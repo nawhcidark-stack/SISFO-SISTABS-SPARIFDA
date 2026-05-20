@@ -1,0 +1,132 @@
+{
+  "entities": {
+    "student": {
+      "title": "Student",
+      "description": "Data representation of a student containing personal and savings information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the student" },
+        "nis": { "type": "string", "description": "Nomor Induk Siswa" },
+        "name": { "type": "string", "description": "Full name of the student" },
+        "class": { "type": "string", "description": "Class name of the student" },
+        "email": { "type": "string", "description": "Email address" },
+        "phone": { "type": "string", "description": "WhatsApp/phone contact number" },
+        "savingsBalance": { "type": "number", "description": "Current savings balance of the student" },
+        "password": { "type": "string", "description": "Custom portal password hash or plain text" }
+      },
+      "required": ["id", "nis", "name", "class", "savingsBalance"]
+    },
+    "sppBill": {
+      "title": "SppBill",
+      "description": "Monthly tuition/SPP billing information",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique billing statement ID" },
+        "studentId": { "type": "string", "description": "ID of the designated student" },
+        "month": { "type": "string", "description": "Target month of SPP" },
+        "year": { "type": "number", "description": "Target year of SPP" },
+        "amount": { "type": "number", "description": "Iuran SPP amount" },
+        "status": { "type": "string", "enum": ["paid", "unpaid", "pending"], "description": "Payment status" },
+        "paidAt": { "type": "string", "description": "Timestamp of payment completion" },
+        "paymentMethod": { "type": "string", "description": "Method of payment used" },
+        "orderId": { "type": "string", "description": "Payment gateway or manual teller transaction ID" }
+      },
+      "required": ["id", "studentId", "month", "year", "amount", "status"]
+    },
+    "savingsTransaction": {
+      "title": "SavingsTransaction",
+      "description": "Records deposits and withdrawals from student balances",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique transaction ID" },
+        "studentId": { "type": "string", "description": "Student who performed the transaction" },
+        "type": { "type": "string", "enum": ["deposit", "withdrawal"], "description": "Mutation type" },
+        "amount": { "type": "number", "description": "Transaction amount" },
+        "status": { "type": "string", "description": "Status of transaction" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of transaction" },
+        "paymentMethod": { "type": "string", "description": "Method of payment" },
+        "notes": { "type": "string", "description": "Optional notes or remarks" }
+      },
+      "required": ["id", "studentId", "type", "amount", "status", "createdAt", "paymentMethod"]
+    },
+    "realtimeNotification": {
+      "title": "RealtimeNotification",
+      "description": "SSE and portal historical logs and notifications",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier for this notification" },
+        "studentId": { "type": "string", "description": "Target student ID if personalized" },
+        "title": { "type": "string", "description": "Notification heading title" },
+        "message": { "type": "string", "description": "Detailed notification body" },
+        "type": { "type": "string", "enum": ["success", "warning", "info"], "description": "Notification category" },
+        "createdAt": { "type": "string", "description": "ISO timestamp of creation" }
+      },
+      "required": ["id", "title", "message", "type", "createdAt"]
+    },
+    "attendanceLog": {
+      "title": "AttendanceLog",
+      "description": "Daily student school attendance records",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Unique identifier of the log" },
+        "studentId": { "type": "string", "description": "Student reference" },
+        "date": { "type": "string", "description": "YYYY-MM-DD format" },
+        "status": { "type": "string", "enum": ["Hadir", "Sakit", "Izin", "Alpa", "Terlambat"], "description": "Status code of attendance" },
+        "notes": { "type": "string", "description": "Optional details or excuse description" }
+      },
+      "required": ["id", "studentId", "date", "status"]
+    },
+    "homeroomTeacher": {
+      "title": "HomeroomTeacher",
+      "description": "Homeroom teacher login and class details",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Teacher unique identifier" },
+        "username": { "type": "string", "description": "Portal username" },
+        "name": { "type": "string", "description": "Full formal name and degree of teacher" },
+        "className": { "type": "string", "description": "Assigned class grade" },
+        "password": { "type": "string", "description": "Account password" }
+      },
+      "required": ["id", "username", "name", "className", "password"]
+    },
+    "appSettings": {
+      "title": "AppSettings",
+      "description": "Global school configuration values, identity metadata, fees and messaging systems",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Config document identification (e.g. sppRates, schoolIdentity)" }
+      },
+      "required": ["id"]
+    }
+  },
+  "firestore": {
+    "/students/{studentId}": {
+      "schema": "student",
+      "description": "Information and savings balances of registered students"
+    },
+    "/sppBills/{billId}": {
+      "schema": "sppBill",
+      "description": "Academic year billing records for student tuition SPP"
+    },
+    "/savingsTransactions/{transactionId}": {
+      "schema": "savingsTransaction",
+      "description": "All student savings balance mutations and receipts"
+    },
+    "/realtimeNotifications/{notificationId}": {
+      "schema": "realtimeNotification",
+      "description": "System alerts and student transaction records"
+    },
+    "/attendanceLogs/{logId}": {
+      "schema": "attendanceLog",
+      "description": "School attendance tracking list"
+    },
+    "/homeroomTeachers/{teacherId}": {
+      "schema": "homeroomTeacher",
+      "description": "Portal profiles for verified class homerooms"
+    },
+    "/configs/{configId}": {
+      "schema": "appSettings",
+      "description": "Dynamic systemic values including midtrans coefficients, WhatsApp configurations and rates"
+    }
+  }
+}

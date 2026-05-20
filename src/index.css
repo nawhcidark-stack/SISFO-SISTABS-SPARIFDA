@@ -1,0 +1,75 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Plus+Jakarta+Sans:wght@500;600;700;800&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-display: "Plus Jakarta Sans", "Inter", sans-serif;
+}
+
+body {
+  font-family: var(--font-sans);
+}
+
+h1, h2, h3, h4, h5, h6 {
+  font-family: var(--font-display);
+}
+
+/* Custom deep green variables matching Islamic Nahdlatul Ulama palette */
+.bg-emerald-850 {
+  background-color: #0c562e;
+}
+.bg-emerald-950 {
+  background-color: #064020;
+}
+.text-emerald-250 {
+  color: #a7f3d0;
+}
+.border-emerald-250 {
+  border-color: #a7f3d0;
+}
+.bg-emerald-650 {
+  background-color: #0f763e;
+}
+.text-emerald-850 {
+  color: #0c562e;
+}
+
+/* Print Layout Optimization Rules */
+@media print {
+  /* Set document color and background */
+  body {
+    background: white !important;
+    color: black !important;
+    font-size: 11pt !important;
+    line-height: 1.4 !important;
+    margin: 0;
+    padding: 0;
+  }
+  
+  /* Hide all elements on page */
+  body * {
+    visibility: hidden !important;
+  }
+  
+  /* Re-enable visibility specifically for print canvas and its descendents */
+  #print-receipt-section, #print-receipt-section *, #print-report-section, #print-report-section * {
+    visibility: visible !important;
+  }
+  
+  /* Position the receipt or report at the top left of the actual paper */
+  #print-receipt-section, #print-report-section {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 1.5cm !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: black !important;
+  }
+}
+
+

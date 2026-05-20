@@ -181,14 +181,28 @@ function handleFirestoreError(error: unknown, operationType: OperationType, rpat
 
 let db: any = null;
 try {
+  let firebaseConfig: any = null;
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
   if (fs.existsSync(firebaseConfigPath)) {
-    const firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
+    firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
+  } else {
+    console.warn("firebase-applet-config.json not found. Using embedded fallback Firebase credentials to auto-connect database...");
+    firebaseConfig = {
+      "projectId": "ungoogly-impulse-271nt",
+      "appId": "1:77575326547:web:93e4b8ce8b1361adcc2fa6",
+      "apiKey": "AIzaSyCz_48fPfLgDHX62T_ClnVAb6Ca1fl_xZI",
+      "authDomain": "ungoogly-impulse-271nt.firebaseapp.com",
+      "firestoreDatabaseId": "ai-studio-7ff6ffdf-833a-490d-a519-ec4364d0517f",
+      "storageBucket": "ungoogly-impulse-271nt.firebasestorage.app",
+      "messagingSenderId": "77575326547",
+      "measurementId": ""
+    };
+  }
+
+  if (firebaseConfig) {
     const firebaseApp = initializeApp(firebaseConfig);
     db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
     console.log("Firebase initialized successfully on server. DB ID:", firebaseConfig.firestoreDatabaseId);
-  } else {
-    console.warn("firebase-applet-config.json not found. Firestore sync is disabled.");
   }
 } catch (error) {
   console.error("Failed to initialize Firebase on server:", error);

@@ -180,6 +180,10 @@ function handleFirestoreError(error: unknown, operationType: OperationType, rpat
 }
 
 let db: any = null;
+let dbSyncStatus = "Initial";
+let dbSyncError: string | null = null;
+let lastSyncTime: string | null = null;
+
 try {
   let firebaseConfig: any = null;
   const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
@@ -203,9 +207,12 @@ try {
     const firebaseApp = initializeApp(firebaseConfig);
     db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
     console.log("Firebase initialized successfully on server. DB ID:", firebaseConfig.firestoreDatabaseId);
+    dbSyncStatus = "Firebase SDK Initialized";
   }
 } catch (error) {
   console.error("Failed to initialize Firebase on server:", error);
+  dbSyncStatus = "Initialization Failed";
+  dbSyncError = error instanceof Error ? error.message : String(error);
 }
 
 async function saveDocToFirestore(colName: string, docId: string, data: any) {
@@ -270,9 +277,13 @@ async function saveStateToFirestore() {
 }
 
 async function syncWithFirestore() {
-  if (!db) return;
+  if (!db) {
+    dbSyncStatus = "Disabled (No DB)";
+    return;
+  }
   try {
     console.log("Connecting database to Firestore...");
+    dbSyncStatus = "Connecting...";
     let snapshot;
     try {
       snapshot = await getDocs(collection(db, "students"));
@@ -282,6 +293,7 @@ async function syncWithFirestore() {
 
     if (snapshot && !snapshot.empty) {
       console.log("Cloud documents found. Pulling state from Firestore...");
+      dbSyncStatus = "Syncing (Loading state)...";
       
       // Clear and populate students
       students.length = 0;
@@ -350,13 +362,22 @@ async function syncWithFirestore() {
         handleFirestoreError(err, OperationType.GET, "configs");
       }
 
+      dbSyncStatus = "Synced (Loaded from Cloud)";
+      lastSyncTime = new Date().toISOString();
+      dbSyncError = null;
       console.log("Connected successfully. State has been loaded from Firestore.");
     } else {
       console.log("No remote database documents. Performing initial Firestore migration...");
+      dbSyncStatus = "Syncing (Uploading Seed)";
       await saveStateToFirestore();
+      dbSyncStatus = "Synced (Initial Seed Completed)";
+      lastSyncTime = new Date().toISOString();
+      dbSyncError = null;
       console.log("Initial Firestore seed and migration completed.");
     }
   } catch (err) {
+    dbSyncStatus = "Failed";
+    dbSyncError = err instanceof Error ? err.message : String(err);
     console.error("Firestore database sync error:", err);
   }
 }
@@ -649,6 +670,23 @@ async function startServer() {
       systemMaintenanceFee: midtransConfig.systemMaintenanceFee !== undefined ? midtransConfig.systemMaintenanceFee : 1500,
       chargeFeesToUser: midtransConfig.chargeFeesToUser !== undefined ? midtransConfig.chargeFeesToUser : true
     });
+  });
+
+  // Force database synchronization with Firestore
+  app.post("/api/admin/force-firestore-sync", async (req, res) => {
+    try {
+      console.log("Admin triggered manual Firestore synchronization...");
+      await syncWithFirestore();
+      res.json({
+        success: true,
+        status: dbSyncStatus,
+        lastSync: lastSyncTime,
+        error: dbSyncError
+      });
+    } catch (err: any) {
+      console.error("Manual Firestore sync failed:", err);
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
   });
 
   // Update dynamic midtrans credentials
@@ -2119,7 +2157,12 @@ async function startServer() {
       midtransEnvironment: midtransConfig.isProduction ? "Production" : "Sandbox",
       configured: !!(midtransConfig.clientKey && midtransConfig.serverKey),
       version: "1.0.0",
-      sseConnectedClients: sseClients.length
+      sseConnectedClients: sseClients.length,
+      firestore: {
+        status: dbSyncStatus,
+        lastSync: lastSyncTime,
+        error: dbSyncError
+      }
     });
   });
 

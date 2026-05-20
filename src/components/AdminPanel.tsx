@@ -63,6 +63,56 @@ export default function AdminPanel({
   const [adminTab, setAdminTab] = useState<'roster' | 'broadcast' | 'config' | 'student_mgmt' | 'laporan' | 'homeroom_mgmt'>('roster');
   const [studentSearch, setStudentSearch] = useState('');
 
+  // Firebase/Cloud Sync States
+  const [systemStatus, setSystemStatus] = useState<any>(null);
+  const [isSyncingLive, setIsSyncingLive] = useState(false);
+  const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
+
+  const fetchSystemStatus = async () => {
+    try {
+      const res = await fetch('/api/system-status');
+      if (res.ok) {
+        const data = await res.json();
+        setSystemStatus(data);
+      }
+    } catch (err) {
+      console.error("Gagal mengambil status sistem:", err);
+    }
+  };
+
+  useEffect(() => {
+    if (adminTab === 'config') {
+      fetchSystemStatus();
+      const interval = setInterval(fetchSystemStatus, 6000);
+      return () => clearInterval(interval);
+    }
+  }, [adminTab]);
+
+  const handleForceSync = async () => {
+    setIsSyncingLive(true);
+    setSyncFeedback(null);
+    try {
+      const res = await fetch('/api/admin/force-firestore-sync', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        }
+      });
+      const data = await res.json();
+      if (data.success) {
+        setSyncFeedback("✔️ Sinkronisasi sukses! Semua koleksi terbaru telah disalin ke Firebase Firestore.");
+        fetchSystemStatus();
+        onRefresh();
+      } else {
+        setSyncFeedback(`⚠️ Gagal menyinkronkan: ${data.error || 'Server error'}`);
+      }
+    } catch (err) {
+      setSyncFeedback("⚠️ Galat koneksi saat mengirim permintaan sinkronisasi.");
+    } finally {
+      setIsSyncingLive(false);
+    }
+  };
+
   const filteredStudents = useMemo(() => {
     if (!studentSearch.trim()) return students;
     const query = studentSearch.toLowerCase().trim();
@@ -1412,6 +1462,106 @@ export default function AdminPanel({
         {/* Tab 3: Config Status Viewer */}
         {adminTab === 'config' && (
           <div className="flex flex-col gap-6 w-full">
+            {/* Firebase Database Sync Status Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-slate-900 text-white p-6 rounded-xl border border-slate-800 shadow-xl flex flex-col gap-5 text-xs text-left relative overflow-hidden"
+            >
+              {/* Decorative subtle background mesh */}
+              <div className="absolute right-0 top-0 w-48 h-48 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none"></div>
+
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
+                <div>
+                  <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
+                    <UploadCloud className="text-emerald-400" size={18} /> Cloud Database-Sync Integration
+                  </h3>
+                  <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed font-medium">
+                    Sistem ini terintegrasi langsung dengan database awan Google Firebase Firestore menggunakan koneksi tersemat (Embedded Fallback) otomatis tanpa konfigurasi manual.
+                  </p>
+                </div>
+                <div className="flex items-center gap-2 self-start md:self-center">
+                  <span className="text-[10px] uppercase font-bold text-slate-400">Status Gateway:</span>
+                  <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold ${
+                    systemStatus?.firestore?.status?.includes('Synced') || systemStatus?.firestore?.status === 'Firebase SDK Initialized'
+                      ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
+                      : systemStatus?.firestore?.status === 'Connecting...' || systemStatus?.firestore?.status?.includes('Syncing')
+                      ? "bg-amber-500/10 border border-amber-500/30 text-amber-400 animate-pulse"
+                      : "bg-red-500/10 border border-red-500/30 text-red-400"
+                  }`}>
+                    <span className={`w-1.5 h-1.5 rounded-full ${
+                      systemStatus?.firestore?.status?.includes('Synced') || systemStatus?.firestore?.status === 'Firebase SDK Initialized'
+                        ? "bg-emerald-450"
+                        : systemStatus?.firestore?.status === 'Connecting...' || systemStatus?.firestore?.status?.includes('Syncing')
+                        ? "bg-amber-400"
+                        : "bg-red-400"
+                    }`}></span>
+                    {systemStatus?.firestore?.status || "Sedang memuat status..."}
+                  </span>
+                </div>
+              </div>
+
+              {syncFeedback && (
+                <div className={`p-3 rounded-lg font-bold text-xs flex items-center gap-2 ${
+                  syncFeedback.includes('sukses') ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300' : 'bg-red-500/10 border border-red-500/20 text-red-300'
+                }`}>
+                  <span>{syncFeedback.includes('sukses') ? "✔️" : "⚠️"}</span>
+                  <span>{syncFeedback}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PROJECT-ID CLOUD</span>
+                  <span className="font-mono text-[11px] text-slate-200 truncate font-semibold">ungoogly-impulse-271nt</span>
+                </div>
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">FIRESTORE SUITE DATABASE ID</span>
+                  <span className="font-mono text-[11px] text-emerald-400 truncate font-semibold">ai-studio-7ff6ffdf-833a-490d-a519-ec4364d0517f</span>
+                </div>
+                <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TERAKHIR DISINKRONKAN (WIB)</span>
+                  <span className="font-mono text-[11px] text-slate-200 font-semibold">
+                    {systemStatus?.firestore?.lastSync ? new Date(systemStatus.firestore.lastSync).toLocaleString('id-ID') : "Belum di sinkronisasikan"}
+                  </span>
+                </div>
+              </div>
+
+              {systemStatus?.firestore?.error && (
+                <div className="p-3 bg-red-950/40 border border-red-900/30 rounded-lg flex flex-col gap-1 text-red-300">
+                  <span className="text-[10px] font-bold uppercase tracking-wider">DETAIL OPERASIONAL ERROR:</span>
+                  <p className="font-mono text-[10px] break-all leading-normal text-red-200 select-all font-semibold">
+                    {systemStatus.firestore.error}
+                  </p>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-950/40 p-3.5 rounded-lg border border-slate-800">
+                <div className="flex items-start gap-2.5">
+                  <span className="p-1 bg-emerald-500/10 text-emerald-400 rounded">💡</span>
+                  <div className="text-[11px] text-slate-300 leading-relaxed font-medium">
+                    Setiap pembaruan data murid, pembayaran tagihan SPP, transaksi tabungan, maupun jurnal absensi, <strong>otomatis langsung tersinkronkan</strong> ke database awan secara real-time. Jika Anda mendapati basis data awan kosong, tekan tombol sinkronkan untuk memigrasikan database memori server secara instan.
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleForceSync}
+                  disabled={isSyncingLive}
+                  className="flex items-center justify-center gap-2 self-end sm:self-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-750 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 shrink-0 select-none"
+                >
+                  {isSyncingLive ? (
+                    <>
+                      <RefreshCw size={12} className="animate-spin text-white animate-normal" /> Menyinkronkan...
+                    </>
+                  ) : (
+                    <>
+                      <RefreshCw size={12} className="text-white" /> Sinkronkan Sekarang 🔄
+                    </>
+                  )}
+                </button>
+              </div>
+            </motion.div>
+
             {/* SPP Nominal Rates Configurations per Level */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}

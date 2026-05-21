@@ -13,7 +13,7 @@ import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc } from "fireb
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher } from "./src/types";
 
 // Setup serverport
-const PORT = 3000;
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
 
 // Initialize dynamic in-memory store
 const students: Student[] = [

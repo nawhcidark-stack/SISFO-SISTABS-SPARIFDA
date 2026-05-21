@@ -201,20 +201,32 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         {/* Right Side: Professional interactive login form */}
         <div className="md:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
           
-          <div className="bg-emerald-900 border-b border-emerald-950 p-6 text-white text-center flex flex-col gap-1 items-center justify-center">
-            <div className="p-1 bg-white text-emerald-950 rounded-xl w-12 h-12 shadow-md flex items-center justify-center overflow-hidden">
-              {schoolIdentity?.logo ? (
-                <img 
-                  src={schoolIdentity.logo} 
-                  className="w-full h-full object-contain" 
-                  alt="Logo" 
-                  referrerPolicy="no-referrer"
-                />
-              ) : (
-                <GraduationCap size={24} className="stroke-[2.5]" />
+          <div className="bg-gradient-to-r from-blue-700 via-teal-600 to-emerald-600 border-b border-emerald-950 p-6 text-white text-center flex flex-col gap-1 items-center justify-center">
+            <div className="flex items-center gap-2">
+              <div className="p-1 bg-white text-slate-800 rounded-xl w-12 h-12 shadow-md flex items-center justify-center overflow-hidden">
+                {schoolIdentity?.logo ? (
+                  <img 
+                    src={schoolIdentity.logo} 
+                    className="w-full h-full object-contain" 
+                    alt="Logo" 
+                    referrerPolicy="no-referrer"
+                  />
+                ) : (
+                  <GraduationCap size={24} className="stroke-[2.5]" />
+                )}
+              </div>
+              {schoolIdentity?.logo2 && (
+                <div className="p-1 bg-white text-slate-800 rounded-xl w-12 h-12 shadow-md flex items-center justify-center overflow-hidden">
+                  <img 
+                    src={schoolIdentity.logo2} 
+                    className="w-full h-full object-contain" 
+                    alt="Logo 2" 
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
               )}
             </div>
-            <h3 className="font-extrabold text-xs tracking-tight uppercase text-yellow-400 mt-2">
+            <h3 className="font-extrabold text-xs tracking-tight uppercase text-yellow-300 mt-2 font-display">
               SISTEM LOGIN PORTAL
             </h3>
             <p className="text-[11px] text-emerald-100 font-bold uppercase tracking-wide">

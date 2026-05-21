@@ -14,57 +14,140 @@ h1, h2, h3, h4, h5, h6 {
   font-family: var(--font-display);
 }
 
-/* Custom deep green variables matching Islamic Nahdlatul Ulama palette */
+/* Custom deep blue & green gradient variables matching the new cohesive layout palette */
 .bg-emerald-850 {
-  background-color: #0c562e;
+  background-color: #1d4ed8; /* Blue */
 }
 .bg-emerald-950 {
-  background-color: #064020;
+  background-color: #0c4a6e; /* Deep ocean blue */
 }
 .text-emerald-250 {
-  color: #a7f3d0;
+  color: #34d399; /* Mint green */
 }
 .border-emerald-250 {
-  border-color: #a7f3d0;
+  border-color: #34d399; /* Mint green */
 }
 .bg-emerald-650 {
-  background-color: #0f763e;
+  background-color: #059669; /* Emerald green */
 }
 .text-emerald-850 {
-  color: #0c562e;
+  color: #1d4ed8; /* Blue */
 }
 
 /* Print Layout Optimization Rules */
 @media print {
-  /* Set document color and background */
-  body {
+  @page {
+    size: auto; /* Automatically adjust paper size based on printer selection */
+    margin: 5mm 8mm 5mm 8mm !important; /* Extremely compact page margins to eliminate blank spaces */
+  }
+
+  /* Reset body and layout wrapper dimensions */
+  html, body {
     background: white !important;
     color: black !important;
-    font-size: 11pt !important;
-    line-height: 1.4 !important;
-    margin: 0;
-    padding: 0;
+    font-size: 10pt !important;
+    line-height: 1.35 !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    height: auto !important;
+    min-height: 100% !important;
+    overflow: visible !important;
   }
-  
-  /* Hide all elements on page */
+
+  /* Hide the entire main app template chrome and dashboard panels completely */
+  /* This prevents any physical layout space from being occupied by invisible elements, saving paper and top space! */
+  header,
+  footer,
+  .no-print,
+  #btn-trigger-notification-log,
+  #btn-logout-portal,
+  button,
+  span.animate-ping,
+  nav,
+  aside,
+  #admin-panel-root > div:not(.fixed),
+  #student-panel-root > div:not(.fixed),
+  #homeroom-panel-root > div:not(.fixed),
+  div[class*="bg-white border-b border-slate-200 py-3"],
+  div[class*="NotificationToast"] {
+    display: none !important;
+    height: 0 !important;
+    width: 0 !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    overflow: hidden !important;
+  }
+
+  /* Hide all elements on page sequentially except our targeted printing overlays */
   body * {
     visibility: hidden !important;
   }
-  
-  /* Re-enable visibility specifically for print canvas and its descendents */
-  #print-receipt-section, #print-receipt-section *, #print-report-section, #print-report-section * {
+
+  /* Dismantle fixed flexbox positioning on the modal background overlay *ancestors* */
+  .fixed.inset-0.z-50,
+  div[class*="backdrop-blur-xs"] {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    backdrop-filter: none !important;
+    box-shadow: none !important;
+    border: none !important;
+    overflow: visible !important;
     visibility: visible !important;
   }
-  
-  /* Position the receipt or report at the top left of the actual paper */
-  #print-receipt-section, #print-report-section {
-    position: absolute !important;
-    left: 0 !important;
-    top: 0 !important;
+
+  /* Dismantle white card styling on the inner modal containers */
+  .bg-white.rounded-2xl,
+  div[class*="rounded-2xl"],
+  div[class*="max-w-xl"],
+  div[class*="max-w-4xl"] {
+    position: static !important;
+    display: block !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    height: auto !important;
+    max-height: none !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: transparent !important;
+    border: none !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+    visibility: visible !important;
+  }
+
+  /* Dismantle scroll view container limiters preventing complete multi-page overflow */
+  .overflow-y-auto,
+  div[class*="overflow-y-auto"] {
+    overflow: visible !important;
+    max-height: none !important;
+    height: auto !important;
+    padding: 0 !important;
+    margin: 0 !important;
+  }
+
+  /* Re-enable visibility specifically for print canvas and its descendants */
+  #print-receipt-section, 
+  #print-receipt-section *, 
+  #print-report-section, 
+  #print-report-section * {
+    visibility: visible !important;
+  }
+
+  /* Style the report and receipt to flow as standard block elements at the very top of the page */
+  #print-receipt-section, 
+  #print-report-section {
+    display: block !important;
+    position: static !important;
     width: 100% !important;
     max-width: 100% !important;
     margin: 0 !important;
-    padding: 1.5cm !important;
+    padding: 0 !important;
     border: none !important;
     box-shadow: none !important;
     background: white !important;

@@ -7,7 +7,7 @@ import HomeroomPanel from './components/HomeroomPanel';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
-import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck } from 'lucide-react';
+import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function App() {
   // Authed state persistence
@@ -31,6 +31,9 @@ export default function App() {
   const [studentBills, setStudentBills] = useState<SppBill[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<SavingsTransaction[]>([]);
   const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>([]);
+  const [activeToasts, setActiveToasts] = useState<RealtimeNotification[]>([]);
+  const [isNotifHistoryOpen, setIsNotifHistoryOpen] = useState<boolean>(false);
+  const [notifSearchQuery, setNotifSearchQuery] = useState<string>('');
   const [attendanceList, setAttendanceList] = useState<AttendanceLog[]>([]);
   const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>([]);
   
@@ -44,6 +47,7 @@ export default function App() {
     principal: "H. Ahmad Fuad, S.Pd, M.PdI",
     treasurer: "Bendahara Madrasah NU",
     logo: "",
+    logo2: "",
     letterhead: ""
   });
   
@@ -281,6 +285,14 @@ export default function App() {
         // Push to top of notifications array
         setGlobalNotifications(prev => [rawNotification, ...prev]);
         
+        // Push to active dynamic toasts for temporary floating displays
+        setActiveToasts(prev => [rawNotification, ...prev]);
+
+        // Auto-dismiss floating toast after 4 seconds
+        setTimeout(() => {
+          setActiveToasts(prev => prev.filter(t => t.id !== rawNotification.id));
+        }, 4000);
+        
         // Play notification ding chime!
         triggerBeep();
 
@@ -326,7 +338,40 @@ export default function App() {
 
   // Dismiss dynamic toast alert manually
   const handleDismissToast = (id: string) => {
+    setActiveToasts(prev => prev.filter(n => n.id !== id));
+  };
+
+  // Delete individual notification from history log
+  const handleDeleteHistoryNotification = (id: string) => {
     setGlobalNotifications(prev => prev.filter(n => n.id !== id));
+  };
+
+  // Clear all notification history logs
+  const handleClearAllHistory = () => {
+    setGlobalNotifications([]);
+  };
+
+  // Modern relative/formatted timestamp helper for logs
+  const formatNotifTime = (dateStr: string) => {
+    try {
+      const d = new Date(dateStr);
+      const now = new Date();
+      const isToday = d.toDateString() === now.toDateString();
+      const yesterday = new Date();
+      yesterday.setDate(now.getDate() - 1);
+      const isYesterday = d.toDateString() === yesterday.toDateString();
+      
+      const timeStr = d.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }) + ' WIB';
+      if (isToday) {
+        return `Hari ini, ${timeStr}`;
+      } else if (isYesterday) {
+        return `Kemarin, ${timeStr}`;
+      } else {
+        return d.toLocaleDateString('id-ID', { day: 'numeric', month: 'short' }) + `, ${timeStr}`;
+      }
+    } catch (e) {
+      return dateStr;
+    }
   };
 
   // 3. SPP Payment Initializer (Midtrans Token Charge)
@@ -448,22 +493,26 @@ export default function App() {
   };
 
   // Admin Manual SPP Verification (Cash clearance)
-  const handlePaySppManual = async (billId: string): Promise<boolean> => {
+  const handlePaySppManual = async (billId: string): Promise<any> => {
     try {
       const res = await fetch('/api/admin/pay-spp-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ billId })
       });
-      return res.ok;
+      if (res.ok) {
+        const data = await res.json();
+        return data.bill || true;
+      }
+      return null;
     } catch (err) {
       console.error(err);
-      return false;
+      return null;
     }
   };
 
   // Admin Manual Savings ledger deposit/withdrawal
-  const handleSavingsManual = async (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string): Promise<boolean> => {
+  const handleSavingsManual = async (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string): Promise<any> => {
     try {
       const res = await fetch('/api/admin/savings-manual', {
         method: 'POST',
@@ -475,10 +524,14 @@ export default function App() {
           notes
         })
       });
-      return res.ok;
+      if (res.ok) {
+        const data = await res.json();
+        return data.transaction || true;
+      }
+      return null;
     } catch (err) {
       console.error(err);
-      return false;
+      return null;
     }
   };
 
@@ -717,9 +770,160 @@ export default function App() {
       
       {/* Toast Alert Engine (Listens globally to active SSE events) */}
       <NotificationToast
-        notifications={globalNotifications}
+        notifications={activeToasts}
         onDismiss={handleDismissToast}
       />
+
+      {/* Drawer Riwayat Notifikasi */}
+      <AnimatePresence>
+        {isNotifHistoryOpen && (
+          <div className="fixed inset-0 z-50 flex justify-end no-print" id="notification-history-modal">
+            {/* Backdrop Overlay */}
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setIsNotifHistoryOpen(false)}
+              className="absolute inset-0 bg-slate-900/40 backdrop-blur-xs cursor-pointer"
+            />
+            
+            {/* Slide-out Panel */}
+            <motion.div
+              initial={{ x: '100%' }}
+              animate={{ x: 0 }}
+              exit={{ x: '100%' }}
+              transition={{ type: 'spring', damping: 26, stiffness: 220 }}
+              className="relative w-full max-w-md bg-white h-full shadow-2xl flex flex-col border-l border-slate-200"
+            >
+              {/* Header */}
+              <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
+                <div className="flex items-center gap-2">
+                  <div className="p-2 bg-indigo-50 text-indigo-600 rounded-lg">
+                    <Bell size={18} className="animate-bounce" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-800 text-sm">Riwayat Notifikasi</h3>
+                    <p className="text-[10px] text-slate-400 font-medium">Update real-time aktivitas sekolah</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setIsNotifHistoryOpen(false)}
+                  className="p-1.5 hover:bg-slate-100 text-slate-400 hover:text-slate-600 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Toolbar & Filter */}
+              <div className="p-4 border-b border-slate-100 flex flex-col gap-2 bg-white">
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Cari notifikasi..."
+                    value={notifSearchQuery}
+                    onChange={(e) => setNotifSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-505"
+                  />
+                  <div className="absolute left-2.5 top-2.5 text-slate-400">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                  </div>
+                </div>
+
+                {globalNotifications.length > 0 && (
+                  <div className="flex items-center justify-between text-[11px] pt-1.5">
+                    <span className="text-slate-500 font-semibold">Total: {globalNotifications.filter(n => {
+                      const q = notifSearchQuery.toLowerCase();
+                      return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
+                    }).length} pesan</span>
+                    <button
+                      onClick={handleClearAllHistory}
+                      className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-800 font-bold transition-colors cursor-pointer uppercase tracking-wider text-[9px]"
+                    >
+                      <Trash2 size={11} /> Hapus Semua
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Message Feed */}
+              <div className="flex-grow overflow-y-auto p-4 flex flex-col gap-3 min-h-0">
+                {globalNotifications.filter(n => {
+                  const q = notifSearchQuery.toLowerCase();
+                  return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
+                }).length === 0 ? (
+                  <div className="flex flex-col items-center justify-center text-center py-20 px-6 gap-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 text-slate-350">
+                      <Bell size={20} className="text-slate-400" />
+                    </div>
+                    <div>
+                      <h4 className="font-bold text-slate-700 text-xs">Belum Ada Notifikasi</h4>
+                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-[240px] mx-auto">
+                        {notifSearchQuery ? 'Tidak menemukan notifikasi dengan kata kunci tersebut.' : 'Semua kuitansi pelunasan, mutasi pinjaman/tabungan, dan siaran pengumuman akan tercatat di sini.'}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  globalNotifications.filter(n => {
+                    const q = notifSearchQuery.toLowerCase();
+                    return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
+                  }).map((notif) => {
+                    let IconComp = Info;
+                    let badgeColor = 'bg-blue-50 text-blue-700 border-blue-100';
+                    
+                    if (notif.type === 'success') {
+                      IconComp = CheckCircle2;
+                      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                    } else if (notif.type === 'warning') {
+                      IconComp = AlertTriangle;
+                      badgeColor = 'bg-amber-50 text-amber-700 border-amber-100';
+                    } else if (notif.type === 'payment') {
+                      IconComp = CreditCard;
+                      badgeColor = 'bg-teal-50 text-teal-700 border-teal-100';
+                    }
+
+                    return (
+                      <motion.div
+                        key={notif.id}
+                        layoutId={`notif-card-${notif.id}`}
+                        className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl hover:bg-slate-100/50 transition-all flex gap-3 relative group"
+                      >
+                        <div className={`p-1.5 rounded-lg border h-fit self-start shrink-0 ${badgeColor}`}>
+                          <IconComp size={15} />
+                        </div>
+                        <div className="flex-grow min-w-0 pr-4">
+                          <span className="text-[9px] font-mono text-slate-400 block mb-0.5">
+                            {formatNotifTime(notif.createdAt)}
+                          </span>
+                          <h4 className="font-bold text-xs text-slate-800 leading-tight">
+                            {notif.title}
+                          </h4>
+                          <p className="text-[11px] text-slate-500 mt-1 leading-relaxed break-words font-medium">
+                            {notif.message}
+                          </p>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteHistoryNotification(notif.id)}
+                          className="absolute right-2 top-2 p-1 text-slate-400 hover:text-rose-600 rounded-md hover:bg-slate-100 opacity-0 group-hover:opacity-100 transition-all cursor-pointer"
+                          title="Hapus"
+                        >
+                          <X size={12} />
+                        </button>
+                      </motion.div>
+                    );
+                  })
+                )}
+              </div>
+
+              {/* Footer */}
+              <div className="p-3 border-t border-slate-100 text-center text-[10px] text-slate-400 bg-slate-50/50 font-medium">
+                Sistem Informasi SMP Maarif NU Pandaan
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Midtrans Snap Popup Orchestration (Supports both mock sandbox and real token inputs) */}
       <MidtransPayModal
@@ -739,33 +943,46 @@ export default function App() {
       />
 
       {/* Main Top Header Branding */}
-      <header className="bg-emerald-900 border-b-4 border-yellow-500 shadow-lg text-white sticky top-0 z-40">
+      <header className="bg-gradient-to-r from-blue-700 via-teal-600 to-emerald-600 border-b-4 border-emerald-400 shadow-lg text-white sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           
           {/* Logo & School Name */}
           <div className="flex items-center gap-3">
-            <div className="p-1 p-1.5 bg-white rounded-xl shadow-md border border-emerald-800 flex items-center justify-center text-emerald-900 self-center h-10 w-10 overflow-hidden">
-              {schoolIdentity.logo ? (
-                <img 
-                  src={schoolIdentity.logo} 
-                  className="w-full h-full object-contain" 
-                  alt="Logo Sekolah" 
-                  referrerPolicy="no-referrer"
-                  id="header-school-logo"
-                />
-              ) : (
-                <GraduationCap size={24} className="stroke-[2.5]" />
+            <div className="flex items-center gap-2 shrink-0">
+              <div className="p-1.5 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center text-slate-800 self-center h-10 w-10 overflow-hidden">
+                {schoolIdentity.logo ? (
+                  <img 
+                    src={schoolIdentity.logo} 
+                    className="w-full h-full object-contain" 
+                    alt="Logo Sekolah" 
+                    referrerPolicy="no-referrer"
+                    id="header-school-logo"
+                  />
+                ) : (
+                  <GraduationCap size={24} className="stroke-[2.5]" />
+                )}
+              </div>
+              {schoolIdentity.logo2 && (
+                <div className="p-1.5 bg-white rounded-xl shadow-md border border-slate-200 flex items-center justify-center text-slate-800 self-center h-10 w-10 overflow-hidden">
+                  <img 
+                    src={schoolIdentity.logo2} 
+                    className="w-full h-full object-contain" 
+                    alt="Logo Sekolah Kedua" 
+                    referrerPolicy="no-referrer"
+                    id="header-school-logo-2"
+                  />
+                </div>
               )}
             </div>
             <div>
-              <h1 className="text-sm font-black tracking-tight uppercase leading-none text-yellow-400">
+              <h1 className="text-sm font-black tracking-tight uppercase leading-none text-yellow-300">
                 {schoolIdentity.subheading || "Lembaga Pendidikan Maarif NU"}
               </h1>
               <h2 className="text-base font-bold tracking-tight text-white mt-0.5">
                 {schoolIdentity.name || "SMP MA'ARIF NU PANDAAN"}
               </h2>
-              <span className="text-[10px] text-emerald-250 block font-medium">
-                Sistem Portal Keuangan SPP & Tabungan Terpadu &bull; {schoolIdentity.accreditation || "Terakreditasi A"}
+              <span className="text-[10px] text-emerald-100 block font-medium">
+                Sistem Portal Administrasi &bull; {schoolIdentity.accreditation || "Terakreditasi A"}
               </span>
             </div>
           </div>
@@ -773,8 +990,8 @@ export default function App() {
           {/* Time indicator and Toggle Sound */}
           <div className="flex items-center gap-3 self-end sm:self-center">
             {/* Live UTC time converted to WIB */}
-            <div className="bg-emerald-950/70 border border-emerald-800 px-3 py-1 rounded-lg text-right font-mono text-[11px] text-emerald-100 flex items-center gap-1.5 shadow-inner">
-              <Activity size={10} className="text-emerald-400 animate-pulse" />
+            <div className="bg-blue-950/40 border border-teal-500/30 px-3 py-1 rounded-lg text-right font-mono text-[11px] text-teal-100 flex items-center gap-1.5 shadow-inner">
+              <Activity size={10} className="text-teal-300 animate-pulse" />
               <span>{timeStr || 'Memuat Jam...'}</span>
             </div>
 
@@ -830,6 +1047,26 @@ export default function App() {
                 <span>Kanal Real-time Aktif</span>
               </div>
               
+              <div className="w-px h-4 bg-slate-200" />
+
+              {/* Tombol Lonceng untuk History Notif */}
+              <button
+                id="btn-trigger-notification-log"
+                onClick={() => setIsNotifHistoryOpen(true)}
+                className="relative flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-250 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 text-[11px] font-bold rounded-lg transition-all cursor-pointer shadow-xs whitespace-nowrap"
+                title="Lihat Riwayat Notifikasi Sekolah"
+              >
+                <span className="relative flex h-4 w-4 items-center justify-center shrink-0">
+                  <Bell size={13} className="animate-pulse text-indigo-600" />
+                  {globalNotifications.length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-650 bg-rose-600 text-[8px] font-extrabold text-white leading-none">
+                      {globalNotifications.length}
+                    </span>
+                  )}
+                </span>
+                <span className="hidden xs:inline">Riwayat Notifikasi</span>
+              </button>
+
               <div className="w-px h-4 bg-slate-200" />
 
               <button

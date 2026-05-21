@@ -107,6 +107,7 @@ let schoolIdentity = {
   principal: "H. Ahmad Fuad, S.Pd, M.PdI",
   treasurer: "Bendahara Madrasah NU",
   logo: "", // base64 string or image url containing the school logo
+  logo2: "", // base64 string or image url containing the second school logo
   letterhead: "" // base64 string or image url containing the school kop surat
 };
 
@@ -643,7 +644,7 @@ async function startServer() {
   await syncWithFirestore();
 
   const app = express();
-  app.use(express.json());
+  app.use(express.json({ limit: '10mb' }));
 
   // Interceptor middleware to auto-save state on successful mutation requests
   app.use((req, res, next) => {
@@ -765,7 +766,7 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, letterhead } = req.body;
+    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead } = req.body;
     
     if (name !== undefined) schoolIdentity.name = String(name).trim();
     if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
@@ -775,6 +776,7 @@ async function startServer() {
     if (principal !== undefined) schoolIdentity.principal = String(principal).trim();
     if (treasurer !== undefined) schoolIdentity.treasurer = String(treasurer).trim();
     if (logo !== undefined) schoolIdentity.logo = String(logo); // can be empty or base64 data URI
+    if (logo2 !== undefined) (schoolIdentity as any).logo2 = String(logo2); // can be empty or base64 data URI
     if (letterhead !== undefined) schoolIdentity.letterhead = String(letterhead); // can be empty or base64 data URI
 
     // Broadcast SSE notification

@@ -61,6 +61,7 @@ export interface SchoolIdentity {
   principal: string;
   treasurer: string;
   logo: string;
+  logo2?: string;
   letterhead?: string;
   sppRates?: {
     grade7: number;

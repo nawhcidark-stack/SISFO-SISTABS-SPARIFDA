@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog } from '../types';
 import { motion } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download } from 'lucide-react';
 
 interface StudentPanelProps {
   students: Student[];
@@ -98,6 +98,354 @@ export default function StudentPanel({
     }
   };
 
+  // Invoice/Receipt state & download helpers
+  const [receiptToPrint, setReceiptToPrint] = useState<{ type: 'spp' | 'savings'; detail: any; student: Student } | null>(null);
+
+  const wordifyAmount = (nominal: number): string => {
+    const words = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
+    if (nominal < 12) {
+      return words[nominal];
+    } else if (nominal < 20) {
+      return wordifyAmount(nominal - 10) + " belas";
+    } else if (nominal < 100) {
+      return wordifyAmount(Math.floor(nominal / 10)) + " puluh " + wordifyAmount(nominal % 10);
+    } else if (nominal < 200) {
+      return "seratus " + wordifyAmount(nominal - 100);
+    } else if (nominal < 1000) {
+      return wordifyAmount(Math.floor(nominal / 100)) + " ratus " + wordifyAmount(nominal % 100);
+    } else if (nominal < 2000) {
+      return "seribu " + wordifyAmount(nominal - 1000);
+    } else if (nominal < 1000000) {
+      return wordifyAmount(Math.floor(nominal / 1000)) + " ribu " + wordifyAmount(nominal % 1000);
+    } else if (nominal < 1000000000) {
+      return wordifyAmount(Math.floor(nominal / 1000000)) + " juta " + wordifyAmount(nominal % 1000000);
+    }
+    return nominal.toString();
+  };
+
+  const indonesianWordsForRupiah = (num: number): string => {
+    const cleanVal = Math.floor(Math.abs(num));
+    if (cleanVal === 0) return "Nol Rupiah";
+    const str = wordifyAmount(cleanVal).trim().replace(/\s+/g, ' ');
+    return str.substring(0, 1).toUpperCase() + str.substring(1) + " Rupiah";
+  };
+
+  const handleDownloadInvoice = (type: 'spp' | 'savings', detail: any, student: Student, sIdentity?: SchoolIdentity) => {
+    const refNum = detail.id.substring(0, 10).toUpperCase();
+    const dateStr = new Date(detail.paidAt || detail.createdAt || '').toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'});
+    const wordified = indonesianWordsForRupiah(detail.amount);
+    
+    let itemTitle = "";
+    let itemSubtitle = "";
+    if (type === 'spp') {
+      itemTitle = "Pembayaran Iuran SPP Wajib Bulanan";
+      itemSubtitle = `Bulan periodik: ${detail.month} ${detail.year} • Metode: ${detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}`;
+    } else {
+      itemTitle = "Mutasi Keuangan Rekening Tabungan";
+      itemSubtitle = `${detail.type === 'deposit' ? 'Penyetoran Saldo Tunai' : 'Penarikan Saldo Tunai'} • Memo: "${detail.notes || 'Transaksi Teller Tabungan'}"`;
+    }
+
+    const schoolLogoStr = sIdentity?.logo ? `<img src="${sIdentity.logo}" style="width: 50px; height: 50px; object-fit: contain;" alt="Logo" />` : '';
+    const schoolLogo2Str = sIdentity?.logo2 ? `<img src="${sIdentity.logo2}" style="width: 50px; height: 50px; object-fit: contain;" alt="Logo 2" />` : '';
+
+    const htmlContent = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8">
+  <title>Invoice Kuitansi #${refNum}</title>
+  <style>
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      color: #334155;
+      background-color: #f8fafc;
+      margin: 0;
+      padding: 40px 20px;
+    }
+    .invoice-card {
+      background-color: #ffffff;
+      max-width: 650px;
+      margin: 0 auto;
+      border: 1px solid #e2e8f0;
+      border-radius: 12px;
+      box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.05);
+      padding: 35px;
+    }
+    .header-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-bottom: 3px double #0d9488;
+      padding-bottom: 15px;
+      margin-bottom: 25px;
+    }
+    .school-info {
+      text-align: left;
+      padding-left: 15px;
+    }
+    .school-name {
+      font-size: 14px;
+      font-weight: 800;
+      color: #0f172a;
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .school-sub {
+      font-size: 10px;
+      color: #0d9488;
+      margin: 2px 0 0 0;
+      text-transform: uppercase;
+      font-weight: 700;
+    }
+    .school-meta {
+      font-size: 9px;
+      color: #64748b;
+      margin: 4px 0 0 0;
+    }
+    .title-area {
+      text-align: right;
+    }
+    .doc-type {
+      font-size: 16px;
+      font-weight: 800;
+      color: #1d4ed8;
+      margin: 0;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    .doc-ref {
+      font-family: monospace;
+      font-size: 10px;
+      color: #64748b;
+      margin: 3px 0 0 0;
+    }
+    .meta-table {
+      width: 100%;
+      border-collapse: collapse;
+      border-bottom: 1px dashed #cbd5e1;
+      margin-bottom: 20px;
+    }
+    .meta-td {
+      width: 25%;
+      padding-bottom: 12px;
+    }
+    .meta-label {
+      font-size: 9px;
+      font-weight: 700;
+      color: #94a3b8;
+      text-transform: uppercase;
+      display: block;
+      margin-bottom: 3px;
+    }
+    .meta-val {
+      font-size: 12px;
+      font-weight: 700;
+      color: #334155;
+    }
+    .details-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-bottom: 20px;
+    }
+    .details-table th {
+      border-bottom: 2px solid #e2e8f0;
+      color: #475569;
+      font-size: 10px;
+      text-transform: uppercase;
+      padding: 8px 0;
+      font-weight: 700;
+      text-align: left;
+    }
+    .details-table td {
+      padding: 12px 0;
+      border-bottom: 1px solid #f1f5f9;
+    }
+    .item-desc {
+      font-weight: 700;
+      font-size: 12px;
+      color: #1e293b;
+    }
+    .item-sub {
+      font-size: 10px;
+      color: #64748b;
+      margin-top: 3px;
+    }
+    .item-total {
+      font-family: monospace;
+      font-weight: 750;
+      font-size: 13px;
+      color: #0f172a;
+      text-align: right;
+    }
+    .wordify-box {
+      background-color: #f0fdf4;
+      padding: 12px;
+      border-radius: 8px;
+      border: 1px solid #bbf7d0;
+      font-style: italic;
+      color: #166534;
+      font-size: 11px;
+      margin-bottom: 25px;
+    }
+    .sig-table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 30px;
+    }
+    .sig-td {
+      width: 50%;
+      vertical-align: top;
+    }
+    .sig-label {
+      font-size: 9px;
+      font-weight: bold;
+      color: #94a3b8;
+      text-transform: uppercase;
+    }
+    .sig-line {
+      font-weight: bold;
+      color: #334155;
+      display: inline-block;
+      width: 180px;
+      border-top: 1px solid #cbd5e1;
+      padding-top: 5px;
+      margin-top: 65px;
+      text-align: center;
+      font-size: 11px;
+    }
+    .action-bar {
+      margin-bottom: 20px;
+      text-align: center;
+    }
+    .btn {
+      background-color: #059669;
+      color: #ffffff;
+      border: none;
+      padding: 8px 16px;
+      border-radius: 6px;
+      font-weight: 700;
+      font-size: 11px;
+      text-transform: uppercase;
+      cursor: pointer;
+      margin: 0 5px;
+      box-shadow: 0 4px 6px -1px rgba(5, 150, 105, 0.2);
+    }
+    .btn:hover {
+      background-color: #047857;
+    }
+    @media print {
+      body {
+        background-color: #ffffff;
+        padding: 0;
+      }
+      .invoice-card {
+        border: none;
+        box-shadow: none;
+        padding: 0;
+      }
+      .action-bar {
+        display: none;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="action-bar row-layout">
+    <button class="btn" onclick="window.print()">Cetak Invoice 🖨️</button>
+  </div>
+  
+  <div class="invoice-card">
+    <table class="header-table">
+      <tr>
+        <td style="width: 50px; vertical-align: middle;">
+          ${schoolLogoStr}
+        </td>
+        <td class="school-info" style="vertical-align: middle;">
+          <h1 class="school-name">${sIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h1>
+          <h2 class="school-sub">${sIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</h2>
+          <p class="school-meta">${sIdentity?.accreditation || "Terakreditasi A"} &bull; ${sIdentity?.address || "Pasuruan, Jawa Timur, Indonesia"} &bull; Telp: ${sIdentity?.phone || "(0343) 631234"}</p>
+        </td>
+        <td style="width: 50px; text-align: right; vertical-align: middle;">
+          ${schoolLogo2Str}
+        </td>
+        <td class="title-area" style="vertical-align: middle; padding-left: 15px;">
+          <h1 class="doc-type">Invoice Resmi</h1>
+          <p class="doc-ref">Ref: #${refNum}</p>
+        </td>
+      </tr>
+    </table>
+
+    <table class="meta-table">
+      <tr>
+        <td class="meta-td">
+          <span class="meta-label">Nama Siswa</span>
+          <span class="meta-val">${student.name}</span>
+        </td>
+        <td class="meta-td">
+          <span class="meta-label">ID / NIS</span>
+          <span class="meta-val">${student.nis}</span>
+        </td>
+        <td class="meta-td">
+          <span class="meta-label">Pendidikan / Kelas</span>
+          <span class="meta-val">Kelas ${student.class}</span>
+        </td>
+        <td class="meta-td" style="text-align: right;">
+          <span class="meta-label" style="text-align: right;">Tanggal Bayar</span>
+          <span class="meta-val" style="display: block; text-align: right;">${dateStr}</span>
+        </td>
+      </tr>
+    </table>
+
+    <table class="details-table">
+      <thead>
+        <tr>
+          <th>Deskripsi Pembayaran</th>
+          <th style="text-align: right;">Jumlah Nominal</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td>
+            <div class="item-desc">${itemTitle}</div>
+            <div class="item-sub">${itemSubtitle}</div>
+          </td>
+          <td class="item-total">Rp ${detail.amount.toLocaleString('id-ID')},00</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div class="wordify-box">
+      Terbilang: <strong>#${wordified}#</strong>
+    </div>
+
+    <table class="sig-table">
+      <tr>
+        <td class="sig-td" style="text-align: left;">
+          <span class="sig-label">Wali Murid / Pembayar</span>
+          <br />
+          <span class="sig-line">(${student.name.substring(0, 16)})</span>
+        </td>
+        <td class="sig-td" style="text-align: right;">
+          <span class="sig-label">${sIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+          <br />
+          <span class="sig-line">(${sIdentity?.treasurer || "Bendahara Sekolah"})</span>
+        </td>
+      </tr>
+    </table>
+  </div>
+</body>
+</html>`;
+
+    const blob = new Blob([htmlContent], { type: 'text/html;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `invoice_${type}_${student.nis}_${refNum}.html`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    URL.revokeObjectURL(url);
+  };
+
   // Quick select chip helper for deposits
   const presetAmounts = ['50000', '100000', '250000', '500000'];
 
@@ -137,7 +485,17 @@ export default function StudentPanel({
   const filteredBills = useMemo(() => {
     let result = bills;
     if (selectedAcademicYear) {
-      result = bills.filter(b => getAcademicYearOfBill(b) === selectedAcademicYear);
+      const selectedStartYear = parseInt(selectedAcademicYear.split('/')[0], 10);
+      result = bills.filter(b => {
+        const billYearStr = getAcademicYearOfBill(b);
+        if (billYearStr === selectedAcademicYear) return true;
+        // Include unpaid bills from previous academic years
+        const billStartYear = parseInt(billYearStr.split('/')[0], 10);
+        if (billStartYear < selectedStartYear && b.status === 'unpaid') {
+          return true;
+        }
+        return false;
+      });
     }
     return [...result].sort((a, b) => {
       if (a.year !== b.year) {
@@ -176,16 +534,16 @@ export default function StudentPanel({
       <div className="lg:col-span-4 flex flex-col gap-6">
         {/* Student Selector */}
         {isLoginLocked ? (
-          <div className="bg-emerald-900 border-4 border-yellow-500 text-white p-5 rounded-xl shadow-lg relative overflow-hidden flex items-center gap-3">
+          <div className="bg-gradient-to-r from-blue-700 to-emerald-600 border-4 border-emerald-400 text-white p-5 rounded-xl shadow-lg relative overflow-hidden flex items-center gap-3">
             <div className="absolute right-0 bottom-0 text-emerald-800/20 translate-x-3 translate-y-3 pointer-events-none">
               <GraduationCap size={72} className="rotate-12" />
             </div>
             <div className="z-10">
               <span className="text-[9px] font-black text-yellow-300 uppercase tracking-widest block mb-1">Status Sesi Masuk</span>
               <h4 className="font-extrabold text-[12px] leading-tight flex items-center gap-1.5 text-white">
-                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping inline-block" /> Terhubung Sesi Orang Tua
+                <span className="w-1.5 h-1.5 rounded-full bg-teal-300 animate-ping inline-block" /> Terhubung Sesi Orang Tua
               </h4>
-              <p className="text-[10px] text-emerald-100 mt-1.5 leading-relaxed">
+              <p className="text-[10px] text-slate-100 mt-1.5 leading-relaxed">
                 Anda masuk secara resmi untuk memonitor keuangan, setor tabungan, atau bayar SPP murid di bawah ini.
               </p>
             </div>
@@ -485,7 +843,14 @@ export default function StudentPanel({
                           return (
                             <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
                               <td className="px-5 py-3.5 font-semibold text-slate-850">
-                                {bill.month} {bill.year}
+                                <div className="flex flex-col gap-0.5">
+                                  <span>{bill.month} {bill.year}</span>
+                                  {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
+                                    <span className="inline-block text-[8px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded border border-rose-100 max-w-max uppercase tracking-wider mt-1.5 animate-pulse">
+                                      Tunggakan TA {getAcademicYearOfBill(bill)}
+                                    </span>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-5 py-3.5 text-right font-bold text-slate-800">
                                 Rp {bill.amount.toLocaleString('id-ID')}
@@ -507,11 +872,21 @@ export default function StudentPanel({
                               </td>
                               <td className="px-5 py-3.5 text-right">
                                 {isPaid ? (
-                                  <div className="text-[10px] text-slate-400 text-right">
-                                    <span className="block font-semibold text-slate-600">{bill.paymentMethod}</span>
-                                    <span className="block font-mono text-[9px] mt-0.5">
-                                      {new Date(bill.paidAt || '').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
-                                    </span>
+                                  <div className="flex items-center justify-end gap-2 text-right">
+                                    <div className="text-[10px] text-slate-400">
+                                      <span className="block font-semibold text-slate-600">{bill.paymentMethod}</span>
+                                      <span className="block font-mono text-[9px] mt-0.5">
+                                        {new Date(bill.paidAt || '').toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                      </span>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => setReceiptToPrint({ type: 'spp', detail: bill, student: currentStudent! })}
+                                      className="p-1.5 hover:bg-slate-100 text-indigo-600 hover:text-indigo-800 rounded-lg border border-slate-200 shadow-xs transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                                      title="Cetak & Unduh Invoice Kuitansi"
+                                    >
+                                      <Printer size={13} />
+                                    </button>
                                   </div>
                                 ) : (
                                   <button
@@ -719,8 +1094,20 @@ export default function StudentPanel({
                                   </span>
                                 )}
                               </td>
-                              <td className={`px-5 py-3 text-right font-bold font-mono text-[11px] ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                {isDeposit ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
+                              <td className="px-5 py-3 text-right whitespace-nowrap">
+                                <div className="flex items-center justify-end gap-2">
+                                  <span className={`font-bold font-mono text-[11px] ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                    {isDeposit ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent! })}
+                                    className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded border border-slate-200/80 shadow-xs transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                                    title="Cetak & Unduh Bukti Transaksi"
+                                  >
+                                    <Printer size={11} />
+                                  </button>
+                                </div>
                               </td>
                             </tr>
                           );
@@ -845,6 +1232,159 @@ export default function StudentPanel({
           </div>
         )}
       </div>
+
+      {/* Receipt Modal for Student Panel */}
+      {receiptToPrint && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 md:p-8 max-w-xl w-full flex flex-col gap-6 relative select-none">
+            
+            {/* Modal Actions */}
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
+              <span className="text-xs font-bold uppercase tracking-wider text-slate-450 text-left">Kuitansi Resmi Pembayaran</span>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadInvoice(receiptToPrint.type, receiptToPrint.detail, receiptToPrint.student, schoolIdentity)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-slate-900 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Download size={12} /> Unduh Invoice HTML 📥
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Printer size={12} /> Cetak / Save PDF 🖨️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceiptToPrint(null)}
+                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-lg text-xs uppercase cursor-pointer transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+
+            {/* Receipt Preview */}
+            <div id="print-receipt-section" className="bg-white text-slate-900 p-6 rounded-lg font-sans border border-slate-100 flex flex-col gap-5 text-[11px] leading-relaxed relative">
+              {/* Receipt Header */}
+              {schoolIdentity?.letterhead ? (
+                <div className="border-b-2 border-slate-900 pb-2 flex flex-col items-center">
+                  <img 
+                    src={schoolIdentity.letterhead} 
+                    className="w-full max-h-24 object-contain" 
+                    alt="Kop Surat" 
+                    referrerPolicy="no-referrer"
+                  />
+                  <div className="w-full text-right font-mono mt-1 text-[8px] text-slate-400 flex justify-between items-center">
+                    <span className="font-extrabold text-slate-800 text-[9px]">KUITANSI RESMI</span>
+                    <span>Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
+                  </div>
+                </div>
+              ) : (
+                <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-center gap-3">
+                  <div className="flex items-center gap-3">
+                    {schoolIdentity?.logo && (
+                      <img 
+                        src={schoolIdentity.logo} 
+                        className="w-10 h-10 object-contain" 
+                        alt="Logo" 
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <div className="flex flex-col gap-0.5 text-left">
+                      <span className="text-xs font-black uppercase tracking-wider text-slate-800">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                      <span className="text-[9px] text-slate-500 uppercase tracking-widest leading-none block">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</span>
+                      <span className="text-[8px] text-slate-400 block font-medium mt-0.5">{schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur"}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {schoolIdentity?.logo2 && (
+                      <img 
+                        src={schoolIdentity.logo2} 
+                        className="w-10 h-10 object-contain" 
+                        alt="Logo 2" 
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <div className="text-right flex flex-col gap-0.5 font-mono">
+                      <span className="text-xs font-extrabold text-slate-850">KUITANSI RESMI</span>
+                      <span className="text-[8px] text-slate-400 block">Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Patient/Student Data Row */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 text-slate-700 pb-3 border-b border-dashed border-slate-300">
+                <div className="flex flex-col gap-0.5 text-left">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Wali Murid / Siswa</span>
+                  <span className="font-bold text-slate-800 text-[11px]">{receiptToPrint.student.name}</span>
+                </div>
+                <div className="flex flex-col gap-0.5 text-left">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">NIS Siswa</span>
+                  <span className="font-mono font-semibold text-slate-700">{receiptToPrint.student.nis}</span>
+                </div>
+                <div className="flex flex-col gap-0.5 text-left">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Pendidikan / Kelas</span>
+                  <span className="font-bold text-slate-800 text-[11px]">Kelas {receiptToPrint.student.class}</span>
+                </div>
+                <div className="flex flex-col gap-0.5 text-right font-mono">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Tanggal Cetak</span>
+                  <span className="font-medium text-slate-600 block">{new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</span>
+                </div>
+              </div>
+
+              {/* Transactions details */}
+              <div className="flex flex-col gap-2 py-1">
+                <div className="flex justify-between font-bold border-b border-slate-200 pb-1 text-[9px] uppercase text-slate-400">
+                  <span>Deskripsi Item Pembayaran</span>
+                  <span>Total Rupiah</span>
+                </div>
+                <div className="flex justify-between items-center text-slate-800">
+                  <div className="flex flex-col gap-0.5 text-left">
+                    {receiptToPrint.type === 'spp' ? (
+                      <>
+                        <span className="font-bold text-slate-800 text-xs">Pembayaran Iuran SPP Wajib Bulanan</span>
+                        <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">Bulan periodik: {receiptToPrint.detail.month} {receiptToPrint.detail.year} &bull; Metode: {receiptToPrint.detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}</span>
+                      </>
+                    ) : (
+                      <>
+                        <span className="font-bold text-slate-800 text-xs">Mutasi Keuangan Rekening Tabungan</span>
+                        <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">{receiptToPrint.detail.type === 'deposit' ? 'Penyetoran Saldo Tunai' : 'Penarikan Saldo Tunai'} &bull; Memo: "{receiptToPrint.detail.notes || 'Transaksi Teller Tabungan'}"</span>
+                      </>
+                    )}
+                  </div>
+                  <span className="font-mono font-bold text-slate-800 text-xs">Rp {receiptToPrint.detail.amount.toLocaleString('id-ID')},00</span>
+                </div>
+              </div>
+
+              {/* Wordify Terbilang Words */}
+              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 font-medium italic text-slate-600 text-[10px] text-left">
+                Terbilang: <span className="font-bold not-italic font-sans text-indigo-700">#{indonesianWordsForRupiah(receiptToPrint.detail.amount)}#</span>
+              </div>
+
+              {/* Signatures */}
+              <div className="grid grid-cols-2 mt-4 pt-3 border-t border-slate-100 text-[10px]">
+                <div className="flex flex-col justify-between h-[65px] text-left">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Wali Murid / Penyetor</span>
+                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center">({receiptToPrint.student.name.substring(0, 16)})</span>
+                </div>
+                <div className="flex flex-col justify-between items-end h-[65px] text-right">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center">({schoolIdentity?.treasurer || "Bendahara Madrasah"})</span>
+                </div>
+              </div>
+
+              {/* Footer */}
+              <div className="text-center text-[8px] text-slate-400 mt-1 font-medium">
+                Bukti pembayaran sah diterbitkan otomatis oleh {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

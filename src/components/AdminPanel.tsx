@@ -10,14 +10,14 @@ interface AdminPanelProps {
   transactions: SavingsTransaction[];
   isLoading: boolean;
   midtransStatus: { merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean } | null;
-  onPaySppManual: (billId: string) => Promise<boolean>;
+  onPaySppManual: (billId: string) => Promise<any>;
   onPaySppViaMidtrans?: (bill: SppBill) => Promise<void>;
   adminSppBillToPrint?: string | null;
   onClearAdminSppBillToPrint?: () => void;
   onDepositSavingsViaMidtrans?: (amount: number, studentId?: string) => Promise<void>;
   adminSavingsToPrint?: { studentId: string; orderId: string; amount: number } | null;
   onClearAdminSavingsToPrint?: () => void;
-  onSavingsManual: (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string) => Promise<boolean>;
+  onSavingsManual: (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string) => Promise<any>;
   onBroadcastNotification: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment') => Promise<boolean>;
   onRefresh: () => void;
   onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }) => Promise<boolean>;
@@ -262,10 +262,10 @@ export default function AdminPanel({
     if (isNaN(amount) || amount <= 0) return;
 
     setTxProcessing(true);
-    const success = await onSavingsManual(selectedStudent.id, txType, amount, txNotes);
+    const resultTx = await onSavingsManual(selectedStudent.id, txType, amount, txNotes);
     setTxProcessing(false);
 
-    if (success) {
+    if (resultTx) {
       setTxAmount('');
       setTxNotes('');
       // Update selectedStudent balance locally for instantaneous visual update
@@ -276,7 +276,25 @@ export default function AdminPanel({
         updatedS.savingsBalance -= amount;
       }
       setSelectedStudent(updatedS);
-      alert('Transaksi manual teller dicatat & notifikasi dikirim real-time!');
+
+      // Create a complete transaction description to print
+      const printTx = {
+        id: resultTx.id || `sav-${Date.now()}`,
+        studentId: selectedStudent.id,
+        type: txType,
+        amount: amount,
+        status: 'success',
+        createdAt: new Date().toISOString(),
+        paymentMethod: 'Manual Teller',
+        notes: txNotes || (txType === 'deposit' ? 'Setoran manual pihak sekolah' : 'Tarik tunai manual')
+      };
+
+      setReceiptToPrint({
+        type: 'savings',
+        detail: printTx,
+        student: updatedS
+      });
+      setPrintId('print-receipt-section');
     }
   };
 
@@ -326,6 +344,7 @@ export default function AdminPanel({
   const [schoolPrincipal, setSchoolPrincipal] = useState("");
   const [schoolTreasurer, setSchoolTreasurer] = useState("");
   const [schoolLogo, setSchoolLogo] = useState("");
+  const [schoolLogo2, setSchoolLogo2] = useState("");
   const [schoolLetterhead, setSchoolLetterhead] = useState("");
   const [isSavingSchoolIdentity, setIsSavingSchoolIdentity] = useState(false);
   const [schoolIdentityMsg, setSchoolIdentityMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
@@ -340,6 +359,7 @@ export default function AdminPanel({
       setSchoolPrincipal(schoolIdentity.principal || "");
       setSchoolTreasurer(schoolIdentity.treasurer || "");
       setSchoolLogo(schoolIdentity.logo || "");
+      setSchoolLogo2(schoolIdentity.logo2 || "");
       setSchoolLetterhead(schoolIdentity.letterhead || "");
     }
   }, [schoolIdentity]);
@@ -633,6 +653,25 @@ export default function AdminPanel({
     reader.readAsDataURL(file);
   };
 
+  const handleLogo2Upload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      setSchoolIdentityMsg({ type: 'error', text: 'Ukuran file logo kedua terlalu besar. Maksimal 2MB.' });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result;
+      if (typeof result === 'string') {
+        setSchoolLogo2(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleLetterheadUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -667,6 +706,7 @@ export default function AdminPanel({
       principal: schoolPrincipal,
       treasurer: schoolTreasurer,
       logo: schoolLogo,
+      logo2: schoolLogo2,
       letterhead: schoolLetterhead
     });
 
@@ -721,7 +761,7 @@ export default function AdminPanel({
             }`}
           >
             <Settings size={15} />
-            Status Gateway Midtrans
+            Pengaturan
           </button>
 
           <button
@@ -935,8 +975,22 @@ export default function AdminPanel({
                                       onClick={async (e) => {
                                         e.stopPropagation();
                                         setProcessingBillId(nextUnpaidBill.id);
-                                        await onPaySppManual(nextUnpaidBill.id);
+                                        const resBill = await onPaySppManual(nextUnpaidBill.id);
                                         setProcessingBillId(null);
+                                        if (resBill) {
+                                          setReceiptToPrint({
+                                            type: 'spp',
+                                            detail: {
+                                              ...nextUnpaidBill,
+                                              status: 'paid',
+                                              paidAt: new Date().toISOString(),
+                                              paymentMethod: 'Manual Teller (Sekolah)',
+                                              orderId: resBill.orderId || `ORD-MANUAL-${Date.now()}`
+                                            },
+                                            student: student
+                                          });
+                                          setPrintId('print-receipt-section');
+                                        }
                                       }}
                                       className="px-2 py-1.5 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 rounded font-bold text-[9px] uppercase tracking-wider transition-colors cursor-pointer flex items-center justify-center"
                                       title="Selesaikan pembayaran dengan pembayaran tunai manual ke Teller"
@@ -1157,8 +1211,22 @@ export default function AdminPanel({
                                                     onClick={async (e) => {
                                                       e.stopPropagation();
                                                       setProcessingBillId(b.id);
-                                                      await onPaySppManual(b.id);
+                                                      const resBill = await onPaySppManual(b.id);
                                                       setProcessingBillId(null);
+                                                      if (resBill) {
+                                                        setReceiptToPrint({
+                                                          type: 'spp',
+                                                          detail: {
+                                                            ...b,
+                                                            status: 'paid',
+                                                            paidAt: new Date().toISOString(),
+                                                            paymentMethod: 'Manual Teller (Sekolah)',
+                                                            orderId: resBill.orderId || `ORD-MANUAL-${Date.now()}`
+                                                          },
+                                                          student: selectedStudent
+                                                        });
+                                                        setPrintId('print-receipt-section');
+                                                      }
                                                     }}
                                                     className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
                                                     title="Bayar Manual Tunai langsung"
@@ -1689,7 +1757,7 @@ export default function AdminPanel({
                   <div className="lg:col-span-1 flex flex-col gap-4">
                     {/* Logo File Upload & Preview Column */}
                     <div className="flex flex-col items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 justify-center text-center">
-                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Logo Sekolah</span>
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Logo Sekolah Utama</span>
                       
                       <div className="relative w-28 h-28 border border-slate-200 bg-white rounded-xl shadow-inner flex items-center justify-center overflow-hidden group">
                         {schoolLogo ? (
@@ -1711,7 +1779,7 @@ export default function AdminPanel({
                         ) : (
                           <div className="flex flex-col items-center gap-1 text-slate-400">
                             <ImageIcon size={28} />
-                            <span className="text-[9px] text-slate-400">Belum Ada Logo</span>
+                            <span className="text-[9px] text-slate-400">Belum Ada Logo Utama</span>
                           </div>
                         )}
                       </div>
@@ -1725,7 +1793,51 @@ export default function AdminPanel({
                         />
                         <div className="flex items-center justify-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 cursor-pointer shadow-xs transition-colors">
                           <UploadCloud size={12} />
-                          <span>Unggah Logo</span>
+                          <span>Unggah Logo Utama</span>
+                        </div>
+                      </label>
+                      <span className="text-[8px] text-slate-400">Format gambar persegi</span>
+                    </div>
+
+                    {/* Logo kedua / pendamping */}
+                    <div className="flex flex-col items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 justify-center text-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Logo Kedua / Pendamping</span>
+                      
+                      <div className="relative w-28 h-28 border border-slate-200 bg-white rounded-xl shadow-inner flex items-center justify-center overflow-hidden group">
+                        {schoolLogo2 ? (
+                          <>
+                            <img 
+                              src={schoolLogo2} 
+                              alt="Logo 2 preview" 
+                              className="w-full h-full object-contain p-2"
+                              referrerPolicy="no-referrer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSchoolLogo2("")}
+                              className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-all cursor-pointer border-0"
+                            >
+                              Hapus Logo Kedua
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1 text-slate-400">
+                            <ImageIcon size={28} />
+                            <span className="text-[9px] text-slate-400">Belum Ada Logo Kedua</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <label className="w-full">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLogo2Upload}
+                          className="hidden"
+                        />
+                        <div className="flex items-center justify-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 cursor-pointer shadow-xs transition-colors">
+                          <UploadCloud size={12} />
+                          <span>Unggah Logo Kedua</span>
                         </div>
                       </label>
                       <span className="text-[8px] text-slate-400">Format gambar persegi</span>
@@ -3078,7 +3190,7 @@ export default function AdminPanel({
                   </div>
                 </div>
               ) : (
-                <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-start gap-3">
+                <div className="border-b-2 border-slate-900 pb-4 flex justify-between items-center gap-3">
                   <div className="flex items-center gap-3">
                     {schoolIdentity?.logo && (
                       <img 
@@ -3094,9 +3206,19 @@ export default function AdminPanel({
                       <span className="text-[8px] text-slate-400 block font-medium mt-0.5">{schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur, Indonesia"} &bull; Telp: {schoolIdentity?.phone || "(0343) 631234"}</span>
                     </div>
                   </div>
-                  <div className="text-right flex flex-col gap-0.5 font-mono shrink-0">
-                    <span className="text-xs font-extrabold text-slate-850">KUITANSI RESMI</span>
-                    <span className="text-[8px] text-slate-400 block">Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
+                  <div className="flex items-center gap-3 shrink-0">
+                    {schoolIdentity?.logo2 && (
+                      <img 
+                        src={schoolIdentity.logo2} 
+                        className="w-10 h-10 object-contain print-receipt-logo" 
+                        alt="Logo 2" 
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <div className="text-right flex flex-col gap-0.5 font-mono">
+                      <span className="text-xs font-extrabold text-slate-850">KUITANSI RESMI</span>
+                      <span className="text-[8px] text-slate-400 block">Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
+                    </div>
                   </div>
                 </div>
               )}
@@ -3217,7 +3339,7 @@ export default function AdminPanel({
                     </div>
                   </div>
                 ) : (
-                  <div className="border-b-4 border-double border-slate-900 pb-3 flex justify-between items-start gap-4 text-left">
+                  <div className="border-b-4 border-double border-slate-900 pb-3 flex justify-between items-center gap-4 text-left">
                     <div className="flex items-center gap-3">
                       {schoolIdentity?.logo && (
                         <img 
@@ -3234,9 +3356,19 @@ export default function AdminPanel({
                         <span className="text-[8px] text-slate-400 block italic leading-none mt-0.5">Telp: {schoolIdentity?.phone || "(0343) 631234"}</span>
                       </div>
                     </div>
-                    <div className="text-right flex flex-col gap-0.5 font-mono shrink-0">
-                      <span className="text-xs font-black text-slate-850">LAPORAN RESMI</span>
-                      <span className="text-[8px] text-slate-400 block mt-1">Dihasilkan: {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span>
+                    <div className="flex items-center gap-3 shrink-0">
+                      {schoolIdentity?.logo2 && (
+                        <img 
+                          src={schoolIdentity.logo2} 
+                          className="w-12 h-12 object-contain print-report-logo" 
+                          alt="Logo 2" 
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      <div className="text-right flex flex-col gap-0.5 font-mono">
+                        <span className="text-xs font-black text-slate-850">LAPORAN RESMI</span>
+                        <span className="text-[8px] text-slate-400 block mt-1">Dihasilkan: {new Date().toLocaleDateString('id-ID')} {new Date().toLocaleTimeString('id-ID', {hour:'2-digit', minute:'2-digit'})}</span>
+                      </div>
                     </div>
                   </div>
                 )}

@@ -219,29 +219,201 @@ Wassalamualaikum Wr. Wb.
     });
   }, [classStudents, attendanceLogs, rekapStartDate, rekapEndDate]);
 
-  // Excel Excel (.csv format with delimiters configured for Microsoft Excel)
+  // Excel (.xls format with clean XML and styles optimized for Microsoft Excel)
   const downloadExcelRekap = () => {
-    let csvContent = "\uFEFF"; // Byte-Order-Mark for direct UTF-8 display compatibility in Excel
+    const totalHadirClass = rekapData.reduce((acc, r) => acc + r.hadir, 0);
+    const totalTerlambatClass = rekapData.reduce((acc, r) => acc + r.terlambat, 0);
+    const totalSakitClass = rekapData.reduce((acc, r) => acc + r.sakit, 0);
+    const totalIzinClass = rekapData.reduce((acc, r) => acc + r.izin, 0);
+    const totalAlpaClass = rekapData.reduce((acc, r) => acc + r.alpa, 0);
+    const totalPencatatanClass = rekapData.reduce((acc, r) => acc + r.total, 0);
+    const avgRateClass = rekapData.length > 0
+      ? Math.round(rekapData.reduce((acc, r) => acc + r.rate, 0) / rekapData.length)
+      : 0;
+
+    const schoolNameUpper = (schoolIdentity?.name || 'SMP MAARIF NU PANDAAN').toUpperCase();
+
+    let excelHtml = `
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<meta charset="utf-8">
+<!--[if gte mso 9]>
+<xml>
+  <x:ExcelWorkbook>
+    <x:ExcelWorksheets>
+      <x:ExcelWorksheet>
+        <x:Name>Rekap Presensi</x:Name>
+        <x:WorksheetOptions>
+          <x:DisplayGridlines/>
+        </x:WorksheetOptions>
+      </x:ExcelWorksheet>
+    </x:ExcelWorksheets>
+  </x:ExcelWorkbook>
+</xml>
+<![endif]-->
+<style>
+  body {
+    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: #1e293b;
+  }
+  .title-school {
+    font-size: 15pt;
+    font-weight: bold;
+    color: #15803d; /* Emerald-700 green */
+    text-align: left;
+    height: 30px;
+  }
+  .title-report {
+    font-size: 11pt;
+    font-weight: bold;
+    color: #334155;
+    text-align: left;
+    height: 22px;
+  }
+  .meta-label {
+    font-size: 9pt;
+    font-weight: bold;
+    color: #475569;
+    height: 18px;
+  }
+  .meta-value {
+    font-size: 9pt;
+    color: #0f172a;
+    height: 18px;
+  }
+  .th-header {
+    background-color: #1e293b; /* Slate-800 */
+    color: #ffffff;
+    font-weight: bold;
+    font-size: 9.5pt;
+    text-align: center;
+    border: 1px solid #cbd5e1;
+    height: 28px;
+    vertical-align: middle;
+  }
+  .td-data {
+    font-size: 9.5pt;
+    border: 1px solid #e2e8f0;
+    height: 22px;
+    vertical-align: middle;
+    padding: 2px 6px;
+  }
+  .td-center {
+    text-align: center;
+  }
+  .td-left {
+    text-align: left;
+  }
+  .zebra-even {
+    background-color: #f8fafc; /* Slate-50 zebra pattern */
+  }
+  .summary-row {
+    background-color: #f1f5f9; /* Slate-100 */
+    font-weight: bold;
+    font-size: 9.5pt;
+    height: 24px;
+  }
+</style>
+</head>
+<body>
+  <table>
+    <!-- Header identity info block -->
+    <tr>
+      <td colspan="11" class="title-school">${schoolNameUpper}</td>
+    </tr>
+    <tr>
+      <td colspan="11" class="title-report">LAPORAN REKAPITULASI PRESENSI KEHADIRAN SISWA</td>
+    </tr>
+    <tr>
+      <td colspan="11" style="height: 6px;"></td>
+    </tr>
     
-    // Header Info metadata
-    csvContent += `REKAPITULASI PRESENSI KEHADIRAN SISWA KELAS ${currentTeacher.className}\n`;
-    csvContent += `Sistem Informasi Akademik:;${schoolIdentity?.name || 'SMP Maarif'}\n`;
-    csvContent += `Wali Kelas Penanggungjawab:;${currentTeacher.name}\n`;
-    csvContent += `Durasi Rekapitulasi Kalender:;${rekapStartDate} s.d. ${rekapEndDate}\n\n`;
-    
-    // Columns heads
-    csvContent += "No;NIS;Nama Siswa;Kelas;Jumlah Hadir (H);Jumlah Terlambat (T);Jumlah Sakit (S);Jumlah Izin (I);Jumlah Tanpa Keterangan / Alpa (A);Total Pencatatan;Persentase Kehadiran\n";
-    
-    // Rows
+    <!-- Meta/Context Details -->
+    <tr>
+      <td colspan="2" class="meta-label">Kelas:</td>
+      <td colspan="9" class="meta-value">${currentTeacher.className}</td>
+    </tr>
+    <tr>
+      <td colspan="2" class="meta-label">Wali Kelas:</td>
+      <td colspan="9" class="meta-value">${currentTeacher.name}</td>
+    </tr>
+    <tr>
+      <td colspan="2" class="meta-label">Rentang Waktu:</td>
+      <td colspan="9" class="meta-value">${rekapStartDate} s.d. ${rekapEndDate}</td>
+    </tr>
+    <tr>
+      <td colspan="2" class="meta-label">Tanggal Ekspor:</td>
+      <td colspan="9" class="meta-value">${new Date().toLocaleString('id-ID', { dateStyle: 'long', timeStyle: 'short' })} WIB</td>
+    </tr>
+    <tr>
+      <td colspan="11" style="height: 12px;"></td>
+    </tr>
+
+    <!-- Table Grid Heads -->
+    <thead>
+      <tr>
+        <th class="th-header" style="width: 40px; background-color: #334155;">No</th>
+        <th class="th-header" style="width: 100px; background-color: #334155;">NIS</th>
+        <th class="th-header" style="width: 250px; background-color: #334155;">Nama Siswa</th>
+        <th class="th-header" style="width: 70px; background-color: #334155;">Kelas</th>
+        <th class="th-header" style="width: 85px; background-color: #16a34a;">Hadir (H)</th>
+        <th class="th-header" style="width: 90px; background-color: #ca8a04;">Terlambat (T)</th>
+        <th class="th-header" style="width: 85px; background-color: #2563eb;">Sakit (S)</th>
+        <th class="th-header" style="width: 85px; background-color: #7c3aed;">Izin (I)</th>
+        <th class="th-header" style="width: 90px; background-color: #db2777;">Alpa (A)</th>
+        <th class="th-header" style="width: 100px; background-color: #475569;">Total Hari</th>
+        <th class="th-header" style="width: 100px; background-color: #0f766e;">Persentase</th>
+      </tr>
+    </thead>
+    <tbody>
+`;
+
     rekapData.forEach((row, idx) => {
-      csvContent += `${idx + 1};${row.student.nis};"${row.student.name}";${currentTeacher.className};${row.hadir};${row.terlambat};${row.sakit};${row.izin};${row.alpa};${row.total};${row.rate}%\n`;
+      const isEven = idx % 2 === 1;
+      const zebraClass = isEven ? 'zebra-even' : '';
+      const percentValue = row.rate / 100;
+      
+      excelHtml += `
+      <tr class="${zebraClass}">
+        <td class="td-data td-center">${idx + 1}</td>
+        <!-- Force text formatting for NIS so leading zeroes are NOT dropped -->
+        <td class="td-data td-center" style="mso-number-format:'@';">${row.student.nis}</td>
+        <td class="td-data td-left" style="font-weight: 500;">${row.student.name}</td>
+        <td class="td-data td-center">${currentTeacher.className}</td>
+        <td class="td-data td-center" style="color: #16a34a; font-weight: bold;">${row.hadir}</td>
+        <td class="td-data td-center" style="color: #ca8a04;">${row.terlambat}</td>
+        <td class="td-data td-center" style="color: #2563eb;">${row.sakit}</td>
+        <td class="td-data td-center" style="color: #7c3aed;">${row.izin}</td>
+        <td class="td-data td-center" style="color: #db2777;">${row.alpa}</td>
+        <td class="td-data td-center">${row.total}</td>
+        <td class="td-data td-center" style="font-weight: bold; mso-number-format:'0%';">${percentValue}</td>
+      </tr>
+`;
     });
-    
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+
+    excelHtml += `
+      <!-- Table Footer Summary for Class averages and absolute totals -->
+      <tr class="summary-row" style="background-color: #e2e8f0; font-weight: bold;">
+        <td colspan="4" class="td-data" style="text-align: right; background-color: #cbd5e1; border-top: 2px solid #475569; padding-right: 12px;">TOTAL / RATA-RATA KELAS</td>
+        <td class="td-data td-center" style="color: #16a34a; background-color: #e2e8f0; border-top: 2px solid #475569;">${totalHadirClass}</td>
+        <td class="td-data td-center" style="color: #ca8a04; background-color: #e2e8f0; border-top: 2px solid #475569;">${totalTerlambatClass}</td>
+        <td class="td-data td-center" style="color: #2563eb; background-color: #e2e8f0; border-top: 2px solid #475569;">${totalSakitClass}</td>
+        <td class="td-data td-center" style="color: #7c3aed; background-color: #e2e8f0; border-top: 2px solid #475569;">${totalIzinClass}</td>
+        <td class="td-data td-center" style="color: #db2777; background-color: #e2e8f0; border-top: 2px solid #475569;">${totalAlpaClass}</td>
+        <td class="td-data td-center" style="background-color: #e2e8f0; border-top: 2px solid #475569;">${totalPencatatanClass}</td>
+        <td class="td-data td-center" style="background-color: #cbd5e1; border-top: 2px solid #475569; mso-number-format:'0%';">${avgRateClass / 100}</td>
+      </tr>
+    </tbody>
+  </table>
+</body>
+</html>
+`;
+
+    const blob = new Blob([excelHtml], { type: 'application/vnd.ms-excel;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `rekap_absensi_kelas_${currentTeacher.className}_${rekapStartDate}_to_${rekapEndDate}.csv`);
+    link.href = url;
+    link.download = `Rekap_Presensi_Kelas_${currentTeacher.className}_${rekapStartDate}_to_${rekapEndDate}.xls`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -687,7 +859,7 @@ Wassalamualaikum Wr. Wb.
                     className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all focus:ring-2 focus:ring-emerald-200 cursor-pointer"
                   >
                     <Download size={14} />
-                    Unduh Format Excel (.CSV)
+                    Unduh Laporan Excel (.xls)
                   </button>
                 </div>
               </div>

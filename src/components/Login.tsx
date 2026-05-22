@@ -49,7 +49,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         }
       } else if (activeRole === 'homeroom') {
         // Homeroom Teacher Validation
-        const res = await fetch('/api/homerooms');
+        const res = await fetch('api/homerooms');
         if (res.ok) {
           const teachers: HomeroomTeacher[] = await res.json();
           const cleanUser = username.trim().toLowerCase();
@@ -93,7 +93,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
           }
         } else {
           // Hit the active NIS API just in case there's a fresh server-side entry
-          const res = await fetch(`/api/students/nis/${cleanNIS}`);
+          const res = await fetch(`api/students/nis/${cleanNIS}`);
           if (res.ok) {
             const data = await res.json();
             const loadedStudent = data.student as Student;

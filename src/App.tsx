@@ -103,7 +103,7 @@ export default function App() {
       setIsLoading(true);
       
       // Load Students
-      const stdRes = await fetch('/api/students');
+      const stdRes = await fetch('api/students');
       if (stdRes.ok) {
         const stdData = await stdRes.json();
         setStudentsList(stdData);
@@ -116,7 +116,7 @@ export default function App() {
       }
 
       // Load Recent notifications history
-      const notifRes = await fetch('/api/notifications');
+      const notifRes = await fetch('api/notifications');
       if (notifRes.ok) {
         const notifData = await notifRes.json();
         setGlobalNotifications(notifData);
@@ -124,7 +124,7 @@ export default function App() {
 
       // Load School Identity configuration
       try {
-        const schoolRes = await fetch('/api/school-identity');
+        const schoolRes = await fetch('api/school-identity');
         if (schoolRes.ok) {
           const sData = await schoolRes.json();
           if (sData.success && sData.schoolIdentity) {
@@ -136,7 +136,7 @@ export default function App() {
       }
 
       // Load Midtrans integration keys metadata
-      const keysRes = await fetch('/api/midtrans-config');
+      const keysRes = await fetch('api/midtrans-config');
       if (keysRes.ok) {
         const keysData = await keysRes.json();
         setSysStatus(keysData);
@@ -144,7 +144,7 @@ export default function App() {
 
       // Load Attendance Logs
       try {
-        const attRes = await fetch('/api/attendance');
+        const attRes = await fetch('api/attendance');
         if (attRes.ok) {
           const attData = await attRes.json();
           setAttendanceList(attData);
@@ -155,7 +155,7 @@ export default function App() {
 
       // Load Homerooms
       try {
-        const hrRes = await fetch('/api/homerooms');
+        const hrRes = await fetch('api/homerooms');
         if (hrRes.ok) {
           const hrData = await hrRes.json();
           setHomeroomsList(hrData);
@@ -179,8 +179,8 @@ export default function App() {
 
       if (checkIsAdmin) {
         // Fetch all student bills and total transactions for admin bookkeeping roster
-        const bRes = await fetch('/api/admin/all-bills');
-        const tRes = await fetch('/api/admin/all-transactions');
+        const bRes = await fetch('api/admin/all-bills');
+        const tRes = await fetch('api/admin/all-transactions');
         if (bRes.ok && tRes.ok) {
           const bData = await bRes.json();
           const tData = await tRes.json();
@@ -190,14 +190,14 @@ export default function App() {
 
         // Also fetch profile of active student selector if they exist
         if (studentId) {
-          const sRes = await fetch(`/api/students/${studentId}`);
+          const sRes = await fetch(`api/students/${studentId}`);
           if (sRes.ok) {
             const sData = await sRes.json();
             setCurrentStudent(sData.student);
           }
         }
       } else {
-        const res = await fetch(`/api/students/${studentId}`);
+        const res = await fetch(`api/students/${studentId}`);
         if (res.ok) {
           const data = await res.json();
           setCurrentStudent(data.student);
@@ -268,7 +268,7 @@ export default function App() {
     initSystemData();
 
     // Setup native browser EventSource
-    const sse = new EventSource('/api/notifications/stream');
+    const sse = new EventSource('api/notifications/stream');
 
     sse.onopen = () => {
       console.log('SSE Real-time notification stream connected successfully!');
@@ -301,7 +301,7 @@ export default function App() {
         const relatedToActiveStud = currentStudent && (rawNotification.studentId === undefined || rawNotification.studentId === currentStudent.id);
         
         // Update general catalog (student balances/bills might have shifted)
-        fetch('/api/students')
+        fetch('api/students')
           .then(res => res.json())
           .then(dataList => {
             setStudentsList(dataList);
@@ -378,7 +378,7 @@ export default function App() {
   const handlePaySpp = async (bill: SppBill) => {
     try {
       setIsLoading(true);
-      const res = await fetch('/api/pay-spp-snap', {
+      const res = await fetch('api/pay-spp-snap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ billId: bill.id })
@@ -416,7 +416,7 @@ export default function App() {
     if (!targetStudent) return;
     try {
       setIsLoading(true);
-      const res = await fetch('/api/deposit-savings-snap', {
+      const res = await fetch('api/deposit-savings-snap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -453,7 +453,7 @@ export default function App() {
   const handleWithdrawSavings = async (amount: number, notes: string): Promise<boolean> => {
     if (!currentStudent) return false;
     try {
-      const res = await fetch('/api/admin/savings-manual', {
+      const res = await fetch('api/admin/savings-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -473,7 +473,7 @@ export default function App() {
   // Change Student Password handler
   const handleChangePassword = async (studentId: string, oldPassword?: string, newPassword?: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const res = await fetch('/api/students/change-password', {
+      const res = await fetch('api/students/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId, oldPassword, newPassword })
@@ -495,7 +495,7 @@ export default function App() {
   // Admin Manual SPP Verification (Cash clearance)
   const handlePaySppManual = async (billId: string): Promise<any> => {
     try {
-      const res = await fetch('/api/admin/pay-spp-manual', {
+      const res = await fetch('api/admin/pay-spp-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ billId })
@@ -514,7 +514,7 @@ export default function App() {
   // Admin Manual Savings ledger deposit/withdrawal
   const handleSavingsManual = async (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string): Promise<any> => {
     try {
-      const res = await fetch('/api/admin/savings-manual', {
+      const res = await fetch('api/admin/savings-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -538,7 +538,7 @@ export default function App() {
   // Admin broadcast trigger
   const handleBroadcastNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment'): Promise<boolean> => {
     try {
-      const res = await fetch('/api/notifications/broadcast', {
+      const res = await fetch('api/notifications/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -557,7 +557,7 @@ export default function App() {
   // Create Student
   const handleCreateStudent = async (studentData: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }): Promise<boolean> => {
     try {
-      const res = await fetch('/api/admin/students', {
+      const res = await fetch('api/admin/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(studentData)
@@ -576,7 +576,7 @@ export default function App() {
   // Update Student
   const handleUpdateStudent = async (id: string, studentData: { nis: string; name: string; class: string; email: string; phone: string }): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/admin/students/${id}`, {
+      const res = await fetch(`api/admin/students/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(studentData)
@@ -595,7 +595,7 @@ export default function App() {
   // Delete Student
   const handleDeleteStudent = async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/admin/students/${id}`, {
+      const res = await fetch(`api/admin/students/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -619,7 +619,7 @@ export default function App() {
   // Batch Import Students Kolektif
   const handleImportStudents = async (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }>): Promise<{ success: boolean; addedCount: number; updatedCount: number }> => {
     try {
-      const res = await fetch('/api/admin/students/import', {
+      const res = await fetch('api/admin/students/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentsList: list })
@@ -639,7 +639,7 @@ export default function App() {
   // Create Homeroom Teacher CRUD
   const handleCreateHomeroom = async (homeroomData: { username: string; name: string; className: string; password?: string }): Promise<boolean> => {
     try {
-      const res = await fetch('/api/admin/homerooms', {
+      const res = await fetch('api/admin/homerooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(homeroomData)
@@ -661,7 +661,7 @@ export default function App() {
   // Update Homeroom Teacher CRUD
   const handleUpdateHomeroom = async (id: string, homeroomData: { username?: string; name?: string; className?: string; password?: string }): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/admin/homerooms/${id}`, {
+      const res = await fetch(`api/admin/homerooms/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(homeroomData)
@@ -683,7 +683,7 @@ export default function App() {
   // Delete Homeroom Teacher CRUD
   const handleDeleteHomeroom = async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`/api/admin/homerooms/${id}`, {
+      const res = await fetch(`api/admin/homerooms/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -703,7 +703,7 @@ export default function App() {
   // Batch save attendance for Class Room
   const handleSaveBatchAttendance = async (logs: { studentId: string; date: string; status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }[]): Promise<boolean> => {
     try {
-      const res = await fetch('/api/attendance/batch', {
+      const res = await fetch('api/attendance/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logs })
@@ -746,7 +746,7 @@ export default function App() {
 
   const handleUpdateSchoolIdentity = async (updatedData: Partial<SchoolIdentity>): Promise<boolean> => {
     try {
-      const res = await fetch('/api/admin/set-school-identity', {
+      const res = await fetch('api/admin/set-school-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData)

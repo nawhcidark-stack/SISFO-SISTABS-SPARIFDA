@@ -70,7 +70,7 @@ export default function AdminPanel({
 
   const fetchSystemStatus = async () => {
     try {
-      const res = await fetch('/api/system-status');
+      const res = await fetch('api/system-status');
       if (res.ok) {
         const data = await res.json();
         setSystemStatus(data);
@@ -92,7 +92,7 @@ export default function AdminPanel({
     setIsSyncingLive(true);
     setSyncFeedback(null);
     try {
-      const res = await fetch('/api/admin/force-firestore-sync', {
+      const res = await fetch('api/admin/force-firestore-sync', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -388,7 +388,7 @@ export default function AdminPanel({
     setIsPromoting(true);
     setPromotionMessage(null);
     try {
-      const res = await fetch('/api/admin/students/promote-all', {
+      const res = await fetch('api/admin/students/promote-all', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' }
       });
@@ -426,7 +426,7 @@ export default function AdminPanel({
     setIsActivatingYear(true);
     setActivatingYearMessage(null);
     try {
-      const res = await fetch('/api/admin/activate-academic-year', {
+      const res = await fetch('api/admin/activate-academic-year', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ startYear: yearNum })
@@ -470,7 +470,7 @@ export default function AdminPanel({
 
   const fetchWaConfig = async () => {
     try {
-      const res = await fetch('/api/whatsapp-config');
+      const res = await fetch('api/whatsapp-config');
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.whatsappConfig) {
@@ -494,7 +494,7 @@ export default function AdminPanel({
     setIsSavingWaConfig(true);
     setWaConfigMsg(null);
     try {
-      const res = await fetch('/api/admin/set-whatsapp-config', {
+      const res = await fetch('api/admin/set-whatsapp-config', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -532,7 +532,7 @@ export default function AdminPanel({
     setWaTesting(true);
     setWaTestFeedback(null);
     try {
-      const res = await fetch('/api/admin/test-whatsapp', {
+      const res = await fetch('api/admin/test-whatsapp', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -558,7 +558,7 @@ export default function AdminPanel({
 
   const fetchSppConfig = async () => {
     try {
-      const res = await fetch('/api/admin/spp-config');
+      const res = await fetch('api/admin/spp-config');
       if (res.ok) {
         const data = await res.json();
         if (data.success && data.sppRates) {
@@ -582,7 +582,7 @@ export default function AdminPanel({
     setIsSavingSppRates(true);
     setSppConfigMsg(null);
     try {
-      const res = await fetch('/api/admin/set-spp-config', {
+      const res = await fetch('api/admin/set-spp-config', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -613,7 +613,7 @@ export default function AdminPanel({
     setIsSavingFees(true);
     setSavingFeesMsg(null);
     try {
-      const res = await fetch('/api/set-midtrans-config', {
+      const res = await fetch('api/set-midtrans-config', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'

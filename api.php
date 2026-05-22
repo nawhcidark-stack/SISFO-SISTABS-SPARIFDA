@@ -19,31 +19,6 @@ if ($_SERVER['REQUEST_METHOD'] === 'OPTIONS') {
 $route = isset($_GET['route']) ? trim($_GET['route'], '/') : '';
 $method = $_SERVER['REQUEST_METHOD'];
 
-// Support Dynamic Path Routing Param Extraction for PHP cPanel
-$route_params = [];
-$matched_route = $route;
-
-if (preg_match('#^students/nis/([^/]+)$#', $route, $matches)) {
-    $matched_route = 'students/nis';
-    $route_params['nis'] = $matches[1];
-} elseif (preg_match('#^students/([^/]+)$#', $route, $matches)) {
-    if ($matches[1] !== 'change-password') {
-        $matched_route = 'students/detail';
-        $route_params['id'] = $matches[1];
-    }
-} elseif (preg_match('#^attendance/student/([^/]+)$#', $route, $matches)) {
-    $matched_route = 'attendance/student';
-    $route_params['studentId'] = $matches[1];
-} elseif (preg_match('#^admin/homerooms/([^/]+)$#', $route, $matches)) {
-    $matched_route = 'admin/homerooms/detail';
-    $route_params['id'] = $matches[1];
-} elseif (preg_match('#^admin/students/([^/]+)$#', $route, $matches)) {
-    if ($matches[1] !== 'import' && $matches[1] !== 'promote-all') {
-        $matched_route = 'admin/students/detail';
-        $route_params['id'] = $matches[1];
-    }
-}
-
 // Local storage data file path
 $db_file = __DIR__ . '/data_store.json';
 
@@ -206,7 +181,7 @@ $state = load_state($db_file);
 // ROUTER ENGINE
 // ----------------------------------------------------
 
-switch ($matched_route) {
+switch ($route) {
     case 'system-status':
         $hasMidtrans = !empty($state['midtransConfig']['serverKey']) && !empty($state['midtransConfig']['clientKey']);
         echo json_encode([
@@ -270,7 +245,7 @@ switch ($matched_route) {
     case 'school-identity':
         echo json_encode([
             "success" => true,
-            "schoolIdentity" => array_merge($state['schoolIdentity'], ["sppRates" => $state['sppRates']])
+            "identity" => $state['schoolIdentity']
         ]);
         break;
 
@@ -288,7 +263,7 @@ switch ($matched_route) {
     case 'whatsapp-config':
         echo json_encode([
             "success" => true,
-            "whatsappConfig" => $state['whatsappConfig']
+            "config" => $state['whatsappConfig']
         ]);
         break;
 
@@ -304,7 +279,10 @@ switch ($matched_route) {
         break;
 
     case 'attendance':
-        echo json_encode($state['attendanceLogs'] ?? []);
+        echo json_encode([
+            "success" => true,
+            "logs" => $state['attendanceLogs'] ?? []
+        ]);
         break;
 
     case 'attendance/batch':
@@ -344,7 +322,10 @@ switch ($matched_route) {
         break;
 
     case 'homerooms':
-        echo json_encode($state['homeroomTeachers']);
+        echo json_encode([
+            "success" => true,
+            "homerooms" => $state['homeroomTeachers']
+        ]);
         break;
 
     case 'admin/homerooms':
@@ -364,7 +345,10 @@ switch ($matched_route) {
         break;
 
     case 'notifications':
-        echo json_encode($state['notifications']);
+        echo json_encode([
+            "success" => true,
+            "notifications" => $state['notifications']
+        ]);
         break;
 
     case 'notifications/broadcast':
@@ -386,15 +370,24 @@ switch ($matched_route) {
         break;
 
     case 'students':
-        echo json_encode($state['students']);
+        echo json_encode([
+            "success" => true,
+            "students" => $state['students']
+        ]);
         break;
 
     case 'admin/all-bills':
-        echo json_encode($state['sppBills']);
+        echo json_encode([
+            "success" => true,
+            "bills" => $state['sppBills']
+        ]);
         break;
 
     case 'admin/all-transactions':
-        echo json_encode($state['savingsTransactions']);
+        echo json_encode([
+            "success" => true,
+            "transactions" => $state['savingsTransactions']
+        ]);
         break;
 
     case 'admin/spp-config':
@@ -990,104 +983,6 @@ switch ($matched_route) {
 
         save_state($db_file, $state);
         echo json_encode(["success" => true, "processed" => $is_processed]);
-        break;
-
-    case 'students/detail':
-        $studentId = $route_params['id'] ?? '';
-        $student = null;
-        foreach ($state['students'] as $s) {
-            if ($s['id'] === $studentId) {
-                $student = $s;
-                break;
-            }
-        }
-        if (!$student) {
-            http_response_code(404);
-            echo json_encode(["error" => "Siswa tidak ditemukan."]);
-            break;
-        }
-        $bills = [];
-        foreach ($state['sppBills'] as $b) {
-            if ($b['studentId'] === $studentId) {
-                $bills[] = $b;
-            }
-        }
-        $transactions = [];
-        foreach ($state['savingsTransactions'] as $t) {
-            if ($t['studentId'] === $studentId) {
-                $transactions[] = $t;
-            }
-        }
-        echo json_encode([
-            "student" => $student,
-            "bills" => $bills,
-            "transactions" => $transactions
-        ]);
-        break;
-
-    case 'attendance/student':
-        $studentId = $route_params['studentId'] ?? '';
-        $logs = [];
-        foreach (($state['attendanceLogs'] ?? []) as $l) {
-            if ($l['studentId'] === $studentId) {
-                $logs[] = $l;
-            }
-        }
-        echo json_encode($logs);
-        break;
-
-    case 'students/nis':
-        $nis = $route_params['nis'] ?? '';
-        $student = null;
-        foreach ($state['students'] as $s) {
-            if ($s['nis'] === $nis) {
-                $student = $s;
-                break;
-            }
-        }
-        if (!$student) {
-            http_response_code(404);
-            echo json_encode(["error" => "Siswa tidak ditemukan dengan NIS={$nis}."]);
-            break;
-        }
-        echo json_encode($student);
-        break;
-
-    case 'admin/homerooms/detail':
-        if ($method === 'DELETE') {
-            $id = $route_params['id'] ?? '';
-            $state['homeroomTeachers'] = array_values(array_filter($state['homeroomTeachers'], function($h) use ($id) {
-                return $h['id'] !== $id;
-            }));
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Wali Kelas berhasil dihapus."]);
-        } else {
-            http_response_code(405);
-            echo json_encode(["error" => "Method Not Allowed"]);
-        }
-        break;
-
-    case 'admin/students/detail':
-        if ($method === 'DELETE') {
-            $id = $route_params['id'] ?? '';
-            // Remove student
-            $state['students'] = array_values(array_filter($state['students'], function($s) use ($id) {
-                return $s['id'] !== $id;
-            }));
-            // Remove bills
-            $state['sppBills'] = array_values(array_filter($state['sppBills'], function($b) use ($id) {
-                return $b['studentId'] !== $id;
-            }));
-            // Remove transactions
-            $state['savingsTransactions'] = array_values(array_filter($state['savingsTransactions'], function($t) use ($id) {
-                return $t['studentId'] !== $id;
-            }));
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Data siswa dan seluruh riwayatnya berhasil dihapus."]);
-        } else {
-            http_response_code(405);
-            echo json_encode(["error" => "Method Not Allowed"]);
-        }
         break;
 
     default:

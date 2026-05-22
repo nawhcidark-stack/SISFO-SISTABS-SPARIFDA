@@ -5,11 +5,6 @@
  * Saves/reads data securely from `data_store.json` with file locker mechanisms.
  */
 
-// Safe settings to block environment warnings from corrupting the JSON payloads
-error_reporting(0);
-ini_set('display_errors', 0);
-date_default_timezone_set('Asia/Jakarta');
-
 header("Access-Control-Allow-Origin: *");
 header("Access-Control-Allow-Headers: Content-Type, Authorization, X-Requested-With");
 header("Access-Control-Allow-Methods: GET, POST, OPTIONS, PUT, DELETE");
@@ -171,17 +166,8 @@ function load_state($file_path) {
     return json_decode($raw, true) ?: [];
 }
 
-// Save with exclusive file system lock to prevent concurrent write issues in production hosting
 function save_state($file_path, $state) {
-    $fp = fopen($file_path, "w");
-    if ($fp) {
-        if (flock($fp, LOCK_EX)) {
-            fwrite($fp, json_encode($state, JSON_PRETTY_PRINT));
-            fflush($fp);
-            flock($fp, LOCK_UN);
-        }
-        fclose($fp);
-    }
+    file_put_contents($file_path, json_encode($state, JSON_PRETTY_PRINT));
 }
 
 // Read body input for POST parameters
@@ -192,640 +178,371 @@ $data_input = json_decode($input_json, true) ?: [];
 $state = load_state($db_file);
 
 // ----------------------------------------------------
-// DYNAMIC REGEX HANDLERS INTERCEPTOR
+// ROUTER ENGINE
 // ----------------------------------------------------
-$is_handled = false;
 
-// 1. LOOKUP STUDENT BY NIS: /api/students/nis/:nis
-if (preg_match('/^students\/nis\/([a-zA-Z0-9_\-\.]+)/i', $route, $matches)) {
-    $nis_param = $matches[1];
-    $match_student = null;
-    foreach ($state['students'] as $std) {
-        if ($std['nis'] === $nis_param) {
-            $match_student = $std;
-            break;
-        }
-    }
-    if ($match_student) {
-        $std_bills = [];
-        foreach (($state['sppBills'] ?? []) as $b) {
-            if ($b['studentId'] === $match_student['id']) {
-                $std_bills[] = $b;
-            }
-        }
-        $std_txs = [];
-        foreach (($state['savingsTransactions'] ?? []) as $t) {
-            if ($t['studentId'] === $match_student['id']) {
-                $std_txs[] = $t;
-            }
-        }
+switch ($route) {
+    case 'system-status':
+        $hasMidtrans = !empty($state['midtransConfig']['serverKey']) && !empty($state['midtransConfig']['clientKey']);
         echo json_encode([
             "success" => true,
-            "student" => $match_student,
-            "bills" => $std_bills,
-            "transactions" => $std_txs
+            "runningOn" => "PHP cPanel/Shared Hosting Environment",
+            "phpVersion" => PHP_VERSION,
+            "firestore" => [
+                "status" => "Koneksi Berjalan (Embedded PHP JSON)",
+                "lastSync" => date('c')
+            ],
+            "midtrans" => [
+                "merchantId" => $state['midtransConfig']['merchantId'] ?: '(Belum Dikoneksi)',
+                "clientKey" => $state['midtransConfig']['clientKey'] ?: '(Belum Dikoneksi)',
+                "configured" => $hasMidtrans,
+                "environment" => (!empty($state['midtransConfig']['isProduction']) ? "Production" : "Sandbox")
+            ]
         ]);
-    } else {
-        http_response_code(404);
-        echo json_encode(["error" => "Siswa dengan NIS '{$nis_param}' tidak ditemukan."]);
-    }
-    $is_handled = true;
-}
+        break;
 
-// 2. EDIT/DELETE STUDENT BY ID: /api/admin/students/:id
-else if (preg_match('/^admin\/students\/([a-zA-Z0-9_\-\.\*]+)$/i', $route, $matches)) {
-    $std_id = $matches[1];
-    if ($std_id !== 'promote-all' && $std_id !== 'import') {
-        if ($method === 'DELETE') {
-            $found_idx = -1;
-            foreach ($state['students'] as $idx => $s) {
-                if ($s['id'] === $std_id) {
-                    $found_idx = $idx;
+    case 'midtrans-config':
+        echo json_encode([
+            "success" => true,
+            "merchantId" => $state['midtransConfig']['merchantId'] ?? "",
+            "clientKey" => $state['midtransConfig']['clientKey'] ?? "",
+            "hasServerKey" => !empty($state['midtransConfig']['serverKey']),
+            "isProduction" => !empty($state['midtransConfig']['isProduction']),
+            "systemMaintenanceFee" => $state['midtransConfig']['systemMaintenanceFee'] ?? 1500,
+            "chargeFeesToUser" => $state['midtransConfig']['chargeFeesToUser'] ?? true
+        ]);
+        break;
+
+    case 'set-midtrans-config':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $state['midtransConfig']['merchantId'] = $data_input['merchantId'] ?? $state['midtransConfig']['merchantId'];
+        $state['midtransConfig']['clientKey'] = $data_input['clientKey'] ?? $state['midtransConfig']['clientKey'];
+        if (!empty($data_input['serverKey'])) {
+            $state['midtransConfig']['serverKey'] = $data_input['serverKey'];
+        }
+        $state['midtransConfig']['isProduction'] = isset($data_input['isProduction']) ? (bool)$data_input['isProduction'] : $state['midtransConfig']['isProduction'];
+        $state['midtransConfig']['systemMaintenanceFee'] = isset($data_input['systemMaintenanceFee']) ? (int)$data_input['systemMaintenanceFee'] : ($state['midtransConfig']['systemMaintenanceFee'] ?? 1500);
+        $state['midtransConfig']['chargeFeesToUser'] = isset($data_input['chargeFeesToUser']) ? (bool)$data_input['chargeFeesToUser'] : ($state['midtransConfig']['chargeFeesToUser'] ?? true);
+
+        // Add a notification
+        $new_notif = [
+            "id" => "notif-sys-" . time(),
+            "title" => "Konfigurasi Gateway & Biaya Diupdate ⚙️",
+            "message" => "Kredensial API Midtrans berhasil diubah dari dasbor panel admin sekolah.",
+            "type" => "info",
+            "createdAt" => date('c')
+        ];
+        array_unshift($state['notifications'], $new_notif);
+
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Konfigurasi Midtrans & Biaya Tambahan Berhasil Diperbarui!"]);
+        break;
+
+    case 'school-identity':
+        echo json_encode([
+            "success" => true,
+            "identity" => $state['schoolIdentity']
+        ]);
+        break;
+
+    case 'admin/set-school-identity':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $state['schoolIdentity'] = array_merge($state['schoolIdentity'], $data_input);
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Kop Surat & Profil Identitas Sekolah Berhasil Diperbarui!"]);
+        break;
+
+    case 'whatsapp-config':
+        echo json_encode([
+            "success" => true,
+            "config" => $state['whatsappConfig']
+        ]);
+        break;
+
+    case 'admin/set-whatsapp-config':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $state['whatsappConfig'] = array_merge($state['whatsappConfig'], $data_input);
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Konfigurasi Integrasi WhatsApp Gateway Disimpan!"]);
+        break;
+
+    case 'attendance':
+        echo json_encode([
+            "success" => true,
+            "logs" => $state['attendanceLogs'] ?? []
+        ]);
+        break;
+
+    case 'attendance/batch':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $logs = $data_input['logs'] ?? [];
+        if (!is_array($logs)) {
+            $logs = [];
+        }
+        foreach ($logs as $new_log) {
+            $log_id = $new_log['id'] ?? ("att-php-" . uniqid());
+            // Check if exist, overwrite
+            $exists = false;
+            foreach ($state['attendanceLogs'] as &$ex_log) {
+                if ($ex_log['studentId'] === $new_log['studentId'] && $ex_log['date'] === $new_log['date']) {
+                    $ex_log['status'] = $new_log['status'];
+                    $ex_log['notes'] = $new_log['notes'] ?? '';
+                    $exists = true;
                     break;
                 }
             }
-            if ($found_idx !== -1) {
-                $studentName = $state['students'][$found_idx]['name'];
-                $studentNIS = $state['students'][$found_idx]['nis'];
-                
-                // Remove student
-                array_splice($state['students'], $found_idx, 1);
-                
-                // Cascade bills deletion
-                $new_bills = [];
-                foreach (($state['sppBills'] ?? []) as $b) {
-                    if ($b['studentId'] !== $std_id) {
-                        $new_bills[] = $b;
-                    }
-                }
-                $state['sppBills'] = $new_bills;
-                
-                // Cascade transaction records deletion
-                $new_txs = [];
-                foreach (($state['savingsTransactions'] ?? []) as $t) {
-                    if ($t['studentId'] !== $std_id) {
-                        $new_txs[] = $t;
-                    }
-                }
-                $state['savingsTransactions'] = $new_txs;
-                
-                // Record system notification
-                $state['notifications'][] = [
-                    "id" => "notif-del-" . time(),
-                    "title" => "Siswa Dihapus 🗑️",
-                    "message" => "Siswa bernama {$studentName} ({$studentNIS}) beserta seluruh riwayat keuangan & SPP-nya telah dihapus permanen.",
-                    "type" => "warning",
-                    "createdAt" => date('c')
+            if (!$exists) {
+                $state['attendanceLogs'][] = [
+                    "id" => $log_id,
+                    "studentId" => $new_log['studentId'],
+                    "date" => $new_log['date'],
+                    "status" => $new_log['status'],
+                    "notes" => $new_log['notes'] ?? ''
                 ];
-                
-                save_state($db_file, $state);
-                echo json_encode(["success" => true, "message" => "Siswa {$studentName} berhasil dihapus dari database!"]);
-            } else {
-                http_response_code(404);
-                echo json_encode(["error" => "Data Siswa tidak ditemukan."]);
             }
-            $is_handled = true;
-        } else if ($method === 'PUT') {
-            $found_idx = -1;
-            foreach ($state['students'] as $idx => &$s) {
-                if ($s['id'] === $std_id) {
-                    $found_idx = $idx;
-                    $s['name'] = $data_input['name'] ?? $s['name'];
-                    $s['nis'] = $data_input['nis'] ?? $s['nis'];
-                    $s['class'] = $data_input['class'] ?? $s['class'];
-                    $s['email'] = $data_input['email'] ?? $s['email'];
-                    $s['phone'] = $data_input['phone'] ?? $s['phone'];
-                    
-                    // Retroactive SPP tariff update in case grade/class level changed
-                    $class_num = (int)filter_var($s['class'], FILTER_SANITIZE_NUMBER_INT);
-                    $new_rate = 150000;
-                    if ($class_num === 8) $new_rate = 155000;
-                    if ($class_num === 9) $new_rate = 160000;
-                    
-                    foreach ($state['sppBills'] as &$bill) {
-                        if ($bill['studentId'] === $std_id && $bill['status'] === 'unpaid') {
-                            $bill['amount'] = $new_rate;
-                        }
-                    }
-                    break;
-                }
-            }
-            if ($found_idx !== -1) {
-                // Record system notification
-                $state['notifications'][] = [
-                    "id" => "notif-upd-" . time(),
-                    "title" => "Data Siswa Diupdate ⚙️",
-                    "message" => "Profil data siswa: {$state['students'][$found_idx]['name']} berhasil diperbarui oleh Administrator.",
-                    "type" => "info",
-                    "createdAt" => date('c')
-                ];
-                save_state($db_file, $state);
-                echo json_encode(["success" => true, "message" => "Profil Siswa Berhasil Diperbarui!"]);
-            } else {
-                http_response_code(404);
-                echo json_encode(["error" => "Data Siswa tidak ditemukan."]);
-            }
-            $is_handled = true;
         }
-    }
-}
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Laporan Absensi Siswa Berhasil Disimpan Ke Database!"]);
+        break;
 
-// 3. EDIT/DELETE HOMEROOM TEACHER ACCOUNT: /api/admin/homerooms/:id
-else if (preg_match('/^admin\/homerooms\/([a-zA-Z0-9_\-\.]+)$/i', $route, $matches)) {
-    $ht_id = $matches[1];
-    if ($method === 'DELETE') {
-        $found_idx = -1;
-        foreach ($state['homeroomTeachers'] as $idx => $ht) {
-            if ($ht['id'] === $ht_id) {
-                $found_idx = $idx;
-                break;
-            }
-        }
-        if ($found_idx !== -1) {
-            $htName = $state['homeroomTeachers'][$found_idx]['name'];
-            array_splice($state['homeroomTeachers'], $found_idx, 1);
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Akun Guru Wali Kelas '{$htName}' berhasil dihapus!"]);
-        } else {
-            http_response_code(404);
-            echo json_encode(["error" => "Wali kelas tidak ditemukan."]);
-        }
-        $is_handled = true;
-    } else if ($method === 'PUT') {
-        $found_idx = -1;
-        foreach ($state['homeroomTeachers'] as &$ht) {
-            if ($ht['id'] === $ht_id) {
-                $found_idx = 1;
-                if (isset($data_input['name'])) $ht['name'] = $data_input['name'];
-                if (isset($data_input['className'])) $ht['className'] = $data_input['className'];
-                if (isset($data_input['username'])) $ht['username'] = $data_input['username'];
-                if (isset($data_input['password'])) $ht['password'] = $data_input['password'];
-                break;
-            }
-        }
-        if ($found_idx !== -1) {
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Akun Guru Wali Kelas berhasil diupdate!"]);
-        } else {
-            http_response_code(404);
-            echo json_encode(["error" => "Wali kelas tidak ditemukan."]);
-        }
-        $is_handled = true;
-    }
-}
+    case 'homerooms':
+        echo json_encode([
+            "success" => true,
+            "homerooms" => $state['homeroomTeachers']
+        ]);
+        break;
 
-// 4. GET SINGLE STUDENT PROFILE DETAIL: /api/students/:id
-else if (preg_match('/^students\/([a-zA-Z0-9_\-\.]+)/i', $route, $matches)) {
-    $std_id = $matches[1];
-    if ($std_id !== 'change-password' && $std_id !== 'nis') {
-        $match_student = null;
-        foreach ($state['students'] as $std) {
-            if ($std['id'] === $std_id) {
-                $match_student = $std;
-                break;
-            }
-        }
-        if ($match_student) {
-            $std_bills = [];
-            foreach (($state['sppBills'] ?? []) as $b) {
-                if ($b['studentId'] === $match_student['id']) {
-                    $std_bills[] = $b;
-                }
-            }
-            $std_txs = [];
-            foreach (($state['savingsTransactions'] ?? []) as $t) {
-                if ($t['studentId'] === $match_student['id']) {
-                    $std_txs[] = $t;
-                }
-            }
-            echo json_encode([
-                "success" => true,
-                "student" => $match_student,
-                "bills" => $std_bills,
-                "transactions" => $std_txs
-            ]);
-        } else {
-            http_response_code(404);
-            echo json_encode(["error" => "Siswa dengan ID '{$std_id}' tidak ditemukan."]);
-        }
-        $is_handled = true;
-    }
-}
-
-// 5. GET ABSENCE LOGS BY STUDENT ID: /api/attendance/student/:studentId
-else if (preg_match('/^attendance\/student\/([a-zA-Z0-9_\-\.]+)/i', $route, $matches)) {
-    $std_id = $matches[1];
-    $std_logs = [];
-    foreach (($state['attendanceLogs'] ?? []) as $log) {
-        if ($log['studentId'] === $std_id) {
-            $std_logs[] = $log;
-        }
-    }
-    echo json_encode($std_logs);
-    $is_handled = true;
-}
-
-// ----------------------------------------------------
-// STATIC & FLAT ROUTER ENGINE FALLBACK
-// ----------------------------------------------------
-if (!$is_handled) {
-    switch ($route) {
-        case 'system-status':
-            $hasMidtrans = !empty($state['midtransConfig']['serverKey']) && !empty($state['midtransConfig']['clientKey']);
-            echo json_encode([
-                "success" => true,
-                "runningOn" => "PHP cPanel/Shared Hosting Environment",
-                "phpVersion" => PHP_VERSION,
-                "firestore" => [
-                    "status" => "Koneksi Berjalan (Embedded PHP JSON)",
-                    "lastSync" => date('c')
-                ],
-                "midtrans" => [
-                    "merchantId" => $state['midtransConfig']['merchantId'] ?: '(Belum Dikoneksi)',
-                    "clientKey" => $state['midtransConfig']['clientKey'] ?: '(Belum Dikoneksi)',
-                    "configured" => $hasMidtrans,
-                    "environment" => (!empty($state['midtransConfig']['isProduction']) ? "Production" : "Sandbox")
-                ]
-            ]);
-            break;
-
-        case 'midtrans-config':
-            echo json_encode([
-                "success" => true,
-                "merchantId" => $state['midtransConfig']['merchantId'] ?? "",
-                "clientKey" => $state['midtransConfig']['clientKey'] ?? "",
-                "hasServerKey" => !empty($state['midtransConfig']['serverKey']),
-                "isProduction" => !empty($state['midtransConfig']['isProduction']),
-                "systemMaintenanceFee" => $state['midtransConfig']['systemMaintenanceFee'] ?? 1500,
-                "chargeFeesToUser" => $state['midtransConfig']['chargeFeesToUser'] ?? true
-            ]);
-            break;
-
-        case 'set-midtrans-config':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $state['midtransConfig']['merchantId'] = $data_input['merchantId'] ?? $state['midtransConfig']['merchantId'];
-            $state['midtransConfig']['clientKey'] = $data_input['clientKey'] ?? $state['midtransConfig']['clientKey'];
-            if (!empty($data_input['serverKey'])) {
-                $state['midtransConfig']['serverKey'] = $data_input['serverKey'];
-            }
-            $state['midtransConfig']['isProduction'] = isset($data_input['isProduction']) ? (bool)$data_input['isProduction'] : $state['midtransConfig']['isProduction'];
-            $state['midtransConfig']['systemMaintenanceFee'] = isset($data_input['systemMaintenanceFee']) ? (int)$data_input['systemMaintenanceFee'] : ($state['midtransConfig']['systemMaintenanceFee'] ?? 1500);
-            $state['midtransConfig']['chargeFeesToUser'] = isset($data_input['chargeFeesToUser']) ? (bool)$data_input['chargeFeesToUser'] : ($state['midtransConfig']['chargeFeesToUser'] ?? true);
-
-            // Add a notification
-            $new_notif = [
-                "id" => "notif-sys-" . time(),
-                "title" => "Konfigurasi Gateway & Biaya Diupdate ⚙️",
-                "message" => "Kredensial API Midtrans berhasil diubah dari dasbor panel admin sekolah.",
-                "type" => "info",
-                "createdAt" => date('c')
+    case 'admin/homerooms':
+        if ($method === 'POST') {
+            $state['homeroomTeachers'][] = [
+                "id" => $data_input['id'] ?? ("ht-php-" . uniqid()),
+                "name" => $data_input['name'] ?? "",
+                "className" => $data_input['className'] ?? "",
+                "username" => $data_input['username'] ?? "",
+                "password" => $data_input['password'] ?? "wali123"
             ];
-            array_unshift($state['notifications'], $new_notif);
-
             save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Konfigurasi Midtrans & Biaya Tambahan Berhasil Diperbarui!"]);
+            echo json_encode(["success" => true, "message" => "Akun Guru Wali Kelas Baru Sukses Ditambah!"]);
+        } else {
+            echo json_encode(["success" => true, "homerooms" => $state['homeroomTeachers']]);
+        }
+        break;
+
+    case 'notifications':
+        echo json_encode([
+            "success" => true,
+            "notifications" => $state['notifications']
+        ]);
+        break;
+
+    case 'notifications/broadcast':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
             break;
+        }
+        $new_notif = [
+            "id" => "notif-bc-" . time(),
+            "title" => $data_input['title'] ?? "Pemberitahuan",
+            "message" => $data_input['message'] ?? "",
+            "type" => $data_input['type'] ?? "info",
+            "createdAt" => date('c')
+        ];
+        array_unshift($state['notifications'], $new_notif);
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Pengumuman berhasil disiarkan ke semua layar wali siswa."]);
+        break;
 
-        case 'school-identity':
-            echo json_encode([
-                "success" => true,
-                "identity" => $state['schoolIdentity']
-            ]);
+    case 'students':
+        echo json_encode([
+            "success" => true,
+            "students" => $state['students']
+        ]);
+        break;
+
+    case 'admin/all-bills':
+        echo json_encode([
+            "success" => true,
+            "bills" => $state['sppBills']
+        ]);
+        break;
+
+    case 'admin/all-transactions':
+        echo json_encode([
+            "success" => true,
+            "transactions" => $state['savingsTransactions']
+        ]);
+        break;
+
+    case 'admin/spp-config':
+        echo json_encode([
+            "success" => true,
+            "sppRates" => $state['sppRates']
+        ]);
+        break;
+
+    case 'admin/set-spp-config':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
             break;
+        }
+        if (isset($data_input['grade7'])) $state['sppRates']['grade7'] = (int)$data_input['grade7'];
+        if (isset($data_input['grade8'])) $state['sppRates']['grade8'] = (int)$data_input['grade8'];
+        if (isset($data_input['grade9'])) $state['sppRates']['grade9'] = (int)$data_input['grade9'];
 
-        case 'admin/set-school-identity':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $state['schoolIdentity'] = array_merge($state['schoolIdentity'], $data_input);
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Kop Surat & Profil Identitas Sekolah Berhasil Diperbarui!"]);
-            break;
-
-        case 'whatsapp-config':
-            echo json_encode([
-                "success" => true,
-                "config" => $state['whatsappConfig']
-            ]);
-            break;
-
-        case 'admin/set-whatsapp-config':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $state['whatsappConfig'] = array_merge($state['whatsappConfig'], $data_input);
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Konfigurasi Integrasi WhatsApp Gateway Disimpan!"]);
-            break;
-
-        case 'admin/test-whatsapp':
-            echo json_encode([
-                "success" => true,
-                "message" => "Integrasi WhatsApp berhasil berjalan (Pesan simulasi dialihkan)."
-            ]);
-            break;
-
-        case 'admin/send-unpaid-wa':
-            echo json_encode([
-                "success" => true,
-                "message" => "Notifikasi penagihan SPP berhasil dikirim ke WhatsApp wali siswa!"
-            ]);
-            break;
-
-        case 'attendance':
-            echo json_encode([
-                "success" => true,
-                "logs" => $state['attendanceLogs'] ?? []
-            ]);
-            break;
-
-        case 'attendance/batch':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $logs = $data_input['logs'] ?? [];
-            if (!is_array($logs)) {
-                $logs = [];
-            }
-            foreach ($logs as $new_log) {
-                $log_id = $new_log['id'] ?? ("att-php-" . uniqid());
-                // Check if exist, overwrite
-                $exists = false;
-                foreach ($state['attendanceLogs'] as &$ex_log) {
-                    if ($ex_log['studentId'] === $new_log['studentId'] && $ex_log['date'] === $new_log['date']) {
-                        $ex_log['status'] = $new_log['status'];
-                        $ex_log['notes'] = $new_log['notes'] ?? '';
-                        $exists = true;
-                        break;
-                    }
-                }
-                if (!$exists) {
-                    $state['attendanceLogs'][] = [
-                        "id" => $log_id,
-                        "studentId" => $new_log['studentId'],
-                        "date" => $new_log['date'],
-                        "status" => $new_log['status'],
-                        "notes" => $new_log['notes'] ?? ''
-                    ];
-                }
-            }
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Laporan Absensi Siswa Berhasil Disimpan Ke Database!"]);
-            break;
-
-        case 'homerooms':
-            echo json_encode([
-                "success" => true,
-                "homerooms" => $state['homeroomTeachers']
-            ]);
-            break;
-
-        case 'admin/homerooms':
-            if ($method === 'POST') {
-                $username = $data_input['username'] ?? '';
-                // Check dup
-                $dup = false;
-                foreach ($state['homeroomTeachers'] as $ht) {
-                    if (strtolower($ht['username']) === strtolower($username)) {
-                        $dup = true;
-                        break;
-                    }
-                }
-                if ($dup) {
-                    http_response_code(400);
-                    echo json_encode(["error" => "Username wali kelas sudah digunakan."]);
-                    break;
-                }
-                
-                $new_ht = [
-                    "id" => $data_input['id'] ?? ("ht-php-" . uniqid()),
-                    "name" => $data_input['name'] ?? "",
-                    "className" => $data_input['className'] ?? "",
-                    "username" => $username,
-                    "password" => $data_input['password'] ?? "wali123"
-                ];
-                $state['homeroomTeachers'][] = $new_ht;
-                
-                $state['notifications'][] = [
-                    "id" => "notif-ht-" . time(),
-                    "title" => "Wali Kelas Baru 👥",
-                    "message" => "Akun wali kelas baru {$new_ht['name']} ({$new_ht['className']}) telah didaftarkan oleh Admin.",
-                    "type" => "info",
-                    "createdAt" => date('c')
-                ];
-                
-                save_state($db_file, $state);
-                echo json_encode(["success" => true, "message" => "Akun Guru Wali Kelas Baru Sukses Ditambah!"]);
-            } else {
-                echo json_encode(["success" => true, "homerooms" => $state['homeroomTeachers']]);
-            }
-            break;
-
-        case 'notifications':
-            echo json_encode([
-                "success" => true,
-                "notifications" => $state['notifications']
-            ]);
-            break;
-
-        case 'notifications/broadcast':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $new_notif = [
-                "id" => "notif-bc-" . time(),
-                "title" => $data_input['title'] ?? "Pemberitahuan",
-                "message" => $data_input['message'] ?? "",
-                "type" => $data_input['type'] ?? "info",
-                "createdAt" => date('c')
-            ];
-            array_unshift($state['notifications'], $new_notif);
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Pengumuman berhasil disiarkan ke semua layar wali siswa."]);
-            break;
-
-        case 'students':
-            echo json_encode([
-                "success" => true,
-                "students" => $state['students']
-            ]);
-            break;
-
-        case 'admin/all-bills':
-            echo json_encode([
-                "success" => true,
-                "bills" => $state['sppBills']
-            ]);
-            break;
-
-        case 'admin/all-transactions':
-            echo json_encode([
-                "success" => true,
-                "transactions" => $state['savingsTransactions']
-            ]);
-            break;
-
-        case 'admin/spp-config':
-            echo json_encode([
-                "success" => true,
-                "sppRates" => $state['sppRates']
-            ]);
-            break;
-
-        case 'admin/set-spp-config':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            if (isset($data_input['grade7'])) $state['sppRates']['grade7'] = (int)$data_input['grade7'];
-            if (isset($data_input['grade8'])) $state['sppRates']['grade8'] = (int)$data_input['grade8'];
-            if (isset($data_input['grade9'])) $state['sppRates']['grade9'] = (int)$data_input['grade9'];
-
-            if (!empty($data_input['updateExistingUnpaid'])) {
-                foreach ($state['sppBills'] as &$bill) {
-                    if ($bill['status'] === 'unpaid') {
-                        // Check level
-                        $std_id = $bill['studentId'];
-                        $std_class = '';
-                        foreach ($state['students'] as $s) {
-                            if ($s['id'] === $std_id) {
-                                $std_class = $s['class'] ?? '';
-                                break;
-                            }
-                        }
-                        if (strpos($std_class, '7') !== false || strpos($std_class, 'VII') !== false) {
-                            $bill['amount'] = $state['sppRates']['grade7'];
-                        } else if (strpos($std_class, '8') !== false || strpos($std_class, 'VIII') !== false) {
-                            $bill['amount'] = $state['sppRates']['grade8'];
-                        } else if (strpos($std_class, '9') !== false || strpos($std_class, 'IX') !== false) {
-                            $bill['amount'] = $state['sppRates']['grade9'];
-                        }
-                    }
-                }
-            }
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Konfigurasi tarif SPP berhasil diubah retroaktif ke tagihan aktif."]);
-            break;
-
-        case 'students/change-password':
-            echo json_encode(["success" => true, "message" => "Kata Sandi Berhasil Diperbarui!"]);
-            break;
-
-        case 'admin/pay-spp-manual':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $billId = $data_input['billId'] ?? '';
-            $paymentType = $data_input['paymentMethod'] ?? 'Teller / Tunai';
-
-            foreach ($state['sppBills'] as &$b) {
-                if ($b['id'] === $billId) {
-                    $b['status'] = 'paid';
-                    $b['paymentType'] = $paymentType;
-                    $b['paidAt'] = date('c');
-                    $b['orderId'] = 'TX-MANUAL-' . rand(100000, 999999);
-                    
-                    // Add Notification
-                    $std_id = $b['studentId'];
-                    $std_name = 'Siswa';
-                    $std_nis = '';
+        if (!empty($data_input['updateExistingUnpaid'])) {
+            foreach ($state['sppBills'] as &$bill) {
+                if ($bill['status'] === 'unpaid') {
+                    // Check level
+                    $std_id = $bill['studentId'];
+                    $std_class = '';
                     foreach ($state['students'] as $s) {
                         if ($s['id'] === $std_id) {
-                            $std_name = $s['name'];
-                            $std_nis = $s['nis'];
+                            $std_class = $s['class'] ?? '';
                             break;
                         }
                     }
-                    
-                    $state['notifications'][] = [
-                        "id" => "notif-spp-" . time(),
-                        "title" => "Pembayaran SPP Lunas (Teller) 💵",
-                        "message" => "SPP Berhasil Dibayarkan untuk Siswa: {$std_name} ({$std_nis}) - Periode: {$b['month']} {$b['year']}.",
-                        "type" => "success",
-                        "createdAt" => date('c')
-                    ];
-                    break;
+                    if (strpos($std_class, '7') !== false || strpos($std_class, 'VII') !== false) {
+                        $bill['amount'] = $state['sppRates']['grade7'];
+                    } else if (strpos($std_class, '8') !== false || strpos($std_class, 'VIII') !== false) {
+                        $bill['amount'] = $state['sppRates']['grade8'];
+                    } else if (strpos($std_class, '9') !== false || strpos($std_class, 'IX') !== false) {
+                        $bill['amount'] = $state['sppRates']['grade9'];
+                    }
                 }
             }
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Pembayaran SPP Manual Berhasil Disimpan!"]);
+        }
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Konfigurasi tarif SPP berhasil diubah retroaktif ke tagihan aktif."]);
+        break;
+
+    case 'students/change-password':
+        // Just return true/dummy because in-memory student password is not strictly gated
+        echo json_encode(["success" => true, "message" => "Kata Sandi Berhasil Diperbarui!"]);
+        break;
+
+    case 'admin/pay-spp-manual':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
             break;
+        }
+        $billId = $data_input['billId'] ?? '';
+        $paymentType = $data_input['paymentMethod'] ?? 'Teller / Tunai';
 
-        case 'admin/savings-manual':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $studentId = $data_input['studentId'] ?? '';
-            $type = $data_input['type'] ?? 'deposit'; // deposit or withdraw
-            $amount = (int)($data_input['amount'] ?? 0);
-
-            if ($amount <= 0) {
-                echo json_encode(["error" => "Nominal harus lebih dari Rp 0."]);
-                break;
-            }
-
-            foreach ($state['students'] as &$std) {
-                if ($std['id'] === $studentId) {
-                    if ($type === 'withdrawal' && $std['savingsBalance'] < $amount) {
-                        http_response_code(400);
-                        echo json_encode(["error" => "Maaf, saldo tabungan siswa tidak mencukupi untuk penarikan."]);
-                        exit;
+        foreach ($state['sppBills'] as &$b) {
+            if ($b['id'] === $billId) {
+                $b['status'] = 'paid';
+                $b['paymentType'] = $paymentType;
+                $b['paidAt'] = date('c');
+                $b['orderId'] = 'TX-MANUAL-' . rand(100000, 999999);
+                
+                // Add Notification
+                $std_id = $b['studentId'];
+                $std_name = 'Siswa';
+                $std_nis = '';
+                foreach ($state['students'] as $s) {
+                    if ($s['id'] === $std_id) {
+                        $std_name = $s['name'];
+                        $std_nis = $s['nis'];
+                        break;
                     }
-
-                    if ($type === 'deposit') {
-                        $std['savingsBalance'] += $amount;
-                        $desc = 'Setoran Tunai di Teller';
-                    } else {
-                        $std['savingsBalance'] -= $amount;
-                        $desc = 'Penarikan Tunai di Teller';
-                    }
-
-                    // Add saving transaction
-                    $state['savingsTransactions'][] = [
-                        "id" => "tx-saved-" . uniqid(),
-                        "studentId" => $studentId,
-                        "type" => ($type === 'deposit' ? 'deposit' : 'withdrawal'),
-                        "amount" => $amount,
-                        "date" => date('Y-m-d'),
-                        "createdAt" => date('c'),
-                        "description" => $desc,
-                        "channel" => "Teller Madrasah"
-                    ];
-
-                    // Add Notification
-                    $state['notifications'][] = [
-                        "id" => "notif-sav-" . time(),
-                        "title" => ($type === 'deposit' ? "Setoran Tabungan Berhasil" : "Penarikan Tabungan Berhasil"),
-                        "message" => "Transaksi Rp " . number_format($amount, 0, ',', '.') . " untuk siswa {$std['name']} ({$std['nis']}) sukses diproses.",
-                        "type" => ($type === 'deposit' ? "success" : "info"),
-                        "createdAt" => date('c')
-                    ];
-                    break;
                 }
+                
+                $state['notifications'][] = [
+                    "id" => "notif-spp-" . time(),
+                    "title" => "Pembayaran SPP Lunas (Teller) 💵",
+                    "message" => "SPP Berhasil Dibayarkan untuk Siswa: {$std_name} ({$std_nis}) - Periode: {$b['month']} {$b['year']}.",
+                    "type" => "success",
+                    "createdAt" => date('c')
+                ];
+                break;
             }
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "message" => "Transaksi Kas Tabungan Berhasil Disimpan Ke Server!"]);
-            break;
+        }
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Pembayaran SPP Manual Berhasil Disimpan!"]);
+        break;
 
-        case 'admin/students':
-            if ($method === 'POST') {
+    case 'admin/savings-manual':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $studentId = $data_input['studentId'] ?? '';
+        $type = $data_input['type'] ?? 'deposit'; // deposit or withdraw
+        $amount = (int)($data_input['amount'] ?? 0);
+
+        if ($amount <= 0) {
+            echo json_encode(["error" => "Nominal harus lebih dari Rp 0."]);
+            break;
+        }
+
+        foreach ($state['students'] as &$std) {
+            if ($std['id'] === $studentId) {
+                if ($type === 'withdraw' && $std['savingsBalance'] < $amount) {
+                    http_response_code(400);
+                    echo json_encode(["error" => "Maaf, saldo tabungan siswa tidak mencukupi untuk penarikan."]);
+                    exit;
+                }
+
+                if ($type === 'deposit') {
+                    $std['savingsBalance'] += $amount;
+                    $desc = 'Setoran Tunai di Teller';
+                } else {
+                    $std['savingsBalance'] -= $amount;
+                    $desc = 'Penarikan Tunai di Teller';
+                }
+
+                // Add saving transaction
+                $state['savingsTransactions'][] = [
+                    "id" => "tx-saved-" . uniqid(),
+                    "studentId" => $studentId,
+                    "type" => $type,
+                    "amount" => $amount,
+                    "date" => date('Y-m-d'),
+                    "createdAt" => date('c'),
+                    "description" => $desc,
+                    "channel" => "Teller Madrasah"
+                ];
+
+                // Add Notification
+                $state['notifications'][] = [
+                    "id" => "notif-sav-" . time(),
+                    "title" => ($type === 'deposit' ? "Setoran Tabungan Berhasil" : "Penarikan Tabungan Berhasil"),
+                    "message" => "Transaksi Rp " . number_format($amount, 0, ',', '.') . " untuk siswa {$std['name']} ({$std['nis']}) sukses diproses.",
+                    "type" => ($type === 'deposit' ? "success" : "info"),
+                    "createdAt" => date('c')
+                ];
+                break;
+            }
+        }
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "message" => "Transaksi Kas Tabungan Berhasil Disimpan Ke Server!"]);
+        break;
+
+    case 'admin/students':
+        if ($method === 'POST') {
+            // Addition or Edit
+            $id = $data_input['id'] ?? '';
+            if (empty($id)) {
                 // ADD NEW
                 $new_id = "std-php-" . uniqid();
                 $nis = $data_input['nis'] ?? '';
@@ -833,21 +550,6 @@ if (!$is_handled) {
                 $class = $data_input['class'] ?? '';
                 $email = $data_input['email'] ?? '';
                 $phone = $data_input['phone'] ?? '';
-                $initialSavings = (int)($data_input['initialSavings'] ?? 0);
-
-                // Check duplicate
-                $dup = false;
-                foreach ($state['students'] as $s) {
-                    if ($s['nis'] === $nis) {
-                        $dup = true;
-                        break;
-                    }
-                }
-                if ($dup) {
-                    http_response_code(400);
-                    echo json_encode(["error" => "Nomor Induk Siswa (NIS) {$nis} sudah terdaftar."]);
-                    break;
-                }
 
                 $state['students'][] = [
                     "id" => $new_id,
@@ -856,10 +558,10 @@ if (!$is_handled) {
                     "class" => $class,
                     "email" => $email,
                     "phone" => $phone,
-                    "savingsBalance" => $initialSavings
+                    "savingsBalance" => 0
                 ];
 
-                // automatically populate SPP bills
+                // Automatically pre-populate SPP bills for this new student for July 2025 - June 2026
                 $months = ["Juli", "Agustus", "September", "Oktober", "November", "Desember", "Januari", "Februari", "Maret", "April", "Mei", "Juni"];
                 $years_arr = [2025, 2025, 2025, 2025, 2025, 2025, 2026, 2026, 2026, 2026, 2026, 2026];
                 $class_num = (int)filter_var($class, FILTER_SANITIZE_NUMBER_INT);
@@ -882,698 +584,393 @@ if (!$is_handled) {
                     ];
                 }
 
-                if ($initialSavings > 0) {
-                    $state['savingsTransactions'][] = [
-                        "id" => "sav-tx-init-" . uniqid(),
-                        "studentId" => $new_id,
-                        "type" => "deposit",
-                        "amount" => $initialSavings,
-                        "date" => date('Y-m-d'),
-                        "createdAt" => date('c'),
-                        "description" => 'Setoran Awal saat Pendaftaran',
-                        "channel" => 'Teller Madrasah'
-                    ];
-                }
-
-                // Add Notification
-                $state['notifications'][] = [
-                    "id" => "notif-newstd-" . time(),
-                    "title" => "Siswa Baru Terdaftar 🎉",
-                    "message" => "Siswa baru bernama {$name} ({$nis}) kelas {$class} telah didaftarkan oleh Admin.",
-                    "type" => "success",
-                    "createdAt" => date('c')
-                ];
-
                 save_state($db_file, $state);
                 echo json_encode(["success" => true, "message" => "Siswa baru Berhasil Ditambahkan beserta 12 bulan tagihan SPP gratis!"]);
-            }
-            break;
-
-        case 'admin/students/import':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $studentsList = $data_input['studentsList'] ?? [];
-            if (!is_array($studentsList)) {
-                $studentsList = [];
-            }
-            $addedCount = 0;
-            $updatedCount = 0;
-            
-            foreach ($studentsList as $inputStd) {
-                $nis = isset($inputStd['nis']) ? trim($inputStd['nis']) : '';
-                $name = isset($inputStd['name']) ? trim($inputStd['name']) : '';
-                $class = isset($inputStd['class']) ? trim($inputStd['class']) : '';
-                if (empty($nis) || empty($name) || empty($class)) {
-                    continue;
-                }
-                
-                // Check if existing
-                $found_idx = -1;
-                foreach ($state['students'] as $idx => $s) {
-                    if (trim($s['nis']) === trim($nis)) {
-                        $found_idx = $idx;
+            } else {
+                // EDIT EXISTING
+                foreach ($state['students'] as &$s) {
+                    if ($s['id'] === $id) {
+                        $s['name'] = $data_input['name'] ?? $s['name'];
+                        $s['nis'] = $data_input['nis'] ?? $s['nis'];
+                        $s['class'] = $data_input['class'] ?? $s['class'];
+                        $s['email'] = $data_input['email'] ?? $s['email'];
+                        $s['phone'] = $data_input['phone'] ?? $s['phone'];
                         break;
                     }
                 }
-                
-                if ($found_idx !== -1) {
-                    // Update student
-                    $state['students'][$found_idx]['name'] = $name;
-                    $state['students'][$found_idx]['class'] = $class;
-                    $state['students'][$found_idx]['email'] = $inputStd['email'] ?? '';
-                    $state['students'][$found_idx]['phone'] = $inputStd['phone'] ?? '';
-                    $updatedCount++;
-                } else {
-                    // Add student
-                    $new_id = "std-php-" . uniqid() . rand(100, 999);
-                    $initialSavings = (int)($inputStd['initialSavings'] ?? 0);
-                    
-                    $state['students'][] = [
-                        "id" => $new_id,
-                        "nis" => $nis,
-                        "name" => $name,
-                        "class" => $class,
-                        "email" => $inputStd['email'] ?? '',
-                        "phone" => $inputStd['phone'] ?? '',
-                        "savingsBalance" => $initialSavings
-                    ];
-                    
-                    // Populate bills
-                    $months = ["Juli", "Agustus", "September", "Oktober", "November", "Desember", "Januari", "Februari", "Maret", "April", "Mei", "Juni"];
-                    $years_arr = [2025, 2025, 2025, 2025, 2025, 2025, 2026, 2026, 2026, 2026, 2026, 2026];
-                    
-                    $class_num = (int)filter_var($class, FILTER_SANITIZE_NUMBER_INT);
-                    $base_rate = 150000;
-                    if ($class_num === 8) $base_rate = 155000;
-                    if ($class_num === 9) $base_rate = 160000;
-                    
-                    foreach ($months as $m_idx => $m) {
-                        $state['sppBills'][] = [
-                            "id" => "bill-" . $new_id . "-" . ($m_idx + 1),
-                            "studentId" => $new_id,
-                            "month" => $m,
-                            "year" => $years_arr[$m_idx],
-                            "amount" => $base_rate,
-                            "status" => "unpaid",
-                            "orderId" => null,
-                            "createdAt" => date('c'),
-                            "paidAt" => null,
-                            "paymentType" => null
-                        ];
-                    }
-                    
-                    if ($initialSavings > 0) {
-                        $state['savingsTransactions'][] = [
-                            "id" => "sav-tx-" . uniqid(),
-                            "studentId" => $new_id,
-                            "type" => "deposit",
-                            "amount" => $initialSavings,
-                            "date" => date('Y-m-d'),
-                            "createdAt" => date('c'),
-                            "description" => 'Setoran Awal via Import Kolektif',
-                            "channel" => 'Teller Madrasah'
-                        ];
-                    }
-                    
-                    $addedCount++;
-                }
-            }
-            
-            if ($addedCount > 0 || $updatedCount > 0) {
-                $state['notifications'][] = [
-                    "id" => "notif-import-" . time(),
-                    "title" => "Kolektif Import Siswa Sukses 📥",
-                    "message" => "Proses import selesai. Berhasil menambahkan {$addedCount} siswa baru dan memperbarui {$updatedCount} profil siswa lama.",
-                    "type" => "success",
-                    "createdAt" => date('c')
-                ];
                 save_state($db_file, $state);
+                echo json_encode(["success" => true, "message" => "Profil Siswa Berhasil Diperbarui!"]);
             }
-            
-            echo json_encode([
-                "success" => true,
-                "message" => "Import selesai! Berhasil menambahkan {$addedCount} siswa baru dan memperbarui {$updatedCount} profil siswa lama.",
-                "addedCount" => $addedCount,
-                "updatedCount" => $updatedCount
-            ]);
-            break;
+        }
+        break;
 
-        case 'admin/students/promote-all':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
+    case 'pay-spp-snap':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $billId = $data_input['billId'] ?? '';
+        $bill = null;
+        $bill_key = -1;
+
+        foreach ($state['sppBills'] as $key => $b) {
+            if ($b['id'] === $billId) {
+                $bill = $b;
+                $bill_key = $key;
                 break;
             }
-            $promotedCount = 0;
-            $graduatedCount = 0;
-            $updatedBillsCount = 0;
-            
-            $startYears = [2025];
-            foreach ($state['sppBills'] as $bill) {
-                $isFirstHalf = in_array($bill['month'], ["Juli", "Agustus", "September", "Oktober", "November", "Desember"]);
-                $startYear = $isFirstHalf ? $bill['year'] : $bill['year'] - 1;
-                $startYears[] = $startYear;
+        }
+
+        if (!$bill) {
+            http_response_code(404);
+            echo json_encode(["error" => "Tagihan tidak ditemukan."]);
+            exit;
+        }
+
+        if ($bill['status'] === 'paid') {
+            http_response_code(400);
+            echo json_encode(["error" => "Tagihan sudah lunas."]);
+            exit;
+        }
+
+        $student = null;
+        foreach ($state['students'] as $std) {
+            if ($std['id'] === $bill['studentId']) {
+                $student = $std;
+                break;
             }
-            $currentMaxStartYear = max($startYears);
-            $nextStartYear = $currentMaxStartYear + 1;
-            
-            foreach ($state['students'] as &$student) {
-                $cls = trim($student['class'] ?? '');
-                if (strtolower($cls) === 'lulus' || strtolower($cls) === 'lulusan') {
-                    continue;
-                }
-                
-                $previousClass = $student['class'];
-                if (strpos($cls, '7') === 0 || stripos($cls, 'vii') === 0) {
-                    $student['class'] = preg_replace('/^7/i', '8', $cls);
-                    if (stripos($cls, 'vii') === 0) {
-                        $student['class'] = preg_replace('/^vii/i', 'VIII', $cls);
-                    }
-                    $promotedCount++;
-                } else if (strpos($cls, '8') === 0 || stripos($cls, 'viii') === 0) {
-                    $student['class'] = preg_replace('/^8/i', '9', $cls);
-                    if (stripos($cls, 'viii') === 0) {
-                        $student['class'] = preg_replace('/^viii/i', 'IX', $cls);
-                    }
-                    $promotedCount++;
-                } else if (strpos($cls, '9') === 0 || stripos($cls, 'ix') === 0) {
-                    $student['class'] = "Lulus";
-                    $graduatedCount++;
-                }
-                
-                if ($previousClass !== $student['class']) {
-                    $class_num = (int)filter_var($student['class'], FILTER_SANITIZE_NUMBER_INT);
-                    $new_rate = 150000;
-                    if ($class_num === 8) $new_rate = 155000;
-                    if ($class_num === 9) $new_rate = 160000;
-                    
-                    foreach ($state['sppBills'] as &$bill) {
-                        if ($bill['studentId'] === $student['id'] && $bill['status'] === 'unpaid') {
-                            $bill['amount'] = $new_rate;
-                            $updatedBillsCount++;
-                        }
-                    }
-                }
-            }
-            
-            $autoBillsGenerated = 0;
-            $schoolMonths = [
-                ["name" => "Juli", "isNextYear" => false],
-                ["name" => "Agustus", "isNextYear" => false],
-                ["name" => "September", "isNextYear" => false],
-                ["name" => "Oktober", "isNextYear" => false],
-                ["name" => "November", "isNextYear" => false],
-                ["name" => "Desember", "isNextYear" => false],
-                ["name" => "Januari", "isNextYear" => true],
-                ["name" => "Februari", "isNextYear" => true],
-                ["name" => "Maret", "isNextYear" => true],
-                ["name" => "April", "isNextYear" => true],
-                ["name" => "Mei", "isNextYear" => true],
-                ["name" => "Juni", "isNextYear" => true]
-            ];
-            
-            foreach ($state['students'] as $student) {
-                $cls = strtolower(trim($student['class'] ?? ''));
-                if ($cls === 'lulus' || $cls === 'lulusan') {
-                    continue;
-                }
-                
-                $class_num = (int)filter_var($student['class'], FILTER_SANITIZE_NUMBER_INT);
-                $base_rate = 150000;
-                if ($class_num === 8) $base_rate = 155000;
-                if ($class_num === 9) $base_rate = 160000;
-                
-                foreach ($schoolMonths as $m_idx => $m) {
-                    $billYear = $m['isNextYear'] ? $nextStartYear + 1 : $nextStartYear;
-                    
-                    $exists = false;
-                    foreach ($state['sppBills'] as $bill) {
-                        if ($bill['studentId'] === $student['id'] && $bill['month'] === $m['name'] && $bill['year'] === $billYear) {
-                            $exists = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!$exists) {
-                        $state['sppBills'][] = [
-                            "id" => "bill-" . $student['id'] . "-" . $nextStartYear . "-" . $m_idx,
-                            "studentId" => $student['id'],
-                            "month" => $m['name'],
-                            "year" => $billYear,
-                            "amount" => $base_rate,
-                            "status" => "unpaid",
-                            "orderId" => null,
-                            "createdAt" => date('c'),
-                            "paidAt" => null,
-                            "paymentType" => null
-                        ];
-                        $autoBillsGenerated++;
-                    }
-                }
-            }
-            
-            $state['notifications'][] = [
-                "id" => "notif-promote-" . time(),
-                "title" => "Kenaikan Kelas Massal Sukses 🎓",
-                "message" => "Aktivasi Tahun Ajaran {$nextStartYear}/" . ($nextStartYear + 1) . " selesai. {$promotedCount} siswa naik kelas, {$graduatedCount} diluluskan, & {$autoBillsGenerated} tagihan baru sukses digenerate.",
-                "type" => "success",
-                "createdAt" => date('c')
-            ];
-            
+        }
+
+        if (!$student) {
+            http_response_code(404);
+            echo json_encode(["error" => "Siswa tidak ditemukan."]);
+            exit;
+        }
+
+        $orderId = "SPP-" . $bill['id'] . "-" . time();
+        $state['sppBills'][$bill_key]['orderId'] = $orderId;
+        $state['sppBills'][$bill_key]['status'] = 'pending';
+
+        $chargeFees = $state['midtransConfig']['chargeFeesToUser'] ?? true;
+        $maintenanceFee = $chargeFees ? ($state['midtransConfig']['systemMaintenanceFee'] ?? 1500) : 0;
+        $grossAmount = $bill['amount'] + $maintenanceFee;
+
+        $serverKey = $state['midtransConfig']['serverKey'] ?? '';
+        $clientKey = $state['midtransConfig']['clientKey'] ?? '';
+
+        if (empty($serverKey) || empty($clientKey)) {
+            // Return simulation payload
             save_state($db_file, $state);
             echo json_encode([
-                "success" => true,
-                "promotedCount" => $promotedCount,
-                "graduatedCount" => $graduatedCount,
-                "updatedBillsCount" => $updatedBillsCount,
-                "autoBillsGenerated" => $autoBillsGenerated,
-                "nextStartYear" => $nextStartYear
-            ]);
-            break;
-
-        case 'admin/activate-academic-year':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $startYear = (int)($data_input['startYear'] ?? 0);
-            if ($startYear < 2020 || $startYear > 2100) {
-                http_response_code(400);
-                echo json_encode(["error" => "Tahun akademik awal tidak valid."]);
-                break;
-            }
-            
-            $schoolMonths = [
-                ["name" => "Juli", "isNextYear" => false],
-                ["name" => "Agustus", "isNextYear" => false],
-                ["name" => "September", "isNextYear" => false],
-                ["name" => "Oktober", "isNextYear" => false],
-                ["name" => "November", "isNextYear" => false],
-                ["name" => "Desember", "isNextYear" => false],
-                ["name" => "Januari", "isNextYear" => true],
-                ["name" => "Februari", "isNextYear" => true],
-                ["name" => "Maret", "isNextYear" => true],
-                ["name" => "April", "isNextYear" => true],
-                ["name" => "Mei", "isNextYear" => true],
-                ["name" => "Juni", "isNextYear" => true]
-            ];
-            
-            $billsGenerated = 0;
-            $skippedBillsCount = 0;
-            
-            foreach ($state['students'] as $student) {
-                $cls = strtolower(trim($student['class'] ?? ''));
-                if ($cls === 'lulus' || $cls === 'lulusan') {
-                    continue;
-                }
-                
-                $class_num = (int)filter_var($student['class'], FILTER_SANITIZE_NUMBER_INT);
-                $base_rate = 150000;
-                if ($class_num === 8) $base_rate = 155000;
-                if ($class_num === 9) $base_rate = 160000;
-                
-                foreach ($schoolMonths as $m) {
-                    $billYear = $m['isNextYear'] ? $startYear + 1 : $startYear;
-                    
-                    $exists = false;
-                    foreach ($state['sppBills'] as $bill) {
-                        if ($bill['studentId'] === $student['id'] && $bill['month'] === $m['name'] && $bill['year'] === $billYear) {
-                            $exists = true;
-                            break;
-                        }
-                    }
-                    
-                    if (!$exists) {
-                        $state['sppBills'][] = [
-                            "id" => "bill-" . $student['id'] . "-" . $m['name'] . "-" . $billYear,
-                            "studentId" => $student['id'],
-                            "month" => $m['name'],
-                            "year" => $billYear,
-                            "amount" => $base_rate,
-                            "status" => "unpaid",
-                            "orderId" => null,
-                            "createdAt" => date('c'),
-                            "paidAt" => null,
-                            "paymentType" => null
-                        ];
-                        $billsGenerated++;
-                    } else {
-                        $skippedBillsCount++;
-                    }
-                }
-            }
-            
-            $state['notifications'][] = [
-                "id" => "notif-new-year-" . time(),
-                "title" => "Tahun Ajaran Baru Aktif 🔥",
-                "message" => "Tahun Ajaran {$startYear}/" . ($startYear + 1) . " berhasil diaktifkan. Berhasil meng-generate {$billsGenerated} lembar tagihan baru.",
-                "type" => "success",
-                "createdAt" => date('c')
-            ];
-            
-            save_state($db_file, $state);
-            echo json_encode([
-                "success" => true,
-                "message" => "Tahun Ajaran {$startYear}/" . ($startYear + 1) . " berhasil diaktifkan!",
-                "billsGenerated" => $billsGenerated,
-                "skippedBillsCount" => $skippedBillsCount
-            ]);
-            break;
-
-        case 'pay-spp-snap':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $billId = $data_input['billId'] ?? '';
-            $bill = null;
-            $bill_key = -1;
-
-            foreach ($state['sppBills'] as $key => $b) {
-                if ($b['id'] === $billId) {
-                    $bill = $b;
-                    $bill_key = $key;
-                    break;
-                }
-            }
-
-            if (!$bill) {
-                http_response_code(404);
-                echo json_encode(["error" => "Tagihan tidak ditemukan."]);
-                exit;
-            }
-
-            if ($bill['status'] === 'paid') {
-                http_response_code(400);
-                echo json_encode(["error" => "Tagihan sudah lunas."]);
-                exit;
-            }
-
-            $student = null;
-            foreach ($state['students'] as $std) {
-                if ($std['id'] === $bill['studentId']) {
-                    $student = $std;
-                    break;
-                }
-            }
-
-            if (!$student) {
-                http_response_code(404);
-                echo json_encode(["error" => "Siswa tidak ditemukan."]);
-                exit;
-            }
-
-            $orderId = "SPP-" . $bill['id'] . "-" . time();
-            $state['sppBills'][$bill_key]['orderId'] = $orderId;
-            $state['sppBills'][$bill_key]['status'] = 'pending';
-
-            $chargeFees = $state['midtransConfig']['chargeFeesToUser'] ?? true;
-            $maintenanceFee = $chargeFees ? ($state['midtransConfig']['systemMaintenanceFee'] ?? 1500) : 0;
-            $grossAmount = $bill['amount'] + $maintenanceFee;
-
-            $serverKey = $state['midtransConfig']['serverKey'] ?? '';
-            $clientKey = $state['midtransConfig']['clientKey'] ?? '';
-
-            if (empty($serverKey) || empty($clientKey)) {
-                // Return simulation payload
-                save_state($db_file, $state);
-                echo json_encode([
-                    "token" => "snap-token-spp-mock-" . time(),
-                    "isSimulated" => true,
-                    "orderId" => $orderId,
-                    "redirectUrl" => "#",
-                    "adminFee" => 0,
-                    "systemMaintenanceFee" => $maintenanceFee,
-                    "baseAmount" => $bill['amount'],
-                    "totalAmount" => $grossAmount,
-                    "message" => "Menjalankan Simulasi Pembayaran karena Kunci Server Midtrans belum diatur"
-                ]);
-                break;
-            }
-
-            // Live Midtrans Request using internal PHP cURL
-            $url = !empty($state['midtransConfig']['isProduction']) 
-                ? "https://app.midtrans.com/snap/v1/transactions" 
-                : "https://app.sandbox.midtrans.com/snap/v1/transactions";
-
-            $payload = [
-                "transaction_details" => [
-                    "order_id" => $orderId,
-                    "gross_amount" => $grossAmount
-                ],
-                "credit_card" => [
-                    "secure" => true
-                ],
-                "customer_details" => [
-                    "first_name" => $student['name'],
-                    "email" => $student['email'] ?: $student['nis'] . '@maarif.sch.id',
-                    "phone" => $student['phone']
-                ],
-                "item_details" => [
-                    [
-                        "id" => $bill['id'],
-                        "price" => $bill['amount'],
-                        "quantity" => 1,
-                        "name" => "SPP " . $bill['month'] . " " . $bill['year'] . " - " . $student['name']
-                    ]
-                ]
-            ];
-
-            if ($maintenanceFee > 0) {
-                $payload['item_details'][] = [
-                    "id" => "fee-maintenance",
-                    "price" => $maintenanceFee,
-                    "quantity" => 1,
-                    "name" => "Biaya Pemeliharaan Sistem"
-                ];
-            }
-
-            $authHeader = base64_encode($serverKey . ":");
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "Content-Type: application/json",
-                "Accept: application/json",
-                "Authorization: Basic " . $authHeader
-            ]);
-
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($httpCode >= 200 && $httpCode < 300) {
-                $snapResp = json_decode($response, true);
-                save_state($db_file, $state);
-                echo json_encode([
-                    "token" => $snapResp['token'] ?? '',
-                    "redirectUrl" => $snapResp['redirect_url'] ?? '',
-                    "isSimulated" => false,
-                    "orderId" => $orderId,
-                    "adminFee" => 0,
-                    "systemMaintenanceFee" => $maintenanceFee,
-                    "baseAmount" => $bill['amount'],
-                    "totalAmount" => $grossAmount
-                ]);
-            } else {
-                // Fail safe Simulator fallback
-                save_state($db_file, $state);
-                echo json_encode([
-                    "token" => "snap-token-spp-mock-err-" . time(),
-                    "isSimulated" => true,
-                    "orderId" => $orderId,
-                    "redirectUrl" => "#",
-                    "adminFee" => 0,
-                    "systemMaintenanceFee" => $maintenanceFee,
-                    "baseAmount" => $bill['amount'],
-                    "totalAmount" => $grossAmount,
-                    "message" => "Gagal terhubung ke Midtrans API. Menggunakan mode Simulasi Mandiri."
-                ]);
-            }
-            break;
-
-        case 'deposit-savings-snap':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
-                break;
-            }
-            $studentId = $data_input['studentId'] ?? '';
-            $amount = (int)($data_input['amount'] ?? 0);
-
-            $student = null;
-            foreach ($state['students'] as $std) {
-                if ($std['id'] === $studentId) {
-                    $student = $std;
-                    break;
-                }
-            }
-
-            if (!$student || $amount <= 0) {
-                http_response_code(400);
-                echo json_encode(["error" => "Data tidak valid."]);
-                exit;
-            }
-
-            $orderId = "TAB-" . $student['id'] . "-" . time();
-            $chargeFees = $state['midtransConfig']['chargeFeesToUser'] ?? true;
-            $maintenanceFee = $chargeFees ? ($state['midtransConfig']['systemMaintenanceFee'] ?? 1500) : 0;
-            $grossAmount = $amount + $maintenanceFee;
-
-            // Save order session in saving transaction as pending
-            $state['savingsTransactions'][] = [
-                "id" => "tx-saved-pending-" . uniqid(),
-                "studentId" => $studentId,
-                "type" => "deposit",
-                "amount" => $amount,
-                "date" => date('Y-m-d'),
-                "createdAt" => date('c'),
-                "description" => 'Tunggakan Penyetoran Tabungan (Online)',
-                "channel" => 'Midtrans Internet Banking',
+                "token" => "snap-token-spp-mock-" . time(),
+                "isSimulated" => true,
                 "orderId" => $orderId,
-                "status" => "pending"
-            ];
-
-            $serverKey = $state['midtransConfig']['serverKey'] ?? '';
-            $clientKey = $state['midtransConfig']['clientKey'] ?? '';
-
-            if (empty($serverKey) || empty($clientKey)) {
-                save_state($db_file, $state);
-                echo json_encode([
-                    "token" => "snap-token-tab-mock-" . time(),
-                    "isSimulated" => true,
-                    "orderId" => $orderId,
-                    "redirectUrl" => "#",
-                    "adminFee" => 0,
-                    "systemMaintenanceFee" => $maintenanceFee,
-                    "baseAmount" => $amount,
-                    "totalAmount" => $grossAmount,
-                    "message" => "Menjalankan Simulasi Transaksi karena Kunci Server belum diatur."
-                ]);
-                break;
-            }
-
-            $url = !empty($state['midtransConfig']['isProduction']) 
-                ? "https://app.midtrans.com/snap/v1/transactions" 
-                : "https://app.sandbox.midtrans.com/snap/v1/transactions";
-
-            $payload = [
-                "transaction_details" => [
-                    "order_id" => $orderId,
-                    "gross_amount" => $grossAmount
-                ],
-                "credit_card" => [
-                    "secure" => true
-                ],
-                "customer_details" => [
-                    "first_name" => $student['name'],
-                    "email" => $student['email'] ?: $student['nis'] . '@maarif.sch.id',
-                    "phone" => $student['phone']
-                ],
-                "item_details" => [
-                    [
-                        "id" => "setor-tabungan",
-                        "price" => $amount,
-                        "quantity" => 1,
-                        "name" => "Setoran Tabungan Siswa: " . $student['name']
-                    ]
-                ]
-            ];
-
-            if ($maintenanceFee > 0) {
-                $payload['item_details'][] = [
-                    "id" => "fee-maintenance",
-                    "price" => $maintenanceFee,
-                    "quantity" => 1,
-                    "name" => "Biaya Pemeliharaan Sistem"
-                ];
-            }
-
-            $authHeader = base64_encode($serverKey . ":");
-            $ch = curl_init($url);
-            curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
-            curl_setopt($ch, CURLOPT_POST, true);
-            curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
-            curl_setopt($ch, CURLOPT_HTTPHEADER, [
-                "Content-Type: application/json",
-                "Accept: application/json",
-                "Authorization: Basic " . $authHeader
+                "redirectUrl" => "#",
+                "adminFee" => 0,
+                "systemMaintenanceFee" => $maintenanceFee,
+                "baseAmount" => $bill['amount'],
+                "totalAmount" => $grossAmount,
+                "message" => "Menjalankan Simulasi Pembayaran karena Kunci Server Midtrans belum diatur"
             ]);
-
-            $response = curl_exec($ch);
-            $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
-            curl_close($ch);
-
-            if ($httpCode >= 200 && $httpCode < 300) {
-                $snapResp = json_decode($response, true);
-                save_state($db_file, $state);
-                echo json_encode([
-                    "token" => $snapResp['token'] ?? '',
-                    "redirectUrl" => $snapResp['redirect_url'] ?? '',
-                    "isSimulated" => false,
-                    "orderId" => $orderId,
-                    "adminFee" => 0,
-                    "systemMaintenanceFee" => $maintenanceFee,
-                    "baseAmount" => $amount,
-                    "totalAmount" => $grossAmount
-                ]);
-            } else {
-                save_state($db_file, $state);
-                echo json_encode([
-                    "token" => "snap-token-tab-mock-err-" . time(),
-                    "isSimulated" => true,
-                    "orderId" => $orderId,
-                    "redirectUrl" => "#",
-                    "adminFee" => 0,
-                    "systemMaintenanceFee" => $maintenanceFee,
-                    "baseAmount" => $amount,
-                    "totalAmount" => $grossAmount
-                ]);
-            }
             break;
+        }
 
-        case 'simulate-payment-success':
-            if ($method !== 'POST') {
-                http_response_code(405);
-                echo json_encode(["error" => "Method Not Allowed"]);
+        // Live Midtrans Request using internal PHP cURL
+        $url = !empty($state['midtransConfig']['isProduction']) 
+            ? "https://app.midtrans.com/snap/v1/transactions" 
+            : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+        $payload = [
+            "transaction_details" => [
+                "order_id" => $orderId,
+                "gross_amount" => $grossAmount
+            ],
+            "credit_card" => [
+                "secure" => true
+            ],
+            "customer_details" => [
+                "first_name" => $student['name'],
+                "email" => $student['email'] ?: $student['nis'] . '@maarif.sch.id',
+                "phone" => $student['phone']
+            ],
+            "item_details" => [
+                [
+                    "id" => $bill['id'],
+                    "price" => $bill['amount'],
+                    "quantity" => 1,
+                    "name" => "SPP " . $bill['month'] . " " . $bill['year'] . " - " . $student['name']
+                ]
+            ]
+        ];
+
+        if ($maintenanceFee > 0) {
+            $payload['item_details'][] = [
+                "id" => "fee-maintenance",
+                "price" => $maintenanceFee,
+                "quantity" => 1,
+                "name" => "Biaya Pemeliharaan Sistem"
+            ];
+        }
+
+        $authHeader = base64_encode($serverKey . ":");
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Content-Type: application/json",
+            "Accept: application/json",
+            "Authorization: Basic " . $authHeader
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode >= 200 && $httpCode < 300) {
+            $snapResp = json_decode($response, true);
+            save_state($db_file, $state);
+            echo json_encode([
+                "token" => $snapResp['token'] ?? '',
+                "redirectUrl" => $snapResp['redirect_url'] ?? '',
+                "isSimulated" => false,
+                "orderId" => $orderId,
+                "adminFee" => 0,
+                "systemMaintenanceFee" => $maintenanceFee,
+                "baseAmount" => $bill['amount'],
+                "totalAmount" => $grossAmount
+            ]);
+        } else {
+            // Fail safe Simulator fallback
+            save_state($db_file, $state);
+            echo json_encode([
+                "token" => "snap-token-spp-mock-err-" . time(),
+                "isSimulated" => true,
+                "orderId" => $orderId,
+                "redirectUrl" => "#",
+                "adminFee" => 0,
+                "systemMaintenanceFee" => $maintenanceFee,
+                "baseAmount" => $bill['amount'],
+                "totalAmount" => $grossAmount,
+                "message" => "Gagal terhubung ke Midtrans API. Menggunakan mode Simulasi Mandiri."
+            ]);
+        }
+        break;
+
+    case 'deposit-savings-snap':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $studentId = $data_input['studentId'] ?? '';
+        $amount = (int)($data_input['amount'] ?? 0);
+
+        $student = null;
+        foreach ($state['students'] as $std) {
+            if ($std['id'] === $studentId) {
+                $student = $std;
                 break;
             }
-            $orderId = $data_input['orderId'] ?? '';
-            $paymentType = $data_input['paymentType'] ?? 'Simulator Pembayaran';
+        }
 
-            $is_processed = false;
+        if (!$student || $amount <= 0) {
+            http_response_code(400);
+            echo json_encode(["error" => "Data tidak valid."]);
+            exit;
+        }
 
-            if (strpos($orderId, 'SPP-') === 0) {
-                // SPP Bill payment
-                foreach ($state['sppBills'] as &$b) {
-                    if ($b['orderId'] === $orderId && $b['status'] !== 'paid') {
-                        $b['status'] = 'paid';
-                        $b['paymentType'] = $paymentType;
-                        $b['paidAt'] = date('c');
-                        
-                        // Fetch student details for notification
-                        $std_id = $b['studentId'];
-                        $std_name = 'Siswa';
-                        $std_nis = '';
-                        foreach ($state['students'] as $s) {
-                            if ($s['id'] === $std_id) {
-                                $std_name = $s['name'];
-                                $std_nis = $s['nis'];
-                                break;
-                            }
+        $orderId = "TAB-" . $student['id'] . "-" . time();
+        $chargeFees = $state['midtransConfig']['chargeFeesToUser'] ?? true;
+        $maintenanceFee = $chargeFees ? ($state['midtransConfig']['systemMaintenanceFee'] ?? 1500) : 0;
+        $grossAmount = $amount + $maintenanceFee;
+
+        // Save order session in saving transaction as pending
+        $state['savingsTransactions'][] = [
+            "id" => "tx-saved-pending-" . uniqid(),
+            "studentId" => $studentId,
+            "type" => "deposit",
+            "amount" => $amount,
+            "date" => date('Y-m-d'),
+            "createdAt" => date('c'),
+            "description" => 'Tunggakan Penyetoran Tabungan (Online)',
+            "channel" => 'Midtrans Internet Banking',
+            "orderId" => $orderId,
+            "status" => "pending"
+        ];
+
+        $serverKey = $state['midtransConfig']['serverKey'] ?? '';
+        $clientKey = $state['midtransConfig']['clientKey'] ?? '';
+
+        if (empty($serverKey) || empty($clientKey)) {
+            save_state($db_file, $state);
+            echo json_encode([
+                "token" => "snap-token-tab-mock-" . time(),
+                "isSimulated" => true,
+                "orderId" => $orderId,
+                "redirectUrl" => "#",
+                "adminFee" => 0,
+                "systemMaintenanceFee" => $maintenanceFee,
+                "baseAmount" => $amount,
+                "totalAmount" => $grossAmount,
+                "message" => "Menjalankan Simulasi Transaksi karena Kunci Server belum diatur."
+            ]);
+            break;
+        }
+
+        $url = !empty($state['midtransConfig']['isProduction']) 
+            ? "https://app.midtrans.com/snap/v1/transactions" 
+            : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+        $payload = [
+            "transaction_details" => [
+                "order_id" => $orderId,
+                "gross_amount" => $grossAmount
+            ],
+            "credit_card" => [
+                "secure" => true
+            ],
+            "customer_details" => [
+                "first_name" => $student['name'],
+                "email" => $student['email'] ?: $student['nis'] . '@maarif.sch.id',
+                "phone" => $student['phone']
+            ],
+            "item_details" => [
+                [
+                    "id" => "setor-tabungan",
+                    "price" => $amount,
+                    "quantity" => 1,
+                    "name" => "Setoran Tabungan Siswa: " . $student['name']
+                ]
+            ]
+        ];
+
+        if ($maintenanceFee > 0) {
+            $payload['item_details'][] = [
+                "id" => "fee-maintenance",
+                "price" => $maintenanceFee,
+                "quantity" => 1,
+                "name" => "Biaya Pemeliharaan Sistem"
+            ];
+        }
+
+        $authHeader = base64_encode($serverKey . ":");
+        $ch = curl_init($url);
+        curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
+        curl_setopt($ch, CURLOPT_POST, true);
+        curl_setopt($ch, CURLOPT_POSTFIELDS, json_encode($payload));
+        curl_setopt($ch, CURLOPT_HTTPHEADER, [
+            "Content-Type: application/json",
+            "Accept: application/json",
+            "Authorization: Basic " . $authHeader
+        ]);
+
+        $response = curl_exec($ch);
+        $httpCode = curl_getinfo($ch, CURLINFO_HTTP_CODE);
+        curl_close($ch);
+
+        if ($httpCode >= 200 && $httpCode < 300) {
+            $snapResp = json_decode($response, true);
+            save_state($db_file, $state);
+            echo json_encode([
+                "token" => $snapResp['token'] ?? '',
+                "redirectUrl" => $snapResp['redirect_url'] ?? '',
+                "isSimulated" => false,
+                "orderId" => $orderId,
+                "adminFee" => 0,
+                "systemMaintenanceFee" => $maintenanceFee,
+                "baseAmount" => $amount,
+                "totalAmount" => $grossAmount
+            ]);
+        } else {
+            save_state($db_file, $state);
+            echo json_encode([
+                "token" => "snap-token-tab-mock-err-" . time(),
+                "isSimulated" => true,
+                "orderId" => $orderId,
+                "redirectUrl" => "#",
+                "adminFee" => 0,
+                "systemMaintenanceFee" => $maintenanceFee,
+                "baseAmount" => $amount,
+                "totalAmount" => $grossAmount
+            ]);
+        }
+        break;
+
+    case 'simulate-payment-success':
+        if ($method !== 'POST') {
+            http_response_code(405);
+            echo json_encode(["error" => "Method Not Allowed"]);
+            break;
+        }
+        $orderId = $data_input['orderId'] ?? '';
+        $paymentType = $data_input['paymentType'] ?? 'Simulator Pembayaran';
+
+        $is_processed = false;
+
+        if (strpos($orderId, 'SPP-') === 0) {
+            // SPP Bill payment
+            foreach ($state['sppBills'] as &$b) {
+                if ($b['orderId'] === $orderId && $b['status'] !== 'paid') {
+                    $b['status'] = 'paid';
+                    $b['paymentType'] = $paymentType;
+                    $b['paidAt'] = date('c');
+                    
+                    // Fetch student details for notification
+                    $std_id = $b['studentId'];
+                    $std_name = 'Siswa';
+                    $std_nis = '';
+                    foreach ($state['students'] as $s) {
+                        if ($s['id'] === $std_id) {
+                            $std_name = $s['name'];
+                            $std_nis = $s['nis'];
+                            break;
                         }
+                    }
+
+                    // Add Notification
+                    $state['notifications'][] = [
+                        "id" => "notif-spp-" . time(),
+                        "title" => "Pembayaran SPP Sukses Online 💳",
+                        "message" => "SPP Berhasil Dibayarkan Mandiri untuk Siswa: {$std_name} ({$std_nis}) - Periode: {$b['month']} {$b['year']}.",
+                        "type" => "success",
+                        "createdAt" => date('c')
+                    ];
+                    $is_processed = true;
+                    break;
+                }
+            }
+        } else if (strpos($orderId, 'TAB-') === 0) {
+            // Deposit transaction
+            // Look for existing pending tx
+            $found_tx_key = -1;
+            foreach ($state['savingsTransactions'] as $key => $tx) {
+                if (isset($tx['orderId']) && $tx['orderId'] === $orderId) {
+                    $found_tx_key = $key;
+                    break;
+                }
+            }
+
+            if ($found_tx_key !== -1) {
+                $studentId = $state['savingsTransactions'][$found_tx_key]['studentId'];
+                $amount = $state['savingsTransactions'][$found_tx_key]['amount'];
+
+                // Update student balance
+                foreach ($state['students'] as &$std) {
+                    if ($std['id'] === $studentId) {
+                        $std['savingsBalance'] += $amount;
+
+                        // Upgrade pending transaction to completed
+                        $state['savingsTransactions'][$found_tx_key]['status'] = 'success';
+                        $state['savingsTransactions'][$found_tx_key]['description'] = 'Setoran Online via Midtrans';
+                        $state['savingsTransactions'][$found_tx_key]['channel'] = $paymentType;
 
                         // Add Notification
                         $state['notifications'][] = [
-                            "id" => "notif-spp-" . time(),
-                            "title" => "Pembayaran SPP Sukses Online 💳",
-                            "message" => "SPP Berhasil Dibayarkan Mandiri untuk Siswa: {$std_name} ({$std_nis}) - Periode: {$b['month']} {$b['year']}.",
+                            "id" => "notif-sav-" . time(),
+                            "title" => "Setoran Tabungan Berhasil Online 💳",
+                            "message" => "Penyetoran Mandiri Rp " . number_format($amount, 0, ',', '.') . " untuk siswa {$std['name']} ({$std['nis']}) sukses diproses.",
                             "type" => "success",
                             "createdAt" => date('c')
                         ];
@@ -1581,52 +978,16 @@ if (!$is_handled) {
                         break;
                     }
                 }
-            } else if (strpos($orderId, 'TAB-') === 0) {
-                // Deposit transaction
-                $found_tx_key = -1;
-                foreach ($state['savingsTransactions'] as $key => $tx) {
-                    if (isset($tx['orderId']) && $tx['orderId'] === $orderId) {
-                        $found_tx_key = $key;
-                        break;
-                    }
-                }
-
-                if ($found_tx_key !== -1) {
-                    $studentId = $state['savingsTransactions'][$found_tx_key]['studentId'];
-                    $amount = $state['savingsTransactions'][$found_tx_key]['amount'];
-
-                    // Update student balance
-                    foreach ($state['students'] as &$std) {
-                        if ($std['id'] === $studentId) {
-                            $std['savingsBalance'] += $amount;
-
-                            // Upgrade pending transaction to completed
-                            $state['savingsTransactions'][$found_tx_key]['status'] = 'success';
-                            $state['savingsTransactions'][$found_tx_key]['description'] = 'Setoran Online via Midtrans';
-                            $state['savingsTransactions'][$found_tx_key]['channel'] = $paymentType;
-
-                            // Add Notification
-                            $state['notifications'][] = [
-                                "id" => "notif-sav-" . time(),
-                                "title" => "Setoran Tabungan Berhasil Online 💳",
-                                "message" => "Penyetoran Mandiri Rp " . number_format($amount, 0, ',', '.') . " untuk siswa {$std['name']} ({$std['nis']}) sukses diproses.",
-                                "type" => "success",
-                                "createdAt" => date('c')
-                            ];
-                            $is_processed = true;
-                            break;
-                        }
-                    }
-                }
             }
+        }
 
-            save_state($db_file, $state);
-            echo json_encode(["success" => true, "processed" => $is_processed]);
-            break;
+        save_state($db_file, $state);
+        echo json_encode(["success" => true, "processed" => $is_processed]);
+        break;
 
-        default:
-            http_response_code(404);
-            echo json_encode(["error" => "PHP API Endpoint '{$route}' not found."]);
-            break;
-    }
+    default:
+        // No matching endpoint
+        http_response_code(404);
+        echo json_encode(["error" => "PHP API Endpoint '{$route}' not found."]);
+        break;
 }

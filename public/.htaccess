@@ -1,0 +1,16 @@
+# Apache Server Configuration File (for cPanel / Shared Hosting)
+# SMP Maarif NU Pandaan - Portal Administrasi
+
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+
+  # 1. Forward all requests starting with /api/* to api.php proxy script
+  RewriteRule ^api/(.*)$ api.php?route=$1 [QSA,L]
+
+  # 2. Support React Client Side SPA routing (redirect all non-existent files to index.html)
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  RewriteCond %{REQUEST_URI} !^/api/
+  RewriteRule . /index.html [L]
+</IfModule>

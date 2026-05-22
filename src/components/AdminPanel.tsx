@@ -327,11 +327,19 @@ export default function AdminPanel({
   const [isSavingFees, setIsSavingFees] = useState<boolean>(false);
   const [savingFeesMsg, setSavingFeesMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  const [midtransMerchantIdInput, setMidtransMerchantIdInput] = useState<string>('');
+  const [midtransClientKeyInput, setMidtransClientKeyInput] = useState<string>('');
+  const [midtransServerKeyInput, setMidtransServerKeyInput] = useState<string>('');
+  const [midtransIsProduction, setMidtransIsProduction] = useState<boolean>(false);
+
   React.useEffect(() => {
     if (midtransStatus) {
       if (midtransStatus.adminFee !== undefined) setAdminFeeInput(midtransStatus.adminFee);
       if (midtransStatus.systemMaintenanceFee !== undefined) setSystemMaintenanceFeeInput(midtransStatus.systemMaintenanceFee);
       if (midtransStatus.chargeFeesToUser !== undefined) setChargeFeesToUserChecked(midtransStatus.chargeFeesToUser);
+      if (midtransStatus.merchantId !== undefined) setMidtransMerchantIdInput(midtransStatus.merchantId);
+      if (midtransStatus.clientKey !== undefined) setMidtransClientKeyInput(midtransStatus.clientKey);
+      if (midtransStatus.isProduction !== undefined) setMidtransIsProduction(midtransStatus.isProduction);
     }
   }, [midtransStatus]);
 
@@ -611,17 +619,18 @@ export default function AdminPanel({
           'Content-Type': 'application/json'
         },
         body: JSON.stringify({
-          merchantId: midtransStatus?.merchantId || "",
-          clientKey: midtransStatus?.clientKey || "",
-          serverKey: "", 
-          isProduction: midtransStatus?.isProduction || false,
+          merchantId: midtransMerchantIdInput,
+          clientKey: midtransClientKeyInput,
+          serverKey: midtransServerKeyInput,
+          isProduction: midtransIsProduction,
           systemMaintenanceFee: systemMaintenanceFeeInput,
           chargeFeesToUser: chargeFeesToUserChecked
         })
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setSavingFeesMsg({ type: 'success', text: '🎉 Biaya pemeliharaan sistem berhasil diperbarui!' });
+        setSavingFeesMsg({ type: 'success', text: '🎉 Semua pengaturan API Midtrans & biaya sistem berhasil disimpan!' });
+        setMidtransServerKeyInput(''); // Reset server key password input after successful update
         onRefresh(); // trigger system config refresh
       } else {
         setSavingFeesMsg({ type: 'error', text: data.error || 'Gagal menyimpan pengaturan.' });
@@ -2032,97 +2041,124 @@ export default function AdminPanel({
               </motion.div>
             </div>
 
-            {/* Midtrans Status */}
+            {/* Midtrans Config & Status Card */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
-              className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-4 text-xs"
+              className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-6 text-xs"
             >
-            <div>
-              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                <Settings size={16} className="text-indigo-605 text-indigo-600" /> Integrasi Payment Gateway Midtrans
-              </h3>
-              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                Aplikasi ini terintegrasi penuh dengan Midtrans Snap API. Kunci-kunci (Keys) diambil langsung oleh Server Node.js di sisi backend dari berkas rahasia lingkungan sistem (.env) demi keamanan API.
-              </p>
-            </div>
-
-            <div className="border border-slate-200 rounded-xl p-4 bg-slate-50/50 flex flex-col gap-3">
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">MIDTRANS MERCHANT ID</span>
-                  <span className="font-mono text-slate-800 text-xs font-semibold">
-                    {midtransStatus?.merchantId || '(Mode Simulasi Aktif)'}
-                  </span>
-                </div>
-                
-                <div className="p-3.5 bg-white rounded-lg border border-slate-200 shadow-sm flex flex-col gap-1.5">
-                  <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">MIDTRANS CLIENT KEY</span>
-                  <span className="font-mono text-slate-800 text-xs font-semibold">
-                    {midtransStatus?.clientKey || '(Mode Simulasi Aktif)'}
-                  </span>
-                </div>
-              </div>
-
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3.5 bg-white rounded-lg border border-slate-200 shadow-sm mt-1 text-xs">
-                <div>
-                  <span className="font-bold text-slate-800">Status Server Key Keamanan:</span>
-                  <span className="text-[11px] text-slate-500 block">Kunci Server terenkripsi di server-side untuk melindungi saldo dana sekolah.</span>
-                </div>
-                <div>
-                  {midtransStatus?.hasServerKey ? (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 font-bold rounded-full bg-emerald-100 text-emerald-800 font-mono text-[9px] uppercase tracking-wide">
-                      ✔️ Tersambung
-                    </span>
-                  ) : (
-                    <span className="inline-flex items-center gap-1.5 px-3 py-1 font-bold rounded-full bg-amber-50 text-amber-700 border border-amber-200 font-mono text-[9px] uppercase tracking-wide">
-                      ⚠️ Simulasi Teller
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-
-            {/* Form Pengaturan Biaya Tambahan ditanggung wali murid */}
-            <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/50 flex flex-col gap-4">
               <div>
-                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wide flex items-center gap-1.5">
-                  ⚙️ Pengaturan Beban Biaya Pembayaran Online (Wali Murid)
-                </h4>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <Settings size={16} className="text-indigo-600" /> Pengaturan & Integrasi Gateway Midtrans
+                </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
-                  Tentukan apakah biaya tambahan untuk pemeliharaan sistem dibebankan penuh ke Wali Murid saat melakukan transaksi cicilan/SPP online. Biaya administrasi gerbang pembayaran (Midtrans) otomatis dihitung oleh Midtrans sesuai metode pembayaran yang dipilih (VA, QRIS, Gopay, Kartu Kredit, dll).
+                  Konfigurasikan kunci akses API Midtrans Anda secara langsung di bawah ini. Pengaturan ini akan disinkronkan secara aman ke peladen backend database sekolah.
                 </p>
               </div>
 
-              <form onSubmit={handleSaveMidtransFees} className="flex flex-col gap-4">
+              <form onSubmit={handleSaveMidtransFees} className="flex flex-col gap-5">
                 {savingFeesMsg && (
                   <div className={`p-3 rounded-lg font-bold text-xs flex items-center gap-2 ${
-                    savingFeesMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-700'
+                    savingFeesMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-250 text-emerald-800' : 'bg-red-50 border border-red-250 text-red-700'
                   }`}>
                     {savingFeesMsg.type === 'success' ? <Check size={14} className="text-emerald-700" /> : <AlertCircle size={14} className="text-red-700" />}
                     {savingFeesMsg.text}
                   </div>
                 )}
 
-                <div className="flex items-center gap-2.5 px-1 py-1 text-slate-600 select-none">
-                  <input
-                    type="checkbox"
-                    id="charge-fees-to-user-chk"
-                    checked={chargeFeesToUserChecked}
-                    onChange={(e) => setChargeFeesToUserChecked(e.target.checked)}
-                    className="w-4 h-4 text-indigo-600 bg-slate-100 border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
-                  />
-                  <label htmlFor="charge-fees-to-user-chk" className="text-[11px] font-bold leading-normal cursor-pointer text-slate-700">
-                    Bebankan Iuran Pemeliharaan kepada Wali Murid (Disematkan ke Total Tagihan Online)
-                  </label>
+                {/* Midtrans Credentials Inputs */}
+                <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/40 flex flex-col gap-4">
+                  <span className="font-bold text-slate-800 text-xs block uppercase tracking-wide">
+                    🔑 Kredensial API Midtrans
+                  </span>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Midtrans Merchant ID
+                      </label>
+                      <input
+                        type="text"
+                        value={midtransMerchantIdInput}
+                        onChange={(e) => setMidtransMerchantIdInput(e.target.value)}
+                        placeholder="Contoh: G123456789"
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Midtrans Client Key
+                      </label>
+                      <input
+                        type="text"
+                        value={midtransClientKeyInput}
+                        onChange={(e) => setMidtransClientKeyInput(e.target.value)}
+                        placeholder="Contoh: SB-Mid-client-XXXXX"
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Midtrans Server Key
+                      </label>
+                      <input
+                        type="password"
+                        value={midtransServerKeyInput}
+                        onChange={(e) => setMidtransServerKeyInput(e.target.value)}
+                        placeholder={midtransStatus?.hasServerKey ? "•••••••••••••••• (Kunci Terenkripsi Aman)" : "Masukkan Server Key keamanan"}
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
+                      />
+                      {midtransStatus?.hasServerKey && (
+                        <span className="text-[9px] text-emerald-600 mt-0.5 leading-relaxed font-semibold">
+                          ✔️ Kunci sudah terintegrasi aman di server. Kosongkan jika tidak ingin mendesain ulang kunci baru.
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                        Lingkungan API (Development / Production)
+                      </label>
+                      <select
+                        value={midtransIsProduction ? 'prod' : 'sandbox'}
+                        onChange={(e) => setMidtransIsProduction(e.target.value === 'prod')}
+                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs cursor-pointer"
+                      >
+                        <option value="sandbox">Sandbox (Mode Simulasi Demo)</option>
+                        <option value="prod">Production (Gerbang Pembayaran Riil / Live)</option>
+                      </select>
+                    </div>
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 gap-4">
+                {/* System Fees Settings */}
+                <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/40 flex flex-col gap-4">
+                  <span className="font-bold text-slate-800 text-xs block uppercase tracking-wide">
+                    ⚙️ Biaya Pemeliharaan Aplikasi
+                  </span>
+                  
+                  <div className="flex items-center gap-2.5 px-1 py-1 text-slate-600 select-none">
+                    <input
+                      type="checkbox"
+                      id="charge-fees-to-user-chk"
+                      checked={chargeFeesToUserChecked}
+                      onChange={(e) => setChargeFeesToUserChecked(e.target.checked)}
+                      className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
+                    />
+                    <label htmlFor="charge-fees-to-user-chk" className="text-[11px] font-bold leading-normal cursor-pointer text-slate-700">
+                      Bebankan Iuran Pemeliharaan kepada Wali Murid (Disematkan ke Total Tagihan Online)
+                    </label>
+                  </div>
+
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-left">
-                      Nominal Biaya Pemeliharaan Sistem
+                      Nominal Surcharge Biaya Pemeliharaan Sistem
                     </label>
-                    <div className="relative mt-1">
+                    <div className="relative mt-1 max-w-md">
                       <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400">Rp</span>
                       <input
                         type="number"
@@ -2131,32 +2167,51 @@ export default function AdminPanel({
                         disabled={!chargeFeesToUserChecked}
                         value={systemMaintenanceFeeInput}
                         onChange={(e) => setSystemMaintenanceFeeInput(parseInt(e.target.value) || 0)}
-                        className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-bold focus:outline-none focus:border-indigo-600 disabled:bg-slate-100 disabled:text-slate-450"
+                        className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-bold focus:outline-none focus:border-indigo-600 disabled:bg-slate-100 disabled:text-slate-450"
                         placeholder="Contoh: 1500"
                       />
                     </div>
                     <span className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Tambahan nominal iuran kas pemeliharaan aplikasi (Contoh Rp 1.500)</span>
                   </div>
+
+                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-250 text-amber-900 text-[11px] leading-relaxed flex flex-col gap-1">
+                    <span className="font-bold">⚡ Informasi Biaya Admin Midtrans Otomatis:</span>
+                    <p className="m-0">
+                      Sistem ini terintegrasi penuh untuk mendukung semua metode pembayaran Snap (Virtual Account, QRIS/GoPay/ShopeePay, Alfa/Indomaret, atau Kartu Kredit). Biaya administrasi Midtrans akan otomatis ditambahkan oleh server Midtrans sendiri di dalam popup Snap kepada Wali Murid (jika fitur Surcharge diaktifkan di Dashboard Portal Midtrans Anda), sehingga nilai tarif admin tidak perlu diatur atau dirawat manual dari aplikasi ini.
+                    </p>
+                  </div>
                 </div>
 
-                <div className="p-3 bg-amber-50 rounded-lg border border-amber-250 text-amber-900 text-[11px] leading-relaxed flex flex-col gap-1">
-                  <span className="font-bold">⚡ Informasi Biaya Admin Midtrans Otomatis:</span>
-                  <p className="m-0">
-                    Sistem ini terintegrasi penuh untuk mendukung semua metode pembayaran Snap (Virtual Account, QRIS/GoPay/ShopeePay, Alfa/Indomaret, atau Kartu Kredit). Biaya administrasi Midtrans akan otomatis ditambahkan oleh server Midtrans sendiri di dalam popup Snap kepada Wali Murid (jika fitur Surcharge diaktifkan di Dashboard Portal Midtrans Anda), sehingga nilai tarif admin tidak perlu diatur atau dirawat manual dari aplikasi ini.
-                  </p>
+                <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div className="flex items-center gap-2">
+                    <span className="text-slate-500 font-bold font-sans">Status Koneksi Gateway:</span>
+                    {midtransStatus?.hasServerKey && midtransStatus?.clientKey ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 animate-pulse">
+                        ● AKTIF ({midtransStatus.isProduction ? 'PRODUCTION' : 'SANDBOX'})
+                      </span>
+                    ) : (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-black bg-amber-100 text-amber-700 border border-amber-200">
+                        ● SIMULASI TELLER
+                      </span>
+                    )}
+                  </div>
+                  
+                  <button
+                    type="submit"
+                    disabled={isSavingFees}
+                    className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-black rounded-lg uppercase tracking-wider text-[10px] transition-all cursor-pointer shadow-md select-none"
+                  >
+                    {isSavingFees ? "Menyimpan Konfigurasi..." : "Simpan Semua Pengaturan 💾"}
+                  </button>
                 </div>
-
-                <button
-                  type="submit"
-                  disabled={isSavingFees}
-                  className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-lg uppercase tracking-wider text-[10px] self-start transition-all cursor-pointer shadow-xs"
-                >
-                  {isSavingFees ? "Menyimpan..." : "Simpan Pengaturan Biaya Pembayaran 💾"}
-                </button>
               </form>
-            </div>
+            </motion.div>
 
-            <div className="p-4 rounded-xl border border-blue-250 border-blue-200 bg-blue-50/20 text-xs flex flex-col gap-2 leading-relaxed text-blue-900">
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-4 rounded-xl border border-blue-200 bg-blue-50/20 text-xs flex flex-col gap-2 leading-relaxed text-blue-900"
+            >
               <span className="font-bold">💡 Informasi Penting Untuk Pengembang:</span>
               <p className="m-0 leading-relaxed">
                 Untuk menghubungkan dengan akun Midtrans asli milik SMP Maarif NU Pandaan:
@@ -2171,8 +2226,7 @@ export default function AdminPanel({
                   </div>
                 </li>
               </ol>
-            </div>
-          </motion.div>
+            </motion.div>
 
           {/* WhatsApp API Configuration Card */}
           <motion.div

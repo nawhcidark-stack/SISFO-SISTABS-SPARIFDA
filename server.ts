@@ -13,7 +13,7 @@ import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc } from "fireb
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher } from "./src/types";
 
 // Setup serverport
-const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const PORT = process.env.PORT || 3000;
 
 // Initialize dynamic in-memory store
 const students: Student[] = [
@@ -2448,9 +2448,17 @@ async function startServer() {
     res.status(500).json({ error: "Terjadi kesalahan internal server" });
   });
 
-  app.listen(PORT, "0.0.0.0", () => {
-    console.log(`SMP Maarif NU Pandaan app is running on port ${PORT}`);
-  });
+  const isUnixSocket = typeof PORT === "string" && (PORT.includes("/") || PORT.includes("\\") || isNaN(Number(PORT)));
+  if (isUnixSocket) {
+    app.listen(PORT, () => {
+      console.log(`SMP Maarif NU Pandaan app is running on Unix socket: ${PORT}`);
+    });
+  } else {
+    const portNumber = typeof PORT === "number" ? PORT : parseInt(PORT, 10) || 3000;
+    app.listen(portNumber, "0.0.0.0", () => {
+      console.log(`SMP Maarif NU Pandaan app is running on TCP port ${portNumber}`);
+    });
+  }
 }
 
 startServer();

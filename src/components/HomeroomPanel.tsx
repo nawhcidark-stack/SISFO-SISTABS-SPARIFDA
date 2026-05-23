@@ -4,7 +4,7 @@ import { motion } from 'motion/react';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
-  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock
+  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key
 } from 'lucide-react';
 
 interface HomeroomPanelProps {
@@ -38,11 +38,18 @@ export default function HomeroomPanel({
   };
 
   const [selectedDate, setSelectedDate] = useState(todayStr);
-  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance'>('record');
+  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile'>('record');
   const [rekapStartDate, setRekapStartDate] = useState(getFirstDayOfMonth());
   const [rekapEndDate, setRekapEndDate] = useState(todayStr);
   const [financeSearch, setFinanceSearch] = useState('');
   const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+
+  // Homeroom Password change states
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [changingPassword, setChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState<string | null>(null);
+  const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
   
   // Filter students who are in this homeroom teacher's class
   const classStudents = students.filter(
@@ -123,6 +130,40 @@ export default function HomeroomPanel({
       setNotifMsg({ type: 'error', text: 'Terjadi kesalahan sistem.' });
     } finally {
       setIsSaving(false);
+    }
+  };
+
+  const handleTeacherPasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword.length < 6) {
+      setPasswordError('Sandi baru harus berjumlah minimal 6 karakter.');
+      return;
+    }
+    setChangingPassword(true);
+    setPasswordError(null);
+    setPasswordSuccess(null);
+    try {
+      const res = await fetch('/api/homerooms/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teacherId: currentTeacher.id,
+          oldPassword,
+          newPassword
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setPasswordSuccess('🎉 Kata sandi berhasil diperbarui secara aman.');
+        setOldPassword('');
+        setNewPassword('');
+      } else {
+        setPasswordError(data.error || 'Gagal memperbarui sandi.');
+      }
+    } catch (err) {
+      setPasswordError('Kesalahan jaringan. Silakan coba lagi.');
+    } finally {
+      setChangingPassword(false);
     }
   };
 
@@ -444,7 +485,7 @@ Wassalamualaikum Wr. Wb.
   }, [classStudents, bills]);
 
   return (
-    <div id="homeroom-dashboard-root" className="flex flex-col gap-6 animate-fade-in">
+    <div id="homeroom-dashboard-root" className="flex flex-col gap-6 pb-24 lg:pb-0 animate-fade-in">
       {/* Top Welcome Title Bar */}
       <div className="bg-gradient-to-r from-emerald-900 to-indigo-950 text-white rounded-2xl p-6 shadow-md border border-emerald-950 relative overflow-hidden">
         {/* Abstract shapes */}
@@ -482,107 +523,128 @@ Wassalamualaikum Wr. Wb.
         </div>
       </div>
 
-      {/* Class Overview Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4 shadow-xs">
-          <div className="p-3 rounded-xl bg-indigo-50 text-indigo-700">
-            <Users size={20} className="stroke-[2.5]" />
+      {/* Class Overview Cards - Compact & Clean Layout */}
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 animate-fade-in">
+        <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-indigo-50 text-indigo-700 shrink-0">
+            <Users size={16} className="stroke-[2.5]" />
           </div>
-          <div>
-            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Total Murid</span>
-            <span className="block text-2xl font-black text-slate-800 mt-1">{classStudents.length} Anak</span>
+          <div className="min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">Total Murid</span>
+            <span className="block text-sm md:text-base font-black text-slate-800 mt-0.5 whitespace-nowrap">{classStudents.length} Anak</span>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4 shadow-xs">
-          <div className="p-3 rounded-xl bg-emerald-50 text-emerald-700">
-            <ClipboardCheck size={20} className="stroke-[2.5]" />
+        <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-emerald-50 text-emerald-700 shrink-0">
+            <ClipboardCheck size={16} className="stroke-[2.5]" />
           </div>
-          <div>
-            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Siswa Hadir hari Ini</span>
-            <span className="block text-2xl font-black text-slate-800 mt-1">{(stats.hadir + stats.terlambat)} / {stats.total}</span>
+          <div className="min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">Hadir Hari Ini</span>
+            <span className="block text-sm md:text-base font-black text-slate-800 mt-0.5 whitespace-nowrap">{(stats.hadir + stats.terlambat)} / {stats.total}</span>
             {stats.terlambat > 0 && (
-              <span className="block text-[10px] text-purple-600 font-bold mt-0.5">({stats.terlambat} Terlambat)</span>
+              <span className="block text-[8px] text-purple-600 font-bold leading-none mt-0.5">({stats.terlambat} Tlk)</span>
             )}
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4 shadow-xs">
-          <div className="p-3 rounded-xl bg-amber-50 text-amber-600">
-            <Calendar size={20} />
+        <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-amber-50 text-amber-600 shrink-0">
+            <Calendar size={16} />
           </div>
-          <div>
-            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Izin & Sakit</span>
-            <span className="block text-2xl font-black text-slate-800 mt-1">{stats.sakit + stats.izin} Anak</span>
+          <div className="min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">Izin & Sakit</span>
+            <span className="block text-sm md:text-base font-black text-slate-800 mt-0.5 whitespace-nowrap">{stats.sakit + stats.izin} Anak</span>
           </div>
         </div>
 
-        <div className="bg-white border border-slate-200 rounded-2xl p-4 flex items-center gap-4 shadow-xs">
-          <div className="p-3 rounded-xl bg-slate-900 text-white">
-            <BookOpen size={20} />
+        <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 shadow-xs">
+          <div className="p-2.5 rounded-lg bg-slate-900 text-white shrink-0">
+            <BookOpen size={16} />
           </div>
-          <div>
-            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none text-slate-400">Total Log Diisi</span>
-            <span className="block text-2xl font-black text-slate-800 mt-1 text-emerald-600">{classLogs.length} Entri</span>
+          <div className="min-w-0">
+            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider leading-none">Total Log</span>
+            <span className="block text-sm md:text-base font-black text-emerald-600 mt-0.5 whitespace-nowrap">{classLogs.length} Entri</span>
           </div>
         </div>
       </div>
 
       {/* Primary Workspace */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-        {/* Left Control Column (Date and Subtabs selector) */}
-        <div className="lg:col-span-3 flex flex-col gap-4">
+        {/* Left Control Column (Date and Subtabs selector) - Hidden on mobile, controlled via bottom nav */}
+        <div className="hidden lg:flex lg:col-span-3 flex-col gap-4">
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-inner flex flex-col gap-5 text-left">
             <div>
               <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest">Atur Parameter</span>
               <h3 className="text-slate-900 font-extrabold text-sm mt-1">Absensi Kelas {currentTeacher.className}</h3>
             </div>
 
-            {/* Subtab selection */}
-            <div className="flex flex-col gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl">
+            {/* Subtab selection - Responsive layout (row with icons on mobile, vertical list with labels on desktop) */}
+            <div className="flex flex-row md:flex-col overflow-x-auto md:overflow-visible gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl scrollbar-none">
               <button
                 _id="tab-btn-record"
                 onClick={() => setActiveSubTab('record')}
-                className={`py-2 px-3 text-left text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 ${
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'record'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
+                title="Pengisian Absensi"
               >
-                📝 Pengisian Absensi
+                <span className="text-sm">📝</span>
+                <span className="hidden md:inline">Pengisian Absensi</span>
               </button>
               <button
                 _id="tab-btn-history"
                 onClick={() => setActiveSubTab('history')}
-                className={`py-2 px-3 text-left text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 ${
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'history'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
+                title="Riwayat Jurnal Kelas"
               >
-                📊 Riwayat Jurnal Kelas
+                <span className="text-sm">📊</span>
+                <span className="hidden md:inline">Riwayat Jurnal</span>
               </button>
               <button
                 _id="tab-btn-rekap"
                 onClick={() => setActiveSubTab('rekap_absensi')}
-                className={`py-2 px-3 text-left text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 ${
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'rekap_absensi'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
+                title="Rekap Absensi Kelas"
               >
-                📉 Rekap Absensi Kelas
+                <span className="text-sm">📉</span>
+                <span className="hidden md:inline">Rekap Absensi</span>
               </button>
               <button
                 _id="tab-btn-finance"
                 onClick={() => setActiveSubTab('finance')}
-                className={`py-2 px-3 text-left text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 ${
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'finance'
                     ? 'bg-slate-900 text-white shadow-md'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
+                title="Tabungan & Tagihan SPP"
               >
-                💳 Tabungan & Tagihan SPP
+                <span className="text-sm">💳</span>
+                <span className="hidden md:inline">Tabungan & SPP</span>
+              </button>
+              <button
+                _id="tab-btn-profile"
+                onClick={() => setActiveSubTab('profile')}
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                  activeSubTab === 'profile'
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+                title="Profil Wali Kelas & Ubah Sandi"
+              >
+                <span className="text-sm">👤</span>
+                <span className="hidden md:inline">Profil & Sandi</span>
               </button>
             </div>
 
@@ -622,6 +684,19 @@ Wassalamualaikum Wr. Wb.
                 </div>
               </div>
 
+              {/* Compact Date Picker for Mobile Screens inside Right Panel when sidebar is hidden */}
+              <div className="lg:hidden px-6 py-3.5 bg-slate-50 border-b border-slate-100 flex flex-col gap-1.5 text-left">
+                <label className="text-[10.5px] font-extrabold text-slate-500 uppercase tracking-wider">Tanggal Kalender Absensi:</label>
+                <input
+                  type="date"
+                  required
+                  value={selectedDate}
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  max={todayStr}
+                  className="px-3.5 py-2 w-full bg-white border border-slate-200 rounded-xl text-xs font-semibold text-slate-800 focus:outline-none focus:border-indigo-600 transition-all font-sans"
+                />
+              </div>
+
               {/* Status Alert or notification inside form code */}
               {notifMsg && (
                 <div className={`m-6 mb-2 p-3 font-semibold text-xs rounded-xl flex items-center gap-2.5 animate-fade-in ${
@@ -643,7 +718,8 @@ Wassalamualaikum Wr. Wb.
                 </div>
               ) : (
                 <div className="p-6 flex flex-col gap-4">
-                  <div className="border border-slate-100 rounded-xl overflow-hidden shadow-xs">
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block border border-slate-100 rounded-xl overflow-hidden shadow-xs">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-slate-100 border-b border-slate-200 font-bold text-slate-500 text-[10px] uppercase tracking-wider select-none">
@@ -704,6 +780,63 @@ Wassalamualaikum Wr. Wb.
                         })}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Mobile Touch-Friendly Card List View */}
+                  <div className="block md:hidden flex flex-col gap-4">
+                    {classStudents.map((student) => {
+                      const currentData = dailyStatusMap[student.id] || { status: 'Hadir', notes: '' };
+
+                      return (
+                        <div key={`mob-att-${student.id}`} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3">
+                          <div className="flex flex-col gap-0.5 text-left">
+                            <span className="font-bold text-slate-800 text-sm">{student.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono font-medium">NIS: {student.nis}</span>
+                          </div>
+
+                          <div className="flex flex-col gap-1.5 text-left">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Status Kehadiran:</span>
+                            <div className="grid grid-cols-5 gap-1 bg-slate-50 p-1 border border-slate-200 rounded-lg">
+                              {(['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Alpa'] as const).map((st) => {
+                                const activeColors = {
+                                  'Hadir': 'bg-emerald-600 text-white border-emerald-600 shadow-xs',
+                                  'Terlambat': 'bg-purple-600 text-white border-purple-600 shadow-xs',
+                                  'Sakit': 'bg-amber-500 text-white border-amber-500 shadow-xs',
+                                  'Izin': 'bg-indigo-600 text-white border-indigo-600 shadow-xs',
+                                  'Alpa': 'bg-rose-600 text-white border-rose-600 shadow-xs'
+                                };
+                                const defaultColors = 'bg-white hover:bg-slate-100 border-slate-200 text-slate-600 font-bold';
+                                const isActive = currentData.status === st;
+                                const shortLabel = st === 'Hadir' ? 'H' : st === 'Terlambat' ? 'T' : st === 'Sakit' ? 'S' : st === 'Izin' ? 'I' : 'A';
+
+                                return (
+                                  <button
+                                    key={st}
+                                    type="button"
+                                    onClick={() => handleStatusChange(student.id, st)}
+                                    className={`py-2 px-0.5 text-xs border font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${isActive ? activeColors[st] : defaultColors}`}
+                                    title={st}
+                                  >
+                                    {shortLabel}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+
+                          <div className="flex flex-col gap-1.5 text-left">
+                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Keterangan / Alasan Surat:</span>
+                            <input
+                              type="text"
+                              value={currentData.notes}
+                              onChange={(e) => handleNotesChange(student.id, e.target.value)}
+                              placeholder="Sakit demam, izin keluar kota, dll"
+                              className="w-full px-3 py-2 border border-slate-200 rounded-lg text-xs placeholder:text-slate-300 focus:outline-none focus:border-slate-700 font-semibold"
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <button
@@ -1083,7 +1216,175 @@ Wassalamualaikum Wr. Wb.
               })()}
             </div>
           )}
+
+          {activeSubTab === 'profile' && (
+            <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col gap-6 text-left">
+              <div>
+                <h3 className="text-slate-900 font-extrabold text-lg flex items-center gap-2">
+                  <span className="p-1 px-2 rounded-lg bg-indigo-50 text-indigo-700">👤</span> Profil Wali Kelas
+                </h3>
+                <p className="text-xs text-slate-500 mt-1">
+                  Detail informasi akun kedinasan Anda dan pengaturan privasi kata sandi.
+                </p>
+              </div>
+
+              {/* Profile Card details */}
+              <div className="bg-gradient-to-br from-indigo-900 to-slate-900 text-white rounded-xl p-5 shadow-sm border border-slate-950 relative overflow-hidden">
+                <div className="absolute right-0 bottom-0 translate-x-1/4 translate-y-1/4 opacity-10">
+                  <User size={150} />
+                </div>
+                <div className="flex items-center gap-4 relative z-10">
+                  <div className="p-4 bg-white/10 backdrop-blur-md rounded-xl text-3xl font-extrabold">
+                    🏫
+                  </div>
+                  <div className="flex-1">
+                    <span className="block text-[10px] uppercase font-bold text-indigo-200 tracking-wider">Wali Kelas Aktif</span>
+                    <h4 className="text-lg font-bold tracking-tight">{currentTeacher.name}</h4>
+                    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-indigo-150 mt-1 border-t border-white/10 pt-1.5 font-medium">
+                      <span>Kelas Binaan: <strong className="text-white font-extrabold">{currentTeacher.className}</strong></span>
+                      <span className="opacity-40">•</span>
+                      <span>Username: <strong className="text-white font-mono font-bold">@{currentTeacher.username}</strong></span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Password Change Form Section */}
+              <div className="border-t border-slate-100 pt-5">
+                <h4 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mb-4">
+                  <span className="p-1 rounded-md bg-amber-50 text-amber-700">🔐</span> Ubah Kata Sandi Akun
+                </h4>
+
+                <form onSubmit={handleTeacherPasswordChange} className="flex flex-col gap-4 max-w-md">
+                  {passwordError && (
+                    <div className="p-3 bg-rose-50 border border-rose-150 text-rose-700 text-xs font-semibold rounded-xl flex items-center gap-2 animate-fade-in">
+                      <AlertCircle size={14} className="shrink-0" />
+                      <span>{passwordError}</span>
+                    </div>
+                  )}
+
+                  {passwordSuccess && (
+                    <div className="p-3 bg-emerald-55 bg-emerald-50 border border-emerald-150 border-emerald-200 text-emerald-850 text-xs font-semibold rounded-xl flex items-center gap-2 animate-fade-in">
+                      <Check size={14} className="shrink-0" />
+                      <span>{passwordSuccess}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-600">Kata Sandi Saat Ini</label>
+                    <div className="relative">
+                      <input
+                        type="password"
+                        required
+                        placeholder="Masukkan sandi lama wali kelas"
+                        value={oldPassword}
+                        onChange={(e) => setOldPassword(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-indigo-650 focus:ring-1 focus:ring-indigo-600 text-slate-800"
+                      />
+                      <Key size={14} className="absolute right-3.5 top-3.5 text-slate-400" />
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-xs font-bold text-slate-600">Kata Sandi Baru</label>
+                    <div className="relative">
+                      <input
+                        type="password"
+                        required
+                        placeholder="Masukkan sandi baru (minimal 6 karakter)"
+                        value={newPassword}
+                        onChange={(e) => setNewPassword(e.target.value)}
+                        className="w-full p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-indigo-650 focus:ring-1 focus:ring-indigo-600 text-slate-800"
+                      />
+                      <Key size={14} className="absolute right-3.5 top-3.5 text-slate-400" />
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={changingPassword}
+                    className="mt-2 w-full sm:w-auto self-start px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs rounded-xl shadow-md cursor-pointer transition-all flex items-center justify-center gap-2 disabled:opacity-50"
+                  >
+                    {changingPassword ? (
+                      <>
+                        <Loader2 size={13} className="animate-spin" />
+                        Sedang Menyimpan...
+                      </>
+                    ) : (
+                      <>Ubah Sandi Akun 🔐</>
+                    )}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
         </div>
+      </div>
+
+      {/* ================= STICKY BOTTOM NAVIGATION BAR FOR MOBILE (lg:hidden) ================= */}
+      <div 
+        style={{ contentVisibility: 'auto' }}
+        className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200/90 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-2 pt-2 pb-3.5 flex justify-around items-center transition-all"
+      >
+        {/* Absensi Tab Button */}
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('record')}
+          className="flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'record' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <ClipboardCheck size={21} className={activeSubTab === 'record' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'record' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Absensi</span>
+        </button>
+ 
+        {/* Jurnal Tab Button */}
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('history')}
+          className="flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'history' ? 'bg-emerald-50 text-emerald-600' : 'text-slate-400'}`}>
+            <BookOpen size={21} className={activeSubTab === 'history' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'history' ? 'text-emerald-700 font-bold' : 'text-slate-400'}`}>Jurnal</span>
+        </button>
+ 
+        {/* Rekap Tab Button */}
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('rekap_absensi')}
+          className="flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'rekap_absensi' ? 'bg-amber-50 text-amber-600' : 'text-slate-400'}`}>
+            <Calendar size={21} className={activeSubTab === 'rekap_absensi' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'rekap_absensi' ? 'text-amber-600 font-bold' : 'text-slate-400'}`}>Rekap</span>
+        </button>
+ 
+        {/* Keuangan Tab Button */}
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('finance')}
+          className="flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'finance' ? 'bg-purple-50 text-purple-600' : 'text-slate-400'}`}>
+            <Wallet size={21} className={activeSubTab === 'finance' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'finance' ? 'text-purple-600 font-bold' : 'text-slate-400'}`}>Keuangan</span>
+        </button>
+ 
+        {/* Profil Tab Button */}
+        <button
+          type="button"
+          onClick={() => setActiveSubTab('profile')}
+          className="flex-1 py-1.5 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'profile' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-400'}`}>
+            <User size={21} className={activeSubTab === 'profile' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'profile' ? 'text-indigo-800 font-bold' : 'text-slate-400'}`}>Profil</span>
+        </button>
       </div>
     </div>
   );

@@ -72,6 +72,31 @@ export default function App() {
 
   // Audio trigger for sound feedback of real-time events
   const [playNotificationSound, setPlayNotificationSound] = useState(true);
+  const [showPaymentSuccessScreen, setShowPaymentSuccessScreen] = useState<boolean>(false);
+  const [successCountdown, setSuccessCountdown] = useState<number>(5);
+
+  useEffect(() => {
+    let interval: any;
+    if (showPaymentSuccessScreen) {
+      setSuccessCountdown(5);
+      interval = setInterval(() => {
+        setSuccessCountdown((prev) => {
+          if (prev <= 1) {
+            clearInterval(interval);
+            setShowPaymentSuccessScreen(false);
+            if (role === 'student') {
+              handleLogout();
+            }
+            return 0;
+          }
+          return prev - 1;
+        });
+      }, 1000);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [showPaymentSuccessScreen, role]);
 
   // Sound generator
   const triggerBeep = () => {
@@ -103,7 +128,7 @@ export default function App() {
       setIsLoading(true);
       
       // Load Students
-      const stdRes = await fetch('api/students');
+      const stdRes = await fetch('/api/students');
       if (stdRes.ok) {
         const stdData = await stdRes.json();
         setStudentsList(stdData);
@@ -116,7 +141,7 @@ export default function App() {
       }
 
       // Load Recent notifications history
-      const notifRes = await fetch('api/notifications');
+      const notifRes = await fetch('/api/notifications');
       if (notifRes.ok) {
         const notifData = await notifRes.json();
         setGlobalNotifications(notifData);
@@ -124,7 +149,7 @@ export default function App() {
 
       // Load School Identity configuration
       try {
-        const schoolRes = await fetch('api/school-identity');
+        const schoolRes = await fetch('/api/school-identity');
         if (schoolRes.ok) {
           const sData = await schoolRes.json();
           if (sData.success && sData.schoolIdentity) {
@@ -136,7 +161,7 @@ export default function App() {
       }
 
       // Load Midtrans integration keys metadata
-      const keysRes = await fetch('api/midtrans-config');
+      const keysRes = await fetch('/api/midtrans-config');
       if (keysRes.ok) {
         const keysData = await keysRes.json();
         setSysStatus(keysData);
@@ -144,7 +169,7 @@ export default function App() {
 
       // Load Attendance Logs
       try {
-        const attRes = await fetch('api/attendance');
+        const attRes = await fetch('/api/attendance');
         if (attRes.ok) {
           const attData = await attRes.json();
           setAttendanceList(attData);
@@ -155,7 +180,7 @@ export default function App() {
 
       // Load Homerooms
       try {
-        const hrRes = await fetch('api/homerooms');
+        const hrRes = await fetch('/api/homerooms');
         if (hrRes.ok) {
           const hrData = await hrRes.json();
           setHomeroomsList(hrData);
@@ -179,8 +204,8 @@ export default function App() {
 
       if (checkIsAdmin) {
         // Fetch all student bills and total transactions for admin bookkeeping roster
-        const bRes = await fetch('api/admin/all-bills');
-        const tRes = await fetch('api/admin/all-transactions');
+        const bRes = await fetch('/api/admin/all-bills');
+        const tRes = await fetch('/api/admin/all-transactions');
         if (bRes.ok && tRes.ok) {
           const bData = await bRes.json();
           const tData = await tRes.json();
@@ -190,14 +215,14 @@ export default function App() {
 
         // Also fetch profile of active student selector if they exist
         if (studentId) {
-          const sRes = await fetch(`api/students/${studentId}`);
+          const sRes = await fetch(`/api/students/${studentId}`);
           if (sRes.ok) {
             const sData = await sRes.json();
             setCurrentStudent(sData.student);
           }
         }
       } else {
-        const res = await fetch(`api/students/${studentId}`);
+        const res = await fetch(`/api/students/${studentId}`);
         if (res.ok) {
           const data = await res.json();
           setCurrentStudent(data.student);
@@ -268,7 +293,7 @@ export default function App() {
     initSystemData();
 
     // Setup native browser EventSource
-    const sse = new EventSource('api/notifications/stream');
+    const sse = new EventSource('/api/notifications/stream');
 
     sse.onopen = () => {
       console.log('SSE Real-time notification stream connected successfully!');
@@ -301,7 +326,7 @@ export default function App() {
         const relatedToActiveStud = currentStudent && (rawNotification.studentId === undefined || rawNotification.studentId === currentStudent.id);
         
         // Update general catalog (student balances/bills might have shifted)
-        fetch('api/students')
+        fetch('/api/students')
           .then(res => res.json())
           .then(dataList => {
             setStudentsList(dataList);
@@ -378,7 +403,7 @@ export default function App() {
   const handlePaySpp = async (bill: SppBill) => {
     try {
       setIsLoading(true);
-      const res = await fetch('api/pay-spp-snap', {
+      const res = await fetch('/api/pay-spp-snap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ billId: bill.id })
@@ -416,7 +441,7 @@ export default function App() {
     if (!targetStudent) return;
     try {
       setIsLoading(true);
-      const res = await fetch('api/deposit-savings-snap', {
+      const res = await fetch('/api/deposit-savings-snap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -449,31 +474,80 @@ export default function App() {
     }
   };
 
-  // 5. Simulated Withdrawal request from client-side
+  // 5. Simulated Withdrawal request from client-side (requests/submits pending withdrawal)
   const handleWithdrawSavings = async (amount: number, notes: string): Promise<boolean> => {
     if (!currentStudent) return false;
     try {
-      const res = await fetch('api/admin/savings-manual', {
+      const res = await fetch('/api/student/withdraw-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentId: currentStudent.id,
-          type: 'withdrawal',
           amount,
           notes
         })
       });
-      return res.ok;
+      if (res.ok) {
+        initSystemData();
+        return true;
+      }
+      return false;
     } catch (err) {
       console.error(err);
       return false;
     }
   };
 
+  // Administrative confirm/approve or reject pending student withdrawal request
+  const handleConfirmWithdrawal = async (transactionId: string, action: 'approve' | 'reject'): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/admin/savings-confirm', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ transactionId, action })
+      });
+      if (res.ok) {
+        initSystemData();
+        return true;
+      } else {
+        const errData = await res.json();
+        alert(errData.error || 'Gagal memproses pengajuan.');
+        return false;
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menghubungi server.');
+      return false;
+    }
+  };
+
+  // Administrative Bulk Savings Withdrawal
+  const handleBulkWithdrawSavings = async (grade: string, amount: number, notes: string, allowDebt: boolean): Promise<any> => {
+    try {
+      const res = await fetch('/api/admin/savings-bulk-withdraw', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ grade, amount, notes, allowDebt })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        initSystemData();
+        return data;
+      } else {
+        alert(data.error || 'Gagal memproses penarikan massal.');
+        return null;
+      }
+    } catch (err) {
+      console.error(err);
+      alert('Gagal menghubungi server.');
+      return null;
+    }
+  };
+
   // Change Student Password handler
   const handleChangePassword = async (studentId: string, oldPassword?: string, newPassword?: string): Promise<{ success: boolean; error?: string }> => {
     try {
-      const res = await fetch('api/students/change-password', {
+      const res = await fetch('/api/students/change-password', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentId, oldPassword, newPassword })
@@ -495,7 +569,7 @@ export default function App() {
   // Admin Manual SPP Verification (Cash clearance)
   const handlePaySppManual = async (billId: string): Promise<any> => {
     try {
-      const res = await fetch('api/admin/pay-spp-manual', {
+      const res = await fetch('/api/admin/pay-spp-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ billId })
@@ -514,7 +588,7 @@ export default function App() {
   // Admin Manual Savings ledger deposit/withdrawal
   const handleSavingsManual = async (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string): Promise<any> => {
     try {
-      const res = await fetch('api/admin/savings-manual', {
+      const res = await fetch('/api/admin/savings-manual', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -538,7 +612,7 @@ export default function App() {
   // Admin broadcast trigger
   const handleBroadcastNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment'): Promise<boolean> => {
     try {
-      const res = await fetch('api/notifications/broadcast', {
+      const res = await fetch('/api/notifications/broadcast', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -557,7 +631,7 @@ export default function App() {
   // Create Student
   const handleCreateStudent = async (studentData: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }): Promise<boolean> => {
     try {
-      const res = await fetch('api/admin/students', {
+      const res = await fetch('/api/admin/students', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(studentData)
@@ -574,9 +648,9 @@ export default function App() {
   };
 
   // Update Student
-  const handleUpdateStudent = async (id: string, studentData: { nis: string; name: string; class: string; email: string; phone: string }): Promise<boolean> => {
+  const handleUpdateStudent = async (id: string, studentData: { nis: string; name: string; class: string; email: string; phone: string; password?: string }): Promise<boolean> => {
     try {
-      const res = await fetch(`api/admin/students/${id}`, {
+      const res = await fetch(`/api/admin/students/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(studentData)
@@ -595,7 +669,7 @@ export default function App() {
   // Delete Student
   const handleDeleteStudent = async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`api/admin/students/${id}`, {
+      const res = await fetch(`/api/admin/students/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -619,7 +693,7 @@ export default function App() {
   // Batch Import Students Kolektif
   const handleImportStudents = async (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }>): Promise<{ success: boolean; addedCount: number; updatedCount: number }> => {
     try {
-      const res = await fetch('api/admin/students/import', {
+      const res = await fetch('/api/admin/students/import', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ studentsList: list })
@@ -639,7 +713,7 @@ export default function App() {
   // Create Homeroom Teacher CRUD
   const handleCreateHomeroom = async (homeroomData: { username: string; name: string; className: string; password?: string }): Promise<boolean> => {
     try {
-      const res = await fetch('api/admin/homerooms', {
+      const res = await fetch('/api/admin/homerooms', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(homeroomData)
@@ -661,7 +735,7 @@ export default function App() {
   // Update Homeroom Teacher CRUD
   const handleUpdateHomeroom = async (id: string, homeroomData: { username?: string; name?: string; className?: string; password?: string }): Promise<boolean> => {
     try {
-      const res = await fetch(`api/admin/homerooms/${id}`, {
+      const res = await fetch(`/api/admin/homerooms/${id}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(homeroomData)
@@ -683,7 +757,7 @@ export default function App() {
   // Delete Homeroom Teacher CRUD
   const handleDeleteHomeroom = async (id: string): Promise<boolean> => {
     try {
-      const res = await fetch(`api/admin/homerooms/${id}`, {
+      const res = await fetch(`/api/admin/homerooms/${id}`, {
         method: 'DELETE'
       });
       if (res.ok) {
@@ -703,7 +777,7 @@ export default function App() {
   // Batch save attendance for Class Room
   const handleSaveBatchAttendance = async (logs: { studentId: string; date: string; status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }[]): Promise<boolean> => {
     try {
-      const res = await fetch('api/attendance/batch', {
+      const res = await fetch('/api/attendance/batch', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ logs })
@@ -727,6 +801,21 @@ export default function App() {
     setIsPayModalOpen(false);
     setPayToken(null);
     setPayOrderId(null);
+
+    // Create a beautiful success toast notification with checkicon
+    const successNotif: RealtimeNotification = {
+      id: 'pay-success-toast-' + Date.now(),
+      title: 'Pembayaran Berhasil! ✓',
+      message: `${payItemName || 'SPP'} sebesar Rp ${payAmount.toLocaleString('id-ID')} lunas terverifikasi.`,
+      type: 'success',
+      createdAt: new Date().toISOString()
+    };
+    setActiveToasts(prev => [successNotif, ...prev]);
+    triggerBeep();
+
+    // Trigger success checklist screen & countdown
+    setShowPaymentSuccessScreen(true);
+
     // Refresh student records
     if (currentStudent) {
       fetchStudentFullData(currentStudent.id);
@@ -746,7 +835,7 @@ export default function App() {
 
   const handleUpdateSchoolIdentity = async (updatedData: Partial<SchoolIdentity>): Promise<boolean> => {
     try {
-      const res = await fetch('api/admin/set-school-identity', {
+      const res = await fetch('/api/admin/set-school-identity', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedData)
@@ -893,14 +982,14 @@ export default function App() {
                           <IconComp size={15} />
                         </div>
                         <div className="flex-grow min-w-0 pr-4">
-                          <span className="text-[9px] font-mono text-slate-400 block mb-0.5">
+                          <span className="text-[9.5px] font-mono text-slate-550 block mb-0.5 font-bold">
                             {formatNotifTime(notif.createdAt)}
                           </span>
-                          <h4 className="font-bold text-xs text-slate-800 leading-tight">
+                          <h4 className="font-extrabold text-xs text-slate-950 leading-tight">
                             {notif.title}
                           </h4>
-                          <p className="text-[11px] text-slate-500 mt-1 leading-relaxed break-words font-medium">
-                            {notif.message}
+                          <p className="text-xs text-slate-800 mt-1.5 leading-relaxed break-words font-medium">
+                            {notif.message || (notif as any).pesan || (notif as any).notes || "Pemberitahuan resmi dari pihak sekolah."}
                           </p>
                         </div>
                         <button
@@ -941,6 +1030,95 @@ export default function App() {
           if (currentStudent) fetchStudentFullData(currentStudent.id);
         }}
       />
+
+      {/* Payment Success Verification Checklist Modal & Redirect Screen */}
+      <AnimatePresence>
+        {showPaymentSuccessScreen && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.9, y: 30 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 30 }}
+              className="bg-white rounded-2xl border border-slate-200 overflow-hidden shadow-2xl w-full max-w-md flex flex-col p-6 text-center select-none"
+            >
+              <div className="flex flex-col items-center gap-4 mt-2">
+                {/* Big decorative Checkmark with subtle scale/bounce animation */}
+                <div className="w-16 h-16 bg-emerald-50 text-emerald-600 rounded-full flex items-center justify-center border border-emerald-100 shadow-md animate-bounce shrink-0">
+                  <CheckCircle2 size={36} className="stroke-[2.5]" />
+                </div>
+                
+                <div>
+                  <h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">
+                    Pembayaran Berhasil!
+                  </h3>
+                  <p className="text-xs text-slate-500 font-medium mt-1">
+                    Transaksi pembayaran SPP Bulanan Anda telah tuntas diverifikasi.
+                  </p>
+                </div>
+              </div>
+
+              {/* Verified Checklist Process Stack */}
+              <div className="my-6 bg-slate-50 border border-slate-100 rounded-xl p-4 text-left flex flex-col gap-3">
+                <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">
+                  Cek List Verifikasi Pembayaran:
+                </span>
+                
+                <div className="flex items-center gap-2.5 text-xs text-slate-700 font-bold">
+                  <div className="p-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">
+                    <CheckCircle2 size={13} className="stroke-[3]" />
+                  </div>
+                  <span>Integrasi Midtrans Gateway diproses</span>
+                </div>
+
+                <div className="flex items-center gap-2.5 text-xs text-slate-700 font-bold">
+                  <div className="p-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">
+                    <CheckCircle2 size={13} className="stroke-[3]" />
+                  </div>
+                  <span className="truncate">Nominal Rp {payAmount.toLocaleString('id-ID')} Lunas</span>
+                </div>
+
+                <div className="flex items-center gap-2.5 text-xs text-slate-700 font-bold">
+                  <div className="p-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">
+                    <CheckCircle2 size={13} className="stroke-[3]" />
+                  </div>
+                  <span>Status SPP terupdate otomatis</span>
+                </div>
+
+                <div className="flex items-center gap-2.5 text-xs text-slate-700 font-bold">
+                  <div className="p-0.5 rounded bg-emerald-100 text-emerald-700 shrink-0">
+                    <CheckCircle2 size={13} className="stroke-[3]" />
+                  </div>
+                  <span>Kuitansi Digital siap diterbitkan</span>
+                </div>
+              </div>
+
+              {/* Countdown or Actions */}
+              <div className="flex flex-col gap-3 mt-2">
+                <p className="text-[11px] text-slate-500 font-semibold bg-slate-50 border border-slate-100 py-1.5 px-3 rounded-lg">
+                  {role === 'student' ? (
+                    `Mengalihkan Anda ke halaman login dalam ${successCountdown} detik...`
+                  ) : (
+                    `Menutup jendela sukses dalam ${successCountdown} detik...`
+                  )}
+                </p>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowPaymentSuccessScreen(false);
+                    if (role === 'student') {
+                      handleLogout();
+                    }
+                  }}
+                  className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
+                >
+                  {role === 'student' ? 'Selesai & Ke Halaman Utama' : 'Tutup & Kembali'}
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
 
       {/* Main Top Header Branding */}
       <header className="bg-gradient-to-r from-blue-700 via-teal-600 to-emerald-600 border-b-4 border-emerald-400 shadow-lg text-white sticky top-0 z-40">
@@ -1047,13 +1225,13 @@ export default function App() {
                 <span>Kanal Real-time Aktif</span>
               </div>
               
-              <div className="w-px h-4 bg-slate-200" />
+              <div className={`w-px h-4 bg-slate-200 ${role === 'student' ? 'hidden lg:block' : ''}`} />
 
               {/* Tombol Lonceng untuk History Notif */}
               <button
                 id="btn-trigger-notification-log"
                 onClick={() => setIsNotifHistoryOpen(true)}
-                className="relative flex items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-250 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 text-[11px] font-bold rounded-lg transition-all cursor-pointer shadow-xs whitespace-nowrap"
+                className={`relative items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-250 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 text-[11px] font-bold rounded-lg transition-all cursor-pointer shadow-xs whitespace-nowrap ${role === 'student' ? 'hidden lg:flex' : 'flex'}`}
                 title="Lihat Riwayat Notifikasi Sekolah"
               >
                 <span className="relative flex h-4 w-4 items-center justify-center shrink-0">
@@ -1107,6 +1285,7 @@ export default function App() {
             isLoginLocked={true}
             schoolIdentity={schoolIdentity}
             attendanceLogs={attendanceList.filter(l => l.studentId === currentStudent?.id)}
+            notifications={globalNotifications}
           />
         ) : role === 'homeroom' ? (
           <HomeroomPanel
@@ -1135,6 +1314,8 @@ export default function App() {
             adminSavingsToPrint={adminSavingsToPrint}
             onClearAdminSavingsToPrint={() => setAdminSavingsToPrint(null)}
             onSavingsManual={handleSavingsManual}
+            onConfirmWithdrawal={handleConfirmWithdrawal}
+            onBulkWithdrawSavings={handleBulkWithdrawSavings}
             onBroadcastNotification={handleBroadcastNotification}
             onRefresh={handleReload}
             onCreateStudent={handleCreateStudent}
@@ -1152,7 +1333,7 @@ export default function App() {
       </main>
 
       {/* Bottom Footer block */}
-      <footer className="bg-slate-900 text-slate-400 border-t border-slate-800 py-6 text-center text-xs mt-auto">
+      <footer className="hidden lg:block bg-slate-900 text-slate-400 border-t border-slate-800 py-6 text-center text-xs mt-auto">
         <div className="max-w-7xl mx-auto px-4 flex flex-col sm:flex-row items-center justify-between gap-4">
           <p className="m-0 text-slate-500">
             &copy; 2026 LP Ma'arif NU Pandaan. Hak Cipta Dilindungi Undang-Undang.

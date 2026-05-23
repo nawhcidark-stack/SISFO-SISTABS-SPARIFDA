@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification } from '../types';
 import { motion } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell } from 'lucide-react';
 
 interface StudentPanelProps {
   students: Student[];
@@ -18,6 +18,7 @@ interface StudentPanelProps {
   isLoginLocked?: boolean;
   schoolIdentity?: SchoolIdentity;
   attendanceLogs?: AttendanceLog[];
+  notifications?: RealtimeNotification[];
 }
 
 export default function StudentPanel({
@@ -34,9 +35,13 @@ export default function StudentPanel({
   onChangePassword,
   isLoginLocked = false,
   schoolIdentity,
-  attendanceLogs = []
+  attendanceLogs = [],
+  notifications = []
 }: StudentPanelProps) {
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi'>('spp');
+  const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
+  const [mobileNotifSearch, setMobileNotifSearch] = useState('');
+  const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
 
   // Calculate dynamic SPP nominal
   let sppRateAmount = 150000;
@@ -312,6 +317,19 @@ export default function StudentPanel({
       text-align: center;
       font-size: 11px;
     }
+    .class-badge {
+      display: inline-block;
+      background-color: #2563eb;
+      color: #ffffff;
+      font-size: 11px;
+      font-weight: 800;
+      padding: 4px 10px;
+      border-radius: 6px;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      border: 1px solid #1d4ed8;
+      box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    }
     .action-bar {
       margin-bottom: 20px;
       text-align: center;
@@ -386,7 +404,7 @@ export default function StudentPanel({
         </td>
         <td class="meta-td">
           <span class="meta-label">Pendidikan / Kelas</span>
-          <span class="meta-val">Kelas ${student.class}</span>
+          <span class="class-badge">Kelas ${student.class}</span>
         </td>
         <td class="meta-td" style="text-align: right;">
           <span class="meta-label" style="text-align: right;">Tanggal Bayar</span>
@@ -529,9 +547,9 @@ export default function StudentPanel({
   };
 
   return (
-    <div id="student-panel-root" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div id="student-panel-root" className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-24 lg:pb-0">
       {/* Left Column: Account Selector and Profile Details */}
-      <div className="lg:col-span-4 flex flex-col gap-6">
+      <div className={`lg:col-span-4 flex flex-col gap-6 ${mobileTab === 'beranda' ? 'flex' : 'hidden lg:flex'}`}>
         {/* Student Selector */}
         {isLoginLocked ? (
           <div className="bg-gradient-to-r from-blue-700 to-emerald-600 border-4 border-emerald-400 text-white p-5 rounded-xl shadow-lg relative overflow-hidden flex items-center gap-3">
@@ -588,7 +606,7 @@ export default function StudentPanel({
             className="flex flex-col gap-6"
           >
             {/* Student Profile Card */}
-            <div className="bg-slate-900 text-slate-200 p-6 rounded-xl border border-slate-800 shadow-lg relative overflow-hidden">
+            <div className="hidden lg:block bg-slate-900 text-slate-200 p-6 rounded-xl border border-slate-800 shadow-lg relative overflow-hidden">
               {/* Decorative branding elements */}
               <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl" />
               <div className="absolute -left-12 -bottom-12 w-36 h-36 rounded-full bg-indigo-500/10 blur-xl" />
@@ -620,7 +638,7 @@ export default function StudentPanel({
             </div>
 
             {/* Quick Balances Stats */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className={`grid grid-cols-2 gap-4 ${mobileTab === 'beranda' ? 'grid' : 'hidden lg:grid'}`}>
               {/* Savings Card */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full hover:shadow-md transition-all">
                 <div>
@@ -651,7 +669,7 @@ export default function StudentPanel({
             </div>
 
             {/* Keamanan Akun (Sandi) Card */}
-            <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3 hover:shadow-sm transition-all">
+            <div className="hidden lg:flex bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-col gap-3 hover:shadow-sm transition-all">
               <div className="flex items-center gap-1.5 justify-between">
                 <div className="flex items-center gap-1.5">
                   <Key size={14} className="text-amber-500" />
@@ -731,7 +749,7 @@ export default function StudentPanel({
       </div>
 
       {/* Right Column: SPP Checklist / Deposits Form & History */}
-      <div className="lg:col-span-8">
+      <div className={`lg:col-span-8 ${mobileTab === 'beranda' ? 'block' : 'hidden lg:block'}`}>
         {currentStudent ? (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
@@ -739,48 +757,71 @@ export default function StudentPanel({
             className="bg-white rounded-xl border border-slate-200 overflow-hidden shadow-sm flex flex-col h-full"
           >
             {/* Folder Header Tabs */}
-            <div className="bg-slate-50 border-b border-slate-200 px-6 py-2 flex items-center justify-between">
-              <div className="flex gap-4">
+            <div className="bg-slate-50 border-b border-slate-200 px-4 md:px-6 py-2 flex flex-col sm:flex-row items-center justify-between gap-3">
+              <div className="flex gap-5 md:gap-4 justify-center items-center w-full sm:w-auto">
                 <button
                   id="tab-spp"
                   onClick={() => setActiveTab('spp')}
-                  className={`py-3 px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none ${
                     activeTab === 'spp'
-                      ? 'border-slate-900 text-slate-900'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                      ? 'border-indigo-600 text-slate-905 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-indigo-600'
                   }`}
+                  title={`Pembayaran SPP ${selectedAcademicYear ? `(TA ${selectedAcademicYear})` : ''}`}
                 >
-                  Pembayaran SPP {selectedAcademicYear ? `(TA ${selectedAcademicYear})` : ''}
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'spp'
+                      ? 'bg-indigo-100 text-indigo-705 shadow-xs ring-1 ring-indigo-200/50'
+                      : 'bg-indigo-50/50 text-indigo-400/80 hover:bg-indigo-100/50 hover:text-indigo-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <CreditCard className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Pembayaran SPP {selectedAcademicYear ? `(TA ${selectedAcademicYear})` : ''}</span>
                 </button>
                 <button
                   id="tab-tabungan"
                   onClick={() => setActiveTab('tabungan')}
-                  className={`py-3 px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer ${
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none ${
                     activeTab === 'tabungan'
-                      ? 'border-slate-900 text-slate-900'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                      ? 'border-emerald-600 text-emerald-705 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-emerald-600'
                   }`}
+                  title="Metode Tabungan & Setoran"
                 >
-                  Metode Tabungan & Setoran
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'tabungan'
+                      ? 'bg-emerald-100 text-emerald-705 shadow-xs ring-1 ring-emerald-200/50'
+                      : 'bg-emerald-50/50 text-emerald-400/80 hover:bg-emerald-100/50 hover:text-emerald-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <Wallet className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Metode Tabungan & Setoran</span>
                 </button>
                 <button
                   id="tab-absensi"
                   onClick={() => setActiveTab('absensi')}
-                  className={`py-3 px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center gap-1 ${
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none ${
                     activeTab === 'absensi'
-                      ? 'border-slate-900 text-slate-900'
-                      : 'border-transparent text-slate-500 hover:text-slate-800'
+                      ? 'border-amber-500 text-amber-705 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-amber-500'
                   }`}
+                  title="Sistem Absensi Kehadiran"
                 >
-                  <CalendarRange size={12} className="text-emerald-500" />
-                  <span>Sistem Absensi Kehadiran</span>
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'absensi'
+                      ? 'bg-amber-100 text-amber-600 shadow-xs ring-1 ring-amber-200/50'
+                      : 'bg-amber-50/50 text-amber-400/80 hover:bg-amber-100/50 hover:text-amber-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <CalendarRange className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Sistem Absensi Kehadiran</span>
                 </button>
               </div>
 
               <button
                 onClick={onRefresh}
                 disabled={isLoading}
-                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
+                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50 sm:self-center"
                 title="Refresh Portal Siswa"
               >
                 <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
@@ -825,14 +866,15 @@ export default function StudentPanel({
                     </div>
                   </div>
 
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm">
+                  {/* Desktop Table View */}
+                  <div className="hidden md:block border border-slate-200 rounded-xl overflow-hidden shadow-sm">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-slate-50 text-slate-400 uppercase font-bold tracking-widest text-[9px] border-b border-slate-200">
-                          <th className="px-5 py-3">Bulan / Periode</th>
-                          <th className="px-5 py-3 text-right">Nominal</th>
-                          <th className="px-5 py-3 text-center">Status</th>
-                          <th className="px-5 py-3 text-right">Aksi Pembayaran</th>
+                          <th className="px-5 py-3 whitespace-nowrap">Bulan / Periode</th>
+                          <th className="px-5 py-3 text-right whitespace-nowrap">Nominal</th>
+                          <th className="px-5 py-3 text-center whitespace-nowrap">Status</th>
+                          <th className="px-5 py-3 text-right whitespace-nowrap">Aksi Pembayaran</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
@@ -842,7 +884,7 @@ export default function StudentPanel({
 
                           return (
                             <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
-                              <td className="px-5 py-3.5 font-semibold text-slate-850">
+                              <td className="px-5 py-3.5 font-semibold text-slate-850 whitespace-nowrap">
                                 <div className="flex flex-col gap-0.5">
                                   <span>{bill.month} {bill.year}</span>
                                   {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
@@ -852,10 +894,10 @@ export default function StudentPanel({
                                   )}
                                 </div>
                               </td>
-                              <td className="px-5 py-3.5 text-right font-bold text-slate-800">
+                              <td className="px-5 py-3.5 text-right font-bold text-slate-800 whitespace-nowrap">
                                 Rp {bill.amount.toLocaleString('id-ID')}
                               </td>
-                              <td className="px-5 py-3.5 text-center">
+                              <td className="px-5 py-3.5 text-center whitespace-nowrap">
                                 {isPaid ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase">
                                     <Check size={10} strokeWidth={3} /> Lunas
@@ -870,7 +912,7 @@ export default function StudentPanel({
                                   </span>
                                 )}
                               </td>
-                              <td className="px-5 py-3.5 text-right">
+                              <td className="px-5 py-3.5 text-right whitespace-nowrap">
                                 {isPaid ? (
                                   <div className="flex items-center justify-end gap-2 text-right">
                                     <div className="text-[10px] text-slate-400">
@@ -907,6 +949,85 @@ export default function StudentPanel({
                         })}
                       </tbody>
                     </table>
+                  </div>
+
+                  {/* Mobile Mobile-Friendly Card List View */}
+                  <div className="block md:hidden flex flex-col gap-3">
+                    {filteredBills.map((bill) => {
+                      const isPaid = bill.status === 'paid';
+                      const isPending = bill.status === 'pending';
+
+                      return (
+                        <div key={`mob-${bill.id}`} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3.5 hover:border-slate-350 transition-colors">
+                          <div className="flex justify-between items-start">
+                            <div className="flex flex-col gap-1">
+                              <span className="font-bold text-slate-800 text-sm leading-tight">{bill.month} {bill.year}</span>
+                              {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
+                                <span className="inline-block text-[8px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded border border-rose-100 max-w-max uppercase tracking-wider animate-pulse">
+                                  Tunggakan TA {getAcademicYearOfBill(bill)}
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-right">
+                              <span className="block font-extrabold text-slate-900 text-sm">
+                                Rp {bill.amount.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-between pt-3 border-t border-slate-100 gap-2">
+                            <div>
+                              {isPaid ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase">
+                                  <Check size={9} strokeWidth={3} /> Lunas
+                                </span>
+                              ) : isPending ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
+                                  <Clock size={9} /> Pending
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-rose-50 text-rose-700 border border-rose-100 uppercase">
+                                  Belum Lunas
+                                </span>
+                              )}
+                            </div>
+
+                            <div className="flex items-center justify-end">
+                              {isPaid ? (
+                                <div className="flex items-center gap-2">
+                                  <div className="text-right text-[9px] text-slate-400 leading-tight">
+                                    <span className="block font-bold text-slate-600">{bill.paymentMethod}</span>
+                                    <span className="block font-mono">
+                                      {new Date(bill.paidAt || '').toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                                    </span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => setReceiptToPrint({ type: 'spp', detail: bill, student: currentStudent! })}
+                                    className="p-2 hover:bg-slate-100 text-indigo-600 hover:text-indigo-800 rounded-lg border border-slate-200 shadow-xs transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                                    title="Cetak & Unduh Invoice Kuitansi"
+                                  >
+                                    <Printer size={13} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  id={`pay-spp-mob-${bill.id}`}
+                                  onClick={() => onPaySpp(bill)}
+                                  className={`px-4 py-2 font-black rounded-lg text-[10px] uppercase tracking-wider shadow-sm transition-all focus:outline-none cursor-pointer flex items-center justify-center gap-1.5 ${
+                                    isPending 
+                                      ? 'bg-amber-500 hover:bg-amber-600 text-white' 
+                                      : 'bg-indigo-600 hover:bg-indigo-750 text-white shadow-md shadow-indigo-100'
+                                  }`}
+                                >
+                                  {isPending ? 'Lanjutkan' : 'Bayar Sekarang'}
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })}
                   </div>
                 </div>
               )}
@@ -1036,8 +1157,11 @@ export default function StudentPanel({
                       </button>
 
                       {withdrawSuccess && (
-                        <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-100 p-2 rounded-lg flex items-center gap-2 font-medium">
-                          <CheckCircle2 size={12} /> Tarik Tabungan sukses divalidasi teller!
+                        <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-lg flex flex-col gap-1 font-semibold leading-relaxed">
+                          <div className="flex items-center gap-1.5 text-[11px] text-amber-800 font-bold">
+                            <span className="text-sm">⏳</span> Pengajuan Berhasil Terkirim!
+                          </div>
+                          <span>Penarikan sedang diproses dan menunggu persetujuan/konfirmasi oleh Admin secara manual. Terima kasih!</span>
                         </div>
                       )}
                     </form>
@@ -1046,7 +1170,7 @@ export default function StudentPanel({
               )}
 
               {/* History Section (Under content) */}
-              <div className="mt-8">
+              <div className="mt-8 hidden lg:block">
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3">
                   Log Transaksi Tabungan Siswa
                 </h4>
@@ -1056,65 +1180,142 @@ export default function StudentPanel({
                     Belum ada riwayat transaksi tabungan untuk siswa ini.
                   </p>
                 ) : (
-                  <div className="border border-slate-200 rounded-xl overflow-hidden shadow-sm max-h-[220px] overflow-y-auto">
-                    <table className="w-full text-left text-xs border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-450 uppercase font-bold tracking-widest text-[9px] border-b border-slate-200">
-                          <th className="px-5 py-2.5">Tanggal</th>
-                          <th className="px-5 py-2.5">Keterangan</th>
-                          <th className="px-5 py-2.5 text-center">Metode</th>
-                          <th className="px-5 py-2.5 text-center">Tipe</th>
-                          <th className="px-5 py-2.5 text-right">Jumlah</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {transactions.map((tx) => {
-                          const isDeposit = tx.type === 'deposit';
+                  <>
+                    {/* Desktop Transaction Log View */}
+                    <div className="hidden md:block border border-slate-200 rounded-xl overflow-hidden shadow-sm max-h-[220px] overflow-y-auto">
+                      <table className="w-full text-left text-xs border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-450 uppercase font-bold tracking-widest text-[9px] border-b border-slate-200">
+                            <th className="px-5 py-2.5">Tanggal</th>
+                            <th className="px-5 py-2.5">Keterangan</th>
+                            <th className="px-5 py-2.5 text-center">Metode</th>
+                            <th className="px-5 py-2.5 text-center">Tipe</th>
+                            <th className="px-5 py-2.5 text-right">Jumlah</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {transactions.map((tx) => {
+                            const isDeposit = tx.type === 'deposit';
 
-                          return (
-                            <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
-                              <td className="px-5 py-3 font-mono text-[10px] text-slate-450 whitespace-nowrap">
-                                {new Date(tx.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
-                              </td>
-                              <td className="px-5 py-3">
-                                <div className="font-semibold text-slate-800">{tx.notes || 'Penyesuaian Saldo'}</div>
-                                {tx.orderId && <div className="text-[9px] text-slate-400 font-mono mt-0.5">ID: {tx.orderId}</div>}
-                              </td>
-                              <td className="px-5 py-3 text-center text-[10px] font-semibold text-slate-500">
-                                {tx.paymentMethod || 'Manual Teller'}
-                              </td>
-                              <td className="px-5 py-3 text-center">
+                            return (
+                              <tr key={tx.id} className="hover:bg-slate-50/50 transition-colors">
+                                <td className="px-5 py-3 font-mono text-[10px] text-slate-450 whitespace-nowrap">
+                                  {new Date(tx.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </td>
+                                <td className="px-5 py-3 whitespace-nowrap">
+                                  <div className="font-semibold text-slate-800">{tx.notes || 'Penyesuaian Saldo'}</div>
+                                  {tx.orderId && <div className="text-[9px] text-slate-400 font-mono mt-0.5">ID: {tx.orderId}</div>}
+                                </td>
+                                <td className="px-5 py-3 text-center text-[10px] font-semibold text-slate-500 whitespace-nowrap">
+                                  {tx.paymentMethod || 'Manual Teller'}
+                                </td>
+                                <td className="px-5 py-3 text-center whitespace-nowrap">
+                                  <div className="flex flex-col items-center gap-1">
+                                    {isDeposit ? (
+                                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold rounded text-[9px] uppercase tracking-wide">
+                                        <ArrowUpRight size={9} /> Setor
+                                      </span>
+                                    ) : (
+                                      <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-100 font-bold rounded text-[9px] uppercase tracking-wide">
+                                        <ArrowDownLeft size={9} /> Tarik
+                                      </span>
+                                    )}
+                                    {tx.status === 'pending' && (
+                                      <span className="inline-flex px-1 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[8px] font-bold uppercase tracking-wider leading-none">
+                                        Pending
+                                      </span>
+                                    )}
+                                    {tx.status === 'failed' && (
+                                      <span className="inline-flex px-1 py-0.5 bg-rose-100 text-rose-700 border border-rose-200 rounded text-[8px] font-bold uppercase tracking-wider leading-none">
+                                        Ditolak
+                                      </span>
+                                    )}
+                                  </div>
+                                </td>
+                                <td className="px-5 py-3 text-right whitespace-nowrap">
+                                  <div className="flex items-center justify-end gap-2">
+                                    <span className={`font-bold font-mono text-[11px] ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                      {isDeposit ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent! })}
+                                      className="p-1.5 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded border border-slate-200 shadow-xs transition-colors cursor-pointer flex items-center justify-center shrink-0"
+                                      title="Cetak & Unduh Bukti Transaksi"
+                                    >
+                                      <Printer size={11} />
+                                    </button>
+                                  </div>
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile Transaction Log View (Touch-Optimized Cards with quick Action) */}
+                    <div className="block md:hidden flex flex-col gap-3 max-h-[350px] overflow-y-auto">
+                      {transactions.map((tx) => {
+                        const isDeposit = tx.type === 'deposit';
+
+                        return (
+                          <div key={`tx-mob-${tx.id}`} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3 hover:border-slate-350 transition-colors text-left">
+                            <div className="flex justify-between items-start">
+                              <div className="flex flex-col gap-1 max-w-[65%]">
+                                <span className="font-bold text-slate-800 text-sm leading-snug">{tx.notes || 'Penyesuaian Saldo'}</span>
+                                <span className="text-[10px] text-slate-450 font-mono">
+                                  {new Date(tx.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit' })}
+                                </span>
+                                {tx.orderId && <span className="text-[8px] text-slate-400 font-mono leading-none">ID: {tx.orderId}</span>}
+                              </div>
+                              <div className="text-right">
+                                <span className={`block font-extrabold text-sm font-mono ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                  {isDeposit ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
+                                </span>
+                                <span className="text-[9px] text-slate-450 font-medium block mt-0.5">
+                                  {tx.paymentMethod || 'Manual Teller'}
+                                </span>
+                              </div>
+                            </div>
+
+                            <div className="flex items-center justify-between pt-2.5 border-t border-slate-100">
+                              <div className="flex items-center gap-1.5 flex-wrap">
                                 {isDeposit ? (
-                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold rounded text-[9px] uppercase tracking-wide">
-                                    <ArrowUpRight size={9} /> Setor
+                                  <span className="inline-flex items-center gap-0.5 px-2.5 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-100 font-bold rounded text-[9px] uppercase tracking-wide">
+                                    <ArrowUpRight size={9} /> Setor Masuk
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-0.5 px-2 py-0.5 bg-rose-50 text-rose-700 border border-rose-100 font-bold rounded text-[9px] uppercase tracking-wide">
-                                    <ArrowDownLeft size={9} /> Tarik
+                                  <span className="inline-flex items-center gap-0.5 px-2.5 py-0.5 bg-rose-50 text-rose-700 border border-rose-100 font-bold rounded text-[9px] uppercase tracking-wide">
+                                    <ArrowDownLeft size={9} /> Tarik Keluar
                                   </span>
                                 )}
-                              </td>
-                              <td className="px-5 py-3 text-right whitespace-nowrap">
-                                <div className="flex items-center justify-end gap-2">
-                                  <span className={`font-bold font-mono text-[11px] ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
-                                    {isDeposit ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
+                                {tx.status === 'pending' && (
+                                  <span className="inline-flex px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[8px] font-bold uppercase tracking-wider leading-none">
+                                    Pending
                                   </span>
-                                  <button
-                                    type="button"
-                                    onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent! })}
-                                    className="p-1 hover:bg-slate-100 text-slate-500 hover:text-slate-800 rounded border border-slate-200/80 shadow-xs transition-colors cursor-pointer flex items-center justify-center shrink-0"
-                                    title="Cetak & Unduh Bukti Transaksi"
-                                  >
-                                    <Printer size={11} />
-                                  </button>
-                                </div>
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
-                  </div>
+                                )}
+                                {tx.status === 'failed' && (
+                                  <span className="inline-flex px-1.5 py-0.5 bg-rose-100 text-rose-700 border border-rose-200 rounded text-[8px] font-bold uppercase tracking-wider leading-none">
+                                    Ditolak
+                                  </span>
+                                )}
+                              </div>
+
+                              <button
+                                type="button"
+                                onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent! })}
+                                className="px-3 py-1.5 bg-white text-indigo-600 hover:text-indigo-850 hover:bg-slate-50 border border-slate-200 hover:border-slate-350 font-bold rounded-lg text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                                title="Cetak & Unduh Bukti Transaksi"
+                              >
+                                <Printer size={11} className="shrink-0" /> Cetak Bukti
+                              </button>
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </>
                 )}
               </div>
               
@@ -1233,41 +1434,482 @@ export default function StudentPanel({
         )}
       </div>
 
-      {/* Receipt Modal for Student Panel */}
-      {receiptToPrint && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 md:p-8 max-w-xl w-full flex flex-col gap-6 relative select-none">
-            
-            {/* Modal Actions */}
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-450 text-left">Kuitansi Resmi Pembayaran</span>
-              <div className="flex gap-2">
-                <button
-                  type="button"
-                  onClick={() => handleDownloadInvoice(receiptToPrint.type, receiptToPrint.detail, receiptToPrint.student, schoolIdentity)}
-                  className="px-3 py-1.5 bg-indigo-600 hover:bg-slate-900 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-                >
-                  <Download size={12} /> Unduh Invoice HTML 📥
-                </button>
-                <button
-                  type="button"
-                  onClick={() => window.print()}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
-                >
-                  <Printer size={12} /> Cetak / Save PDF 🖨️
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setReceiptToPrint(null)}
-                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-lg text-xs uppercase cursor-pointer transition-all"
-                >
-                  Tutup
-                </button>
+      {/* ================= MOBILE NAVIGATION TAB VIEWS (lg:hidden) ================= */}
+      {currentStudent && (
+        <div className="lg:hidden col-span-1">
+          {/* 1. MOBILE TAB: LOG TRANSAKSI */}
+          {mobileTab === 'log' && (
+            <div className="flex flex-col gap-4 animate-fade-in text-left">
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex flex-col gap-1.5 mb-4 text-left">
+                  <h3 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider">Log & Riwayat Transaksi Siswa</h3>
+                  <p className="text-slate-400 text-xs">Rekaman bukti transaksi tabungan dan pembayaran SPP Anda.</p>
+                </div>
+
+                {/* Filter Tabs for Mobile logs */}
+                <div className="flex gap-2 p-1 bg-slate-100 rounded-lg text-xs font-semibold mb-4">
+                  <button
+                    onClick={() => setMobileLogFilter('all')}
+                    className={`flex-1 py-1.5 rounded-md text-center transition-all cursor-pointer ${
+                      mobileLogFilter === 'all'
+                        ? 'bg-white text-slate-800 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-slate-800'
+                    }`}
+                  >
+                    Semua
+                  </button>
+                  <button
+                    onClick={() => setMobileLogFilter('savings')}
+                    className={`flex-1 py-1.5 rounded-md text-center transition-all cursor-pointer ${
+                      mobileLogFilter === 'savings'
+                        ? 'bg-white text-emerald-700 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-emerald-650'
+                    }`}
+                  >
+                    Tabungan
+                  </button>
+                  <button
+                    onClick={() => setMobileLogFilter('spp')}
+                    className={`flex-1 py-1.5 rounded-md text-center transition-all cursor-pointer ${
+                      mobileLogFilter === 'spp'
+                        ? 'bg-white text-indigo-700 shadow-xs font-bold'
+                        : 'text-slate-500 hover:text-indigo-650'
+                    }`}
+                  >
+                    SPP
+                  </button>
+                </div>
+
+                {/* Container Mutasi */}
+                <div className="flex flex-col gap-3 max-h-[55vh] overflow-y-auto pr-1">
+                  {/* Render Mutasi Tabungan */}
+                  {(mobileLogFilter === 'all' || mobileLogFilter === 'savings') && (
+                    <div className="flex flex-col gap-2">
+                      {(mobileLogFilter === 'savings' || (mobileLogFilter === 'all' && transactions.length > 0)) && (
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Mutasi Tabungan</span>
+                      )}
+                      {transactions.length === 0 ? (
+                        mobileLogFilter === 'savings' && (
+                          <p className="text-[11px] text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-dashed border-slate-200">
+                            Belum ada riwayat transaksi tabungan untuk siswa ini.
+                          </p>
+                        )
+                      ) : (
+                        transactions.map((tx) => {
+                          const isDeposit = tx.type === 'deposit';
+                          return (
+                            <div key={`m-tx-${tx.id}`} className="bg-slate-50 border border-slate-150 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs text-left">
+                              <div className="flex items-center gap-3">
+                                <div className={`p-2 rounded-xl shrink-0 ${isDeposit ? 'bg-emerald-100 text-emerald-700' : 'bg-rose-100 text-rose-700'}`}>
+                                  {isDeposit ? <ArrowUpRight size={15} /> : <ArrowDownLeft size={15} />}
+                                </div>
+                                <div className="flex flex-col gap-0.5">
+                                  <span className="font-bold text-slate-800 leading-tight block">{tx.notes || 'Penyesuaian Saldo'}</span>
+                                  <div className="flex items-center gap-1.5 text-[9px] text-slate-400 mt-0.5 font-medium">
+                                    <span className="font-mono">{new Date(tx.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                                    <span>&bull;</span>
+                                    <span>{tx.paymentMethod || 'Teller'}</span>
+                                  </div>
+                                </div>
+                              </div>
+                              <div className="flex items-center gap-2">
+                                <span className={`font-black font-mono text-[12px] ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
+                                  {isDeposit ? '+' : '-'}Rp{tx.amount.toLocaleString('id-ID')}
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent })}
+                                  className="p-1.5 bg-white hover:bg-slate-100 text-slate-500 rounded border border-slate-200 transition-colors cursor-pointer shrink-0"
+                                  title="Cetak/Unduh Bukti"
+                                >
+                                  <Printer size={12} />
+                                </button>
+                              </div>
+                            </div>
+                          );
+                        })
+                      )}
+                    </div>
+                  )}
+
+                  {/* Render Mutasi/Tagihan SPP Lunas */}
+                  {(mobileLogFilter === 'all' || mobileLogFilter === 'spp') && (
+                    <div className="flex flex-col gap-2 mt-2">
+                      {(mobileLogFilter === 'spp' || (mobileLogFilter === 'all' && bills.filter(b => b.status === 'paid').length > 0)) && (
+                        <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block mb-1">Riwayat SPP Selesai</span>
+                      )}
+                      {bills.filter(b => b.status === 'paid').length === 0 ? (
+                        mobileLogFilter === 'spp' && (
+                          <p className="text-[11px] text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-dashed border-slate-200">
+                            Belum ada riwayat iuran SPP lunas.
+                          </p>
+                        )
+                      ) : (
+                        bills.filter(b => b.status === 'paid').map((bill) => (
+                          <div key={`m-spp-${bill.id}`} className="bg-indigo-50/40 border border-indigo-100 rounded-xl p-3.5 flex items-center justify-between gap-3 text-xs text-left">
+                            <div className="flex items-center gap-3">
+                              <div className="p-2 rounded-xl bg-indigo-100 text-indigo-700 shrink-0">
+                                <CreditCard size={15} />
+                              </div>
+                              <div className="flex flex-col gap-0.5">
+                                <span className="font-bold text-slate-800 leading-tight">SPP {bill.month} {bill.year}</span>
+                                <div className="flex items-center gap-1.5 text-[9px] text-indigo-600 font-bold uppercase tracking-wider mt-0.5">
+                                  <span>TERBAYAR 🎉</span>
+                                  {bill.paidAt && (
+                                    <>
+                                      <span>&bull;</span>
+                                      <span className="font-mono text-slate-400">{new Date(bill.paidAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}</span>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="font-extrabold text-[12px] text-indigo-700 font-mono">
+                                Rp{bill.amount.toLocaleString('id-ID')}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setReceiptToPrint({ type: 'spp', detail: bill, student: currentStudent })}
+                                className="p-1.5 bg-white hover:bg-indigo-100/50 text-indigo-600 rounded border border-indigo-150 transition-colors cursor-pointer shrink-0"
+                                title="Cetak/Unduh Bukti"
+                              >
+                                <Printer size={12} />
+                              </button>
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
+          )}
 
+          {/* 2. MOBILE TAB: NOTIFIKASI LONCENG */}
+          {mobileTab === 'lonceng' && (
+            <div className="flex flex-col gap-4 animate-fade-in text-left">
+              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-sm">
+                <div className="flex flex-col gap-1.5 mb-4 text-left">
+                  <h3 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
+                    <span className="relative inline-block">
+                      <Bell size={16} className="text-slate-800" />
+                      {notifications.length > 0 && (
+                        <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
+                      )}
+                    </span>
+                    Notifikasi Sekolah
+                  </h3>
+                  <p className="text-slate-400 text-xs text-left">Pemberitahuan resmi iuran SPP, mutasi tabungan, absensi siswa, dan informasi sekolah.</p>
+                </div>
+
+                {/* Filter Cari Notifikasi di Ponsel */}
+                <div className="relative mb-4">
+                  <input
+                    type="text"
+                    placeholder="Cari pengumuman..."
+                    value={mobileNotifSearch}
+                    onChange={(e) => setMobileNotifSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-600 transition-all font-semibold"
+                  />
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+                  </div>
+                </div>
+
+                {/* List Notifikasi */}
+                <div className="flex flex-col gap-3.5 pr-1">
+                  {(() => {
+                    const filtered = notifications.filter(n => {
+                      const matchesQuery = n.title.toLowerCase().includes(mobileNotifSearch.toLowerCase()) || 
+                                           (n.message || "").toLowerCase().includes(mobileNotifSearch.toLowerCase());
+                      const isForThisStudent = !n.studentId || n.studentId === currentStudent.id;
+                      return matchesQuery && isForThisStudent;
+                    });
+
+                    if (filtered.length === 0) {
+                      return (
+                        <div className="text-center py-10 px-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-2.5">
+                          <Bell size={24} className="text-slate-300 stroke-1" />
+                          <div>
+                            <p className="font-bold text-slate-600 text-[11px]">Belum Ada Pengumuman</p>
+                            <p className="text-[10px] text-slate-400 mt-0.5">Semua notifikasi penting wali murid akan muncul di sini.</p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return filtered.map((notif) => {
+                      let bgClass = 'bg-blue-50/55 border-blue-150';
+                      let barColor = 'bg-blue-650 bg-blue-600';
+                      let labelText = 'Info Madrasah';
+                      if (notif.type === 'success') { 
+                        bgClass = 'bg-emerald-50/50 border-emerald-150'; 
+                        barColor = 'bg-emerald-600'; 
+                        labelText = 'Transaksi Berhasil'; 
+                      } else if (notif.type === 'warning') { 
+                        bgClass = 'bg-amber-50/60 border-amber-150'; 
+                        barColor = 'bg-amber-500'; 
+                        labelText = 'Pemberitahuan Rekening / Sandi'; 
+                      } else if (notif.type === 'payment') { 
+                        bgClass = 'bg-indigo-50/50 border-indigo-150'; 
+                        barColor = 'bg-indigo-600'; 
+                        labelText = 'Pembayaran Terverifikasi'; 
+                      }
+
+                      // Robust helper to resolve descriptions from any source or keyword patterns
+                      const getNotifDetails = (n: RealtimeNotification): string => {
+                        if (n.message && n.message.trim() !== '') return n.message;
+                        const anyNotif = n as any;
+                        if (anyNotif.pesan && anyNotif.pesan.trim() !== '') return anyNotif.pesan;
+                        if (anyNotif.notes && anyNotif.notes.trim() !== '') return anyNotif.notes;
+                        if (anyNotif.description && anyNotif.description.trim() !== '') return anyNotif.description;
+                        if (anyNotif.content && anyNotif.content.trim() !== '') return anyNotif.content;
+                        if (anyNotif.messageText && anyNotif.messageText.trim() !== '') return anyNotif.messageText;
+
+                        // Fallbacks built dynamically to ensure clear user-facing descriptions
+                        const lowerTitle = (n.title || "").toLowerCase();
+                        if (lowerTitle.includes("identitas")) {
+                          return "Data administrasi dan identitas resmi SMP MA'ARIF NU PANDAAN berhasil dimutakhirkan oleh Administrator.";
+                        }
+                        if (lowerTitle.includes("massal") || lowerTitle.includes("bulk")) {
+                          return `Prosedur penarikan tabungan massal perwalian kelas berhasil dibukukan oleh sistem teller madrasah secara aman.`;
+                        }
+                        if (lowerTitle.includes("tarik") || lowerTitle.includes("tabungan") || lowerTitle.includes("withdraw")) {
+                          return "Mutasi rekening atau status penarikan tabungan siswa telah dicatat dan didebet sesuai otorisasi.";
+                        }
+                        if (lowerTitle.includes("setoran") || lowerTitle.includes("deposit")) {
+                          return "Mutasi penyetoran dana tabungan siswa telah berhasil diverifikasi dan ditambahkan ke saldo utama.";
+                        }
+                        if (lowerTitle.includes("gateway") || lowerTitle.includes("biaya") || lowerTitle.includes("midtrans")) {
+                          return "Konfigurasi payment gateway otomatis dan biaya administrasi diperbarui untuk opsi pelunasan SPP online.";
+                        }
+                        if (lowerTitle.includes("spp") || lowerTitle.includes("bayar") || lowerTitle.includes("lunas")) {
+                          return "Catatan pelunasan iuran bulanan SPP wajib siswa berhasil dicatatkan dalam server keuangan sekolah.";
+                        }
+                        if (lowerTitle.includes("sandi") || lowerTitle.includes("katasandi") || lowerTitle.includes("password")) {
+                          return "Pengaturan kata sandi akun masuk portal siswa & wali murid berhasil diperbarui demi tujuan keamanan.";
+                        }
+                        return "Pengumuman berkala reguler mengenai kemajuan akademik dan aktivitas operasional harian sekolah.";
+                      };
+
+                      const fullMessage = getNotifDetails(notif);
+
+                      return (
+                        <div key={`m-notif-${notif.id}`} className={`p-4 rounded-xl border ${bgClass} flex flex-col gap-2 relative overflow-hidden text-left shadow-xs transition-colors`}>
+                          <div className={`absolute left-0 top-0 bottom-0 w-1.5 ${barColor}`} />
+                          
+                          {/* Title and Badge Metadata Row */}
+                          <div className="flex justify-between items-start gap-3 pl-2.5">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 block mb-0.5">{labelText}</span>
+                              <h4 className="font-extrabold text-slate-900 text-xs sm:text-sm leading-tight pr-10">{notif.title}</h4>
+                            </div>
+                            <span className="text-[9px] text-slate-500 font-mono font-bold whitespace-nowrap hidden sm:inline-block">
+                              {new Date(notif.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                            </span>
+                          </div>
+
+                          {/* Mobile Screen Spec Date Badge */}
+                          <div className="pl-2.5 text-[9px] text-slate-500 font-mono font-bold block sm:hidden">
+                            {new Date(notif.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                          </div>
+
+                          {/* High Contrast Detailed Message Grid (Keterangan) */}
+                          <div className="pl-2.5 mt-1 pb-0.5">
+                            <span className="text-[9px] font-black text-slate-700 uppercase tracking-wider block mb-1">Keterangan:</span>
+                            <p className="text-[12px] sm:text-xs text-slate-900 leading-relaxed font-bold break-words px-2.5 py-1.5 bg-white/70 border border-slate-250/25 rounded-lg">
+                              {fullMessage}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    });
+                  })()}
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 3. MOBILE TAB: PROFIL ORANG */}
+          {mobileTab === 'orang' && (
+            <div className="flex flex-col gap-5 animate-fade-in text-left">
+              {/* Digital School Card Samping */}
+              <div className="bg-slate-900 text-slate-200 p-6 rounded-2xl border border-slate-800 shadow-xl relative overflow-hidden">
+                <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-indigo-500/10 blur-2xl pointer-events-none" />
+                <div className="absolute -left-12 -bottom-12 w-36 h-36 rounded-full bg-emerald-500/10 blur-xl pointer-events-none" />
+
+                <div className="flex justify-between items-start mb-5">
+                  <div className="flex flex-col gap-0.5 text-left">
+                    <span className="text-[9px] font-black text-emerald-400 uppercase tracking-widest leading-none">Kartu Profil Siswa</span>
+                    <span className="text-slate-400 text-[10px] mt-0.5 leading-none">{schoolIdentity?.name || "SMP Maarif NU Pandaan"}</span>
+                  </div>
+                  <span className="bg-emerald-500 text-white text-[10px] font-black uppercase px-2.5 py-0.5 rounded-md tracking-wider">
+                    Kelas {currentStudent.class}
+                  </span>
+                </div>
+
+                <div className="flex flex-col gap-3.5 border-t border-slate-800/80 pt-4">
+                  <div className="flex flex-col gap-0.5 text-left">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Nama Lengkap Siswa</span>
+                    <span className="text-base font-extrabold text-white leading-tight block">{currentStudent.name}</span>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-4 mt-1.5">
+                    <div className="flex flex-col gap-0.5 text-left">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Nomor Induk Siswa (NIS)</span>
+                      <span className="text-xs font-mono font-bold text-slate-300 bg-slate-800/55 border border-slate-700/50 px-2 py-0.5 rounded w-fit">{currentStudent.nis}</span>
+                    </div>
+                    <div className="flex flex-col gap-0.5 text-left">
+                      <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Kontak Wali Phone</span>
+                      <span className="text-xs font-semibold text-slate-300">{currentStudent.phone}</span>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col gap-0.5 text-left mt-1">
+                    <span className="text-[9px] font-bold text-slate-500 uppercase tracking-wide">Orang Tua / Wali Sesi</span>
+                    <span className="text-xs font-semibold text-slate-300">Bp/Ibu {currentStudent.name.split(' ')[0]}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Security password form */}
+              <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-3">
+                <div className="flex items-center gap-2 justify-between">
+                  <div className="flex items-center gap-1.5">
+                    <Key size={14} className="text-amber-500" />
+                    <span className="text-[10px] font-bold uppercase tracking-wider text-slate-500">Ubah Kata Sandi Akun</span>
+                  </div>
+                </div>
+                
+                <p className="text-[11px] text-slate-500 leading-relaxed text-left">
+                  Sandi bawaan Anda adalah nomor <span className="font-mono font-bold bg-slate-100/100 px-1 py-0.5 rounded text-slate-700">NIS Siswa</span> atau <span className="font-mono font-bold bg-slate-100/100 px-1 py-0.5 rounded text-slate-700">123456</span>. Amankan dengan sandi baru di sini.
+                </p>
+
+                <form onSubmit={handlePasswordChangeSubmit} className="flex flex-col gap-3.5 mt-2 border-t border-slate-100 pt-3">
+                  {passwordError && (
+                    <div className="p-2.5 bg-red-50 border border-red-200 text-red-700 rounded-lg font-bold flex items-center gap-1.5 text-[11px] text-left">
+                      <AlertCircle size={14} /> {passwordError}
+                    </div>
+                  )}
+
+                  {passwordSuccess && (
+                    <div className="p-2.5 bg-emerald-50 border border-emerald-250 text-emerald-800 rounded-lg font-bold flex items-center gap-1.5 text-[11px] text-left">
+                      <Check size={14} /> {passwordSuccess}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Kata Sandi Lama / Default *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Masukkan sandi lama"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-indigo-600 transition-all text-slate-800 focus:ring-1 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1 text-left">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">Kata Sandi Baru *</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Minimal 6 karakter"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold focus:outline-none focus:border-indigo-600 transition-all text-slate-800 focus:ring-1 focus:ring-indigo-600"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={changingPassword}
+                    className="w-full mt-1.5 py-2.5 bg-slate-900 hover:bg-slate-950 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm cursor-pointer disabled:opacity-50"
+                  >
+                    {changingPassword ? 'Sedang Memproses...' : 'Ubah Sandi Baru Anda 🔐'}
+                  </button>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ================= STICKY BOTTOM NAVIGATION BAR FOR MOBILE (lg:hidden) ================= */}
+      {currentStudent && (
+        <div 
+          style={{ contentVisibility: 'auto' }}
+          className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-2 pt-2 pb-4 flex justify-around items-center transition-all"
+        >
+          {/* Beranda Tab Button */}
+          <button
+            onClick={() => setMobileTab('beranda')}
+            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all min-w-0"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'beranda' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-400'}`}>
+              <Home size={22} className={mobileTab === 'beranda' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'beranda' ? 'text-indigo-900 font-extrabold' : 'text-slate-500 font-medium'}`}>Beranda</span>
+          </button>
+
+          {/* Log Tab Button */}
+          <button
+            onClick={() => setMobileTab('log')}
+            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all min-w-0"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'log' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-400'}`}>
+              <History size={22} className={mobileTab === 'log' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'log' ? 'text-emerald-900 font-extrabold' : 'text-slate-500 font-medium'}`}>Log Trx</span>
+          </button>
+
+          {/* Notifikasi Tab Button */}
+          <button
+            onClick={() => setMobileTab('lonceng')}
+            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all relative min-w-0"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors relative ${mobileTab === 'lonceng' ? 'bg-amber-50 text-amber-650' : 'text-slate-400'}`}>
+              <Bell size={22} className={mobileTab === 'lonceng' ? 'text-amber-600 stroke-[2.5px]' : 'text-slate-400 stroke-[1.8px]'} />
+              {notifications.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-600 text-[9px] font-black text-white px-1 leading-none shadow-sm border border-white">
+                  {notifications.length}
+                </span>
+              )}
+            </div>
+            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'lonceng' ? 'text-amber-950 font-extrabold' : 'text-slate-500 font-medium'}`}>Notifikasi</span>
+          </button>
+
+          {/* Profil Tab Button */}
+          <button
+            onClick={() => setMobileTab('orang')}
+            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all min-w-0"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'orang' ? 'bg-blue-50 text-blue-700' : 'text-slate-400'}`}>
+              <User size={22} className={mobileTab === 'orang' ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} />
+            </div>
+            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'orang' ? 'text-blue-900 font-extrabold' : 'text-slate-500 font-medium'}`}>Profil</span>
+          </button>
+        </div>
+      )}
+      {receiptToPrint && (
+        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 no-print">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 md:p-8 max-w-xl w-full flex flex-col gap-6 relative select-none">
+            
             {/* Receipt Preview */}
             <div id="print-receipt-section" className="bg-white text-slate-900 p-6 rounded-lg font-sans border border-slate-100 flex flex-col gap-5 text-[11px] leading-relaxed relative">
+              {/* Paid Status Watermark Badge on the Receipt itself */}
+              {((receiptToPrint.type === 'spp' && receiptToPrint.detail.status === 'paid') || 
+                (receiptToPrint.type === 'savings' && (receiptToPrint.detail.status === 'success' || !receiptToPrint.detail.status || receiptToPrint.detail.status === 'completed'))) && (
+                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-12 border-4 border-dashed border-emerald-500/15 rounded-2xl px-6 py-2 pointer-events-none select-none z-0">
+                  <span className="font-sans font-black tracking-widest text-[36px] uppercase text-emerald-500/15">
+                    {receiptToPrint.type === 'spp' ? 'LUNAS' : 'SUKSES'}
+                  </span>
+                </div>
+              )}
+
               {/* Receipt Header */}
               {schoolIdentity?.letterhead ? (
                 <div className="border-b-2 border-slate-900 pb-2 flex flex-col items-center">
@@ -1326,13 +1968,26 @@ export default function StudentPanel({
                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">NIS Siswa</span>
                   <span className="font-mono font-semibold text-slate-700">{receiptToPrint.student.nis}</span>
                 </div>
-                <div className="flex flex-col gap-0.5 text-left">
+                <div className="flex flex-col gap-1 text-left">
                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Pendidikan / Kelas</span>
-                  <span className="font-bold text-slate-800 text-[11px]">Kelas {receiptToPrint.student.class}</span>
+                  <span className="inline-flex items-center justify-center bg-indigo-600 text-white font-black text-xs md:text-sm px-3 py-1.5 rounded-lg w-fit shadow-xs border border-indigo-750 select-none tracking-wider whitespace-nowrap">
+                     Kelas {receiptToPrint.student.class}
+                  </span>
                 </div>
-                <div className="flex flex-col gap-0.5 text-right font-mono">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Tanggal Cetak</span>
-                  <span className="font-medium text-slate-600 block">{new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}</span>
+                <div className="flex flex-col gap-0.5 text-right font-sans">
+                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">
+                    {receiptToPrint.type === 'spp' ? 'Tanggal Bayar' : 'Tanggal Transaksi'}
+                  </span>
+                  <span className="font-bold text-emerald-600 block">
+                    {receiptToPrint.type === 'spp'
+                      ? (receiptToPrint.detail.paidAt 
+                          ? new Date(receiptToPrint.detail.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})
+                          : (receiptToPrint.detail.status === 'paid' ? 'Lunas / Cash' : 'Belum Lunas'))
+                      : new Date(receiptToPrint.detail.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
+                  </span>
+                  <span className="text-[7px] text-slate-400 mt-0.5 block font-sans">
+                    Cetak: {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}
+                  </span>
                 </div>
               </div>
 
@@ -1367,19 +2022,76 @@ export default function StudentPanel({
 
               {/* Signatures */}
               <div className="grid grid-cols-2 mt-4 pt-3 border-t border-slate-100 text-[10px]">
-                <div className="flex flex-col justify-between h-[65px] text-left">
+                <div className="flex flex-col justify-between h-[100px] text-left">
                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Wali Murid / Penyetor</span>
-                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center">({receiptToPrint.student.name.substring(0, 16)})</span>
+                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({receiptToPrint.student.name.substring(0, 16)})</span>
                 </div>
-                <div className="flex flex-col justify-between items-end h-[65px] text-right">
+                <div className="flex flex-col justify-between items-end h-[100px] text-right relative">
                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
-                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center">({schoolIdentity?.treasurer || "Bendahara Madrasah"})</span>
+                  
+                  {/* Signature and Stamp layer for paid/completed receipts */}
+                  {((receiptToPrint.type === 'spp' && receiptToPrint.detail.status === 'paid') || 
+                    (receiptToPrint.type === 'savings' && (receiptToPrint.detail.status === 'success' || !receiptToPrint.detail.status || receiptToPrint.detail.status === 'completed'))) && (
+                    <div className="absolute top-[18px] right-2 w-32 h-[55px] pointer-events-none select-none z-10 flex items-center justify-center">
+                      {/* Treasurer signature */}
+                      {schoolIdentity?.treasurerSignature && (
+                        <img 
+                          src={schoolIdentity.treasurerSignature} 
+                          alt="Ttd Bendahara" 
+                          className="absolute -bottom-1 right-2 max-h-12 max-w-[90px] object-contain z-10 mix-blend-multiply" 
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                      
+                      {/* School stamp */}
+                      {schoolIdentity?.schoolStamp && (
+                        <img 
+                          src={schoolIdentity.schoolStamp} 
+                          alt="Stempel Sekolah" 
+                          className="absolute -bottom-2 right-[60px] max-h-[70px] max-w-[112px] object-contain z-20 mix-blend-multiply opacity-85" 
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                    </div>
+                  )}
+
+                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({schoolIdentity?.treasurer || "Bendahara Madrasah"})</span>
                 </div>
               </div>
 
               {/* Footer */}
               <div className="text-center text-[8px] text-slate-400 mt-1 font-medium">
                 Bukti pembayaran sah diterbitkan otomatis oleh {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.
+              </div>
+            </div>
+
+            {/* Modal Actions at the Bottom */}
+            <div className="flex flex-col sm:flex-row gap-3 justify-between items-center pt-4 border-t border-slate-100 no-print">
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-450 text-left">
+                Kuitansi Resmi Pembayaran
+              </span>
+              <div className="flex gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => handleDownloadInvoice(receiptToPrint.type, receiptToPrint.detail, receiptToPrint.student, schoolIdentity)}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-slate-900 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Download size={12} /> Unduh Invoice HTML 📥
+                </button>
+                <button
+                  type="button"
+                  onClick={() => window.print()}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
+                >
+                  <Printer size={12} /> Cetak / Save PDF 🖨️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceiptToPrint(null)}
+                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-lg text-xs uppercase cursor-pointer transition-all"
+                >
+                  Tutup
+                </button>
               </div>
             </div>
           </div>

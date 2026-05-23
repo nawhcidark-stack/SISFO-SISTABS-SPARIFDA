@@ -6,7 +6,7 @@ import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRig
 interface StudentManagementProps {
   students: Student[];
   onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }) => Promise<boolean>;
-  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string }) => Promise<boolean>;
+  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string }) => Promise<boolean>;
   onDeleteStudent: (id: string) => Promise<boolean>;
   onImportStudents: (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }>) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
   onRefresh: () => void;
@@ -36,7 +36,8 @@ export default function StudentManagement({
     class: '7-A',
     email: '',
     phone: '',
-    initialSavings: '0'
+    initialSavings: '0',
+    password: ''
   });
 
   const [saving, setSaving] = useState(false);
@@ -211,7 +212,8 @@ export default function StudentManagement({
       class: '7-A',
       email: '',
       phone: '',
-      initialSavings: '0'
+      initialSavings: '0',
+      password: ''
     });
     setErrorMsg('');
   };
@@ -265,6 +267,11 @@ export default function StudentManagement({
       return;
     }
 
+    if (formData.password && formData.password.trim().length > 0 && formData.password.trim().length < 6) {
+      setErrorMsg('Kata sandi baru harus minimal 6 karakter!');
+      return;
+    }
+
     setSaving(true);
     try {
       const success = await onUpdateStudent(editingStudent.id, {
@@ -272,7 +279,8 @@ export default function StudentManagement({
         name: formData.name.trim(),
         class: formData.class.trim(),
         email: formData.email.trim(),
-        phone: formData.phone.trim()
+        phone: formData.phone.trim(),
+        password: formData.password && formData.password.trim().length >= 6 ? formData.password.trim() : undefined
       });
 
       if (success) {
@@ -316,7 +324,8 @@ export default function StudentManagement({
       class: student.class,
       email: student.email || '',
       phone: student.phone || '',
-      initialSavings: '0' // Not editable
+      initialSavings: '0', // Not editable
+      password: ''
     });
   };
 
@@ -721,6 +730,20 @@ export default function StudentManagement({
                       className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-slate-800 focus:bg-white"
                     />
                   </div>
+                </div>
+
+                <div className="flex flex-col gap-1 bg-amber-50/60 p-3 rounded-lg border border-amber-200/80 mt-1">
+                  <label className="font-extrabold text-amber-800 uppercase text-[9px] tracking-wider">Atur Ulang Sandi Akun Wali/Siswa (Opsional)</label>
+                  <input
+                    type="password"
+                    placeholder="Masukkan sandi baru (kosongkan jika tidak ingin diubah)"
+                    value={formData.password}
+                    onChange={(e) => setFormData({ ...formData, password: e.target.value })}
+                    className="p-2.5 bg-white border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-amber-500 focus:ring-1 focus:ring-amber-500"
+                  />
+                  <p className="text-[10px] text-amber-700/85 italic leading-snug font-medium">
+                    *Kosongkan untuk tetap memakai sandi lama yang sudah aktif. Isi minimal 6 karakter untuk memperbarui sandi login portal.
+                  </p>
                 </div>
 
                 <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-150 mt-2">

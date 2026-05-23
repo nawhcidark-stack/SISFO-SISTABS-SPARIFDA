@@ -108,7 +108,9 @@ let schoolIdentity = {
   treasurer: "Bendahara Madrasah NU",
   logo: "", // base64 string or image url containing the school logo
   logo2: "", // base64 string or image url containing the second school logo
-  letterhead: "" // base64 string or image url containing the school kop surat
+  letterhead: "", // base64 string or image url containing the school kop surat
+  treasurerSignature: "", // base64 string or image url of treasurer signature
+  schoolStamp: "" // base64 string or image url of school official stamp
 };
 
 // WhatsApp API notification settings
@@ -766,7 +768,7 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead } = req.body;
+    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp } = req.body;
     
     if (name !== undefined) schoolIdentity.name = String(name).trim();
     if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
@@ -778,6 +780,8 @@ async function startServer() {
     if (logo !== undefined) schoolIdentity.logo = String(logo); // can be empty or base64 data URI
     if (logo2 !== undefined) (schoolIdentity as any).logo2 = String(logo2); // can be empty or base64 data URI
     if (letterhead !== undefined) schoolIdentity.letterhead = String(letterhead); // can be empty or base64 data URI
+    if (treasurerSignature !== undefined) (schoolIdentity as any).treasurerSignature = String(treasurerSignature);
+    if (schoolStamp !== undefined) (schoolIdentity as any).schoolStamp = String(schoolStamp);
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
@@ -900,6 +904,30 @@ async function startServer() {
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
+
+    res.json({ success: true, message: "Kata sandi berhasil disimpan." });
+  });
+
+  // Change homeroom teacher password
+  app.post("/api/homerooms/change-password", (req, res) => {
+    const { teacherId, oldPassword, newPassword } = req.body;
+    if (!teacherId || !newPassword) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+
+    const teacher = homeroomTeachers.find(ht => ht.id === teacherId);
+    if (!teacher) {
+      return res.status(404).json({ error: "Wali kelas tidak ditemukan." });
+    }
+
+    // Check old password
+    const activePassword = teacher.password || "wali123";
+    if (oldPassword && oldPassword !== activePassword) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
+    }
+
+    teacher.password = newPassword.trim();
+    saveState();
 
     res.json({ success: true, message: "Kata sandi berhasil disimpan." });
   });
@@ -1167,6 +1195,123 @@ async function startServer() {
     res.json({ success: true, bill });
   });
 
+  // Student post withdrawal request (unconfirmed, requires admin approval)
+  app.post("/api/student/withdraw-request", (req, res) => {
+    const { studentId, amount, notes } = req.body;
+    const student = students.find(s => s.id === studentId);
+    if (!student) {
+      return res.status(404).json({ error: "Siswa tidak ditemukan." });
+    }
+
+    const valAmount = Number(amount);
+    if (isNaN(valAmount) || valAmount <= 0) {
+      return res.status(400).json({ error: "Jumlah penarikan harus berupa angka positif." });
+    }
+
+    if (student.savingsBalance < valAmount) {
+      return res.status(400).json({ error: "Maaf, saldo tabungan Anda tidak mencukupi." });
+    }
+
+    const transaction: SavingsTransaction = {
+      id: `sav-${Date.now()}`,
+      studentId,
+      type: "withdrawal",
+      amount: valAmount,
+      status: "pending",
+      createdAt: new Date().toISOString(),
+      paymentMethod: "Manual Teller",
+      notes: notes || "Pengajuan tarik tunai mandiri"
+    };
+
+    savingsTransactions.push(transaction);
+
+    // Broadcast live SSE notifications
+    const notification: RealtimeNotification = {
+      id: `notif-sav-req-${Date.now()}`,
+      studentId,
+      title: "Pengajuan Tarik Tabungan",
+      message: `Siswa ${student.name} mengajukan penarikan tunai sebesar Rp ${valAmount.toLocaleString("id-ID")}. Menunggu persetujuan admin.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    saveState();
+    res.json({ success: true, transaction });
+  });
+
+  // Admin confirm/approve or reject pending student withdrawal request
+  app.post("/api/admin/savings-confirm", (req, res) => {
+    const { transactionId, action } = req.body; // action: 'approve' | 'reject'
+    const transaction = savingsTransactions.find(t => t.id === transactionId);
+    if (!transaction) {
+      return res.status(404).json({ error: "Data pengajuan penarikan tidak ditemukan." });
+    }
+
+    if (transaction.status !== "pending") {
+      return res.status(400).json({ error: "Pengajuan penarikan ini sudah diproses sebelumnya." });
+    }
+
+    const student = students.find(s => s.id === transaction.studentId);
+    if (!student) {
+      return res.status(404).json({ error: "Siswa terkait tidak ditemukan." });
+    }
+
+    if (action === "approve") {
+      if (student.savingsBalance < transaction.amount) {
+        transaction.status = "failed";
+        saveState();
+        return res.status(400).json({ error: "Gagal menyetujui. Saldo tabungan siswa saat ini tidak mencukupi." });
+      }
+
+      // Deduct balance
+      student.savingsBalance -= transaction.amount;
+      transaction.status = "success";
+
+      // Broadcast success notification
+      const notification: RealtimeNotification = {
+        id: `notif-sav-appr-${Date.now()}`,
+        studentId: student.id,
+        title: "Penarikan Tabungan Disetujui",
+        message: `Pengajuan tarik tunai Rp ${transaction.amount.toLocaleString("id-ID")} untuk ${student.name} telah disetujui admin. Saldo saat ini: Rp ${student.savingsBalance.toLocaleString("id-ID")}.`,
+        type: "success",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+
+      // Send automated WhatsApp confirmation for savings if enabled
+      if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
+        const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+          `📝 *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
+          `Pengajuan *TARIK PENARIKAN TABUNGAN* sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* telah DISETUJUI oleh Admin:\n\n` +
+          `• Status: *BERHASIL / DISETUJUI*\n` +
+          `• Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+          `• Memo: *${transaction.notes}*\n` +
+          `• *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
+          `Terima kasih.\n` +
+          `-- LP MA'ARIF NU PANDAAN --`;
+        sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings WA:", err));
+      }
+    } else {
+      // rejection
+      transaction.status = "failed";
+
+      // Broadcast rejection notification
+      const notification: RealtimeNotification = {
+        id: `notif-sav-rej-${Date.now()}`,
+        studentId: student.id,
+        title: "Penarikan Tabungan Ditolak",
+        message: `Pengajuan tarik tunai Rp ${transaction.amount.toLocaleString("id-ID")} untuk ${student.name} telah DITOLAK oleh admin.`,
+        type: "warning",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+    }
+
+    saveState();
+    res.json({ success: true, student, transaction });
+  });
+
   // Admin Manual Savings Transaction (Add/Withdraw manual)
   app.post("/api/admin/savings-manual", (req, res) => {
     const { studentId, type, amount, notes } = req.body;
@@ -1229,6 +1374,114 @@ async function startServer() {
     }
 
     res.json({ success: true, student, transaction });
+  });
+
+  // Admin Bulk Savings Withdrawal per grade level (7,8,9)
+  app.post("/api/admin/savings-bulk-withdraw", (req, res) => {
+    const { grade, amount, notes, allowDebt } = req.body;
+    
+    // Validate inputs
+    if (!grade || !["7", "8", "9"].includes(String(grade))) {
+      return res.status(400).json({ error: "Tingkat kelas tidak valid (harus 7, 8, atau 9)." });
+    }
+
+    const valAmount = Number(amount);
+    if (isNaN(valAmount) || valAmount <= 0) {
+      return res.status(400).json({ error: "Jumlah penarikan harus berupa angka positif." });
+    }
+
+    const customNotes = notes || `Penarikan massal tingkat ${grade}`;
+
+    // Filter students belonging to specified grade
+    const targetStudents = students.filter(student => {
+      const cls = String(student.class || "").trim();
+      return cls.startsWith(String(grade));
+    });
+
+    if (targetStudents.length === 0) {
+      return res.status(404).json({ error: `Tidak ditemukan siswa di tingkat kelas ${grade}.` });
+    }
+
+    let successCount = 0;
+    let skippedCount = 0;
+    let totalDeducted = 0;
+
+    for (const student of targetStudents) {
+      let deductVal = valAmount;
+      if (!allowDebt && student.savingsBalance < valAmount) {
+        // If they have some balance but not enough, we withdraw whatever balance they have remaining
+        deductVal = student.savingsBalance;
+      }
+
+      if (deductVal <= 0) {
+        skippedCount++;
+        continue;
+      }
+
+      // Deduct balance
+      student.savingsBalance -= deductVal;
+      totalDeducted += deductVal;
+      successCount++;
+
+      // Create transaction record
+      const transaction: SavingsTransaction = {
+        id: `sav-bulk-${Date.now()}-${student.id}`,
+        studentId: student.id,
+        type: "withdrawal",
+        amount: deductVal,
+        status: "success",
+        createdAt: new Date().toISOString(),
+        paymentMethod: "Manual Teller (Massal)",
+        notes: customNotes
+      };
+      savingsTransactions.push(transaction);
+
+      // Create dynamic notification for this specific student/parents
+      const studentNotification: RealtimeNotification = {
+        id: `notif-sav-bulk-st-${Date.now()}-${student.id}`,
+        studentId: student.id,
+        title: "Penarikan Tabungan Massal",
+        message: `Tabungan Anda ditarik massal sebesar Rp ${deductVal.toLocaleString("id-ID")} untuk: ${customNotes}. Saldo baru: Rp ${student.savingsBalance.toLocaleString("id-ID")}.`,
+        type: "warning",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(studentNotification);
+
+      // Send automated WhatsApp notification (if enabled)
+      if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
+        const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+          `📝 *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
+          `Telah diproses *PENARIKAN TABUNGAN MASSAL* Tingkat ${grade} oleh Teller Sekolah:\n\n` +
+          `• Jumlah Penarikan: *Rp ${deductVal.toLocaleString("id-ID")}*\n` +
+          `• Keperluan: *${customNotes}*\n` +
+          `• Tanggal: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+          `• Status: *BERHASIL*\n` +
+          `• *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
+          `Terima kasih.\n` +
+          `-- LP MA'ARIF NU PANDAAN --`;
+        sendWhatsappNotification(student.phone, waMsg).catch(err => console.error(`Error sending bulk savings WA for ${student.name}:`, err));
+      }
+    }
+
+    // Record general notification in the school notification feed
+    const schoolNotification: RealtimeNotification = {
+      id: `notif-bulk-sav-sch-${Date.now()}`,
+      title: `Penarikan Massal Tingkat ${grade} Berhasil`,
+      message: `Diproses penarikan tabungan massal tingkat ${grade} sebesar Rp ${valAmount.toLocaleString("id-ID")} per siswa untuk "${customNotes}". Sebanyak ${successCount} siswa didebet, total dana dihimpun: Rp ${totalDeducted.toLocaleString("id-ID")}.`,
+      type: "success",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(schoolNotification);
+
+    saveState();
+
+    res.json({
+      success: true,
+      successCount,
+      skippedCount,
+      totalDeducted,
+      message: `Berhasil memproses penarikan massal tingkat ${grade}. Keperluan: ${customNotes}.`
+    });
   });
 
   // 1. Create Student (with initial savings & automatic SPP bills)
@@ -1316,7 +1569,7 @@ async function startServer() {
 
   // 2. Update Student
   app.put("/api/admin/students/:id", (req, res) => {
-    const { nis, name, class: className, email, phone } = req.body;
+    const { nis, name, class: className, email, phone, password } = req.body;
     const student = students.find(s => s.id === req.params.id);
     
     if (!student) {
@@ -1339,6 +1592,10 @@ async function startServer() {
     student.class = className;
     student.email = email || "";
     student.phone = phone || "";
+    
+    if (password !== undefined) {
+      student.password = String(password).trim();
+    }
 
     // Sync student unpaid bills with the SPP rate corresponding to their new class grade
     let updatedBillsCount = 0;
@@ -1351,6 +1608,8 @@ async function startServer() {
         }
       });
     }
+
+    saveState();
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {

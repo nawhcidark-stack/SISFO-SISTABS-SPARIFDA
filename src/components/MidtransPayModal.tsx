@@ -41,7 +41,7 @@ export default function MidtransPayModal({
             console.log('Midtrans Snap Success:', result);
             // Notify server of success if it hasn't handled it yet.
             // Note that webhooks will also handle this in absolute prod, but this ensures instant local sync!
-            fetch('api/simulate-payment-success', {
+            fetch('/api/simulate-payment-success', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
               body: JSON.stringify({ orderId, paymentType: 'Midtrans Snap' })
@@ -83,7 +83,7 @@ export default function MidtransPayModal({
     if (payMethod === 'card') pType = 'Kartu Kredit';
 
     try {
-      const response = await fetch('api/simulate-payment-success', {
+      const response = await fetch('/api/simulate-payment-success', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({

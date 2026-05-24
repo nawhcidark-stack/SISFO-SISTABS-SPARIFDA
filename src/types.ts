@@ -98,3 +98,38 @@ export interface HomeroomTeacher {
   className: string; // e.g., "7-A", "7-B", "8-A", "9-C"
   password?: string;
 }
+
+export interface SubjectTeacher {
+  id: string;
+  username: string;
+  name: string;
+  subject: string; // e.g., "Matematika", "Bahasa Inggris", "IPA", etc.
+  password?: string;
+}
+
+export interface SubjectAttendanceEntry {
+  studentId: string;
+  studentName: string;
+  status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
+  notes?: string;
+}
+
+export interface TeachingJournal {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  subject: string;
+  className: string;
+  date: string;
+  topic: string; // Materi Pembelajaran
+  attendance: SubjectAttendanceEntry[];
+  notes?: string; // Catatan KBM
+  fase?: string;
+  semester?: string;
+  alokasiWaktu?: string; // JP
+  jamKe?: string;
+  pertemuanKe?: string;
+  tujuanPembelajaran?: string;
+  pencapaianKktp?: string;
+  createdAt: string;
+}

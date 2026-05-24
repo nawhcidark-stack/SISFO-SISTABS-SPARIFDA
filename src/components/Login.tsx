@@ -1,22 +1,22 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { Student, SchoolIdentity, HomeroomTeacher } from '../types';
+import { Student, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
 import { ShieldCheck, User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, ClipboardCheck } from 'lucide-react';
 
 interface LoginProps {
   students: Student[];
-  onLoginSuccess: (role: 'student' | 'admin' | 'homeroom', student: Student | null, homeroom: HomeroomTeacher | null) => void;
+  onLoginSuccess: (role: 'student' | 'admin' | 'homeroom' | 'subject_teacher', student: Student | null, homeroom: HomeroomTeacher | null, subjectTeacher?: SubjectTeacher | null) => void;
   schoolIdentity?: SchoolIdentity;
 }
 
 export default function Login({ students, onLoginSuccess, schoolIdentity }: LoginProps) {
-  const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom'>('student');
+  const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher'>('student');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
 
-  const handleQuickFill = (role: 'student' | 'admin' | 'homeroom', userVal: string, passVal: string) => {
+  const handleQuickFill = (role: 'student' | 'admin' | 'homeroom' | 'subject_teacher', userVal: string, passVal: string) => {
     setActiveRole(role);
     setUsername(userVal);
     setPassword(passVal);
@@ -60,7 +60,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
             if (password === expectedPassword || password === '123456' || password === cleanUser) {
               setTimeout(() => {
                 setIsValidating(false);
-                onLoginSuccess('homeroom', null, found);
+                onLoginSuccess('homeroom', null, found, null);
               }, 600);
             } else {
               setIsValidating(false);
@@ -74,6 +74,33 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
           setIsValidating(false);
           setErrorMsg('Gagal terhubung ke modul otentikasi Wali Kelas.');
         }
+      } else if (activeRole === 'subject_teacher') {
+        // Subject Teacher Validation
+        const res = await fetch('/api/subject-teachers');
+        if (res.ok) {
+          const teachers: SubjectTeacher[] = await res.json();
+          const cleanUser = username.trim().toLowerCase();
+          const found = teachers.find(t => t.username.toLowerCase() === cleanUser);
+          
+          if (found) {
+            const expectedPassword = found.password || 'mapel123';
+            if (password === expectedPassword || password === 'mapel123' || password === cleanUser) {
+              setTimeout(() => {
+                setIsValidating(false);
+                onLoginSuccess('subject_teacher', null, null, found);
+              }, 600);
+            } else {
+              setIsValidating(false);
+              setErrorMsg('Sandi Guru Mata Pelajaran Anda salah.');
+            }
+          } else {
+            setIsValidating(false);
+            setErrorMsg('Username Guru Mata Pelajaran tidak terdaftar.');
+          }
+        } else {
+          setIsValidating(false);
+          setErrorMsg('Gagal terhubung ke modul otentikasi Guru Mata Pelajaran.');
+        }
       } else {
         // Student/Parent Validation
         const cleanNIS = username.trim();
@@ -85,7 +112,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
           if (password === expectedPassword || password === '123456' || password === cleanNIS) {
             setTimeout(() => {
               setIsValidating(false);
-              onLoginSuccess('student', found, null);
+              onLoginSuccess('student', found, null, null);
             }, 600);
           } else {
             setIsValidating(false);
@@ -100,7 +127,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
             const expectedPassword = loadedStudent?.password || '123456';
             if (password === expectedPassword || password === '123456' || password === cleanNIS) {
               setIsValidating(false);
-              onLoginSuccess('student', loadedStudent, null);
+              onLoginSuccess('student', loadedStudent, null, null);
             } else {
               setIsValidating(false);
               setErrorMsg(loadedStudent?.password ? 'Sandi Anda salah.' : 'Sandinya salah. Coba gunakan: 123456');
@@ -194,6 +221,28 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                   </button>
                 </div>
               </div>
+
+              <div className="flex flex-col gap-1.5">
+                <span className="text-[10px] font-bold text-slate-400">Guru Mata Pelajaran (Jurnal KBM & Absensi Mapel):</span>
+                <div className="flex flex-wrap gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => handleQuickFill('subject_teacher', 'guru_math', 'mapel123')}
+                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[10px] whitespace-nowrap text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-sm cursor-pointer border-emerald-100"
+                  >
+                    <ClipboardCheck size={11} className="text-indigo-500" />
+                    <span>Guru MTK (guru_math / mapel123)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => handleQuickFill('subject_teacher', 'guru_english', 'mapel123')}
+                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[10px] whitespace-nowrap text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-sm cursor-pointer border-emerald-100"
+                  >
+                    <ClipboardCheck size={11} className="text-indigo-500" />
+                    <span>Guru B.Inggris (guru_english)</span>
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         </div>
@@ -236,20 +285,20 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
 
           <div className="p-8">
             {/* Tab switchers */}
-            <div className="grid grid-cols-3 gap-1.5 bg-slate-50 p-1 rounded-xl border border-slate-200 mb-6">
+            <div className="grid grid-cols-4 gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200 mb-6 font-semibold">
               <button
                 type="button"
                 onClick={() => {
                   setActiveRole('student');
                   setErrorMsg(null);
                 }}
-                className={`py-2 text-[10px] md:text-xs font-bold rounded-lg cursor-pointer transition-all ${
+                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
                   activeRole === 'student'
                     ? 'bg-slate-900 text-white shadow'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                Wali Murid / Siswa
+                Siswa
               </button>
               <button
                 type="button"
@@ -257,13 +306,13 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                   setActiveRole('admin');
                   setErrorMsg(null);
                 }}
-                className={`py-2 text-[10px] md:text-xs font-bold rounded-lg cursor-pointer transition-all ${
+                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
                   activeRole === 'admin'
                     ? 'bg-slate-900 text-white shadow'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
-                Staf Administrasi
+                Admin
               </button>
               <button
                 type="button"
@@ -271,13 +320,27 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                   setActiveRole('homeroom');
                   setErrorMsg(null);
                 }}
-                className={`py-2 text-[10px] md:text-xs font-bold rounded-lg cursor-pointer transition-all ${
+                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
                   activeRole === 'homeroom'
                     ? 'bg-slate-900 text-white shadow'
                     : 'text-slate-600 hover:bg-slate-100'
                 }`}
               >
                 Wali Kelas
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  setActiveRole('subject_teacher');
+                  setErrorMsg(null);
+                }}
+                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
+                  activeRole === 'subject_teacher'
+                    ? 'bg-slate-900 text-white shadow'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                Guru Mapel
               </button>
             </div>
 
@@ -292,7 +355,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               {/* Form Input fields */}
               <div>
                 <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 align-left text-left">
-                  {activeRole === 'student' ? 'Nomor Induk Siswa (NIS)' : activeRole === 'admin' ? 'Username Staf' : 'Username Wali Kelas'}
+                  {activeRole === 'student' ? 'Nomor Induk Siswa (NIS)' : activeRole === 'admin' ? 'Username Staf' : activeRole === 'homeroom' ? 'Username Wali Kelas' : 'Username Guru Mapel'}
                 </label>
                 <div className="relative">
                   <input
@@ -303,7 +366,9 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                         ? 'Masukkan NIS Anda (cth: 20241001)' 
                         : activeRole === 'admin' 
                           ? 'Masukkan username staf' 
-                          : 'Masukkan username bimbingan kelas Anda'
+                          : activeRole === 'homeroom'
+                            ? 'Masukkan username bimbingan kelas Anda'
+                            : 'Masukkan username guru mapel Anda (cth: guru_math)'
                     }
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}

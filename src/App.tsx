@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog } from './types';
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal } from './types';
 import StudentPanel from './components/StudentPanel';
 import AdminPanel from './components/AdminPanel';
 import HomeroomPanel from './components/HomeroomPanel';
+import SubjectTeacherPanel from './components/SubjectTeacherPanel';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
@@ -14,14 +15,18 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('smp_maarif_logged_in') === 'true';
   });
-  const [role, setRole] = useState<'student' | 'admin' | 'homeroom'>(() => {
-    return (localStorage.getItem('smp_maarif_role') as 'student' | 'admin' | 'homeroom') || 'student';
+  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher'>(() => {
+    return (localStorage.getItem('smp_maarif_role') as 'student' | 'admin' | 'homeroom' | 'subject_teacher') || 'student';
   });
   const [loggedStudentId, setLoggedStudentId] = useState<string | null>(() => {
     return localStorage.getItem('smp_maarif_student_id');
   });
   const [loggedHomeroom, setLoggedHomeroom] = useState<HomeroomTeacher | null>(() => {
     const raw = localStorage.getItem('smp_maarif_logged_homeroom');
+    return raw ? JSON.parse(raw) : null;
+  });
+  const [loggedSubjectTeacher, setLoggedSubjectTeacher] = useState<SubjectTeacher | null>(() => {
+    const raw = localStorage.getItem('smp_maarif_logged_subject_teacher');
     return raw ? JSON.parse(raw) : null;
   });
 
@@ -32,10 +37,30 @@ export default function App() {
   const [studentTransactions, setStudentTransactions] = useState<SavingsTransaction[]>([]);
   const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>([]);
   const [activeToasts, setActiveToasts] = useState<RealtimeNotification[]>([]);
+  const [readNotifIds, setReadNotifIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('school_read_notif_ids');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
   const [isNotifHistoryOpen, setIsNotifHistoryOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (isNotifHistoryOpen && globalNotifications.length > 0) {
+      const allIds = globalNotifications.map(n => n.id);
+      setReadNotifIds(prev => {
+        const merged = Array.from(new Set([...prev, ...allIds]));
+        localStorage.setItem('school_read_notif_ids', JSON.stringify(merged));
+        return merged;
+      });
+    }
+  }, [isNotifHistoryOpen, globalNotifications]);
   const [notifSearchQuery, setNotifSearchQuery] = useState<string>('');
   const [attendanceList, setAttendanceList] = useState<AttendanceLog[]>([]);
   const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>([]);
+  const [subjectTeachersList, setSubjectTeachersList] = useState<SubjectTeacher[]>([]);
   
   // School Identity state
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity>({
@@ -189,6 +214,17 @@ export default function App() {
         console.error("Gagal memuat wali kelas", e);
       }
 
+      // Load Subject Teachers
+      try {
+        const stRes = await fetch('/api/subject-teachers');
+        if (stRes.ok) {
+          const stData = await stRes.json();
+          setSubjectTeachersList(stData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat guru mapel", e);
+      }
+
       setIsLoading(false);
     } catch (err) {
       console.error('Failed to boot initial data', err);
@@ -246,7 +282,12 @@ export default function App() {
     }
   };
 
-  const handleLoginSuccess = (userRole: 'student' | 'admin' | 'homeroom', student: Student | null, homeroom: HomeroomTeacher | null) => {
+  const handleLoginSuccess = (
+    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher', 
+    student: Student | null, 
+    homeroom: HomeroomTeacher | null,
+    subjectTeacher?: SubjectTeacher | null
+  ) => {
     setIsLoggedIn(true);
     setRole(userRole);
     localStorage.setItem('smp_maarif_logged_in', 'true');
@@ -258,17 +299,31 @@ export default function App() {
       fetchStudentFullData(student.id, false);
       setLoggedHomeroom(null);
       localStorage.removeItem('smp_maarif_logged_homeroom');
+      setLoggedSubjectTeacher(null);
+      localStorage.removeItem('smp_maarif_logged_subject_teacher');
     } else if (userRole === 'homeroom' && homeroom) {
       setLoggedHomeroom(homeroom);
       localStorage.setItem('smp_maarif_logged_homeroom', JSON.stringify(homeroom));
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
       fetchStudentFullData('', true);
+      setLoggedSubjectTeacher(null);
+      localStorage.removeItem('smp_maarif_logged_subject_teacher');
+    } else if (userRole === 'subject_teacher' && subjectTeacher) {
+      setLoggedSubjectTeacher(subjectTeacher);
+      localStorage.setItem('smp_maarif_logged_subject_teacher', JSON.stringify(subjectTeacher));
+      setLoggedStudentId(null);
+      localStorage.removeItem('smp_maarif_student_id');
+      fetchStudentFullData('', true);
+      setLoggedHomeroom(null);
+      localStorage.removeItem('smp_maarif_logged_homeroom');
     } else {
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
       setLoggedHomeroom(null);
       localStorage.removeItem('smp_maarif_logged_homeroom');
+      setLoggedSubjectTeacher(null);
+      localStorage.removeItem('smp_maarif_logged_subject_teacher');
       if (studentsList.length > 0) {
         fetchStudentFullData(studentsList[0].id, true);
       } else {
@@ -282,10 +337,12 @@ export default function App() {
     setLoggedStudentId(null);
     setCurrentStudent(null);
     setLoggedHomeroom(null);
+    setLoggedSubjectTeacher(null);
     localStorage.removeItem('smp_maarif_logged_in');
     localStorage.removeItem('smp_maarif_role');
     localStorage.removeItem('smp_maarif_student_id');
     localStorage.removeItem('smp_maarif_logged_homeroom');
+    localStorage.removeItem('smp_maarif_logged_subject_teacher');
   };
 
   // 2. Real-time notifications listener using Server-Sent Events (SSE)
@@ -585,6 +642,28 @@ export default function App() {
     }
   };
 
+  // Admin Cancel/Void Manual SPP
+  const handleCancelSppManual = async (billId: string): Promise<any> => {
+    try {
+      const res = await fetch('/api/admin/cancel-spp-manual', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billId })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        handleReload();
+        return { success: true, bill: data.bill };
+      } else {
+        const errData = await res.json();
+        return { success: false, error: errData.error || 'Gagal membatalkan pembayaran SPP.' };
+      }
+    } catch (err) {
+      console.error(err);
+      return { success: false, error: 'Kesalahan jaringan server.' };
+    }
+  };
+
   // Admin Manual Savings ledger deposit/withdrawal
   const handleSavingsManual = async (studentId: string, type: 'deposit' | 'withdrawal', amount: number, notes: string): Promise<any> => {
     try {
@@ -710,6 +789,37 @@ export default function App() {
     }
   };
 
+  // Batch Import Teachers (Wali Kelas & Guru Mapel)
+  const handleImportTeachers = async (
+    homerooms: Array<{ username: string; name: string; className: string; password?: string }>,
+    subjectTeachers: Array<{ username: string; name: string; subject: string; password?: string }>
+  ): Promise<{ success: boolean; homeroomsAdded: number; homeroomsUpdated: number; subjectsAdded: number; subjectsUpdated: number }> => {
+    try {
+      const res = await fetch('/api/admin/teachers/import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ homerooms, subjectTeachers })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setHomeroomsList(data.homeroomsList || []);
+        setSubjectTeachersList(data.subjectTeachersList || []);
+        initSystemData();
+        return {
+          success: true,
+          homeroomsAdded: data.summary?.homeroomsAdded || 0,
+          homeroomsUpdated: data.summary?.homeroomsUpdated || 0,
+          subjectsAdded: data.summary?.subjectsAdded || 0,
+          subjectsUpdated: data.summary?.subjectsUpdated || 0
+        };
+      }
+      return { success: false, homeroomsAdded: 0, homeroomsUpdated: 0, subjectsAdded: 0, subjectsUpdated: 0 };
+    } catch (err) {
+      console.error(err);
+      return { success: false, homeroomsAdded: 0, homeroomsUpdated: 0, subjectsAdded: 0, subjectsUpdated: 0 };
+    }
+  };
+
   // Create Homeroom Teacher CRUD
   const handleCreateHomeroom = async (homeroomData: { username: string; name: string; className: string; password?: string }): Promise<boolean> => {
     try {
@@ -764,6 +874,90 @@ export default function App() {
         const data = await res.json();
         if (data.success) {
           setHomeroomsList(data.homeroomTeachers || []);
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  };
+
+  // Create Subject Teacher CRUD
+  const handleCreateSubjectTeacher = async (stData: { username: string; name: string; subject: string; password?: string }): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/admin/subject-teachers', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(stData)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSubjectTeachersList(data.subjectTeachers || []);
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  };
+
+  // Update Subject Teacher CRUD
+  const handleUpdateSubjectTeacher = async (id: string, stData: { username?: string; name?: string; subject?: string; password?: string }): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/admin/subject-teachers/${id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(stData)
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSubjectTeachersList(data.subjectTeachers || []);
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  };
+
+  // Delete Subject Teacher CRUD
+  const handleDeleteSubjectTeacher = async (id: string): Promise<boolean> => {
+    try {
+      const res = await fetch(`/api/admin/subject-teachers/${id}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSubjectTeachersList(data.subjectTeachers || []);
+          return true;
+        }
+      }
+      return false;
+    } catch (err) {
+      console.error(err);
+      return false;
+    }
+  };
+
+  // Auto-generate Subject Teachers bulk action
+  const handleAutoGenerateSubjectTeachers = async (): Promise<boolean> => {
+    try {
+      const res = await fetch('/api/admin/subject-teachers/auto-generate', {
+        method: 'POST'
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setSubjectTeachersList(data.subjectTeachers || []);
           return true;
         }
       }
@@ -1211,6 +1405,11 @@ export default function App() {
                   <ClipboardCheck size={13} className="text-amber-700" />
                   <span>Wali Kelas: {loggedHomeroom?.name || 'Wali Kelas'} (Kelas {loggedHomeroom?.className})</span>
                 </div>
+              ) : role === 'subject_teacher' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-50 text-teal-850 border border-teal-150 rounded-lg text-xs font-extrabold shadow-sm">
+                  <ClipboardCheck size={13} className="text-teal-700" />
+                  <span>Guru Mapel: {loggedSubjectTeacher?.name || 'Guru Mapel'} ({loggedSubjectTeacher?.subject})</span>
+                </div>
               ) : (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-850 border border-indigo-150 rounded-lg text-xs font-bold shadow-sm animate-pulse">
                   <ShieldCheck size={13} className="text-indigo-700" />
@@ -1230,15 +1429,25 @@ export default function App() {
               {/* Tombol Lonceng untuk History Notif */}
               <button
                 id="btn-trigger-notification-log"
-                onClick={() => setIsNotifHistoryOpen(true)}
+                onClick={() => {
+                  setIsNotifHistoryOpen(true);
+                  if (globalNotifications.length > 0) {
+                    const allIds = globalNotifications.map(n => n.id);
+                    setReadNotifIds(prev => {
+                      const merged = Array.from(new Set([...prev, ...allIds]));
+                      localStorage.setItem('school_read_notif_ids', JSON.stringify(merged));
+                      return merged;
+                    });
+                  }
+                }}
                 className={`relative items-center gap-1.5 px-3 py-1.5 bg-slate-100 hover:bg-slate-250 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 text-[11px] font-bold rounded-lg transition-all cursor-pointer shadow-xs whitespace-nowrap ${role === 'student' ? 'hidden lg:flex' : 'flex'}`}
                 title="Lihat Riwayat Notifikasi Sekolah"
               >
                 <span className="relative flex h-4 w-4 items-center justify-center shrink-0">
                   <Bell size={13} className="animate-pulse text-indigo-600" />
-                  {globalNotifications.length > 0 && (
-                    <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-650 bg-rose-600 text-[8px] font-extrabold text-white leading-none">
-                      {globalNotifications.length}
+                  {globalNotifications.filter(n => !readNotifIds.includes(n.id)).length > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 flex h-4 w-4 items-center justify-center rounded-full bg-rose-650 bg-rose-600 text-[8px] font-extrabold text-white leading-none animate-pulse">
+                      {globalNotifications.filter(n => !readNotifIds.includes(n.id)).length}
                     </span>
                   )}
                 </span>
@@ -1299,6 +1508,16 @@ export default function App() {
             onRefresh={handleReload}
             isLoading={isLoading}
           />
+        ) : role === 'subject_teacher' ? (
+          <SubjectTeacherPanel
+            currentTeacher={loggedSubjectTeacher!}
+            students={studentsList}
+            attendanceLogs={attendanceList}
+            schoolIdentity={schoolIdentity}
+            onLogout={handleLogout}
+            onRefresh={handleReload}
+            isLoading={isLoading}
+          />
         ) : (
           <AdminPanel
             students={studentsList}
@@ -1307,6 +1526,7 @@ export default function App() {
             isLoading={isLoading}
             midtransStatus={sysStatus}
             onPaySppManual={handlePaySppManual}
+            onCancelSppManual={handleCancelSppManual}
             onPaySppViaMidtrans={handlePaySpp}
             adminSppBillToPrint={adminSppBillToPrint}
             onClearAdminSppBillToPrint={() => setAdminSppBillToPrint(null)}
@@ -1322,12 +1542,18 @@ export default function App() {
             onUpdateStudent={handleUpdateStudent}
             onDeleteStudent={handleDeleteStudent}
             onImportStudents={handleImportStudents}
+            onImportTeachers={handleImportTeachers}
             schoolIdentity={schoolIdentity}
             onUpdateSchoolIdentity={handleUpdateSchoolIdentity}
             homerooms={homeroomsList}
             onCreateHomeroom={handleCreateHomeroom}
             onUpdateHomeroom={handleUpdateHomeroom}
             onDeleteHomeroom={handleDeleteHomeroom}
+            subjectTeachers={subjectTeachersList}
+            onCreateSubjectTeacher={handleCreateSubjectTeacher}
+            onUpdateSubjectTeacher={handleUpdateSubjectTeacher}
+            onDeleteSubjectTeacher={handleDeleteSubjectTeacher}
+            onAutoGenerateSubjectTeachers={handleAutoGenerateSubjectTeachers}
           />
         )}
       </main>

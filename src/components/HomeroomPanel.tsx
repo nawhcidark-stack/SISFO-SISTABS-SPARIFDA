@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill } from '../types';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
-  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key
+  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key,
+  Printer, FileText
 } from 'lucide-react';
 
 interface HomeroomPanelProps {
@@ -50,6 +51,36 @@ export default function HomeroomPanel({
   const [changingPassword, setChangingPassword] = useState(false);
   const [passwordError, setPasswordError] = useState<string | null>(null);
   const [passwordSuccess, setPasswordSuccess] = useState<string | null>(null);
+
+  // Teaching Journals state and printing systems
+  const [teachingJournalsList, setTeachingJournalsList] = useState<any[]>([]);
+  const [loadingJournals, setLoadingJournals] = useState(false);
+  const [journalViewMode, setJournalViewMode] = useState<'presensi' | 'kbm'>('presensi');
+  const [selectedJournalToPrint, setSelectedJournalToPrint] = useState<any | null>(null);
+  const [compiledJournalPrint, setCompiledJournalPrint] = useState<boolean>(false);
+
+  const fetchTeachingJournals = async () => {
+    setLoadingJournals(true);
+    try {
+      const res = await fetch('/api/teaching-journals');
+      if (res.ok) {
+        const data = await res.json();
+        // Filter journals that belong to current homeroom teacher's class
+        const filtered = data.filter((j: any) => j.className.toLowerCase() === currentTeacher.className.toLowerCase());
+        setTeachingJournalsList(filtered);
+      }
+    } catch (err) {
+      console.error("Gagal memuat jurnal pembelajaran guru", err);
+    } finally {
+      setLoadingJournals(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeSubTab === 'history') {
+      fetchTeachingJournals();
+    }
+  }, [activeSubTab, currentTeacher.className]);
   
   // Filter students who are in this homeroom teacher's class
   const classStudents = students.filter(
@@ -60,6 +91,7 @@ export default function HomeroomPanel({
   const [dailyStatusMap, setDailyStatusMap] = useState<Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }>>({});
   const [isSaving, setIsSaving] = useState(false);
   const [notifMsg, setNotifMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [showSuccessCheck, setShowSuccessCheck] = useState<boolean>(false);
 
   // Sync state when date changes or logs/students change
   useEffect(() => {
@@ -120,17 +152,18 @@ export default function HomeroomPanel({
     }));
 
     try {
-      const success = await onSaveBatchAttendance(logsToSave);
-      if (success) {
-        setNotifMsg({ type: 'success', text: `🎉 Berhasil menyimpan absensi Kelas ${currentTeacher.className} tanggal ${selectedDate}!` });
-      } else {
-        setNotifMsg({ type: 'error', text: 'Gagal menghubungkan ke server untuk menyimpan absensi.' });
-      }
-    } catch (err) {
-      setNotifMsg({ type: 'error', text: 'Terjadi kesalahan sistem.' });
-    } finally {
-      setIsSaving(false);
-    }
+       const success = await onSaveBatchAttendance(logsToSave);
+       if (success) {
+         setNotifMsg({ type: 'success', text: `🎉 Berhasil menyimpan absensi Kelas ${currentTeacher.className} tanggal ${selectedDate}!` });
+         setShowSuccessCheck(true);
+       } else {
+         setNotifMsg({ type: 'error', text: 'Gagal menghubungkan ke server untuk menyimpan absensi.' });
+       }
+     } catch (err) {
+       setNotifMsg({ type: 'error', text: 'Terjadi kesalahan sistem.' });
+     } finally {
+       setIsSaving(false);
+     }
   };
 
   const handleTeacherPasswordChange = async (e: React.FormEvent) => {
@@ -177,6 +210,18 @@ export default function HomeroomPanel({
     izin: currentFilteredLogs.filter(l => l.status === 'Izin').length,
     alpa: currentFilteredLogs.filter(l => l.status === 'Alpa').length,
   };
+
+  const currentDailyStats = useMemo(() => {
+    const values = Object.values(dailyStatusMap) as { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }[];
+    return {
+      total: classStudents.length,
+      hadir: values.filter(v => v.status === 'Hadir').length,
+      terlambat: values.filter(v => v.status === 'Terlambat').length,
+      sakit: values.filter(v => v.status === 'Sakit').length,
+      izin: values.filter(v => v.status === 'Izin').length,
+      alpa: values.filter(v => v.status === 'Alpa').length,
+    };
+  }, [dailyStatusMap, classStudents]);
 
   // All time class stats
   const classLogs = attendanceLogs.filter(l => classStudents.some(s => s.id === l.studentId));
@@ -487,7 +532,9 @@ Wassalamualaikum Wr. Wb.
   return (
     <div id="homeroom-dashboard-root" className="flex flex-col gap-6 pb-24 lg:pb-0 animate-fade-in">
       {/* Top Welcome Title Bar */}
-      <div className="bg-gradient-to-r from-emerald-900 to-indigo-950 text-white rounded-2xl p-6 shadow-md border border-emerald-950 relative overflow-hidden">
+      <div className={`bg-gradient-to-r from-emerald-900 to-indigo-950 text-white rounded-2xl p-6 shadow-md border border-emerald-950 relative overflow-hidden animate-fade-in ${
+        activeSubTab === 'record' ? 'hidden lg:block' : 'hidden'
+      }`}>
         {/* Abstract shapes */}
         <div className="absolute right-0 top-0 w-64 h-64 bg-white/5 rounded-full -mr-16 -mt-16 pointer-events-none" />
         <div className="absolute left-1/3 bottom-0 w-48 h-48 bg-emerald-500/5 rounded-full pointer-events-none" />
@@ -524,7 +571,9 @@ Wassalamualaikum Wr. Wb.
       </div>
 
       {/* Class Overview Cards - Compact & Clean Layout */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 animate-fade-in">
+      <div className={`grid grid-cols-2 lg:grid-cols-4 gap-3 animate-fade-in ${
+        activeSubTab === 'record' ? 'grid' : 'hidden'
+      }`}>
         <div className="bg-white border border-slate-200 rounded-xl p-3 flex items-center gap-3 shadow-xs">
           <div className="p-2.5 rounded-lg bg-indigo-50 text-indigo-700 shrink-0">
             <Users size={16} className="stroke-[2.5]" />
@@ -863,116 +912,254 @@ Wassalamualaikum Wr. Wb.
 
           {activeSubTab === 'history' && (
             <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left p-6">
-              <div className="mb-6">
-                <h3 className="text-slate-900 font-extrabold text-sm">Jurnal & Riwayat Presensi Kelas</h3>
-                <p className="text-slate-450 text-xs mt-0.5">Koleksi ringkasan kehadiran seluruh siswa kelas {currentTeacher.className} dari waktu ke waktu.</p>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 mb-6 pb-4 border-b border-slate-100">
+                <div>
+                  <h3 className="text-slate-900 font-extrabold text-sm">Jurnal &amp; Riwayat Presensi Kelas / KBM</h3>
+                  <p className="text-slate-450 text-xs mt-0.5">Koleksi ringkasan kehadiran seluruh siswa kelas {currentTeacher.className} dari waktu ke waktu dan log kegiatan pembelajaran harian.</p>
+                </div>
+                
+                {/* Switcher Mode / Segmented Control */}
+                <div className="flex gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 w-fit shrink-0 select-none">
+                  <button
+                    type="button"
+                    onClick={() => setJournalViewMode('presensi')}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${journalViewMode === 'presensi' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    📝 Kehadiran Harian
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setJournalViewMode('kbm');
+                      fetchTeachingJournals();
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${journalViewMode === 'kbm' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
+                  >
+                    📖 Jurnal Pembelajaran (KBM)
+                  </button>
+                </div>
               </div>
 
-              {classLogs.length === 0 ? (
-                <div className="p-12 text-center text-slate-400">
-                  Belum ada sejarah pengisian jurnal absensi di kelas ini.
-                </div>
+              {journalViewMode === 'presensi' ? (
+                classLogs.length === 0 ? (
+                  <div className="p-12 text-center text-slate-400">
+                    Belum ada sejarah pengisian jurnal absensi di kelas ini.
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-6 animate-fade-in">
+                    {/* Aggregate stats breakdown of current class logs ratio */}
+                    {(() => {
+                      const uniqueDates = Array.from(new Set(classLogs.map(l => l.date)));
+                      const totalEntries = classLogs.length;
+                      const h_total = classLogs.filter(l => l.status === 'Hadir').length;
+                      const t_total = classLogs.filter(l => l.status === 'Terlambat').length;
+                      const s_total = classLogs.filter(l => l.status === 'Sakit').length;
+                      const i_total = classLogs.filter(l => l.status === 'Izin').length;
+                      const a_total = classLogs.filter(l => l.status === 'Alpa').length;
+
+                      return (
+                        <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex items-center justify-between flex-wrap gap-4 select-none">
+                          <div>
+                            <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Kehadiran Kumulatif</span>
+                            <span className="block text-xl font-black text-slate-800 mt-1">{totalEntries > 0 ? Math.round(((h_total + t_total) / totalEntries) * 100) : 100}%</span>
+                          </div>
+                          <div className="flex items-center gap-3">
+                            <div className="text-center">
+                              <span className="block text-[8px] font-bold text-emerald-600 uppercase">Hadir</span>
+                              <span className="block text-sm font-semibold text-slate-700 mt-0.5">{h_total}</span>
+                            </div>
+                            <div className="border-l border-slate-200 h-6 shrink-0" />
+                            <div className="text-center">
+                              <span className="block text-[8px] font-bold text-purple-600 uppercase">Terlambat</span>
+                              <span className="block text-sm font-semibold text-slate-700 mt-0.5">{t_total}</span>
+                            </div>
+                            <div className="border-l border-slate-200 h-6 shrink-0" />
+                            <div className="text-center">
+                              <span className="block text-[8px] font-bold text-amber-600 uppercase">Sakit</span>
+                              <span className="block text-sm font-semibold text-slate-700 mt-0.5">{s_total}</span>
+                            </div>
+                            <div className="border-l border-slate-200 h-6 shrink-0" />
+                            <div className="text-center">
+                              <span className="block text-[8px] font-bold text-blue-600 uppercase">Izin</span>
+                              <span className="block text-sm font-semibold text-slate-700 mt-0.5">{i_total}</span>
+                            </div>
+                            <div className="border-l border-slate-200 h-6 shrink-0" />
+                            <div className="text-center">
+                              <span className="block text-[8px] font-bold text-rose-600 uppercase">Alpa</span>
+                              <span className="block text-sm font-semibold text-slate-700 mt-0.5">{a_total}</span>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
+
+                    {/* Date-wise journals listing */}
+                    {(() => {
+                      const uniqueDatesSorted = Array.from(new Set(classLogs.map(l => l.date))).sort((a,b) => b.localeCompare(a));
+
+                      return (
+                        <div className="flex flex-col gap-4">
+                          {uniqueDatesSorted.map((date) => {
+                            const dateLogs = classLogs.filter(l => l.date === date);
+                            const total = classStudents.length;
+                            const h = dateLogs.filter(l => l.status === 'Hadir').length;
+                            const t = dateLogs.filter(l => l.status === 'Terlambat').length;
+                            const s = dateLogs.filter(l => l.status === 'Sakit').length;
+                            const i = dateLogs.filter(l => l.status === 'Izin').length;
+                            const a = dateLogs.filter(l => l.status === 'Alpa').length;
+                            const attendanceRate = total > 0 ? Math.round(((h + t) / total) * 100) : 100;
+
+                            return (
+                              <div key={date} className="bg-white border border-slate-200 hover:border-slate-300 transition-all rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+                                <div className="flex flex-col gap-1 text-left">
+                                  <span className="text-xs font-black text-slate-800">
+                                    {new Date(date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                  </span>
+                                  <span className="block text-[10px] text-slate-400 font-semibold uppercase font-mono tracking-wider">
+                                    Persentase: {attendanceRate}% Hadir ({h + t} dari {total} Siswa)
+                                  </span>
+                                </div>
+
+                                <div className="flex items-center gap-2 self-start sm:self-center">
+                                  <div className="flex gap-1">
+                                    {h > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 rounded">H: {h}</span>}
+                                    {t > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-purple-700 bg-purple-50 rounded">T: {t}</span>}
+                                    {s > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-amber-700 bg-amber-50 rounded">S: {s}</span>}
+                                    {i > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-blue-700 bg-blue-50 rounded">I: {i}</span>}
+                                    {a > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-rose-700 bg-rose-50 rounded">A: {a}</span>}
+                                  </div>
+                                  
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedDate(date);
+                                      setActiveSubTab('record');
+                                    }}
+                                    className="p-1 px-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-[9px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer text-center"
+                                  >
+                                    Edit Jurnal
+                                  </button>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      );
+                    })()}
+                  </div>
+                )
               ) : (
-                <div className="flex flex-col gap-6">
-                  {/* Aggregate stats breakdown of current class logs ratio */}
-                  {(() => {
-                    const uniqueDates = Array.from(new Set(classLogs.map(l => l.date)));
-                    const totalEntries = classLogs.length;
-                    const h_total = classLogs.filter(l => l.status === 'Hadir').length;
-                    const t_total = classLogs.filter(l => l.status === 'Terlambat').length;
-                    const s_total = classLogs.filter(l => l.status === 'Sakit').length;
-                    const i_total = classLogs.filter(l => l.status === 'Izin').length;
-                    const a_total = classLogs.filter(l => l.status === 'Alpa').length;
+                /* JOURNAL KBM FROM SUBJECT TEACHERS (LES / MAPEL) */
+                <div className="flex flex-col gap-6 animate-fade-in">
+                  <div className="flex justify-between items-center bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex-wrap gap-4 select-none">
+                    <div className="text-left">
+                      <h4 className="text-indigo-950 font-black text-xs uppercase tracking-wider">Jurnal Kegiatan Belajar Mengajar (KBM) Kelas {currentTeacher.className}</h4>
+                      <p className="text-slate-500 text-[11px] mt-0.5 font-semibold">Berikut adalah rincian materi pembelajaran dan administrasi presensi harian per jam mata pelajaran dari guru bidang studi.</p>
+                    </div>
 
-                    return (
-                      <div className="bg-slate-50 rounded-2xl p-4 border border-slate-100 flex items-center justify-between flex-wrap gap-4 select-none">
-                        <div>
-                          <span className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest leading-none">Kehadiran Kumulatif</span>
-                          <span className="block text-xl font-black text-slate-800 mt-1">{totalEntries > 0 ? Math.round(((h_total + t_total) / totalEntries) * 100) : 100}%</span>
-                        </div>
-                        <div className="flex items-center gap-3">
-                          <div className="text-center">
-                            <span className="block text-[8px] font-bold text-emerald-600 uppercase">Hadir</span>
-                            <span className="block text-sm font-semibold text-slate-700 mt-0.5">{h_total}</span>
-                          </div>
-                          <div className="border-l border-slate-200 h-6 shrink-0" />
-                          <div className="text-center">
-                            <span className="block text-[8px] font-bold text-purple-600 uppercase">Terlambat</span>
-                            <span className="block text-sm font-semibold text-slate-700 mt-0.5">{t_total}</span>
-                          </div>
-                          <div className="border-l border-slate-200 h-6 shrink-0" />
-                          <div className="text-center">
-                            <span className="block text-[8px] font-bold text-amber-600 uppercase">Sakit</span>
-                            <span className="block text-sm font-semibold text-slate-700 mt-0.5">{s_total}</span>
-                          </div>
-                          <div className="border-l border-slate-200 h-6 shrink-0" />
-                          <div className="text-center">
-                            <span className="block text-[8px] font-bold text-blue-600 uppercase">Izin</span>
-                            <span className="block text-sm font-semibold text-slate-700 mt-0.5">{i_total}</span>
-                          </div>
-                          <div className="border-l border-slate-200 h-6 shrink-0" />
-                          <div className="text-center">
-                            <span className="block text-[8px] font-bold text-rose-600 uppercase">Alpa</span>
-                            <span className="block text-sm font-semibold text-slate-700 mt-0.5">{a_total}</span>
-                          </div>
-                        </div>
-                      </div>
-                    );
-                  })()}
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={fetchTeachingJournals}
+                        disabled={loadingJournals}
+                        className="px-3.5 py-2 border border-slate-300 hover:bg-white text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all bg-white/70"
+                      >
+                        🔄 {loadingJournals ? 'Memuat...' : 'Muat Ulang'}
+                      </button>
+                      {teachingJournalsList.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCompiledJournalPrint(true);
+                            // Trigger native browser printing immediately
+                            setTimeout(() => {
+                              window.print();
+                            }, 350);
+                          }}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-indigo-700 transition-all"
+                        >
+                          <Printer size={13} strokeWidth={2.5} />
+                          <span>Cetak Buku KBM Kelas</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
 
-                  {/* Date-wise journals listing */}
-                  {(() => {
-                    const uniqueDatesSorted = Array.from(new Set(classLogs.map(l => l.date))).sort((a,b) => b.localeCompare(a));
-
-                    return (
-                      <div className="flex flex-col gap-4">
-                        {uniqueDatesSorted.map((date) => {
-                          const dateLogs = classLogs.filter(l => l.date === date);
-                          const total = classStudents.length;
-                          const h = dateLogs.filter(l => l.status === 'Hadir').length;
-                          const t = dateLogs.filter(l => l.status === 'Terlambat').length;
-                          const s = dateLogs.filter(l => l.status === 'Sakit').length;
-                          const i = dateLogs.filter(l => l.status === 'Izin').length;
-                          const a = dateLogs.filter(l => l.status === 'Alpa').length;
-                          const attendanceRate = total > 0 ? Math.round(((h + t) / total) * 100) : 100;
+                  {loadingJournals ? (
+                    <div className="p-12 text-center text-slate-400 font-semibold flex flex-col items-center justify-center gap-3">
+                      <Loader2 className="animate-spin text-indigo-600" size={26} />
+                      <p className="text-xs">Menghubungkan ke pusat data KBM...</p>
+                    </div>
+                  ) : teachingJournalsList.length === 0 ? (
+                    <div className="p-12 text-center text-slate-400 bg-slate-50 border border-slate-150 rounded-2xl">
+                      <BookOpen size={28} className="mx-auto text-slate-300 mb-2" />
+                      <p className="text-xs font-bold text-slate-700">Belum ada Rekaman Jurnal Pembelajaran</p>
+                      <p className="text-[11px] text-slate-440 max-w-sm mx-auto mt-0.5">Guru Mata Pelajaran belum mengisi Jurnal KBM maupun absensi khusus jam pelajaran di kelas {currentTeacher.className}.</p>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4">
+                      {teachingJournalsList
+                        .sort((a,b) => b.date.localeCompare(a.date))
+                        .map((journal) => {
+                          const totalSiswa = journal.attendance?.length || 0;
+                          const hadirCount = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;
+                          const terlambatCount = journal.attendance?.filter((a: any) => a.status === 'Terlambat').length || 0;
+                          const sakitCount = journal.attendance?.filter((a: any) => a.status === 'Sakit').length || 0;
+                          const izinCount = journal.attendance?.filter((a: any) => a.status === 'Izin').length || 0;
+                          const alpaCount = journal.attendance?.filter((a: any) => a.status === 'Alpa').length || 0;
+                          const totalHadir = hadirCount + terlambatCount;
+                          const totalAbsen = sakitCount + izinCount + alpaCount;
 
                           return (
-                            <div key={date} className="bg-white border border-slate-200 hover:border-slate-300 transition-all rounded-xl p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-                              <div className="flex flex-col gap-1 text-left">
-                                <span className="text-xs font-black text-slate-800">
-                                  {new Date(date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                </span>
-                                <span className="block text-[10px] text-slate-400 font-semibold uppercase font-mono tracking-wider">
-                                  Persentase: {attendanceRate}% Hadir ({h + t} dari {total} Siswa)
-                                </span>
+                            <div key={journal.id} className="bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-xs transition-all rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                              <div className="flex-grow min-w-0 flex gap-3 text-left">
+                                <div className="p-3 bg-indigo-50 text-indigo-700 rounded-xl hidden sm:block h-fit shrink-0">
+                                  <FileText size={18} />
+                                </div>
+                                <div className="min-w-0 flex flex-col gap-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="font-extrabold text-sm text-slate-900">{journal.subject}</span>
+                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                      {journal.teacherName}
+                                    </span>
+                                    <span className="text-[10px] text-slate-400 font-bold font-mono">
+                                      {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                    </span>
+                                  </div>
+                                  <p className="text-xs text-slate-700 font-semibold leading-tight"><strong className="text-slate-400 font-extrabold text-[10px] uppercase">Materi KBM:</strong> {journal.topic}</p>
+                                  {journal.notes && (
+                                    <p className="text-[11px] text-slate-500 italic mt-0.5">Catatan: &ldquo;{journal.notes}&rdquo;</p>
+                                  )}
+                                  <div className="flex gap-1.5 mt-2 flex-wrap">
+                                    <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-emerald-50 text-emerald-800 border border-emerald-100 uppercase">Hadir: {totalHadir}</span>
+                                    {totalAbsen > 0 && (
+                                      <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-rose-50 text-rose-800 border border-rose-100 uppercase">Absen: {totalAbsen}</span>
+                                    )}
+                                    {sakitCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-amber-600 font-mono">Sakit: {sakitCount}</span>}
+                                    {izinCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-blue-600 font-mono">Izin: {izinCount}</span>}
+                                    {alpaCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-bold text-rose-600 font-mono">Alpa: {alpaCount}</span>}
+                                  </div>
+                                </div>
                               </div>
 
-                              <div className="flex items-center gap-2 self-start sm:self-center">
-                                <div className="flex gap-1">
-                                  {h > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 rounded">H: {h}</span>}
-                                  {t > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-purple-700 bg-purple-50 rounded">T: {t}</span>}
-                                  {s > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-amber-700 bg-amber-50 rounded">S: {s}</span>}
-                                  {i > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-blue-700 bg-blue-50 rounded">I: {i}</span>}
-                                  {a > 0 && <span className="inline-flex px-1.5 py-0.5 text-[9px] font-bold text-rose-700 bg-rose-50 rounded">A: {a}</span>}
-                                </div>
-                                
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedDate(date);
-                                    setActiveSubTab('record');
-                                  }}
-                                  className="p-1 px-2.5 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-md text-[9px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer text-center"
-                                >
-                                  Edit Jurnal
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setSelectedJournalToPrint(journal);
+                                  setTimeout(() => {
+                                    window.print();
+                                  }, 350);
+                                }}
+                                className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer self-start md:self-center"
+                              >
+                                <Printer size={13} />
+                                <span>Cetak Jurnal PDF</span>
+                              </button>
                             </div>
                           );
                         })}
-                      </div>
-                    );
-                  })()}
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -1386,6 +1573,486 @@ Wassalamualaikum Wr. Wb.
           <span className={`text-[9.5px] leading-none ${activeSubTab === 'profile' ? 'text-indigo-800 font-bold' : 'text-slate-400'}`}>Profil</span>
         </button>
       </div>
+
+      {/* Visual Checklist / Success Animation Modal */}
+      <AnimatePresence>
+        {showSuccessCheck && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.9, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', damping: 25, stiffness: 350 }}
+              className="bg-white rounded-3xl p-6 shadow-2xl border border-slate-150 flex flex-col items-center max-w-sm w-full text-center relative overflow-hidden"
+            >
+              {/* Subtle green pattern background */}
+              <div className="absolute top-0 inset-x-0 h-2 bg-gradient-to-r from-emerald-400 via-teal-500 to-emerald-600" />
+              <div className="absolute -right-12 -top-12 w-32 h-32 bg-emerald-50 rounded-full opacity-40 pointer-events-none" />
+              <div className="absolute -left-12 -bottom-12 w-32 h-32 bg-slate-50 rounded-full opacity-40 pointer-events-none" />
+
+              {/* Draw-in animated SVG checkmark */}
+              <div className="w-20 h-20 rounded-full bg-emerald-50/80 border border-emerald-100 flex items-center justify-center mb-5 mt-2 shadow-inner">
+                <svg className="w-11 h-11 text-emerald-600" viewBox="0 0 52 52" fill="none" stroke="currentColor">
+                  <motion.circle 
+                    cx="26" 
+                    cy="26" 
+                    r="23" 
+                    strokeWidth="3.5" 
+                    stroke="currentColor" 
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 0.5, ease: "easeInOut" }}
+                  />
+                  <motion.path 
+                    d="M16 27l7 7 15-15" 
+                    strokeWidth="4.5" 
+                    strokeLinecap="round" 
+                    strokeLinejoin="round"
+                    initial={{ pathLength: 0 }}
+                    animate={{ pathLength: 1 }}
+                    transition={{ duration: 0.4, delay: 0.4, ease: "easeOut" }}
+                  />
+                </svg>
+              </div>
+
+              <h3 className="font-extrabold text-slate-950 text-base subpixel-antialiased tracking-tight">
+                Absensi Berhasil Disimpan!
+              </h3>
+              <p className="text-slate-500 text-[11px] leading-relaxed mt-2 px-1">
+                Rekap absensi kelas <span className="font-extrabold text-slate-800">Kelas {currentTeacher.className}</span> untuk tanggal <span className="font-bold text-slate-800">{new Date(selectedDate).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</span> telah sukses disimpan & disinkronkan.
+              </p>
+
+              {/* Micro stats review */}
+              <div className="mt-5 w-full bg-slate-50/80 border border-slate-100 rounded-2xl p-3.5 flex flex-col gap-2 relative z-10">
+                <div className="flex justify-between items-center text-xs text-slate-650">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                    Hadir
+                  </span>
+                  <span className="font-black text-slate-900 font-sans">{currentDailyStats.hadir} Siswa</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-slate-650">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-amber-500" />
+                    Terlambat
+                  </span>
+                  <span className="font-black text-slate-900 font-sans">{currentDailyStats.terlambat} Siswa</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-slate-650">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-sky-500" />
+                    Sakit / Izin
+                  </span>
+                  <span className="font-black text-slate-900 font-sans">{currentDailyStats.sakit + currentDailyStats.izin} Siswa</span>
+                </div>
+                <div className="flex justify-between items-center text-xs text-slate-650">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500" />
+                    Tanpa Keterangan
+                  </span>
+                  <span className="font-black text-rose-600 font-sans">{currentDailyStats.alpa} Siswa</span>
+                </div>
+                <div className="border-t border-slate-200/60 my-0.5 pt-1.5 flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+                  <span>Total Murid</span>
+                  <span className="font-black font-sans">{currentDailyStats.total} Anak</span>
+                </div>
+              </div>
+
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowSuccessCheck(false)}
+                className="mt-6 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md border border-slate-950 flex items-center justify-center gap-2 relative z-10"
+              >
+                <Check size={14} className="stroke-[3px]" />
+                Selesai & Tutup
+              </motion.button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL PRINT OUT JURNAL INDIVIDUAL */}
+      <AnimatePresence>
+        {selectedJournalToPrint && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs no-print p-4 overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-4xl w-full text-slate-900 flex flex-col gap-4 relative my-8"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-slate-100 flex-wrap gap-2 select-none">
+                <div className="flex items-center gap-2">
+                  <Printer size={18} className="text-indigo-600" />
+                  <span className="font-extrabold text-slate-800 text-sm">Pratinjau PDF Jurnal Pembelajaran KBM</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3 py-1 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-lg border border-indigo-700 cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak Jurnal (PDF)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedJournalToPrint(null)}
+                    className="px-3 py-1 border border-slate-200 hover:bg-slate-100 text-slate-605 font-bold rounded-lg text-xs uppercase cursor-pointer transition-all"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+
+              {/* Core report print canvas section */}
+              <div className="overflow-y-auto pr-1 max-h-[70vh]">
+                <div id="print-report-section" className="bg-white text-slate-950 p-6 rounded-lg font-sans border border-slate-150 flex flex-col gap-6 text-[11px] leading-relaxed relative text-left">
+                  
+                  {/* Official School Header - Kop Surat */}
+                  {schoolIdentity?.letterhead ? (
+                    <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
+                      <img 
+                        src={schoolIdentity.letterhead} 
+                        className="w-full max-h-24 object-contain" 
+                        alt="Kop Surat" 
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="w-full text-right font-mono mt-1 text-[8px] text-slate-400 flex justify-between items-center">
+                        <span className="text-[9px] font-black text-slate-800">DOKUMEN JURNAL PEMBELAJARAN (KBM)</span>
+                        <span>Diunduh: {new Date().toLocaleDateString('id-ID')}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-b-4 border-double border-slate-900 pb-3 flex justify-between items-center gap-4 text-left">
+                      <div className="flex items-center gap-3">
+                        {schoolIdentity?.logo && (
+                          <img 
+                            src={schoolIdentity.logo} 
+                            className="w-12 h-12 object-contain" 
+                            alt="Logo" 
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        <div className="flex flex-col gap-0.5 text-left font-sans">
+                          <span className="text-sm font-black uppercase tracking-wider text-slate-900">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                          <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold leading-none block">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</span>
+                          <span className="text-[9px] text-slate-400 block font-semibold mt-1">{schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur, Indonesia"}</span>
+                        </div>
+                      </div>
+                      <div className="text-right flex flex-col gap-0.5 font-mono shrink-0">
+                        <span className="text-xs font-black text-slate-800">DOKUMEN RESMI</span>
+                        <span className="text-[8px] text-slate-400 block mt-1">Dihasilkan: {new Date().toLocaleDateString('id-ID')}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Title of Document */}
+                  <div className="text-center my-1 text-slate-900">
+                    <h2 className="text-sm font-extrabold uppercase tracking-widest underline">
+                      Jurnal Pembelajaran &amp; Presensi Mata Pelajaran
+                    </h2>
+                    <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
+                      Kelas: {selectedJournalToPrint.className} &bull; Semester Genap &bull; Tahun Ajaran 2025/2026
+                    </p>
+                  </div>
+
+                  {/* Meta Information Field */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border border-slate-200 p-4 rounded-xl bg-slate-50/50">
+                    <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Mata Pelajaran</span>
+                        <span>:</span>
+                        <span className="font-extrabold text-slate-900">{selectedJournalToPrint.subject}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Guru Pengampu</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">{selectedJournalToPrint.teacherName}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Hari &amp; Tanggal</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">
+                          {new Date(selectedJournalToPrint.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Materi / Bahasan</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-900">{selectedJournalToPrint.topic}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Catatan KBM</span>
+                        <span>:</span>
+                        <span className="font-medium text-slate-700 italic">{selectedJournalToPrint.notes || "-"}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Tingkat Absensi</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">
+                          {(() => {
+                            const total = selectedJournalToPrint.attendance?.length || 0;
+                            const hadir = selectedJournalToPrint.attendance?.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length || 0;
+                            return `${hadir} dari ${total} Siswa Hadir (${total > 0 ? Math.round((hadir / total) * 100) : 100}%)`;
+                          })()}
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Attendance Table */}
+                  <div className="flex flex-col gap-2">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">
+                      Daftar Kehadiran Siswa Jam Pelajaran:
+                    </span>
+                    <table className="w-full border-collapse border border-slate-300 text-[10px] text-slate-800">
+                      <thead>
+                        <tr className="bg-slate-100 font-bold uppercase tracking-wider text-slate-700">
+                          <th className="border border-slate-300 px-3 py-2 text-center" style={{ width: '4%' }}>No</th>
+                          <th className="border border-slate-300 px-3 py-2 text-center" style={{ width: '15%' }}>NIS</th>
+                          <th className="border border-slate-300 px-3 py-2 text-left" style={{ width: '45%' }}>Nama Siswa</th>
+                          <th className="border border-slate-300 px-3 py-2 text-center" style={{ width: '15%' }}>Kehadiran</th>
+                          <th className="border border-slate-300 px-3 py-2 text-left" style={{ width: '21%' }}>Catatan Keterangan</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {students
+                          .filter(s => s.class.toLowerCase() === selectedJournalToPrint.className.toLowerCase())
+                          .sort((a,b) => a.name.localeCompare(b.name))
+                          .map((student, idx) => {
+                            const attEntry = selectedJournalToPrint.attendance?.find((a: any) => a.studentId === student.id);
+                            const status = attEntry?.status || 'Hadir';
+                            const notes = attEntry?.notes || '';
+
+                            const statusColors: Record<string, string> = {
+                              'Hadir': 'text-emerald-700 font-bold',
+                              'Terlambat': 'text-purple-600 font-bold',
+                              'Sakit': 'text-amber-600 font-semibold',
+                              'Izin': 'text-blue-600 font-semibold',
+                              'Alpa': 'text-rose-600 font-black'
+                            };
+
+                            return (
+                              <tr key={student.id} className="hover:bg-slate-50/50">
+                                <td className="border border-slate-300 px-3 py-1.5 text-center">{idx + 1}</td>
+                                <td className="border border-slate-300 px-3 py-1.5 text-center font-mono">{student.nis}</td>
+                                <td className="border border-slate-300 px-3 py-1.5 text-left font-bold">{student.name}</td>
+                                <td className={`border border-slate-300 px-3 py-1.5 text-center uppercase tracking-wider ${statusColors[status] || 'text-slate-705'}`}>{status}</td>
+                                <td className="border border-slate-300 px-3 py-1.5 text-left text-[9px] text-slate-500 font-medium">{notes || "-"}</td>
+                              </tr>
+                            );
+                          })
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Signatures section */}
+                  <div className="grid grid-cols-2 gap-8 mt-12 mb-4 text-center">
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-slate-500">Mengetahui,</span>
+                      <span className="text-xs font-bold text-slate-800 mt-0.5">Wali Kelas {selectedJournalToPrint.className}</span>
+                      <div className="h-16" />
+                      <span className="text-xs font-bold text-slate-900 border-b border-slate-900 pb-0.5 min-w-[180px]">{currentTeacher.name}</span>
+                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">WALI KELAS RESMI</span>
+                    </div>
+
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-slate-500">Tanda Tangan,</span>
+                      <span className="text-xs font-bold text-slate-800 mt-0.5">Guru Mata Pelajaran</span>
+                      <div className="h-16" />
+                      <span className="text-xs font-bold text-slate-900 border-b border-slate-900 pb-0.5 min-w-[180px]">{selectedJournalToPrint.teacherName}</span>
+                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">GURU MATA PELAJARAN</span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL PRINT OUT JURNAL REKAPITULASI COMPILED */}
+      <AnimatePresence>
+        {compiledJournalPrint && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs no-print p-4 overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-2xl p-6 shadow-2xl border border-slate-200 max-w-5xl w-full text-slate-900 flex flex-col gap-4 relative my-8"
+            >
+              <div className="flex justify-between items-center pb-3 border-b border-slate-100 flex-wrap gap-2 select-none">
+                <div className="flex items-center gap-2">
+                  <Printer size={18} className="text-indigo-600" />
+                  <span className="font-extrabold text-slate-800 text-sm">Pratinjau PDF Buku Rekap Jurnal Pembelajaran KBM Kelas</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3 py-1 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs uppercase tracking-wider rounded-lg border border-slate-950 cursor-pointer shadow-xs transition-colors flex items-center gap-1.5"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak Sekarang (PDF)</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCompiledJournalPrint(false)}
+                    className="px-3 py-1 border border-slate-200 hover:bg-slate-100 text-slate-605 font-bold rounded-lg text-xs uppercase cursor-pointer transition-all"
+                  >
+                    Tutup
+                  </button>
+                </div>
+              </div>
+
+              {/* Core report print canvas section */}
+              <div className="overflow-y-auto pr-1 max-h-[70vh]">
+                <div id="print-report-section" className="bg-white text-slate-950 p-6 rounded-lg font-sans border border-slate-150 flex flex-col gap-6 text-[11px] leading-relaxed relative text-left">
+                  
+                  {/* Official School Header - Kop Surat */}
+                  {schoolIdentity?.letterhead ? (
+                    <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
+                      <img 
+                        src={schoolIdentity.letterhead} 
+                        className="w-full max-h-24 object-contain" 
+                        alt="Kop Surat" 
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="w-full text-right font-mono mt-1 text-[8px] text-slate-400 flex justify-between items-center">
+                        <span className="text-[9px] font-black text-slate-800">REKAPITULASI JURNAL MENGAJAR KBM KELAS</span>
+                        <span>Dicetak: {new Date().toLocaleDateString('id-ID')}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-b-4 border-double border-slate-900 pb-3 flex justify-between items-center gap-4 text-left">
+                      <div className="flex items-center gap-3">
+                        {schoolIdentity?.logo && (
+                          <img 
+                            src={schoolIdentity.logo} 
+                            className="w-12 h-12 object-contain" 
+                            alt="Logo" 
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        <div className="flex flex-col gap-0.5 text-left font-sans">
+                          <span className="text-sm font-black uppercase tracking-wider text-slate-900">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                          <span className="text-[10px] text-slate-500 uppercase tracking-widest font-bold leading-none block">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</span>
+                          <span className="text-[9px] text-slate-400 block font-semibold mt-1">{schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur, Indonesia"}</span>
+                        </div>
+                      </div>
+                      <div className="text-right flex flex-col gap-0.5 font-mono shrink-0">
+                        <span className="text-xs font-black text-slate-800">BUKU KBM KELAS</span>
+                        <span className="text-[8px] text-slate-400 block mt-1">Dicetak: {new Date().toLocaleDateString('id-ID')}</span>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Title of Document */}
+                  <div className="text-center my-1 text-slate-900">
+                    <h2 className="text-sm font-extrabold uppercase tracking-widest underline">
+                      Buku Rekapitulasi Jurnal Mengajar &amp; KBM Kelas
+                    </h2>
+                    <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
+                      Kelas Rujukan: {currentTeacher.className} &bull; Wali Kelas: {currentTeacher.name} &bull; Semester Genap &bull; Tahun Ajaran 2025/2026
+                    </p>
+                  </div>
+
+                  {/* Summary counts panel */}
+                  <div className="p-3 border border-slate-200 rounded-xl bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-600 font-bold uppercase tracking-wider">
+                    <span>Nama Kelas: {currentTeacher.className}</span>
+                    <span>Total Jurnal Terdaftar: {teachingJournalsList.length} Entri Kegiatan</span>
+                    <span>Tanggal Dicetak: {new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</span>
+                  </div>
+
+                  {/* Rationale and Instruction */}
+                  <div className="flex flex-col gap-2">
+                    <table className="w-full border-collapse border border-slate-300 text-[10px] text-slate-800">
+                      <thead>
+                        <tr className="bg-slate-100 font-extrabold uppercase tracking-wider text-slate-700 text-center">
+                          <th className="border border-slate-300 px-3 py-2" style={{ width: '4%' }}>No</th>
+                          <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Hari &amp; Tanggal</th>
+                          <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Mata Pelajaran</th>
+                          <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Guru Pengampu</th>
+                          <th className="border border-slate-300 px-3 py-2 text-left" style={{ width: '26%' }}>Materi / Pembahasan Belajar</th>
+                          <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Kehadiran Jam Mapel</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {teachingJournalsList
+                          .sort((a,b) => b.date.localeCompare(a.date))
+                          .map((journal, idx) => {
+                            const total = journal.attendance?.length || 0;
+                            const h = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;
+                            const t = journal.attendance?.filter((a: any) => a.status === 'Terlambat').length || 0;
+                            const sakit = journal.attendance?.filter((a: any) => a.status === 'Sakit').length || 0;
+                            const izin = journal.attendance?.filter((a: any) => a.status === 'Izin').length || 0;
+                            const alpa = journal.attendance?.filter((a: any) => a.status === 'Alpa').length || 0;
+
+                            const isAllHadir = sakit + izin + alpa === 0;
+
+                            return (
+                              <tr key={journal.id} className="hover:bg-slate-50/50">
+                                <td className="border border-slate-300 px-3 py-1.5 text-center">{idx + 1}</td>
+                                <td className="border border-slate-300 px-3 py-1.5 text-center font-bold">
+                                  {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' })}
+                                </td>
+                                <td className="border border-slate-300 px-3 py-1.5 text-center font-extrabold text-slate-900">{journal.subject}</td>
+                                <td className="border border-slate-300 px-3 py-1.5 text-center font-medium text-slate-700">{journal.teacherName}</td>
+                                <td className="border border-slate-300 px-3 py-1.5 text-left leading-relaxed font-semibold">
+                                  <div>{journal.topic}</div>
+                                  {journal.notes && <div className="text-[8.5px] italic text-slate-400 mt-0.5">Note: &ldquo;{journal.notes}&rdquo;</div>}
+                                </td>
+                                <td className="border border-slate-300 px-2 py-1.5 text-center font-mono text-[9px]">
+                                  {isAllHadir ? (
+                                    <span className="text-emerald-700 font-bold">LENGKAP ({total})</span>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1 justify-center max-w-[120px] mx-auto">
+                                      {h + t > 0 && <span className="text-emerald-600 font-semibold text-[8px]">H:{h+t}</span>}
+                                      {sakit > 0 && <span className="text-amber-500 font-semibold text-[8px]">S:{sakit}</span>}
+                                      {izin > 0 && <span className="text-blue-600 font-semibold text-[8px]">I:{izin}</span>}
+                                      {alpa > 0 && <span className="text-rose-600 font-bold text-[8.5px]">A:{alpa}</span>}
+                                    </div>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })
+                        }
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {/* Signatures section */}
+                  <div className="grid grid-cols-2 gap-8 mt-12 mb-4 text-center">
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-slate-500">Mengesahkan Rekap,</span>
+                      <span className="text-xs font-bold text-slate-800 mt-0.5">Wali Kelas {currentTeacher.className}</span>
+                      <div className="h-16" />
+                      <span className="text-xs font-bold text-slate-900 border-b border-slate-900 pb-0.5 min-w-[180px]">{currentTeacher.name}</span>
+                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">WALI KELAS KBM RESMI</span>
+                    </div>
+
+                    <div className="flex flex-col items-center">
+                      <span className="text-[10px] text-slate-500">Mengetahui,</span>
+                      <span className="text-xs font-bold text-slate-800 mt-0.5">Kepala Sekolah {schoolIdentity?.name || "SMP Maarif NU Pandaan"}</span>
+                      <div className="h-16" />
+                      <span className="text-xs font-bold text-slate-900 border-b border-slate-900 pb-0.5 min-w-[180px]">{schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</span>
+                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">KEPALA SEKOLAH</span>
+                    </div>
+                  </div>
+
+                </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

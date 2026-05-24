@@ -1,7 +1,54 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification } from '../types';
-import { motion } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell } from 'lucide-react';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal } from '../types';
+import { motion, AnimatePresence } from 'motion/react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode } from 'lucide-react';
+import QRCode from 'qrcode';
+
+// Component for rendering beautifully styled, local QR Codes without API dependency
+function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
+  const [qrUrl, setQrUrl] = useState<string>('');
+
+  useEffect(() => {
+    let isMounted = true;
+    QRCode.toDataURL(text, {
+      margin: 1,
+      width: size,
+      color: {
+        dark: '#0f172a', // slate-900
+        light: '#ffffff',
+      },
+    })
+      .then((url) => {
+        if (isMounted) setQrUrl(url);
+      })
+      .catch((err) => console.error('Error in scanning StudentQrCode:', err));
+
+    return () => {
+      isMounted = false;
+    };
+  }, [text, size]);
+
+  if (!qrUrl) {
+    return (
+      <div 
+        style={{ width: size, height: size }}
+        className="bg-slate-50 border border-slate-100 rounded-xl flex items-center justify-center animate-pulse text-[8px] text-slate-400 font-extrabold"
+      >
+        QR...
+      </div>
+    );
+  }
+
+  return (
+    <img
+      src={qrUrl}
+      alt="QR Code Siswa"
+      style={{ width: size, height: size }}
+      className="object-contain rounded-xl"
+      referrerPolicy="no-referrer"
+    />
+  );
+}
 
 interface StudentPanelProps {
   students: Student[];
@@ -38,10 +85,95 @@ export default function StudentPanel({
   attendanceLogs = [],
   notifications = []
 }: StudentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi'>('spp');
+  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr'>('spp');
+  const [printQrCard, setPrintQrCard] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
+  
+  // Subject Teacher journals and attendance data states
+  const [teachingJournals, setTeachingJournals] = useState<TeachingJournal[]>([]);
+  const [loadingJournals, setLoadingJournals] = useState<boolean>(false);
+  const [attendanceSubTab, setAttendanceSubTab] = useState<'harian' | 'mapel'>('harian');
+
+  const [readNotifIds, setReadNotifIds] = useState<string[]>(() => {
+    try {
+      const raw = localStorage.getItem('student_read_notif_ids');
+      return raw ? JSON.parse(raw) : [];
+    } catch {
+      return [];
+    }
+  });
+
+  // Fetch teaching journals from server to extract subject student attendance
+  useEffect(() => {
+    if (currentStudent) {
+      setLoadingJournals(true);
+      fetch('/api/teaching-journals')
+        .then((res) => {
+          if (res.ok) {
+            return res.json();
+          }
+          throw new Error('Gagal mengambil data jurnal mapel');
+        })
+        .then((data) => {
+          if (Array.isArray(data)) {
+            setTeachingJournals(data);
+          }
+        })
+        .catch((err) => console.error("Error fetching teaching journals inside student panel:", err))
+        .finally(() => setLoadingJournals(false));
+    }
+  }, [currentStudent]);
+
+  // Memoized subject attendance entries for current student
+  const studentSubjectAttendance = useMemo(() => {
+    if (!currentStudent) return [];
+    
+    interface SubjectAttItem {
+      journalId: string;
+      date: string;
+      subject: string;
+      teacherName: string;
+      topic: string;
+      status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
+      notes?: string;
+      jamKe?: string;
+    }
+
+    const list: SubjectAttItem[] = [];
+
+    for (const journal of teachingJournals) {
+      if (!journal.attendance) continue;
+      const entry = journal.attendance.find(a => a.studentId === currentStudent.id);
+      if (entry) {
+        list.push({
+          journalId: journal.id,
+          date: journal.date,
+          subject: journal.subject,
+          teacherName: journal.teacherName,
+          topic: journal.topic,
+          status: entry.status as any,
+          notes: entry.notes || journal.notes,
+          jamKe: journal.jamKe
+        });
+      }
+    }
+
+    // Sort descending by date
+    return list.sort((a, b) => b.date.localeCompare(a.date));
+  }, [teachingJournals, currentStudent]);
+
+  useEffect(() => {
+    if (mobileTab === 'lonceng' && notifications.length > 0) {
+      const allIds = notifications.map(n => n.id);
+      setReadNotifIds(prev => {
+        const merged = Array.from(new Set([...prev, ...allIds]));
+        localStorage.setItem('student_read_notif_ids', JSON.stringify(merged));
+        return merged;
+      });
+    }
+  }, [mobileTab, notifications]);
 
   // Calculate dynamic SPP nominal
   let sppRateAmount = 150000;
@@ -404,11 +536,7 @@ export default function StudentPanel({
         </td>
         <td class="meta-td">
           <span class="meta-label">Pendidikan / Kelas</span>
-          <span class="class-badge">Kelas ${student.class}</span>
-        </td>
-        <td class="meta-td" style="text-align: right;">
-          <span class="meta-label" style="text-align: right;">Tanggal Bayar</span>
-          <span class="meta-val" style="display: block; text-align: right;">${dateStr}</span>
+          <span class="meta-val">Kelas ${student.class}</span>
         </td>
       </tr>
     </table>
@@ -433,6 +561,9 @@ export default function StudentPanel({
 
     <div class="wordify-box">
       Terbilang: <strong>#${wordified}#</strong>
+      <div style="font-size: 9px; color: #166534; font-style: normal; margin-top: 5px; font-weight: bold;">
+        Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
+      </div>
     </div>
 
     <table class="sig-table">
@@ -440,12 +571,13 @@ export default function StudentPanel({
         <td class="sig-td" style="text-align: left;">
           <span class="sig-label">Wali Murid / Pembayar</span>
           <br />
-          <span class="sig-line">(${student.name.substring(0, 16)})</span>
+          <span class="sig-line" style="margin-top: 48px;">(${student.name.substring(0, 16)})</span>
         </td>
         <td class="sig-td" style="text-align: right;">
+          <span style="font-size: 11px; font-weight: bold; color: #1e293b; display: block; margin-bottom: 2px;">Pandaan, ${dateStr}</span>
           <span class="sig-label">${sIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
           <br />
-          <span class="sig-line">(${sIdentity?.treasurer || "Bendahara Sekolah"})</span>
+          <span class="sig-line" style="margin-top: 25px;">(${sIdentity?.treasurer || "Bendahara Sekolah"})</span>
         </td>
       </tr>
     </table>
@@ -815,6 +947,25 @@ export default function StudentPanel({
                     <CalendarRange className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
                   </div>
                   <span className="hidden md:inline">Sistem Absensi Kehadiran</span>
+                </button>
+                <button
+                  id="tab-kartu-qr"
+                  onClick={() => setActiveTab('kartu_qr')}
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none ${
+                    activeTab === 'kartu_qr'
+                      ? 'border-indigo-600 text-indigo-705 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-indigo-600'
+                  }`}
+                  title="Kartu QR Pembayaran Siswa"
+                >
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'kartu_qr'
+                      ? 'bg-indigo-100 text-indigo-755 shadow-xs ring-1 ring-indigo-200/50'
+                      : 'bg-indigo-50/50 text-indigo-400/80 hover:bg-indigo-100/50 hover:text-indigo-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <QrCode className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Kartu QR Pembayaran</span>
                 </button>
               </div>
 
@@ -1321,102 +1472,482 @@ export default function StudentPanel({
               
               {activeTab === 'absensi' && (
                 <div className="flex flex-col gap-6 animate-fade-in text-left">
-                  <div>
-                    <h4 className="font-bold text-slate-850 text-sm">Sistem Absensi Kehadiran Siswa</h4>
-                    <p className="text-slate-500 text-xs mt-0.5">
-                      Catatan presensi harian siswa yang dikonfirmasi oleh Wali Kelas Anda secara berkala.
-                    </p>
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">Sistem Rekapitulasi Presensi Kehadiran Siswa</h4>
+                      <p className="text-slate-500 text-xs mt-0.5">
+                        Pantau riwayat presensi harian dari Wali Kelas dan presensi per-sesi KBM dari Guru Mapel secara terperinci.
+                      </p>
+                    </div>
+
+                    {/* Sub-tab Pill Switcher */}
+                    <div className="inline-flex bg-slate-100 p-1 rounded-2xl border border-slate-200/60 select-none self-start sm:self-center">
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceSubTab('harian')}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
+                          attendanceSubTab === 'harian'
+                            ? 'bg-white text-emerald-850 shadow-xs ring-1 ring-slate-200/20'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <ClipboardList size={12} className={attendanceSubTab === 'harian' ? 'text-emerald-600 animate-pulse' : 'text-slate-400'} />
+                        <span>Wali Kelas (Harian)</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceSubTab('mapel')}
+                        className={`px-3 py-1.5 rounded-xl text-[10px] font-extrabold uppercase tracking-wide transition-all cursor-pointer flex items-center gap-1.5 ${
+                          attendanceSubTab === 'mapel'
+                            ? 'bg-white text-indigo-850 shadow-xs ring-1 ring-slate-200/20'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        <BookOpen size={12} className={attendanceSubTab === 'mapel' ? 'text-indigo-600' : 'text-slate-400'} />
+                        <span>Guru Mapel (KBM)</span>
+                      </button>
+                    </div>
                   </div>
 
-                  {/* Attendance Stats Cards */}
-                  {(() => {
-                    const logs = attendanceLogs || [];
-                    const total = logs.length;
-                    const hCount = logs.filter(l => l.status === 'Hadir').length;
-                    const sCount = logs.filter(l => l.status === 'Sakit').length;
-                    const iCount = logs.filter(l => l.status === 'Izin').length;
-                    const aCount = logs.filter(l => l.status === 'Alpa').length;
-                    const tCount = logs.filter(l => l.status === 'Terlambat').length;
-                    const attendanceRate = total > 0 ? Math.round(((hCount + tCount) / total) * 100) : 100;
-
-                    return (
-                      <div className="flex flex-col gap-4">
-                        <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
-                          <div className="bg-emerald-50 border border-emerald-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] font-bold text-emerald-600 uppercase tracking-wider">Hadir</span>
-                            <span className="block text-lg font-black text-emerald-800 mt-1">{hCount} Hari</span>
-                          </div>
-                          <div className="bg-purple-50 border border-purple-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] font-bold text-purple-600 uppercase tracking-wider">Terlambat</span>
-                            <span className="block text-lg font-black text-purple-800 mt-1">{tCount} Hari</span>
-                          </div>
-                          <div className="bg-amber-50 border border-amber-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] font-bold text-amber-600 uppercase tracking-wider">Sakit</span>
-                            <span className="block text-lg font-black text-amber-800 mt-1">{sCount} Hari</span>
-                          </div>
-                          <div className="bg-blue-50 border border-blue-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] font-bold text-blue-600 uppercase tracking-wider">Izin</span>
-                            <span className="block text-lg font-black text-blue-800 mt-1">{iCount} Hari</span>
-                          </div>
-                          <div className="bg-rose-50 border border-rose-100 rounded-xl p-3 text-center">
-                            <span className="block text-[9px] font-bold text-rose-600 uppercase tracking-wider">Alpa</span>
-                            <span className="block text-lg font-black text-rose-800 mt-1">{aCount} Hari</span>
-                          </div>
-                          <div className="col-span-2 sm:col-span-1 bg-slate-900 border border-slate-950 rounded-xl p-3 text-center text-white">
-                            <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Kehadiran</span>
-                            <span className="block text-lg font-black mt-1 text-emerald-400">{attendanceRate}%</span>
-                          </div>
+                  {/* SUB TAB 1: DAILY ATTENDANCE (WALI KELAS) */}
+                  {attendanceSubTab === 'harian' && (
+                    <div className="flex flex-col gap-5 animate-fade-in">
+                      <div className="bg-emerald-50/40 border border-emerald-100/60 p-3.5 rounded-2xl flex gap-3 text-xs text-slate-600 leading-relaxed">
+                        <ClipboardList size={20} className="text-emerald-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-extrabold text-emerald-900 block text-[11px] uppercase tracking-wider mb-0.5">Catatan Presensi Harian Wali Kelas</span>
+                          Presensi di bawah ini dikonfirmasi satu kali setiap hari oleh <strong>Wali Kelas {currentStudent?.class}</strong>. Menentukan kualifikasi kehadiran umum siswa untuk penilaian akhir semester di rapor sekolah.
                         </div>
+                      </div>
 
-                        {/* Recent Attendance Logs Table */}
-                        <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
-                          {logs.length === 0 ? (
-                            <div className="p-8 text-center text-slate-400 text-xs">
-                              Belum ada catatan absensi untuk siswa {currentStudent?.name || ''}.
+                      {(() => {
+                        const logs = attendanceLogs || [];
+                        const total = logs.length;
+                        const hCount = logs.filter(l => l.status === 'Hadir').length;
+                        const sCount = logs.filter(l => l.status === 'Sakit').length;
+                        const iCount = logs.filter(l => l.status === 'Izin').length;
+                        const aCount = logs.filter(l => l.status === 'Alpa').length;
+                        const tCount = logs.filter(l => l.status === 'Terlambat').length;
+                        const attendanceRate = total > 0 ? Math.round(((hCount + tCount) / total) * 100) : 100;
+
+                        return (
+                          <div className="flex flex-col gap-4">
+                            <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                              <div className="bg-emerald-50 border border-emerald-100/70 rounded-2xl p-3 text-center transition-all hover:bg-emerald-100/40">
+                                <span className="block text-[9px] font-extrabold text-emerald-600 uppercase tracking-wider">Hadir</span>
+                                <span className="block text-lg font-black text-emerald-850 mt-1">{hCount} Hari</span>
+                              </div>
+                              <div className="bg-purple-50 border border-purple-100/70 rounded-2xl p-3 text-center transition-all hover:bg-purple-100/40">
+                                <span className="block text-[9px] font-extrabold text-purple-600 uppercase tracking-wider">Terlambat</span>
+                                <span className="block text-lg font-black text-purple-850 mt-1">{tCount} Hari</span>
+                              </div>
+                              <div className="bg-amber-50 border border-amber-100/70 rounded-2xl p-3 text-center transition-all hover:bg-amber-100/40">
+                                <span className="block text-[9px] font-extrabold text-amber-600 uppercase tracking-wider">Sakit</span>
+                                <span className="block text-lg font-black text-amber-850 mt-1">{sCount} Hari</span>
+                              </div>
+                              <div className="bg-blue-50 border border-blue-100/70 rounded-2xl p-3 text-center transition-all hover:bg-blue-100/40">
+                                <span className="block text-[9px] font-extrabold text-blue-600 uppercase tracking-wider">Izin</span>
+                                <span className="block text-lg font-black text-blue-850 mt-1">{iCount} Hari</span>
+                              </div>
+                              <div className="bg-rose-50 border border-rose-100/70 rounded-2xl p-3 text-center transition-all hover:bg-rose-100/40">
+                                <span className="block text-[9px] font-extrabold text-rose-600 uppercase tracking-wider">Alpa</span>
+                                <span className="block text-lg font-black text-rose-850 mt-1">{aCount} Hari</span>
+                              </div>
+                              <div className="col-span-2 sm:col-span-1 bg-slate-900 border border-slate-950 rounded-2xl p-3 text-center text-white shadow-sm shadow-slate-900/10">
+                                <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Persentase</span>
+                                <span className="block text-lg font-black mt-1 text-emerald-400">{attendanceRate}%</span>
+                              </div>
                             </div>
-                          ) : (
-                            <div className="overflow-x-auto">
-                              <table className="w-full text-left border-collapse text-xs">
-                                <thead>
-                                  <tr className="bg-slate-55 bg-slate-100 border-b border-slate-200 font-bold text-slate-600 text-[10px] uppercase tracking-wider select-none">
-                                    <th className="py-2.5 px-4">Hari & Tanggal</th>
-                                    <th className="py-2.5 px-4 text-center">Status</th>
-                                    <th className="py-2.5 px-4">Keterangan / Alasan dari Wali Kelas</th>
-                                  </tr>
-                                </thead>
-                                <tbody className="divide-y divide-slate-100">
-                                  {logs.slice().sort((a,b) => b.date.localeCompare(a.date)).map((log) => {
-                                    const statusColors: Record<string, string> = {
-                                      'Hadir': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                                      'Terlambat': 'bg-purple-50 text-purple-700 border-purple-200',
-                                      'Sakit': 'bg-amber-50 text-amber-700 border-amber-200',
-                                      'Izin': 'bg-blue-50 text-blue-700 border-blue-200',
-                                      'Alpa': 'bg-rose-50 text-rose-700 border-rose-200'
-                                    };
-                                    return (
-                                      <tr key={log.id} className="hover:bg-slate-50/50">
-                                        <td className="py-2.5 px-4 font-semibold text-slate-700">
-                                          {new Date(log.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                        </td>
-                                        <td className="py-2.5 px-4 text-center">
-                                          <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-bold text-[9px] uppercase border ${statusColors[log.status] || 'bg-slate-100 text-slate-805'}`}>
-                                            {log.status}
-                                          </span>
-                                        </td>
-                                        <td className="py-2.5 px-4 text-slate-500 italic max-w-xs truncate">
-                                          {log.notes || <span className="text-slate-300 font-normal">Tidak ada catatan</span>}
-                                        </td>
+
+                            {/* Recent Attendance Logs Table */}
+                            <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                              {logs.length === 0 ? (
+                                <div className="p-12 text-center text-slate-400 text-xs font-semibold flex flex-col items-center justify-center gap-2">
+                                  <ClipboardList className="text-slate-300 stroke-[1.5]" size={32} />
+                                  <span>Belum ada catatan absensi harian wali kelas untuk {currentStudent?.name || ''}.</span>
+                                </div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left border-collapse text-xs">
+                                    <thead>
+                                      <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 text-[10px] uppercase tracking-wider select-none">
+                                        <th className="py-3 px-4">Hari & Tanggal</th>
+                                        <th className="py-3 px-4 text-center border-l border-r border-slate-100">Status</th>
+                                        <th className="py-3 px-4">Keterangan / Alasan dari Wali Kelas</th>
                                       </tr>
-                                    );
-                                  })}
-                                </tbody>
-                              </table>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {logs.slice().sort((a,b) => b.date.localeCompare(a.date)).map((log) => {
+                                        const statusColors: Record<string, string> = {
+                                          'Hadir': 'bg-emerald-50 text-emerald-750 border-emerald-200 text-emerald-700',
+                                          'Terlambat': 'bg-purple-50 text-purple-750 border-purple-200 text-purple-700',
+                                          'Sakit': 'bg-amber-50 text-amber-750 border-amber-200 text-amber-700',
+                                          'Izin': 'bg-blue-50 text-blue-750 border-blue-200 text-blue-700',
+                                          'Alpa': 'bg-rose-50 text-rose-750 border-rose-200 text-rose-700'
+                                        };
+                                        return (
+                                          <tr key={log.id} className="hover:bg-slate-50/50">
+                                            <td className="py-3 px-4 font-bold text-slate-800">
+                                              {new Date(log.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                            </td>
+                                            <td className="py-3 px-4 text-center border-l border-r border-slate-100">
+                                              <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-black text-[9px] uppercase border ${statusColors[log.status] || 'bg-slate-100 text-slate-800'}`}>
+                                                {log.status}
+                                              </span>
+                                            </td>
+                                            <td className="py-3 px-4 text-slate-500 font-semibold italic">
+                                              {log.notes || <span className="text-slate-300 font-normal">Tidak ada catatan</span>}
+                                            </td>
+                                          </tr>
+                                        );
+                                      })}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })()}
+                    </div>
+                  )}
+
+                  {/* SUB TAB 2: SUBJECT ATTENDANCE (GURU MAPEL KBM) */}
+                  {attendanceSubTab === 'mapel' && (
+                    <div className="flex flex-col gap-5 animate-fade-in">
+                      <div className="bg-indigo-50/40 border border-indigo-100/60 p-3.5 rounded-2xl flex gap-3 text-xs text-slate-600 leading-relaxed">
+                        <BookOpen size={20} className="text-indigo-600 shrink-0 mt-0.5" />
+                        <div>
+                          <span className="font-extrabold text-indigo-900 block text-[11px] uppercase tracking-wider mb-0.5">Catatan Presensi Mata Pelajaran Guru Mapel</span>
+                          Presensi di bawah ini diisi secara real-time oleh para <strong>Guru Mata Pelajaran</strong> pada setiap sesi KBM (Kegiatan Belajar Mengajar) sesuai dengan topik materi yang diajarkan pada hari itu.
+                        </div>
+                      </div>
+
+                      {loadingJournals ? (
+                        <div className="py-16 flex flex-col items-center justify-center text-slate-400 font-semibold text-xs gap-3">
+                          <RefreshCw className="animate-spin text-indigo-500" size={24} />
+                          <span>Memproses histori presensi KBM Mapel...</span>
+                        </div>
+                      ) : (
+                        (() => {
+                          const list = studentSubjectAttendance;
+                          const total = list.length;
+                          const hCount = list.filter(l => l.status === 'Hadir').length;
+                          const sCount = list.filter(l => l.status === 'Sakit').length;
+                          const iCount = list.filter(l => l.status === 'Izin').length;
+                          const aCount = list.filter(l => l.status === 'Alpa').length;
+                          const tCount = list.filter(l => l.status === 'Terlambat').length;
+                          const attendanceRate = total > 0 ? Math.round(((hCount + tCount) / total) * 100) : 100;
+
+                          return (
+                            <div className="flex flex-col gap-4">
+                              <div className="grid grid-cols-2 sm:grid-cols-6 gap-3">
+                                <div className="bg-emerald-50 border border-emerald-100/70 rounded-2xl p-3 text-center transition-all hover:bg-emerald-100/40">
+                                  <span className="block text-[9px] font-extrabold text-emerald-600 uppercase tracking-wider">Hadir</span>
+                                  <span className="block text-lg font-black text-emerald-850 mt-1">{hCount} Sesi</span>
+                                </div>
+                                <div className="bg-purple-50 border border-purple-100/70 rounded-2xl p-3 text-center transition-all hover:bg-purple-100/40">
+                                  <span className="block text-[9px] font-extrabold text-purple-600 uppercase tracking-wider">Terlambat</span>
+                                  <span className="block text-lg font-black text-purple-850 mt-1">{tCount} Sesi</span>
+                                </div>
+                                <div className="bg-amber-50 border border-amber-100/70 rounded-2xl p-3 text-center transition-all hover:bg-amber-100/40">
+                                  <span className="block text-[9px] font-extrabold text-amber-600 uppercase tracking-wider">Sakit</span>
+                                  <span className="block text-lg font-black text-amber-850 mt-1">{sCount} Sesi</span>
+                                </div>
+                                <div className="bg-blue-50 border border-blue-100/70 rounded-2xl p-3 text-center transition-all hover:bg-blue-100/40">
+                                  <span className="block text-[9px] font-extrabold text-blue-600 uppercase tracking-wider">Izin</span>
+                                  <span className="block text-lg font-black text-blue-850 mt-1">{iCount} Sesi</span>
+                                </div>
+                                <div className="bg-rose-50 border border-rose-100/70 rounded-2xl p-3 text-center transition-all hover:bg-rose-100/40">
+                                  <span className="block text-[9px] font-extrabold text-rose-600 uppercase tracking-wider">Alpa</span>
+                                  <span className="block text-lg font-black text-rose-850 mt-1">{aCount} Sesi</span>
+                                </div>
+                                <div className="col-span-2 sm:col-span-1 bg-slate-900 border border-slate-950 rounded-2xl p-3 text-center text-white shadow-sm shadow-slate-900/10">
+                                  <span className="block text-[9px] font-bold text-slate-400 uppercase tracking-wider">Kehadiran KBM</span>
+                                  <span className="block text-lg font-black mt-1 text-indigo-400">{attendanceRate}%</span>
+                                </div>
+                              </div>
+
+                              {/* Subject Attendance Logs Table */}
+                              <div className="border border-slate-200 rounded-2xl overflow-hidden bg-white shadow-xs">
+                                {list.length === 0 ? (
+                                  <div className="p-12 text-center text-slate-400 text-xs font-semibold flex flex-col items-center justify-center gap-2">
+                                    <BookOpen className="text-slate-300 stroke-[1.5]" size={32} />
+                                    <span>Belum ada catatan kehadiran mata pelajaran untuk {currentStudent?.name || ''}.</span>
+                                  </div>
+                                ) : (
+                                  <div className="overflow-x-auto">
+                                    <table className="w-full text-left border-collapse text-xs">
+                                      <thead>
+                                        <tr className="bg-slate-50 border-b border-slate-200 font-bold text-slate-600 text-[10px] uppercase tracking-wider select-none">
+                                          <th className="py-3 px-4">Hari / Tanggal</th>
+                                          <th className="py-3 px-4">Mata Pelajaran & Guru</th>
+                                          <th className="py-3 px-4">Materi Kegiatan Pembelajaran (KBM)</th>
+                                          <th className="py-3 px-4 text-center border-l border-r border-slate-100">Status</th>
+                                          <th className="py-3 px-4">Keterangan Khusus Mapel</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {list.map((item, idx) => {
+                                          const statusColors: Record<string, string> = {
+                                            'Hadir': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                            'Terlambat': 'bg-purple-50 text-purple-700 border-purple-200',
+                                            'Sakit': 'bg-amber-50 text-amber-700 border-amber-200',
+                                            'Izin': 'bg-blue-50 text-blue-700 border-blue-200',
+                                            'Alpa': 'bg-rose-50 text-rose-700 border-rose-200'
+                                          };
+                                          return (
+                                            <tr key={`${item.journalId}-${idx}`} className="hover:bg-slate-50/50">
+                                              <td className="py-3 px-4 font-bold text-slate-800">
+                                                <div>
+                                                  {new Date(item.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}
+                                                </div>
+                                                {item.jamKe && (
+                                                  <span className="inline-block text-[9px] font-extrabold bg-slate-100 text-slate-500 rounded px-1.5 py-0.5 mt-0.5 font-mono">
+                                                    Jam Ke-{item.jamKe}
+                                                  </span>
+                                                )}
+                                              </td>
+                                              <td className="py-3 px-4">
+                                                <div className="font-extrabold text-indigo-950 text-[12px]">{item.subject}</div>
+                                                <div className="text-slate-400 font-semibold text-[10px]">{item.teacherName}</div>
+                                              </td>
+                                              <td className="py-3 px-4 text-slate-600 font-bold max-w-xs truncate leading-relaxed">
+                                                {item.topic}
+                                              </td>
+                                              <td className="py-3 px-4 text-center border-l border-r border-slate-100">
+                                                <span className={`inline-flex items-center px-2 py-0.5 rounded-md font-black text-[9px] uppercase border ${statusColors[item.status] || 'bg-slate-100 text-slate-800'}`}>
+                                                  {item.status}
+                                                </span>
+                                              </td>
+                                              <td className="py-3 px-4 text-slate-500 font-semibold italic">
+                                                {item.notes || <span className="text-slate-300 font-normal">-</span>}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {activeTab === 'kartu_qr' && currentStudent && (
+                <div className="flex flex-col gap-6 animate-fade-in text-left">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">Sistem Kartu QR Pembayaran Siswa</h4>
+                      <p className="text-slate-500 text-xs mt-0.5">
+                        Download atau cetak kartu QR pembayaran Anda secara mandiri. Kode QR ini digunakan saat melakukan pembayaran tunai (SPP/Setoran Tabungan) di loket sekolah agar teller dapat instan mendeteksi profil siswa melalui scan barcode / kamera.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex flex-col md:flex-row items-center justify-center gap-8 py-4">
+                    {/* Beautiful physical QR card mockup */}
+                    <div
+                      className="bg-white border border-slate-200 hover:border-emerald-300 rounded-[24px] p-5 shadow-md flex flex-col justify-between h-[270px] max-w-[390px] w-full relative overflow-hidden"
+                    >
+                      {/* Card Kop (White background, top) */}
+                      {schoolIdentity?.letterhead ? (
+                        <div className="-mx-3 -mt-3 h-16 flex items-center justify-center overflow-hidden shrink-0 border-b border-slate-100 mb-2 bg-white">
+                          <img
+                            src={schoolIdentity.letterhead}
+                            alt="Kop Surat"
+                            className="w-full h-full object-fill"
+                            referrerPolicy="no-referrer"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 text-left shrink-0 w-full">
+                          <div className="flex items-center gap-2 min-w-0">
+                            {schoolIdentity?.logo ? (
+                              <img
+                                src={schoolIdentity.logo}
+                                alt="Logo Sekolah"
+                                className="w-10 h-10 object-contain shrink-0"
+                                referrerPolicy="no-referrer"
+                              />
+                            ) : (
+                              <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-800 font-black text-[11px] shrink-0 ring-1 ring-emerald-200">
+                                NU
+                              </div>
+                            )}
+                            <div className="min-w-0 leading-none">
+                              <h4 className="text-[10.5px] font-black text-slate-900 tracking-tight uppercase leading-tight truncate">
+                                {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                              </h4>
+                              <p className="text-[7px] font-black text-emerald-700 uppercase tracking-wider leading-none mt-0.5 truncate">
+                                {schoolIdentity?.subheading || "BERAKHLAK MULIA • BERILMU • BERPRESTASI"}
+                              </p>
+                            </div>
+                          </div>
+                          {schoolIdentity?.logo2 ? (
+                            <img
+                              src={schoolIdentity.logo2}
+                              alt="Logo 2"
+                              className="w-10 h-10 object-contain shrink-0"
+                              referrerPolicy="no-referrer"
+                            />
+                          ) : (
+                            <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 font-extrabold text-[11px] shrink-0 ring-1 ring-amber-100">
+                              ⭐
                             </div>
                           )}
                         </div>
+                      )}
+
+                      {/* Card Body - Blue & Green Gradient */}
+                      <div className="flex-1 bg-gradient-to-br from-blue-600 via-teal-600 to-emerald-500 rounded-xl p-3 flex items-center justify-between gap-3 relative overflow-hidden text-white mb-2.5">
+                        {/* Curved background overlay */}
+                        <div className="absolute right-0 top-0 bottom-0 w-1/4 bg-white/[0.04] rounded-l-full blur-xs pointer-events-none" />
+
+                        {/* Left: Avatar frame - vertically aligned and centered with details/QR */}
+                        <div className="flex flex-col items-center justify-center gap-1.5 shrink-0 min-w-[70px]">
+                          <div className="w-14 h-14 rounded-full border border-white bg-white/20 flex items-center justify-center overflow-hidden shadow-inner relative shrink-0">
+                            <svg viewBox="0 0 24 24" className="w-[42px] h-[42px] text-white/90" fill="currentColor">
+                              <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                            </svg>
+                          </div>
+                          
+                          <div className="bg-emerald-950/70 border border-emerald-450/40 px-1.5 py-0.5 rounded-full text-[6px] font-extrabold uppercase tracking-wide leading-none text-emerald-200 shrink-0 text-center scale-[0.9] whitespace-nowrap">
+                            SPP & TABUNGAN TUNAI
+                          </div>
+                        </div>
+
+                        {/* Center: Details */}
+                        <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0 text-left z-10 leading-none">
+                          <div className="min-w-0">
+                            <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NAMA</span>
+                            <span className="text-[12.5px] font-black tracking-wide text-white block uppercase truncate leading-tight mt-0.5" title={currentStudent.name}>
+                              {currentStudent.name}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NIS</span>
+                            <span className="font-mono text-[11.5px] font-black text-white tracking-wider block leading-none mt-0.5">
+                              {currentStudent.nis}
+                            </span>
+                          </div>
+
+                          <div>
+                            <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">KELAS</span>
+                            <span className="text-[11px] font-black text-white block leading-none uppercase mt-0.5">
+                              {currentStudent.class}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Right: White box for QR */}
+                        <div className="bg-white rounded-lg p-2 flex flex-col items-center justify-center w-[102px] h-full shrink-0 shadow-sm z-10 text-slate-900 gap-1 select-none">
+                          <span className="text-[7.5px] font-black text-indigo-900 uppercase tracking-tight leading-none text-center">SCAN NIS</span>
+                          <span className="text-[5.5px] font-black text-slate-400 uppercase tracking-widest leading-none text-center">UNTUK BAYAR</span>
+
+                          <div className="p-0.5 bg-white border border-slate-100 rounded-md flex items-center justify-center shrink-0">
+                            <StudentQrCode text={currentStudent.nis} size={64} />
+                          </div>
+
+                          <span className="font-mono text-[8.5px] font-black tracking-widest text-slate-800 leading-none">
+                            {currentStudent.nis}
+                          </span>
+                        </div>
                       </div>
-                    );
-                  })()}
+
+                      {/* Card Bottom: Footnote Clause */}
+                      <div className="flex items-center justify-between text-[7px] text-slate-400 pt-0.5 uppercase tracking-wider font-extrabold shrink-0 border-t border-slate-50">
+                        <span className="text-emerald-600">AKTIF &bull; MANDIRI</span>
+                        <span>{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                      </div>
+                    </div>
+
+                    {/* Explanatory cards & interactive actions */}
+                    <div className="flex-1 flex flex-col gap-4 w-full">
+                      <div className="bg-slate-50 border border-slate-200 p-4 rounded-2xl">
+                        <h5 className="font-bold text-slate-800 text-xs flex items-center gap-1.5 mb-1.5">
+                          <CheckCircle2 size={14} className="text-emerald-600" />
+                          Petunjuk Penggunaan Kartu QR
+                        </h5>
+                        <ul className="text-[11px] text-slate-600 space-y-2 list-disc list-inside">
+                          <li>Saran terbaik: klik tombol <strong>Cetak Kartu Fisik</strong> kemudian potong sesuai garis horisontal putus-putus.</li>
+                          <li>Anda juga dapat menyimpan QR Code sebagai gambar di galeri HP Anda untuk dibuka secara instan saat dibutuhkan.</li>
+                          <li>Scan QR code ini pada petugas loket sekolah untuk penarikan/penyetoran tabungan maupun iuran SPP tunai agar proses input cepat dan bebas dari kesalahan entri data.</li>
+                        </ul>
+                      </div>
+
+                      <div className="flex flex-col sm:flex-row gap-3">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const tempCanvas = document.createElement('canvas');
+                            QRCode.toCanvas(tempCanvas, currentStudent.nis, {
+                              width: 400,
+                              margin: 4,
+                              color: {
+                                dark: '#0f172a',
+                                light: '#ffffff'
+                              }
+                            }, (error) => {
+                              if (error) {
+                                console.error(error);
+                                return;
+                              }
+                              const finalCanvas = document.createElement('canvas');
+                              finalCanvas.width = 400;
+                              finalCanvas.height = 490;
+                              const ctx = finalCanvas.getContext('2d');
+                              if (ctx) {
+                                ctx.fillStyle = '#ffffff';
+                                ctx.fillRect(0, 0, 400, 490);
+                                ctx.drawImage(tempCanvas, 0, 0);
+                                
+                                ctx.fillStyle = '#0f172a';
+                                ctx.textAlign = 'center';
+                                
+                                // Name
+                                ctx.font = 'bold 20px "Inter", "Helvetica Neue", sans-serif';
+                                let displayName = currentStudent.name.toUpperCase();
+                                if (displayName.length > 28) {
+                                  displayName = displayName.substring(0, 25) + '...';
+                                }
+                                ctx.fillText(displayName, 200, 425);
+                                
+                                // NIS
+                                ctx.font = 'bold 16px "JetBrains Mono", monospace';
+                                ctx.fillStyle = '#64748b';
+                                ctx.fillText(`NIS: ${currentStudent.nis}`, 200, 455);
+                                
+                                const link = document.createElement('a');
+                                link.download = `QR_${currentStudent.nis}_KELAS_${currentStudent.class}_${currentStudent.name.replace(/\s+/g, '_')}.png`;
+                                link.href = finalCanvas.toDataURL('image/png');
+                                link.click();
+                              }
+                            });
+                          }}
+                          className="flex-1 py-3 bg-white hover:bg-indigo-50 border-2 border-indigo-150 hover:border-indigo-500 text-indigo-700 font-extrabold rounded-2xl text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"
+                        >
+                          <Download size={14} />
+                          <span>Unduh Gambar QR</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setPrintQrCard(true)}
+                          className="flex-1 py-3 bg-slate-900 border border-slate-950 text-white font-extrabold rounded-2xl text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 hover:bg-slate-950 transition-all cursor-pointer shadow-md"
+                        >
+                          <Printer size={14} />
+                          <span>Cetak Kartu Fisik</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               )}
             </div>
@@ -1595,7 +2126,7 @@ export default function StudentPanel({
                   <h3 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
                     <span className="relative inline-block">
                       <Bell size={16} className="text-slate-800" />
-                      {notifications.length > 0 && (
+                      {notifications.filter(n => !readNotifIds.includes(n.id)).length > 0 && (
                         <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
                       )}
                     </span>
@@ -1873,9 +2404,9 @@ export default function StudentPanel({
           >
             <div className={`p-1.5 rounded-xl transition-colors relative ${mobileTab === 'lonceng' ? 'bg-amber-50 text-amber-650' : 'text-slate-400'}`}>
               <Bell size={22} className={mobileTab === 'lonceng' ? 'text-amber-600 stroke-[2.5px]' : 'text-slate-400 stroke-[1.8px]'} />
-              {notifications.length > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-600 text-[9px] font-black text-white px-1 leading-none shadow-sm border border-white">
-                  {notifications.length}
+              {notifications.filter(n => (!n.studentId || n.studentId === currentStudent?.id) && !readNotifIds.includes(n.id)).length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-600 text-[9px] font-black text-white px-1 leading-none shadow-sm border border-white animate-pulse">
+                  {notifications.filter(n => (!n.studentId || n.studentId === currentStudent?.id) && !readNotifIds.includes(n.id)).length}
                 </span>
               )}
             </div>
@@ -1892,6 +2423,157 @@ export default function StudentPanel({
             </div>
             <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'orang' ? 'text-blue-900 font-extrabold' : 'text-slate-500 font-medium'}`}>Profil</span>
           </button>
+        </div>
+      )}
+      {printQrCard && currentStudent && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs no-print p-4 overflow-y-auto">
+          <motion.div
+            initial={{ scale: 0.95, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white rounded-2xl p-6 md:p-8 shadow-2xl border border-slate-200 max-w-xl w-full flex flex-col gap-6 relative"
+          >
+            {/* Header Action Buttons */}
+            <div className="flex justify-between items-center pb-3 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-center gap-2 text-slate-900">
+                <QrCode className="text-indigo-600 animate-pulse" size={17} />
+                <span className="font-extrabold text-sm uppercase tracking-wide">Pratinjau Cetak Kartu QR</span>
+              </div>
+              <div className="flex gap-2.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setTimeout(() => window.print(), 100);
+                  }}
+                  className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Printer size={12} /> Cetak Kartu 🖨️
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setPrintQrCard(false)}
+                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-100 text-slate-600 font-bold rounded-lg text-xs uppercase cursor-pointer transition-all"
+                >
+                  Tutup
+                </button>
+              </div>
+            </div>
+
+            {/* Printable Area Wrapper */}
+            <div className="bg-white p-4 rounded-lg border border-slate-100 flex flex-col items-center">
+              <div id="print-report-section" className="bg-white text-slate-905 p-5 rounded-[24px] font-sans border-2 border-dashed border-slate-350 flex flex-col justify-between h-[270px] w-full max-w-[395px] relative overflow-hidden">
+                {/* Inner Header / Kop */}
+                {schoolIdentity?.letterhead ? (
+                  <div className="-mx-3 -mt-3 h-16 flex items-center justify-center overflow-hidden shrink-0 border-b border-slate-100 mb-2 bg-white">
+                    <img
+                      src={schoolIdentity.letterhead}
+                      alt="Kop Surat"
+                      className="w-full h-full object-fill"
+                      referrerPolicy="no-referrer"
+                    />
+                  </div>
+                ) : (
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 text-left shrink-0 w-full">
+                    <div className="flex items-center gap-2 min-w-0">
+                      {schoolIdentity?.logo ? (
+                        <img
+                          src={schoolIdentity.logo}
+                          alt="Logo"
+                          className="w-10 h-10 object-contain shrink-0"
+                          referrerPolicy="no-referrer"
+                        />
+                      ) : (
+                        <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-800 font-black text-[11px] shrink-0 ring-1 ring-emerald-200">
+                          NU
+                        </div>
+                      )}
+                      <div className="min-w-0 leading-none">
+                        <h4 className="text-[10.5px] font-black text-slate-900 tracking-tight uppercase leading-tight truncate">
+                          {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                        </h4>
+                        <p className="text-[7px] font-black text-emerald-700 uppercase tracking-wider leading-none mt-0.5 truncate">
+                          {schoolIdentity?.subheading || "BERAKHLAK MULIA • BERILMU • BERPRESTASI"}
+                        </p>
+                      </div>
+                    </div>
+                    {schoolIdentity?.logo2 ? (
+                      <img
+                        src={schoolIdentity.logo2}
+                        alt="Logo 2"
+                        className="w-10 h-10 object-contain shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                    ) : (
+                      <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 font-extrabold text-[11px] shrink-0 ring-1 ring-amber-100">
+                        ⭐
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Beautiful Card Body */}
+                <div className="flex-1 bg-gradient-to-br from-blue-600 via-teal-600 to-emerald-500 rounded-xl p-3 flex items-center justify-between gap-3 relative overflow-hidden text-white mb-2.5">
+                  <div className="absolute right-0 top-0 bottom-0 w-1/4 bg-white/[0.04] rounded-l-full blur-xs pointer-events-none" />
+
+                  {/* Left: Avatar frame - vertically aligned and centered with details/QR */}
+                  <div className="flex flex-col items-center justify-center gap-1.5 shrink-0 min-w-[70px]">
+                    <div className="w-14 h-14 rounded-full border border-white bg-white/20 flex items-center justify-center overflow-hidden shadow-inner relative shrink-0">
+                      <svg viewBox="0 0 24 24" className="w-[42px] h-[42px] text-white/90" fill="currentColor">
+                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                      </svg>
+                    </div>
+                    
+                    <div className="bg-emerald-950/70 border border-emerald-450/40 px-1.5 py-0.5 rounded-full text-[6px] font-extrabold uppercase tracking-wide leading-none text-emerald-200 shrink-0 text-center scale-[0.9] whitespace-nowrap">
+                      SPP & TABUNGAN TUNAI
+                    </div>
+                  </div>
+
+                  {/* Center Details */}
+                  <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0 text-left z-10 leading-none">
+                    <div className="min-w-0">
+                      <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NAMA</span>
+                      <span className="text-[12.5px] font-black tracking-wide text-white block uppercase truncate leading-tight mt-0.5">
+                        {currentStudent.name}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NIS</span>
+                      <span className="font-mono text-[11.5px] font-black text-white tracking-wider block leading-none mt-0.5">
+                        {currentStudent.nis}
+                      </span>
+                    </div>
+
+                    <div>
+                      <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">KELAS</span>
+                      <span className="text-[11px] font-black text-white block leading-none uppercase mt-0.5">
+                        {currentStudent.class}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Right: White box for QR */}
+                  <div className="bg-white rounded-lg p-2 flex flex-col items-center justify-center w-[102px] h-full shrink-0 shadow-sm z-10 text-slate-900 gap-1">
+                    <span className="text-[7.5px] font-black text-indigo-900 uppercase tracking-tight leading-none text-center">SCAN NIS</span>
+                    <span className="text-[5.5px] font-black text-slate-400 uppercase tracking-widest leading-none text-center">UNTUK BAYAR</span>
+
+                    <div className="p-0.5 bg-white border border-slate-100 rounded-md flex items-center justify-center shrink-0">
+                      <StudentQrCode text={currentStudent.nis} size={64} />
+                    </div>
+
+                    <span className="font-mono text-[8.5px] font-black tracking-widest text-slate-800 leading-none">
+                      {currentStudent.nis}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Cutting Line Cue Footnote */}
+                <div className="text-center text-[7.5px] text-slate-400 uppercase tracking-widest font-extrabold shrink-0">
+                  ✂️ Gunting Mengikuti Garis Putus-Putus
+                </div>
+              </div>
+            </div>
+
+          </motion.div>
         </div>
       )}
       {receiptToPrint && (
@@ -1959,35 +2641,21 @@ export default function StudentPanel({
               )}
 
               {/* Patient/Student Data Row */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-y-2 text-slate-700 pb-3 border-b border-dashed border-slate-300">
-                <div className="flex flex-col gap-0.5 text-left">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Wali Murid / Siswa</span>
-                  <span className="font-bold text-slate-800 text-[11px]">{receiptToPrint.student.name}</span>
+              <div className="flex flex-col gap-1 text-left pb-3 border-b border-dashed border-slate-300 text-slate-700 font-sans text-xs">
+                <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
+                  <span className="font-bold text-slate-500">Wali Murid/Siswa</span>
+                  <span className="text-slate-400 font-bold">:</span>
+                  <span className="font-bold text-slate-900">{receiptToPrint.student.name}</span>
                 </div>
-                <div className="flex flex-col gap-0.5 text-left">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">NIS Siswa</span>
-                  <span className="font-mono font-semibold text-slate-700">{receiptToPrint.student.nis}</span>
+                <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
+                  <span className="font-bold text-slate-500">NIS</span>
+                  <span className="text-slate-400 font-bold">:</span>
+                  <span className="font-mono font-bold text-slate-800">{receiptToPrint.student.nis}</span>
                 </div>
-                <div className="flex flex-col gap-1 text-left">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Pendidikan / Kelas</span>
-                  <span className="inline-flex items-center justify-center bg-indigo-600 text-white font-black text-xs md:text-sm px-3 py-1.5 rounded-lg w-fit shadow-xs border border-indigo-750 select-none tracking-wider whitespace-nowrap">
-                     Kelas {receiptToPrint.student.class}
-                  </span>
-                </div>
-                <div className="flex flex-col gap-0.5 text-right font-sans">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">
-                    {receiptToPrint.type === 'spp' ? 'Tanggal Bayar' : 'Tanggal Transaksi'}
-                  </span>
-                  <span className="font-bold text-emerald-600 block">
-                    {receiptToPrint.type === 'spp'
-                      ? (receiptToPrint.detail.paidAt 
-                          ? new Date(receiptToPrint.detail.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})
-                          : (receiptToPrint.detail.status === 'paid' ? 'Lunas / Cash' : 'Belum Lunas'))
-                      : new Date(receiptToPrint.detail.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
-                  </span>
-                  <span className="text-[7px] text-slate-400 mt-0.5 block font-sans">
-                    Cetak: {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}
-                  </span>
+                <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
+                  <span className="font-bold text-slate-500">Kelas</span>
+                  <span className="text-slate-400 font-bold">:</span>
+                  <span className="font-bold text-slate-800 text-normal">{receiptToPrint.student.class}</span>
                 </div>
               </div>
 
@@ -2016,23 +2684,37 @@ export default function StudentPanel({
               </div>
 
               {/* Wordify Terbilang Words */}
-              <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 font-medium italic text-slate-600 text-[10px] text-left">
-                Terbilang: <span className="font-bold not-italic font-sans text-indigo-700">#{indonesianWordsForRupiah(receiptToPrint.detail.amount)}#</span>
+              <div className="flex flex-col gap-2">
+                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 font-medium italic text-slate-600 text-[10px] text-left">
+                  Terbilang: <span className="font-bold not-italic font-sans text-indigo-700">#{indonesianWordsForRupiah(receiptToPrint.detail.amount)}#</span>
+                </div>
+                <div className="text-[9px] text-slate-500 font-semibold pl-1 text-left">
+                  Tanggal Cetak: {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
+                </div>
               </div>
 
               {/* Signatures */}
               <div className="grid grid-cols-2 mt-4 pt-3 border-t border-slate-100 text-[10px]">
-                <div className="flex flex-col justify-between h-[100px] text-left">
+                <div className="flex flex-col justify-between h-[120px] text-left">
                   <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Wali Murid / Penyetor</span>
                   <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({receiptToPrint.student.name.substring(0, 16)})</span>
                 </div>
-                <div className="flex flex-col justify-between items-end h-[100px] text-right relative">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                <div className="flex flex-col justify-between items-end h-[120px] text-right relative">
+                  <div className="flex flex-col items-end gap-0.5">
+                    <span className="text-[10px] font-bold text-slate-800 font-sans">
+                      Pandaan, {receiptToPrint.type === 'spp'
+                        ? (receiptToPrint.detail.paidAt 
+                            ? new Date(receiptToPrint.detail.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})
+                            : (receiptToPrint.detail.status === 'paid' ? new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : 'Belum Lunas'))
+                        : new Date(receiptToPrint.detail.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
+                    </span>
+                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                  </div>
                   
                   {/* Signature and Stamp layer for paid/completed receipts */}
                   {((receiptToPrint.type === 'spp' && receiptToPrint.detail.status === 'paid') || 
                     (receiptToPrint.type === 'savings' && (receiptToPrint.detail.status === 'success' || !receiptToPrint.detail.status || receiptToPrint.detail.status === 'completed'))) && (
-                    <div className="absolute top-[18px] right-2 w-32 h-[55px] pointer-events-none select-none z-10 flex items-center justify-center">
+                    <div className="absolute top-[28px] right-2 w-32 h-[55px] pointer-events-none select-none z-10 flex items-center justify-center">
                       {/* Treasurer signature */}
                       {schoolIdentity?.treasurerSignature && (
                         <img 

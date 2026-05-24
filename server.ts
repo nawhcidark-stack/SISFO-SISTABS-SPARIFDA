@@ -10,7 +10,7 @@ import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc } from "fireb
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal } from "./src/types";
 
 // Setup serverport
 const PORT = process.env.PORT || 3000;
@@ -82,6 +82,34 @@ const homeroomTeachers: HomeroomTeacher[] = [
   { id: "ht-2", username: "wali7b", name: "Endang Lastari, S.Pd", className: "7-B", password: "wali123" },
   { id: "ht-3", username: "wali8a", name: "Joko Susilo, S.Pd", className: "8-A", password: "wali123" },
   { id: "ht-4", username: "wali9c", name: "Rina Wijayanti, S.Pd", className: "9-C", password: "wali123" }
+];
+
+const subjectTeachers: SubjectTeacher[] = [
+  { id: "st-1", username: "guru_math", name: "Drs. Heru Setyawan, M.Pd", subject: "Matematika", password: "mapel123" },
+  { id: "st-2", username: "guru_english", name: "Ibu Lindawati, S.Pd", subject: "Bahasa Inggris", password: "mapel123" },
+  { id: "st-3", username: "guru_ipa", name: "Budi Wijaya, S.Si", subject: "Ilmu Pengetahuan Alam", password: "mapel123" },
+  { id: "st-4", username: "guru_ips", name: "Dra. Siti Rahma", subject: "Ilmu Pengetahuan Sosial", password: "mapel123" },
+  { id: "st-5", username: "guru_indo", name: "Ahmad Fauzan, S.S", subject: "Bahasa Indonesia", password: "mapel123" },
+  { id: "st-6", username: "guru_agama", name: "KH. M. Syukron, S.Pd.I", subject: "Pendidikan Agama Islam", password: "mapel123" },
+  { id: "st-7", username: "guru_pjok", name: "Eko Prasetyo, S.Pd", subject: "Pendidikan Jasmani & OR", password: "mapel123" }
+];
+
+const teachingJournals: TeachingJournal[] = [
+  {
+    id: "tj-1",
+    teacherId: "st-1",
+    teacherName: "Drs. Heru Setyawan, M.Pd",
+    subject: "Matematika",
+    className: "7-A",
+    date: "2026-05-20",
+    topic: "Persamaan Linear Satu Variabel (PLSV)",
+    attendance: [
+      { studentId: "std-1", studentName: "Ahmad Fauzi", status: "Hadir" },
+      { studentId: "std-2", studentName: "Siti Aminah", status: "Hadir" }
+    ],
+    notes: "Siswa memahami konsep dasar persamaan linear dengan sangat baik. Diperbanyak latihan soal mandiri.",
+    createdAt: new Date().toISOString()
+  }
 ];
 
 // Pre-populate SPP bills (Juli 2025 to Juni 2026)
@@ -397,7 +425,9 @@ function saveState() {
       midtransConfig,
       whatsappConfig,
       attendanceLogs,
-      homeroomTeachers
+      homeroomTeachers,
+      subjectTeachers,
+      teachingJournals
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
     // Asynchronously update to Firestore
@@ -454,6 +484,14 @@ function loadState() {
       if (Array.isArray(data.homeroomTeachers)) {
         homeroomTeachers.length = 0;
         homeroomTeachers.push(...data.homeroomTeachers);
+      }
+      if (Array.isArray(data.subjectTeachers)) {
+        subjectTeachers.length = 0;
+        subjectTeachers.push(...data.subjectTeachers);
+      }
+      if (Array.isArray(data.teachingJournals)) {
+        teachingJournals.length = 0;
+        teachingJournals.push(...data.teachingJournals);
       }
       if (data.sppRates) Object.assign(sppRates, data.sppRates);
       if (data.schoolIdentity) Object.assign(schoolIdentity, data.schoolIdentity);
@@ -1075,6 +1113,219 @@ async function startServer() {
     res.json({ success: true, homeroomTeachers, removed });
   });
 
+  // --- SUBJECT TEACHERS (GURU MAPEL) ENDPOINTS ---
+  app.get("/api/subject-teachers", (req, res) => {
+    res.json(subjectTeachers);
+  });
+
+  app.post("/api/admin/subject-teachers", (req, res) => {
+    const { username, name, subject, password } = req.body;
+    if (!username || !name || !subject) {
+      return res.status(400).json({ error: "Informasi Guru Mata Pelajaran tidak lengkap." });
+    }
+
+    const duplicate = subjectTeachers.find(st => st.username.toLowerCase() === username.toLowerCase());
+    if (duplicate) {
+      return res.status(400).json({ error: `Username guru mapel "${username}" sudah digunakan.` });
+    }
+
+    const newSt: SubjectTeacher = {
+      id: `st-${Date.now()}`,
+      username: username.trim(),
+      name: name.trim(),
+      subject: subject.trim(),
+      password: password ? String(password).trim() : "mapel123"
+    };
+
+    subjectTeachers.push(newSt);
+    saveState();
+
+    const notification: RealtimeNotification = {
+      id: `notif-st-add-${newSt.id}`,
+      title: "Guru Mata Pelajaran Baru",
+      message: `Akun Guru Mapel baru Bapak/Ibu ${newSt.name} (${newSt.subject}) telah didaftarkan.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, subjectTeachers, added: newSt });
+  });
+
+  app.put("/api/admin/subject-teachers/:id", (req, res) => {
+    const id = req.params.id;
+    const { username, name, subject, password } = req.body;
+    
+    const stIndex = subjectTeachers.findIndex(st => st.id === id);
+    if (stIndex === -1) {
+      return res.status(404).json({ error: "Guru mapel tidak ditemukan." });
+    }
+
+    if (username) {
+      const dup = subjectTeachers.find(st => st.username.toLowerCase() === username.toLowerCase() && st.id !== id);
+      if (dup) {
+        return res.status(400).json({ error: `Username "${username}" sudah digunakan guru mapel lain.` });
+      }
+      subjectTeachers[stIndex].username = username.trim();
+    }
+
+    if (name) subjectTeachers[stIndex].name = name.trim();
+    if (subject) subjectTeachers[stIndex].subject = subject.trim();
+    if (password !== undefined) subjectTeachers[stIndex].password = String(password).trim();
+
+    saveState();
+    res.json({ success: true, subjectTeachers, updated: subjectTeachers[stIndex] });
+  });
+
+  app.delete("/api/admin/subject-teachers/:id", (req, res) => {
+    const id = req.params.id;
+    const idx = subjectTeachers.findIndex(st => st.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Guru mapel tidak ditemukan." });
+    }
+
+    const removed = subjectTeachers.splice(idx, 1)[0];
+    saveState();
+    res.json({ success: true, subjectTeachers, removed });
+  });
+
+  app.post("/api/admin/subject-teachers/auto-generate", (req, res) => {
+    const list = [
+      { name: "Drs. Heru Setyawan, M.Pd", subject: "Matematika", username: "guru_math" },
+      { name: "Ibu Lindawati, S.Pd", subject: "Bahasa Inggris", username: "guru_english" },
+      { name: "Budi Wijaya, S.Si", subject: "Ilmu Pengetahuan Alam", username: "guru_ipa" },
+      { name: "Dra. Siti Rahma", subject: "Ilmu Pengetahuan Sosial", username: "guru_ips" },
+      { name: "Ahmad Fauzan, S.S", subject: "Bahasa Indonesia", username: "guru_indo" },
+      { name: "KH. M. Syukron, S.Pd.I", subject: "Pendidikan Agama Islam", username: "guru_agama" },
+      { name: "Eko Prasetyo, S.Pd", subject: "Pendidikan Jasmani & OR", username: "guru_pjok" },
+      { name: "Dra. Nurhayati", subject: "Seni Budaya", username: "guru_seni" },
+      { name: "Agus Setyono, S.Kom", subject: "Informatika", username: "guru_info" }
+    ];
+
+    let addedCount = 0;
+    list.forEach(item => {
+      const exists = subjectTeachers.some(t => t.username.toLowerCase() === item.username.toLowerCase());
+      if (!exists) {
+        subjectTeachers.push({
+          id: `st-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          username: item.username,
+          name: item.name,
+          subject: item.subject,
+          password: "mapel123"
+        });
+        addedCount++;
+      }
+    });
+
+    saveState();
+    res.json({ success: true, subjectTeachers, addedCount });
+  });
+
+  app.post("/api/subject-teachers/change-password", (req, res) => {
+    const { teacherId, oldPassword, newPassword } = req.body;
+    if (!teacherId || !newPassword) {
+      return res.status(400).json({ error: "Data kata sandi tidak lengkap." });
+    }
+
+    const teacher = subjectTeachers.find(t => t.id === teacherId);
+    if (!teacher) {
+      return res.status(404).json({ error: "Guru mapel tidak ditemukan." });
+    }
+
+    const activePassword = teacher.password || "mapel123";
+    if (oldPassword && oldPassword !== activePassword) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan salah." });
+    }
+
+    teacher.password = newPassword.trim();
+    saveState();
+    res.json({ success: true, message: "Kata sandi mapel berhasil diubah." });
+  });
+
+  // --- TEACHING JOURNALS (JURNAL PEMBELAJARAN & ABSENSI MAPEL) ENDPOINTS ---
+  app.get("/api/teaching-journals", (req, res) => {
+    res.json(teachingJournals);
+  });
+
+  app.post("/api/teaching-journals", (req, res) => {
+    const { 
+      teacherId, 
+      teacherName, 
+      subject, 
+      className, 
+      date, 
+      topic, 
+      attendance, 
+      notes,
+      fase,
+      semester,
+      alokasiWaktu,
+      jamKe,
+      pertemuanKe,
+      tujuanPembelajaran,
+      pencapaianKktp
+    } = req.body;
+    if (!teacherId || !teacherName || !subject || !className || !date || !topic || !Array.isArray(attendance)) {
+      return res.status(400).json({ error: "Data Jurnal Pembelajaran tidak lengkap." });
+    }
+
+    const newJournal: TeachingJournal = {
+      id: `tj-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      teacherId,
+      teacherName,
+      subject,
+      className,
+      date,
+      topic,
+      attendance,
+      notes: notes || "",
+      fase: fase || "D",
+      semester: semester || "Genap",
+      alokasiWaktu: alokasiWaktu || "2 JP",
+      jamKe: jamKe || "",
+      pertemuanKe: pertemuanKe || "",
+      tujuanPembelajaran: tujuanPembelajaran || "",
+      pencapaianKktp: pencapaianKktp || "",
+      createdAt: new Date().toISOString()
+    };
+
+    teachingJournals.unshift(newJournal);
+
+    // Also sync/merge into standard attendanceLogs
+    attendance.forEach((studentAtt: any) => {
+      const { studentId, status, notes: attNotes } = studentAtt;
+      const existingLogIndex = attendanceLogs.findIndex(log => log.studentId === studentId && log.date === date);
+      if (existingLogIndex !== -1) {
+        // Update existing daily attendance
+        attendanceLogs[existingLogIndex].status = status;
+        attendanceLogs[existingLogIndex].notes = `Oleh Guru Mapel (${subject}): ${attNotes || ''}`.trim();
+      } else {
+        // Create new daily attendance
+        attendanceLogs.push({
+          id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          studentId,
+          date,
+          status,
+          notes: `Oleh Guru Mapel (${subject}): ${attNotes || ''}`.trim()
+        });
+      }
+    });
+
+    saveState();
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-tj-${newJournal.id}`,
+      title: "Jurnal Pembelajaran Baru",
+      message: `Bapak/Ibu ${teacherName} mengisi KBM ${subject} di Kelas ${className} mengenai: "${topic}"`,
+      type: "success",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, teachingJournals, newJournal });
+  });
+
   // Real-time Event Streaming Endpoint (SSE)
   app.get("/api/notifications/stream", (req, res) => {
     res.writeHead(200, {
@@ -1192,6 +1443,55 @@ async function startServer() {
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending auto payment WA:", err));
     }
 
+    saveState();
+    res.json({ success: true, bill });
+  });
+
+  // Admin Cancel/Void Manual SPP
+  app.post("/api/admin/cancel-spp-manual", (req, res) => {
+    const { billId } = req.body;
+    const bill = sppBills.find(b => b.id === billId);
+    if (!bill) {
+      return res.status(404).json({ error: "Tagihan SPP tidak ditemukan." });
+    }
+    if (bill.status !== "paid") {
+      return res.status(400).json({ error: "Hanya tagihan berstatus lunas yang dapat dibatalkan." });
+    }
+    if (bill.paymentMethod !== "Manual Teller (Sekolah)") {
+      return res.status(400).json({ error: "Hanya pembayaran melalui Manual Teller yang dapat dibatalkan." });
+    }
+
+    const student = students.find(s => s.id === bill.studentId);
+    const prevOrderId = bill.orderId || "";
+
+    bill.status = "unpaid";
+    bill.paidAt = undefined;
+    bill.paymentMethod = undefined;
+    bill.orderId = undefined;
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-spp-cancel-${Date.now()}`,
+      studentId: bill.studentId,
+      title: "Pembayaran SPP Dibatalkan",
+      message: `Status pembayaran SPP ${student?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIBATALKAN / DIKOREKSI oleh Admin Sekolah.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    // Send automated WhatsApp void notification if enabled
+    if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
+      const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+        `⚠️ *PEMBATALAN / KOREKSI PEMBAYARAN SPP*\n` +
+        `Transaksi pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* (No. Transaksi: ${prevOrderId}) telah *DIBATALKAN / DIKOREKSI* oleh pihak teller sekolah karena kesalahan administrasi.\n\n` +
+        `Status tagihan Anda kembali menjadi: *BELUM LUNAS (UNPAID)*.\n\n` +
+        `Silakan abaikan kuitansi sebelumnya. Hubungi bagian keuangan jika ada pertanyaan.\n` +
+        `-- LP MA'ARIF NU PANDAAN --`;
+      sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending void SPP WA:", err));
+    }
+
+    saveState();
     res.json({ success: true, bill });
   });
 
@@ -1855,6 +2155,94 @@ async function startServer() {
       message: `Tahun Ajaran ${yearNum}/${yearNum + 1} berhasil diaktifkan!`,
       billsGenerated,
       skippedBillsCount
+    });
+  });
+
+  // Batch Import Teachers (Wali Kelas & Guru Mapel) via JSON data parsed from templates
+  app.post("/api/admin/teachers/import", (req, res) => {
+    const { homerooms, subjectTeachers: subjects } = req.body;
+    let homeroomsAdded = 0;
+    let homeroomsUpdated = 0;
+    let subjectsAdded = 0;
+    let subjectsUpdated = 0;
+
+    if (Array.isArray(homerooms)) {
+      homerooms.forEach((inputHt: any) => {
+        const { username, name, className, password } = inputHt;
+        if (!username || !name || !className) {
+          // Skip invalid rows
+          return;
+        }
+
+        const existingHt = homeroomTeachers.find(ht => ht.username.toLowerCase() === username.toString().toLowerCase().trim());
+        if (existingHt) {
+          existingHt.name = name.trim();
+          existingHt.className = className.trim();
+          if (password) existingHt.password = String(password).trim();
+          homeroomsUpdated++;
+        } else {
+          homeroomTeachers.push({
+            id: `ht-${Date.now()}-${homeroomsAdded}-${Math.random().toString(36).substr(2, 4)}`,
+            username: username.toString().toLowerCase().trim(),
+            name: name.trim(),
+            className: className.trim(),
+            password: password ? String(password).trim() : "wali123"
+          });
+          homeroomsAdded++;
+        }
+      });
+    }
+
+    if (Array.isArray(subjects)) {
+      subjects.forEach((inputSt: any) => {
+        const { username, name, subject, password } = inputSt;
+        if (!username || !name || !subject) {
+          // Skip invalid rows
+          return;
+        }
+
+        const existingSt = subjectTeachers.find(st => st.username.toLowerCase() === username.toString().toLowerCase().trim());
+        if (existingSt) {
+          existingSt.name = name.trim();
+          existingSt.subject = subject.trim();
+          if (password) existingSt.password = String(password).trim();
+          subjectsUpdated++;
+        } else {
+          subjectTeachers.push({
+            id: `st-${Date.now()}-${subjectsAdded}-${Math.random().toString(36).substr(2, 4)}`,
+            username: username.toString().toLowerCase().trim(),
+            name: name.trim(),
+            subject: subject.trim(),
+            password: password ? String(password).trim() : "mapel123"
+          });
+          subjectsAdded++;
+        }
+      });
+    }
+
+    if (homeroomsAdded > 0 || homeroomsUpdated > 0 || subjectsAdded > 0 || subjectsUpdated > 0) {
+      saveState();
+      // Broadcast notification
+      const notification: RealtimeNotification = {
+        id: `notif-teachers-import-${Date.now()}`,
+        title: "Batch Import Guru Berhasil",
+        message: `Batch import berhasil! Wali Kelas: +${homeroomsAdded}, ~${homeroomsUpdated}. Guru Mapel: +${subjectsAdded}, ~${subjectsUpdated}.`,
+        type: "success",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+    }
+
+    res.json({
+      success: true,
+      homeroomsList: homeroomTeachers,
+      subjectTeachersList: subjectTeachers,
+      summary: {
+        homeroomsAdded,
+        homeroomsUpdated,
+        subjectsAdded,
+        subjectsUpdated
+      }
     });
   });
 

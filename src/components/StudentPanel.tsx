@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock } from 'lucide-react';
 import QRCode from 'qrcode';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
@@ -607,6 +607,36 @@ export default function StudentPanel({
     return `${startYear}/${startYear + 1}`;
   };
 
+  // Helper to determine active / inactive state of an SPP bill
+  const checkIsBillActive = (bill: SppBill, allBills: SppBill[]) => {
+    const MONTH_MAP: Record<string, number> = {
+      "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+      "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+    };
+
+    const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
+    const billScore = bill.year * 12 + billMonthIdx;
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthIdx = now.getMonth();
+    const currentScore = currentYear * 12 + currentMonthIdx;
+
+    // 1. If it's a past month or current month, it is always active
+    if (billScore <= currentScore) {
+      return true;
+    }
+
+    // 2. If it is a future month, check if all bills strictly prior are paid
+    const priorBills = allBills.filter(b => {
+      const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
+      const bScore = b.year * 12 + bMonthIdx;
+      return bScore < billScore;
+    });
+
+    return priorBills.every(b => b.status === 'paid');
+  };
+
   // Get list of unique academic years present in the bills list
   const academicYears = useMemo(() => {
     const years = Array.from(new Set(bills.map(getAcademicYearOfBill)));
@@ -1032,12 +1062,13 @@ export default function StudentPanel({
                         {filteredBills.map((bill) => {
                           const isPaid = bill.status === 'paid';
                           const isPending = bill.status === 'pending';
+                          const isCurrentlyActive = checkIsBillActive(bill, bills);
 
                           return (
-                            <tr key={bill.id} className="hover:bg-slate-50 transition-colors">
+                            <tr key={bill.id} className={`hover:bg-slate-50 transition-colors ${!isCurrentlyActive && !isPaid ? 'opacity-60 bg-slate-50/50' : ''}`}>
                               <td className="px-5 py-3.5 font-semibold text-slate-850 whitespace-nowrap">
                                 <div className="flex flex-col gap-0.5">
-                                  <span>{bill.month} {bill.year}</span>
+                                  <span className={!isCurrentlyActive && !isPaid ? 'text-slate-400 font-normal' : ''}>{bill.month} {bill.year}</span>
                                   {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
                                     <span className="inline-block text-[8px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded border border-rose-100 max-w-max uppercase tracking-wider mt-1.5 animate-pulse">
                                       Tunggakan TA {getAcademicYearOfBill(bill)}
@@ -1045,7 +1076,7 @@ export default function StudentPanel({
                                   )}
                                 </div>
                               </td>
-                              <td className="px-5 py-3.5 text-right font-bold text-slate-800 whitespace-nowrap">
+                              <td className={`px-5 py-3.5 text-right font-bold whitespace-nowrap ${!isCurrentlyActive && !isPaid ? 'text-slate-400' : 'text-slate-800'}`}>
                                 Rp {bill.amount.toLocaleString('id-ID')}
                               </td>
                               <td className="px-5 py-3.5 text-center whitespace-nowrap">
@@ -1057,8 +1088,12 @@ export default function StudentPanel({
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
                                     <Clock size={10} /> Pending
                                   </span>
+                                ) : !isCurrentlyActive ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 uppercase">
+                                    <Lock size={10} /> Belum Aktif
+                                  </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-rose-50 text-rose-700 border border-rose-100 uppercase">
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-rose-50 text-rose-700 border border-rose-100 uppercase animate-pulse">
                                     Belum Lunas
                                   </span>
                                 )}
@@ -1081,6 +1116,14 @@ export default function StudentPanel({
                                       <Printer size={13} />
                                     </button>
                                   </div>
+                                ) : !isCurrentlyActive ? (
+                                  <button
+                                    disabled
+                                    className="px-3 py-1.5 font-bold rounded-lg text-[10px] uppercase tracking-wider bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed"
+                                    title="SPP bulan berjalan harus dilunasi terlebih dahulu"
+                                  >
+                                    Nonaktif
+                                  </button>
                                 ) : (
                                   <button
                                     id={`pay-spp-${bill.id}`}
@@ -1107,12 +1150,13 @@ export default function StudentPanel({
                     {filteredBills.map((bill) => {
                       const isPaid = bill.status === 'paid';
                       const isPending = bill.status === 'pending';
+                      const isCurrentlyActive = checkIsBillActive(bill, bills);
 
                       return (
-                        <div key={`mob-${bill.id}`} className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3.5 hover:border-slate-350 transition-colors">
+                        <div key={`mob-${bill.id}`} className={`bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3.5 hover:border-slate-350 transition-colors ${!isCurrentlyActive && !isPaid ? 'opacity-60 bg-slate-50/50' : ''}`}>
                           <div className="flex justify-between items-start">
                             <div className="flex flex-col gap-1">
-                              <span className="font-bold text-slate-800 text-sm leading-tight">{bill.month} {bill.year}</span>
+                              <span className={`font-bold text-sm leading-tight ${!isCurrentlyActive && !isPaid ? 'text-slate-400 font-normal' : 'text-slate-800'}`}>{bill.month} {bill.year}</span>
                               {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
                                 <span className="inline-block text-[8px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded border border-rose-100 max-w-max uppercase tracking-wider animate-pulse">
                                   Tunggakan TA {getAcademicYearOfBill(bill)}
@@ -1120,7 +1164,7 @@ export default function StudentPanel({
                               )}
                             </div>
                             <div className="text-right">
-                              <span className="block font-extrabold text-slate-900 text-sm">
+                              <span className={`block font-extrabold text-sm ${!isCurrentlyActive && !isPaid ? 'text-slate-400' : 'text-slate-900'}`}>
                                 Rp {bill.amount.toLocaleString('id-ID')}
                               </span>
                             </div>
@@ -1136,8 +1180,12 @@ export default function StudentPanel({
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
                                   <Clock size={9} /> Pending
                                 </span>
+                              ) : !isCurrentlyActive ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 uppercase">
+                                  <Lock size={9} /> Belum Aktif
+                                </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-rose-50 text-rose-700 border border-rose-100 uppercase">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-rose-50 text-rose-700 border border-rose-100 uppercase animate-pulse">
                                   Belum Lunas
                                 </span>
                               )}
@@ -1161,6 +1209,14 @@ export default function StudentPanel({
                                     <Printer size={13} />
                                   </button>
                                 </div>
+                              ) : !isCurrentlyActive ? (
+                                <button
+                                  disabled
+                                  className="px-4 py-2 font-black rounded-lg text-[10px] uppercase tracking-wider bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed flex items-center justify-center gap-1.5"
+                                  title="SPP bulan berjalan harus dilunasi terlebih dahulu"
+                                >
+                                  Nonaktif
+                                </button>
                               ) : (
                                 <button
                                   id={`pay-spp-mob-${bill.id}`}

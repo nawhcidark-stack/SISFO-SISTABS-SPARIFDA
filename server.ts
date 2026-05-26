@@ -1400,6 +1400,36 @@ async function startServer() {
     res.json({ student, bills: studentBills, transactions: studentTx });
   });
 
+  // Helper to determine if an SPP bill is active or deactivated
+  function isBillActive(bill: SppBill, studentBills: SppBill[]): boolean {
+    const MONTH_MAP: Record<string, number> = {
+      "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+      "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+    };
+
+    const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
+    const billScore = bill.year * 12 + billMonthIdx;
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthIdx = now.getMonth();
+    const currentScore = currentYear * 12 + currentMonthIdx;
+
+    // 1. If it's a past month or current month, it is always active
+    if (billScore <= currentScore) {
+      return true;
+    }
+
+    // 2. If it is a future month, it is active only if all bills strictly prior to this bill are paid
+    const priorBills = studentBills.filter(b => {
+      const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
+      const bScore = b.year * 12 + bMonthIdx;
+      return bScore < billScore;
+    });
+
+    return priorBills.every(b => b.status === 'paid');
+  }
+
   // Admin Manual SPP Update (Teller/Manual mode)
   app.post("/api/admin/pay-spp-manual", (req, res) => {
     const { billId } = req.body;
@@ -1409,6 +1439,11 @@ async function startServer() {
     }
     if (bill.status === "paid") {
       return res.status(400).json({ error: "Tagihan sudah lunas." });
+    }
+
+    const studentBills = sppBills.filter(b => b.studentId === bill.studentId);
+    if (!isBillActive(bill, studentBills)) {
+      return res.status(400).json({ error: `Tagihan SPP ${bill.month} ${bill.year} belum aktif. Silakan lunasi SPP bulan berjalan terlebih dahulu.` });
     }
 
     const student = students.find(s => s.id === bill.studentId);
@@ -2357,6 +2392,11 @@ async function startServer() {
     }
     if (bill.status === "paid") {
       return res.status(400).json({ error: "Tagihan sudah lunas." });
+    }
+
+    const studentBills = sppBills.filter(b => b.studentId === bill.studentId);
+    if (!isBillActive(bill, studentBills)) {
+      return res.status(400).json({ error: `Tagihan SPP ${bill.month} ${bill.year} belum aktif. Silakan lunasi SPP bulan berjalan terlebih dahulu.` });
     }
 
     const student = students.find(s => s.id === bill.studentId);

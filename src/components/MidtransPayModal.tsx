@@ -71,6 +71,7 @@ export default function MidtransPayModal({
   }, [isOpen, token, isSimulated, orderId]);
 
   if (!isOpen) return null;
+  if (!isSimulated) return null;
 
   // Handle local payment simulation actions
   const handlePaymentSubmit = async (e: React.FormEvent) => {

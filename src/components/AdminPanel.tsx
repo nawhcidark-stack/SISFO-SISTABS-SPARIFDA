@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera } from 'lucide-react';
+import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock } from 'lucide-react';
 import StudentManagement from './StudentManagement';
 import QRScannerModal from './QRScannerModal';
 import QRCode from 'qrcode';
@@ -449,7 +449,42 @@ export default function AdminPanel({
   }>>([]);
   const [processingCart, setProcessingCart] = useState(false);
 
+  // Helper to determine active / inactive state of an SPP bill (for Admin/Cashier)
+  const checkIsBillActive = (bill: SppBill, studentId: string) => {
+    const studentBills = bills.filter(b => b.studentId === studentId);
+    const MONTH_MAP: Record<string, number> = {
+      "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+      "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+    };
+
+    const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
+    const billScore = bill.year * 12 + billMonthIdx;
+
+    const now = new Date();
+    const currentYear = now.getFullYear();
+    const currentMonthIdx = now.getMonth();
+    const currentScore = currentYear * 12 + currentMonthIdx;
+
+    // 1. If it's a past month or current month, it is always active
+    if (billScore <= currentScore) {
+      return true;
+    }
+
+    // 2. If it is a future month, check if all bills strictly prior are paid
+    const priorBills = studentBills.filter(b => {
+      const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
+      const bScore = b.year * 12 + bMonthIdx;
+      return bScore < billScore;
+    });
+
+    return priorBills.every(b => b.status === 'paid');
+  };
+
   const addToCartSpp = (bill: SppBill, student: Student) => {
+    if (!checkIsBillActive(bill, student.id)) {
+      alert(`Peringatan: Tagihan SPP ${bill.month} ${bill.year} belum aktif karena SPP bulan berjalan belum lunas.`);
+      return;
+    }
     if (paymentCart.some(item => item.type === 'spp' && item.billId === bill.id)) {
       alert(`SPP ${bill.month} ${bill.year} untuk ${student.name} sudah ada di dalam ringkasan keranjang belanja!`);
       return;
@@ -2116,12 +2151,14 @@ export default function AdminPanel({
                                             <td className="py-2.5 font-mono text-slate-600 font-bold">Rp {b.amount.toLocaleString('id-ID')}</td>
                                             <td className="py-2.5 text-center">
                                               {b.status === 'paid' ? (
-                                                <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">LUNAS</span>
-                                              ) : b.status === 'pending' ? (
-                                                <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">PENDING</span>
-                                              ) : (
-                                                <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-100">UNPAID</span>
-                                              )}
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">LUNAS</span>
+                                               ) : b.status === 'pending' ? (
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">PENDING</span>
+                                               ) : !checkIsBillActive(b, selectedStudent.id) ? (
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 uppercase flex items-center gap-0.5 justify-center"><Lock size={8} /> Nonaktif</span>
+                                               ) : (
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-100">UNPAID</span>
+                                               )}
                                             </td>
                                             <td className="py-2.5 text-right">
                                               {b.status === 'paid' ? (
@@ -2151,67 +2188,73 @@ export default function AdminPanel({
                                                     </button>
                                                   )}
                                                 </div>
-                                              ) : (
-                                                <div className="flex gap-1 justify-end items-center">
-                                                  <button
-                                                    type="button"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      addToCartSpp(b, selectedStudent);
-                                                    }}
-                                                    className="px-1.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
-                                                    title="Tambahkan tagihan ini ke Ringkasan Keranjang Pembayaran"
-                                                  >
-                                                    <ShoppingCart size={9} />
-                                                    <span>+ Keranjang</span>
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    disabled={processingBillId !== null}
-                                                    onClick={async (e) => {
-                                                      e.stopPropagation();
-                                                      if (onPaySppViaMidtrans) {
-                                                        setProcessingBillId(b.id);
-                                                        await onPaySppViaMidtrans(b);
-                                                        setProcessingBillId(null);
-                                                      }
-                                                    }}
-                                                    className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-sm"
-                                                    title="Bayar online menggunakan gerbang pembayaran Midtrans"
-                                                  >
-                                                    <Zap size={9} className="text-yellow-350 fill-yellow-350 animate-pulse" />
-                                                    <span>Midtrans</span>
-                                                  </button>
-                                                  <button
-                                                    type="button"
-                                                    disabled={processingBillId !== null}
-                                                    onClick={async (e) => {
-                                                      e.stopPropagation();
-                                                      setProcessingBillId(b.id);
-                                                      const resBill = await onPaySppManual(b.id);
-                                                      setProcessingBillId(null);
-                                                      if (resBill) {
-                                                        setReceiptToPrint({
-                                                          type: 'spp',
-                                                          detail: {
-                                                            ...b,
-                                                            status: 'paid',
-                                                            paidAt: new Date().toISOString(),
-                                                            paymentMethod: 'Manual Teller (Sekolah)',
-                                                            orderId: resBill.orderId || `ORD-MANUAL-${Date.now()}`
-                                                          },
-                                                          student: selectedStudent
-                                                        });
-                                                        setPrintId('print-receipt-section');
-                                                      }
-                                                    }}
-                                                    className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
-                                                    title="Bayar Manual Tunai langsung"
-                                                  >
-                                                    Manual
-                                                  </button>
-                                                </div>
-                                              )}
+                                              ) : !checkIsBillActive(b, selectedStudent.id) ? (
+                                                   <div className="flex justify-end items-center">
+                                                     <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 flex items-center gap-1" title="Siswa harus melunasi SPP bulan berjalan terlebih dahulu">
+                                                       <Lock size={9} /> SPP berjalan belum lunas
+                                                     </span>
+                                                   </div>
+                                                 ) : (
+                                                   <div className="flex gap-1 justify-end items-center">
+                                                     <button
+                                                       type="button"
+                                                       onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         addToCartSpp(b, selectedStudent);
+                                                       }}
+                                                       className="px-1.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
+                                                       title="Tambahkan tagihan ini ke Ringkasan Keranjang Pembayaran"
+                                                     >
+                                                       <ShoppingCart size={9} />
+                                                       <span>+ Keranjang</span>
+                                                     </button>
+                                                     <button
+                                                       type="button"
+                                                       disabled={processingBillId !== null}
+                                                       onClick={async (e) => {
+                                                         e.stopPropagation();
+                                                         if (onPaySppViaMidtrans) {
+                                                           setProcessingBillId(b.id);
+                                                           await onPaySppViaMidtrans(b);
+                                                           setProcessingBillId(null);
+                                                         }
+                                                       }}
+                                                       className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-sm"
+                                                       title="Bayar online menggunakan gerbang pembayaran Midtrans"
+                                                     >
+                                                       <Zap size={9} className="text-yellow-350 fill-yellow-350 animate-pulse" />
+                                                       <span>Midtrans</span>
+                                                     </button>
+                                                     <button
+                                                       type="button"
+                                                       disabled={processingBillId !== null}
+                                                       onClick={async (e) => {
+                                                         e.stopPropagation();
+                                                         setProcessingBillId(b.id);
+                                                         const resBill = await onPaySppManual(b.id);
+                                                         setProcessingBillId(null);
+                                                         if (resBill) {
+                                                           setReceiptToPrint({
+                                                             type: 'spp',
+                                                             detail: {
+                                                               ...b,
+                                                               status: 'paid',
+                                                               paidAt: new Date().toISOString(),
+                                                               paymentMethod: 'Manual Teller (Sekolah)',
+                                                               orderId: resBill.orderId || `ORD-MANUAL-${Date.now()}`
+                                                             },
+                                                             student: selectedStudent
+                                                           });
+                                                           setPrintId('print-receipt-section');
+                                                         }
+                                                       }}
+                                                       className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
+                                                       title="Bayar Manual Tunai langsung"
+                                                     >
+                                                       Manual
+                                                     </button>
+                                                   </div>
+                                                 )}
                                             </td>
                                           </tr>
                                         ))}
@@ -4222,7 +4265,7 @@ export default function AdminPanel({
                             ctx.fillText(`NIS: ${student.nis}`, 200, 455);
                             
                             const link = document.createElement('a');
-                            link.download = `QR_${student.nis}_KELAS_${student.class}_${student.name.replace(/\s+/g, '_')}.png`;
+                            link.download = `${student.nis}.png`;
                             link.href = finalCanvas.toDataURL('image/png');
                             link.click();
                           }

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock } from 'lucide-react';
+import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
 import StudentManagement from './StudentManagement';
 import QRScannerModal from './QRScannerModal';
 import QRCode from 'qrcode';
@@ -90,6 +90,7 @@ interface AdminPanelProps {
   onUpdateSubjectTeacher?: (id: string, data: { username?: string; name?: string; subject?: string; password?: string }) => Promise<boolean>;
   onDeleteSubjectTeacher?: (id: string) => Promise<boolean>;
   onAutoGenerateSubjectTeachers?: () => Promise<boolean>;
+  onLogout?: () => void;
 }
 
 export default function AdminPanel({
@@ -126,10 +127,12 @@ export default function AdminPanel({
   onCreateSubjectTeacher,
   onUpdateSubjectTeacher,
   onDeleteSubjectTeacher,
-  onAutoGenerateSubjectTeachers
+  onAutoGenerateSubjectTeachers,
+  onLogout
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [adminTab, setAdminTab] = useState<'roster' | 'broadcast' | 'config' | 'student_mgmt' | 'laporan' | 'homeroom_mgmt' | 'subject_teacher_mgmt' | 'student_qr'>('roster');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
 
@@ -749,6 +752,16 @@ export default function AdminPanel({
   const [updateExistingUnpaidBills, setUpdateExistingUnpaidBills] = useState(true);
   const [sppConfigMsg, setSppConfigMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  // Treasurer Account credentials security states
+  const [adminTreasurerPasswordInput, setAdminTreasurerPasswordInput] = useState('');
+  const [treasurerActionMsg, setTreasurerActionMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [isOperatingTreasurerPwd, setIsOperatingTreasurerPwd] = useState(false);
+
+  // Principal/Kepala Sekolah Account credentials security states
+  const [adminPrincipalPasswordInput, setAdminPrincipalPasswordInput] = useState('');
+  const [principalActionMsg, setPrincipalActionMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [isOperatingPrincipalPwd, setIsOperatingPrincipalPwd] = useState(false);
+
   // Midtrans Gateways & Fees States
   const [adminFeeInput, setAdminFeeInput] = useState<number>(4000);
   const [systemMaintenanceFeeInput, setSystemMaintenanceFeeInput] = useState<number>(1500);
@@ -802,6 +815,9 @@ export default function AdminPanel({
       setSchoolLetterhead(schoolIdentity.letterhead || "");
       setSchoolTreasurerSignature(schoolIdentity.treasurerSignature || "");
       setSchoolStamp(schoolIdentity.schoolStamp || "");
+      if (schoolIdentity.sppRates) {
+        setSppConfigRates(schoolIdentity.sppRates);
+      }
     }
   }, [schoolIdentity]);
 
@@ -1004,6 +1020,10 @@ export default function AdminPanel({
   };
 
   React.useEffect(() => {
+    fetchSppConfig();
+  }, []);
+
+  React.useEffect(() => {
     if (adminTab === 'config') {
       fetchSppConfig();
       fetchWaConfig();
@@ -1038,6 +1058,116 @@ export default function AdminPanel({
       setSppConfigMsg({ type: 'error', text: 'Koneksi gagal. Silakan coba lagi.' });
     } finally {
       setIsSavingSppRates(false);
+    }
+  };
+
+  const handleAdminUpdateTreasurerPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminTreasurerPasswordInput.trim()) {
+      setTreasurerActionMsg({ type: 'error', text: 'Password sandi baru tidak boleh kosong.' });
+      return;
+    }
+    if (adminTreasurerPasswordInput.trim().length < 5) {
+      setTreasurerActionMsg({ type: 'error', text: 'Password minimal 5 karakter.' });
+      return;
+    }
+    setIsOperatingTreasurerPwd(true);
+    setTreasurerActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/treasurer/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newPassword: adminTreasurerPasswordInput.trim() })
+      });
+      if (res.ok) {
+        setTreasurerActionMsg({ type: 'success', text: 'Sandi Bendahara berhasil diperbarui secara aman!' });
+        setAdminTreasurerPasswordInput('');
+      } else {
+        const d = await res.json();
+        setTreasurerActionMsg({ type: 'error', text: d.error || 'Gagal mengubah sandi Bendahara.' });
+      }
+    } catch {
+      setTreasurerActionMsg({ type: 'error', text: 'Gangguan jaringan/server.' });
+    } finally {
+      setIsOperatingTreasurerPwd(false);
+    }
+  };
+
+  const handleAdminResetTreasurerPassword = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin menyetel ulang sandi Bendahara kembali ke bawaan default (bendahara123)?')) {
+      return;
+    }
+    setIsOperatingTreasurerPwd(true);
+    setTreasurerActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/treasurer/reset-password', {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setTreasurerActionMsg({ type: 'success', text: 'Sandi Bendahara sukses di-reset ke bawaan default: bendahara123' });
+      } else {
+        const d = await res.json();
+        setTreasurerActionMsg({ type: 'error', text: d.error || 'Gagal melakukan reset sandi.' });
+      }
+    } catch {
+      setTreasurerActionMsg({ type: 'error', text: 'Gangguan komunikasi dengan server.' });
+    } finally {
+      setIsOperatingTreasurerPwd(false);
+    }
+  };
+
+  const handleAdminUpdatePrincipalPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminPrincipalPasswordInput.trim()) {
+      setPrincipalActionMsg({ type: 'error', text: 'Sandi baru tidak boleh kosong.' });
+      return;
+    }
+    if (adminPrincipalPasswordInput.trim().length < 5) {
+      setPrincipalActionMsg({ type: 'error', text: 'Password minimal 5 karakter.' });
+      return;
+    }
+    setIsOperatingPrincipalPwd(true);
+    setPrincipalActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/principal/change-password', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ newPassword: adminPrincipalPasswordInput.trim() })
+      });
+      if (res.ok) {
+         setPrincipalActionMsg({ type: 'success', text: 'Sandi Kepala Sekolah berhasil diperbarui secara aman!' });
+         setAdminPrincipalPasswordInput('');
+      } else {
+         const d = await res.json();
+         setPrincipalActionMsg({ type: 'error', text: d.error || 'Gagal mengubah sandi Kepala Sekolah.' });
+      }
+    } catch {
+       setPrincipalActionMsg({ type: 'error', text: 'Gangguan jaringan/server.' });
+    } finally {
+       setIsOperatingPrincipalPwd(false);
+    }
+  };
+
+  const handleAdminResetPrincipalPassword = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin menyetel ulang sandi Kepala Sekolah kembali ke bawaan default (kepala123)?')) {
+      return;
+    }
+    setIsOperatingPrincipalPwd(true);
+    setPrincipalActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/principal/reset-password', {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setPrincipalActionMsg({ type: 'success', text: 'Sandi Kepala Sekolah sukses di-reset ke bawaan default: kepala123' });
+      } else {
+        const d = await res.json();
+        setPrincipalActionMsg({ type: 'error', text: d.error || 'Gagal melakukan reset sandi.' });
+      }
+    } catch {
+      setPrincipalActionMsg({ type: 'error', text: 'Gangguan komunikasi dengan server.' });
+    } finally {
+      setIsOperatingPrincipalPwd(false);
     }
   };
 
@@ -1201,9 +1331,9 @@ export default function AdminPanel({
   };
 
   return (
-    <div id="admin-panel-root" className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+    <div id="admin-panel-root" className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0">
       {/* Sidebar Command List */}
-      <div className="lg:col-span-3 flex flex-col gap-4">
+      <div className="hidden md:flex md:col-span-3 flex-col gap-4">
         <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-1.5">
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-2.5 block">Menu Administrasi</span>
           
@@ -1256,7 +1386,7 @@ export default function AdminPanel({
             }`}
           >
             <GraduationCap size={15} />
-            Kelola & CRUD Siswa
+           Akun Siswa
           </button>
 
           <button
@@ -1337,7 +1467,7 @@ export default function AdminPanel({
       </div>
 
       {/* Main Action Stage */}
-      <div className="lg:col-span-9 flex flex-col gap-6">
+      <div className="md:col-span-9 flex flex-col gap-6">
         {/* Tab 1: Student Roster and Payments */}
         {adminTab === 'roster' && (
           <div className="flex flex-col gap-6">
@@ -2764,6 +2894,146 @@ export default function AdminPanel({
               </form>
             </motion.div>
 
+            {/* Pengaturan Keamanan Akses Bendahara */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-5 text-xs text-left text-slate-800"
+            >
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <Key size={16} className="text-emerald-600" /> Pengaturan Keamanan Akun Bendahara
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  Kelola keamanan kredensial login untuk <strong>Bendahara Keuangan</strong>. Anda dapat memperbarui password secara langsung di bawah ini atau meresetnya kembali ke sandi bawaan default (<code className="bg-slate-100 px-1 py-0.5 rounded font-mono font-bold text-indigo-700">bendahara123</code>).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Form to change password directly */}
+                <form onSubmit={handleAdminUpdateTreasurerPassword} className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">Atur Kata Sandi Baru Khusus</span>
+                  
+                  {treasurerActionMsg && (
+                    <div className={`p-3 rounded-lg font-bold text-xs ${
+                      treasurerActionMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-250 text-emerald-800' : 'bg-rose-50 border border-rose-200 text-rose-700'
+                    }`}>
+                      {treasurerActionMsg.text}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-extrabold text-slate-400">Kata Sandi Baru</label>
+                    <input
+                      type="password"
+                      placeholder="Masukkan sandi baru Bendahara (Min 5 karakter)"
+                      value={adminTreasurerPasswordInput}
+                      onChange={(e) => setAdminTreasurerPasswordInput(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 bg-white rounded-xl text-slate-800 focus:outline-none focus:border-indigo-600 font-semibold"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isOperatingTreasurerPwd}
+                    className="w-full py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isOperatingTreasurerPwd ? 'Menyimpan...' : 'Perbarui Sandi Bendahara 🔑'}
+                  </button>
+                </form>
+
+                {/* Reset to Default */}
+                <div className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl h-full justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">Setel Ulang Sandi Kembali ke Bawaan</span>
+                    <p className="text-[11px] text-slate-500 mt-2 leading-relaxed font-semibold">
+                      Lupa password bendahara aktif? Klik tombol di bawah ini untuk mengembalikan sandi Bendahara kembali ke standar bawaan sistem: <strong className="font-mono text-indigo-700">bendahara123</strong>.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAdminResetTreasurerPassword}
+                    disabled={isOperatingTreasurerPwd}
+                    className="w-full mt-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw size={12} className={isOperatingTreasurerPwd ? 'animate-spin' : ''} />
+                    <span>Reset Password ke Default (bendahara123) 🔄</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Pengaturan Keamanan Akses Kepala Sekolah */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-5 text-xs text-left text-slate-800"
+            >
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <Key size={16} className="text-violet-600" /> Pengaturan Keamanan Akun Kepala Sekolah (Principal)
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  Kelola keamanan kredensial login untuk <strong>Kepala Sekolah</strong>. Anda dapat memperbarui password secara langsung di bawah ini atau meresetnya kembali ke sandi bawaan default (<code className="bg-slate-100 px-1 py-0.5 rounded font-mono font-bold text-violet-700">kepala123</code>).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Form to change password directly */}
+                <form onSubmit={handleAdminUpdatePrincipalPassword} className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-violet-700 uppercase tracking-wider block">Atur Kata Sandi Baru Khusus</span>
+                  
+                  {principalActionMsg && (
+                    <div className={`p-3 rounded-lg font-bold text-xs ${
+                      principalActionMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-250 text-emerald-800' : 'bg-rose-50 border border-rose-200 text-rose-700'
+                    }`}>
+                      {principalActionMsg.text}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-extrabold text-slate-400">Kata Sandi Baru</label>
+                    <input
+                      type="password"
+                      placeholder="Masukkan sandi baru Kepala Sekolah (Min 5 karakter)"
+                      value={adminPrincipalPasswordInput}
+                      onChange={(e) => setAdminPrincipalPasswordInput(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 bg-white rounded-xl text-slate-800 focus:outline-none focus:border-violet-600 font-semibold"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isOperatingPrincipalPwd}
+                    className="w-full py-2.5 bg-violet-600 hover:bg-violet-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isOperatingPrincipalPwd ? 'Menyimpan...' : 'Perbarui Sandi Kepala Sekolah 🔑'}
+                  </button>
+                </form>
+
+                {/* Reset to Default */}
+                <div className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl h-full justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">Setel Ulang Sandi Kembali ke Bawaan</span>
+                    <p className="text-[11px] text-slate-500 mt-2 leading-relaxed font-semibold">
+                      Lupa password Kepala Sekolah aktif? Klik tombol di bawah ini untuk mengembalikan sandi Kepala Sekolah kembali ke standar bawaan sistem: <strong className="font-mono text-violet-700">kepala123</strong>.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAdminResetPrincipalPassword}
+                    disabled={isOperatingPrincipalPwd}
+                    className="w-full mt-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw size={12} className={isOperatingPrincipalPwd ? 'animate-spin' : ''} />
+                    <span>Reset Password ke Default (kepala123) 🔄</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+
             {/* Pengaturan Identitas Sekolah & Logo */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}
@@ -3095,7 +3365,7 @@ export default function AdminPanel({
                       type="text"
                       value={schoolTreasurer}
                       onChange={(e) => setSchoolTreasurer(e.target.value)}
-                      placeholder="Contoh: Bendahara Madrasah NU"
+                      placeholder="Contoh: Bendahara Sekolah"
                       className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-xs"
                     />
                   </div>
@@ -5004,7 +5274,7 @@ export default function AdminPanel({
                       <span className="text-lg font-bold font-mono text-emerald-700">
                         {countActiveAccounts} Siswa
                       </span>
-                      <span className="text-[9px] text-slate-500 block leading-tight">{Math.round((countActiveAccounts / students.length) * 100)}% Dari total siswa madrasah</span>
+                      <span className="text-[9px] text-slate-500 block leading-tight">{Math.round((countActiveAccounts / students.length) * 100)}% Dari total siswa sekolah</span>
                     </div>
 
                     <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col gap-1.5">
@@ -5249,7 +5519,7 @@ export default function AdminPanel({
                   )}
 
 
-                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-32 pt-1 text-center font-bold">({schoolIdentity?.treasurer || "Bendahara Madrasah NU"})</span>
+                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-32 pt-1 text-center font-bold">({schoolIdentity?.treasurer || "Bendahara Sekolah"})</span>
                 </div>
               </div>
 
@@ -5643,7 +5913,7 @@ export default function AdminPanel({
                   </div>
                   <div className="flex flex-col justify-between items-end h-[85px] text-right">
                     <span className="text-[9px] font-bold text-slate-500 uppercase tracking-widest block">Diverifikasi & Pertanggungjawaban</span>
-                    <span className="font-bold text-slate-800 font-sans border-t-2 border-slate-900 w-44 pt-1 text-center">({schoolIdentity?.treasurer || "Bendahara Madrasah NU"})</span>
+                    <span className="font-bold text-slate-800 font-sans border-t-2 border-slate-900 w-44 pt-1 text-center">({schoolIdentity?.treasurer || "Bendahara Sekolah"})</span>
                   </div>
                 </div>
 
@@ -6139,6 +6409,193 @@ export default function AdminPanel({
             }}
             onClose={() => setIsQrScannerOpen(false)}
           />
+        )}
+      </AnimatePresence>
+
+      {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) ================= */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-2 flex md:hidden justify-around items-center h-16 no-print select-none">
+        {/* Menu 1 (Home/Roster - paling kiri) */}
+        <button
+          type="button"
+          onClick={() => {
+            setAdminTab('roster');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${adminTab === 'roster' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <Home size={20} className={adminTab === 'roster' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${adminTab === 'roster' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Beranda</span>
+        </button>
+
+        {/* Menu 2 (Siswa) */}
+        <button
+          type="button"
+          onClick={() => {
+            setAdminTab('student_mgmt');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${adminTab === 'student_mgmt' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <User size={20} className={adminTab === 'student_mgmt' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${adminTab === 'student_mgmt' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Siswa</span>
+        </button>
+
+        {/* Menu 3 (Laporan) */}
+        <button
+          type="button"
+          onClick={() => {
+            setAdminTab('laporan');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${adminTab === 'laporan' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <BarChart3 size={20} className={adminTab === 'laporan' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${adminTab === 'laporan' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Laporan</span>
+        </button>
+
+        {/* Menu 4 (Broadcast) */}
+        <button
+          type="button"
+          onClick={() => {
+            setAdminTab('broadcast');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${adminTab === 'broadcast' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <BellRing size={20} className={adminTab === 'broadcast' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${adminTab === 'broadcast' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Broadcast</span>
+        </button>
+
+        {/* Menu 5 (Lainnya - 4 kotak, paling kanan) */}
+        <button
+          type="button"
+          onClick={() => setShowMoreMenu(prev => !prev)}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${showMoreMenu ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={showMoreMenu ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${showMoreMenu ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+        </button>
+      </div>
+
+      {/* Slide-over menu bottom sheet overlay for "Lainnya" */}
+      <AnimatePresence>
+        {showMoreMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.3 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMoreMenu(false)}
+              className="fixed inset-0 z-40 bg-black"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+            >
+              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Pendukung</span>
+                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Admin Utama</h4>
+                </div>
+                <button
+                  onClick={() => setShowMoreMenu(false)}
+                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab('homeroom_mgmt');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🏫</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Kelola Wali Kelas</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Manajemen pembagian rombongan belajar kelas</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab('subject_teacher_mgmt');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-650 text-lg">📝</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Kelola Guru Mapel</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kelola daftar penugasan guru pengampu mata pelajaran</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab('student_qr');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">📇</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Cetak QR Kolektif</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Eksportir &amp; cetakan kartu QR identitas siswa massal</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab('config');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-purple-50 rounded-xl text-purple-600 text-lg">⚙️</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">WhatsApp &amp; Identitas</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Konfigurasi token gateway WhatsApp &amp; data lembaga</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onLogout && onLogout();
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sistem</h5>
+                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar aman dari portal kontrol admin pusat</p>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </>
         )}
       </AnimatePresence>
     </div>

@@ -5,19 +5,32 @@ import { ShieldCheck, User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkle
 
 interface LoginProps {
   students: Student[];
-  onLoginSuccess: (role: 'student' | 'admin' | 'homeroom' | 'subject_teacher', student: Student | null, homeroom: HomeroomTeacher | null, subjectTeacher?: SubjectTeacher | null) => void;
+  onLoginSuccess: (
+    role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras', 
+    student: Student | null, 
+    homeroom: HomeroomTeacher | null, 
+    subjectTeacher?: SubjectTeacher | null
+  ) => void;
   schoolIdentity?: SchoolIdentity;
 }
 
 export default function Login({ students, onLoginSuccess, schoolIdentity }: LoginProps) {
-  const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher'>('student');
+  const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras'>('student');
+  const [activeGroup, setActiveGroup] = useState<'student' | 'teacher' | 'staff'>('student');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
 
-  const handleQuickFill = (role: 'student' | 'admin' | 'homeroom' | 'subject_teacher', userVal: string, passVal: string) => {
+  const handleQuickFill = (role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras', userVal: string, passVal: string) => {
     setActiveRole(role);
+    if (role === 'student') {
+      setActiveGroup('student');
+    } else if (role === 'homeroom' || role === 'subject_teacher' || role === 'principal') {
+      setActiveGroup('teacher');
+    } else {
+      setActiveGroup('staff');
+    }
     setUsername(userVal);
     setPassword(passVal);
     setErrorMsg(null);
@@ -35,10 +48,38 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
     setIsValidating(true);
 
     try {
-      if (activeRole === 'admin') {
+      if (activeRole === 'principal') {
+        // Principal Validation
+        const res = await fetch('/api/principal/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('principal', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Username atau Password Kepala Sekolah salah.');
+        }
+      } else if (activeRole === 'waka_sarpras') {
+        // Waka Sarpras Validation
+        const cleanUser = username.trim().toLowerCase();
+        if ((cleanUser === 'sarpras' || cleanUser === 'waka') && password === 'sarpras123') {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_sarpras', null, null, null);
+          }, 600);
+        } else {
+          setIsValidating(false);
+          setErrorMsg('Username atau Password Waka Sarpras salah. Coba: sarpras / sarpras123.');
+        }
+      } else if (activeRole === 'admin') {
         // Admin Validation
         if (username.toLowerCase() === 'admin' && password === 'admin123') {
-          // Success
           setTimeout(() => {
             setIsValidating(false);
             onLoginSuccess('admin', null, null);
@@ -46,6 +87,23 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         } else {
           setIsValidating(false);
           setErrorMsg('Username atau Password Kepala/Staf Administrasi salah.');
+        }
+      } else if (activeRole === 'treasurer') {
+        // Treasurer/Bendahara Validation
+        const res = await fetch('/api/treasurer/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('treasurer', null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Username atau Password Bendahara Keuangan salah.');
         }
       } else if (activeRole === 'homeroom') {
         // Homeroom Teacher Validation
@@ -108,7 +166,6 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
 
         if (found) {
           const expectedPassword = found.password || '123456';
-          // Standard security checking: Allow their customized password, or '123456' or cleanNIS
           if (password === expectedPassword || password === '123456' || password === cleanNIS) {
             setTimeout(() => {
               setIsValidating(false);
@@ -119,7 +176,6 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
             setErrorMsg(found.password ? 'Sandi Anda salah.' : 'Sandinya salah. Coba gunakan: 123456');
           }
         } else {
-          // Hit the active NIS API just in case there's a fresh server-side entry
           const res = await fetch(`/api/students/nis/${cleanNIS}`);
           if (res.ok) {
             const data = await res.json();
@@ -147,7 +203,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
 
   return (
     <div id="login-container-root" className="min-h-[calc(100vh-140px)] flex items-center justify-center py-10 px-4">
-      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-12 gap-8 items-center">
+      <div className="w-full max-w-5xl grid grid-cols-1 md:grid-cols-12 gap-8 items-center text-left">
         
         {/* Left Side: Welcoming brand message & guide info */}
         <div className="md:col-span-5 flex flex-col gap-6 text-slate-800">
@@ -156,10 +212,10 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               <Sparkles size={11} className="text-emerald-700 animate-pulse" /> LP MA'ARIF NU PANDAAN
             </span>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight leading-tight">
-              Selamat Datang di Portal Kas & SPP Terpadu
+              Selamat Datang di Portal Kas &amp; SPP Terpadu
             </h2>
             <p className="text-xs text-slate-500 leading-relaxed">
-              Sistem informasi monitoring kas tabungan mandiri siswa dan pembayaran SPP bulanan instan dengan integrasi Payment Gateway Midtrans Sandbox.
+              Sistem informasi monitoring kas tabungan mandiri siswa, pembayaran SPP bulanan instan, serta manajemen logistik inventaris sarana prasarana sekolah.
             </p>
           </div>
 
@@ -169,88 +225,91 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
             </h4>
 
             {/* Student Account chips */}
-            <div className="flex flex-col gap-2">
-              <span className="text-[10px] font-bold text-slate-400">Portal Wali Murid & Siswa (NIS + Sandi):</span>
-              <div className="flex flex-wrap gap-1.5">
-                {students.map((s) => (
+            <div className="flex flex-col gap-1.5">
+              <span className="text-[10px] font-bold text-slate-400">Portal Wali Murid &amp; Siswa (NIS):</span>
+              <div className="flex flex-wrap gap-1">
+                {students.slice(0, 3).map((s) => (
                   <button
                     key={s.id}
                     type="button"
                     onClick={() => handleQuickFill('student', s.nis, '123456')}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[10px] text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-sm cursor-pointer"
+                    className="px-2 py-1 bg-white border border-slate-250 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[9.5px] text-slate-705 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
                   >
-                    <User size={10} className="text-emerald-600" />
+                    <User size={9} className="text-emerald-600" />
                     <span>{s.name.split(' ')[0]} ({s.nis})</span>
                   </button>
                 ))}
               </div>
             </div>
 
-            {/* Admin and Homeroom account chips */}
-            <div className="flex flex-col gap-3 border-t border-slate-100 pt-3">
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400">Staf Administrasi / Teller:</span>
+            {/* Staff / Management quick fill */}
+            <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2.5">
+              <span className="text-[10px] font-bold text-slate-400">Manajemen Sekolah &amp; Sarpras:</span>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleQuickFill('waka_sarpras', 'sarpras', 'sarpras123')}
+                  className="px-2 py-1 bg-white border border-amber-200 hover:border-amber-500 hover:bg-amber-50 rounded-lg text-left text-[9.5px] text-amber-900 transition-all font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <ShieldCheck size={9} className="text-amber-600" />
+                  <span>Waka Sarpras (sarpras/sarpras123)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickFill('principal', 'kepala', 'kepala123')}
+                  className="px-2 py-1 bg-white border border-indigo-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-lg text-left text-[9.5px] text-indigo-950 transition-all font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <ShieldCheck size={9} className="text-indigo-600" />
+                  <span>Kepala Sekolah (kepala)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickFill('treasurer', 'bendahara', 'bendahara123')}
+                  className="px-2 py-1 bg-white border border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-lg text-left text-[9.5px] text-emerald-950 transition-all font-bold flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <ShieldCheck size={9} className="text-emerald-600" />
+                  <span>Bendahara (bendahara)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleQuickFill('admin', 'admin', 'admin123')}
-                  className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-55 rounded-lg text-left text-[10px] text-slate-700 transition-all font-bold flex items-center gap-1.5 shadow-sm cursor-pointer w-fit"
+                  className="px-2 py-1 bg-white border border-slate-200 hover:border-slate-805 rounded-lg text-left text-[9.5px] text-slate-705 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
                 >
-                  <ShieldCheck size={11} className="text-indigo-600" />
-                  <span>Admin Sekolah (admin / admin123)</span>
+                  <ShieldCheck size={9} className="text-slate-600" />
+                  <span>Admin Staf</span>
                 </button>
               </div>
+            </div>
 
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400">Wali Kelas (Bimbingan Absensi):</span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('homeroom', 'wali7a', 'wali123')}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[10px] whitespace-nowrap text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-sm cursor-pointer"
-                  >
-                    <ClipboardCheck size={11} className="text-amber-500" />
-                    <span>Wali 7-A (wali7a / wali123)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('homeroom', 'wali7b', 'wali123')}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[10px] whitespace-nowrap text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-sm cursor-pointer"
-                  >
-                    <ClipboardCheck size={11} className="text-amber-500" />
-                    <span>Wali 7-B (wali7b / wali123)</span>
-                  </button>
-                </div>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <span className="text-[10px] font-bold text-slate-400">Guru Mata Pelajaran (Jurnal KBM & Absensi Mapel):</span>
-                <div className="flex flex-wrap gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('subject_teacher', 'guru_math', 'mapel123')}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[10px] whitespace-nowrap text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-sm cursor-pointer border-emerald-100"
-                  >
-                    <ClipboardCheck size={11} className="text-indigo-500" />
-                    <span>Guru MTK (guru_math / mapel123)</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => handleQuickFill('subject_teacher', 'guru_english', 'mapel123')}
-                    className="px-2.5 py-1.5 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[10px] whitespace-nowrap text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-sm cursor-pointer border-emerald-100"
-                  >
-                    <ClipboardCheck size={11} className="text-indigo-500" />
-                    <span>Guru B.Inggris (guru_english)</span>
-                  </button>
-                </div>
+            {/* Teachers quick fill */}
+            <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2.5">
+              <span className="text-[10px] font-bold text-slate-400">Tenaga Pendidik / Guru Kelas:</span>
+              <div className="flex flex-wrap gap-1">
+                <button
+                  type="button"
+                  onClick={() => handleQuickFill('homeroom', 'wali7a', 'wali123')}
+                  className="px-2 py-1 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[9.5px] text-slate-705 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <ClipboardCheck size={9} className="text-amber-500" />
+                  <span>Wali 7-A (wali7a)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleQuickFill('subject_teacher', 'guru_math', 'mapel123')}
+                  className="px-2 py-1 bg-white border border-slate-250 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[9.5px] text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
+                >
+                  <ClipboardCheck size={9} className="text-indigo-500" />
+                  <span>Guru MTK (guru_math)</span>
+                </button>
               </div>
             </div>
           </div>
         </div>
 
         {/* Right Side: Professional interactive login form */}
-        <div className="md:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden">
+        <div className="md:col-span-7 bg-white rounded-2xl border border-slate-200 shadow-xl overflow-hidden text-left">
           
-          <div className="bg-gradient-to-r from-blue-700 via-teal-600 to-emerald-600 border-b border-emerald-950 p-6 text-white text-center flex flex-col gap-1 items-center justify-center">
+          <div className="bg-gradient-to-r from-blue-700 via-teal-600 to-emerald-600 border-b border-emerald-950 p-6 text-white flex flex-col gap-1 items-center justify-center text-center">
             <div className="flex items-center gap-2">
               <div className="p-1 bg-white text-slate-800 rounded-xl w-12 h-12 shadow-md flex items-center justify-center overflow-hidden">
                 {schoolIdentity?.logo ? (
@@ -279,69 +338,40 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               SISTEM LOGIN PORTAL
             </h3>
             <p className="text-[11px] text-emerald-100 font-bold uppercase tracking-wide">
-              {schoolIdentity?.name || "SMP MAARIF NU PANDAAN"}
+              {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
             </p>
           </div>
 
-          <div className="p-8">
-            {/* Tab switchers */}
-            <div className="grid grid-cols-4 gap-1 bg-slate-50 p-1 rounded-xl border border-slate-200 mb-6 font-semibold">
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveRole('student');
+          <div className="p-8 flex flex-col gap-5">
+            {/* Consolidated & Clean unified Dropdown roles selector - Eliminates too many tabs */}
+            <div className="flex flex-col gap-1.5">
+              <label className="block text-[10px] font-black tracking-widest text-slate-450 uppercase text-left">
+                📦 PERAN AKSES KEAMANAN (ROLE):
+              </label>
+              <select
+                value={activeRole}
+                onChange={(e) => {
+                  const r = e.target.value as any;
+                  setActiveRole(r);
+                  if (r === 'student') {
+                    setActiveGroup('student');
+                  } else if (['homeroom', 'subject_teacher', 'principal'].includes(r)) {
+                    setActiveGroup('teacher');
+                  } else {
+                    setActiveGroup('staff');
+                  }
                   setErrorMsg(null);
                 }}
-                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
-                  activeRole === 'student'
-                    ? 'bg-slate-900 text-white shadow'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
+                className="w-full px-4 py-3 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 text-slate-800 focus:outline-slate-905 focus:border-slate-805 cursor-pointer hover:bg-slate-100 transition-all font-display shadow-inner"
               >
-                Siswa
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveRole('admin');
-                  setErrorMsg(null);
-                }}
-                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
-                  activeRole === 'admin'
-                    ? 'bg-slate-900 text-white shadow'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Admin
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveRole('homeroom');
-                  setErrorMsg(null);
-                }}
-                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
-                  activeRole === 'homeroom'
-                    ? 'bg-slate-900 text-white shadow'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Wali Kelas
-              </button>
-              <button
-                type="button"
-                onClick={() => {
-                  setActiveRole('subject_teacher');
-                  setErrorMsg(null);
-                }}
-                className={`py-2 text-[10px] font-extrabold rounded-lg cursor-pointer transition-all ${
-                  activeRole === 'subject_teacher'
-                    ? 'bg-slate-900 text-white shadow'
-                    : 'text-slate-600 hover:bg-slate-100'
-                }`}
-              >
-                Guru Mapel
-              </button>
+                <option value="student">🎓 Portal Wali Murid / Siswa (Gunakan NIS)</option>
+                <option value="homeroom">🍎 Wali Kelas (Bimbingan Rapor &amp; Absensi)</option>
+                <option value="subject_teacher">📚 Guru Mata Pelajaran (KBM &amp; Catatan Mapel)</option>
+                <option value="waka_sarpras">📦 Waka Sarana &amp; Prasarana (Sarpras Inventaris)</option>
+                <option value="treasurer">💰 Bendahara Keuangan (Mutasi SPP &amp; Tabungan)</option>
+                <option value="principal">👑 Kepala Sekolah / Yayasan (Executive Board)</option>
+                <option value="admin">🛡️ Staf Administrasi / Admin Sekolah</option>
+              </select>
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -354,44 +384,42 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
 
               {/* Form Input fields */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 align-left text-left">
-                  {activeRole === 'student' ? 'Nomor Induk Siswa (NIS)' : activeRole === 'admin' ? 'Username Staf' : activeRole === 'homeroom' ? 'Username Wali Kelas' : 'Username Guru Mapel'}
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 text-left">
+                  {activeRole === 'student' ? 'Nomor Induk Siswa (NIS)' : 'Username Akun'}
                 </label>
-                <div className="relative">
+                <div className="relative text-left">
                   <input
                     type="text"
                     required
                     placeholder={
                       activeRole === 'student' 
                         ? 'Masukkan NIS Anda (cth: 20241001)' 
-                        : activeRole === 'admin' 
-                          ? 'Masukkan username staf' 
-                          : activeRole === 'homeroom'
-                            ? 'Masukkan username bimbingan kelas Anda'
-                            : 'Masukkan username guru mapel Anda (cth: guru_math)'
+                        : activeRole === 'waka_sarpras'
+                          ? 'Gunakan username waka sarpras (sarpras)'
+                          : 'Masukkan username login Anda'
                     }
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
                   />
-                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-450 text-slate-400">
+                  <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
                     <User size={14} />
                   </div>
                 </div>
               </div>
 
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 text-left">
                   Kata Sandi (Password)
                 </label>
-                <div className="relative">
+                <div className="relative text-left">
                   <input
                     type="password"
                     required
-                    placeholder="Masukkan kata sandi (default: 123456 atau admin123)"
+                    placeholder="Masukkan kata sandi sandi otentikasi Anda"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs text-slate-800 font-semibold"
+                    className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs text-slate-800 font-semibold"
                   />
                   <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-450 text-slate-400">
                     <Key size={14} />
@@ -402,7 +430,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               <button
                 type="submit"
                 disabled={isValidating}
-                className="w-full mt-4 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs uppercase tracking-wider rounded-lg transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full mt-4 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isValidating ? (
                   'Menghubungkan...'

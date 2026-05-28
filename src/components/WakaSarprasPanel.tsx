@@ -1,0 +1,1717 @@
+import React, { useState, useEffect, useMemo } from 'react';
+import { 
+  Package, ShoppingCart, Users2, Search, Plus, Edit2, Trash2, 
+  Printer, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Loader2, LogOut, Check, X
+} from 'lucide-react';
+import { SchoolIdentity, HomeroomTeacher, SubjectTeacher, SarprasItem, SarprasProposal, SarprasLoan } from '../types';
+
+// Helper component for printing crisp vector barcodes
+function BarcodeSVG({ value }: { value: string }) {
+  const cleanVal = String(value || "INV-000").toUpperCase();
+  const seed = cleanVal.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
+  
+  const bars: React.ReactNode[] = [];
+  let currentX = 10;
+  const height = 40;
+  
+  for (let i = 0; i < 35; i++) {
+    const isThick = ((seed * (i + 13)) % 5 === 0) || (i % 7 === 0);
+    const width = isThick ? 3 : 1;
+    const gap = ((seed + i) % 4 === 0) ? 2 : 1;
+    
+    bars.push(
+      <rect 
+        key={`bar-${i}`} 
+        x={currentX} 
+        y={5} 
+        width={width} 
+        height={height} 
+        fill="black" 
+      />
+    );
+    currentX += width + gap;
+  }
+  
+  const totalWidth = currentX + 10;
+  
+  return (
+    <div className="flex flex-col items-center gap-1 bg-white p-2 rounded border border-slate-100 w-fit mx-auto">
+      <svg width={totalWidth} height={height + 10} className="mx-auto block">
+        {bars}
+      </svg>
+      <span className="text-[9px] font-mono font-bold tracking-widest text-slate-800">{cleanVal}</span>
+    </div>
+  );
+}
+
+interface WakaSarprasPanelProps {
+  schoolIdentity?: SchoolIdentity;
+  onLogout: () => void;
+  homerooms: HomeroomTeacher[];
+  subjectTeachers: SubjectTeacher[];
+}
+
+export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, subjectTeachers }: WakaSarprasPanelProps) {
+  const [activeTab, setActiveTab] = useState<'katalog' | 'pengajuan' | 'peminjaman' | 'laporan'>('katalog');
+  
+  // Custom expandable Categories and Locations saved in localStorage
+  const [categories, setCategories] = useState<string[]>(() => {
+    const saved = localStorage.getItem('sarpras_categories');
+    return saved ? JSON.parse(saved) : ['Elektronik / Multimedia', 'Mebel / Furniture', 'Olahraga', 'Kesenian', 'Alat Tulis / Buku', 'Laboratorium', 'Lainnya'];
+  });
+
+  const [locations, setLocations] = useState<string[]>(() => {
+    const saved = localStorage.getItem('sarpras_locations');
+    return saved ? JSON.parse(saved) : ['Gudang Utama', 'Laboratorium IPA', 'Laboratorium Komputer', 'Ruang Guru', 'Ruang Kelas 7-A', 'Ruang Kelas 8-A', 'Perpustakaan'];
+  });
+
+  // Dynamic input states for categories & locations forms
+  const [showManageCatLoc, setShowManageCatLoc] = useState(false);
+  const [newCatInput, setNewCatInput] = useState('');
+  const [newLocInput, setNewLocInput] = useState('');
+
+  // Barcode Print Selection States
+  const [selectedBarcodeItems, setSelectedBarcodeItems] = useState<string[]>([]);
+  const [barcodePrintData, setBarcodePrintData] = useState<SarprasItem[] | null>(null);
+
+  // Auto coding states
+  const [autoCode, setAutoCode] = useState(true);
+
+  // Data State
+  const [items, setItems] = useState<SarprasItem[]>([]);
+  const [proposals, setProposals] = useState<SarprasProposal[]>([]);
+  const [loans, setLoans] = useState<SarprasLoan[]>([]);
+  const [isLoading, setIsLoading] = useState(false);
+  const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Form States - Items
+  const [itemForm, setItemForm] = useState<{
+    id?: string;
+    name: string;
+    code: string;
+    category: string;
+    condition: 'Baik' | 'Rusak Ringan' | 'Rusak Berat';
+    location: string;
+    totalQty: number;
+    price: number;
+  }>({
+    name: '',
+    code: '',
+    category: 'Elektronik / Multimedia',
+    condition: 'Baik',
+    location: 'Gudang Utama',
+    totalQty: 1,
+    price: 0
+  });
+  const [isEditingItem, setIsEditingItem] = useState(false);
+  const [showItemForm, setShowItemForm] = useState(false);
+
+  // Form States - Proposals
+  const [proposalForm, setProposalForm] = useState({
+    id: '',
+    itemName: '',
+    qty: 1,
+    estimatedPrice: 0,
+    reason: ''
+  });
+  const [showProposalForm, setShowProposalForm] = useState(false);
+
+  // Form States - Loans
+  const [loanForm, setLoanForm] = useState({
+    itemId: '',
+    borrowerId: '',
+    borrowerName: '',
+    qty: 1,
+    loanDate: new Date().toISOString().split('T')[0],
+    notes: ''
+  });
+  const [showLoanForm, setShowLoanForm] = useState(false);
+
+  // Filters & Search States
+  const [itemSearch, setItemSearch] = useState('');
+  const [itemCategoryFilter, setItemCategoryFilter] = useState('Semua');
+  const [itemConditionFilter, setItemConditionFilter] = useState('Semua');
+
+  const [loanSearch, setLoanSearch] = useState('');
+  const [loanStatusFilter, setLoanStatusFilter] = useState('Semua');
+
+  // Print Mode State
+  const [printData, setPrintData] = useState<{
+    title: string;
+    headers: string[];
+    rows: string[][];
+    totals?: { label: string; value: string }[];
+  } | null>(null);
+
+  // Unified Teacher representation mapped from homerooms and subjectTeachers
+  const teachersList = useMemo(() => {
+    const arr: { id: string; name: string; detail: string }[] = [];
+    homerooms.forEach(h => {
+      arr.push({ id: h.id, name: h.name, detail: `Wali Kelas ${h.className}` });
+    });
+    subjectTeachers.forEach(s => {
+      arr.push({ id: s.id, name: s.name, detail: `Guru Mapel ${s.subject}` });
+    });
+    return arr.sort((a, b) => a.name.localeCompare(b.name));
+  }, [homerooms, subjectTeachers]);
+
+  // Load all data
+  const loadSarprasData = async () => {
+    setIsLoading(true);
+    try {
+      const [rItems, rProposals, rLoans] = await Promise.all([
+        fetch('/api/sarpras/items').then(r => r.json()),
+        fetch('/api/sarpras/proposals').then(r => r.json()),
+        fetch('/api/sarpras/loans').then(r => r.json())
+      ]);
+      setItems(Array.isArray(rItems) ? rItems : []);
+      setProposals(Array.isArray(rProposals) ? rProposals : []);
+      setLoans(Array.isArray(rLoans) ? rLoans : []);
+    } catch (err) {
+      console.error("Gagal menjaring data sarpras:", err);
+      showMsg('error', 'Gagal memuat database sarpras.');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadSarprasData();
+  }, []);
+
+  // Automatic high-integrity code generation calculation helper
+  const generateAutoCode = (cat: string, nameString: string) => {
+    let abbr = "GEN";
+    const cleanCat = String(cat || "").toLowerCase();
+    if (cleanCat.includes("elektronik") || cleanCat.includes("multimedia")) abbr = "ELK";
+    else if (cleanCat.includes("mebel") || cleanCat.includes("furniture")) abbr = "MBL";
+    else if (cleanCat.includes("olahraga")) abbr = "OLR";
+    else if (cleanCat.includes("kesenian")) abbr = "KSN";
+    else if (cleanCat.includes("tulis") || cleanCat.includes("buku")) abbr = "ATB";
+    else if (cleanCat.includes("lab") || cleanCat.includes("laboratorium")) abbr = "LAB";
+    else {
+      const filtered = cleanCat.replace(/[^a-z]/g, '').toUpperCase();
+      abbr = filtered.substring(0, 3) || "GEN";
+    }
+
+    let seed = 0;
+    if (nameString) {
+      seed = nameString.split('').reduce((acc, char) => acc + char.charCodeAt(0), 0);
+    } else {
+      seed = Math.floor(Math.random() * 90) + 10;
+    }
+    
+    const yearMonth = new Date().toISOString().substring(2, 7).replace('-', ''); // e.g. "2605"
+    const codeNum = (seed % 900) + 100; // deterministic 100-999
+    return `INV/${abbr}/${yearMonth}/${codeNum}`;
+  };
+
+  // Re-generate code automatically on input or category shift if autoCode option is active
+  useEffect(() => {
+    if (autoCode && !isEditingItem) {
+      const generated = generateAutoCode(itemForm.category, itemForm.name);
+      setItemForm(prev => ({ ...prev, code: generated }));
+    }
+  }, [autoCode, itemForm.category, itemForm.name, isEditingItem]);
+
+  // Categories submit & delete actions
+  const handleAddCategory = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newCatInput.trim()) return;
+    const clean = newCatInput.trim();
+    if (categories.some(c => c.toLowerCase() === clean.toLowerCase())) {
+      showMsg('error', 'Kategori tersebut sudah terdaftar.');
+      return;
+    }
+    const updated = [...categories, clean];
+    setCategories(updated);
+    localStorage.setItem('sarpras_categories', JSON.stringify(updated));
+    setNewCatInput('');
+    showMsg('success', `Sukses mendaftarkan kategori baru: ${clean}`);
+  };
+
+  const handleDeleteCategory = (cat: string) => {
+    if (categories.length <= 1) {
+      showMsg('error', 'Harus menyisakan minimal satu kategori utama.');
+      return;
+    }
+    if (!window.confirm(`Yakin ingin membuang kategori "${cat}"?`)) return;
+    const updated = categories.filter(c => c !== cat);
+    setCategories(updated);
+    localStorage.setItem('sarpras_categories', JSON.stringify(updated));
+    showMsg('success', 'Kategori berhasil dihapus.');
+  };
+
+  // Locations submit & delete actions
+  const handleAddLocation = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!newLocInput.trim()) return;
+    const clean = newLocInput.trim();
+    if (locations.some(l => l.toLowerCase() === clean.toLowerCase())) {
+      showMsg('error', 'Lokasi tersebut sudah terdaftar.');
+      return;
+    }
+    const updated = [...locations, clean];
+    setLocations(updated);
+    localStorage.setItem('sarpras_locations', JSON.stringify(updated));
+    setNewLocInput('');
+    showMsg('success', `Sukses mendaftarkan lokasi baru: ${clean}`);
+  };
+
+  const handleDeleteLocation = (loc: string) => {
+    if (locations.length <= 1) {
+      showMsg('error', 'Harus menyisakan minimal satu lokasi penyimpanan.');
+      return;
+    }
+    if (!window.confirm(`Yakin ingin membuang lokasi "${loc}"?`)) return;
+    const updated = locations.filter(l => l !== loc);
+    setLocations(updated);
+    localStorage.setItem('sarpras_locations', JSON.stringify(updated));
+    showMsg('success', 'Lokasi penyimpanan berhasil dihapus.');
+  };
+
+  const showMsg = (type: 'success' | 'error', text: string) => {
+    setActionMessage({ type, text });
+    setTimeout(() => {
+      setActionMessage(null);
+    }, 4500);
+  };
+
+  // Item handler methods
+  const handleSaveItem = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!itemForm.name || !itemForm.code) {
+      showMsg('error', 'Nama barang dan kode inventaris harus diisi.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/sarpras/items', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(itemForm)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setItems(data.sarprasItems);
+        showMsg('success', isEditingItem ? 'Informasi barang berhasil disunting.' : 'Barang inventaris sukses ditambahkan.');
+        setItemForm({
+          name: '',
+          code: '',
+          category: categories[0] || 'Elektronik / Multimedia',
+          condition: 'Baik',
+          location: locations[0] || 'Gudang Utama',
+          totalQty: 1,
+          price: 0
+        });
+        setIsEditingItem(false);
+        setShowItemForm(false);
+      } else {
+        showMsg('error', data.error || 'Gagal menyimpan barang.');
+      }
+    } catch (err) {
+      showMsg('error', 'Kesalahan koneksi sever.');
+    }
+  };
+
+  const handleEditItemClick = (it: SarprasItem) => {
+    setItemForm({
+      id: it.id,
+      name: it.name,
+      code: it.code,
+      category: it.category,
+      condition: it.condition,
+      location: it.location,
+      totalQty: it.totalQty,
+      price: it.price || 0
+    });
+    setIsEditingItem(true);
+    setShowItemForm(true);
+  };
+
+  const handleDeleteItem = async (id: string) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus barang inventaris ini?")) return;
+    try {
+      const res = await fetch(`/api/sarpras/items/${id}`, { method: 'DELETE' });
+      const data = await res.json();
+      if (res.ok) {
+        setItems(data.sarprasItems);
+        showMsg('success', 'Barang berhasil dihapus dari inventaris.');
+      } else {
+        showMsg('error', data.error || 'Gagal menghapus barang.');
+      }
+    } catch (err) {
+      showMsg('error', 'Kesalahan koneksi server.');
+    }
+  };
+
+  // Proposal submit handler
+  const handleSaveProposal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!proposalForm.itemName || !proposalForm.qty || !proposalForm.estimatedPrice) {
+      showMsg('error', 'Nama barang, jumlah unit, dan estimasi harga wajib diisi.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/sarpras/proposals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(proposalForm)
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setProposals(data.sarprasProposals);
+        showMsg('success', 'Proposal pembelian berhasil diajukan ke Kepala Sekolah.');
+        setProposalForm({
+          id: '',
+          itemName: '',
+          qty: 1,
+          estimatedPrice: 0,
+          reason: ''
+        });
+        setShowProposalForm(false);
+      } else {
+        showMsg('error', data.error || 'Gagal memproses proposal.');
+      }
+    } catch (err) {
+      showMsg('error', 'Kesalahan jaringan server.');
+    }
+  };
+
+  // Loan/Borrowing checker out handler
+  const handleCheckoutLoan = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!loanForm.itemId || !loanForm.borrowerId || !loanForm.qty) {
+      showMsg('error', 'Lengkapi seluruh formulir peminjaman.');
+      return;
+    }
+
+    const t = teachersList.find(teacher => teacher.id === loanForm.borrowerId);
+    if (!t) {
+      showMsg('error', 'Pendidik tidak valid.');
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/sarpras/loans', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          ...loanForm,
+          borrowerName: t.name
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setLoans(data.sarprasLoans);
+        setItems(data.sarprasItems);
+        showMsg('success', `Peminjaman barang berhasil dicatat atas nama ${t.name}.`);
+        setLoanForm({
+          itemId: '',
+          borrowerId: '',
+          borrowerName: '',
+          qty: 1,
+          loanDate: new Date().toISOString().split('T')[0],
+          notes: ''
+        });
+        setShowLoanForm(false);
+      } else {
+        showMsg('error', data.error || 'Gagal melakukan peminjaman.');
+      }
+    } catch (err) {
+      showMsg('error', 'Kesalahan server.');
+    }
+  };
+
+  const handleReturnLoan = async (loanId: string) => {
+    if (!window.confirm("Apakah Anda yakin barang pinjaman ini sudah dikembalikan secara utuh?")) return;
+    try {
+      const res = await fetch(`/api/sarpras/loans/${loanId}/return`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setLoans(data.sarprasLoans);
+        setItems(data.sarprasItems);
+        showMsg('success', 'Barang telah dikembalikan dan kuantitas tersedia disinkronkan kembali.');
+      } else {
+        showMsg('error', data.error || 'Gagal memperbarui status pengembalian.');
+      }
+    } catch (err) {
+      showMsg('error', 'Gagal memproses pengembalian barang.');
+    }
+  };
+
+  // Filter computations
+  const filteredItems = useMemo(() => {
+    return items.filter(it => {
+      const matchSearch = it.name.toLowerCase().includes(itemSearch.toLowerCase()) || it.code.toLowerCase().includes(itemSearch.toLowerCase());
+      const matchCat = itemCategoryFilter === 'Semua' || it.category === itemCategoryFilter;
+      const matchCond = itemConditionFilter === 'Semua' || it.condition === itemConditionFilter;
+      return matchSearch && matchCat && matchCond;
+    });
+  }, [items, itemSearch, itemCategoryFilter, itemConditionFilter]);
+
+  const filteredLoans = useMemo(() => {
+    return loans.filter(l => {
+      const matchSearch = l.itemName.toLowerCase().includes(loanSearch.toLowerCase()) || l.borrowerName.toLowerCase().includes(loanSearch.toLowerCase());
+      const matchStatus = loanStatusFilter === 'Semua' || l.status === loanStatusFilter;
+      return matchSearch && matchStatus;
+    });
+  }, [loans, loanSearch, loanStatusFilter]);
+
+  // Metric summaries
+  const totalItemCount = useMemo(() => items.reduce((sum, i) => sum + i.totalQty, 0), [items]);
+  const activeBorrowedCount = useMemo(() => loans.filter(l => l.status === 'dipinjam').reduce((sum, l) => sum + l.qty, 0), [loans]);
+  
+  const pendingProposalBudget = useMemo(() => {
+    return proposals.filter(p => p.status === 'pending').reduce((sum, p) => sum + p.totalPrice, 0);
+  }, [proposals]);
+
+  const approvedProposalBudget = useMemo(() => {
+    return proposals.filter(p => p.status === 'approved').reduce((sum, p) => sum + p.totalPrice, 0);
+  }, [proposals]);
+
+  // Printing engine
+  const triggerPrintPreview = (title: string, headers: string[], rows: string[][], totals?: { label: string; value: string }[]) => {
+    setPrintData({ title, headers, rows, totals });
+    setTimeout(() => {
+      window.print();
+    }, 300);
+  };
+
+  // Dynamic categories and locations are governed by the component states and localStorage
+
+
+  return (
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans print:bg-white print:text-black">
+      {/* Printable Area Overlay */}
+      {printData && (
+        <div className="hidden print:block absolute inset-0 bg-white p-8 overflow-visible z-50">
+          <div className="flex flex-col gap-1 items-center border-b-4 border-double border-slate-800 pb-4 mb-6">
+            <h1 className="text-xl font-extrabold uppercase tracking-wide text-center">
+              {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+            </h1>
+            <p className="text-[10px] text-center text-slate-600 font-medium italic">
+              {schoolIdentity?.address || "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan"}
+            </p>
+            <p className="text-[10px] text-center text-slate-500 font-mono">
+              Waka Sarana &amp; Prasarana - Laporan Resmi Sarpras Sekolah
+            </p>
+          </div>
+
+          <h2 className="text-sm font-black uppercase text-center tracking-wide mb-6">
+            {printData.title}
+          </h2>
+
+          <table className="w-full text-left text-[11px] border-collapse border border-slate-700">
+            <thead>
+              <tr className="bg-slate-100 border-b border-slate-700">
+                {printData.headers.map((h, i) => (
+                  <th key={i} className="py-2.5 px-3 font-extrabold border-r border-slate-700">{h}</th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {printData.rows.map((row, rIdx) => (
+                <tr key={rIdx} className="border-b border-slate-300">
+                  {row.map((cell, cIdx) => (
+                    <td key={cIdx} className="py-2 px-3 border-r border-slate-300 font-mono text-[10.5px]">{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {printData.totals && (
+            <div className="mt-4 flex flex-col items-end gap-1 font-mono text-[11px]">
+              {printData.totals.map((t, idx) => (
+                <div key={idx} className="flex gap-4">
+                  <span className="font-bold text-slate-600">{t.label}:</span>
+                  <span className="font-extrabold text-slate-950">{t.value}</span>
+                </div>
+              ))}
+            </div>
+          )}
+
+          <div className="mt-16 flex justify-between px-12 text-[11px]">
+            <div className="text-center">
+              <span className="block text-slate-500">Mengetahui,</span>
+              <span className="block font-bold mt-16">{schoolIdentity?.principal || "H. Ahmad Fuad, M.PdI"}</span>
+              <span className="block text-[9px] text-slate-400">Kepala Sekolah</span>
+            </div>
+            <div className="text-center">
+              <span className="block text-slate-500">Pandaan, {new Date().toLocaleDateString('id-ID')}</span>
+              <span className="block font-bold mt-16">Waka Sarana &amp; Prasarana</span>
+              <span className="block text-[9px] text-slate-400">Unit Inventaris Sekolah</span>
+            </div>
+          </div>
+
+          <button 
+            onClick={() => setPrintData(null)}
+            className="print:hidden fixed bottom-6 right-6 bg-slate-900 text-white font-bold py-2 px-4 rounded-xl shadow-lg border border-slate-700 hover:bg-slate-805 cursor-pointer flex items-center gap-1"
+          >
+            <ArrowLeft size={14} /> Kembali
+          </button>
+        </div>
+      )}
+
+      {/* Printable Barcode Overlay / Preview Modal */}
+      {barcodePrintData && (
+        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 print:border-none print:shadow-none print:p-0 print:max-w-full">
+            <div className="flex justify-between items-center border-b pb-3 print:hidden">
+              <div className="text-left">
+                <h3 className="font-extrabold text-slate-900 text-sm">🖨️ Pratinjau Barcode Barang Kebutuhan</h3>
+                <p className="text-xs text-slate-500">Jumlah barcode yang siap dicetak: {barcodePrintData.length} label.</p>
+              </div>
+              <button 
+                onClick={() => setBarcodePrintData(null)}
+                className="p-1 px-3 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg text-xs font-extrabold cursor-pointer"
+              >
+                Tutup Pratinjau
+              </button>
+            </div>
+
+            <div className="p-4 bg-slate-100 rounded-xl max-h-[450px] overflow-y-auto print:bg-white print:max-h-full print:overflow-visible">
+              <div className="grid grid-cols-2 lg:grid-cols-3 gap-6 print:grid-cols-3 print:gap-4 print:p-2">
+                {barcodePrintData.map((item) => (
+                  <div 
+                    key={item.id || item.code} 
+                    className="border-2 border-slate-300 p-4 rounded-xl flex flex-col items-center justify-between text-center bg-white aspect-video relative shadow-xs print:shadow-none print:border-slate-800"
+                    style={{ minHeight: '145px', breakInside: 'avoid' }}
+                  >
+                    {/* Atas: Nama barang */}
+                    <div className="text-[11px] font-black text-slate-950 border-b border-dashed border-slate-300 pb-1 w-full truncate">
+                      {item.name}
+                    </div>
+                    
+                    {/* Tengah: Barcode SVG with text below barcode inside the SVG helper */}
+                    <div className="my-1.5 select-none scale-95 transform">
+                      <BarcodeSVG value={item.code} />
+                    </div>
+                    
+                    {/* Bawahnya barcode: Tempat barang */}
+                    <div className="text-[10px] font-black tracking-wide text-indigo-700 w-full truncate border-t border-dashed border-slate-300 pt-1 uppercase font-mono">
+                      📍 {item.location || "Gudang Utama"}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex justify-end gap-3 border-t pt-4 print:hidden">
+              <button
+                onClick={() => setBarcodePrintData(null)}
+                className="px-4 py-2 text-slate-600 hover:bg-slate-100 font-bold text-xs rounded-xl cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                onClick={() => {
+                  window.print();
+                }}
+                className="px-5 py-2.5 bg-slate-900 hover:bg-slate-805 text-white font-extrabold text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
+              >
+                <Printer size={13} /> Mulai Cetak Label Barcode ({barcodePrintData.length} Unit)
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Screen Layout Dashboard */}
+      <div className="print:hidden">
+        {/* Sub-Header / Identity Letterhead banner */}
+        <header className="bg-slate-900 text-white relative shadow-md">
+          <div className="absolute inset-0 bg-gradient-to-r from-teal-900/30 to-indigo-900/30 pointer-events-none" />
+          <div className="max-w-7xl mx-auto px-6 py-6 md:py-8 relative flex flex-col md:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4 text-left">
+              <div className="bg-gradient-to-tr from-amber-500 to-indigo-600 p-3.5 rounded-2xl shadow-inner text-white ring-2 ring-indigo-300">
+                <Package size={28} />
+              </div>
+              <div>
+                <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider font-mono">Vice Principal Desk</span>
+                <h1 className="text-2xl font-black tracking-tight">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h1>
+                <p className="text-slate-300 text-xs font-semibold mt-0.5">
+                  🛡️ Portal Administrasi Sarana, Prasarana &amp; Logistik Terintegrasi (Waka Sarpras)
+                </p>
+              </div>
+            </div>
+
+            <button
+              onClick={onLogout}
+              className="px-5 py-2.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white border border-rose-500/20 text-rose-300 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-sm transition-all"
+            >
+              <LogOut size={13} strokeWidth={2.5} /> Keluar Portal
+            </button>
+          </div>
+        </header>
+
+        <main className="max-w-7xl mx-auto px-4 md:px-6 py-8">
+          {/* Action Alerts messages */}
+          {actionMessage && (
+            <div className={`mb-6 p-4 rounded-xl border flex items-center gap-3 text-sm font-bold animate-fade-in ${
+              actionMessage.type === 'success' 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                : 'bg-rose-50 border-rose-200 text-rose-800'
+            }`}>
+              {actionMessage.type === 'success' ? <CheckCircle2 size={18} className="text-emerald-600" /> : <AlertTriangle size={18} className="text-rose-600" />}
+              <span>{actionMessage.text}</span>
+            </div>
+          )}
+
+          {/* Quick Stats Grid Row */}
+          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 text-left">
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Aset Terkatalog</span>
+                <h3 className="text-3xl font-black text-slate-900 mt-2 font-mono">{items.length}</h3>
+                <p className="text-slate-500 text-[11px] mt-1">Jenis barang inventaris sekolah.</p>
+              </div>
+              <div className="absolute right-4 bottom-4 text-indigo-100 pointer-events-none">
+                <Package size={52} />
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Total Kuantitas</span>
+                <h3 className="text-3xl font-black text-emerald-700 mt-2 font-mono">{totalItemCount}</h3>
+                <p className="text-slate-500 text-[11px] mt-1">Unit/barang fisik keseluruhan.</p>
+              </div>
+              <div className="absolute right-4 bottom-4 text-emerald-100 pointer-events-none">
+                <CheckCircle2 size={52} />
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Sedang Dipinjam</span>
+                <h3 className="text-3xl font-black text-amber-600 mt-2 font-mono">{activeBorrowedCount}</h3>
+                <p className="text-slate-500 text-[11px] mt-1">Unit dalam peminjaman aktif oleh guru.</p>
+              </div>
+              <div className="absolute right-4 bottom-4 text-amber-100 pointer-events-none">
+                <Users2 size={52} />
+              </div>
+            </div>
+
+            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
+              <div>
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Belanja Sarpras Disetujui</span>
+                <h3 className="text-2xl font-black text-slate-900 mt-2 font-mono">Rp {approvedProposalBudget.toLocaleString('id-ID')}</h3>
+                <p className="text-orange-550 text-[10px] font-bold mt-1">Pending: Rp {pendingProposalBudget.toLocaleString('id-ID')}</p>
+              </div>
+              <div className="absolute right-4 bottom-4 text-orange-100 pointer-events-none">
+                <ShoppingCart size={52} />
+              </div>
+            </div>
+          </section>
+
+          {/* Tab Button bar switchers */}
+          <div className="flex border-b border-slate-200 gap-2 mb-8 bg-white p-1.5 rounded-2xl border">
+            {[
+              { id: 'katalog', label: '📦 Katalog Inventaris' },
+              { id: 'peminjaman', label: '🤝 Peminjaman Barang' },
+              { id: 'pengajuan', label: '🛒 Pengajuan Pembelian' },
+              { id: 'laporan', label: '📊 Laporan & Cetak' }
+            ].map((tab) => (
+              <button
+                key={tab.id}
+                onClick={() => {
+                  setActiveTab(tab.id as any);
+                  setShowItemForm(false);
+                  setShowLoanForm(false);
+                  setShowProposalForm(false);
+                }}
+                className={`py-3 px-5 rounded-xl font-bold font-display text-xs transition-all cursor-pointer flex-1 md:flex-initial ${
+                  activeTab === tab.id 
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : 'text-slate-600 hover:bg-slate-100'
+                }`}
+              >
+                {tab.label}
+              </button>
+            ))}
+          </div>
+
+          {/* TAB 1: ITEMS INVENTORY CATALOGUE */}
+          {activeTab === 'katalog' && (
+            <div className="animate-fade-in flex flex-col gap-6 text-left">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="font-extrabold text-lg text-slate-900">Manajemen Barang &amp; Sarana Inventaris</h2>
+                  <p className="text-slate-500 text-xs">Simpan, sunting kondisi, dan catat status kuantitas aset inventaris sekolah.</p>
+                </div>
+                <div className="flex items-center gap-2 flex-wrap sm:flex-nowrap">
+                  <button
+                    onClick={() => {
+                      setShowManageCatLoc(!showManageCatLoc);
+                      setShowItemForm(false);
+                    }}
+                    className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs border border-slate-300 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    🛠️ Kelola Kategori &amp; Lokasi
+                  </button>
+                  <button
+                    onClick={() => {
+                      setIsEditingItem(false);
+                      setItemForm({
+                        name: '',
+                        code: '',
+                        category: categories[0] || 'Elektronik / Multimedia',
+                        condition: 'Baik',
+                        location: locations[0] || 'Gudang Utama',
+                        totalQty: 1
+                      });
+                      setShowItemForm(!showItemForm);
+                      setShowManageCatLoc(false);
+                    }}
+                    className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Plus size={14} /> {showItemForm ? 'Batal Tambah' : 'Tambah Aset Baru'}
+                  </button>
+                </div>
+              </div>
+
+              {/* Collapsible Kategori & Lokasi Management Box */}
+              {showManageCatLoc && (
+                <div className="bg-slate-900 text-white border border-slate-800 rounded-2xl p-6 shadow-md flex flex-col gap-6 animate-fade-in relative">
+                  <div className="absolute top-0 inset-x-0 h-1 bg-gradient-to-r from-teal-500 to-indigo-500 rounded-t-2xl" />
+                  <div className="flex justify-between items-center pb-2 border-b border-slate-800">
+                    <div>
+                      <h3 className="font-black text-sm tracking-tight text-white flex items-center gap-1.5">
+                        📂 Master Kategori &amp; Lokasi Penyimpanan
+                      </h3>
+                      <p className="text-slate-400 text-[10.5px]">Tambahkan jenis kategori baru dan zonasi lokasi koordinasi sarpras sekolah.</p>
+                    </div>
+                    <button 
+                      type="button"
+                      onClick={() => setShowManageCatLoc(false)}
+                      className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-350 hover:text-white rounded-lg transition-all cursor-pointer"
+                    >
+                      <X size={14} />
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-slate-300">
+                    {/* Part A: Kategori */}
+                    <div className="bg-slate-950/40 p-5 rounded-xl border border-slate-800/80 flex flex-col gap-4">
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-200">🆕 Form Penambahan Kategori</h4>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Daftarkan kategori logistik asrama / sekolah baru.</p>
+                      </div>
+                      
+                      <form onSubmit={handleAddCategory} className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={newCatInput}
+                          onChange={(e) => setNewCatInput(e.target.value)}
+                          placeholder="Misal: Sarana Masjid, Sanitasi"
+                          className="flex-1 px-3 py-1.5 text-xs border border-slate-800 rounded-lg bg-slate-900 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-indigo-505"
+                          required
+                        />
+                        <button
+                          type="submit"
+                          className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-black text-xs rounded-lg shadow-sm transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                        >
+                          <Plus size={11} strokeWidth={3} /> Tambah
+                        </button>
+                      </form>
+
+                      <div>
+                        <span className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-2">Daftar Kategori Saat Ini</span>
+                        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                          {categories.map((cat, idx) => (
+                            <div key={idx} className="bg-slate-900 border border-slate-800 text-slate-350 font-bold text-[10px] py-1 px-2.5 rounded-md flex items-center gap-2 group hover:border-slate-700">
+                              <span>{cat}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteCategory(cat)}
+                                className="text-slate-500 hover:text-rose-400 font-extrabold transition-all cursor-pointer text-xs"
+                                title="Hapus Kategori"
+                              >
+                                &times;
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Part B: Lokasi */}
+                    <div className="bg-slate-950/40 p-5 rounded-xl border border-slate-800/80 flex flex-col gap-4">
+                      <div>
+                        <h4 className="font-bold text-xs text-slate-200">📍 Form Penambahan Lokasi Barang</h4>
+                        <p className="text-[10px] text-slate-500 mt-0.5">Daftarkan lokasi penyimpanan ruang atau lorong sekolah.</p>
+                      </div>
+
+                      <form onSubmit={handleAddLocation} className="flex gap-2">
+                        <input 
+                          type="text"
+                          value={newLocInput}
+                          onChange={(e) => setNewLocInput(e.target.value)}
+                          placeholder="Misal: Aula Lantai 2, Kantor TU"
+                          className="flex-1 px-3 py-1.5 text-xs border border-slate-800 rounded-lg bg-slate-900 text-slate-100 placeholder-slate-600 focus:outline-none focus:border-emerald-505"
+                          required
+                        />
+                        <button
+                          type="submit"
+                          className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-lg shadow-sm transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                        >
+                          <Plus size={11} strokeWidth={3} /> Tambah
+                        </button>
+                      </form>
+
+                      <div>
+                        <span className="block text-[9px] font-black text-slate-500 uppercase tracking-wider mb-2">Daftar Lokasi (Akan Masuk Drop-down)</span>
+                        <div className="flex flex-wrap gap-1.5 max-h-36 overflow-y-auto pr-1">
+                          {locations.map((loc, idx) => (
+                            <div key={idx} className="bg-slate-900 border border-slate-800 text-slate-350 font-bold text-[10px] py-1 px-2.5 rounded-md flex items-center gap-2 group hover:border-slate-700">
+                              <span>{loc}</span>
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteLocation(loc)}
+                                className="text-slate-500 hover:text-rose-400 font-extrabold transition-all cursor-pointer text-xs"
+                                title="Hapus Lokasi"
+                              >
+                                &times;
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Collapsible Item Form */}
+              {showItemForm && (
+                <form onSubmit={handleSaveItem} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
+                  <h3 className="font-extrabold text-sm text-slate-800">
+                    {isEditingItem ? "📝 Sunting Detail Barang Inventaris" : "🆕 Masukkan Barang Inventaris Baru"}
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="md:col-span-2">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nama Barang / Aset</label>
+                      <input 
+                        type="text"
+                        value={itemForm.name}
+                        onChange={(e) => setItemForm({ ...itemForm, name: e.target.value })}
+                        placeholder="Misal: Epson EB-X400, Meja Belajar Kayu, Laptop BK"
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-sans focus:outline-indigo-600"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5 font-sans">
+                        <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">Kode Inventaris</label>
+                        {!isEditingItem && (
+                          <label className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 cursor-pointer select-none">
+                            <input 
+                              type="checkbox" 
+                              checked={autoCode} 
+                              onChange={(e) => setAutoCode(e.target.checked)}
+                              className="rounded border-slate-350 text-indigo-600 focus:ring-indigo-500 scale-90"
+                            />
+                            Otomatis
+                          </label>
+                        )}
+                      </div>
+                      <input 
+                        type="text"
+                        value={itemForm.code}
+                        onChange={(e) => setItemForm({ ...itemForm, code: e.target.value })}
+                        placeholder="INV/LAB-COMP/01"
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-mono focus:outline-indigo-600 disabled:opacity-60 disabled:bg-slate-100"
+                        disabled={autoCode && !isEditingItem}
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kategori</label>
+                      <select 
+                        value={itemForm.category}
+                        onChange={(e) => setItemForm({ ...itemForm, category: e.target.value })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 font-sans focus:outline-indigo-600 cursor-pointer"
+                      >
+                        {categories.map((cat, idx) => (
+                          <option key={idx} value={cat}>{cat}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Lokasi Fisik Barang</label>
+                      <select 
+                        value={itemForm.location}
+                        onChange={(e) => setItemForm({ ...itemForm, location: e.target.value })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer"
+                        required
+                      >
+                        <option value="">-- Pilih Lokasi --</option>
+                        {locations.map((loc, idx) => (
+                          <option key={idx} value={loc}>{loc}</option>
+                        ))}
+                      </select>
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-sans">Kuantitas Total Unit</label>
+                      <input 
+                        type="number"
+                        min="1"
+                        value={itemForm.totalQty}
+                        onChange={(e) => setItemForm({ ...itemForm, totalQty: Number(e.target.value) || 1 })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 font-bold text-slate-800"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-sans">Nilai Estimasi per Unit (Rp)</label>
+                      <input 
+                        type="number"
+                        min="0"
+                        value={itemForm.price}
+                        onChange={(e) => setItemForm({ ...itemForm, price: Number(e.target.value) || 0 })}
+                        placeholder="Contoh: 5500000"
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 font-bold text-slate-800"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kondisi Fisik</label>
+                      <select 
+                        value={itemForm.condition}
+                        onChange={(e) => setItemForm({ ...itemForm, condition: e.target.value as any })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer font-bold text-slate-800"
+                      >
+                        <option value="Baik">Baik (Siap Pakai)</option>
+                        <option value="Rusak Ringan">Rusak Ringan (Bisa Digunakan)</option>
+                        <option value="Rusak Berat">Rusak Berat (Butuh Ganti/Servis)</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowItemForm(false)}
+                      className="px-4 py-2 text-slate-500 hover:bg-slate-100 text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-xl cursor-pointer shadow-sm"
+                    >
+                      {isEditingItem ? 'Simpan Perubahan' : 'Daftarkan Barang'}
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Filters Panel & Listing Table */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-4 mb-6">
+                  {/* Search box */}
+                  <div className="relative md:col-span-2">
+                    <Search className="absolute left-3.5 top-3 text-slate-400" size={14} />
+                    <input 
+                      type="text"
+                      value={itemSearch}
+                      onChange={(e) => setItemSearch(e.target.value)}
+                      placeholder="Cari berdasarkan nama aset atau kode inventaris..."
+                      className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-slate-905"
+                    />
+                  </div>
+
+                  {/* Category dropdown */}
+                  <div>
+                    <select
+                      value={itemCategoryFilter}
+                      onChange={(e) => setItemCategoryFilter(e.target.value)}
+                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 cursor-pointer text-slate-700"
+                    >
+                      <option value="Semua">Semua Kategori</option>
+                      {categories.map((cat, idx) => (
+                        <option key={idx} value={cat}>{cat}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  {/* Condition selector filter */}
+                  <div>
+                    <select
+                      value={itemConditionFilter}
+                      onChange={(e) => setItemConditionFilter(e.target.value)}
+                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 cursor-pointer text-slate-700"
+                    >
+                      <option value="Semua">Semua Kondisi</option>
+                      <option value="Baik">Baik</option>
+                      <option value="Rusak Ringan">Rusak Ringan</option>
+                      <option value="Rusak Berat">Rusak Berat</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Bulk actions banner */}
+                {selectedBarcodeItems.length > 0 && (
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 flex justify-between items-center animate-fade-in mb-4">
+                    <div className="text-left">
+                      <span className="text-[10px] font-black uppercase text-indigo-700 tracking-wider block">Kolektif Cetak Barcode</span>
+                      <p className="text-xs font-bold text-slate-700">{selectedBarcodeItems.length} barang siap dikompilasi ke lembar cetak barcode.</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedBarcodeItems([])}
+                        className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 font-bold text-xs rounded-lg cursor-pointer"
+                      >
+                        Atur Ulang / Kosongkan
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const comps = items.filter(i => selectedBarcodeItems.includes(i.id));
+                          setBarcodePrintData(comps);
+                        }}
+                        className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-lg shadow-sm cursor-pointer flex items-center gap-1.5"
+                      >
+                        <Printer size={12} /> Cetak Kolektif ({selectedBarcodeItems.length})
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {isLoading ? (
+                  <div className="py-12 flex flex-col items-center justify-center gap-2.5 text-slate-400">
+                    <Loader2 className="animate-spin text-slate-800" size={24} />
+                    <span className="text-xs font-bold font-mono">Synchronizing master katalog...</span>
+                  </div>
+                ) : filteredItems.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-2">
+                    <span className="text-3xl">🏜️</span>
+                    <p className="text-xs font-bold">Tidak ada barang inventaris yang sesuai dengan filter.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
+                          <th className="pb-3 px-2 text-center w-10">
+                            <input 
+                              type="checkbox" 
+                              checked={filteredItems.length > 0 && filteredItems.every(i => selectedBarcodeItems.includes(i.id))}
+                              onChange={(e) => {
+                                if (e.target.checked) {
+                                  setSelectedBarcodeItems(prev => {
+                                    const addition = filteredItems.map(i => i.id).filter(id => !prev.includes(id));
+                                    return [...prev, ...addition];
+                                  });
+                                } else {
+                                  setSelectedBarcodeItems(prev => prev.filter(id => !filteredItems.some(f => f.id === id)));
+                                }
+                              }}
+                              className="rounded border-slate-350 text-indigo-600 focus:ring-indigo-500"
+                            />
+                          </th>
+                          <th className="pb-3 px-2">Info Barang</th>
+                          <th className="pb-3 px-2">Kategori &amp; Lokasi</th>
+                          <th className="pb-3 px-2">Kondisi</th>
+                          <th className="pb-3 px-2 text-right">Nilai Estimasi Unit</th>
+                          <th className="pb-3 px-2 text-center font-mono">Stok Tersedia</th>
+                          <th className="pb-3 px-2 text-right">Opsi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredItems.map((it) => {
+                          const isWarning = it.availableQty === 0;
+                          return (
+                            <tr key={it.id} className="border-b border-slate-100 hover:bg-slate-50/70 transition-all">
+                              <td className="py-4.5 px-2 text-center">
+                                <input 
+                                  type="checkbox" 
+                                  checked={selectedBarcodeItems.includes(it.id)}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedBarcodeItems(prev => [...prev, it.id]);
+                                    } else {
+                                      setSelectedBarcodeItems(prev => prev.filter(id => id !== it.id));
+                                    }
+                                  }}
+                                  className="rounded border-slate-350 text-indigo-600 focus:ring-indigo-500"
+                                />
+                              </td>
+                              <td className="py-4.5 px-2">
+                                <div className="font-extrabold text-slate-800">{it.name}</div>
+                                <div className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">{it.code}</div>
+                              </td>
+                              <td className="py-4.5 px-2">
+                                <span className="px-2 py-0.5 rounded-md bg-slate-100 font-bold text-[10px] text-slate-600 block w-fit mb-1">{it.category}</span>
+                                <span className="text-[11px] text-slate-500 font-medium">📍 {it.location || "Gudang Utama"}</span>
+                              </td>
+                              <td className="py-4.5 px-2">
+                                <span className={`px-2.5 py-0.5 rounded-full font-black text-[9px] uppercase tracking-wider ${
+                                  it.condition === 'Baik' 
+                                    ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
+                                    : it.condition === 'Rusak Ringan'
+                                      ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                                      : 'bg-rose-50 text-rose-800 border border-rose-250'
+                                }`}>
+                                  {it.condition}
+                                </span>
+                              </td>
+                              <td className="py-4.5 px-2 text-right">
+                                <div className="font-mono text-xs font-black text-slate-900">
+                                  Rp {(it.price || 0).toLocaleString('id-ID')}
+                                </div>
+                                <span className="text-[9.5px] text-slate-400 font-bold font-mono">
+                                  Total: Rp {((it.price || 0) * (it.totalQty || 0)).toLocaleString('id-ID')}
+                                </span>
+                              </td>
+                              <td className="py-4.5 px-2 text-center">
+                                <div className={`font-mono text-base font-black ${isWarning ? 'text-rose-500' : 'text-slate-900'}`}>
+                                  {it.availableQty} <span className="text-slate-400 text-xs font-bold font-sans">/ {it.totalQty}</span>
+                                </div>
+                                <span className="text-[9px] text-slate-400 font-semibold block">{isWarning ? 'Kosong & Dipinjam' : 'Tersedia'}</span>
+                              </td>
+                              <td className="py-4.5 px-2 text-right">
+                                <div className="flex items-center justify-end gap-1.5 font-sans">
+                                  <button
+                                    onClick={() => setBarcodePrintData([it])}
+                                    className="p-2 text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
+                                    title="Cetak Barcode Satuan (Baras)"
+                                  >
+                                    <Printer size={12} className="text-slate-550" />
+                                  </button>
+                                  <button
+                                    onClick={() => handleEditItemClick(it)}
+                                    className="p-2 text-indigo-700 hover:bg-indigo-50 border border-indigo-100 rounded-lg cursor-pointer transition-all"
+                                    title="Sunting"
+                                  >
+                                    <Edit2 size={12} />
+                                  </button>
+                                  <button
+                                    onClick={() => handleDeleteItem(it.id)}
+                                    className="p-2 text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-lg cursor-pointer transition-all"
+                                    title="Hapus"
+                                  >
+                                    <Trash2 size={12} />
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 2: BORROWING GOODS (PEMINJAMAN BARANG) */}
+          {activeTab === 'peminjaman' && (
+            <div className="animate-fade-in flex flex-col gap-6 text-left">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="font-extrabold text-lg text-slate-900">Peminjaman Logistik &amp; Media Pembelajaran</h2>
+                  <p className="text-slate-500 text-xs">Peminjam terhubung langsung ke akun guru untuk pemantauan agenda kelas.</p>
+                </div>
+                <button
+                  onClick={() => setShowLoanForm(!showLoanForm)}
+                  className="px-4 py-2.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Plus size={14} /> {showLoanForm ? 'Batal Form' : 'Catat Peminjaman Baru'}
+                </button>
+              </div>
+
+              {/* Loan Checkout Form */}
+              {showLoanForm && (
+                <form onSubmit={handleCheckoutLoan} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
+                  <h3 className="font-extrabold text-sm text-slate-800">
+                    🤝 Formulir Kontrak Peminjaman Barang
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Item selector */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pilih Aset Sekolah</label>
+                      <select
+                        value={loanForm.itemId}
+                        onChange={(e) => setLoanForm({ ...loanForm, itemId: e.target.value })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer text-slate-705"
+                        required
+                      >
+                        <option value="">-- Hubungkan Aset --</option>
+                        {items.map((it) => (
+                          <option key={it.id} value={it.id} disabled={it.availableQty <= 0}>
+                            {it.name} [Stok: {it.availableQty} unit available] ({it.condition})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Teacher accounts list dropdown link */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pendidik Peminjam (Link Akun)</label>
+                      <select
+                        value={loanForm.borrowerId}
+                        onChange={(e) => setLoanForm({ ...loanForm, borrowerId: e.target.value })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer text-slate-705"
+                        required
+                      >
+                        <option value="">-- Hubungkan Guru Mapel / Wali --</option>
+                        {teachersList.map((t) => (
+                          <option key={t.id} value={t.id}>
+                            {t.name} ({t.detail})
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Borrowed Quantity */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kuantitas Unit Dipinjam</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={loanForm.qty}
+                        onChange={(e) => setLoanForm({ ...loanForm, qty: Number(e.target.value) || 1 })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Keluar Pinjaman</label>
+                      <input
+                        type="date"
+                        value={loanForm.loanDate}
+                        onChange={(e) => setLoanForm({ ...loanForm, loanDate: e.target.value })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Deskripsi / Peruntukan</label>
+                      <input
+                        type="text"
+                        value={loanForm.notes}
+                        onChange={(e) => setLoanForm({ ...loanForm, notes: e.target.value })}
+                        placeholder="Misal: Keperluan Praktik Listening kls 8-B, rapat wali murid"
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowLoanForm(false)}
+                      className="px-4 py-2 text-slate-500 hover:bg-slate-100 text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-amber-550 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl cursor-pointer shadow-sm"
+                    >
+                      Konfirmasikan Pinjaman
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Loan Logs table */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs">
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 mb-6">
+                  {/* Search bar */}
+                  <div className="relative w-full md:max-w-md">
+                    <Search className="absolute left-3.5 top-3 text-slate-400" size={14} />
+                    <input 
+                      type="text"
+                      value={loanSearch}
+                      onChange={(e) => setLoanSearch(e.target.value)}
+                      placeholder="Cari berdasarkan nama guru atau nama barang..."
+                      className="w-full pl-9 pr-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-slate-805"
+                    />
+                  </div>
+
+                  {/* Status selector */}
+                  <div className="w-full md:w-48">
+                    <select
+                      value={loanStatusFilter}
+                      onChange={(e) => setLoanStatusFilter(e.target.value)}
+                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 cursor-pointer text-slate-700"
+                    >
+                      <option value="Semua">Semua Status</option>
+                      <option value="dipinjam">🚨 Aktif (Dipinjam)</option>
+                      <option value="kembali">✅ Selesai (Kembali)</option>
+                    </select>
+                  </div>
+                </div>
+
+                {loans.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-2">
+                    <span className="text-3xl">🤝</span>
+                    <p className="text-xs font-bold">Belum ada pencatatan peminjaman barang inventaris.</p>
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto font-sans">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="border-b border-slate-200 text-slate-400 font-extrabold uppercase text-[10px] tracking-wider">
+                          <th className="pb-3 px-2">Guru Peminjam</th>
+                          <th className="pb-3 px-2">Keterangan Barang</th>
+                          <th className="pb-3 px-2">Tanggal Pinjam</th>
+                          <th className="pb-3 px-2">Status</th>
+                          <th className="pb-3 px-2 text-right">Aksi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredLoans.map((l) => (
+                          <tr key={l.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-all">
+                            <td className="py-4.5 px-2">
+                              <div className="font-extrabold text-slate-800">{l.borrowerName}</div>
+                              <span className="text-[9.5px] text-indigo-600 font-bold block mt-0.5">
+                                ID: {l.borrowerId}
+                              </span>
+                            </td>
+                            <td className="py-4.5 px-2">
+                              <div className="font-bold text-slate-700">{l.itemName}</div>
+                              <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Jumlah: {l.qty} unit {l.notes ? `(${l.notes})` : ''}</div>
+                            </td>
+                            <td className="py-4.5 px-2">
+                              <span className="text-slate-600 font-mono text-[10.5px] font-bold block">📅 {l.loanDate}</span>
+                              {l.returnDate && (
+                                <span className="text-[10px] font-medium text-emerald-600 block mt-0.5">Kembali: {l.returnDate}</span>
+                              )}
+                            </td>
+                            <td className="py-4.5 px-2">
+                              <span className={`px-2.5 py-0.5 rounded-full font-black text-[9px] uppercase tracking-wider ${
+                                l.status === 'dipinjam' 
+                                  ? 'bg-rose-50 text-rose-800 border border-rose-205'
+                                  : 'bg-emerald-50 text-emerald-800 border border-emerald-250'
+                              }`}>
+                                {l.status === 'dipinjam' ? 'Dipinjam' : 'Dikembalikan'}
+                              </span>
+                            </td>
+                            <td className="py-4.5 px-2 text-right">
+                              {l.status === 'dipinjam' ? (
+                                <button
+                                  onClick={() => handleReturnLoan(l.id)}
+                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg transition-all cursor-pointer shadow-xs inline-flex items-center gap-1"
+                                >
+                                  <Check size={10} /> Konfirm Kembali
+                                </button>
+                              ) : (
+                                <span className="text-slate-400 font-bold text-[10px] italic">Selesai</span>
+                              )}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 3: PROCUREMENT PROPOSALS (PENGAJUAN BELANJA) */}
+          {activeTab === 'pengajuan' && (
+            <div className="animate-fade-in flex flex-col gap-6 text-left">
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+                <div>
+                  <h2 className="font-extrabold text-lg text-slate-900">Pengajuan Procurement / Belanja Sarpras Berkala</h2>
+                  <p className="text-slate-500 text-xs">Pencatatan nominal belanja terhubung dan termonitor langsung oleh Kepala Sekolah.</p>
+                </div>
+                <button
+                  onClick={() => {
+                    setProposalForm({
+                      id: '',
+                      itemName: '',
+                      qty: 1,
+                      estimatedPrice: 0,
+                      reason: ''
+                    });
+                    setShowProposalForm(!showProposalForm);
+                  }}
+                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                >
+                  <Plus size={14} /> {showProposalForm ? 'Batal Ajukan' : 'Ajukan Procurement Baru'}
+                </button>
+              </div>
+
+              {/* Procurement form */}
+              {showProposalForm && (
+                <form onSubmit={handleSaveProposal} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
+                  <h3 className="font-extrabold text-sm text-slate-800">
+                    🛒 Formulir Pengajuan Pembelian Baru
+                  </h3>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Nama Barang Kebutuhan</label>
+                      <input
+                        type="text"
+                        value={proposalForm.itemName}
+                        onChange={(e) => setProposalForm({ ...proposalForm, itemName: e.target.value })}
+                        placeholder="Misal: 3 unit AC Sharp, Perbaikan Plafon R. Guru"
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Jumlah Kuantitas (Unit)</label>
+                      <input
+                        type="number"
+                        min="1"
+                        value={proposalForm.qty}
+                        onChange={(e) => setProposalForm({ ...proposalForm, qty: Number(e.target.value) || 1 })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Estimasi Harga Per Unit (Rp)</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={proposalForm.estimatedPrice}
+                        onChange={(e) => setProposalForm({ ...proposalForm, estimatedPrice: Number(e.target.value) || 0 })}
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 font-mono"
+                        required
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Estimasi Total Biaya</label>
+                    <div className="px-4 py-2 border border-slate-200 rounded-xl bg-slate-100 font-mono text-xs font-extrabold mt-1">
+                      Rp {(proposalForm.qty * proposalForm.estimatedPrice).toLocaleString('id-ID')}
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Alasan Pembelian / Analisis Urgensi</label>
+                    <textarea
+                      value={proposalForm.reason}
+                      onChange={(e) => setProposalForm({ ...proposalForm, reason: e.target.value })}
+                      placeholder="Uraikan mengapa pengadaan barang ini mendesak..."
+                      rows={2}
+                      className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                      required
+                    />
+                  </div>
+
+                  <div className="flex justify-end gap-3 pt-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowProposalForm(false)}
+                      className="px-4 py-2 text-slate-500 hover:bg-slate-100 text-xs font-bold rounded-xl cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-extrabold rounded-xl cursor-pointer shadow-sm"
+                    >
+                      Kirim Proposal Belanja
+                    </button>
+                  </div>
+                </form>
+              )}
+
+              {/* Proposals log block */}
+              <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs relative overflow-hidden">
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-teal-505 to-indigo-600" />
+                <h3 className="font-extrabold text-sm text-slate-800 mb-6 flex items-center gap-2">
+                  📝 Riwayat &amp; Status Monitor Pengajuan Pembelian Sarpras
+                </h3>
+
+                {proposals.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-1">
+                    <span className="text-3xl">📭</span>
+                    <p className="text-xs font-bold">Belum ada riwayat pengajuan procurement.</p>
+                  </div>
+                ) : (
+                  <div className="flex flex-col gap-4">
+                    {proposals.map((prop) => (
+                      <div key={prop.id} className="border border-slate-150 rounded-xl p-5 hover:shadow-xs transition-all bg-slate-50/40">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
+                          <div>
+                            <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[9px] font-bold">
+                              No: {prop.id} &bull; Tgl: {prop.date}
+                            </span>
+                            <h4 className="font-extrabold text-sm text-slate-900 mt-1">{prop.itemName}</h4>
+                          </div>
+
+                          <div className="flex items-center gap-3">
+                            <span className={`px-3 py-1 rounded-full font-black text-[9px] uppercase tracking-wider border ${
+                              prop.status === 'approved'
+                                ? 'bg-emerald-50 text-emerald-850 border-emerald-200'
+                                : prop.status === 'rejected'
+                                  ? 'bg-rose-50 text-rose-850 border-rose-200'
+                                  : 'bg-amber-50 text-amber-850 border-amber-205'
+                            }`}>
+                              {prop.status === 'approved' ? '✅ Disetujui' : prop.status === 'rejected' ? '❌ Ditolak' : '⏳ Menunggu'}
+                            </span>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mt-3 text-xs">
+                          <div>
+                            <span className="text-slate-450 block font-semibold text-[9.5px] uppercase">Jumlah Unit:</span>
+                            <span className="font-bold text-slate-700">{prop.qty} unit</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-450 block font-semibold text-[9.5px] uppercase">Estimasi Satuan:</span>
+                            <span className="font-bold text-slate-700 font-mono">Rp {prop.estimatedPrice.toLocaleString('id-ID')}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-450 block font-semibold text-[9.5px] uppercase">Nominal Total:</span>
+                            <span className="font-black text-indigo-700 font-mono text-sm">Rp {prop.totalPrice.toLocaleString('id-ID')}</span>
+                          </div>
+                          <div>
+                            <span className="text-slate-450 block font-semibold text-[9.5px] uppercase">Diusulkan Oleh:</span>
+                            <span className="font-bold text-slate-700">{prop.proposedBy || 'Waka Sarpras'}</span>
+                          </div>
+                        </div>
+
+                        <div className="mt-3 text-xs bg-white border border-slate-150 p-3 rounded-lg">
+                          <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Alasan Peminjaman / Urgensi</span>
+                          <p className="text-slate-600 leading-relaxed italic font-medium">"{prop.reason || "-"}"</p>
+                        </div>
+
+                        {prop.notes && (
+                          <div className="mt-2.5 text-xs bg-amber-50 border border-amber-100 p-3 rounded-lg">
+                            <span className="block text-[9px] font-black text-amber-700 uppercase tracking-widest mb-1">Catatan Kepala Sekolah ({schoolIdentity?.principal})</span>
+                            <p className="text-amber-800 leading-relaxed font-bold italic">"{prop.notes}"</p>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* TAB 4: REPORTS WITH HIGH GRAPHIC DESIGN PRINT LAYOUTS */}
+          {activeTab === 'laporan' && (
+            <div className="animate-fade-in flex flex-col gap-6 text-left">
+              <div>
+                <h2 className="font-extrabold text-lg text-slate-900">Rekapitulasi Pelaporan &amp; Cetak Berkas Sarpras</h2>
+                <p className="text-slate-500 text-xs">Unduh atau cetak langsung laporan logistik resmi dalam layout kops surat sekolah yang sah.</p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+                {/* Printable card 1 */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-slate-300 transition-all">
+                  <div>
+                    <span className="text-[28px]">📜</span>
+                    <h3 className="font-extrabold text-sm text-slate-800 mt-3">Laporan Aset Inventaris Sekolah</h3>
+                    <p className="text-slate-500 text-xs mt-1">
+                      Rekapitulasi lengkap seluruh daftar barang, jumlah total, ketersediaan, serta lokasi penyimpanan.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const headers = ["KODE", "NAMA BARANG", "KATEGORI", "LOKASI", "TOTAL", "TERSEDIA", "KONDISI"];
+                      const rows = items.map(it => [
+                        it.code,
+                        it.name,
+                        it.category,
+                        it.location,
+                        `${it.totalQty} unit`,
+                        `${it.availableQty} unit`,
+                        it.condition
+                      ]);
+                      triggerPrintPreview("DAFTAR INVENTARIS BARANG DAN ASET SEKOLAH", headers, rows, [
+                        { label: "Total Jumlah Macam Barang", value: `${items.length} Aset` },
+                        { label: "Total Unit Secara Fisik", value: `${totalItemCount} Unit` }
+                      ]);
+                    }}
+                    className="mt-6 w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Printer size={13} /> Cetak Laporan Aset Master
+                  </button>
+                </div>
+
+                {/* Printable card 2 */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-slate-300 transition-all">
+                  <div>
+                    <span className="text-[28px]">🤝</span>
+                    <h3 className="font-extrabold text-sm text-slate-800 mt-3">Laporan Aktivitas Peminjaman</h3>
+                    <p className="text-slate-500 text-xs mt-1">
+                      Pencatatan rincian peminjaman barang oleh para tenaga pendidik, baik yang aktif maupun riwayat pengembalian.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const headers = ["PEMINJAM", "NAMA BARANG", "JUMLAH", "TGL PINJAM", "TGL KEMBALI", "STATUS"];
+                      const rows = loans.map(l => [
+                        l.borrowerName,
+                        l.itemName,
+                        `${l.qty} unit`,
+                        l.loanDate,
+                        l.returnDate || "-",
+                        l.status === 'dipinjam' ? 'Sedang Dipinjam' : 'Sudah Kembali'
+                      ]);
+                      triggerPrintPreview("LAPORAN AKTIVITAS DAN RIWAYAT PEMINJAMAN SARPRAS", headers, rows, [
+                        { label: "Total Catatan Pinjaman", value: `${loans.length} Transaksi` },
+                        { label: "Peminjaman Aktif Saat Ini", value: `${loans.filter(l => l.status === 'dipinjam').length} Pinjaman` }
+                      ]);
+                    }}
+                    className="mt-6 w-full py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Printer size={13} /> Cetak Laporan Peminjaman
+                  </button>
+                </div>
+
+                {/* Printable card 3 */}
+                <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-slate-300 transition-all">
+                  <div>
+                    <span className="text-[28px]">🛒</span>
+                    <h3 className="font-extrabold text-sm text-slate-800 mt-3">Laporan Sinking Budgets Belanja</h3>
+                    <p className="text-slate-500 text-xs mt-1">
+                      Daftar kalkulasi nominal anggaran pengeluaran belanja sarpras yang disetujui untuk pembiayaan instansi.
+                    </p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      const headers = ["ID PROPOSAL", "KETERANGAN BELANJA", "JUMLAH", "ESTIMASI SATUAN", "TOTAL BIAYA", "TGL AJU", "STATUS"];
+                      const rows = proposals.map(p => [
+                        p.id,
+                        p.itemName,
+                        `${p.qty} unit`,
+                        `Rp ${p.estimatedPrice.toLocaleString('id-ID')}`,
+                        `Rp ${p.totalPrice.toLocaleString('id-ID')}`,
+                        p.date,
+                        p.status === 'approved' ? 'Disetujui' : p.status === 'rejected' ? 'Ditolak' : 'Menunggu'
+                      ]);
+                      triggerPrintPreview("LAPORAN ANGGARAN BELANJA DAN PROCUREMENT SARPRAS", headers, rows, [
+                        { label: "Anggaran Disetujui Kepala Sekolah", value: `Rp ${approvedProposalBudget.toLocaleString('id-ID')}` },
+                        { label: "Rancangan Anggaran Menunggu", value: `Rp ${pendingProposalBudget.toLocaleString('id-ID')}` }
+                      ]);
+                    }}
+                    className="mt-6 w-full py-2 bg-slate-900 hover:bg-slate-850 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  >
+                    <Printer size={13} /> Cetak Laporan Belanja
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+        </main>
+      </div>
+    </div>
+  );
+}

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid } from 'lucide-react';
 import QRCode from 'qrcode';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
@@ -66,6 +66,7 @@ interface StudentPanelProps {
   schoolIdentity?: SchoolIdentity;
   attendanceLogs?: AttendanceLog[];
   notifications?: RealtimeNotification[];
+  onLogout?: () => void;
 }
 
 export default function StudentPanel({
@@ -83,11 +84,13 @@ export default function StudentPanel({
   isLoginLocked = false,
   schoolIdentity,
   attendanceLogs = [],
-  notifications = []
+  notifications = [],
+  onLogout
 }: StudentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr'>('spp');
+  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr' | 'jurnal_catatan'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
   
@@ -95,6 +98,13 @@ export default function StudentPanel({
   const [teachingJournals, setTeachingJournals] = useState<TeachingJournal[]>([]);
   const [loadingJournals, setLoadingJournals] = useState<boolean>(false);
   const [attendanceSubTab, setAttendanceSubTab] = useState<'harian' | 'mapel'>('harian');
+
+  // Student synchronized journals/logs states
+  const [devLogs, setDevLogs] = useState<StudentDevelopmentLog[]>([]);
+  const [infractionLogs, setInfractionLogs] = useState<StudentInfractionLog[]>([]);
+  const [counselingLogs, setCounselingLogs] = useState<StudentCounselingLog[]>([]);
+  const [loadingStudentLogs, setLoadingStudentLogs] = useState<boolean>(false);
+  const [journalSubTab, setJournalSubTab] = useState<'perkembangan' | 'pelanggaran' | 'bimbingan'>('perkembangan');
 
   const [readNotifIds, setReadNotifIds] = useState<string[]>(() => {
     try {
@@ -125,6 +135,35 @@ export default function StudentPanel({
         .finally(() => setLoadingJournals(false));
     }
   }, [currentStudent]);
+
+  // Fetch synchronized student development, infraction, and counseling logs on load / selection
+  useEffect(() => {
+    if (currentStudent) {
+      setLoadingStudentLogs(true);
+      Promise.all([
+        fetch('/api/student-development-logs').then(res => res.ok ? res.json() : []),
+        fetch('/api/student-infraction-logs').then(res => res.ok ? res.json() : []),
+        fetch('/api/student-counseling-logs').then(res => res.ok ? res.json() : [])
+      ])
+        .then(([devData, infData, counData]) => {
+          if (Array.isArray(devData)) {
+            setDevLogs(devData.filter(log => log.studentId === currentStudent.id));
+          }
+          if (Array.isArray(infData)) {
+            setInfractionLogs(infData.filter(log => log.studentId === currentStudent.id));
+          }
+          if (Array.isArray(counData)) {
+            setCounselingLogs(counData.filter(log => log.studentId === currentStudent.id));
+          }
+        })
+        .catch((err) => console.error("Error fetching personal student logs inside student panel:", err))
+        .finally(() => setLoadingStudentLogs(false));
+    }
+  }, [currentStudent, isLoading]);
+
+  const totalInfractionPoints = useMemo(() => {
+    return infractionLogs.reduce((acc, log) => acc + (log.points || 0), 0);
+  }, [infractionLogs]);
 
   // Memoized subject attendance entries for current student
   const studentSubjectAttendance = useMemo(() => {
@@ -709,9 +748,9 @@ export default function StudentPanel({
   };
 
   return (
-    <div id="student-panel-root" className="grid grid-cols-1 lg:grid-cols-12 gap-6 pb-24 lg:pb-0">
+    <div id="student-panel-root" className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0">
       {/* Left Column: Account Selector and Profile Details */}
-      <div className={`lg:col-span-4 flex flex-col gap-6 ${mobileTab === 'beranda' ? 'flex' : 'hidden lg:flex'}`}>
+      <div className={`md:col-span-4 flex flex-col gap-6 ${mobileTab === 'beranda' ? 'flex' : 'hidden md:flex'}`}>
         {/* Student Selector */}
         {isLoginLocked ? (
           <div className="bg-gradient-to-r from-blue-700 to-emerald-600 border-4 border-emerald-400 text-white p-5 rounded-xl shadow-lg relative overflow-hidden flex items-center gap-3">
@@ -768,7 +807,7 @@ export default function StudentPanel({
             className="flex flex-col gap-6"
           >
             {/* Student Profile Card */}
-            <div className="hidden lg:block bg-slate-900 text-slate-200 p-6 rounded-xl border border-slate-800 shadow-lg relative overflow-hidden">
+            <div className="hidden md:block bg-slate-900 text-slate-200 p-6 rounded-xl border border-slate-800 shadow-lg relative overflow-hidden">
               {/* Decorative branding elements */}
               <div className="absolute -right-16 -top-16 w-48 h-48 rounded-full bg-emerald-500/10 blur-2xl" />
               <div className="absolute -left-12 -bottom-12 w-36 h-36 rounded-full bg-indigo-500/10 blur-xl" />
@@ -800,7 +839,7 @@ export default function StudentPanel({
             </div>
 
             {/* Quick Balances Stats */}
-            <div className={`grid grid-cols-2 gap-4 ${mobileTab === 'beranda' ? 'grid' : 'hidden lg:grid'}`}>
+            <div className={`grid grid-cols-2 gap-4 ${mobileTab === 'beranda' ? 'grid' : 'hidden md:grid'}`}>
               {/* Savings Card */}
               <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between h-full hover:shadow-md transition-all">
                 <div>
@@ -831,7 +870,7 @@ export default function StudentPanel({
             </div>
 
             {/* Keamanan Akun (Sandi) Card */}
-            <div className="hidden lg:flex bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-col gap-3 hover:shadow-sm transition-all">
+            <div className="hidden md:flex bg-white p-5 rounded-xl border border-slate-200 shadow-sm flex-col gap-3 hover:shadow-sm transition-all">
               <div className="flex items-center gap-1.5 justify-between">
                 <div className="flex items-center gap-1.5">
                   <Key size={14} className="text-amber-500" />
@@ -911,7 +950,7 @@ export default function StudentPanel({
       </div>
 
       {/* Right Column: SPP Checklist / Deposits Form & History */}
-      <div className={`lg:col-span-8 ${mobileTab === 'beranda' ? 'block' : 'hidden lg:block'}`}>
+      <div className={`md:col-span-8 ${mobileTab === 'beranda' ? 'block' : 'hidden md:block'}`}>
         {currentStudent ? (
           <motion.div
             initial={{ opacity: 0, x: 20 }}
@@ -996,6 +1035,25 @@ export default function StudentPanel({
                     <QrCode className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
                   </div>
                   <span className="hidden md:inline">Kartu QR Pembayaran</span>
+                </button>
+                <button
+                  id="tab-jurnal-catatan"
+                  onClick={() => setActiveTab('jurnal_catatan')}
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none ${
+                    activeTab === 'jurnal_catatan'
+                      ? 'border-rose-600 text-rose-705 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-rose-600'
+                  }`}
+                  title="Jurnal Catatan Perkembangan, Pelanggaran, dan Bimbingan Siswa"
+                >
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'jurnal_catatan'
+                      ? 'bg-rose-100 text-rose-700 shadow-xs ring-1 ring-rose-200/50'
+                      : 'bg-rose-50/50 text-rose-400/80 hover:bg-rose-100/50 hover:text-rose-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <ClipboardList className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Jurnal & Catatan</span>
                 </button>
               </div>
 
@@ -1240,7 +1298,8 @@ export default function StudentPanel({
               )}
 
               {activeTab === 'tabungan' && (
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                <>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {/* Tabungan Deposit Box */}
                   <div className="p-5 rounded-xl border border-slate-200 bg-slate-50/50 flex flex-col justify-between shadow-sm">
                     <div>
@@ -1374,10 +1433,9 @@ export default function StudentPanel({
                     </form>
                   </div>
                 </div>
-              )}
 
               {/* History Section (Under content) */}
-              <div className="mt-8 hidden lg:block">
+              <div className="mt-8 hidden md:block">
                 <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3">
                   Log Transaksi Tabungan Siswa
                 </h4>
@@ -1525,6 +1583,8 @@ export default function StudentPanel({
                   </>
                 )}
               </div>
+                </>
+              )}
               
               {activeTab === 'absensi' && (
                 <div className="flex flex-col gap-6 animate-fade-in text-left">
@@ -2006,6 +2066,254 @@ export default function StudentPanel({
                   </div>
                 </div>
               )}
+
+              {activeTab === 'jurnal_catatan' && (
+                <div className="flex flex-col gap-6 animate-fade-in text-left">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                        📋 Jurnal Catatan & Perkembangan Siswa
+                      </h4>
+                      <p className="text-slate-500 text-xs mt-0.5">
+                        Rekaman riwayat catatan perkembangan, pelanggaran kedisiplinan, dan histori bimbingan konseling Anda secara langsung dari sekolah.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Infraction Points Banner */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4 bg-slate-50 border border-slate-200 p-4 rounded-2xl">
+                    <div className="bg-white border border-slate-150 rounded-xl p-4.5 text-left shadow-2xs">
+                      <span className="text-[10px] uppercase font-bold text-slate-400 block tracking-wider">Total Catatan Pelanggaran</span>
+                      <div className="text-xl font-black text-slate-800 mt-1 flex items-baseline gap-1">
+                        <span>{infractionLogs.length}</span>
+                        <span className="text-xs text-slate-400 font-semibold">Kejadian</span>
+                      </div>
+                    </div>
+                    <div className="bg-red-50/50 border border-red-150 rounded-xl p-4.5 text-left shadow-2xs">
+                      <span className="text-[10px] uppercase font-bold text-red-700 block tracking-wider">Akumulasi Poin Pelanggaran</span>
+                      <div className="text-xl font-black text-red-650 mt-1 flex items-baseline gap-1 font-mono">
+                        <span>{totalInfractionPoints}</span>
+                        <span className="text-xs text-red-500 font-black">POIN PENALTI</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                        Makin rendah poin, makin tinggi indeks kedisiplinan Anda.
+                      </p>
+                    </div>
+                    <div className="bg-emerald-50/50 border border-emerald-150 rounded-xl p-4.5 text-left shadow-2xs">
+                      <span className="text-[10px] uppercase font-bold text-emerald-700 block tracking-wider">Status Disiplin Siswa</span>
+                      <div className="text-sm font-black text-emerald-750 mt-1.5 flex items-center gap-1.5">
+                        <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                        <span>{totalInfractionPoints === 0 ? "Sangat Baik & Disiplin" : totalInfractionPoints <= 15 ? "Kondusif" : totalInfractionPoints <= 50 ? "Perlu Pembinaan" : "Rekomendasi Skorsing/Panggilan Wali"}</span>
+                      </div>
+                      <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                        Sistem Penilaian Kedisiplinan Terkendali Utama.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Sub Tab Switcher */}
+                  <div className="flex p-1 bg-slate-100 rounded-2xl w-full sm:w-max gap-2 text-xs font-bold shadow-xs">
+                    <button
+                      type="button"
+                      onClick={() => setJournalSubTab('perkembangan')}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap text-[11px] ${
+                        journalSubTab === 'perkembangan'
+                          ? 'bg-rose-500 text-white shadow-xs font-black'
+                          : 'text-slate-650 hover:bg-slate-200'
+                      }`}
+                    >
+                      📈 Catatan Perkembangan ({devLogs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setJournalSubTab('pelanggaran')}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap text-[11px] ${
+                        journalSubTab === 'pelanggaran'
+                          ? 'bg-amber-600 text-white shadow-xs font-black'
+                          : 'text-slate-655 hover:bg-slate-200'
+                      }`}
+                    >
+                      🚨 Pelanggaran & Disiplin ({infractionLogs.length})
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setJournalSubTab('bimbingan')}
+                      className={`flex-1 sm:flex-none px-4 py-2 rounded-xl transition-all cursor-pointer whitespace-nowrap text-[11px] ${
+                        journalSubTab === 'bimbingan'
+                          ? 'bg-emerald-600 text-white shadow-xs font-black'
+                          : 'text-slate-655 hover:bg-slate-200'
+                      }`}
+                    >
+                      🤝 Bimbingan & Konseling ({counselingLogs.length})
+                    </button>
+                  </div>
+
+                  {/* SUB TAB CONTENT */}
+                  {loadingStudentLogs ? (
+                    <div className="flex flex-col items-center justify-center py-12 gap-2 text-slate-400">
+                      <RefreshCw size={24} className="animate-spin text-rose-500" />
+                      <p className="text-xs font-medium">Memuat jurnal catatan siswa...</p>
+                    </div>
+                  ) : (
+                    <div className="space-y-4">
+                      {/* SUB TAB: CATATAN PERKEMBANGAN */}
+                      {journalSubTab === 'perkembangan' && (
+                        <div className="space-y-4">
+                          {devLogs.length === 0 ? (
+                            <div className="border border-dashed border-slate-200 rounded-2xl p-10 text-center text-slate-400 flex flex-col items-center justify-center bg-slate-50/50 gap-2">
+                              <BookOpen size={28} className="text-slate-350" />
+                              <p className="text-xs font-bold text-slate-600">Belum Ada Catatan Perkembangan</p>
+                              <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
+                                Wali kelas belum memasukkan catatan perkembangan akademik, sikap, maupun prestasi terkait Anda.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                              {devLogs.map((log) => {
+                                const categoryColors: Record<string, string> = {
+                                  'Akademik': 'bg-blue-50 text-blue-700 border-blue-200',
+                                  'Sikap': 'bg-purple-50 text-purple-700 border-purple-200',
+                                  'Prestasi': 'bg-amber-50 text-amber-700 border-amber-200',
+                                  'Minat': 'bg-pink-50 text-pink-700 border-pink-200',
+                                  'Catatan Khusus': 'bg-slate-50 text-slate-700 border-slate-200'
+                                };
+                                const col = categoryColors[log.category] || 'bg-slate-50 text-slate-700 border-slate-200';
+                                return (
+                                  <div key={log.id} className="bg-white border border-slate-150 rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-shadow text-left flex flex-col gap-3">
+                                    <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                                      <span className={`text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-full border ${col}`}>
+                                        {log.category}
+                                      </span>
+                                      <span className="text-[10px] font-bold text-slate-400 font-mono flex items-center gap-1">
+                                        <Clock size={10} />
+                                        {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-705 leading-relaxed font-semibold whitespace-pre-wrap">
+                                      {log.notes}
+                                    </p>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* SUB TAB: PELANGGARAN & DISIPLIN */}
+                      {journalSubTab === 'pelanggaran' && (
+                        <div className="space-y-4">
+                          {infractionLogs.length === 0 ? (
+                            <div className="border border-dashed border-slate-200 rounded-2xl p-10 text-center text-slate-400 flex flex-col items-center justify-center bg-slate-50/50 gap-2">
+                              <CheckCircle2 size={28} className="text-emerald-500" />
+                              <p className="text-xs font-bold text-slate-650">Siswa Berkelakuan Sangat Baik</p>
+                              <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
+                                Tidak ada rekam jejak pelanggaran tata tertib sekolah atau catatan kedisplinan yang tercatat untuk Anda. Terus pertahankan!
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {infractionLogs.map((log) => {
+                                const statusColors: Record<string, string> = {
+                                  'Selesai': 'bg-emerald-50 text-emerald-700 border-emerald-200',
+                                  'Dalam Proses': 'bg-amber-50 text-amber-700 border-amber-200',
+                                  'Belum Selesai': 'bg-rose-50 text-rose-700 border-rose-200'
+                                };
+                                const statusCol = statusColors[log.resolutionStatus] || 'bg-slate-50 text-slate-705';
+                                return (
+                                  <div key={log.id} className="bg-white border border-slate-150 rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-shadow text-left flex flex-col md:flex-row md:items-start justify-between gap-4">
+                                    <div className="flex-grow flex flex-col gap-2">
+                                      <div className="flex items-center gap-2 flex-wrap">
+                                        <span className="text-[11px] font-black text-rose-950 bg-rose-50 border border-rose-150 px-2.5 py-0.5 rounded-lg">
+                                          🚨 {log.infractionType}
+                                        </span>
+                                        {log.points !== undefined && (
+                                          <span className="text-[10px] bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-lg font-black font-mono">
+                                            Penalti: {log.points} pt
+                                          </span>
+                                        )}
+                                        <span className="text-[10px] text-slate-400 font-bold font-mono">
+                                          ⏱️ {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} pukul {log.time}
+                                        </span>
+                                      </div>
+                                      
+                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-left">
+                                          <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Tempat Kejadian</div>
+                                          <p className="text-xs font-bold text-slate-750 mt-0.5">{log.location}</p>
+                                        </div>
+                                        <div className="bg-amber-50/40 p-2.5 rounded-xl border border-amber-100/60 text-left">
+                                          <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Tindak Lanjut / Sanksi</div>
+                                          <p className="text-xs font-bold text-slate-750 mt-0.5">{log.actionTaken}</p>
+                                        </div>
+                                      </div>
+                                    </div>
+
+                                    <div className="shrink-0 flex md:flex-col justify-between items-center md:items-end gap-2 border-t md:border-t-0 border-slate-110 pt-3 md:pt-0">
+                                      <span className="text-[9px] font-medium text-slate-400 hidden md:block">Status Penanganan</span>
+                                      <span className={`text-[10px] font-black tracking-wide px-2.5 py-1 rounded-full border ${statusCol}`}>
+                                        ● {log.resolutionStatus}
+                                      </span>
+                                    </div>
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      {/* SUB TAB: BIMBINGAN & KONSELING */}
+                      {journalSubTab === 'bimbingan' && (
+                        <div className="space-y-4">
+                          {counselingLogs.length === 0 ? (
+                            <div className="border border-dashed border-slate-200 rounded-2xl p-10 text-center text-slate-400 flex flex-col items-center justify-center bg-slate-50/50 gap-2">
+                              <User size={28} className="text-slate-350" />
+                              <p className="text-xs font-bold text-slate-650">Tidak Ada Rekaman Konseling</p>
+                              <p className="text-[11px] text-slate-400 max-w-sm leading-relaxed">
+                                Konselor / Guru BK belum mencatat adanya sesi bimbingan, mediasi, atau mediasi konsultasi pribadi untuk Anda.
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="space-y-4">
+                              {counselingLogs.map((log) => (
+                                <div key={log.id} className="bg-white border border-slate-150 rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-shadow text-left flex flex-col gap-3">
+                                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                                    <span className="text-xs font-black text-emerald-950 bg-emerald-50 border border-emerald-150 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                                      🤝 Konseling BK
+                                    </span>
+                                    <span className="text-[10px] font-bold text-slate-400 font-mono flex items-center gap-1">
+                                      <Clock size={10} />
+                                      {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                    </span>
+                                  </div>
+
+                                  <div className="text-left font-medium space-y-2">
+                                    <div>
+                                      <span className="text-[9px] uppercase font-bold text-indigo-500 tracking-wider">Topik Pembahasan:</span>
+                                      <p className="text-xs font-bold text-slate-800 whitespace-pre-wrap">{log.topic}</p>
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1 pt-1 border-t border-slate-50">
+                                      <div>
+                                        <span className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Rencana Pemecahan Solusi:</span>
+                                        <p className="text-xs text-slate-650 mt-0.5 whitespace-pre-wrap">{log.actionPlan}</p>
+                                      </div>
+                                      <div>
+                                        <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">Hasil BK / Tindak Lanjut:</span>
+                                        <p className="text-xs text-slate-650 mt-0.5 whitespace-pre-wrap">{log.result}</p>
+                                      </div>
+                                    </div>
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
         ) : (
@@ -2023,7 +2331,7 @@ export default function StudentPanel({
 
       {/* ================= MOBILE NAVIGATION TAB VIEWS (lg:hidden) ================= */}
       {currentStudent && (
-        <div className="lg:hidden col-span-1">
+        <div className="md:hidden col-span-1">
           {/* 1. MOBILE TAB: LOG TRANSAKSI */}
           {mobileTab === 'log' && (
             <div className="flex flex-col gap-4 animate-fade-in text-left">
@@ -2230,7 +2538,7 @@ export default function StudentPanel({
                     return filtered.map((notif) => {
                       let bgClass = 'bg-blue-50/55 border-blue-150';
                       let barColor = 'bg-blue-650 bg-blue-600';
-                      let labelText = 'Info Madrasah';
+                      let labelText = 'Info Sekolah';
                       if (notif.type === 'success') { 
                         bgClass = 'bg-emerald-50/50 border-emerald-150'; 
                         barColor = 'bg-emerald-600'; 
@@ -2261,7 +2569,7 @@ export default function StudentPanel({
                           return "Data administrasi dan identitas resmi SMP MA'ARIF NU PANDAAN berhasil dimutakhirkan oleh Administrator.";
                         }
                         if (lowerTitle.includes("massal") || lowerTitle.includes("bulk")) {
-                          return `Prosedur penarikan tabungan massal perwalian kelas berhasil dibukukan oleh sistem teller madrasah secara aman.`;
+                          return `Prosedur penarikan tabungan massal perwalian kelas berhasil dibukukan oleh sistem teller sekolah secara aman.`;
                         }
                         if (lowerTitle.includes("tarik") || lowerTitle.includes("tabungan") || lowerTitle.includes("withdraw")) {
                           return "Mutasi rekening atau status penarikan tabungan siswa telah dicatat dan didebet sesuai otorisasi.";
@@ -2425,62 +2733,206 @@ export default function StudentPanel({
         </div>
       )}
 
-      {/* ================= STICKY BOTTOM NAVIGATION BAR FOR MOBILE (lg:hidden) ================= */}
+      {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) ================= */}
       {currentStudent && (
         <div 
           style={{ contentVisibility: 'auto' }}
-          className="lg:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_16px_rgba(0,0,0,0.08)] px-2 pt-2 pb-4 flex justify-around items-center transition-all"
+          className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-2 flex md:hidden justify-around items-center h-16 no-print select-none"
         >
-          {/* Beranda Tab Button */}
+          {/* Menu 1 (Home - paling kiri) */}
           <button
-            onClick={() => setMobileTab('beranda')}
-            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all min-w-0"
+            type="button"
+            onClick={() => {
+              setMobileTab('beranda');
+              setActiveTab('spp');
+              setShowMoreMenu(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
           >
-            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'beranda' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-400'}`}>
-              <Home size={22} className={mobileTab === 'beranda' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'beranda' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+              <Home size={20} className={mobileTab === 'beranda' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
             </div>
-            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'beranda' ? 'text-indigo-900 font-extrabold' : 'text-slate-500 font-medium'}`}>Beranda</span>
+            <span className={`text-[9.5px] leading-none ${mobileTab === 'beranda' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Beranda</span>
           </button>
 
-          {/* Log Tab Button */}
+          {/* Menu 2 (Log Trx) */}
           <button
-            onClick={() => setMobileTab('log')}
-            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all min-w-0"
+            type="button"
+            onClick={() => {
+              setMobileTab('log');
+              setShowMoreMenu(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
           >
-            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'log' ? 'bg-emerald-50 text-emerald-700' : 'text-slate-400'}`}>
-              <History size={22} className={mobileTab === 'log' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'log' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+              <History size={20} className={mobileTab === 'log' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
             </div>
-            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'log' ? 'text-emerald-900 font-extrabold' : 'text-slate-500 font-medium'}`}>Log Trx</span>
+            <span className={`text-[9.5px] leading-none ${mobileTab === 'log' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Log Trx</span>
           </button>
 
-          {/* Notifikasi Tab Button */}
+          {/* Menu 3 (Notifikasi) */}
           <button
-            onClick={() => setMobileTab('lonceng')}
-            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all relative min-w-0"
+            type="button"
+            onClick={() => {
+              setMobileTab('lonceng');
+              setShowMoreMenu(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all relative"
           >
-            <div className={`p-1.5 rounded-xl transition-colors relative ${mobileTab === 'lonceng' ? 'bg-amber-50 text-amber-650' : 'text-slate-400'}`}>
-              <Bell size={22} className={mobileTab === 'lonceng' ? 'text-amber-600 stroke-[2.5px]' : 'text-slate-400 stroke-[1.8px]'} />
+            <div className={`p-1.5 rounded-xl transition-colors relative ${mobileTab === 'lonceng' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+              <Bell size={20} className={mobileTab === 'lonceng' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
               {notifications.filter(n => (!n.studentId || n.studentId === currentStudent?.id) && !readNotifIds.includes(n.id)).length > 0 && (
-                <span className="absolute -top-1 -right-1 flex h-4.5 min-w-4.5 items-center justify-center rounded-full bg-rose-600 text-[9px] font-black text-white px-1 leading-none shadow-sm border border-white animate-pulse">
+                <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 text-[8px] font-black text-white px-1 leading-none shadow-sm border border-white">
                   {notifications.filter(n => (!n.studentId || n.studentId === currentStudent?.id) && !readNotifIds.includes(n.id)).length}
                 </span>
               )}
             </div>
-            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'lonceng' ? 'text-amber-950 font-extrabold' : 'text-slate-500 font-medium'}`}>Notifikasi</span>
+            <span className={`text-[9.5px] leading-none ${mobileTab === 'lonceng' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Notif</span>
           </button>
 
-          {/* Profil Tab Button */}
+          {/* Menu 4 (Profil) */}
           <button
-            onClick={() => setMobileTab('orang')}
-            className="flex-1 py-1 flex flex-col items-center justify-center cursor-pointer transition-all min-w-0"
+            type="button"
+            onClick={() => {
+              setMobileTab('orang');
+              setShowMoreMenu(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
           >
-            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'orang' ? 'bg-blue-50 text-blue-700' : 'text-slate-400'}`}>
-              <User size={22} className={mobileTab === 'orang' ? 'stroke-[2.5px]' : 'stroke-[1.5px]'} />
+            <div className={`p-1.5 rounded-xl transition-colors ${mobileTab === 'orang' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+              <User size={20} className={mobileTab === 'orang' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
             </div>
-            <span className={`text-[10px] tracking-tight whitespace-nowrap mt-0.5 ${mobileTab === 'orang' ? 'text-blue-900 font-extrabold' : 'text-slate-500 font-medium'}`}>Profil</span>
+            <span className={`text-[9.5px] leading-none ${mobileTab === 'orang' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Profil</span>
+          </button>
+
+          {/* Menu 5 (Lainnya - 4 kotak, paling kanan) */}
+          <button
+            type="button"
+            onClick={() => setShowMoreMenu(prev => !prev)}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${showMoreMenu ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+              <LayoutGrid size={20} className={showMoreMenu ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[9.5px] leading-none ${showMoreMenu ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
           </button>
         </div>
       )}
+
+      {/* Slide-over menu bottom sheet overlay for "Lainnya" */}
+      <AnimatePresence>
+        {showMoreMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.3 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMoreMenu(false)}
+              className="fixed inset-0 z-40 bg-black"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10 shadow-[0_-5px_20px_rgba(0,0,0,0.1)]"
+            >
+              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Akses Cepat Siswa</span>
+                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Menu Tambahan Siswa / Wali</h4>
+                </div>
+                <button
+                  onClick={() => setShowMoreMenu(false)}
+                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setPrintQrCard(true);
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">📇</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Kartu Pembayaran</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cetak kartu ID pembayaran digital dengan kode QR unik Anda</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileTab('beranda');
+                    setActiveTab('spp');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">💰</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800 font-sans">Tagihan SPP</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cek status cicilan iuran bulanan dan pelunasan SPP online</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileTab('beranda');
+                    setActiveTab('tabungan');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🏦</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Setor &amp; Tarik</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ajukan setor tunai mandiri maupun penarikan dana tabungan</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileTab('beranda');
+                    setActiveTab('absensi');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">📅</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Kehadiran Kelas</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Rekapitulasi log harian dan absen mata pelajaran siswa</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onLogout && onLogout();
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
+                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar dengan aman serta akhiri pengalihan akses siswa</p>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
       {printQrCard && currentStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs no-print p-4 overflow-y-auto">
           <motion.div
@@ -2793,7 +3245,7 @@ export default function StudentPanel({
                     </div>
                   )}
 
-                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({schoolIdentity?.treasurer || "Bendahara Madrasah"})</span>
+                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({schoolIdentity?.treasurer || "Bendahara Sekolah"})</span>
                 </div>
               </div>
 

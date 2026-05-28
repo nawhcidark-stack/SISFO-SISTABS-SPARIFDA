@@ -89,6 +89,12 @@ export interface AttendanceLog {
   date: string; // "YYYY-MM-DD"
   status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
   notes?: string;
+  subjectNotes?: {
+    subject: string;
+    teacherName: string;
+    status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
+    notes: string;
+  }[];
 }
 
 export interface HomeroomTeacher {
@@ -114,6 +120,20 @@ export interface SubjectAttendanceEntry {
   notes?: string;
 }
 
+export interface TreasurerTransaction {
+  id: string;
+  type: 'incoming' | 'outgoing';
+  category: string; // 'SPP', 'Tabungan', 'Operasional', 'Gaji Guru', 'Pembangunan', 'Ujan', 'Lainnya'
+  amount: number;
+  description: string;
+  date: string; // "YYYY-MM-DD"
+  source: 'spp' | 'savings' | 'custom';
+  studentName?: string;
+  nis?: string;
+  createdBy?: string;
+}
+
+
 export interface TeachingJournal {
   id: string;
   teacherId: string;
@@ -133,3 +153,162 @@ export interface TeachingJournal {
   pencapaianKktp?: string;
   createdAt: string;
 }
+
+export interface StudentDevelopmentLog {
+  id: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  date: string; // "YYYY-MM-DD"
+  category: 'Akademik' | 'Sikap' | 'Prestasi' | 'Minat' | 'Catatan Khusus';
+  notes: string;
+  createdAt: string;
+}
+
+export interface StudentInfractionLog {
+  id: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  date: string; // "YYYY-MM-DD"
+  time: string; // "HH:MM" e.g., "08:15"
+  location: string;
+  infractionType: string; // Jenis pelanggaran
+  actionTaken: string; // Tindah lanjut / sanksi / pembinaan
+  resolutionStatus: 'Belum Selesai' | 'Dalam Proses' | 'Selesai';
+  points?: number;
+  createdAt: string;
+}
+
+export interface InfractionRule {
+  id: string;
+  name: string;
+  points: number;
+  category: string; // "Ringan", "Sedang", "Berat"
+}
+
+export interface StudentCounselingLog {
+  id: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  date: string; // "YYYY-MM-DD"
+  topic: string; // Topik / permasalahan
+  actionPlan: string; // Tindakan / solusi
+  result: string; // Hasil dan tindak lanjut
+  createdAt: string;
+}
+
+export interface ClassAnnouncement {
+  id: string;
+  className: string;
+  title: string;
+  content: string;
+  date: string; // "YYYY-MM-DD"
+  targetRecipient: string; // "Siswa", "Orang Tua", "Semua"
+  confirmationStatus: 'Belum Dibaca' | 'Sebagian Terbaca' | 'Telah Dikonfirmasi';
+  createdAt: string;
+}
+
+export interface ClassMeetingLog {
+  id: string;
+  className: string;
+  meetingType: string; // "Rapat Orang Tua", "Rapat Dewan Guru", "Koordinasi Komite", "Lainnya"
+  date: string; // "YYYY-MM-DD"
+  attendees: string; // Peserta
+  agenda: string; // Agenda & hasil keputusan
+  followUp: string; // Tindak lanjut
+  createdAt: string;
+}
+
+export interface MerdekaAssessment {
+  id: string;
+  studentId: string;
+  studentName: string;
+  className: string;
+  subject: string;
+  teacherName: string;
+  semester: string; // "Ganjil" | "Genap"
+  academicYear: string; // e.g. "2025/2026"
+  tp1Name: string;
+  tp1Grade: number;
+  tp2Name?: string;
+  tp2Grade?: number;
+  tp3Name?: string;
+  tp3Grade?: number;
+  nilaiFormatif: number; // calculated as avg of available TPs
+  nilaiSumatifLM: number; // Sumatif Lingkup Materi
+  nilaiSAS: number; // Sumatif Akhir Semester
+  nilaiRapor: number; // calculated as e.g., (nilaiFormatif + nilaiSumatifLM + nilaiSAS) / 3 or customized weights
+  deskripsiCapaian: string;
+  createdAt: string;
+}
+
+export interface PrincipalWorkProgram {
+  id: string;
+  title: string;
+  description: string;
+  targetDate: string; // YYYY-MM-DD
+  status: 'planned' | 'active' | 'completed';
+  syncWithStaff: boolean; // if true, visible to teachers
+  createdAt: string;
+}
+
+export interface TeacherEvaluation {
+  id: string;
+  teacherType: 'homeroom' | 'subject_teacher';
+  teacherId: string;
+  teacherName: string;
+  evaluatorName: string;
+  date: string; // YYYY-MM-DD
+  academicYear: string;
+  pedagogicScore: number; // 1-100
+  professionalScore: number; // 1-100
+  personalScore: number; // 1-100
+  socialScore: number; // 1-100
+  notes: string; // Catatan khusus dan rekomendasi
+  createdAt: string;
+}
+
+export interface SarprasItem {
+  id: string;
+  name: string;
+  code: string;
+  category: string;
+  condition: 'Baik' | 'Rusak Ringan' | 'Rusak Berat';
+  location: string;
+  totalQty: number;
+  availableQty: number;
+  price?: number;
+}
+
+export interface SarprasProposal {
+  id: string;
+  itemName: string;
+  qty: number;
+  estimatedPrice: number;
+  totalPrice: number;
+  proposedBy: string; // e.g. "Waka Sarpras"
+  date: string; // YYYY-MM-DD
+  reason: string;
+  status: 'pending' | 'approved' | 'rejected';
+  notes?: string;
+  createdAt: string;
+}
+
+export interface SarprasLoan {
+  id: string;
+  itemId: string;
+  itemName: string;
+  borrowerId: string; // references SubjectTeacher.id or HomeroomTeacher.id
+  borrowerName: string;
+  qty: number;
+  loanDate: string; // YYYY-MM-DD
+  returnDate?: string; // YYYY-MM-DD or empty
+  status: 'dipinjam' | 'kembali';
+  notes?: string;
+}
+
+
+
+

@@ -5,7 +5,7 @@ import {
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
   Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer,
-  User, Bell
+  User, Bell, LayoutGrid, Home
 } from 'lucide-react';
 
 interface SubjectTeacherPanelProps {
@@ -27,7 +27,8 @@ export default function SubjectTeacherPanel({
   onRefresh,
   isLoading = false
 }: SubjectTeacherPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile'>('create');
+  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg'>('create');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [topic, setTopic] = useState<string>('');
@@ -46,6 +47,117 @@ export default function SubjectTeacherPanel({
   const [systemNotifications, setSystemNotifications] = useState<RealtimeNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState<boolean>(false);
   const [notifSearch, setNotifSearch] = useState<string>('');
+
+  // Principal Work Programs state
+  const [workPrograms, setWorkPrograms] = useState<any[]>([]);
+  const [loadingWorkPrograms, setLoadingWorkPrograms] = useState<boolean>(false);
+  const [evaluations, setEvaluations] = useState<any[]>([]);
+  const [loadingEvaluations, setLoadingEvaluations] = useState<boolean>(false);
+
+  const fetchEvaluations = async () => {
+    setLoadingEvaluations(true);
+    try {
+      const res = await fetch('/api/principal/teacher-evaluations');
+      if (res.ok) {
+        const data = await res.json();
+        const filtered = data.filter((e: any) => e.teacherId === currentTeacher.id);
+        setEvaluations(filtered);
+      }
+    } catch (err) {
+      console.error("Gagal menjaring evaluasi guru:", err);
+    } finally {
+      setLoadingEvaluations(false);
+    }
+  };
+
+  const handlePrintPkg = (ev: any) => {
+    const pWin = window.open("", "_blank");
+    if (!pWin) return;
+    
+    const avgScore = Math.round((Number(ev.pedagogicScore) + Number(ev.professionalScore) + Number(ev.personalScore) + Number(ev.socialScore)) / 4);
+
+    const rowG = `
+      <tr><td>Kompetensi Pedagogis (KBM & Psikologi)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.pedagogicScore}</td></tr>
+      <tr><td>Kompetensi Profesional (Materi Ajar)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.professionalScore}</td></tr>
+      <tr><td>Kompetensi Kepribadian (Budi Pekerti/Sikap)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.personalScore}</td></tr>
+      <tr><td>Kompetensi Sosial (Paguyuban/Interaksi)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.socialScore}</td></tr>
+      <tr style="background:#f1f5f9; font-weight:bold;"><td>NILAI RATA-RATA EVALUASI</td><td style="text-align:center;">80</td><td style="text-align:center; color:#10b981;">${avgScore}</td></tr>
+    `;
+
+    pWin.document.write(`
+      <html>
+        <head>
+          <title>OFFICIAL PKG - ${ev.teacherName}</title>
+          <style>
+            body { font-family: sans-serif; padding:40px; color:#333; font-size:12px; line-height:1.6; }
+            .head-school { text-align:center; font-weight:bold; font-size:15px; border-bottom:3px double #000; padding-bottom:12px; margin-bottom:20px; }
+            .meta-grid { width:100%; border-collapse:collapse; margin-bottom:20px; }
+            .meta-grid td { padding:5px; }
+            .rep-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+            .rep-table th, .rep-table td { border:1px solid #64748b; padding:8px; }
+            .recom-box { border: 1px solid #000; padding:15px; background:#f8fafc; font-weight:bold; margin-bottom:40px; }
+            .sigs { width:100%; margin-top:50px; }
+            .sigs td { text-align:center; width:50%; }
+          </style>
+        </head>
+        <body>
+          <div class="head-school">
+            ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}<br/>
+            <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity?.address || ""} | Phone: ${schoolIdentity?.phone || ""}</span>
+          </div>
+          
+          <h3 style="text-align:center; text-transform:uppercase; text-decoration:underline;">LEMBAR HASIL PENILAIAN KINERJA GURU (PKG)</h3>
+          <p style="text-align:center; font-weight:bold; font-size:10px; margin-top:-10px;">TAHUN AJARAN / AKADEMIK: ${ev.academicYear}</p>
+          
+          <table class="meta-grid">
+            <tr><td style="width:20%; font-weight:bold;">Nama Pendidik</td><td>: <strong>${ev.teacherName}</strong></td></tr>
+            <tr><td style="font-weight:bold;">Tugas Jabatan</td><td>: ${ev.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mata Pelajaran'}</td></tr>
+            <tr><td style="font-weight:bold;">Penilai / Jabatan</td><td>: ${schoolIdentity?.principal || ev.evaluatorName || "H. Ahmad Fuad, S.Pd, M.PdI"} / Kepala Sekolah</td></tr>
+            <tr><td style="font-weight:bold;">Tanggal Sinkron</td><td>: ${ev.date}</td></tr>
+          </table>
+
+          <h4>A. INDEKS KOMPETENSI RUJUKAN</h4>
+          <table class="rep-table">
+            <thead>
+              <tr style="background:#f1f5f9;"><th>Aspek Kompetensi Utama</th><th style="width:15%">KKM Min</th><th style="width:15%">Nilai Dicapai</th></tr>
+            </thead>
+            <tbody>
+              ${rowG}
+            </tbody>
+          </table>
+
+          <h4>B. REKOMENDASI KARIR & CATATAN KHUSUS</h4>
+          <div class="recom-box">
+            "${ev.notes}"
+          </div>
+
+          <table class="sigs">
+            <tr>
+              <td>Guru yang Dinilai<div style="height:70px"></div><strong>( ${ev.teacherName} )</strong></td>
+              <td>Mengetahui,<br/>Kepala Sekolah<div style="height:70px"></div><strong><u>${schoolIdentity?.principal || ev.evaluatorName || "H. Ahmad Fuad, S.Pd, M.PdI"}</u></strong><br/>NIP. Demonstration Creds</td>
+            </tr>
+          </table>
+          <script>window.print();</script>
+        </body>
+      </html>
+    `);
+    pWin.document.close();
+  };
+
+  const fetchPrincipalWorkPrograms = async () => {
+    setLoadingWorkPrograms(true);
+    try {
+      const res = await fetch('/api/principal/work-programs');
+      if (res.ok) {
+        const data = await res.json();
+        setWorkPrograms(data);
+      }
+    } catch (err) {
+      console.error("Gagal menjaring program kerja kepala sekolah:", err);
+    } finally {
+      setLoadingWorkPrograms(false);
+    }
+  };
   
   // Class attendance state mapper
   const [dailyStatusMap, setDailyStatusMap] = useState<Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }>>({});
@@ -61,6 +173,108 @@ export default function SubjectTeacherPanel({
   const [endDate, setEndDate] = useState<string>('');
   const [showCollectivePrintModal, setShowCollectivePrintModal] = useState<boolean>(false);
 
+  // --- Kurikulum Merdeka State Settings ---
+  const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
+  const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
+  const [selectedGradeClass, setSelectedGradeClass] = useState<string>('');
+  const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>('Genap');
+  const [selectedYearGrading, setSelectedYearGrading] = useState<string>('2025/2026');
+  
+  // High quality default TPs based on popular subjects
+  const defaultTpsMap: Record<string, string[]> = {
+    'Matematika': [
+      'Memahami konsep & penyelesaian masalah relasi harian',
+      'Menerapkan analisis logis persamaan nilai kompetensi',
+      'Menyajikan representasi grafis hasil observasi'
+    ],
+    'Bahasa Inggris': [
+      'Identify main ideas in descriptive and narrative English texts',
+      'Compose short conversations about expressing opinion and advice',
+      'Use proper greeting, warning, and simple structures'
+    ],
+    'Ilmu Pengetahuan Alam': [
+      'Menjelaskan klasifikasi makhluk hidup dan ekosistem lokal',
+      'Menganalisis konsep suhu, kalor, pemuaian, dan wujud benda',
+      'Melakukan penyelidikan ilmiah tentang sifat zat kompleks'
+    ],
+    'Ilmu Pengetahuan Sosial': [
+      'Menilai kontribusi interaksi sosial terhadap ruang geografis',
+      'Mengidentifikasi kegiatan ekonomi masyarakat dan kebutuhan',
+      'Menceritakan sejarah pembentukan budaya di wilayah Nusantara'
+    ],
+    'Bahasa Indonesia': [
+      'Menulis teks deskripsi deskriptif dari objek observasi',
+      'Menelaah unsur buku fiksi dan non-fiksi secara obyektif',
+      'Menyajikan teks prosedur dengan susunan kalimat efektif'
+    ],
+    'Pendidikan Agama Islam': [
+      'Membaca dan melafalkan ayat Al-Quran mengenai adab',
+      'Mendemonstrasikan rukun shalat fardhu dan khusyuk berniat',
+      'Mengimplementasikan akhlakul karimah kepada guru dan teman'
+    ],
+    'Pendidikan Jasmani & OR': [
+      'Melakukan teknik dasar olahraga bersahabat koordinatif',
+      'Menjaga kebugaran jasmani melalui senam ketangkasan terlatih',
+      'Mengetahui pola makan seimbang pencegah penyakit menular'
+    ]
+  };
+
+  const currentSubjectDefaultTps = useMemo(() => {
+    return defaultTpsMap[currentTeacher.subject] || [
+      'Mengidentifikasi elemen kompetensi dasar materi pembelajaran',
+      'Menyelesaikan tugas analisis praktis secara mandiri berfikir',
+      'Menyajikan hasil evaluasi materi dalam bentuk simpulan logis'
+    ];
+  }, [currentTeacher.subject]);
+
+  const [tp1InputName, setTp1InputName] = useState<string>('');
+  const [tp2InputName, setTp2InputName] = useState<string>('');
+  const [tp3InputName, setTp3InputName] = useState<string>('');
+
+  useEffect(() => {
+    if (currentSubjectDefaultTps) {
+      setTp1InputName(currentSubjectDefaultTps[0] || '');
+      setTp2InputName(currentSubjectDefaultTps[1] || '');
+      setTp3InputName(currentSubjectDefaultTps[2] || '');
+    }
+  }, [currentSubjectDefaultTps]);
+
+  const [gradeInputMap, setGradeInputMap] = useState<Record<string, {
+    tp1Grade: string;
+    tp2Grade: string;
+    tp3Grade: string;
+    nilaiSumatifLM: string;
+    nilaiSAS: string;
+    deskripsiCapaian: string;
+  }>>({});
+
+  const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
+  const [excelPasteContent, setExcelPasteContent] = useState<string>('');
+  const [excelParseError, setExcelParseError] = useState<string | null>(null);
+  const [excelParsedPreview, setExcelParsedPreview] = useState<any[]>([]);
+
+  // Get distinct classes from students
+  const availableClasses = useMemo(() => {
+    const classesSet = new Set<string>();
+    students.forEach(s => {
+      if (s.class) classesSet.add(s.class.trim().toUpperCase());
+    });
+    return Array.from(classesSet).sort();
+  }, [students]);
+
+  useEffect(() => {
+    if (!selectedGradeClass && availableClasses.length > 0) {
+      setSelectedGradeClass(availableClasses[0]);
+    }
+  }, [availableClasses, selectedGradeClass]);
+
+  // If no class is selected yet, default to the first available class
+  useEffect(() => {
+    if (!selectedClass && availableClasses.length > 0) {
+      setSelectedClass(availableClasses[0]);
+    }
+  }, [availableClasses, selectedClass]);
+
   const filteredJournals = useMemo(() => {
     let list = journals;
     if (startDate) {
@@ -72,22 +286,6 @@ export default function SubjectTeacherPanel({
     // Sort chronological (oldest to newest) for school logs printable order
     return [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
   }, [journals, startDate, endDate]);
-
-  // Get distinct classes from students
-  const availableClasses = useMemo(() => {
-    const classesSet = new Set<string>();
-    students.forEach(s => {
-      if (s.class) classesSet.add(s.class.trim().toUpperCase());
-    });
-    return Array.from(classesSet).sort();
-  }, [students]);
-
-  // If no class is selected yet, default to the first available class
-  useEffect(() => {
-    if (!selectedClass && availableClasses.length > 0) {
-      setSelectedClass(availableClasses[0]);
-    }
-  }, [availableClasses, selectedClass]);
 
   // Load journals history
   const fetchJournals = async () => {
@@ -122,10 +320,197 @@ export default function SubjectTeacherPanel({
     }
   };
 
+  const fetchAssessments = async () => {
+    setLoadingAssessments(true);
+    try {
+      const res = await fetch('/api/merdeka-assessments');
+      if (res.ok) {
+        const data = await res.json();
+        setMerdekaAssessments(data);
+      }
+    } catch (err) {
+      console.error(err);
+    } finally {
+      setLoadingAssessments(false);
+    }
+  };
+
   useEffect(() => {
     fetchJournals();
     fetchNotifications();
+    fetchAssessments();
+    fetchPrincipalWorkPrograms();
+    fetchEvaluations();
   }, [currentTeacher]);
+
+  const gradingClassStudents = useMemo(() => {
+    if (!selectedGradeClass) return [];
+    return students.filter(s => s.class.trim().toUpperCase() === selectedGradeClass.trim().toUpperCase())
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [students, selectedGradeClass]);
+
+  useEffect(() => {
+    const newMap: Record<string, {
+      tp1Grade: string;
+      tp2Grade: string;
+      tp3Grade: string;
+      nilaiSumatifLM: string;
+      nilaiSAS: string;
+      deskripsiCapaian: string;
+    }> = {};
+
+    gradingClassStudents.forEach(s => {
+      const match = merdekaAssessments.find(a => 
+        a.studentId === s.id && 
+        matchSubject(a.subject, currentTeacher.subject) && 
+        a.semester === selectedSemesterGrading && 
+        a.academicYear === selectedYearGrading
+      );
+      if (match) {
+        newMap[s.id] = {
+          tp1Grade: String(match.tp1Grade ?? ''),
+          tp2Grade: match.tp2Grade !== undefined && match.tp2Grade !== null ? String(match.tp2Grade) : '',
+          tp3Grade: match.tp3Grade !== undefined && match.tp3Grade !== null ? String(match.tp3Grade) : '',
+          nilaiSumatifLM: String(match.nilaiSumatifLM ?? ''),
+          nilaiSAS: String(match.nilaiSAS ?? ''),
+          deskripsiCapaian: match.deskripsiCapaian ?? ''
+        };
+      } else {
+        newMap[s.id] = {
+          tp1Grade: '',
+          tp2Grade: '',
+          tp3Grade: '',
+          nilaiSumatifLM: '',
+          nilaiSAS: '',
+          deskripsiCapaian: ''
+        };
+      }
+    });
+
+    setGradeInputMap(newMap);
+  }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, currentTeacher.subject]);
+
+  function matchSubject(sub1: string, sub2: string): boolean {
+    return (sub1 || '').trim().toLowerCase() === (sub2 || '').trim().toLowerCase();
+  }
+
+  const handleImportExcelData = () => {
+    if (!excelPasteContent.trim()) {
+      setExcelParseError("Silakan tempel data dari Excel atau unggah file terlebih dahulu.");
+      return;
+    }
+
+    try {
+      const rows = excelPasteContent.trim().split("\n");
+      const parsedData: any[] = [];
+      
+      rows.forEach((row, idx) => {
+        const cells = row.split(/\t|,/).map(c => c.trim().replace(/^["']|["']$/g, ''));
+        
+        if (idx === 0 && (
+          cells[0].toLowerCase().includes("nis") || 
+          cells[1].toLowerCase().includes("nama") || 
+          (cells[2] && cells[2].toLowerCase().includes("tp")) ||
+          (cells[2] && cells[2].toLowerCase().includes("nilai"))
+        )) {
+          return;
+        }
+
+        const rawNis = cells[0];
+        const nameInput = cells[1];
+        const tp1Str = cells[2];
+        const tp2Str = cells[3] || "";
+        const tp3Str = cells[4] || "";
+        const slmStr = cells[5] || "";
+        const sasStr = cells[6] || "";
+
+        if (!rawNis && !nameInput) return;
+
+        // Try to match student
+        const matched = students.find(s => 
+          (rawNis && s.nis && String(s.nis).trim() === String(rawNis).trim()) || 
+          (nameInput && s.name.toLowerCase() === nameInput.toLowerCase()) ||
+          (nameInput && s.name.toLowerCase().includes(nameInput.toLowerCase()))
+        );
+
+        if (matched) {
+          parsedData.push({
+            studentId: matched.id,
+            studentName: matched.name,
+            nis: matched.nis,
+            className: matched.class,
+            tp1Grade: Number(tp1Str) || 0,
+            tp2Grade: tp2Str !== "" ? Number(tp2Str) : undefined,
+            tp3Grade: tp3Str !== "" ? Number(tp3Str) : undefined,
+            nilaiSumatifLM: Number(slmStr) || 0,
+            nilaiSAS: Number(sasStr) || 0,
+            matched: true
+          });
+        } else {
+          parsedData.push({
+            nis: rawNis || "-",
+            studentName: nameInput || "Siswa Tidak Ditemukan",
+            matched: false,
+            tp1Grade: Number(tp1Str) || 0,
+            nilaiSumatifLM: Number(slmStr) || 0,
+            nilaiSAS: Number(sasStr) || 0
+          });
+        }
+      });
+
+      const verifiedMatches = parsedData.filter(d => d.matched);
+      if (verifiedMatches.length === 0) {
+        setExcelParseError("Gagal mencocokkan data baris dengan siswa terdaftar. Pastikan NIS atau Nama sesuai.");
+        setExcelParsedPreview([]);
+      } else {
+        setExcelParsedPreview(parsedData);
+        setExcelParseError(null);
+      }
+    } catch (err: any) {
+      setExcelParseError("Kesalahan saat memproses data: " + err.message);
+    }
+  };
+
+  const applyExcelImportToState = () => {
+    const updatedMap = { ...gradeInputMap };
+    let importCount = 0;
+
+    excelParsedPreview.forEach(item => {
+      if (item.matched && item.studentId) {
+        updatedMap[item.studentId] = {
+          tp1Grade: String(item.tp1Grade),
+          tp2Grade: item.tp2Grade !== undefined ? String(item.tp2Grade) : "",
+          tp3Grade: item.tp3Grade !== undefined ? String(item.tp3Grade) : "",
+          nilaiSumatifLM: String(item.nilaiSumatifLM),
+          nilaiSAS: String(item.nilaiSAS),
+          deskripsiCapaian: ""
+        };
+        importCount++;
+      }
+    });
+
+    setGradeInputMap(updatedMap);
+    setShowExcelModal(false);
+    setExcelPasteContent('');
+    setExcelParsedPreview([]);
+    setFeedback({
+      type: 'success',
+      text: `Berhasil mencocokkan & memuat nilai untuk ${importCount} siswa dari Excel ke tabel.`
+    });
+  };
+
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result as string;
+      if (text) {
+        setExcelPasteContent(text);
+      }
+    };
+    reader.readAsText(file);
+  };
 
   // Class students roster
   const classStudents = useMemo(() => {
@@ -134,16 +519,20 @@ export default function SubjectTeacherPanel({
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [students, selectedClass]);
 
-  // Pre-fill attendance statuses when selecting a class
+  // Pre-fill attendance statuses when selecting a class or changing date, getting default from wali kelas daily attendance
   useEffect(() => {
     if (classStudents.length > 0) {
       const initialMap: Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }> = {};
       classStudents.forEach(s => {
-        initialMap[s.id] = { status: 'Hadir', notes: '' };
+        const matchingLog = attendanceLogs.find(log => log.studentId === s.id && log.date === selectedDate);
+        initialMap[s.id] = { 
+          status: matchingLog ? matchingLog.status : 'Hadir', 
+          notes: matchingLog && matchingLog.notes ? matchingLog.notes : ''
+        };
       });
       setDailyStatusMap(initialMap);
     }
-  }, [selectedClass, students]);
+  }, [selectedClass, selectedDate, students, attendanceLogs, classStudents]);
 
   // Status statistics for selected daily map
   const currentDailyStats = useMemo(() => {
@@ -349,6 +738,28 @@ export default function SubjectTeacherPanel({
           <span>Notifikasi ({systemNotifications.length})</span>
         </button>
         <button
+          onClick={() => { setActiveSubTab('penilaian'); setFeedback(null); }}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
+            activeSubTab === 'penilaian'
+              ? 'bg-indigo-600 text-white border border-indigo-600 shadow-sm font-black'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <BookOpen size={13} />
+          <span>Penilaian Merdeka</span>
+        </button>
+        <button
+          onClick={() => { setActiveSubTab('pkg'); setFeedback(null); }}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
+            activeSubTab === 'pkg'
+              ? 'bg-amber-600 text-white border border-amber-600 shadow-sm font-black'
+              : 'text-slate-500 hover:text-slate-800 hover:bg-slate-50'
+          }`}
+        >
+          <ShieldCheck size={13} />
+          <span>Kinerja (PKG)</span>
+        </button>
+        <button
           onClick={() => { setActiveSubTab('profile'); setFeedback(null); }}
           className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
             activeSubTab === 'profile'
@@ -530,13 +941,15 @@ export default function SubjectTeacherPanel({
               </div>
 
               <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-black text-slate-650">Catatan KBM / Hambatan (Opsional)</label>
+                <label className="text-xs font-black text-indigo-750 flex items-center gap-1 bg-indigo-50/50 p-2 border border-indigo-100 rounded-lg w-fit">
+                  <span>Catatan Khusus KBM / Agenda (Terhubung ke Rekap Wali Kelas)</span>
+                </label>
                 <textarea
-                  placeholder="Tulis hambatan, PR, atau catatan siswa khusus pada hari ini..."
+                  placeholder="Tulis hambatan, tugas, catatan khusus di kelas, atau materi tambahan hari ini yang akan otomatis sinkron ke asisten rekap wali kelas..."
                   rows={4}
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
-                  className="px-3.5 py-2.5 border border-slate-200 rounded-xl font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-800 text-xs bg-white resize-none"
+                  className="px-3.5 py-2.5 border border-slate-200 rounded-xl font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:border-slate-800 text-xs bg-white resize-none shadow-xs"
                 />
               </div>
 
@@ -849,6 +1262,35 @@ export default function SubjectTeacherPanel({
                           Total: {totalSiswa} Siswa
                         </span>
                       </div>
+
+                      {/* Display of non-present student names */}
+                      {(() => {
+                        const nonPresent = (journal.attendance || []).filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+                        if (nonPresent.length > 0) {
+                          return (
+                            <div className="mt-2 text-xs text-slate-700 leading-relaxed bg-rose-50/20 border border-slate-150 rounded-xl p-2.5 max-w-xl">
+                              <span className="font-extrabold text-slate-800 text-[10px] uppercase tracking-wider block mb-1">Daftar Siswa Tidak Hadir:</span>
+                              <div className="flex flex-wrap gap-1.5">
+                                {nonPresent.map((a: any, i: number) => (
+                                  <span key={i} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                    a.status === 'Sakit' ? 'bg-amber-50 text-amber-850 border-amber-100' :
+                                    a.status === 'Izin' ? 'bg-sky-50 text-sky-850 border-sky-100' :
+                                    'bg-rose-50 text-rose-850 border-rose-100'
+                                  }`}>
+                                    {a.studentName} ({a.status}{a.notes ? `: ${a.notes}` : ''})
+                                  </span>
+                                ))}
+                              </div>
+                            </div>
+                          );
+                        } else {
+                          return (
+                            <div className="mt-2 text-[10.5px] font-extrabold text-emerald-700 bg-emerald-50/40 border border-emerald-100 rounded-lg p-1.5 w-fit px-2.5">
+                              ✓ Nihil (Semua siswa hadir)
+                            </div>
+                          );
+                        }
+                      })()}
                     </div>
 
                     <div className="flex gap-2 flex-wrap h-fit self-start md:self-center pr-1 select-none">
@@ -966,6 +1408,119 @@ export default function SubjectTeacherPanel({
         </div>
       )}
 
+      {/* View: Evaluasi Kinerja (PKG) */}
+      {activeSubTab === 'pkg' && (
+        <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
+          {/* Header Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-amber-500 to-indigo-600" />
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 pb-4 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Laporan Hasil Kinerja</span>
+                <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
+                  🎖️ Penilaian Kinerja Guru (PKG) Saya
+                </h2>
+                <p className="text-slate-500 text-[11px] mt-0.5">
+                  Hasil evaluasi dan penilaian kuantitatif kompetensi pendidik terintegrasi yang dirilis secara resmi oleh Kepala Sekolah.
+                </p>
+              </div>
+            </div>
+
+            {loadingEvaluations ? (
+              <div className="py-12 flex flex-col items-center justify-center gap-2.5 text-slate-400">
+                <Loader2 className="animate-spin text-indigo-600" size={32} />
+                <span className="text-xs font-bold font-sans">Menjaring data penilaian resmi...</span>
+              </div>
+            ) : evaluations.length === 0 ? (
+              <div className="py-12 flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 mt-6 gap-3">
+                <span className="text-4xl text-slate-300">📭</span>
+                <div>
+                  <h4 className="font-bold text-slate-800 text-sm">Belum Ada Penilaian PKG</h4>
+                  <p className="text-slate-500 text-xs mt-1 max-w-md">
+                    Kepala Sekolah belum menerbitkan atau mensinkronkan penilaian kinerja (PKG) berkala untuk akun pendidik Anda.
+                  </p>
+                </div>
+              </div>
+            ) : (
+              <div className="flex flex-col gap-6 mt-6">
+                {evaluations.map((ev) => {
+                  const avgScore = Math.round((Number(ev.pedagogicScore) + Number(ev.professionalScore) + Number(ev.personalScore) + Number(ev.socialScore)) / 4);
+                  return (
+                    <div key={ev.id} className="bg-slate-50 border border-slate-200 rounded-2xl p-6 flex flex-col gap-6 hover:shadow-md transition-all">
+                      {/* Top Header of evaluation */}
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-200 pb-4">
+                        <div>
+                          <span className="px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-amber-800 font-extrabold text-[9px] uppercase tracking-wider">
+                            TA: {ev.academicYear}
+                          </span>
+                          <h3 className="font-extrabold text-sm text-slate-900 mt-1.5">
+                            Lembar PKG - {ev.teacherName}
+                          </h3>
+                          <span className="block text-[10px] text-slate-500 mt-0.5">
+                            Penilai: {schoolIdentity?.principal || ev.evaluatorName} (Kepala Sekolah) &bull; Synchronized: {ev.date}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => handlePrintPkg(ev)}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer w-fit"
+                        >
+                          <Printer size={13} />
+                          Cetak Laporan Resmi
+                        </button>
+                      </div>
+
+                      {/* Score metrics grid */}
+                      <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                        <div className="bg-white border border-slate-200 p-4 rounded-xl text-center flex flex-col justify-center shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Pedagogik</span>
+                          <span className="text-2xl font-black text-indigo-600 mt-1 font-mono">{ev.pedagogicScore}</span>
+                          <span className="text-[9px] text-slate-500 mt-1">KKM: 80</span>
+                        </div>
+                        <div className="bg-white border border-slate-200 p-4 rounded-xl text-center flex flex-col justify-center shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Profesional</span>
+                          <span className="text-2xl font-black text-indigo-600 mt-1 font-mono">{ev.professionalScore}</span>
+                          <span className="text-[9px] text-slate-500 mt-1">KKM: 80</span>
+                        </div>
+                        <div className="bg-white border border-slate-200 p-4 rounded-xl text-center flex flex-col justify-center shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Kepribadian</span>
+                          <span className="text-2xl font-black text-indigo-600 mt-1 font-mono">{ev.personalScore}</span>
+                          <span className="text-[9px] text-slate-500 mt-1">KKM: 80</span>
+                        </div>
+                        <div className="bg-white border border-slate-200 p-4 rounded-xl text-center flex flex-col justify-center shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">Sosial</span>
+                          <span className="text-2xl font-black text-indigo-600 mt-1 font-mono">{ev.socialScore}</span>
+                          <span className="text-[9px] text-slate-500 mt-1">KKM: 80</span>
+                        </div>
+                        <div className="col-span-2 md:col-span-1 bg-amber-500/10 border-2 border-amber-500/20 p-4 rounded-xl text-center flex flex-col justify-center shadow-xs">
+                          <span className="text-[10px] font-extrabold uppercase text-amber-700 tracking-wider">Rata-Rata</span>
+                          <span className="text-2xl font-black text-emerald-700 mt-1 font-mono">{avgScore}</span>
+                          <span className="text-[9px] text-emerald-700 font-extrabold mt-1">
+                            {avgScore >= 85 ? 'AMAT BAIK' : 'BAIK'}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Notes / Recommendations area */}
+                      {ev.notes && (
+                        <div className="bg-white border border-slate-200 p-4 rounded-xl text-left">
+                          <span className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-2">
+                            Catatan Khusus &amp; Rekomendasi Kepala Sekolah
+                          </span>
+                          <p className="text-xs text-slate-700 font-bold italic leading-relaxed font-sans">
+                            "{ev.notes}"
+                          </p>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* View: Profil Guru Mapel */}
       {activeSubTab === 'profile' && (
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start text-left">
@@ -1057,6 +1612,457 @@ export default function SubjectTeacherPanel({
                 </div>
               </div>
             </div>
+
+            {/* Program Kerja Kepala Sekolah Card */}
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-5">
+              <div>
+                <div className="flex justify-between items-center">
+                  <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2">
+                    <span className="p-1.5 rounded-lg bg-teal-50 text-teal-700">📢</span> Program Kerja Kepala Sekolah
+                  </h3>
+                  <span className="text-[9px] uppercase font-bold text-slate-400 font-mono tracking-wider">
+                    Instruksi Resmi Pendidik
+                  </span>
+                </div>
+                <p className="text-xs text-slate-550 text-slate-500 mt-1">
+                  Daftar kebijakan dan rancangan program strategis yang diturunkan oleh Kepala Sekolah ({schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}) demi koordinasi pendidik.
+                </p>
+              </div>
+
+              <div className="flex flex-col gap-3.5 max-h-[400px] overflow-y-auto pr-1">
+                {loadingWorkPrograms ? (
+                  <div className="flex flex-col items-center justify-center p-12 text-slate-400 text-xs font-semibold">
+                    <Loader2 size={16} className="animate-spin text-indigo-500 mb-2" />
+                    Memuat program kerja Kepala Sekolah...
+                  </div>
+                ) : workPrograms.filter(p => p.syncWithStaff).length === 0 ? (
+                  <div className="p-12 text-center text-slate-400 border border-dashed border-slate-200 rounded-2xl bg-slate-50/50 text-xs italic">
+                    Saat ini belum ada program kerja strategis yang dipublikasikan oleh Kepala Sekolah.
+                  </div>
+                ) : (
+                  workPrograms.filter(p => p.syncWithStaff).map(p => {
+                    const statusBgs = {
+                      planned: 'bg-blue-50 text-blue-700 border-blue-100',
+                      active: 'bg-emerald-50 text-emerald-700 border-emerald-100 animate-pulse',
+                      completed: 'bg-slate-100 text-slate-600 border-slate-200'
+                    };
+                    const statusLabels = {
+                      planned: 'Direncanakan',
+                      active: 'Berjalan Aktif',
+                      completed: 'Selesai'
+                    };
+
+                    return (
+                      <div key={p.id} className="p-4 border border-slate-150 rounded-xl bg-slate-50/50 flex flex-col gap-2 shadow-xxs">
+                        <div className="flex justify-between items-start gap-4">
+                          <h4 className="font-extrabold text-slate-850 text-slate-800 text-xs leading-tight">{p.title}</h4>
+                          <span className={`px-2 py-0.5 border text-[9px] font-black uppercase rounded-md shrink-0 ${statusBgs[p.status] || ''}`}>
+                            {statusLabels[p.status] || p.status}
+                          </span>
+                        </div>
+                        <p className="text-slate-600 text-[11px] leading-relaxed whitespace-pre-line">{p.description}</p>
+                        <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400 font-bold border-t border-slate-200/50 pt-2 mt-1">
+                          <span>📅 Batas Pelaksanaan: <span className="text-slate-705 font-mono">{p.targetDate}</span></span>
+                        </div>
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* View: Penilaian Kurikulum Merdeka */}
+      {activeSubTab === 'penilaian' && (
+        <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
+          {/* Header & Filter Card */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-500 to-indigo-600" />
+            
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-4 border-b border-slate-100">
+              <div>
+                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Guru Mata Pelajaran</span>
+                <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
+                  <Sparkles size={18} className="text-amber-500" />
+                  Penilaian Rapor Kurikulum Merdeka ({currentTeacher.subject})
+                </h2>
+                <p className="text-slate-500 text-[11px] mt-0.5">
+                  Isi kriteria ketercapaian tujuan pembelajaran (KKTP), formatif harian, sumatif materi, dan SAS untuk nilai rapor akhir otomatis.
+                </p>
+              </div>
+
+              {/* Action Buttons */}
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setExcelPasteContent('');
+                    setExcelParseError(null);
+                    setExcelParsedPreview([]);
+                    setShowExcelModal(true);
+                  }}
+                  className="px-3.5 py-2.5 rounded-xl border-2 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
+                >
+                  <FileText size={14} className="text-emerald-600" />
+                  Import dari MS Excel
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const updated = { ...gradeInputMap };
+                    gradingClassStudents.forEach(s => {
+                      if (!updated[s.id]?.tp1Grade) {
+                        updated[s.id] = {
+                          tp1Grade: String(Math.floor(Math.random() * 16) + 80),
+                          tp2Grade: String(Math.floor(Math.random() * 16) + 78),
+                          tp3Grade: String(Math.floor(Math.random() * 16) + 82),
+                          nilaiSumatifLM: String(Math.floor(Math.random() * 16) + 78),
+                          nilaiSAS: String(Math.floor(Math.random() * 16) + 80),
+                          deskripsiCapaian: ''
+                        };
+                      }
+                    });
+                    setGradeInputMap(updated);
+                    setFeedback({ type: 'success', text: "Berhasil mengisi otomatis sampel nilai (80-95) yang kosong untuk demo penilaian!" });
+                  }}
+                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                >
+                  <Sparkles size={13} className="text-slate-500" />
+                  Isi Contoh Nilai
+                </button>
+              </div>
+            </div>
+
+            {/* Filter Row */}
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas</label>
+                <select
+                  value={selectedGradeClass}
+                  onChange={(e) => setSelectedGradeClass(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-black text-slate-800 transition-colors cursor-pointer"
+                >
+                  {availableClasses.length === 0 ? (
+                    <option value="">Tidak ada kelas terdaftar</option>
+                  ) : (
+                    availableClasses.map(c => (
+                      <option key={c} value={c}>Kelas {c}</option>
+                    ))
+                  )}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Semester</label>
+                <select
+                  value={selectedSemesterGrading}
+                  onChange={(e) => setSelectedSemesterGrading(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                >
+                  <option value="Ganjil">Semester Ganjil</option>
+                  <option value="Genap">Semester Genap</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Tahun Ajaran</label>
+                <select
+                  value={selectedYearGrading}
+                  onChange={(e) => setSelectedYearGrading(e.target.value)}
+                  className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                >
+                  <option value="2025/2026">2025/2026</option>
+                  <option value="2024/2025">2024/2025</option>
+                </select>
+              </div>
+            </div>
+          </div>
+
+          {/* TP Config / Kriteria Ketercapaian Card */}
+          <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-xs text-left">
+            <div className="flex items-center gap-2 mb-4">
+              <span className="h-2.5 w-2.5 rounded-full bg-indigo-600 animate-pulse" />
+              <h3 className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600">
+                Deskripsi Tujuan Pembelajaran (TP) yang Diujikan
+              </h3>
+            </div>
+            
+            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 1 (TP-1)</span>
+                <textarea
+                  value={tp1InputName}
+                  onChange={(e) => setTp1InputName(e.target.value)}
+                  rows={2}
+                  maxLength={100}
+                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
+                  placeholder="Isi uraian TP-1..."
+                />
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 2 (TP-2) - Opsional</span>
+                <textarea
+                  value={tp2InputName}
+                  onChange={(e) => setTp2InputName(e.target.value)}
+                  rows={2}
+                  maxLength={100}
+                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
+                  placeholder="Isi uraian TP-2 (kosongkan jika tidak ada)..."
+                />
+              </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 3 (TP-3) - Opsional</span>
+                <textarea
+                  value={tp3InputName}
+                  onChange={(e) => setTp3InputName(e.target.value)}
+                  rows={2}
+                  maxLength={100}
+                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
+                  placeholder="Isi uraian TP-3 (kosongkan jika tidak ada)..."
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Student Grading Grid Table */}
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+            <div className="overflow-x-auto">
+              <table className="w-full border-collapse text-xs select-none">
+                <thead>
+                  <tr className="bg-slate-900 text-white font-extrabold uppercase tracking-wider text-[10px] text-center">
+                    <th className="py-3 px-3 w-12 text-center rounded-tl-3xl">No</th>
+                    <th className="py-3 px-4 text-left min-w-[160px]">Nama Siswa [NIS]</th>
+                    <th className="py-3 px-2 w-20 text-indigo-300">TP-1</th>
+                    <th className="py-3 px-2 w-20 text-indigo-300">TP-2</th>
+                    <th className="py-3 px-2 w-20 text-indigo-300">TP-3</th>
+                    <th className="py-3 px-2 w-24 bg-indigo-950 text-indigo-300">Avg Formatif</th>
+                    <th className="py-3 px-2 w-24 text-amber-400">Sumatif LM</th>
+                    <th className="py-3 px-2 w-20 text-amber-400">SAS</th>
+                    <th className="py-3 px-2 w-24 bg-slate-950 text-emerald-400 font-black rounded-tr-3xl">Nilai Rapor</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {gradingClassStudents.length === 0 ? (
+                    <tr>
+                      <td colSpan={9} className="py-20 text-center text-slate-400 font-semibold text-xs">
+                        Tidak ada data siswa ditemukan untuk kelas {selectedGradeClass}.
+                      </td>
+                    </tr>
+                  ) : (
+                    gradingClassStudents.map((s, idx) => {
+                      const inputState = gradeInputMap[s.id] || {
+                        tp1Grade: '',
+                        tp2Grade: '',
+                        tp3Grade: '',
+                        nilaiSumatifLM: '',
+                        nilaiSAS: '',
+                        deskripsiCapaian: ''
+                      };
+
+                      // On-the-fly calculations
+                      const tp1G = Number(inputState.tp1Grade) || 0;
+                      const tp2G = inputState.tp2Grade !== '' ? Number(inputState.tp2Grade) : undefined;
+                      const tp3G = inputState.tp3Grade !== '' ? Number(inputState.tp3Grade) : undefined;
+
+                      let tpCount = 0;
+                      let sumTp = 0;
+                      if (inputState.tp1Grade !== '') { tpCount++; sumTp += tp1G; }
+                      if (tp2G !== undefined) { tpCount++; sumTp += tp2G; }
+                      if (tp3G !== undefined) { tpCount++; sumTp += tp3G; }
+
+                      const avgF = tpCount > 0 ? Math.round(sumTp / tpCount) : 0;
+                      const slm = Number(inputState.nilaiSumatifLM) || 0;
+                      const sas = Number(inputState.nilaiSAS) || 0;
+
+                      // Final assessment weight (avgFormatif + sumatifLM + SAS)/3
+                      const raporScore = tpCount > 0 || slm > 0 || sas > 0 ? Math.round((avgF + slm + sas) / 3) : 0;
+
+                      const handleGradeChange = (field: string, val: string) => {
+                        let cleanIdx = val;
+                        if (val !== '') {
+                          const numVal = parseInt(val);
+                          if (isNaN(numVal)) cleanIdx = '';
+                          else cleanIdx = String(Math.min(100, Math.max(0, numVal)));
+                        }
+                        setGradeInputMap(prev => ({
+                          ...prev,
+                          [s.id]: {
+                            ...prev[s.id] || {
+                              tp1Grade: '',
+                              tp2Grade: '',
+                              tp3Grade: '',
+                              nilaiSumatifLM: '',
+                              nilaiSAS: '',
+                              deskripsiCapaian: ''
+                            },
+                            [field]: cleanIdx
+                          }
+                        }));
+                      };
+
+                      return (
+                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
+                          <td className="py-3 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="py-3 px-4 text-left">
+                            <div className="font-extrabold text-slate-800 text-[12px]">{s.name}</div>
+                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">NIS: {s.nis}</div>
+                          </td>
+                          
+                          {/* TP Grades Inputs */}
+                          <td className="py-2.5 px-1.5 text-center">
+                            <input
+                              type="text"
+                              maxLength={3}
+                              value={inputState.tp1Grade}
+                              onChange={(e) => handleGradeChange('tp1Grade', e.target.value)}
+                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30"
+                              placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2.5 px-1.5 text-center">
+                            <input
+                              type="text"
+                              maxLength={3}
+                              value={inputState.tp2Grade}
+                              onChange={(e) => handleGradeChange('tp2Grade', e.target.value)}
+                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
+                              placeholder="-"
+                              disabled={!tp2InputName.trim()}
+                            />
+                          </td>
+                          <td className="py-2.5 px-1.5 text-center">
+                            <input
+                              type="text"
+                              maxLength={3}
+                              value={inputState.tp3Grade}
+                              onChange={(e) => handleGradeChange('tp3Grade', e.target.value)}
+                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
+                              placeholder="-"
+                              disabled={!tp3InputName.trim()}
+                            />
+                          </td>
+
+                          {/* Computed Formative Average */}
+                          <td className="py-2.5 px-2 text-center font-black text-indigo-700 bg-indigo-50/10 text-[12px]">
+                            {avgF || "-"}
+                          </td>
+
+                          {/* Sumatif LM & Final SAS */}
+                          <td className="py-2.5 px-1.5 text-center">
+                            <input
+                              type="text"
+                              maxLength={3}
+                              value={inputState.nilaiSumatifLM}
+                              onChange={(e) => handleGradeChange('nilaiSumatifLM', e.target.value)}
+                              className="w-14 text-center border border-amber-200 focus:border-amber-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-amber-500/5"
+                              placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2.5 px-1.5 text-center">
+                            <input
+                              type="text"
+                              maxLength={3}
+                              value={inputState.nilaiSAS}
+                              onChange={(e) => handleGradeChange('nilaiSAS', e.target.value)}
+                              className="w-14 text-center border border-amber-200 focus:border-amber-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-amber-500/5"
+                              placeholder="-"
+                            />
+                          </td>
+
+                          {/* Computed Final Report Score */}
+                          <td className="py-2.5 px-2 text-center font-black text-slate-900 bg-slate-100 text-sm">
+                            <span className={`px-2 py-0.5 rounded-md ${
+                              raporScore >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800 font-extrabold'
+                            }`}>
+                              {raporScore || "-"}
+                            </span>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Bottom Form Actions */}
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+              <span className="text-[10px] font-semibold text-slate-500">
+                Nilai akhir rapor Kurikulum Merdeka dihitung dengan bobot seimbang rata formatif, sumatif l/m dan SAS.
+              </span>
+              <button
+                type="button"
+                onClick={async () => {
+                  setIsSaving(true);
+                  try {
+                    const batchData = gradingClassStudents.map(s => {
+                      const inputState = gradeInputMap[s.id] || {
+                        tp1Grade: '',
+                        tp2Grade: '',
+                        tp3Grade: '',
+                        nilaiSumatifLM: '',
+                        nilaiSAS: '',
+                        deskripsiCapaian: ''
+                      };
+
+                      return {
+                        studentId: s.id,
+                        studentName: s.name,
+                        className: s.class,
+                        subject: currentTeacher.subject,
+                        teacherName: currentTeacher.name,
+                        semester: selectedSemesterGrading,
+                        academicYear: selectedYearGrading,
+                        tp1Name: tp1InputName,
+                        tp1Grade: inputState.tp1Grade || "0",
+                        tp2Name: tp2InputName || undefined,
+                        tp2Grade: inputState.tp2Grade !== "" ? inputState.tp2Grade : undefined,
+                        tp3Name: tp3InputName || undefined,
+                        tp3Grade: inputState.tp3Grade !== "" ? inputState.tp3Grade : undefined,
+                        nilaiSumatifLM: inputState.nilaiSumatifLM || "0",
+                        nilaiSAS: inputState.nilaiSAS || "0"
+                      };
+                    });
+
+                    const res = await fetch('/api/merdeka-assessments', {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify(batchData)
+                    });
+
+                    if (res.ok) {
+                      setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka untuk Kelas ${selectedGradeClass} berhasil disimpan ke basis data!` });
+                      fetchAssessments();
+                      onRefresh();
+                    } else {
+                      setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian.' });
+                    }
+                  } catch (err: any) {
+                    setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem.' });
+                  } finally {
+                    setIsSaving(false);
+                  }
+                }}
+                className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs tracking-wider rounded-xl cursor-pointer transition-all flex items-center gap-2 shadow-md shadow-indigo-100 disabled:opacity-50"
+                disabled={isSaving || gradingClassStudents.length === 0}
+              >
+                {isSaving ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" />
+                    <span>Menyimpan...</span>
+                  </>
+                ) : (
+                  <>
+                    <Save size={13} />
+                    <span>SIMPAN DATA PENILAIAN</span>
+                  </>
+                )}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -1101,43 +2107,70 @@ export default function SubjectTeacherPanel({
                 </div>
               </div>
 
-              {/* Table scroll */}
-              <div className="max-h-[350px] overflow-y-auto">
-                <table className="min-w-full divide-y divide-slate-150">
-                  <thead className="bg-slate-50 uppercase text-[9px] font-bold text-slate-400 tracking-wider sticky top-0">
-                    <tr>
-                      <th className="px-5 py-2.5 text-left w-12">No</th>
-                      <th className="px-5 py-2.5 text-left">Nama Lengkap</th>
-                      <th className="px-5 py-2.5 text-center">Presensi KBM</th>
-                      <th className="px-5 py-2.5 text-left">Catatan KBM Siswa</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-slate-100 bg-white text-xs">
-                    {historyDetailJournal.attendance.map((att, idx) => {
-                      let tagClass = 'bg-slate-100 text-slate-750 border-slate-200';
-                      if (att.status === 'Hadir') tagClass = 'bg-emerald-50 text-emerald-800 border-emerald-100';
-                      else if (att.status === 'Terlambat') tagClass = 'bg-amber-50 text-amber-800 border-amber-150';
-                      else if (att.status === 'Sakit') tagClass = 'bg-sky-50 text-sky-800 border-sky-100';
-                      else if (att.status === 'Izin') tagClass = 'bg-indigo-50 text-indigo-800 border-indigo-150';
-                      else if (att.status === 'Alpa') tagClass = 'bg-rose-50 text-rose-800 border-rose-100';
+              {/* Rekap Absensi (Cukup Rekap Saja) */}
+              <div className="p-6 bg-slate-50 border-b border-slate-100 flex flex-col gap-4">
+                <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">REKAPITULASI PRESENSI KBM</span>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-3 text-center">
+                    <span className="block text-[10px] font-bold text-emerald-800 uppercase">Hadir</span>
+                    <span className="block text-xl font-extrabold text-emerald-900 mt-1">
+                      {historyDetailJournal.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length}
+                    </span>
+                  </div>
+                  <div className="bg-sky-50 border border-sky-150 rounded-2xl p-3 text-center">
+                    <span className="block text-[10px] font-bold text-sky-800 uppercase">Sakit</span>
+                    <span className="block text-xl font-extrabold text-sky-900 mt-1">
+                      {historyDetailJournal.attendance.filter(a => a.status === 'Sakit').length}
+                    </span>
+                  </div>
+                  <div className="bg-indigo-50 border border-indigo-150 rounded-2xl p-3 text-center">
+                    <span className="block text-[10px] font-bold text-indigo-800 uppercase">Izin</span>
+                    <span className="block text-xl font-extrabold text-indigo-900 mt-1">
+                      {historyDetailJournal.attendance.filter(a => a.status === 'Izin').length}
+                    </span>
+                  </div>
+                  <div className="bg-rose-50 border border-rose-150 rounded-2xl p-3 text-center">
+                    <span className="block text-[10px] font-bold text-rose-800 uppercase">Alpa</span>
+                    <span className="block text-xl font-extrabold text-rose-900 mt-1">
+                      {historyDetailJournal.attendance.filter(a => a.status === 'Alpa').length}
+                    </span>
+                  </div>
+                </div>
 
-                      return (
-                        <tr key={idx} className="hover:bg-slate-50/20">
-                          <td className="px-5 py-2.5 font-bold text-slate-400 font-sans">{idx + 1}</td>
-                          <td className="px-5 py-2.5 font-extrabold text-slate-900">{att.studentName}</td>
-                          <td className="px-5 py-2.5 text-center">
-                            <span className={`px-2 py-0.5 rounded-full border text-[9.5px] font-black uppercase tracking-wider ${tagClass}`}>
-                              {att.status}
-                            </span>
-                          </td>
-                          <td className="px-5 py-2.5 text-slate-500 italic font-medium">
-                            {att.notes || '-'}
-                          </td>
-                        </tr>
-                      );
-                    })}
-                  </tbody>
-                </table>
+                {/* List of non-present students */}
+                {(() => {
+                  const nonPresent = historyDetailJournal.attendance.filter(a => a.status !== 'Hadir' && a.status !== 'Terlambat');
+                  if (nonPresent.length > 0) {
+                    return (
+                      <div className="bg-white border border-slate-150 rounded-xl p-3 text-xs leading-relaxed text-slate-700">
+                        <span className="font-extrabold text-slate-800 block mb-1">Rincian Siswa Tidak Hadir / Keterangan Khusus KBM:</span>
+                        <div className="flex flex-col gap-1">
+                          {nonPresent.map((a, i) => (
+                            <div key={i} className="flex justify-between border-b border-dashed border-slate-100 pb-1">
+                              <span>{a.studentName}</span>
+                              <span className="font-bold uppercase tracking-wider text-[10px]">
+                                {a.status === 'Sakit' ? 'Sakit' : a.status === 'Izin' ? 'Izin' : 'Alpa'}
+                                {a.notes ? ` (${a.notes})` : ''}
+                              </span>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  }
+                  return (
+                    <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 text-xs text-center text-emerald-800 font-semibold select-none">
+                      Semua siswa hadir (Nihil Absensi).
+                    </div>
+                  );
+                })()}
+
+                {historyDetailJournal.notes && (
+                  <div className="bg-amber-50 border border-amber-200/60 p-3.5 rounded-xl text-xs text-amber-900 font-medium leading-relaxed">
+                    <strong className="text-amber-800 font-extrabold block mb-1">Catatan Khusus Pembelajaran KBM:</strong>
+                    &ldquo;{historyDetailJournal.notes}&rdquo;
+                  </div>
+                )}
               </div>
 
               <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-between items-center flex-wrap gap-2 select-none">
@@ -1388,15 +2421,7 @@ export default function SubjectTeacherPanel({
                           <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Tujuan Pembelajaran</th>
                           <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Materi Pembelajaran</th>
                           <th className="border border-slate-900 px-1.5 py-3 text-[9px]" style={{ width: '8%', border: '1px solid #000' }}>Pencapaian KKTP</th>
-                          <th className="border border-slate-900 px-1 py-1 text-[9px]" colSpan={4} style={{ width: '15%', border: '1px solid #000' }}>
-                            <div className="border-b border-slate-900 pb-1 mb-1 font-bold text-center">Absensi</div>
-                            <div className="grid grid-cols-[60%_13.3%_13.3%_13.3%] text-[8px] font-black text-center tracking-tighter">
-                              <span className="text-left pl-1">Nama</span>
-                              <span>S</span>
-                              <span>I</span>
-                              <span>A</span>
-                            </div>
-                          </th>
+                          <th className="border border-slate-900 px-1.5 py-3 text-[10px]" style={{ width: '15%', border: '1px solid #000' }}>Rekap Presensi KBM</th>
                           <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '10%', border: '1px solid #000' }}>Keterangan</th>
                         </tr>
                       </thead>
@@ -1424,42 +2449,23 @@ export default function SubjectTeacherPanel({
                             {selectedJournalToPrint.pencapaianKktp || "Tercapai"}
                           </td>
                           
-                          {/* Absensi sub-table renderer */}
-                          <td colSpan={4} className="border border-slate-900 p-0 text-left align-top font-mono" style={{ border: '1px solid #000' }}>
+                          {/* Absensi sub-table renderer reconstituted as a recap summary */}
+                          <td className="border border-slate-900 px-2 py-2.5 text-center font-mono" style={{ border: '1px solid #000' }}>
                             {(() => {
-                              const absents = selectedJournalToPrint.attendance.filter(
-                                att => att.status === 'Sakit' || att.status === 'Izin' || att.status === 'Alpa'
-                              );
-                              if (absents.length === 0) {
-                                return (
-                                  <div className="text-center text-slate-400 font-bold italic py-3 select-none text-[8px]">
-                                    Nihil (Hadir Semua)
-                                  </div>
-                                );
-                              }
+                              const total = selectedJournalToPrint.attendance.length;
+                              const h = selectedJournalToPrint.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                              const s = selectedJournalToPrint.attendance.filter(a => a.status === 'Sakit').length;
+                              const i = selectedJournalToPrint.attendance.filter(a => a.status === 'Izin').length;
+                              const a = selectedJournalToPrint.attendance.filter(a => a.status === 'Alpa').length;
+
                               return (
-                                <table className="w-full border-collapse text-[8px] leading-tight">
-                                  <tbody>
-                                    {absents.map((abs, sIdx) => {
-                                      return (
-                                        <tr key={sIdx} className={sIdx > 0 ? "border-t border-slate-400" : ""}>
-                                          <td className="px-1 py-1 text-left font-sans font-bold truncate max-w-[50px] text-slate-900" style={{ width: '60%', borderRight: '1px solid #000' }}>
-                                            {abs.studentName}
-                                          </td>
-                                          <td className="py-1 text-center font-bold text-amber-600" style={{ width: '13.3%', borderRight: '1px solid #000' }}>
-                                            {abs.status === 'Sakit' ? '✔' : ''}
-                                          </td>
-                                          <td className="py-1 text-center font-bold text-blue-600" style={{ width: '13.3%', borderRight: '1px solid #000' }}>
-                                            {abs.status === 'Izin' ? '✔' : ''}
-                                          </td>
-                                          <td className="py-1 text-center font-bold text-rose-600" style={{ width: '13.3%' }}>
-                                            {abs.status === 'Alpa' ? '✔' : ''}
-                                          </td>
-                                        </tr>
-                                      );
-                                    })}
-                                  </tbody>
-                                </table>
+                                <div className="text-[8px] leading-tight flex flex-col items-center">
+                                  <span className="font-bold">Total: {total}</span>
+                                  <span className="text-emerald-750 font-bold">H: {h}</span>
+                                  {s > 0 && <span className="text-amber-600 font-medium">S: {s}</span>}
+                                  {i > 0 && <span className="text-blue-600 font-medium">I: {i}</span>}
+                                  {a > 0 && <span className="text-rose-600 font-bold">A: {a}</span>}
+                                </div>
                               );
                             })()}
                           </td>
@@ -1492,6 +2498,164 @@ export default function SubjectTeacherPanel({
                   </div>
 
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL IMPORT EXCEL PENILAIAN */}
+      <AnimatePresence>
+        {showExcelModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-150 flex flex-col max-w-4xl w-full text-left relative"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 bg-emerald-700 text-white flex justify-between items-center select-none">
+                <div>
+                  <h4 className="font-extrabold text-sm uppercase text-white tracking-wider flex items-center gap-2">
+                    <FileText size={16} />
+                    Import Nilai Kurikulum Merdeka dari MS Excel
+                  </h4>
+                  <p className="text-[11px] text-emerald-100 mt-0.5">
+                    Memetakan data baris spreadsheet secara pintar berdasar NIS atau Nama Siswa.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setShowExcelModal(false)}
+                  className="p-1.5 hover:bg-emerald-800 rounded-lg text-emerald-100 hover:text-white transition-all cursor-pointer"
+                >
+                  <X size={15} />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 overflow-y-auto max-h-[75vh] flex flex-col gap-4">
+                {/* Instructions */}
+                <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-4 text-[11px] leading-relaxed text-emerald-900">
+                  <span className="font-black text-xs block mb-1">Panduan Penggunaan Template Excel:</span>
+                  <ol className="list-decimal pl-4 flex flex-col gap-1">
+                    <li>Gunakan software <strong>MS Excel</strong> atau <strong>Google Sheets</strong>.</li>
+                    <li>
+                      Buatlah tabel dengan kolom yang berurutan dari kiri ke kanan sebagai berikut:
+                      <div className="py-1 px-2 border border-emerald-200 bg-emerald-150/40 rounded-lg font-mono text-[9px] mt-1 text-slate-700">
+                        NIS | Nama Siswa | Nilai TP1 | Nilai TP2 | Nilai TP3 | Nilai Sumatif LM | Nilai SAS
+                      </div>
+                    </li>
+                    <li>Sistem akan mendeteksi baris siswa berdasarkan <strong>NIS</strong> (disarankan) atau <strong>Nama Lengkap</strong> yang sesuai di kelas terpilih.</li>
+                    <li>Cukup blok tabel nilai di Excel Anda, tekan <strong>Ctrl+C</strong> (salin), lalu tekan <strong>Ctrl+V</strong> (tempel) di kotak teks di bawah ini.</li>
+                  </ol>
+                </div>
+
+                {/* Upload or Area Input */}
+                <div className="flex flex-col gap-1.5">
+                  <div className="flex justify-between items-center">
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metode Tempel Data (Copy-Paste) atau Unggah CSV/TXT</span>
+                    <label className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer">
+                      <span>📁 Unggah Berkas</span>
+                      <input
+                        type="file"
+                        accept=".csv,.tsv,.txt"
+                        className="hidden"
+                        onChange={handleFileUpload}
+                      />
+                    </label>
+                  </div>
+                  <textarea
+                    rows={8}
+                    value={excelPasteContent}
+                    onChange={(e) => setExcelPasteContent(e.target.value)}
+                    placeholder="NIS&#9;Nama&#9;Nilai TP1&#9;Nilai TP2&#9;Nilai TP3&#9;Nilai LM&#9;Nilai SAS&#10;24001&#9;Achmad Fauzi&#9;85&#9;80&#9;90&#9;88&#9;82"
+                    className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-3 font-mono text-xs bg-slate-50/50 leading-relaxed"
+                  />
+                </div>
+
+                {excelParseError && (
+                  <div className="p-3 bg-rose-50 border border-rose-150 text-rose-800 rounded-xl text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle size={14} className="text-rose-600 shrink-0" />
+                    <span>{excelParseError}</span>
+                  </div>
+                )}
+
+                {/* Parse Action Button */}
+                <div className="flex justify-start">
+                  <button
+                    type="button"
+                    onClick={handleImportExcelData}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer"
+                  >
+                    MOCK & REVIEW DATA COCOK
+                  </button>
+                </div>
+
+                {/* Matches Preview */}
+                {excelParsedPreview.length > 0 && (
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden mt-2">
+                    <div className="bg-slate-50 px-4 py-2 border-b border-slate-200 flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">Hasil Pemetaan Siswa ({excelParsedPreview.filter(p=>p.matched).length} matched)</span>
+                    </div>
+                    <div className="max-h-[220px] overflow-y-auto">
+                      <table className="w-full text-[11px] border-collapse text-left">
+                        <thead>
+                          <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
+                            <th className="py-2 px-3">NIS</th>
+                            <th className="py-2 px-3">Nama Input</th>
+                            <th className="py-2 px-2 text-center">TP1</th>
+                            <th className="py-2 px-2 text-center">TP2</th>
+                            <th className="py-2 px-2 text-center">TP3</th>
+                            <th className="py-2 px-2 text-center">Sum LM</th>
+                            <th className="py-2 px-2 text-center">SAS</th>
+                            <th className="py-2 px-3 text-right">Status Match</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {excelParsedPreview.map((item, idx) => (
+                            <tr key={idx} className={`border-b border-slate-100 ${item.matched ? 'bg-emerald-50/30' : 'bg-rose-50/30'}`}>
+                              <td className="py-1.5 px-3 font-mono">{item.nis || "-"}</td>
+                              <td className="py-1.5 px-3 font-bold text-slate-800">{item.studentName}</td>
+                              <td className="py-1.5 px-2 text-center">{item.tp1Grade}</td>
+                              <td className="py-1.5 px-2 text-center">{item.tp2Grade ?? "-"}</td>
+                              <td className="py-1.5 px-2 text-center">{item.tp3Grade ?? "-"}</td>
+                              <td className="py-1.5 px-2 text-center">{item.nilaiSumatifLM}</td>
+                              <td className="py-1.5 px-2 text-center">{item.nilaiSAS}</td>
+                              <td className="py-1.5 px-3 text-right">
+                                {item.matched ? (
+                                  <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-black text-[9px] rounded-md uppercase">Terdaftar</span>
+                                ) : (
+                                  <span className="px-1.5 py-0.5 bg-rose-100 text-rose-800 font-black text-[9px] rounded-md uppercase">Tidak Cocok</span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-150 flex justify-end gap-2">
+                <button
+                  type="button"
+                  onClick={() => setShowExcelModal(false)}
+                  className="px-4 py-2 border border-slate-200 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl font-bold text-xs cursor-pointer transition-all"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  disabled={excelParsedPreview.filter(p => p.matched).length === 0}
+                  onClick={applyExcelImportToState}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl cursor-pointer transition-all flex items-center gap-1.5"
+                >
+                  <Check size={13} />
+                  <span>TERAPKAN NILAI SEKARANG</span>
+                </button>
               </div>
             </motion.div>
           </div>
@@ -1638,15 +2802,7 @@ export default function SubjectTeacherPanel({
                           <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Tujuan Pembelajaran</th>
                           <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Materi Pembelajaran</th>
                           <th className="border border-slate-900 px-1.5 py-3 text-[9px]" style={{ width: '8%', border: '1px solid #000' }}>Pencapaian KKTP</th>
-                          <th className="border border-slate-900 px-1 py-1 text-[9px]" colSpan={4} style={{ width: '15%', border: '1px solid #000' }}>
-                            <div className="border-b border-slate-900 pb-1 mb-1 font-bold text-center">Absensi</div>
-                            <div className="grid grid-cols-[60%_13.3%_13.3%_13.3%] text-[8px] font-black text-center tracking-tighter">
-                              <span className="text-left pl-1">Nama</span>
-                              <span>S</span>
-                              <span>I</span>
-                              <span>A</span>
-                            </div>
-                          </th>
+                          <th className="border border-slate-900 px-1.5 py-3 text-[10px]" style={{ width: '15%', border: '1px solid #000' }}>Rekap Presensi KBM</th>
                           <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '10%', border: '1px solid #000' }}>Keterangan</th>
                         </tr>
                       </thead>
@@ -1676,42 +2832,23 @@ export default function SubjectTeacherPanel({
                               {journalToPrint.pencapaianKktp || "Tercapai"}
                             </td>
                             
-                            {/* Absensi sub-table renderer */}
-                            <td colSpan={4} className="border border-slate-900 p-0 text-left align-top font-mono" style={{ border: '1px solid #000' }}>
+                            {/* Absensi sub-table renderer reconstituted as a recap summary */}
+                            <td className="border border-slate-900 px-2 py-2.5 text-center font-mono" style={{ border: '1px solid #000' }}>
                               {(() => {
-                                const absents = journalToPrint.attendance.filter(
-                                  att => att.status === 'Sakit' || att.status === 'Izin' || att.status === 'Alpa'
-                                );
-                                if (absents.length === 0) {
-                                  return (
-                                    <div className="text-center text-slate-400 font-bold italic py-3 select-none text-[8px]">
-                                      Nihil (Hadir Semua)
-                                    </div>
-                                  );
-                                }
+                                const total = journalToPrint.attendance.length;
+                                const h = journalToPrint.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                                const s = journalToPrint.attendance.filter(a => a.status === 'Sakit').length;
+                                const i = journalToPrint.attendance.filter(a => a.status === 'Izin').length;
+                                const a = journalToPrint.attendance.filter(a => a.status === 'Alpa').length;
+
                                 return (
-                                  <table className="w-full border-collapse text-[8px] leading-tight">
-                                    <tbody>
-                                      {absents.map((abs, sIdx) => {
-                                        return (
-                                          <tr key={sIdx} className={sIdx > 0 ? "border-t border-slate-300" : ""}>
-                                            <td className="px-1 py-1 text-left font-sans font-bold truncate max-w-[50px] text-slate-900" style={{ width: '60%', borderRight: '1px solid #000' }}>
-                                              {abs.studentName}
-                                            </td>
-                                            <td className="py-1 text-center font-bold text-amber-600" style={{ width: '13.3%', borderRight: '1px solid #000' }}>
-                                              {abs.status === 'Sakit' ? '✔' : ''}
-                                            </td>
-                                            <td className="py-1 text-center font-bold text-blue-600" style={{ width: '13.3%', borderRight: '1px solid #000' }}>
-                                              {abs.status === 'Izin' ? '✔' : ''}
-                                            </td>
-                                            <td className="py-1 text-center font-bold text-rose-600" style={{ width: '13.3%' }}>
-                                              {abs.status === 'Alpa' ? '✔' : ''}
-                                            </td>
-                                          </tr>
-                                        );
-                                      })}
-                                    </tbody>
-                                  </table>
+                                  <div className="text-[8px] leading-tight flex flex-col items-center">
+                                    <span className="font-bold">Total: {total}</span>
+                                    <span className="text-emerald-750 font-bold">H: {h}</span>
+                                    {s > 0 && <span className="text-amber-600 font-medium">S: {s}</span>}
+                                    {i > 0 && <span className="text-blue-600 font-medium">I: {i}</span>}
+                                    {a > 0 && <span className="text-rose-600 font-black">A: {a}</span>}
+                                  </div>
                                 );
                               })()}
                             </td>
@@ -1751,67 +2888,183 @@ export default function SubjectTeacherPanel({
         )}
       </AnimatePresence>
 
-      {/* Mobile Floating Bottom Navigation Bar */}
-      <div className="md:hidden fixed bottom-0 inset-x-0 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.06)] px-2 py-1.5 flex justify-around items-center z-40 no-print select-none">
+      {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) ================= */}
+      <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-2 flex md:hidden justify-around items-center h-16 no-print select-none">
+        {/* Menu 1 (Home - paling kiri) */}
         <button
           type="button"
-          onClick={() => { setActiveSubTab('create'); setFeedback(null); }}
-          className={`flex flex-col items-center justify-center gap-1.5 py-1 px-3 transition-colors cursor-pointer ${
-            activeSubTab === 'create'
-              ? 'text-indigo-600 font-black'
-              : 'text-slate-500'
-          }`}
+          onClick={() => {
+            setActiveSubTab('create');
+            setFeedback(null);
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <ClipboardCheck size={20} className={activeSubTab === 'create' ? 'text-indigo-600' : ''} />
-          <span className="text-[9px] text-center font-bold tracking-tight leading-none">Jurnal & Absensi</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setActiveSubTab('history'); setFeedback(null); }}
-          className={`flex flex-col items-center justify-center gap-1.5 py-1 px-3 transition-colors cursor-pointer ${
-            activeSubTab === 'history'
-              ? 'text-indigo-600 font-black'
-              : 'text-slate-500'
-          }`}
-        >
-          <History size={20} className={activeSubTab === 'history' ? 'text-indigo-600' : ''} />
-          <span className="text-[9px] text-center font-bold tracking-tight leading-none">Riwayat Jurnal</span>
-        </button>
-
-        <button
-          type="button"
-          onClick={() => { setActiveSubTab('notifications'); setFeedback(null); }}
-          className={`flex flex-col items-center justify-center gap-1.5 py-1 px-3 transition-colors cursor-pointer relative ${
-            activeSubTab === 'notifications'
-              ? 'text-indigo-600 font-black'
-              : 'text-slate-500'
-          }`}
-        >
-          <div className="relative">
-            <Bell size={20} className={activeSubTab === 'notifications' ? 'text-indigo-600' : ''} />
-            {systemNotifications.length > 0 && (
-              <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-[8px] font-black text-white leading-none">
-                {systemNotifications.length}
-              </span>
-            )}
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'create' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <Home size={20} className={activeSubTab === 'create' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className="text-[9px] text-center font-bold tracking-tight leading-none">Notifikasi</span>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'create' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Home</span>
         </button>
 
+        {/* Menu 2 (Riwayat Jurnal) */}
         <button
           type="button"
-          onClick={() => { setActiveSubTab('profile'); setFeedback(null); }}
-          className={`flex flex-col items-center justify-center gap-1.5 py-1 px-3 transition-colors cursor-pointer ${
-            activeSubTab === 'profile'
-              ? 'text-indigo-600 font-black'
-              : 'text-slate-500'
-          }`}
+          onClick={() => {
+            setActiveSubTab('history');
+            setFeedback(null);
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <User size={20} className={activeSubTab === 'profile' ? 'text-indigo-600' : ''} />
-          <span className="text-[9px] text-center font-bold tracking-tight leading-none font-sans">Profil</span>
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'history' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <History size={20} className={activeSubTab === 'history' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'history' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Riwayat</span>
+        </button>
+
+        {/* Menu 3 (Notifikasi) */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveSubTab('notifications');
+            setFeedback(null);
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'notifications' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <div className="relative">
+              <Bell size={20} className={activeSubTab === 'notifications' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+              {systemNotifications.length > 0 && (
+                <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5 items-center justify-center rounded-full bg-rose-500 text-[8px] font-black text-white leading-none">
+                  {systemNotifications.length}
+                </span>
+              )}
+            </div>
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'notifications' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Notifikasi</span>
+        </button>
+
+        {/* Menu 4 (Penilaian Merdeka) */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveSubTab('penilaian');
+            setFeedback(null);
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeSubTab === 'penilaian' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <BookOpen size={20} className={activeSubTab === 'penilaian' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeSubTab === 'penilaian' ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Nilai</span>
+        </button>
+
+        {/* Menu 5 (Lainnya - 4 kotak, paling kanan) */}
+        <button
+          type="button"
+          onClick={() => setShowMoreMenu(prev => !prev)}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${(activeSubTab === 'profile' || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(activeSubTab === 'profile' || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${(activeSubTab === 'profile' || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
+
+      {/* Slide-over menu bottom sheet overlay for "Lainnya" */}
+      <AnimatePresence>
+        {showMoreMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.3 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMoreMenu(false)}
+              className="fixed inset-0 z-40 bg-black"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10"
+            >
+              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Lainnya</span>
+                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Guru Mapel</h4>
+                </div>
+                <button
+                  onClick={() => setShowMoreMenu(false)}
+                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('profile');
+                    setFeedback(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeSubTab === 'profile'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">👤</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Profil Saya</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Detail pendidik, verifikasi mata pelajaran, &amp; atur sandi</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('pkg');
+                    setFeedback(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeSubTab === 'pkg'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖️</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Evaluasi PKG</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru berkala dari Kepala Sekolah</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onLogout();
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
+                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Akhiri sesi login guru mata pelajaran dengan aman</p>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

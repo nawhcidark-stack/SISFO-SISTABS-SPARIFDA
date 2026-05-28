@@ -9,7 +9,7 @@ import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc } from "fireb
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment } from "./src/types";
 
 // Setup serverport
 const PORT = process.env.PORT || 3000;
@@ -55,6 +55,7 @@ const students: Student[] = [
 ];
 
 const sppBills: SppBill[] = [];
+const treasurerTransactions: TreasurerTransaction[] = [];
 const savingsTransactions: SavingsTransaction[] = [];
 const notifications: RealtimeNotification[] = [
   {
@@ -111,6 +112,328 @@ const teachingJournals: TeachingJournal[] = [
   }
 ];
 
+const studentDevelopmentLogs: StudentDevelopmentLog[] = [
+  {
+    id: "sdl-1",
+    studentId: "std-1",
+    studentName: "Ahmad Fauzi",
+    className: "7-A",
+    date: "2026-05-25",
+    category: "Akademik",
+    notes: "Siswa menunjukkan peningkatan pesat dalam memahami materi Matematika Aljabar.",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "sdl-2",
+    studentId: "std-2",
+    studentName: "Siti Aminah",
+    className: "7-A",
+    date: "2026-05-26",
+    category: "Sikap",
+    notes: "Sangat aktif membantu teman sekelas dalam kerja kelompok (Peer tutoring).",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const studentInfractionLogs: StudentInfractionLog[] = [
+  {
+    id: "sil-1",
+    studentId: "std-1",
+    studentName: "Ahmad Fauzi",
+    className: "7-A",
+    date: "2026-05-24",
+    time: "07:30",
+    location: "Gerbang Sekolah",
+    infractionType: "Terlambat masuk sekolah tanpa keterangan sah",
+    actionTaken: "Pemberian teguran lisan & pencatatan poin kedisiplinan ringan",
+    resolutionStatus: "Selesai",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "sil-2",
+    studentId: "std-1",
+    studentName: "Ahmad Fauzi",
+    className: "7-A",
+    date: "2026-05-26",
+    time: "10:15",
+    location: "Kelas 7-A",
+    infractionType: "Membawa & menggunakan handphone saat KBM tanpa izin guru",
+    actionTaken: "Handphone disita sementara, diserahkan ke wali kelas, pemanggilan siswa untuk bimbingan",
+    resolutionStatus: "Dalam Proses",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const studentCounselingLogs: StudentCounselingLog[] = [
+  {
+    id: "scl-1",
+    studentId: "std-1",
+    studentName: "Ahmad Fauzi",
+    className: "7-A",
+    date: "2026-05-26",
+    topic: "Konseling kedisiplinan dan fokus belajar terkait insiden membawa handphone ke kelas",
+    actionPlan: "Siswa menandatangani surat janji lisan tidak membawa handphone di luar izin sekolah, diberikan pendampingan motivasi belajar",
+    result: "Siswa menyadari kesalahannya, bersikap kooperatif, berjanji untuk lebih fokus saat KBM",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const infractionRules: any[] = [
+  { id: "ir-1", name: "Terlambat masuk sekolah tanpa keterangan sah", points: 5, category: "Ringan" },
+  { id: "ir-2", name: "Membawa & menggunakan handphone saat KBM tanpa izin guru", points: 10, category: "Sedang" },
+  { id: "ir-3", name: "Merokok di area sekolah / berseragam sekolah", points: 25, category: "Sedang" },
+  { id: "ir-4", name: "Terlibat dalam perkelahian / tawuran antar pelajar", points: 75, category: "Berat" },
+  { id: "ir-5", name: "Melakukan bullying / perundungan verbal maupun fisik", points: 50, category: "Berat" }
+];
+
+const classAnnouncements: ClassAnnouncement[] = [
+  {
+    id: "ca-1",
+    className: "7-A",
+    title: "Pengumuman Persiapan Ulangan Harian Bersama",
+    content: "Diimbau bagi seluruh siswa kelas 7-A untuk mempersiapkan diri menghadapi ulangan kompetensi Matematika dan IPA minggu depan. Harap membawa alat tulis lengkap.",
+    date: "2026-05-27",
+    targetRecipient: "Semua",
+    confirmationStatus: "Sebagian Terbaca",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const classMeetingLogs: ClassMeetingLog[] = [
+  {
+    id: "cml-1",
+    className: "7-A",
+    meetingType: "Rapat Orang Tua",
+    date: "2026-05-15",
+    attendees: "Wali Kelas 7-A & 25 Orang Tua/Wali Murid",
+    agenda: "Sosialisasi program parenting digital siswa, pembagian laporan kemajuan tengah semester, koordinasi SPP bulanan",
+    followUp: "Pembentukan koordinator paguyuban kelas untuk koordinasi komunikasi cepat via WhatsApp Group",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const merdekaAssessments: MerdekaAssessment[] = [
+  {
+    id: "ma-1",
+    studentId: "std-1",
+    studentName: "Ahmad Fauzi",
+    className: "7-A",
+    subject: "Matematika",
+    teacherName: "Drs. Heru Setyawan, M.Pd",
+    semester: "Genap",
+    academicYear: "2025/2026",
+    tp1Name: "Persamaan Linear Satu Variabel",
+    tp1Grade: 88,
+    tp2Name: "Pertidaksamaan Linear Satu Variabel",
+    tp2Grade: 75,
+    tp3Name: "Perbandingan dan Skala",
+    tp3Grade: 82,
+    nilaiFormatif: 82,
+    nilaiSumatifLM: 80,
+    nilaiSAS: 85,
+    nilaiRapor: 82,
+    deskripsiCapaian: "Menunjukkan pemahaman yang sangat baik dalam Persamaan Linear Satu Variabel. Perlu pendampingan lebih lanjut dalam Pertidaksamaan Linear Satu Variabel.",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "ma-2",
+    studentId: "std-2",
+    studentName: "Siti Aminah",
+    className: "7-A",
+    subject: "Matematika",
+    teacherName: "Drs. Heru Setyawan, M.Pd",
+    semester: "Genap",
+    academicYear: "2025/2026",
+    tp1Name: "Persamaan Linear Satu Variabel",
+    tp1Grade: 92,
+    tp2Name: "Pertidaksamaan Linear Satu Variabel",
+    tp2Grade: 88,
+    tp3Name: "Perbandingan dan Skala",
+    tp3Grade: 90,
+    nilaiFormatif: 90,
+    nilaiSumatifLM: 92,
+    nilaiSAS: 94,
+    nilaiRapor: 92,
+    deskripsiCapaian: "Menunjukkan pemahaman yang sangat baik dalam seluruh materi, khususnya Persamaan Linear Satu Variabel.",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const principalWorkPrograms: any[] = [
+  {
+    id: "pwp-1",
+    title: "Peningkatan Kompetensi Digital Guru",
+    description: "Pelatihan pemanfaatan AI-assisted grading dan e-learning Kurikulum Merdeka untuk menunjang KBM interaktif guru-guru SMP Ma'arif NU Pandaan.",
+    targetDate: "2026-06-15",
+    status: "active",
+    syncWithStaff: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "pwp-2",
+    title: "Akreditasi Sekolah & Audit Sarpras",
+    description: "Peninjauan berkas kesiapan akreditasi perpustakaan digital dan laboratorium komputer SMP Ma'arif NU Pandaan.",
+    targetDate: "2026-08-10",
+    status: "planned",
+    syncWithStaff: true,
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "pwp-3",
+    title: "Penyusunan Rapor Kegiatan Tengah Semester",
+    description: "Verifikasi kelayakan Rapor Kurikulum Merdeka dan keselarasan asessment formatif ditiap jenjang kelas 7, 8, dan 9.",
+    targetDate: "2026-05-30",
+    status: "active",
+    syncWithStaff: true,
+    createdAt: new Date().toISOString()
+  }
+];
+
+const teacherEvaluations: any[] = [
+  {
+    id: "te-1",
+    teacherType: "homeroom",
+    teacherId: "ht-1",
+    teacherName: "Budi Santoso, S.Pd",
+    evaluatorName: "H. Ahmad Fuad, S.Pd, M.PdI",
+    date: "2026-05-20",
+    academicYear: "2025/2026",
+    pedagogicScore: 92,
+    professionalScore: 88,
+    personalScore: 95,
+    socialScore: 90,
+    notes: "Sangat baik dalam pengelolaan kelas 7-A dan memiliki kepribadian serta interaksi sosial yang hangat bersama murid dan wali murid. Perlu mempertahankan materi ajar digital demi memicu inovasi tinggi.",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "te-2",
+    teacherType: "subject_teacher",
+    teacherId: "st-1",
+    teacherName: "Drs. Heru Setyawan, M.Pd",
+    evaluatorName: "H. Ahmad Fuad, S.Pd, M.PdI",
+    date: "2026-05-22",
+    academicYear: "2025/2026",
+    pedagogicScore: 89,
+    professionalScore: 91,
+    personalScore: 88,
+    socialScore: 87,
+    notes: "Kemampuan memahamkan siswa terhadap konsep-konsep Aljabar dan Persamaan Linear sangat baik. Disarankan mengintegrasikan alat peraga digital interaktif.",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const sarprasItems: any[] = [
+  {
+    id: "item-1",
+    name: "Proyektor Epson EB-X400",
+    code: "INV/EP/X400/01",
+    category: "Elektronik / Multimedia",
+    condition: "Baik",
+    location: "Gudang Multimedia",
+    totalQty: 5,
+    availableQty: 3,
+    price: 5200000
+  },
+  {
+    id: "item-2",
+    name: "Layar Projector Tripod 70 inch",
+    code: "INV/SCR/L150/02",
+    category: "Multimedia",
+    condition: "Baik",
+    location: "Lab Komputer 1",
+    totalQty: 3,
+    availableQty: 2,
+    price: 1400000
+  },
+  {
+    id: "item-3",
+    name: "Laptop Acer Aspire 3 Intel Core i3",
+    code: "INV/LP/AC/05",
+    category: "Elektronik / Komputer",
+    condition: "Baik",
+    location: "Ruang BK",
+    totalQty: 4,
+    availableQty: 4,
+    price: 7500000
+  },
+  {
+    id: "item-4",
+    name: "Wireless Microphone Shure SVX24",
+    code: "INV/MIC/SH-300",
+    category: "Audio / Elektronik",
+    condition: "Rusak Ringan",
+    location: "Lab Musik",
+    totalQty: 2,
+    availableQty: 2,
+    price: 1950000
+  },
+  {
+    id: "item-5",
+    name: "Speaker Portable Polytron PTS-112",
+    code: "INV/SPK/POL-10",
+    category: "Audio / Elektronik",
+    condition: "Baik",
+    location: "Lab Bahasa",
+    totalQty: 2,
+    availableQty: 1,
+    price: 2800000
+  }
+];
+
+const sarprasProposals: any[] = [
+  {
+    id: "proposal-1",
+    itemName: "Whiteboard Baru Magnetic (Kelas 7-B & 7-C)",
+    qty: 2,
+    estimatedPrice: 350000,
+    totalPrice: 700000,
+    proposedBy: "Waka Sarpras",
+    date: "2026-05-24",
+    reason: "Papan tulis kelas 7-B sudah buram dan tidak bisa dibersihkan",
+    status: "approved",
+    notes: "Disetujui. Silakan dikoordinasikan dengan Bendahara.",
+    createdAt: new Date().toISOString()
+  },
+  {
+    id: "proposal-2",
+    itemName: "10 Unit Chromebook Lenovo Belajar",
+    qty: 10,
+    estimatedPrice: 3500000,
+    totalPrice: 35000000,
+    proposedBy: "Waka Sarpras",
+    date: "2026-05-26",
+    reason: "Kekurangan perangkat untuk pelaksanaan Asesmen Nasional (ANBK) Mandiri",
+    status: "pending",
+    notes: "",
+    createdAt: new Date().toISOString()
+  }
+];
+
+const sarprasLoans: any[] = [
+  {
+    id: "loan-1",
+    itemId: "item-1",
+    itemName: "Proyektor Epson EB-X400",
+    borrowerId: "st-1",
+    borrowerName: "Drs. Heru Setyawan, M.Pd",
+    qty: 1,
+    loanDate: "2026-05-26",
+    status: "dipinjam",
+    notes: "Untuk pelajaran aljabar kelas 7-A"
+  },
+  {
+    id: "loan-2",
+    itemId: "item-5",
+    itemName: "Speaker Portable Polytron PTS-112",
+    borrowerId: "st-2",
+    borrowerName: "Ibu Lindawati, S.Pd",
+    qty: 1,
+    loanDate: "2026-05-27",
+    status: "dipinjam",
+    notes: "Listening practice kelas 8-B"
+  }
+];
+
 // Pre-populate SPP bills (Juli 2025 to Juni 2026)
 const months = [
   "Juli", "Agustus", "September", "Oktober", "November", "Desember",
@@ -132,7 +455,7 @@ let schoolIdentity = {
   address: "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan, Jawa Timur",
   phone: "(0343) 631234",
   principal: "H. Ahmad Fuad, S.Pd, M.PdI",
-  treasurer: "Bendahara Madrasah NU",
+  treasurer: "Bendahara Sekolah NU",
   logo: "", // base64 string or image url containing the school logo
   logo2: "", // base64 string or image url containing the second school logo
   letterhead: "", // base64 string or image url containing the school kop surat
@@ -150,6 +473,27 @@ let whatsappConfig = {
   notifyOnBilling: true, // Auto send WA on new billing statement creation
   notifyOnPayment: true,  // Auto send WA when payment succeeds (online/offline)
   notifyOnSavings: true   // Auto send WA when deposit/withdrawal of savings succeeds
+};
+
+// Treasurer/Bendahara Credentials Config
+let treasurerConfig = {
+  password: "bendahara123"
+};
+
+// Kepala Sekolah Credentials Config
+let principalConfig = {
+  password: "kepala123"
+};
+
+// Server configuration values (Midtrans Keys)
+let midtransConfig: MidtransConfig = {
+  merchantId: process.env.MIDTRANS_MERCHANT_ID || "",
+  clientKey: process.env.MIDTRANS_CLIENT_KEY || "",
+  serverKey: process.env.MIDTRANS_SERVER_KEY || "",
+  isProduction: false,
+  adminFee: 4000,
+  systemMaintenanceFee: 1500,
+  chargeFeesToUser: true
 };
 
 // Helper to determine tuition SPP amount based on student class/level
@@ -294,11 +638,17 @@ async function saveStateToFirestore() {
     for (const item of homeroomTeachers) {
       await saveDocToFirestore("homeroomTeachers", item.id, item);
     }
+    // Save treasurerTransactions
+    for (const item of treasurerTransactions) {
+      await saveDocToFirestore("treasurerTransactions", item.id, item);
+    }
     // Save all key configuration documents
     await saveDocToFirestore("configs", "sppRates", sppRates);
     await saveDocToFirestore("configs", "schoolIdentity", schoolIdentity);
     await saveDocToFirestore("configs", "midtransConfig", midtransConfig);
     await saveDocToFirestore("configs", "whatsappConfig", whatsappConfig);
+    await saveDocToFirestore("configs", "treasurerConfig", treasurerConfig);
+    await saveDocToFirestore("configs", "principalConfig", principalConfig);
 
     console.log("All state collections synced to Firestore.");
   } catch (err) {
@@ -377,6 +727,15 @@ async function syncWithFirestore() {
         handleFirestoreError(err, OperationType.GET, "homeroomTeachers");
       }
 
+      // Clear and populate treasurerTransactions
+      try {
+        const bndSnap = await getDocs(collection(db, "treasurerTransactions"));
+        treasurerTransactions.length = 0;
+        bndSnap.forEach(d => treasurerTransactions.push(d.data() as TreasurerTransaction));
+      } catch (err) {
+        handleFirestoreError(err, OperationType.GET, "treasurerTransactions");
+      }
+
       // Populate config settings
       try {
         const configSnap = await getDocs(collection(db, "configs"));
@@ -387,6 +746,8 @@ async function syncWithFirestore() {
           else if (cid === "schoolIdentity") Object.assign(schoolIdentity, cdata);
           else if (cid === "midtransConfig") Object.assign(midtransConfig, cdata);
           else if (cid === "whatsappConfig") Object.assign(whatsappConfig, cdata);
+          else if (cid === "treasurerConfig") Object.assign(treasurerConfig, cdata);
+          else if (cid === "principalConfig") Object.assign(principalConfig, cdata);
         });
       } catch (err) {
         handleFirestoreError(err, OperationType.GET, "configs");
@@ -423,10 +784,25 @@ function saveState() {
       schoolIdentity,
       midtransConfig,
       whatsappConfig,
+      treasurerConfig,
+      principalConfig,
       attendanceLogs,
       homeroomTeachers,
       subjectTeachers,
-      teachingJournals
+      teachingJournals,
+      treasurerTransactions,
+      studentDevelopmentLogs,
+      studentInfractionLogs,
+      studentCounselingLogs,
+      classAnnouncements,
+      classMeetingLogs,
+      merdekaAssessments,
+      principalWorkPrograms,
+      teacherEvaluations,
+      infractionRules,
+      sarprasItems,
+      sarprasProposals,
+      sarprasLoans
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
     // Asynchronously update to Firestore
@@ -492,10 +868,109 @@ function loadState() {
         teachingJournals.length = 0;
         teachingJournals.push(...data.teachingJournals);
       }
+      if (Array.isArray(data.studentDevelopmentLogs)) {
+        studentDevelopmentLogs.length = 0;
+        studentDevelopmentLogs.push(...data.studentDevelopmentLogs);
+      }
+      if (Array.isArray(data.studentInfractionLogs)) {
+        studentInfractionLogs.length = 0;
+        studentInfractionLogs.push(...data.studentInfractionLogs);
+      }
+      if (Array.isArray(data.studentCounselingLogs)) {
+        studentCounselingLogs.length = 0;
+        studentCounselingLogs.push(...data.studentCounselingLogs);
+      }
+      if (Array.isArray(data.classAnnouncements)) {
+        classAnnouncements.length = 0;
+        classAnnouncements.push(...data.classAnnouncements);
+      }
+      if (Array.isArray(data.classMeetingLogs)) {
+        classMeetingLogs.length = 0;
+        classMeetingLogs.push(...data.classMeetingLogs);
+      }
+      if (Array.isArray(data.merdekaAssessments)) {
+        merdekaAssessments.length = 0;
+        merdekaAssessments.push(...data.merdekaAssessments);
+      }
+      if (Array.isArray(data.principalWorkPrograms)) {
+        principalWorkPrograms.length = 0;
+        principalWorkPrograms.push(...data.principalWorkPrograms);
+      }
+      if (Array.isArray(data.teacherEvaluations)) {
+        teacherEvaluations.length = 0;
+        teacherEvaluations.push(...data.teacherEvaluations);
+      }
+      if (Array.isArray(data.infractionRules)) {
+        infractionRules.length = 0;
+        infractionRules.push(...data.infractionRules);
+      }
+      if (Array.isArray(data.sarprasItems)) {
+        sarprasItems.length = 0;
+        sarprasItems.push(...data.sarprasItems);
+      }
+      if (Array.isArray(data.sarprasProposals)) {
+        sarprasProposals.length = 0;
+        sarprasProposals.push(...data.sarprasProposals);
+      }
+      if (Array.isArray(data.sarprasLoans)) {
+        sarprasLoans.length = 0;
+        sarprasLoans.push(...data.sarprasLoans);
+      }
+      if (Array.isArray(data.treasurerTransactions)) {
+        treasurerTransactions.length = 0;
+        treasurerTransactions.push(...data.treasurerTransactions);
+      } else {
+        // Initial mock data if empty
+        treasurerTransactions.length = 0;
+        treasurerTransactions.push(
+          {
+            id: "tx-bnd-1",
+            type: "incoming",
+            category: "Operasional",
+            amount: 15000000,
+            description: "Penerimaan Dana BOS Reguler Tahap I Tahun 2026",
+            date: "2026-05-10",
+            source: "custom",
+            createdBy: "Sistem (BOS)"
+          },
+          {
+            id: "tx-bnd-2",
+            type: "outgoing",
+            category: "Gaji Guru",
+            amount: 4500000,
+            description: "Honorarium Guru GTT & Pegawai PTT Bulan April",
+            date: "2026-05-02",
+            source: "custom",
+            createdBy: "bendahara"
+          },
+          {
+            id: "tx-bnd-3",
+            type: "outgoing",
+            category: "Pembangunan",
+            amount: 2500050,
+            description: "Pembelian Semen & Pasir Renovasi Musholla",
+            date: "2026-05-15",
+            source: "custom",
+            createdBy: "bendahara"
+          },
+          {
+            id: "tx-bnd-4",
+            type: "incoming",
+            category: "Lainnya",
+            amount: 1200000,
+            description: "Pihak Ketiga - Sumbangan Alumni Peduli Pendidikan",
+            date: "2026-05-18",
+            source: "custom",
+            createdBy: "bendahara"
+          }
+        );
+      }
       if (data.sppRates) Object.assign(sppRates, data.sppRates);
       if (data.schoolIdentity) Object.assign(schoolIdentity, data.schoolIdentity);
       if (data.midtransConfig) Object.assign(midtransConfig, data.midtransConfig);
       if (data.whatsappConfig) Object.assign(whatsappConfig, data.whatsappConfig);
+      if (data.treasurerConfig) Object.assign(treasurerConfig, data.treasurerConfig);
+      if (data.principalConfig) Object.assign(principalConfig, data.principalConfig);
       console.log("State loaded successfully from database");
       return true;
     }
@@ -516,6 +991,9 @@ if (isLoaded) {
       // Make bills before Maret 2026 paid
       const isPaid = mIdx < 8; // Juli - Februari paid
       const mappedAmount = getSppAmountForClass(student.class);
+      const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
+      const isJuly = month === "Juli";
+      const isRegPaid = isGrade7 && isJuly;
 
       sppBills.push({
         id: `bill-${student.id}-${mIdx}`,
@@ -525,8 +1003,8 @@ if (isLoaded) {
         amount: mappedAmount,
         status: isPaid ? "paid" : "unpaid",
         paidAt: isPaid ? new Date(2025, 6 + mIdx, 10, 14, 30).toISOString() : undefined,
-        paymentMethod: isPaid ? "Manual Teller" : undefined,
-        orderId: isPaid ? `ORD-MANUAL-${student.id}-${mIdx}` : undefined
+        paymentMethod: isPaid ? (isRegPaid ? "Lunas Pendaftaran" : "Manual Teller") : undefined,
+        orderId: isPaid ? (isRegPaid ? `ORD-REGISTRATION-${student.id}` : `ORD-MANUAL-${student.id}-${mIdx}`) : undefined
       });
     });
 
@@ -557,17 +1035,6 @@ if (isLoaded) {
   // Save base initialization
   saveState();
 }
-
-// Server configuration values (Midtrans Keys)
-let midtransConfig: MidtransConfig = {
-  merchantId: process.env.MIDTRANS_MERCHANT_ID || "",
-  clientKey: process.env.MIDTRANS_CLIENT_KEY || "",
-  serverKey: process.env.MIDTRANS_SERVER_KEY || "",
-  isProduction: false,
-  adminFee: 4000,
-  systemMaintenanceFee: 1500,
-  chargeFeesToUser: true
-};
 
 // SSE Client list
 let sseClients: any[] = [];
@@ -969,6 +1436,156 @@ async function startServer() {
     res.json({ success: true, message: "Kata sandi berhasil disimpan." });
   });
 
+  // Treasurer/Bendahara Credentials Validation Endpoints
+  app.post("/api/treasurer/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username dan password wajib diisi." });
+    }
+    if (username.slice().toLowerCase() === "bendahara" && password === treasurerConfig.password) {
+      res.json({ success: true, message: "Login Bendahara berhasil." });
+    } else {
+      res.status(401).json({ error: "Password Bendahara salah. Coba periksa kembali password Anda atau hubungi admin." });
+    }
+  });
+
+  app.post("/api/treasurer/change-password", (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    if (oldPassword !== treasurerConfig.password) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
+    }
+    treasurerConfig.password = newPassword.trim();
+    saveState();
+    
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-treasurer-${Date.now()}`,
+      title: "Sandi Akun Bendahara Berubah 🔑",
+      message: `Password akun Bendahara baru saja diperbarui melalui portal bendahara keamanan.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Kata sandi Bendahara sukses disimpan." });
+  });
+
+  app.post("/api/admin/treasurer/reset-password", (req, res) => {
+    treasurerConfig.password = "bendahara123";
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-treasurer-reset-${Date.now()}`,
+      title: "Sandi Bendahara Direset 🔒",
+      message: `Akun Bendahara disetel ulang ke sandi bawaan (bendahara123) oleh Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Password Bendahara berhasil di-reset ke sandi bawaan: bendahara123" });
+  });
+
+  app.post("/api/admin/treasurer/change-password", (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    treasurerConfig.password = newPassword.trim();
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-treasurer-admin-${Date.now()}`,
+      title: "Sandi Bendahara Diubah Admin 🔑",
+      message: `Password akun Bendahara telah disetel oleh Kepala/Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Sandi Bendahara sukses diperbarui." });
+  });
+
+  // Principal/Kepala Sekolah Credentials Validation Endpoints
+  app.post("/api/principal/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username dan password wajib diisi." });
+    }
+    if (username.slice().toLowerCase() === "kepala" && password === principalConfig.password) {
+      res.json({ success: true, message: "Login Kepala Sekolah berhasil." });
+    } else {
+      res.status(401).json({ error: "Password Kepala Sekolah salah. Coba periksa kembali password Anda atau hubungi admin." });
+    }
+  });
+
+  app.post("/api/principal/change-password", (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    if (oldPassword !== principalConfig.password) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
+    }
+    principalConfig.password = newPassword.trim();
+    saveState();
+    
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-principal-${Date.now()}`,
+      title: "Sandi Akun Kepala Sekolah Berubah 🔑",
+      message: `Password akun Kepala Sekolah baru saja diperbarui melalui portal keamanan pribadi.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Kata sandi Kepala Sekolah sukses disimpan." });
+  });
+
+  app.post("/api/admin/principal/reset-password", (req, res) => {
+    principalConfig.password = "kepala123";
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-principal-reset-${Date.now()}`,
+      title: "Sandi Kepala Sekolah Direset 🔒",
+      message: `Akun Kepala Sekolah disetel ulang ke sandi bawaan (kepala123) oleh Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Password Kepala Sekolah berhasil di-reset ke sandi bawaan: kepala123" });
+  });
+
+  app.post("/api/admin/principal/change-password", (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    principalConfig.password = newPassword.trim();
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-principal-admin-${Date.now()}`,
+      title: "Sandi Kepala Sekolah Diubah Admin 🔑",
+      message: `Password akun Kepala Sekolah telah disetel oleh Kepala/Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Sandi Kepala Sekolah sukses diperbarui oleh Admin." });
+  });
+
   // --- STUDENT ATTENDANCE (ABSENSI) ENDPOINTS ---
   app.get("/api/attendance", (req, res) => {
     res.json(attendanceLogs);
@@ -1294,10 +1911,27 @@ async function startServer() {
     attendance.forEach((studentAtt: any) => {
       const { studentId, status, notes: attNotes } = studentAtt;
       const existingLogIndex = attendanceLogs.findIndex(log => log.studentId === studentId && log.date === date);
+      
+      const newSubNote = {
+        subject,
+        teacherName,
+        status,
+        notes: attNotes || ''
+      };
+
       if (existingLogIndex !== -1) {
-        // Update existing daily attendance
+        // Update existing daily attendance status
         attendanceLogs[existingLogIndex].status = status;
-        attendanceLogs[existingLogIndex].notes = `Oleh Guru Mapel (${subject}): ${attNotes || ''}`.trim();
+
+        if (!attendanceLogs[existingLogIndex].subjectNotes) {
+          attendanceLogs[existingLogIndex].subjectNotes = [];
+        }
+        const existingSubNotesIndex = attendanceLogs[existingLogIndex].subjectNotes!.findIndex((sn: any) => sn.subject === subject);
+        if (existingSubNotesIndex !== -1) {
+          attendanceLogs[existingLogIndex].subjectNotes![existingSubNotesIndex] = newSubNote;
+        } else {
+          attendanceLogs[existingLogIndex].subjectNotes!.push(newSubNote);
+        }
       } else {
         // Create new daily attendance
         attendanceLogs.push({
@@ -1305,7 +1939,8 @@ async function startServer() {
           studentId,
           date,
           status,
-          notes: `Oleh Guru Mapel (${subject}): ${attNotes || ''}`.trim()
+          notes: "",
+          subjectNotes: [newSubNote]
         });
       }
     });
@@ -1323,6 +1958,874 @@ async function startServer() {
     broadcastNotification(notification);
 
     res.json({ success: true, teachingJournals, newJournal });
+  });
+
+  // --- STUDENT DEVELOPMENT LOGS (CATATAN PERKEMBANGAN SISWA) ENDPOINTS ---
+  app.get("/api/student-development-logs", (req, res) => {
+    res.json(studentDevelopmentLogs);
+  });
+
+  app.post("/api/student-development-logs", (req, res) => {
+    const { studentId, studentName, className, date, category, notes } = req.body;
+    if (!studentId || !studentName || !className || !date || !category || !notes) {
+      return res.status(400).json({ error: "Data Catatan Perkembangan Siswa tidak lengkap." });
+    }
+
+    const newLog: StudentDevelopmentLog = {
+      id: `sdl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      studentId,
+      studentName,
+      className,
+      date,
+      category,
+      notes,
+      createdAt: new Date().toISOString()
+    };
+
+    studentDevelopmentLogs.unshift(newLog);
+    saveState();
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-sdl-${newLog.id}`,
+      title: `Catatan Perkembangan Siswa: ${category}`,
+      message: `Catatan perkembangan baru ditambahkan untuk ${studentName} (Kelas ${className}).`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, studentDevelopmentLogs, newLog });
+  });
+
+  app.delete("/api/student-development-logs/:id", (req, res) => {
+    const { id } = req.params;
+    const index = studentDevelopmentLogs.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Catatan perkembangan tidak ditemukan." });
+    }
+    studentDevelopmentLogs.splice(index, 1);
+    saveState();
+    res.json({ success: true, studentDevelopmentLogs });
+  });
+
+  // --- STUDENT INFRACTION LOGS (PENCATATAN PELANGGARAN) ENDPOINTS ---
+  app.get("/api/student-infraction-logs", (req, res) => {
+    res.json(studentInfractionLogs);
+  });
+
+  app.post("/api/student-infraction-logs", (req, res) => {
+    const { studentId, studentName, className, date, time, location, infractionType, actionTaken, resolutionStatus, points } = req.body;
+    if (!studentId || !studentName || !className || !date || !time || !location || !infractionType || !actionTaken || !resolutionStatus) {
+      return res.status(400).json({ error: "Data Pelanggaran tidak lengkap." });
+    }
+
+    const newLog: StudentInfractionLog = {
+      id: `sil-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      studentId,
+      studentName,
+      className,
+      date,
+      time,
+      location,
+      infractionType,
+      actionTaken,
+      resolutionStatus,
+      points: Number(points) || 0,
+      createdAt: new Date().toISOString()
+    } as any;
+
+    studentInfractionLogs.unshift(newLog);
+    saveState();
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-sil-${newLog.id}`,
+      title: `Laporan Pelanggaran: Kelas ${className}`,
+      message: `Pencatatan pelanggaran baru untuk ${studentName} (${infractionType}) dengan status: ${resolutionStatus}.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, studentInfractionLogs, newLog });
+  });
+
+  app.delete("/api/student-infraction-logs/:id", (req, res) => {
+    const { id } = req.params;
+    const index = studentInfractionLogs.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Pencatatan pelanggaran tidak ditemukan." });
+    }
+    studentInfractionLogs.splice(index, 1);
+    saveState();
+    res.json({ success: true, studentInfractionLogs });
+  });
+
+  // --- INFRACTION MASTER RULES (POIN PELANGGARAN CRUD) ---
+  app.get("/api/infraction-rules", (req, res) => {
+    res.json(infractionRules);
+  });
+
+  app.post("/api/infraction-rules", (req, res) => {
+    const { name, points, category } = req.body;
+    if (!name || points === undefined || !category) {
+      return res.status(400).json({ error: "Nama, poin dan tingkatan pelanggaran wajib diisi." });
+    }
+    const newRule = {
+      id: `ir-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      name,
+      points: Number(points) || 0,
+      category
+    };
+    infractionRules.unshift(newRule);
+    saveState();
+    res.json({ success: true, infractionRules, newRule });
+  });
+
+  app.put("/api/infraction-rules/:id", (req, res) => {
+    const { id } = req.params;
+    const { name, points, category } = req.body;
+    const rule = infractionRules.find(r => r.id === id);
+    if (!rule) {
+      return res.status(404).json({ error: "Aturan pelanggaran tidak ditemukan." });
+    }
+    if (name !== undefined) rule.name = name;
+    if (points !== undefined) rule.points = Number(points) || 0;
+    if (category !== undefined) rule.category = category;
+    saveState();
+    res.json({ success: true, infractionRules, updatedRule: rule });
+  });
+
+  app.delete("/api/infraction-rules/:id", (req, res) => {
+    const { id } = req.params;
+    const idx = infractionRules.findIndex(r => r.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Aturan pelanggaran tidak ditemukan." });
+    }
+    infractionRules.splice(idx, 1);
+    saveState();
+    res.json({ success: true, infractionRules });
+  });
+
+
+  // --- STUDENT COUNSELING LOGS (BIMBINGAN & KONSELING) ENDPOINTS ---
+  app.get("/api/student-counseling-logs", (req, res) => {
+    res.json(studentCounselingLogs);
+  });
+
+  app.post("/api/student-counseling-logs", (req, res) => {
+    const { studentId, studentName, className, date, topic, actionPlan, result } = req.body;
+    if (!studentId || !studentName || !className || !date || !topic || !actionPlan || !result) {
+      return res.status(400).json({ error: "Data Bimbingan & Konseling tidak lengkap." });
+    }
+
+    const newLog: StudentCounselingLog = {
+      id: `scl-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      studentId,
+      studentName,
+      className,
+      date,
+      topic,
+      actionPlan,
+      result,
+      createdAt: new Date().toISOString()
+    };
+
+    studentCounselingLogs.unshift(newLog);
+    saveState();
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-scl-${newLog.id}`,
+      title: `Catatan Bimbingan: ${studentName}`,
+      message: `Wali Kelas ${className} memperbarui sesi bimbingan dengan topik: "${topic}".`,
+      type: "success",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, studentCounselingLogs, newLog });
+  });
+
+  app.delete("/api/student-counseling-logs/:id", (req, res) => {
+    const { id } = req.params;
+    const index = studentCounselingLogs.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Bimbingan konseling tidak ditemukan." });
+    }
+    studentCounselingLogs.splice(index, 1);
+    saveState();
+    res.json({ success: true, studentCounselingLogs });
+  });
+
+
+  // --- CLASS ANNOUNCEMENTS (INFORMASI & PENGUMUMAN) ENDPOINTS ---
+  app.get("/api/class-announcements", (req, res) => {
+    res.json(classAnnouncements);
+  });
+
+  app.post("/api/class-announcements", (req, res) => {
+    const { className, title, content, date, targetRecipient, confirmationStatus } = req.body;
+    if (!className || !title || !content || !date || !targetRecipient || !confirmationStatus) {
+      return res.status(400).json({ error: "Data Informasi & Pengumuman tidak lengkap." });
+    }
+
+    const newLog: ClassAnnouncement = {
+      id: `ca-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      className,
+      title,
+      content,
+      date,
+      targetRecipient,
+      confirmationStatus,
+      createdAt: new Date().toISOString()
+    };
+
+    classAnnouncements.unshift(newLog);
+    saveState();
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-ca-${newLog.id}`,
+      title: `📢 Pengumuman Baru Kelas ${className}`,
+      message: `${title}: ${content.substr(0, 80)}...`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, classAnnouncements, newLog });
+  });
+
+  app.patch("/api/class-announcements/:id/status", (req, res) => {
+    const { id } = req.params;
+    const { confirmationStatus } = req.body;
+    if (!confirmationStatus) {
+      return res.status(400).json({ error: "Status konfirmasi kosong." });
+    }
+    const index = classAnnouncements.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Pengumuman tidak ditemukan." });
+    }
+    classAnnouncements[index].confirmationStatus = confirmationStatus;
+    saveState();
+    res.json({ success: true, classAnnouncements });
+  });
+
+  app.delete("/api/class-announcements/:id", (req, res) => {
+    const { id } = req.params;
+    const index = classAnnouncements.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Informasi/pengumuman tidak ditemukan." });
+    }
+    classAnnouncements.splice(index, 1);
+    saveState();
+    res.json({ success: true, classAnnouncements });
+  });
+
+
+  // --- CLASS MEETING LOGS (RAPAT / KOORDINASI) ENDPOINTS ---
+  app.get("/api/class-meeting-logs", (req, res) => {
+    res.json(classMeetingLogs);
+  });
+
+  app.post("/api/class-meeting-logs", (req, res) => {
+    const { className, meetingType, date, attendees, agenda, followUp } = req.body;
+    if (!className || !meetingType || !date || !attendees || !agenda || !followUp) {
+      return res.status(400).json({ error: "Data Jurnal Rapat tidak lengkap." });
+    }
+
+    const newLog: ClassMeetingLog = {
+      id: `cml-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      className,
+      meetingType,
+      date,
+      attendees,
+      agenda,
+      followUp,
+      createdAt: new Date().toISOString()
+    };
+
+    classMeetingLogs.unshift(newLog);
+    saveState();
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-cml-${newLog.id}`,
+      title: `Rapat/Koordinasi Kelas ${className}`,
+      message: `Telah didokumentasikan jenis rapat: ${meetingType} pada tanggal ${date}.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, classMeetingLogs, newLog });
+  });
+
+  app.delete("/api/class-meeting-logs/:id", (req, res) => {
+    const { id } = req.params;
+    const index = classMeetingLogs.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Dokumen rapat tidak ditemukan." });
+    }
+    classMeetingLogs.splice(index, 1);
+    saveState();
+    res.json({ success: true, classMeetingLogs });
+  });
+
+  // --- PENILAIAN KURIKULUM MERDEKA ENDPOINTS ---
+  app.get("/api/merdeka-assessments", (req, res) => {
+    res.json(merdekaAssessments);
+  });
+
+  app.post("/api/merdeka-assessments", (req, res) => {
+    const data = req.body;
+    
+    // Support bulk insert (Excel Import) or single insert
+    if (Array.isArray(data)) {
+      const results: MerdekaAssessment[] = [];
+      data.forEach((item: any) => {
+        const {
+          studentId,
+          studentName,
+          className,
+          subject,
+          teacherName,
+          semester,
+          academicYear,
+          tp1Name,
+          tp1Grade,
+          tp2Name,
+          tp2Grade,
+          tp3Name,
+          tp3Grade,
+          nilaiSumatifLM,
+          nilaiSAS
+        } = item;
+
+        if (!studentId || !studentName || !className || !subject || !teacherName) {
+          return;
+        }
+
+        const tp1G = Number(tp1Grade) || 0;
+        const tp2G = tp2Grade !== undefined && tp2Grade !== "" ? Number(tp2Grade) : undefined;
+        const tp3G = tp3Grade !== undefined && tp3Grade !== "" ? Number(tp3Grade) : undefined;
+
+        let tpCount = 1;
+        let sumTp = tp1G;
+        if (tp2G !== undefined) {
+          tpCount++;
+          sumTp += tp2G;
+        }
+        if (tp3G !== undefined) {
+          tpCount++;
+          sumTp += tp3G;
+        }
+        const calculatedFormatif = Math.round(sumTp / tpCount);
+
+        const slm = Number(nilaiSumatifLM) || 0;
+        const sas = Number(nilaiSAS) || 0;
+        const calculatedRapor = Math.round((calculatedFormatif + slm + sas) / 3);
+
+        const tps = [{ name: tp1Name, score: tp1G }];
+        if (tp2Name && tp2G !== undefined) tps.push({ name: tp2Name, score: tp2G });
+        if (tp3Name && tp3G !== undefined) tps.push({ name: tp3Name, score: tp3G });
+
+        tps.sort((a, b) => b.score - a.score);
+        const highestTp = tps[0];
+        const lowestTp = tps[tps.length - 1];
+
+        let desc = "";
+        if (highestTp && highestTp.score >= 75) {
+          desc += `Menunjukkan penguasaan sangat baik dalam ${highestTp.name}.`;
+        } else if (highestTp) {
+          desc += `Menunjukkan penguasaan cukup dalam ${highestTp.name}.`;
+        }
+
+        if (lowestTp && lowestTp.score < 70 && lowestTp.name !== highestTp.name) {
+          desc += ` Perlu pendampingan lebih lanjut dalam meningkatkan kompetensi ${lowestTp.name}.`;
+        }
+
+        const existingIdx = merdekaAssessments.findIndex(
+          a => a.studentId === studentId &&
+               a.subject === subject &&
+               a.semester === (semester || "Genap") &&
+               a.academicYear === (academicYear || "2025/2026")
+        );
+
+        const cleanItem: MerdekaAssessment = {
+          id: existingIdx !== -1 ? merdekaAssessments[existingIdx].id : `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          studentId,
+          studentName,
+          className,
+          subject,
+          teacherName,
+          semester: semester || "Genap",
+          academicYear: academicYear || "2025/2026",
+          tp1Name,
+          tp1Grade: tp1G,
+          tp2Name: tp2Name || undefined,
+          tp2Grade: tp2G,
+          tp3Name: tp3Name || undefined,
+          tp3Grade: tp3G,
+          nilaiFormatif: calculatedFormatif,
+          nilaiSumatifLM: slm,
+          nilaiSAS: sas,
+          nilaiRapor: calculatedRapor,
+          deskripsiCapaian: desc || "Telah menunjukkan kompetensi sesuai kriteria.",
+          createdAt: new Date().toISOString()
+        };
+
+        if (existingIdx !== -1) {
+          merdekaAssessments[existingIdx] = cleanItem;
+        } else {
+          merdekaAssessments.unshift(cleanItem);
+        }
+        results.push(cleanItem);
+      });
+
+      saveState();
+      return res.json({ success: true, count: results.length, merdekaAssessments });
+    } else {
+      const {
+        studentId,
+        studentName,
+        className,
+        subject,
+        teacherName,
+        semester,
+        academicYear,
+        tp1Name,
+        tp1Grade,
+        tp2Name,
+        tp2Grade,
+        tp3Name,
+        tp3Grade,
+        nilaiSumatifLM,
+        nilaiSAS,
+        deskripsiCapaian
+      } = req.body;
+
+      if (!studentId || !studentName || !className || !subject || !teacherName || !tp1Name) {
+        return res.status(400).json({ error: "Data nilai Kurikulum Merdeka tidak lengkap." });
+      }
+
+      const tp1G = Number(tp1Grade) || 0;
+      const tp2G = tp2Grade !== undefined && tp2Grade !== "" ? Number(tp2Grade) : undefined;
+      const tp3G = tp3Grade !== undefined && tp3Grade !== "" ? Number(tp3Grade) : undefined;
+
+      let tpCount = 1;
+      let sumTp = tp1G;
+      if (tp2G !== undefined) {
+        tpCount++;
+        sumTp += tp2G;
+      }
+      if (tp3G !== undefined) {
+        tpCount++;
+        sumTp += tp3G;
+      }
+      const calculatedFormatif = Math.round(sumTp / tpCount);
+
+      const slm = Number(nilaiSumatifLM) || 0;
+      const sas = Number(nilaiSAS) || 0;
+      const calculatedRapor = Math.round((calculatedFormatif + slm + sas) / 3);
+
+      let finalDesc = deskripsiCapaian;
+      if (!finalDesc) {
+        const tps = [{ name: tp1Name, score: tp1G }];
+        if (tp2Name && tp2G !== undefined) tps.push({ name: tp2Name, score: tp2G });
+        if (tp3Name && tp3G !== undefined) tps.push({ name: tp3Name, score: tp3G });
+
+        tps.sort((a, b) => b.score - a.score);
+        const highestTp = tps[0];
+        const lowestTp = tps[tps.length - 1];
+
+        let desc = "";
+        if (highestTp && highestTp.score >= 75) {
+          desc += `Menunjukkan penguasaan sangat baik dalam ${highestTp.name}.`;
+        } else if (highestTp) {
+          desc += `Menunjukkan penguasaan cukup dalam ${highestTp.name}.`;
+        }
+
+        if (lowestTp && lowestTp.score < 70 && lowestTp.name !== highestTp.name) {
+          desc += ` Perlu bimbingan lebih lanjut dalam memahami ${lowestTp.name}.`;
+        }
+        finalDesc = desc || "Telah menunjukkan kompetensi sesuai kriteria.";
+      }
+
+      const existingIdx = merdekaAssessments.findIndex(
+        a => a.studentId === studentId &&
+             a.subject === subject &&
+             a.semester === (semester || "Genap") &&
+             a.academicYear === (academicYear || "2025/2026")
+      );
+
+      const newAssessment: MerdekaAssessment = {
+        id: existingIdx !== -1 ? merdekaAssessments[existingIdx].id : `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        studentId,
+        studentName,
+        className,
+        subject,
+        teacherName,
+        semester: semester || "Genap",
+        academicYear: academicYear || "2025/2026",
+        tp1Name,
+        tp1Grade: tp1G,
+        tp2Name: tp2Name || undefined,
+        tp2Grade: tp2G,
+        tp3Name: tp3Name || undefined,
+        tp3Grade: tp3G,
+        nilaiFormatif: calculatedFormatif,
+        nilaiSumatifLM: slm,
+        nilaiSAS: sas,
+        nilaiRapor: calculatedRapor,
+        deskripsiCapaian: finalDesc,
+        createdAt: new Date().toISOString()
+      };
+
+      if (existingIdx !== -1) {
+        merdekaAssessments[existingIdx] = newAssessment;
+      } else {
+        merdekaAssessments.unshift(newAssessment);
+      }
+
+      saveState();
+      res.json({ success: true, merdekaAssessments, newAssessment });
+    }
+  });
+
+  app.delete("/api/merdeka-assessments/:id", (req, res) => {
+    const { id } = req.params;
+    const index = merdekaAssessments.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Data nilai tidak ditemukan." });
+    }
+    merdekaAssessments.splice(index, 1);
+    saveState();
+    res.json({ success: true, merdekaAssessments });
+  });
+
+  // --- KEPALA SEKOLAH (PRINCIPAL) ENDPOINTS ---
+  app.get("/api/principal/work-programs", (req, res) => {
+    res.json(principalWorkPrograms);
+  });
+
+  app.post("/api/principal/work-programs", (req, res) => {
+    const item = req.body;
+    if (!item.title || !item.description) {
+      return res.status(400).json({ error: "Judul dan deskripsi program kerja wajib diisi." });
+    }
+
+    if (item.id) {
+      const idx = principalWorkPrograms.findIndex(p => p.id === item.id);
+      if (idx !== -1) {
+        principalWorkPrograms[idx] = {
+          ...principalWorkPrograms[idx],
+          title: item.title,
+          description: item.description,
+          targetDate: item.targetDate || "2026-12-31",
+          status: item.status || "planned",
+          syncWithStaff: item.syncWithStaff !== undefined ? item.syncWithStaff : true,
+        };
+      } else {
+        return res.status(404).json({ error: "Program kerja tidak ditemukan" });
+      }
+    } else {
+      const newItem = {
+        id: `pwp-${Date.now()}`,
+        title: item.title,
+        description: item.description,
+        targetDate: item.targetDate || "2026-12-31",
+        status: item.status || "planned",
+        syncWithStaff: item.syncWithStaff !== undefined ? item.syncWithStaff : true,
+        createdAt: new Date().toISOString()
+      };
+      principalWorkPrograms.unshift(newItem);
+    }
+    saveState();
+    res.json({ success: true, principalWorkPrograms });
+  });
+
+  app.delete("/api/principal/work-programs/:id", (req, res) => {
+    const { id } = req.params;
+    const idx = principalWorkPrograms.findIndex(p => p.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Program kerja tidak ditemukan." });
+    }
+    principalWorkPrograms.splice(idx, 1);
+    saveState();
+    res.json({ success: true, principalWorkPrograms });
+  });
+
+  app.get("/api/principal/teacher-evaluations", (req, res) => {
+    res.json(teacherEvaluations);
+  });
+
+  app.post("/api/principal/teacher-evaluations", (req, res) => {
+    const item = req.body;
+    if (!item.teacherId || !item.teacherName) {
+      return res.status(400).json({ error: "Guru yang dinilai harus dipilih." });
+    }
+
+    if (item.id) {
+      const idx = teacherEvaluations.findIndex(e => e.id === item.id);
+      if (idx !== -1) {
+        teacherEvaluations[idx] = {
+          ...teacherEvaluations[idx],
+          pedagogicScore: Number(item.pedagogicScore) || 80,
+          professionalScore: Number(item.professionalScore) || 80,
+          personalScore: Number(item.personalScore) || 80,
+          socialScore: Number(item.socialScore) || 80,
+          notes: item.notes || "",
+          academicYear: item.academicYear || "2025/2026",
+          date: item.date || new Date().toISOString().split('T')[0],
+        };
+      } else {
+        return res.status(404).json({ error: "Penilaian tidak ditemukan" });
+      }
+    } else {
+      const newItem = {
+        id: `te-${Date.now()}`,
+        teacherType: item.teacherType || 'homeroom',
+        teacherId: item.teacherId,
+        teacherName: item.teacherName,
+        evaluatorName: schoolIdentity.principal || item.evaluatorName || "H. Ahmad Fuad, S.Pd, M.PdI",
+        date: item.date || new Date().toISOString().split('T')[0],
+        academicYear: item.academicYear || "2025/2026",
+        pedagogicScore: Number(item.pedagogicScore) || 80,
+        professionalScore: Number(item.professionalScore) || 80,
+        personalScore: Number(item.personalScore) || 80,
+        socialScore: Number(item.socialScore) || 80,
+        notes: item.notes || "",
+        createdAt: new Date().toISOString()
+      };
+      teacherEvaluations.unshift(newItem);
+    }
+    saveState();
+    res.json({ success: true, teacherEvaluations });
+  });
+
+  app.delete("/api/principal/teacher-evaluations/:id", (req, res) => {
+    const { id } = req.params;
+    const idx = teacherEvaluations.findIndex(e => e.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Penilaian tidak ditemukan." });
+    }
+    teacherEvaluations.splice(idx, 1);
+    saveState();
+    res.json({ success: true, teacherEvaluations });
+  });
+
+  // --- SARPRAS (FACILITIES AND INFRASTRUCTURE) ENDPOINTS ---
+  app.get("/api/sarpras/items", (req, res) => {
+    res.json(sarprasItems);
+  });
+
+  app.post("/api/sarpras/items", (req, res) => {
+    const item = req.body;
+    if (!item.name || !item.code) {
+      return res.status(400).json({ error: "Nama barang dan kode inventaris wajib diisi." });
+    }
+
+    if (item.id) {
+      const idx = sarprasItems.findIndex(i => i.id === item.id);
+      if (idx !== -1) {
+        const diffTotal = (Number(item.totalQty) || 0) - (sarprasItems[idx].totalQty || 0);
+        sarprasItems[idx] = {
+          ...sarprasItems[idx],
+          name: String(item.name).trim(),
+          code: String(item.code).trim(),
+          category: String(item.category || "Umum").trim(),
+          condition: item.condition || "Baik",
+          location: String(item.location || "Gudang").trim(),
+          totalQty: Number(item.totalQty) || 0,
+          availableQty: Math.max(0, (sarprasItems[idx].availableQty || 0) + diffTotal),
+          price: Number(item.price) || 0
+        };
+      } else {
+        return res.status(404).json({ error: "Barang tidak ditemukan." });
+      }
+    } else {
+      const newItem = {
+        id: "item-" + Date.now(),
+        name: String(item.name).trim(),
+        code: String(item.code).trim(),
+        category: String(item.category || "Umum").trim(),
+        condition: item.condition || "Baik",
+        location: String(item.location || "Gudang").trim(),
+        totalQty: Number(item.totalQty) || 0,
+        availableQty: Number(item.totalQty) || 0,
+        price: Number(item.price) || 0
+      };
+      sarprasItems.unshift(newItem);
+    }
+
+    saveState();
+    res.json({ success: true, sarprasItems });
+  });
+
+  app.delete("/api/sarpras/items/:id", (req, res) => {
+    const { id } = req.params;
+    const hasActiveLoan = sarprasLoans.some(l => l.itemId === id && l.status === "dipinjam");
+    if (hasActiveLoan) {
+      return res.status(400).json({ error: "Barang tidak bisa dihapus karena sedang dipinjam oleh guru." });
+    }
+
+    const idx = sarprasItems.findIndex(i => i.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Barang tidak ditemukan." });
+    }
+
+    sarprasItems.splice(idx, 1);
+    saveState();
+    res.json({ success: true, sarprasItems });
+  });
+
+  app.get("/api/sarpras/proposals", (req, res) => {
+    res.json(sarprasProposals);
+  });
+
+  app.post("/api/sarpras/proposals", (req, res) => {
+    const prop = req.body;
+    if (!prop.itemName || !prop.qty || !prop.estimatedPrice) {
+      return res.status(400).json({ error: "Nama barang, jumlah, dan estimasi harga wajib diisi." });
+    }
+
+    if (prop.id) {
+      const idx = sarprasProposals.findIndex(p => p.id === prop.id);
+      if (idx !== -1) {
+        if (sarprasProposals[idx].status !== 'pending') {
+          return res.status(400).json({ error: "Pengajuan yang sudah diproses tidak dapat diedit." });
+        }
+        sarprasProposals[idx] = {
+          ...sarprasProposals[idx],
+          itemName: String(prop.itemName).trim(),
+          qty: Number(prop.qty) || 1,
+          estimatedPrice: Number(prop.estimatedPrice) || 0,
+          totalPrice: (Number(prop.qty) || 1) * (Number(prop.estimatedPrice) || 0),
+          reason: String(prop.reason || "").trim()
+        };
+      } else {
+        return res.status(404).json({ error: "Pengajuan tidak ditemukan." });
+      }
+    } else {
+      const newProp = {
+        id: "proposal-" + Date.now(),
+        itemName: String(prop.itemName).trim(),
+        qty: Number(prop.qty) || 1,
+        estimatedPrice: Number(prop.estimatedPrice) || 0,
+        totalPrice: (Number(prop.qty) || 1) * (Number(prop.estimatedPrice) || 0),
+        proposedBy: "Waka Sarpras",
+        date: new Date().toISOString().split('T')[0],
+        reason: String(prop.reason || "").trim(),
+        status: "pending",
+        notes: "",
+        createdAt: new Date().toISOString()
+      };
+      sarprasProposals.unshift(newProp);
+    }
+
+    saveState();
+    res.json({ success: true, sarprasProposals });
+  });
+
+  app.post("/api/sarpras/proposals/:id/status", (req, res) => {
+    const { id } = req.params;
+    const { status, notes } = req.body;
+    if (!['approved', 'rejected'].includes(status)) {
+      return res.status(400).json({ error: "Status baru tidak valid." });
+    }
+
+    const idx = sarprasProposals.findIndex(p => p.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Pengajuan tidak ditemukan." });
+    }
+
+    sarprasProposals[idx].status = status;
+    sarprasProposals[idx].notes = String(notes || "").trim();
+
+    if (status === 'approved') {
+      const propObj = sarprasProposals[idx];
+      treasurerTransactions.unshift({
+        id: "tx-bnd-sarpras-" + Date.now(),
+        type: "outgoing",
+        category: "Operasional",
+        amount: propObj.totalPrice,
+        description: `Belanja Sarpras Disetujui: ${propObj.itemName} (${propObj.qty} Unit)`,
+        date: new Date().toISOString().split("T")[0],
+        source: "custom",
+        createdBy: "Persetujuan Kepala Sekolah"
+      });
+    }
+
+    saveState();
+    res.json({ success: true, sarprasProposals, treasurerTransactions });
+  });
+
+  app.get("/api/sarpras/loans", (req, res) => {
+    res.json(sarprasLoans);
+  });
+
+  app.post("/api/sarpras/loans", (req, res) => {
+    const loan = req.body;
+    if (!loan.itemId || !loan.borrowerId || !loan.borrowerName || !loan.qty) {
+      return res.status(400).json({ error: "Barang, peminjam, dan jumlah pinjam wajib diisi." });
+    }
+
+    const itemIdx = sarprasItems.findIndex(i => i.id === loan.itemId);
+    if (itemIdx === -1) {
+      return res.status(404).json({ error: "Barang tidak ditemukan." });
+    }
+
+    const reqQty = Number(loan.qty) || 1;
+    if (sarprasItems[itemIdx].availableQty < reqQty) {
+      return res.status(400).json({ error: `Stok tersedia tidak mencukupi. Tersedia: ${sarprasItems[itemIdx].availableQty} unit.` });
+    }
+
+    sarprasItems[itemIdx].availableQty -= reqQty;
+
+    const newLoan = {
+      id: "loan-" + Date.now(),
+      itemId: loan.itemId,
+      itemName: sarprasItems[itemIdx].name,
+      borrowerId: loan.borrowerId,
+      borrowerName: loan.borrowerName,
+      qty: reqQty,
+      loanDate: loan.loanDate || new Date().toISOString().split('T')[0],
+      status: "dipinjam",
+      notes: String(loan.notes || "").trim()
+    };
+    sarprasLoans.unshift(newLoan);
+
+    saveState();
+    res.json({ success: true, sarprasLoans, sarprasItems });
+  });
+
+  app.post("/api/sarpras/loans/:id/return", (req, res) => {
+    const { id } = req.params;
+    const loanIdx = sarprasLoans.findIndex(l => l.id === id);
+    if (loanIdx === -1) {
+      return res.status(404).json({ error: "Laporan pinjaman tidak ditemukan." });
+    }
+
+    if (sarprasLoans[loanIdx].status === 'kembali') {
+      return res.status(400).json({ error: "Barang ini sudah dikembalikan sebelumnya." });
+    }
+
+    const itemIdx = sarprasItems.findIndex(i => i.id === sarprasLoans[loanIdx].itemId);
+    if (itemIdx !== -1) {
+      sarprasItems[itemIdx].availableQty = Math.min(
+        sarprasItems[itemIdx].totalQty, 
+        sarprasItems[itemIdx].availableQty + sarprasLoans[loanIdx].qty
+      );
+    }
+
+    sarprasLoans[loanIdx].status = "kembali";
+    sarprasLoans[loanIdx].returnDate = new Date().toISOString().split('T')[0];
+
+    saveState();
+    res.json({ success: true, sarprasLoans, sarprasItems });
   });
 
   // Real-time Event Streaming Endpoint (SSE)
@@ -1361,6 +2864,124 @@ async function startServer() {
     };
     broadcastNotification(notif);
     res.json({ success: true, notification: notif });
+  });
+
+  // ==========================================
+  // BendaHara (Treasurer) Endpoints
+  // ==========================================
+
+  // Get integrated treasurer ledger list of transactions
+  app.get("/api/treasurer/transactions", (req, res) => {
+    // 1. Get all paid SPP bills
+    const sppIntegrated = sppBills
+      .filter(b => b.status === 'paid')
+      .map(b => {
+        const student = students.find(s => s.id === b.studentId);
+        return {
+          id: `spp-int-${b.id}`,
+          type: 'incoming' as const,
+          category: 'SPP',
+          amount: b.amount,
+          description: `Pembayaran SPP Bulan ${b.month} ${b.year} - ${student?.name || 'Siswa'} (${student?.nis || ''})`,
+          date: (b.paidAt || new Date().toISOString()).substring(0, 10),
+          source: 'spp' as const,
+          studentName: student?.name || 'Siswa',
+          nis: student?.nis || '',
+          createdBy: b.paymentMethod || 'Manual Teller (Sekolah)'
+        };
+      });
+
+    // 2. Get all successful savings transactions
+    const savingsIntegrated = savingsTransactions
+      .filter(t => t.status === 'success')
+      .map(t => {
+        const student = students.find(s => s.id === t.studentId);
+        const isDeposit = t.type === 'deposit';
+        return {
+          id: `sav-int-${t.id}`,
+          type: (isDeposit ? 'incoming' : 'outgoing') as 'incoming' | 'outgoing',
+          category: 'Tabungan',
+          amount: t.amount,
+          description: `${isDeposit ? 'Setoran' : 'Penarikan'} Tabungan Siswa - ${student?.name || 'Siswa'} (${student?.nis || ''})${t.notes ? `: ${t.notes}` : ''}`,
+          date: (t.createdAt || new Date().toISOString()).substring(0, 10),
+          source: 'savings' as const,
+          studentName: student?.name || 'Siswa',
+          nis: student?.nis || '',
+          createdBy: t.paymentMethod || 'Teller'
+        };
+      });
+
+    // 3. Merged transactions
+    const merged: TreasurerTransaction[] = [
+      ...treasurerTransactions,
+      ...sppIntegrated,
+      ...savingsIntegrated
+    ];
+
+    // Sort by date descending
+    merged.sort((a, b) => b.date.localeCompare(a.date));
+
+    res.json(merged);
+  });
+
+  // Create manual bookkeeping transaction
+  app.post("/api/treasurer/transactions", (req, res) => {
+    const { type, category, amount, description, date } = req.body;
+    if (!type || !category || !amount || !description || !date) {
+      return res.status(400).json({ error: "Semua field wajib diisi." });
+    }
+
+    const newTx: TreasurerTransaction = {
+      id: `tx-bnd-${Date.now()}`,
+      type: type as 'incoming' | 'outgoing',
+      category: String(category),
+      amount: Number(amount) || 0,
+      description: String(description),
+      date: String(date),
+      source: 'custom' as const,
+      createdBy: 'bendahara'
+    };
+
+    treasurerTransactions.push(newTx);
+    saveState();
+    res.json({ success: true, transaction: newTx });
+  });
+
+  // Update manual bookkeeping transaction
+  app.put("/api/treasurer/transactions/:id", (req, res) => {
+    const { type, category, amount, description, date } = req.body;
+    const { id } = req.params;
+
+    const txIndex = treasurerTransactions.findIndex(t => t.id === id);
+    if (txIndex === -1) {
+      return res.status(444).json({ error: "Transaksi manual tidak ditemukan." });
+    }
+
+    const updatedTx = {
+      ...treasurerTransactions[txIndex],
+      type: type ? (type as 'incoming' | 'outgoing') : treasurerTransactions[txIndex].type,
+      category: category ? String(category) : treasurerTransactions[txIndex].category,
+      amount: amount ? Number(amount) : treasurerTransactions[txIndex].amount,
+      description: description ? String(description) : treasurerTransactions[txIndex].description,
+      date: date ? String(date) : treasurerTransactions[txIndex].date
+    };
+
+    treasurerTransactions[txIndex] = updatedTx;
+    saveState();
+    res.json({ success: true, transaction: updatedTx });
+  });
+
+  // Delete manual bookkeeping transaction
+  app.delete("/api/treasurer/transactions/:id", (req, res) => {
+    const { id } = req.params;
+    const txIndex = treasurerTransactions.findIndex(t => t.id === id);
+    if (txIndex === -1) {
+      return res.status(404).json({ error: "Transaksi manual tidak ditemukan." });
+    }
+
+    treasurerTransactions.splice(txIndex, 1);
+    saveState();
+    res.json({ success: true, message: "Transaksi berhasil dihapus." });
   });
 
   // Get active students
@@ -1862,13 +3483,19 @@ async function startServer() {
     startYears.forEach(startYear => {
       months.forEach((month, mIdx) => {
         const billYear = mIdx < 6 ? startYear : startYear + 1;
+        const isGrade7 = className.trim().startsWith("7") || className.trim().toUpperCase().startsWith("VII");
+        const isJuly = month === "Juli";
+        const isPaid = isGrade7 && isJuly;
         sppBills.push({
           id: `bill-${newStudentId}-${startYear}-${mIdx}`,
           studentId: newStudentId,
           month: month,
           year: billYear,
           amount: getSppAmountForClass(className),
-          status: "unpaid"
+          status: isPaid ? "paid" : "unpaid",
+          paidAt: isPaid ? new Date().toISOString() : undefined,
+          paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
+          orderId: isPaid ? `ORD-REGISTRATION-${newStudentId}` : undefined
         });
       });
     });
@@ -2159,13 +3786,20 @@ async function startServer() {
         );
 
         if (!exists) {
+          const isGrade7 = student.class.trim().startsWith("7") || student.class.trim().toUpperCase().startsWith("VII");
+          const isJuly = m.name === "Juli";
+          const isPaid = isGrade7 && isJuly;
+
           sppBills.push({
             id: `bill-${student.id}-${m.name}-${billYear}-${Date.now().toString().slice(-4)}`,
             studentId: student.id,
             month: m.name,
             year: billYear,
             amount: getSppAmountForClass(student.class),
-            status: "unpaid"
+            status: isPaid ? "paid" : "unpaid",
+            paidAt: isPaid ? new Date().toISOString() : undefined,
+            paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
+            orderId: isPaid ? `ORD-REGISTRATION-${student.id}-${billYear}` : undefined
           });
           billsGenerated++;
         } else {
@@ -2338,13 +3972,20 @@ async function startServer() {
         startYears.forEach(startYear => {
           months.forEach((month, mIdx) => {
             const billYear = mIdx < 6 ? startYear : startYear + 1;
+            const isGrade7 = className.trim().startsWith("7") || className.trim().toUpperCase().startsWith("VII");
+            const isJuly = month === "Juli";
+            const isPaid = isGrade7 && isJuly;
+
             sppBills.push({
               id: `bill-${newStudentId}-${startYear}-${mIdx}`,
               studentId: newStudentId,
               month: month,
               year: billYear,
               amount: getSppAmountForClass(className),
-              status: "unpaid"
+              status: isPaid ? "paid" : "unpaid",
+              paidAt: isPaid ? new Date().toISOString() : undefined,
+              paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
+              orderId: isPaid ? `ORD-REGISTRATION-${newStudentId}` : undefined
             });
           });
         });

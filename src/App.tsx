@@ -5,9 +5,13 @@ import StudentPanel from './components/StudentPanel';
 import AdminPanel from './components/AdminPanel';
 import HomeroomPanel from './components/HomeroomPanel';
 import SubjectTeacherPanel from './components/SubjectTeacherPanel';
+import TreasurerPanel from './components/TreasurerPanel';
+import PrincipalPanel from './components/PrincipalPanel';
+import WakaSarprasPanel from './components/WakaSarprasPanel';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
+import SppPaymentReviewModal from './components/SppPaymentReviewModal';
 import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle } from 'lucide-react';
 
 export default function App() {
@@ -15,8 +19,8 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('smp_maarif_logged_in') === 'true';
   });
-  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher'>(() => {
-    return (localStorage.getItem('smp_maarif_role') as 'student' | 'admin' | 'homeroom' | 'subject_teacher') || 'student';
+  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras'>(() => {
+    return (localStorage.getItem('smp_maarif_role') as 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras') || 'student';
   });
   const [loggedStudentId, setLoggedStudentId] = useState<string | null>(() => {
     return localStorage.getItem('smp_maarif_student_id');
@@ -70,7 +74,7 @@ export default function App() {
     address: "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan, Jawa Timur",
     phone: "(0343) 631234",
     principal: "H. Ahmad Fuad, S.Pd, M.PdI",
-    treasurer: "Bendahara Madrasah NU",
+    treasurer: "Bendahara Sekolah NU",
     logo: "",
     logo2: "",
     letterhead: ""
@@ -83,6 +87,10 @@ export default function App() {
   const [payAmount, setPayAmount] = useState<number>(0);
   const [payItemName, setPayItemName] = useState<string>('');
   const [payIsSimulated, setPayIsSimulated] = useState<boolean>(true);
+
+  // Payment review modal states
+  const [sppReviewBill, setSppReviewBill] = useState<SppBill | null>(null);
+  const [isSppReviewOpen, setIsSppReviewOpen] = useState(false);
 
   // Admin Auto Receipt print after successful Midtrans Transaction
   const [adminSppBillToPrintCandidate, setAdminSppBillToPrintCandidate] = useState<string | null>(null);
@@ -283,7 +291,7 @@ export default function App() {
   };
 
   const handleLoginSuccess = (
-    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher', 
+    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras', 
     student: Student | null, 
     homeroom: HomeroomTeacher | null,
     subjectTeacher?: SubjectTeacher | null
@@ -456,8 +464,14 @@ export default function App() {
     }
   };
 
-  // 3. SPP Payment Initializer (Midtrans Token Charge)
+  // 3. SPP Payment Initializer (Opens Review Modal First)
   const handlePaySpp = async (bill: SppBill) => {
+    setSppReviewBill(bill);
+    setIsSppReviewOpen(true);
+  };
+
+  // Actual checkout execution after review approval
+  const executePaySppSnap = async (bill: SppBill) => {
     try {
       setIsLoading(true);
       const res = await fetch('/api/pay-spp-snap', {
@@ -1225,6 +1239,27 @@ export default function App() {
         }}
       />
 
+      {/* Spp online payment review step before Snap checkout */}
+      <SppPaymentReviewModal
+        isOpen={isSppReviewOpen}
+        bill={sppReviewBill}
+        studentName={sppReviewBill ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.name || "Siswa" : "Siswa"}
+        studentNis={sppReviewBill ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.nis || "-" : "-"}
+        studentClass={sppReviewBill ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.class || "-" : "-"}
+        midtransStatus={sysStatus}
+        onCancel={() => {
+          setIsSppReviewOpen(false);
+          setSppReviewBill(null);
+        }}
+        onConfirm={() => {
+          setIsSppReviewOpen(false);
+          if (sppReviewBill) {
+            executePaySppSnap(sppReviewBill);
+          }
+          setSppReviewBill(null);
+        }}
+      />
+
       {/* Payment Success Verification Checklist Modal & Redirect Screen */}
       <AnimatePresence>
         {showPaymentSuccessScreen && (
@@ -1410,6 +1445,16 @@ export default function App() {
                   <ClipboardCheck size={13} className="text-teal-700" />
                   <span>Guru Mapel: {loggedSubjectTeacher?.name || 'Guru Mapel'} ({loggedSubjectTeacher?.subject})</span>
                 </div>
+              ) : role === 'treasurer' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-rose-50 text-rose-850 border border-rose-150 rounded-lg text-xs font-bold shadow-sm animate-pulse">
+                  <ShieldCheck size={13} className="text-rose-700" />
+                  <span>Bendahara: {schoolIdentity.treasurer}</span>
+                </div>
+              ) : role === 'principal' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-violet-50 text-violet-850 border border-violet-155 border-slate-200 rounded-lg text-xs font-bold shadow-sm">
+                  <ShieldCheck size={13} className="text-indigo-700" />
+                  <span>Kepala Sekolah: {schoolIdentity.principal}</span>
+                </div>
               ) : (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-850 border border-indigo-150 rounded-lg text-xs font-bold shadow-sm animate-pulse">
                   <ShieldCheck size={13} className="text-indigo-700" />
@@ -1495,6 +1540,7 @@ export default function App() {
             schoolIdentity={schoolIdentity}
             attendanceLogs={attendanceList.filter(l => l.studentId === currentStudent?.id)}
             notifications={globalNotifications}
+            onLogout={handleLogout}
           />
         ) : role === 'homeroom' ? (
           <HomeroomPanel
@@ -1517,6 +1563,31 @@ export default function App() {
             onLogout={handleLogout}
             onRefresh={handleReload}
             isLoading={isLoading}
+          />
+        ) : role === 'treasurer' ? (
+          <TreasurerPanel
+            schoolIdentity={schoolIdentity}
+            onLogout={handleLogout}
+          />
+        ) : role === 'principal' ? (
+          <PrincipalPanel
+            students={studentsList}
+            bills={studentBills}
+            attendanceLogs={attendanceList}
+            homerooms={homeroomsList}
+            subjectTeachers={subjectTeachersList}
+            schoolIdentity={schoolIdentity}
+            onUpdateSchoolIdentity={handleUpdateSchoolIdentity}
+            onLogout={handleLogout}
+            onRefresh={handleReload}
+            isLoading={isLoading}
+          />
+        ) : role === 'waka_sarpras' ? (
+          <WakaSarprasPanel
+            schoolIdentity={schoolIdentity}
+            onLogout={handleLogout}
+            homerooms={homeroomsList}
+            subjectTeachers={subjectTeachersList}
           />
         ) : (
           <AdminPanel
@@ -1554,6 +1625,7 @@ export default function App() {
             onUpdateSubjectTeacher={handleUpdateSubjectTeacher}
             onDeleteSubjectTeacher={handleDeleteSubjectTeacher}
             onAutoGenerateSubjectTeachers={handleAutoGenerateSubjectTeachers}
+            onLogout={handleLogout}
           />
         )}
       </main>

@@ -280,6 +280,7 @@ export interface SarprasItem {
   totalQty: number;
   availableQty: number;
   price?: number;
+  purchaseYear?: string;
 }
 
 export interface SarprasProposal {

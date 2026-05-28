@@ -1,8 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Package, ShoppingCart, Users2, Search, Plus, Edit2, Trash2, 
-  Printer, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Loader2, LogOut, Check, X
+  Printer, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Loader2, LogOut, Check, X,
+  Home, LayoutGrid
 } from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
 import { SchoolIdentity, HomeroomTeacher, SubjectTeacher, SarprasItem, SarprasProposal, SarprasLoan } from '../types';
 
 // Helper component for printing crisp vector barcodes
@@ -52,7 +54,8 @@ interface WakaSarprasPanelProps {
 }
 
 export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, subjectTeachers }: WakaSarprasPanelProps) {
-  const [activeTab, setActiveTab] = useState<'katalog' | 'pengajuan' | 'peminjaman' | 'laporan'>('katalog');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'katalog' | 'pengajuan' | 'peminjaman' | 'laporan'>('dashboard');
+  const [showMoreMenu, setShowMoreMenu] = useState(false);
   
   // Custom expandable Categories and Locations saved in localStorage
   const [categories, setCategories] = useState<string[]>(() => {
@@ -94,6 +97,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
     location: string;
     totalQty: number;
     price: number;
+    purchaseYear: string;
   }>({
     name: '',
     code: '',
@@ -101,7 +105,8 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
     condition: 'Baik',
     location: 'Gudang Utama',
     totalQty: 1,
-    price: 0
+    price: 0,
+    purchaseYear: new Date().getFullYear().toString()
   });
   const [isEditingItem, setIsEditingItem] = useState(false);
   const [showItemForm, setShowItemForm] = useState(false);
@@ -302,7 +307,8 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
           condition: 'Baik',
           location: locations[0] || 'Gudang Utama',
           totalQty: 1,
-          price: 0
+          price: 0,
+          purchaseYear: new Date().getFullYear().toString()
         });
         setIsEditingItem(false);
         setShowItemForm(false);
@@ -323,7 +329,8 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
       condition: it.condition,
       location: it.location,
       totalQty: it.totalQty,
-      price: it.price || 0
+      price: it.price || 0,
+      purchaseYear: it.purchaseYear || new Date().getFullYear().toString()
     });
     setIsEditingItem(true);
     setShowItemForm(true);
@@ -488,7 +495,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans print:bg-white print:text-black">
       {/* Printable Area Overlay */}
       {printData && (
-        <div className="hidden print:block absolute inset-0 bg-white p-8 overflow-visible z-50">
+        <div id="print-report-section" className="hidden print:block absolute inset-0 bg-white p-8 overflow-visible z-50">
           <div className="flex flex-col gap-1 items-center border-b-4 border-double border-slate-800 pb-4 mb-6">
             <h1 className="text-xl font-extrabold uppercase tracking-wide text-center">
               {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
@@ -559,7 +566,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
 
       {/* Printable Barcode Overlay / Preview Modal */}
       {barcodePrintData && (
-        <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
+        <div id="print-report-section" className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 print:border-none print:shadow-none print:p-0 print:max-w-full">
             <div className="flex justify-between items-center border-b pb-3 print:hidden">
               <div className="text-left">
@@ -579,22 +586,27 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 {barcodePrintData.map((item) => (
                   <div 
                     key={item.id || item.code} 
-                    className="border-2 border-slate-300 p-4 rounded-xl flex flex-col items-center justify-between text-center bg-white aspect-video relative shadow-xs print:shadow-none print:border-slate-800"
-                    style={{ minHeight: '145px', breakInside: 'avoid' }}
+                    className="border-2 border-slate-350 p-4 rounded-xl flex flex-col items-center justify-center text-center bg-white relative shadow-xs print:shadow-none print:border-slate-800 gap-1"
+                    style={{ minHeight: '165px', breakInside: 'avoid' }}
                   >
-                    {/* Atas: Nama barang */}
-                    <div className="text-[11px] font-black text-slate-950 border-b border-dashed border-slate-300 pb-1 w-full truncate">
+                    {/* 1. Barcode visual lines & its code */}
+                    <div className="select-none scale-100 transform origin-center my-0.5">
+                      <BarcodeSVG value={item.code} />
+                    </div>
+
+                    {/* Item Name context */}
+                    <div className="text-[10px] font-extrabold text-slate-800 uppercase tracking-tight truncate w-full mt-1">
                       {item.name}
                     </div>
                     
-                    {/* Tengah: Barcode SVG with text below barcode inside the SVG helper */}
-                    <div className="my-1.5 select-none scale-95 transform">
-                      <BarcodeSVG value={item.code} />
+                    {/* 2. School Identity */}
+                    <div className="text-[9.5px] font-black tracking-normal text-slate-900 uppercase">
+                      SMP MAARIF NU PANDAAN
                     </div>
                     
-                    {/* Bawahnya barcode: Tempat barang */}
-                    <div className="text-[10px] font-black tracking-wide text-indigo-700 w-full truncate border-t border-dashed border-slate-300 pt-1 uppercase font-mono">
-                      📍 {item.location || "Gudang Utama"}
+                    {/* 3. Lokasi Barang | Tahun Pembelian */}
+                    <div className="text-[9px] font-bold tracking-wide text-indigo-700 w-full truncate border-t border-dashed border-slate-300 pt-1 uppercase font-mono mt-1">
+                      {item.location || "Gudang Utama"} | {item.purchaseYear || "-"}
                     </div>
                   </div>
                 ))}
@@ -649,7 +661,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
           </div>
         </header>
 
-        <main className="max-w-7xl mx-auto px-4 md:px-6 py-8">
+        <main className="max-w-7xl mx-auto px-4 md:px-6 py-8 pb-24 md:pb-8">
           {/* Action Alerts messages */}
           {actionMessage && (
             <div className={`mb-6 p-4 rounded-xl border flex items-center gap-3 text-sm font-bold animate-fade-in ${
@@ -661,57 +673,10 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               <span>{actionMessage.text}</span>
             </div>
           )}
-
-          {/* Quick Stats Grid Row */}
-          <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 mb-8 text-left">
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Aset Terkatalog</span>
-                <h3 className="text-3xl font-black text-slate-900 mt-2 font-mono">{items.length}</h3>
-                <p className="text-slate-500 text-[11px] mt-1">Jenis barang inventaris sekolah.</p>
-              </div>
-              <div className="absolute right-4 bottom-4 text-indigo-100 pointer-events-none">
-                <Package size={52} />
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Total Kuantitas</span>
-                <h3 className="text-3xl font-black text-emerald-700 mt-2 font-mono">{totalItemCount}</h3>
-                <p className="text-slate-500 text-[11px] mt-1">Unit/barang fisik keseluruhan.</p>
-              </div>
-              <div className="absolute right-4 bottom-4 text-emerald-100 pointer-events-none">
-                <CheckCircle2 size={52} />
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Sedang Dipinjam</span>
-                <h3 className="text-3xl font-black text-amber-600 mt-2 font-mono">{activeBorrowedCount}</h3>
-                <p className="text-slate-500 text-[11px] mt-1">Unit dalam peminjaman aktif oleh guru.</p>
-              </div>
-              <div className="absolute right-4 bottom-4 text-amber-100 pointer-events-none">
-                <Users2 size={52} />
-              </div>
-            </div>
-
-            <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
-              <div>
-                <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Belanja Sarpras Disetujui</span>
-                <h3 className="text-2xl font-black text-slate-900 mt-2 font-mono">Rp {approvedProposalBudget.toLocaleString('id-ID')}</h3>
-                <p className="text-orange-550 text-[10px] font-bold mt-1">Pending: Rp {pendingProposalBudget.toLocaleString('id-ID')}</p>
-              </div>
-              <div className="absolute right-4 bottom-4 text-orange-100 pointer-events-none">
-                <ShoppingCart size={52} />
-              </div>
-            </div>
-          </section>
-
-          {/* Tab Button bar switchers */}
-          <div className="flex border-b border-slate-200 gap-2 mb-8 bg-white p-1.5 rounded-2xl border">
+           {/* Tab Button bar switchers */}
+          <div className="hidden md:flex border-b border-slate-200 gap-2 mb-8 bg-white p-1.5 rounded-2xl border">
             {[
+              { id: 'dashboard', label: '🏠 Beranda' },
               { id: 'katalog', label: '📦 Katalog Inventaris' },
               { id: 'peminjaman', label: '🤝 Peminjaman Barang' },
               { id: 'pengajuan', label: '🛒 Pengajuan Pembelian' },
@@ -735,6 +700,172 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               </button>
             ))}
           </div>
+
+          {/* TAB 0: DASHBOARD HOME */}
+          {activeTab === 'dashboard' && (
+            <div className="animate-fade-in flex flex-col gap-6 text-left">
+              {/* Welcome / Instruction Hero */}
+              <div className="bg-slate-900 text-white rounded-3xl p-6 md:p-8 relative overflow-hidden border border-slate-800">
+                <div className="absolute inset-0 bg-gradient-to-r from-teal-900/40 via-indigo-950/50 to-slate-950/60" />
+                <div className="relative z-10 max-w-2xl">
+                  <span className="text-[10px] font-black uppercase text-amber-400 bg-amber-400/10 px-2.5 py-1 rounded-md border border-amber-400/20 tracking-wider">Beranda Kerja</span>
+                  <h2 className="text-xl md:text-2xl font-black mt-3 text-white leading-tight">Sistem Inventarisasi &amp; Pengadaan Digital</h2>
+                  <p className="text-slate-300 text-xs md:text-sm mt-2 leading-relaxed">
+                    Selamat datang di dashboard kerja Wakil Kepala Sekolah bidang Sarana &amp; Prasarana. Kelola pendataan sarana prasarana sekolah secara saksama, ajukan usulan pembelanjaan unit baru, koordinasikan peminjaman logistik guru, serta unduh rekapitulasi laporan berstempel resmi.
+                  </p>
+                  
+                  {/* Quick Actions / Shortcuts */}
+                  <div className="mt-6 flex flex-wrap gap-2.5">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('katalog');
+                        setItemForm({ name: '', code: '', category: categories[0] || 'Elektronik / Multimedia', condition: 'Baik', location: locations[0] || 'Gudang Utama', totalQty: 1, price: 0, purchaseYear: new Date().getFullYear().toString() });
+                        setIsEditingItem(false);
+                        setShowItemForm(true);
+                      }}
+                      className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-xl transition-all cursor-pointer shadow-sm"
+                    >
+                      📦 Tambah Aset Baru
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('peminjaman');
+                        setLoanForm({ itemId: '', borrowerId: '', borrowerName: '', qty: 1, loanDate: new Date().toISOString().split('T')[0], notes: '' });
+                        setShowLoanForm(true);
+                      }}
+                      className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[11px] rounded-xl border border-slate-700 transition-all cursor-pointer"
+                    >
+                      🤝 Catat Pinjaman
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setActiveTab('pengajuan');
+                        setProposalForm({ id: '', itemName: '', qty: 1, estimatedPrice: 0, reason: '' });
+                        setShowProposalForm(true);
+                      }}
+                      className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[11px] rounded-xl transition-all cursor-pointer shadow-sm"
+                    >
+                      🛒 Ajukan Proposal Belanja
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              {/* Quick Stats Grid Row */}
+              <section className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 text-left">
+                <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md transition-all group" onClick={() => setActiveTab('katalog')}>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Aset Terkatalog</span>
+                    <h3 className="text-3xl font-black text-slate-900 mt-2 font-mono">{items.length}</h3>
+                    <p className="text-slate-500 text-[11px] mt-1">Jenis barang inventaris sekolah.</p>
+                  </div>
+                  <div className="absolute right-4 bottom-4 text-indigo-100 pointer-events-none group-hover:scale-115 transition-transform duration-300">
+                    <Package size={52} />
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Total Kuantitas</span>
+                    <h3 className="text-3xl font-black text-emerald-700 mt-2 font-mono">{totalItemCount}</h3>
+                    <p className="text-slate-500 text-[11px] mt-1">Unit/barang fisik keseluruhan.</p>
+                  </div>
+                  <div className="absolute right-4 bottom-4 text-emerald-100 pointer-events-none">
+                    <CheckCircle2 size={52} />
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md transition-all group" onClick={() => setActiveTab('peminjaman')}>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Sedang Dipinjam</span>
+                    <h3 className="text-3xl font-black text-amber-600 mt-2 font-mono">{activeBorrowedCount}</h3>
+                    <p className="text-slate-500 text-[11px] mt-1">Unit dalam peminjaman aktif oleh guru.</p>
+                  </div>
+                  <div className="absolute right-4 bottom-4 text-amber-100 pointer-events-none group-hover:scale-115 transition-transform duration-300">
+                    <Users2 size={52} />
+                  </div>
+                </div>
+
+                <div className="bg-white border border-slate-200 p-6 rounded-2xl shadow-xs relative overflow-hidden flex flex-col justify-between cursor-pointer hover:shadow-md transition-all group" onClick={() => setActiveTab('pengajuan')}>
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-widest font-mono">Belanja Sarpras Disetujui</span>
+                    <h3 className="text-2xl font-black text-slate-900 mt-2 font-mono font-sans">Rp {approvedProposalBudget.toLocaleString('id-ID')}</h3>
+                    <p className="text-orange-550 text-[10px] font-bold mt-1">Pending: Rp {pendingProposalBudget.toLocaleString('id-ID')}</p>
+                  </div>
+                  <div className="absolute right-4 bottom-4 text-orange-100 pointer-events-none group-hover:scale-115 transition-transform duration-300">
+                    <ShoppingCart size={52} />
+                  </div>
+                </div>
+              </section>
+
+              {/* Overview Info / System Logs & Reminders */}
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 flex flex-col gap-4">
+                  <div className="flex justify-between items-center border-b pb-3">
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-900">⚠️ Barang Rusak &amp; Perlu Perbaikan</h4>
+                      <p className="text-slate-550 text-[11px] mt-0.5">Datar inventaris dengan kondisi Rusak Ringan atau Rusak Berat.</p>
+                    </div>
+                    <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold uppercase">
+                      Kondisi Kritis
+                    </span>
+                  </div>
+                  
+                  {items.filter(i => i.condition !== 'Baik').length === 0 ? (
+                    <div className="py-6 text-center text-slate-450 text-xs font-semibold">
+                      🌱 Sip! Semua unit inventaris sekolah dalam keadaan baik saat ini.
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto">
+                      {items.filter(i => i.condition !== 'Baik').map(item => (
+                        <div key={item.id} className="flex justify-between items-center bg-slate-50/70 border border-slate-150 p-3 rounded-xl hover:bg-slate-50 transition-all">
+                          <div className="flex flex-col text-xs">
+                            <span className="font-bold text-slate-800 leading-tight">{item.name}</span>
+                            <span className="text-[10px] text-slate-400 font-mono mt-0.5">{item.code} • {item.location}</span>
+                          </div>
+                          <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
+                            item.condition === 'Rusak Berat' ? 'bg-red-50 text-red-600 border border-red-150' : 'bg-amber-50 text-amber-700 border border-amber-150'
+                          }`}>
+                            {item.condition}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 flex flex-col gap-4">
+                  <div>
+                    <h4 className="font-extrabold text-sm text-slate-900">⚡ Status Ruang Penyimpanan</h4>
+                    <p className="text-slate-550 text-[11px] mt-0.5 font-semibold">Pemetaan persebaran kuantitas barang.</p>
+                  </div>
+                  <div className="flex flex-col gap-3 h-[250px] overflow-y-auto pr-1">
+                    {locations.map(loc => {
+                      const locItems = items.filter(it => it.location === loc);
+                      const totalLocQty = locItems.reduce((sum, it) => sum + it.totalQty, 0);
+                      return (
+                        <div key={loc} className="flex flex-col gap-1.5 border-b border-slate-100 pb-2.5 last:border-0 last:pb-0">
+                          <div className="flex justify-between items-center text-xs">
+                            <span className="font-bold text-slate-700">{loc}</span>
+                            <span className="font-mono text-[10.5px] font-bold text-indigo-650 bg-indigo-50 px-2 rounded-md">{totalLocQty} Unit</span>
+                          </div>
+                          <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                            <div 
+                              className="bg-indigo-600 h-full rounded-full transition-all duration-500" 
+                              style={{ width: `${Math.min(100, Math.max(8, totalItemCount > 0 ? (totalLocQty / totalItemCount) * 100 : 0))}%` }} 
+                            />
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* TAB 1: ITEMS INVENTORY CATALOGUE */}
           {activeTab === 'katalog' && (
@@ -944,7 +1075,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     </div>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                  <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
                     <div>
                       <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Lokasi Fisik Barang</label>
                       <select 
@@ -955,7 +1086,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       >
                         <option value="">-- Pilih Lokasi --</option>
                         {locations.map((loc, idx) => (
-                          <option key={idx} value={loc}>{loc}</option>
+                           <option key={idx} value={loc}>{loc}</option>
                         ))}
                       </select>
                     </div>
@@ -971,7 +1102,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       />
                     </div>
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-sans">Nilai Estimasi per Unit (Rp)</label>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5 font-sans">Nilai Estimasi (Rp)</label>
                       <input 
                         type="number"
                         min="0"
@@ -979,6 +1110,17 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                         onChange={(e) => setItemForm({ ...itemForm, price: Number(e.target.value) || 0 })}
                         placeholder="Contoh: 5500000"
                         className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 font-bold text-slate-800"
+                        required
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tahun Pembelian</label>
+                      <input 
+                        type="text"
+                        value={itemForm.purchaseYear}
+                        onChange={(e) => setItemForm({ ...itemForm, purchaseYear: e.target.value })}
+                        placeholder="Contoh: 2026"
+                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 font-bold text-slate-800 font-mono"
                         required
                       />
                     </div>
@@ -1148,7 +1290,9 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                               </td>
                               <td className="py-4.5 px-2">
                                 <div className="font-extrabold text-slate-800">{it.name}</div>
-                                <div className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">{it.code}</div>
+                                <div className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">
+                                  {it.code} <span className="text-indigo-650 font-sans font-black ml-1.5 px-1 bg-indigo-50 rounded">📅 Beli: {it.purchaseYear || "-"}</span>
+                                </div>
                               </td>
                               <td className="py-4.5 px-2">
                                 <span className="px-2 py-0.5 rounded-md bg-slate-100 font-bold text-[10px] text-slate-600 block w-fit mb-1">{it.category}</span>
@@ -1624,10 +1768,11 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                   </div>
                   <button
                     onClick={() => {
-                      const headers = ["KODE", "NAMA BARANG", "KATEGORI", "LOKASI", "TOTAL", "TERSEDIA", "KONDISI"];
+                      const headers = ["KODE", "NAMA BARANG", "TAHUN BELI", "KATEGORI", "LOKASI", "TOTAL", "TERSEDIA", "KONDISI"];
                       const rows = items.map(it => [
                         it.code,
                         it.name,
+                        it.purchaseYear || "-",
                         it.category,
                         it.location,
                         `${it.totalQty} unit`,
@@ -1711,6 +1856,180 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
             </div>
           )}
         </main>
+
+        {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) ================= */}
+        <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-2 flex md:hidden justify-around items-center h-16 no-print select-none">
+          {/* Menu 1 (Beranda - paling kiri) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('dashboard');
+              setShowMoreMenu(false);
+              setShowItemForm(false);
+              setShowLoanForm(false);
+              setShowProposalForm(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'dashboard' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+              <Home size={20} className={activeTab === 'dashboard' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[9.5px] leading-none ${activeTab === 'dashboard' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Beranda</span>
+          </button>
+
+          {/* Menu 2 (Katalog) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('katalog');
+              setShowMoreMenu(false);
+              setShowItemForm(false);
+              setShowLoanForm(false);
+              setShowProposalForm(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'katalog' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+              <Package size={20} className={activeTab === 'katalog' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[9.5px] leading-none ${activeTab === 'katalog' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Katalog</span>
+          </button>
+
+          {/* Menu 3 (Peminjaman) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('peminjaman');
+              setShowMoreMenu(false);
+              setShowItemForm(false);
+              setShowLoanForm(false);
+              setShowProposalForm(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'peminjaman' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+              <Users2 size={20} className={activeTab === 'peminjaman' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[9.5px] leading-none ${activeTab === 'peminjaman' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Pinjam</span>
+          </button>
+
+          {/* Menu 4 (Pengajuan) */}
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab('pengajuan');
+              setShowMoreMenu(false);
+              setShowItemForm(false);
+              setShowLoanForm(false);
+              setShowProposalForm(false);
+            }}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'pengajuan' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+              <ShoppingCart size={20} className={activeTab === 'pengajuan' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[9.5px] leading-none ${activeTab === 'pengajuan' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Belanja</span>
+          </button>
+
+          {/* Menu 5 (Lainnya - Kotak Empat, Paling Kanan) */}
+          <button
+            type="button"
+            onClick={() => setShowMoreMenu(prev => !prev)}
+            className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+          >
+            <div className={`p-1.5 rounded-xl transition-colors ${showMoreMenu ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+              <LayoutGrid size={20} className={showMoreMenu ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+            </div>
+            <span className={`text-[9.5px] leading-none ${showMoreMenu ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Lainnya</span>
+          </button>
+        </div>
+
+        {/* Slide-over menu bottom sheet overlay for "Lainnya" */}
+        <AnimatePresence>
+          {showMoreMenu && (
+            <>
+              <motion.div
+                initial={{ opacity: 0 }}
+                animate={{ opacity: 0.3 }}
+                exit={{ opacity: 0 }}
+                onClick={() => setShowMoreMenu(false)}
+                className="fixed inset-0 z-40 bg-black"
+              />
+              <motion.div
+                initial={{ y: '100%' }}
+                animate={{ y: 0 }}
+                exit={{ y: '100%' }}
+                transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+                className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10 no-print"
+              >
+                <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
+                  <div className="flex flex-col">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Pendukung</span>
+                    <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Waka Sarpras</h4>
+                  </div>
+                  <button
+                    onClick={() => setShowMoreMenu(false)}
+                    className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                  >
+                    Tutup
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('laporan');
+                      setShowMoreMenu(false);
+                      setShowItemForm(false);
+                      setShowLoanForm(false);
+                      setShowProposalForm(false);
+                    }}
+                    className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  >
+                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">📊</span>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-800">Laporan &amp; Cetak</h5>
+                      <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cetak draf log berkas inventarisasi</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setActiveTab('katalog');
+                      setShowManageCatLoc(true);
+                      setShowItemForm(false);
+                      setShowMoreMenu(false);
+                    }}
+                    className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                  >
+                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🛠️</span>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-slate-800">Kelola Kategori &amp; Lokasi</h5>
+                      <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengaturan label &amp; ruang sarana</p>
+                    </div>
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowMoreMenu(false);
+                      onLogout();
+                    }}
+                    className="p-4 border border-red-100 hover:bg-red-50/50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all col-span-2 sm:col-span-1"
+                  >
+                    <span className="p-2 w-fit bg-red-50 rounded-xl text-red-650 text-lg">🚪</span>
+                    <div>
+                      <h5 className="font-extrabold text-xs text-red-600">Keluar Portal</h5>
+                      <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Logout &amp; mengakhiri sesi kerja</p>
+                    </div>
+                  </button>
+                </div>
+              </motion.div>
+            </>
+          )}
+        </AnimatePresence>
       </div>
     </div>
   );

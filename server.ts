@@ -332,7 +332,8 @@ const sarprasItems: any[] = [
     location: "Gudang Multimedia",
     totalQty: 5,
     availableQty: 3,
-    price: 5200000
+    price: 5200000,
+    purchaseYear: "2024"
   },
   {
     id: "item-2",
@@ -343,7 +344,8 @@ const sarprasItems: any[] = [
     location: "Lab Komputer 1",
     totalQty: 3,
     availableQty: 2,
-    price: 1400000
+    price: 1400000,
+    purchaseYear: "2023"
   },
   {
     id: "item-3",
@@ -354,7 +356,8 @@ const sarprasItems: any[] = [
     location: "Ruang BK",
     totalQty: 4,
     availableQty: 4,
-    price: 7500000
+    price: 7500000,
+    purchaseYear: "2025"
   },
   {
     id: "item-4",
@@ -365,7 +368,8 @@ const sarprasItems: any[] = [
     location: "Lab Musik",
     totalQty: 2,
     availableQty: 2,
-    price: 1950000
+    price: 1950000,
+    purchaseYear: "2024"
   },
   {
     id: "item-5",
@@ -376,7 +380,8 @@ const sarprasItems: any[] = [
     location: "Lab Bahasa",
     totalQty: 2,
     availableQty: 1,
-    price: 2800000
+    price: 2800000,
+    purchaseYear: "2025"
   }
 ];
 
@@ -2641,7 +2646,8 @@ async function startServer() {
           location: String(item.location || "Gudang").trim(),
           totalQty: Number(item.totalQty) || 0,
           availableQty: Math.max(0, (sarprasItems[idx].availableQty || 0) + diffTotal),
-          price: Number(item.price) || 0
+          price: Number(item.price) || 0,
+          purchaseYear: item.purchaseYear ? String(item.purchaseYear).trim() : ""
         };
       } else {
         return res.status(404).json({ error: "Barang tidak ditemukan." });
@@ -2656,7 +2662,8 @@ async function startServer() {
         location: String(item.location || "Gudang").trim(),
         totalQty: Number(item.totalQty) || 0,
         availableQty: Number(item.totalQty) || 0,
-        price: Number(item.price) || 0
+        price: Number(item.price) || 0,
+        purchaseYear: item.purchaseYear ? String(item.purchaseYear).trim() : ""
       };
       sarprasItems.unshift(newItem);
     }

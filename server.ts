@@ -5,7 +5,13 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc } from "firebase/firestore";
+import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, terminate, setLogLevel } from "firebase/firestore";
+
+try {
+  setLogLevel("silent");
+} catch (e) {
+  console.warn("Could not set firebase log level to silent:", e);
+}
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
@@ -497,8 +503,8 @@ let midtransConfig: MidtransConfig = {
   serverKey: process.env.MIDTRANS_SERVER_KEY || "",
   isProduction: false,
   adminFee: 4000,
-  systemMaintenanceFee: 1500,
-  chargeFeesToUser: true
+  systemMaintenanceFee: 0,
+  chargeFeesToUser: false
 };
 
 // Helper to determine tuition SPP amount based on student class/level
@@ -544,8 +550,21 @@ interface FirestoreErrorInfo {
 }
 
 function handleFirestoreError(error: unknown, operationType: OperationType, rpath: string | null) {
+  const errMsg = error instanceof Error ? error.message : String(error);
+  const isQuota = errMsg.includes("RESOURCE_EXHAUSTED") ||
+    errMsg.includes("resource-exhausted") ||
+    errMsg.includes("quota") ||
+    errMsg.includes("Quota limit exceeded") ||
+    (error && (error as any).code === "resource-exhausted") ||
+    (error && String((error as any).code) === "8");
+
+  if (isQuota) {
+    suspendFirestoreAndCleanup();
+    return; // Recover gracefully by turning off the DB without throwing an exception
+  }
+
   const errInfo: FirestoreErrorInfo = {
-    error: error instanceof Error ? error.message : String(error),
+    error: errMsg,
     authInfo: {
       userId: "SERVER_SERVICE",
       email: "server-agent@demo.com",
@@ -562,6 +581,7 @@ let db: any = null;
 let dbSyncStatus = "Initial";
 let dbSyncError: string | null = null;
 let lastSyncTime: string | null = null;
+let isInitialSyncCompleted = false;
 
 try {
   let firebaseConfig: any = null;
@@ -594,27 +614,65 @@ try {
   dbSyncError = error instanceof Error ? error.message : String(error);
 }
 
+let isFirestoreSuspended = false;
+
+async function suspendFirestoreAndCleanup() {
+  if (isFirestoreSuspended) return;
+  isFirestoreSuspended = true;
+  dbSyncStatus = "Suspended (Firestore Quota Exceeded)";
+  dbSyncError = "Batas kuota database Firestore tercapai (RESOURCE_EXHAUSTED). Sistem otomatis beralih menggunakan Penyimpanan Lokal Berkecepatan Tinggi.";
+  console.warn("⚠️ Firestore Quota Exceeded detected! Suspending all Firestore operations to prevent spamming errors.");
+  if (db) {
+    try {
+      const dbToTerminate = db;
+      db = null; // Instantly prevent new references
+      await terminate(dbToTerminate);
+      console.log("Firestore client successfully terminated to shut down active gRPC write/read streams.");
+    } catch (err) {
+      console.error("Failed to gracefully terminate active Firestore client:", err);
+    }
+  }
+}
+
+function checkQuotaExceeded(err: any): boolean {
+  const errMsg = err instanceof Error ? err.message : String(err);
+  if (
+    errMsg.includes("RESOURCE_EXHAUSTED") ||
+    errMsg.includes("resource-exhausted") ||
+    errMsg.includes("quota") ||
+    errMsg.includes("Quota limit exceeded") ||
+    (err && err.code === "resource-exhausted") ||
+    (err && String(err.code) === "8")
+  ) {
+    suspendFirestoreAndCleanup();
+    return true;
+  }
+  return false;
+}
+
 async function saveDocToFirestore(colName: string, docId: string, data: any) {
-  if (!db) return;
+  if (!db || isFirestoreSuspended) return;
   try {
     await setDoc(doc(db, colName, docId), data);
   } catch (err) {
+    if (checkQuotaExceeded(err)) return;
     handleFirestoreError(err, OperationType.WRITE, `${colName}/${docId}`);
   }
 }
 
 async function deleteDocFromFirestore(colName: string, docId: string) {
-  if (!db) return;
+  if (!db || isFirestoreSuspended) return;
   try {
     await deleteDoc(doc(db, colName, docId));
     console.log(`Deleted document ${docId} from ${colName} in Firestore`);
   } catch (err) {
+    if (checkQuotaExceeded(err)) return;
     handleFirestoreError(err, OperationType.DELETE, `${colName}/${docId}`);
   }
 }
 
 async function saveStateToFirestore() {
-  if (!db) return;
+  if (!db || isFirestoreSuspended || !isInitialSyncCompleted) return;
   try {
     console.log("Syncing database state to Firebase Firestore...");
     
@@ -664,6 +722,12 @@ async function saveStateToFirestore() {
 async function syncWithFirestore() {
   if (!db) {
     dbSyncStatus = "Disabled (No DB)";
+    isInitialSyncCompleted = true;
+    return;
+  }
+  if (isFirestoreSuspended) {
+    dbSyncStatus = "Suspended (Firestore Quota Exceeded)";
+    isInitialSyncCompleted = true;
     return;
   }
   try {
@@ -673,6 +737,7 @@ async function syncWithFirestore() {
     try {
       snapshot = await getDocs(collection(db, "students"));
     } catch (err) {
+      if (checkQuotaExceeded(err)) return;
       handleFirestoreError(err, OperationType.GET, "students");
     }
 
@@ -687,6 +752,7 @@ async function syncWithFirestore() {
       });
 
       // Clear and populate bills
+      if (!db || isFirestoreSuspended) return;
       try {
         const billsSnap = await getDocs(collection(db, "sppBills"));
         sppBills.length = 0;
@@ -696,6 +762,7 @@ async function syncWithFirestore() {
       }
 
       // Clear and populate transactions
+      if (!db || isFirestoreSuspended) return;
       try {
         const txsSnap = await getDocs(collection(db, "savingsTransactions"));
         savingsTransactions.length = 0;
@@ -705,6 +772,7 @@ async function syncWithFirestore() {
       }
 
       // Clear and populate notifications
+      if (!db || isFirestoreSuspended) return;
       try {
         const notifsSnap = await getDocs(collection(db, "realtimeNotifications"));
         notifications.length = 0;
@@ -715,6 +783,7 @@ async function syncWithFirestore() {
       }
 
       // Clear and populate attendance logs
+      if (!db || isFirestoreSuspended) return;
       try {
         const attSnap = await getDocs(collection(db, "attendanceLogs"));
         attendanceLogs.length = 0;
@@ -724,6 +793,7 @@ async function syncWithFirestore() {
       }
 
       // Clear and populate homeroom teachers
+      if (!db || isFirestoreSuspended) return;
       try {
         const htSnap = await getDocs(collection(db, "homeroomTeachers"));
         homeroomTeachers.length = 0;
@@ -733,6 +803,7 @@ async function syncWithFirestore() {
       }
 
       // Clear and populate treasurerTransactions
+      if (!db || isFirestoreSuspended) return;
       try {
         const bndSnap = await getDocs(collection(db, "treasurerTransactions"));
         treasurerTransactions.length = 0;
@@ -742,6 +813,7 @@ async function syncWithFirestore() {
       }
 
       // Populate config settings
+      if (!db || isFirestoreSuspended) return;
       try {
         const configSnap = await getDocs(collection(db, "configs"));
         configSnap.forEach(d => {
@@ -758,13 +830,20 @@ async function syncWithFirestore() {
         handleFirestoreError(err, OperationType.GET, "configs");
       }
 
+      if (!db || isFirestoreSuspended) {
+        isInitialSyncCompleted = true;
+        return;
+      }
+
       dbSyncStatus = "Synced (Loaded from Cloud)";
       lastSyncTime = new Date().toISOString();
       dbSyncError = null;
+      isInitialSyncCompleted = true;
       console.log("Connected successfully. State has been loaded from Firestore.");
     } else {
       console.log("No remote database documents. Performing initial Firestore migration...");
       dbSyncStatus = "Syncing (Uploading Seed)";
+      isInitialSyncCompleted = true; // Set to true so saveStateToFirestore isn't blocked of writes
       await saveStateToFirestore();
       dbSyncStatus = "Synced (Initial Seed Completed)";
       lastSyncTime = new Date().toISOString();
@@ -775,6 +854,7 @@ async function syncWithFirestore() {
     dbSyncStatus = "Failed";
     dbSyncError = err instanceof Error ? err.message : String(err);
     console.error("Firestore database sync error:", err);
+    isInitialSyncCompleted = true; // Allow local operations if sync fails
   }
 }
 
@@ -1151,8 +1231,14 @@ async function sendWhatsappNotification(phoneNumber: string, message: string): P
 }
 
 async function startServer() {
-  // Sync state with Firestore database
-  await syncWithFirestore();
+  // Sync state with Firestore database and await completion on startup
+  console.log("Awaiting initial Firestore database sync before starting Express server...");
+  try {
+    await syncWithFirestore();
+  } catch (err) {
+    console.error("Critical: Initial sync with Firestore failed on startup, proceeding anyway:", err);
+    isInitialSyncCompleted = true;
+  }
 
   const app = express();
   app.use(express.json({ limit: '10mb' }));
@@ -1179,8 +1265,8 @@ async function startServer() {
       hasServerKey: !!midtransConfig.serverKey,
       isProduction: midtransConfig.isProduction,
       adminFee: 0, // Automated/Handled directly by Midtrans
-      systemMaintenanceFee: midtransConfig.systemMaintenanceFee !== undefined ? midtransConfig.systemMaintenanceFee : 1500,
-      chargeFeesToUser: midtransConfig.chargeFeesToUser !== undefined ? midtransConfig.chargeFeesToUser : true
+      systemMaintenanceFee: 0,
+      chargeFeesToUser: false
     });
   });
 
@@ -1188,6 +1274,7 @@ async function startServer() {
   app.post("/api/admin/force-firestore-sync", async (req, res) => {
     try {
       console.log("Admin triggered manual Firestore synchronization...");
+      isFirestoreSuspended = false;
       await syncWithFirestore();
       res.json({
         success: true,
@@ -1203,27 +1290,29 @@ async function startServer() {
 
   // Update dynamic midtrans credentials
   app.post("/api/set-midtrans-config", (req, res) => {
-    const { merchantId, clientKey, serverKey, isProduction, systemMaintenanceFee, chargeFeesToUser } = req.body;
+    const { merchantId, clientKey, serverKey, isProduction } = req.body;
     midtransConfig = {
       merchantId: merchantId || "",
       clientKey: clientKey || "",
       serverKey: serverKey ? serverKey : (midtransConfig.serverKey || ""),
       isProduction: !!isProduction,
       adminFee: 0, // Automated/Handled directly by Midtrans
-      systemMaintenanceFee: systemMaintenanceFee !== undefined ? Number(systemMaintenanceFee) : (midtransConfig.systemMaintenanceFee || 1500),
-      chargeFeesToUser: chargeFeesToUser !== undefined ? !!chargeFeesToUser : (midtransConfig.chargeFeesToUser !== false)
+      systemMaintenanceFee: 0,
+      chargeFeesToUser: false
     };
     
     const notif: RealtimeNotification = {
       id: `notif-sys-${Date.now()}`,
-      title: "Konfigurasi Gateway & Biaya Diupdate ⚙️",
-      message: `Midtrans Admin fee otomatis (Surcharge Aktif), Maintenance Fee: Rp ${midtransConfig.systemMaintenanceFee}. Ditanggung Wali: ${midtransConfig.chargeFeesToUser ? 'YA' : 'TIDAK'}`,
+      title: "Konfigurasi Gateway Diupdate ⚙️",
+      message: "Kredensial dan pengaturan Midtrans berhasil diperbarui oleh Administrator.",
       type: "info",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notif);
 
-    res.json({ success: true, message: "Konfigurasi Midtrans & Biaya Tambahan pemeliharaan berhasil disimpan!" });
+    saveState();
+
+    res.json({ success: true, message: "Konfigurasi Midtrans berhasil disimpan!" });
   });
 
   // Get dynamic SPP config rates
@@ -1267,6 +1356,8 @@ async function startServer() {
     };
     broadcastNotification(notification);
 
+    saveState();
+
     res.json({ success: true, sppRates, updatedBillsCount });
   });
 
@@ -1302,6 +1393,8 @@ async function startServer() {
     };
     broadcastNotification(notification);
 
+    saveState();
+
     res.json({ success: true, schoolIdentity });
   });
 
@@ -1332,6 +1425,8 @@ async function startServer() {
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
+
+    saveState();
 
     res.json({ success: true, whatsappConfig, message: "Konfigurasi WhatsApp SDK berhasil disimpan!" });
   });
@@ -2627,6 +2722,15 @@ async function startServer() {
     res.json(sarprasItems);
   });
 
+  app.get("/api/sarpras/items/by-code/:code", (req, res) => {
+    const code = decodeURIComponent(req.params.code).trim();
+    const item = sarprasItems.find(i => i.code.toUpperCase() === code.toUpperCase());
+    if (!item) {
+      return res.status(404).json({ error: "Barang inventaris tidak ditemukan." });
+    }
+    res.json(item);
+  });
+
   app.post("/api/sarpras/items", (req, res) => {
     const item = req.body;
     if (!item.name || !item.code) {
@@ -2933,7 +3037,7 @@ async function startServer() {
 
   // Create manual bookkeeping transaction
   app.post("/api/treasurer/transactions", (req, res) => {
-    const { type, category, amount, description, date } = req.body;
+    const { type, category, amount, description, date, recipientName } = req.body;
     if (!type || !category || !amount || !description || !date) {
       return res.status(400).json({ error: "Semua field wajib diisi." });
     }
@@ -2946,7 +3050,8 @@ async function startServer() {
       description: String(description),
       date: String(date),
       source: 'custom' as const,
-      createdBy: 'bendahara'
+      createdBy: 'bendahara',
+      recipientName: recipientName ? String(recipientName) : undefined
     };
 
     treasurerTransactions.push(newTx);
@@ -2956,7 +3061,7 @@ async function startServer() {
 
   // Update manual bookkeeping transaction
   app.put("/api/treasurer/transactions/:id", (req, res) => {
-    const { type, category, amount, description, date } = req.body;
+    const { type, category, amount, description, date, recipientName } = req.body;
     const { id } = req.params;
 
     const txIndex = treasurerTransactions.findIndex(t => t.id === id);
@@ -2970,7 +3075,8 @@ async function startServer() {
       category: category ? String(category) : treasurerTransactions[txIndex].category,
       amount: amount ? Number(amount) : treasurerTransactions[txIndex].amount,
       description: description ? String(description) : treasurerTransactions[txIndex].description,
-      date: date ? String(date) : treasurerTransactions[txIndex].date
+      date: date ? String(date) : treasurerTransactions[txIndex].date,
+      recipientName: recipientName !== undefined ? String(recipientName) : treasurerTransactions[txIndex].recipientName
     };
 
     treasurerTransactions[txIndex] = updatedTx;
@@ -4033,7 +4139,7 @@ async function startServer() {
   // Midtrans Payment Gateway Proxy & Token Endpoint
   // Generate snap payment token for SPP payment
   app.post("/api/pay-spp-snap", async (req, res) => {
-    const { billId } = req.body;
+    const { billId, origin } = req.body;
     const bill = sppBills.find(b => b.id === billId);
     if (!bill) {
       return res.status(404).json({ error: "Tagihan tidak ditemukan." });
@@ -4055,11 +4161,12 @@ async function startServer() {
     const orderId = `SPP-${bill.id}-${Date.now()}`;
     bill.orderId = orderId;
     bill.status = "pending";
+    saveState();
 
     // Calculate fees if enabled and charged to user
     const adminFeeVal = 0; // Automated directly by Midtrans Surcharge settings
-    const maintenanceFeeVal = midtransConfig.chargeFeesToUser ? (midtransConfig.systemMaintenanceFee || 1500) : 0;
-    const grossAmountVal = bill.amount + maintenanceFeeVal;
+    const maintenanceFeeVal = 0;
+    const grossAmountVal = bill.amount;
 
     // If Midtrans credentials aren't set, we automatically enter sandbox flow simulation mode
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
@@ -4086,6 +4193,8 @@ async function startServer() {
       const url = midtransConfig.isProduction 
         ? "https://app.midtrans.com/snap/v1/transactions" 
         : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+      const appReturnUrl = origin || "https://ais-pre-vqyvsdvdikjp7ctz7wouro-539390488845.asia-east1.run.app";
 
       const payload = {
         transaction_details: {
@@ -4115,7 +4224,12 @@ async function startServer() {
               name: "Biaya Pemeliharaan Sistem"
             }
           ] : [])
-        ]
+        ],
+        callbacks: {
+          finish: appReturnUrl,
+          error: appReturnUrl,
+          pending: appReturnUrl
+        }
       };
 
       const response = await fetch(url, {
@@ -4165,7 +4279,7 @@ async function startServer() {
 
   // Deposit savings generate snap token
   app.post("/api/deposit-savings-snap", async (req, res) => {
-    const { studentId, amount } = req.body;
+    const { studentId, amount, origin } = req.body;
     const student = students.find(s => s.id === studentId);
     if (!student) {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
@@ -4191,11 +4305,12 @@ async function startServer() {
       notes: "Setoran via Payment Gateway"
     };
     savingsTransactions.push(trans);
+    saveState();
 
     // Calculate fees if enabled and charged to user
     const adminFeeVal = 0; // Automated directly by Midtrans Surcharge settings
-    const maintenanceFeeVal = midtransConfig.chargeFeesToUser ? (midtransConfig.systemMaintenanceFee || 1500) : 0;
-    const grossAmountVal = valAmount + maintenanceFeeVal;
+    const maintenanceFeeVal = 0;
+    const grossAmountVal = valAmount;
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
     if (!hasMidtrans) {
@@ -4217,6 +4332,8 @@ async function startServer() {
       const url = midtransConfig.isProduction 
         ? "https://app.midtrans.com/snap/v1/transactions" 
         : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+      const appReturnUrl = origin || "https://ais-pre-vqyvsdvdikjp7ctz7wouro-539390488845.asia-east1.run.app";
 
       const payload = {
         transaction_details: {
@@ -4246,7 +4363,12 @@ async function startServer() {
               name: "Biaya Pemeliharaan Sistem"
             }
           ] : [])
-        ]
+        ],
+        callbacks: {
+          finish: appReturnUrl,
+          error: appReturnUrl,
+          pending: appReturnUrl
+        }
       };
 
       const response = await fetch(url, {
@@ -4335,6 +4457,7 @@ async function startServer() {
           sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online payment WA:", err));
         }
 
+        saveState();
         return res.json({ success: true, type: "spp", bill, student: affectedStudent });
       }
     } else if (orderId.startsWith("SAV-")) {
@@ -4376,6 +4499,7 @@ async function startServer() {
             sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online savings WA:", err));
           }
 
+          saveState();
           return res.json({ success: true, type: "savings", transaction, student: affectedStudent });
         } else {
           return res.json({ success: true, message: "Transaksi sudah diproses sebelumnya." });
@@ -4403,12 +4527,18 @@ async function startServer() {
     let isHandled = false;
 
     if (order_id.startsWith("SPP-")) {
-      const bill = sppBills.find(b => b.orderId === order_id);
+      const middle = order_id.slice(4);
+      const lastHyphenIndex = middle.lastIndexOf("-");
+      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+      const bill = sppBills.find(b => b.orderId === order_id || b.id === billId);
       if (bill) {
         if (isSettlement) {
           bill.status = "paid";
           bill.paidAt = new Date().toISOString();
           bill.paymentMethod = `Midtrans (${payment_type})`;
+          if (bill.orderId !== order_id) {
+            bill.orderId = order_id; // repair orderId reference
+          }
           
           const student = students.find(s => s.id === bill.studentId);
           isHandled = true;
@@ -4437,6 +4567,7 @@ async function startServer() {
           }
         } else if (transaction_status === "pending") {
           bill.status = "pending";
+          if (bill.orderId !== order_id) bill.orderId = order_id;
           isHandled = true;
         } else if (transaction_status === "expire" || transaction_status === "deny" || transaction_status === "cancel") {
           bill.status = "unpaid";
@@ -4444,7 +4575,31 @@ async function startServer() {
         }
       }
     } else if (order_id.startsWith("SAV-")) {
-      const transaction = savingsTransactions.find(t => t.orderId === order_id);
+      let transaction = savingsTransactions.find(t => t.orderId === order_id);
+      if (!transaction && isSettlement) {
+        // Recovery mechanism: if transaction is missing from local state (e.g. database synced or updated without it)
+        const middle = order_id.slice(4);
+        const lastHyphenIndex = middle.lastIndexOf("-");
+        const studentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+          const recoveredAmount = Number(gross_amount) || 0;
+          if (recoveredAmount > 0) {
+            transaction = {
+              id: `sav-pay-recovered-${Date.now()}`,
+              studentId,
+              type: "deposit",
+              amount: recoveredAmount,
+              status: "pending",
+              createdAt: new Date().toISOString(),
+              orderId: order_id,
+              paymentMethod: `Midtrans (${payment_type || 'Online'})`,
+              notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
+            };
+            savingsTransactions.push(transaction);
+          }
+        }
+      }
       if (transaction) {
         if (isSettlement && transaction.status === "pending") {
           transaction.status = "success";
@@ -4480,6 +4635,10 @@ async function startServer() {
           isHandled = true;
         }
       }
+    }
+
+    if (isHandled) {
+      saveState();
     }
 
     res.json({ status: "success", handled: isHandled });

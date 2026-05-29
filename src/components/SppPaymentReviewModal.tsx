@@ -37,11 +37,8 @@ export default function SppPaymentReviewModal({
   // Extract rates and configurations
   const baseSpp = bill.amount;
   const adminPG = midtransStatus?.adminFee !== undefined ? midtransStatus.adminFee : 4000;
-  const adminSchool = midtransStatus?.chargeFeesToUser 
-    ? (midtransStatus.systemMaintenanceFee !== undefined ? midtransStatus.systemMaintenanceFee : 1500)
-    : 0;
   
-  const grandTotal = baseSpp + adminPG + adminSchool;
+  const grandTotal = baseSpp + adminPG;
 
   const formatIDR = (val: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
@@ -126,19 +123,6 @@ export default function SppPaymentReviewModal({
                     <span className="text-[10px] text-slate-450 font-medium">Biaya jasa gerbang finansial Midtrans</span>
                   </div>
                   <span className="font-black text-xs text-slate-800 font-mono">{formatIDR(adminPG)}</span>
-                </div>
-
-                {/* 3. Admin Sekolah */}
-                <div className="p-3.5 flex justify-between items-center transition-all bg-white hover:bg-slate-50/40">
-                  <div className="flex flex-col">
-                    <span className="font-extrabold text-xs text-slate-850">Admin/Pemeliharaan Sekolah</span>
-                    <span className="text-[10px] text-slate-450 font-medium">Iuran kas pemeliharaan sistem digital</span>
-                  </div>
-                  {adminSchool > 0 ? (
-                    <span className="font-black text-xs text-slate-800 font-mono">{formatIDR(adminSchool)}</span>
-                  ) : (
-                    <span className="text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 uppercase tracking-wider font-mono">GRATIS</span>
-                  )}
                 </div>
 
                 {/* Grand Total */}

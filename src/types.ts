@@ -131,6 +131,7 @@ export interface TreasurerTransaction {
   studentName?: string;
   nis?: string;
   createdBy?: string;
+  recipientName?: string;
 }
 
 

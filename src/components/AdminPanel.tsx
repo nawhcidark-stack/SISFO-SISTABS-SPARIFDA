@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher, AttendanceLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
 import StudentManagement from './StudentManagement';
@@ -91,6 +91,7 @@ interface AdminPanelProps {
   onDeleteSubjectTeacher?: (id: string) => Promise<boolean>;
   onAutoGenerateSubjectTeachers?: () => Promise<boolean>;
   onLogout?: () => void;
+  attendanceLogs?: AttendanceLog[];
 }
 
 export default function AdminPanel({
@@ -128,7 +129,8 @@ export default function AdminPanel({
   onUpdateSubjectTeacher,
   onDeleteSubjectTeacher,
   onAutoGenerateSubjectTeachers,
-  onLogout
+  onLogout,
+  attendanceLogs = []
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [adminTab, setAdminTab] = useState<'roster' | 'broadcast' | 'config' | 'student_mgmt' | 'laporan' | 'homeroom_mgmt' | 'subject_teacher_mgmt' | 'student_qr'>('roster');
@@ -582,10 +584,17 @@ export default function AdminPanel({
   };
 
   // Laporan & Rekap states
-  const [activeReportSubTab, setActiveReportSubTab] = useState<'harian' | 'rekap-spp' | 'rekap-tabungan'>('harian');
+  const [activeReportSubTab, setActiveReportSubTab] = useState<'harian' | 'rekap-spp' | 'rekap-tabungan' | 'rekap-absen'>('harian');
   const [currentDateFilter, setCurrentDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
   const [rekapSppGradeFilter, setRekapSppGradeFilter] = useState<string>('all');
   const [rekapSppYearFilter, setRekapSppYearFilter] = useState<string>('all');
+
+  const [absenStartDate, setAbsenStartDate] = useState<string>(() => {
+    const d = new Date();
+    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().split('T')[0];
+  });
+  const [absenEndDate, setAbsenEndDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [absenClassFilter, setAbsenClassFilter] = useState<string>('all');
 
   const getAcademicYearOfBill = (bill: SppBill) => {
     const startYear = ["Juli", "Agustus", "September", "Oktober", "November", "Desember"].includes(bill.month)
@@ -1186,8 +1195,8 @@ export default function AdminPanel({
           clientKey: midtransClientKeyInput,
           serverKey: midtransServerKeyInput,
           isProduction: midtransIsProduction,
-          systemMaintenanceFee: systemMaintenanceFeeInput,
-          chargeFeesToUser: chargeFeesToUserChecked
+          systemMaintenanceFee: 0,
+          chargeFeesToUser: false
         })
       });
       const data = await res.json();
@@ -3523,51 +3532,12 @@ export default function AdminPanel({
                   </div>
                 </div>
 
-                {/* System Fees Settings */}
-                <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/40 flex flex-col gap-4">
-                  <span className="font-bold text-slate-800 text-xs block uppercase tracking-wide">
-                    ⚙️ Biaya Pemeliharaan Aplikasi
-                  </span>
-                  
-                  <div className="flex items-center gap-2.5 px-1 py-1 text-slate-600 select-none">
-                    <input
-                      type="checkbox"
-                      id="charge-fees-to-user-chk"
-                      checked={chargeFeesToUserChecked}
-                      onChange={(e) => setChargeFeesToUserChecked(e.target.checked)}
-                      className="w-4 h-4 text-indigo-600 bg-white border-slate-300 rounded focus:ring-indigo-500 cursor-pointer"
-                    />
-                    <label htmlFor="charge-fees-to-user-chk" className="text-[11px] font-bold leading-normal cursor-pointer text-slate-700">
-                      Bebankan Iuran Pemeliharaan kepada Wali Murid (Disematkan ke Total Tagihan Online)
-                    </label>
-                  </div>
-
-                  <div className="flex flex-col gap-1">
-                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-left">
-                      Nominal Surcharge Biaya Pemeliharaan Sistem
-                    </label>
-                    <div className="relative mt-1 max-w-md">
-                      <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-slate-400">Rp</span>
-                      <input
-                        type="number"
-                        required
-                        min="0"
-                        disabled={!chargeFeesToUserChecked}
-                        value={systemMaintenanceFeeInput}
-                        onChange={(e) => setSystemMaintenanceFeeInput(parseInt(e.target.value) || 0)}
-                        className="w-full pl-9 pr-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-bold focus:outline-none focus:border-indigo-600 disabled:bg-slate-100 disabled:text-slate-450"
-                        placeholder="Contoh: 1500"
-                      />
-                    </div>
-                    <span className="text-[9px] text-slate-400 mt-0.5 leading-relaxed">Tambahan nominal iuran kas pemeliharaan aplikasi (Contoh Rp 1.500)</span>
-                  </div>
-
-                  <div className="p-3 bg-amber-50 rounded-lg border border-amber-250 text-amber-900 text-[11px] leading-relaxed flex flex-col gap-1">
-                    <span className="font-bold">⚡ Informasi Biaya Admin Midtrans Otomatis:</span>
-                    <p className="m-0">
-                      Sistem ini terintegrasi penuh untuk mendukung semua metode pembayaran Snap (Virtual Account, QRIS/GoPay/ShopeePay, Alfa/Indomaret, atau Kartu Kredit). Biaya administrasi Midtrans akan otomatis ditambahkan oleh server Midtrans sendiri di dalam popup Snap kepada Wali Murid (jika fitur Surcharge diaktifkan di Dashboard Portal Midtrans Anda), sehingga nilai tarif admin tidak perlu diatur atau dirawat manual dari aplikasi ini.
-                    </p>
-                  </div>
+                {/* Midtrans Info Surcharge */}
+                <div className="border border-slate-200 rounded-xl p-5 bg-amber-50/50 text-amber-900 text-[11px] leading-relaxed flex flex-col gap-1.5">
+                  <span className="font-bold text-amber-950 flex items-center gap-1">⚡ Informasi Biaya Admin Midtrans Otomatis:</span>
+                  <p className="m-0 text-amber-850 font-medium">
+                    Sistem ini terintegrasi penuh untuk mendukung semua metode pembayaran Snap (Virtual Account, QRIS/GoPay/ShopeePay, Alfa/Indomaret, atau Kartu Kredit). Biaya administrasi Midtrans akan otomatis ditambahkan oleh server Midtrans sendiri di dalam popup Snap kepada Wali Murid (jika fitur Surcharge diaktifkan di Dashboard Portal Midtrans Anda), sehingga nilai tarif admin tidak perlu diatur atau dirawat manual dari aplikasi ini.
+                  </p>
                 </div>
 
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
@@ -4838,8 +4808,8 @@ export default function AdminPanel({
             className="flex flex-col gap-6 w-full"
           >
             {/* Laporan Sub Tabs Selector */}
-            <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 text-xs">
-              <div className="flex gap-1.5 bg-slate-50 p-1 border border-slate-200 rounded-lg w-full sm:w-auto">
+             <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 text-xs">
+              <div className="flex gap-1.5 bg-slate-50 p-1 border border-slate-200 rounded-lg w-full lg:w-auto overflow-x-auto whitespace-nowrap scrollbar-none">
                 <button
                   type="button"
                   onClick={() => setActiveReportSubTab('harian')}
@@ -4872,6 +4842,17 @@ export default function AdminPanel({
                   }`}
                 >
                   <span className="flex items-center gap-1.5 justify-center"><BarChart3 size={12} /> Rekap Tabungan</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setActiveReportSubTab('rekap-absen')}
+                  className={`flex-1 sm:flex-initial px-4 py-2 text-center font-bold text-[11px] uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                    activeReportSubTab === 'rekap-absen'
+                      ? 'bg-slate-900 text-white shadow-sm'
+                      : 'text-slate-600 hover:bg-slate-100'
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 justify-center"><ClipboardCheck size={12} /> Rekap Absensi 📊</span>
                 </button>
               </div>
 
@@ -5330,6 +5311,410 @@ export default function AdminPanel({
                         </tbody>
                       </table>
                     </div>
+                  </div>
+                </div>
+              );
+            })()}
+
+            {activeReportSubTab === 'rekap-absen' && (() => {
+              const formatIndonesianDateLocal = (dateStr: string) => {
+                if (!dateStr) return "";
+                try {
+                  const parts = dateStr.split("-");
+                  if (parts.length !== 3) return dateStr;
+                  const months = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+                  const day = parseInt(parts[2], 10);
+                  const month = months[parseInt(parts[1], 10) - 1];
+                  const year = parts[0];
+                  return `${day} ${month} ${year}`;
+                } catch (err) {
+                  return dateStr;
+                }
+              };
+
+              // Map & Filter function
+              const getFilteredAttendanceLogsLocal = () => {
+                let logsInPeriod = attendanceLogs.filter(log => {
+                  return log.date >= absenStartDate && log.date <= absenEndDate;
+                });
+
+                const mapped = logsInPeriod.map(log => {
+                  const student = students.find(s => s.id === log.studentId);
+                  if (!student) return null;
+
+                  const homeroom = homerooms.find(h => h.className === student.class);
+                  const homeroomName = homeroom ? homeroom.name : "Belum Ditentukan";
+
+                  return {
+                    ...log,
+                    studentName: student.name,
+                    studentNis: student.nis,
+                    studentClass: student.class,
+                    homeroomName: homeroomName
+                  };
+                }).filter(item => item !== null) as Array<any>;
+
+                const filtered = mapped.filter(log => {
+                  if (absenClassFilter === 'all') return true;
+                  return log.studentClass === absenClassFilter;
+                });
+
+                return filtered;
+              };
+
+              const filteredLogs = getFilteredAttendanceLogsLocal();
+              const totalLogs = filteredLogs.length;
+
+              const matchHadir = filteredLogs.filter(l => l.status === 'Hadir').length;
+              const matchSakit = filteredLogs.filter(l => l.status === 'Sakit').length;
+              const matchIzin = filteredLogs.filter(l => l.status === 'Izin').length;
+              const matchAlpa = filteredLogs.filter(l => l.status === 'Alpa').length;
+              const matchTerlambat = filteredLogs.filter(l => l.status === 'Terlambat').length;
+
+              const pctHadir = totalLogs > 0 ? Math.round((matchHadir / totalLogs) * 100) : 0;
+              const pctSakit = totalLogs > 0 ? Math.round((matchSakit / totalLogs) * 100) : 0;
+              const pctIzin = totalLogs > 0 ? Math.round((matchIzin / totalLogs) * 100) : 0;
+              const pctAlpa = totalLogs > 0 ? Math.round((matchAlpa / totalLogs) * 100) : 0;
+              const pctTerlambat = totalLogs > 0 ? Math.round((matchTerlambat / totalLogs) * 100) : 0;
+
+              // Generate the recap list of total counts for each student in the specified class filter & date range
+              const getStudentRecapList = () => {
+                const filteredStudents = students.filter(student => {
+                  if (absenClassFilter === 'all') return true;
+                  return student.class === absenClassFilter;
+                });
+
+                const list = filteredStudents.map(student => {
+                  const studentLogs = attendanceLogs.filter(log => {
+                    return log.studentId === student.id && log.date >= absenStartDate && log.date <= absenEndDate;
+                  });
+
+                  const counts = {
+                    H: studentLogs.filter(l => l.status === 'Hadir').length,
+                    S: studentLogs.filter(l => l.status === 'Sakit').length,
+                    I: studentLogs.filter(l => l.status === 'Izin').length,
+                    A: studentLogs.filter(l => l.status === 'Alpa').length,
+                    T: studentLogs.filter(l => l.status === 'Terlambat').length,
+                    total: studentLogs.length
+                  };
+
+                  const homeroom = homerooms.find(h => h.className === student.class);
+                  const homeroomName = homeroom ? homeroom.name : "Belum Ditentukan";
+
+                  return {
+                    id: student.id,
+                    nis: student.nis,
+                    name: student.name,
+                    class: student.class,
+                    homeroomName,
+                    ...counts
+                  };
+                });
+
+                // Sort by class first, then student name
+                return list.sort((a, b) => {
+                  const classCompare = a.class.localeCompare(b.class);
+                  if (classCompare !== 0) return classCompare;
+                  return a.name.localeCompare(b.name);
+                });
+              };
+
+              const recapList = getStudentRecapList();
+
+              const handleDownloadXLS = () => {
+                if (recapList.length === 0) {
+                  alert("Tidak ada data siswa untuk filter kelas terpilih.");
+                  return;
+                }
+
+                let html = `
+                  <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+                  <head>
+                    <!--[if gte mso 9]>
+                    <xml>
+                      <x:ExcelWorkbook>
+                        <x:ExcelWorksheets>
+                          <x:ExcelWorksheet>
+                            <x:Name>Rekap Presensi Siswa</x:Name>
+                            <x:WorksheetOptions>
+                              <x:DisplayGridlines/>
+                            </x:WorksheetOptions>
+                          </x:ExcelWorksheet>
+                        </x:ExcelWorksheets>
+                      </x:ExcelWorkbook>
+                    </xml>
+                    <![endif]-->
+                    <style>
+                      table { border-collapse: collapse; font-family: Arial, sans-serif; }
+                      th { background-color: #3b82f6; color: white; font-weight: bold; border: 1px solid #cbd5e1; padding: 8px; text-align: center; }
+                      td { border: 1px solid #cbd5e1; padding: 6px; }
+                      .title { font-size: 14pt; font-weight: bold; text-align: center; color: #1e3a8a; }
+                      .meta { font-size: 10pt; text-align: center; color: #475569; }
+                      .center { text-align: center; }
+                      .hadir { background-color: #d1fae5; color: #065f46; font-weight: bold; text-align: center; }
+                      .sakit { background-color: #dbeafe; color: #1e40af; font-weight: bold; text-align: center; }
+                      .izin { background-color: #fef3c7; color: #92400e; font-weight: bold; text-align: center; }
+                      .alpa { background-color: #fee2e2; color: #991b1b; font-weight: bold; text-align: center; }
+                      .terlambat { background-color: #f3e8ff; color: #6b21a8; font-weight: bold; text-align: center; }
+                    </style>
+                  </head>
+                  <body>
+                    <table>
+                      <tr><td colspan="11" class="title">LAPORAN REKAPITULASI PRESENSI SISWA (REKAP JUMLAH)</td></tr>
+                      <tr><td colspan="11" class="meta">SMP MA'ARIF NU PANDAAN</td></tr>
+                      <tr><td colspan="11" class="meta">Periode Tanggal: ${formatIndonesianDateLocal(absenStartDate)} s.d ${formatIndonesianDateLocal(absenEndDate)}</td></tr>
+                      <tr><td colspan="11" class="meta">Wali Kelas / Kelas Filter: ${absenClassFilter === 'all' ? 'Semua Wali Kelas' : `Kelas ${absenClassFilter}`}</td></tr>
+                      <tr><td colspan="11"></td></tr>
+                      <thead>
+                        <tr>
+                          <th>No</th>
+                          <th>NIS</th>
+                          <th>Nama Siswa</th>
+                          <th>Kelas</th>
+                          <th>Wali Kelas</th>
+                          <th style="background-color: #10b981; color: white;">Hadir (H)</th>
+                          <th style="background-color: #3b82f6; color: white;">Sakit (S)</th>
+                          <th style="background-color: #f59e0b; color: white;">Izin (I)</th>
+                          <th style="background-color: #ef4444; color: white;">Alpa (A)</th>
+                          <th style="background-color: #8b5cf6; color: white;">Terlambat (T)</th>
+                          <th>Total Presensi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                `;
+
+                recapList.forEach((row, idx) => {
+                  html += `
+                    <tr>
+                      <td class="center">${idx + 1}</td>
+                      <td style="mso-number-format:'\\@';" class="center">${row.nis}</td>
+                      <td>${row.name}</td>
+                      <td class="center">${row.class}</td>
+                      <td>${row.homeroomName}</td>
+                      <td class="hadir center">${row.H}</td>
+                      <td class="sakit center">${row.S}</td>
+                      <td class="izin center">${row.I}</td>
+                      <td class="alpa center">${row.A}</td>
+                      <td class="terlambat center">${row.T}</td>
+                      <td class="center" style="font-weight: bold;">${row.total}</td>
+                    </tr>
+                  `;
+                });
+
+                html += `
+                      </tbody>
+                    </table>
+                  </body>
+                  </html>
+                `;
+
+                const blob = new Blob([html], { type: 'application/vnd.ms-excel;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `Rekap_Presensi_H_S_I_A_T_${absenClassFilter === 'all' ? 'Semua_Wali' : `Kelas_${absenClassFilter}`}_${absenStartDate}_s.d_${absenEndDate}.xls`;
+                link.click();
+                URL.revokeObjectURL(url);
+              };
+
+              const handleDownloadCSV = () => {
+                if (recapList.length === 0) {
+                  alert("Tidak ada data siswa untuk filter kelas terpilih.");
+                  return;
+                }
+
+                const csvRows = [
+                  "sep=;",
+                  "LAPORAN REKAPITULASI PRESENSI SISWA (REKAP JUMLAH)",
+                  "SMP MA'ARIF NU PANDAAN",
+                  `Periode: ${absenStartDate} s.d ${absenEndDate}`,
+                  `Wali Kelas Filter: ${absenClassFilter === 'all' ? 'Semua Kelas' : `Kelas ${absenClassFilter}`}`,
+                  "",
+                  "No;NIS;Nama Siswa;Kelas;Wali Kelas;Hadir (H);Sakit (S);Izin (I);Alpa (A);Terlambat (T);Total Presensi"
+                ];
+
+                recapList.forEach((row, index) => {
+                  const csvLine = [
+                    index + 1,
+                    `"${row.nis}"`,
+                    `"${row.name.replace(/"/g, '""')}"`,
+                    `"${row.class}"`,
+                    `"${row.homeroomName.replace(/"/g, '""')}"`,
+                    row.H,
+                    row.S,
+                    row.I,
+                    row.A,
+                    row.T,
+                    row.total
+                  ];
+                  csvRows.push(csvLine.join(";"));
+                });
+
+                const BOM = "\uFEFF";
+                const blob = new Blob([BOM + csvRows.join("\n")], { type: 'text/csv;charset=utf-8;' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement("a");
+                link.href = url;
+                link.download = `Rekap_Presensi_H_S_I_A_T_${absenClassFilter === 'all' ? 'Semua_Kelas' : `Kelas_${absenClassFilter}`}_${absenStartDate}_s.d_${absenEndDate}.csv`;
+                link.click();
+                URL.revokeObjectURL(url);
+              };
+
+              return (
+                <div className="flex flex-col gap-6">
+                  {/* Rentang Filter Form block */}
+                  <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-4">
+                    <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+                      <div>
+                        <h4 className="font-extrabold text-slate-800 text-xs sm:text-sm uppercase tracking-wider">Unduh Rekap Absensi Siswa (H, S, I, A, T)</h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">Filter data rekapitulasi status absensi harian per siswa yang dikelola oleh wali kelas berdasarkan rentang tanggal tertentu.</p>
+                      </div>
+                      <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                        <button
+                          type="button"
+                          onClick={handleDownloadXLS}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] sm:text-xs cursor-pointer transition-all uppercase tracking-wider"
+                        >
+                          <Download size={13} /> Ekspor Excel Rapi (.xls)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={handleDownloadCSV}
+                          className="flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-900 text-white font-bold rounded-lg text-[10px] sm:text-xs cursor-pointer transition-all uppercase tracking-wider"
+                        >
+                          <FileText size={13} /> Ekspor CSV (.csv)
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      {/* Start Date */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Tanggal Mulai</label>
+                        <input
+                          type="date"
+                          value={absenStartDate}
+                          onChange={(e) => setAbsenStartDate(e.target.value)}
+                          className="px-3.5 py-2 border border-slate-250 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer w-full"
+                        />
+                      </div>
+
+                      {/* End Date */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Tanggal Selesai</label>
+                        <input
+                          type="date"
+                          value={absenEndDate}
+                          onChange={(e) => setAbsenEndDate(e.target.value)}
+                          className="px-3.5 py-2 border border-slate-250 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer w-full"
+                        />
+                      </div>
+
+                      {/* Select Homeroom Class */}
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[10px] font-bold text-slate-450 uppercase tracking-wider">Wali Kelas / Kelas</label>
+                        <select
+                          value={absenClassFilter}
+                          onChange={(e) => setAbsenClassFilter(e.target.value)}
+                          className="px-3.5 py-2 border border-slate-250 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-1 focus:ring-indigo-500 cursor-pointer w-full"
+                        >
+                          <option value="all">Semua Wali Kelas & Kelas</option>
+                          {homerooms.map(h => (
+                            <option key={h.id} value={h.className}>
+                              Kelas {h.className} - {h.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Summary Stats Panel */}
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-3.5">
+                    <div className="bg-white p-4 border border-slate-200 rounded-xl flex flex-col gap-1 shadow-xs justify-center">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Presensi</span>
+                      <span className="text-base font-black font-mono text-slate-800 leading-none mt-1">{totalLogs} Data</span>
+                    </div>
+
+                    <div className="bg-emerald-50/45 p-4 border border-emerald-150 rounded-xl flex flex-col gap-1 shadow-xs justify-center">
+                      <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">Hadir (H)</span>
+                      <span className="text-base font-black font-mono text-emerald-700 leading-none mt-1">{matchHadir} ({pctHadir}%)</span>
+                    </div>
+
+                    <div className="bg-purple-50/45 p-4 border border-purple-150 rounded-xl flex flex-col gap-1 shadow-xs justify-center">
+                      <span className="text-[9px] font-bold text-purple-600 uppercase tracking-wider">Terlambat (T)</span>
+                      <span className="text-base font-black font-mono text-purple-700 leading-none mt-1">{matchTerlambat} ({pctTerlambat}%)</span>
+                    </div>
+
+                    <div className="bg-blue-50/45 p-4 border border-blue-150 rounded-xl flex flex-col gap-1 shadow-xs justify-center">
+                      <span className="text-[9px] font-bold text-blue-600 uppercase tracking-wider">Sakit (S)</span>
+                      <span className="text-base font-black font-mono text-blue-700 leading-none mt-1">{matchSakit} ({pctSakit}%)</span>
+                    </div>
+
+                    <div className="bg-amber-50/45 p-4 border border-amber-150 rounded-xl flex flex-col gap-1 shadow-xs justify-center">
+                      <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">Izin (I)</span>
+                      <span className="text-base font-black font-mono text-amber-700 leading-none mt-1">{matchIzin} ({pctIzin}%)</span>
+                    </div>
+
+                    <div className="bg-rose-50/45 p-4 border border-rose-150 rounded-xl flex flex-col gap-1 shadow-xs justify-center">
+                      <span className="text-[9px] font-bold text-rose-500 uppercase tracking-wider">Alpa (A)</span>
+                      <span className="text-base font-black font-mono text-rose-700 leading-none mt-1">{matchAlpa} ({pctAlpa}%)</span>
+                    </div>
+                  </div>
+
+                  {/* Preview Table block representation */}
+                  <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-4">
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">Preview Rekap Absensi Siswa</h4>
+                      <p className="text-[10px] text-slate-400 mt-0.5">Menampilkan total rekap status absensi (H, S, I, A, T) untuk setiap siswa berdasarkan filter terpilih.</p>
+                    </div>
+
+                    {recapList.length === 0 ? (
+                      <div className="py-12 border border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center text-center p-4">
+                        <ShieldAlert size={28} className="text-slate-350 animate-bounce mb-2" />
+                        <span className="text-xs font-bold text-slate-500">Tidak ada data siswa / presensi found</span>
+                        <span className="text-[10px] text-slate-400 max-w-xs mt-1">Ubah rentang tanggal pencarian atau filter kelas untuk mendapatkan log presensi siswa.</span>
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
+                          <thead>
+                            <tr className="text-slate-455 font-extrabold uppercase text-[9px] tracking-wider pb-2 border-b border-slate-100">
+                              <th className="pb-2 text-center">No</th>
+                              <th className="pb-2">NIS</th>
+                              <th className="pb-2">Nama Siswa</th>
+                              <th className="pb-2 text-center">Kelas</th>
+                              <th className="pb-2">Wali Kelas</th>
+                              <th className="pb-2 text-center text-emerald-600">H</th>
+                              <th className="pb-2 text-center text-blue-600">S</th>
+                              <th className="pb-2 text-center text-amber-600">I</th>
+                              <th className="pb-2 text-center text-rose-600">A</th>
+                              <th className="pb-2 text-center text-purple-600">T</th>
+                              <th className="pb-2 text-center font-black">Total</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium">
+                            {recapList.map((row, idx) => {
+                              return (
+                                <tr key={row.id} className="hover:bg-slate-50/40 select-none">
+                                  <td className="py-2.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                                  <td className="py-2.5 font-mono text-slate-500 font-extrabold">{row.nis}</td>
+                                  <td className="py-2.5 font-bold text-slate-800 whitespace-nowrap">{row.name}</td>
+                                  <td className="py-2.5 text-center text-slate-755 font-extrabold whitespace-nowrap">{row.class}</td>
+                                  <td className="py-2.5 text-slate-655 font-bold whitespace-nowrap">{row.homeroomName}</td>
+                                  <td className="py-2.5 text-center font-black text-emerald-600 font-mono text-xs">{row.H}</td>
+                                  <td className="py-2.5 text-center font-black text-blue-600 font-mono text-xs">{row.S}</td>
+                                  <td className="py-2.5 text-center font-black text-amber-600 font-mono text-xs">{row.I}</td>
+                                  <td className="py-2.5 text-center font-black text-rose-600 font-mono text-xs">{row.A}</td>
+                                  <td className="py-2.5 text-center font-black text-purple-600 font-mono text-xs">{row.T}</td>
+                                  <td className="py-2.5 text-center font-black text-slate-800 font-mono text-xs bg-slate-50/{20}">{row.total}</td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   </div>
                 </div>
               );

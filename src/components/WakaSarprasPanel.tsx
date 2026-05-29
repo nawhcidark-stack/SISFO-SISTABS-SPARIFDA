@@ -5,43 +5,50 @@ import {
   Home, LayoutGrid
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import QRCode from 'qrcode';
 import { SchoolIdentity, HomeroomTeacher, SubjectTeacher, SarprasItem, SarprasProposal, SarprasLoan } from '../types';
 
-// Helper component for printing crisp vector barcodes
-function BarcodeSVG({ value }: { value: string }) {
-  const cleanVal = String(value || "INV-000").toUpperCase();
-  const seed = cleanVal.split('').reduce((acc, c) => acc + c.charCodeAt(0), 0);
-  
-  const bars: React.ReactNode[] = [];
-  let currentX = 10;
-  const height = 40;
-  
-  for (let i = 0; i < 35; i++) {
-    const isThick = ((seed * (i + 13)) % 5 === 0) || (i % 7 === 0);
-    const width = isThick ? 3 : 1;
-    const gap = ((seed + i) % 4 === 0) ? 2 : 1;
-    
-    bars.push(
-      <rect 
-        key={`bar-${i}`} 
-        x={currentX} 
-        y={5} 
-        width={width} 
-        height={height} 
-        fill="black" 
-      />
-    );
-    currentX += width + gap;
-  }
-  
-  const totalWidth = currentX + 10;
-  
+// Helper component for printing crisp QR codes
+function QRCodeElement({ value, size = 100 }: { value: string; size?: number }) {
+  const [qrUrl, setQrUrl] = useState<string>('');
+
+  useEffect(() => {
+    let active = true;
+    const qrLink = window.location.origin + "/?scan=" + encodeURIComponent(value);
+    QRCode.toDataURL(qrLink, {
+      margin: 1.5,
+      width: size,
+      color: {
+        dark: '#0f172a',
+        light: '#ffffff'
+      }
+    })
+      .then(url => {
+        if (active) setQrUrl(url);
+      })
+      .catch(err => {
+        console.error('QR Code generation error:', err);
+      });
+    return () => {
+      active = false;
+    };
+  }, [value, size]);
+
   return (
-    <div className="flex flex-col items-center gap-1 bg-white p-2 rounded border border-slate-100 w-fit mx-auto">
-      <svg width={totalWidth} height={height + 10} className="mx-auto block">
-        {bars}
-      </svg>
-      <span className="text-[9px] font-mono font-bold tracking-widest text-slate-800">{cleanVal}</span>
+    <div className="flex flex-col items-center gap-1 bg-white p-1 rounded-lg border border-slate-200 w-fit mx-auto">
+      {qrUrl ? (
+        <img 
+          src={qrUrl} 
+          alt={value} 
+          width={size} 
+          height={size} 
+          className="mx-auto block"
+          referrerPolicy="no-referrer"
+        />
+      ) : (
+        <div style={{ width: size, height: size }} className="bg-slate-50 animate-pulse rounded-lg mx-auto" />
+      )}
+      <span className="text-[9.5px] font-mono font-extrabold tracking-wider text-slate-800 uppercase mt-0.5">{value}</span>
     </div>
   );
 }
@@ -86,6 +93,19 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   const [loans, setLoans] = useState<SarprasLoan[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Custom dialog confirmation state to bypass blocked window.confirm inside iframes
+  const [confirmDialog, setConfirmDialog] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: string;
+    onConfirm: () => void | Promise<void>;
+  }>({
+    isOpen: false,
+    title: '',
+    message: '',
+    onConfirm: () => {}
+  });
 
   // Form States - Items
   const [itemForm, setItemForm] = useState<{
@@ -240,11 +260,18 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
       showMsg('error', 'Harus menyisakan minimal satu kategori utama.');
       return;
     }
-    if (!window.confirm(`Yakin ingin membuang kategori "${cat}"?`)) return;
-    const updated = categories.filter(c => c !== cat);
-    setCategories(updated);
-    localStorage.setItem('sarpras_categories', JSON.stringify(updated));
-    showMsg('success', 'Kategori berhasil dihapus.');
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Kategori',
+      message: `Apakah Anda yakin ingin menghapus kategori "${cat}"?`,
+      onConfirm: () => {
+        const updated = categories.filter(c => c !== cat);
+        setCategories(updated);
+        localStorage.setItem('sarpras_categories', JSON.stringify(updated));
+        showMsg('success', 'Kategori berhasil dihapus.');
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   // Locations submit & delete actions
@@ -268,11 +295,18 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
       showMsg('error', 'Harus menyisakan minimal satu lokasi penyimpanan.');
       return;
     }
-    if (!window.confirm(`Yakin ingin membuang lokasi "${loc}"?`)) return;
-    const updated = locations.filter(l => l !== loc);
-    setLocations(updated);
-    localStorage.setItem('sarpras_locations', JSON.stringify(updated));
-    showMsg('success', 'Lokasi penyimpanan berhasil dihapus.');
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Lokasi Penyimpanan',
+      message: `Apakah Anda yakin ingin menghapus lokasi penyimpanan "${loc}"?`,
+      onConfirm: () => {
+        const updated = locations.filter(l => l !== loc);
+        setLocations(updated);
+        localStorage.setItem('sarpras_locations', JSON.stringify(updated));
+        showMsg('success', 'Lokasi penyimpanan berhasil dihapus.');
+        setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+      }
+    });
   };
 
   const showMsg = (type: 'success' | 'error', text: string) => {
@@ -337,19 +371,27 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   };
 
   const handleDeleteItem = async (id: string) => {
-    if (!window.confirm("Apakah Anda yakin ingin menghapus barang inventaris ini?")) return;
-    try {
-      const res = await fetch(`/api/sarpras/items/${id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (res.ok) {
-        setItems(data.sarprasItems);
-        showMsg('success', 'Barang berhasil dihapus dari inventaris.');
-      } else {
-        showMsg('error', data.error || 'Gagal menghapus barang.');
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hapus Barang Inventaris',
+      message: 'Apakah Anda yakin ingin menghapus barang inventaris ini? Tindakan ini akan menghapus aset secara permanen.',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/sarpras/items/${id}`, { method: 'DELETE' });
+          const data = await res.json();
+          if (res.ok) {
+            setItems(data.sarprasItems);
+            showMsg('success', 'Barang berhasil dihapus dari inventaris.');
+          } else {
+            showMsg('error', data.error || 'Gagal menghapus barang.');
+          }
+        } catch (err) {
+          showMsg('error', 'Kesalahan koneksi server.');
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    } catch (err) {
-      showMsg('error', 'Kesalahan koneksi server.');
-    }
+    });
   };
 
   // Proposal submit handler
@@ -432,22 +474,30 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   };
 
   const handleReturnLoan = async (loanId: string) => {
-    if (!window.confirm("Apakah Anda yakin barang pinjaman ini sudah dikembalikan secara utuh?")) return;
-    try {
-      const res = await fetch(`/api/sarpras/loans/${loanId}/return`, {
-        method: 'POST'
-      });
-      const data = await res.json();
-      if (res.ok) {
-        setLoans(data.sarprasLoans);
-        setItems(data.sarprasItems);
-        showMsg('success', 'Barang telah dikembalikan dan kuantitas tersedia disinkronkan kembali.');
-      } else {
-        showMsg('error', data.error || 'Gagal memperbarui status pengembalian.');
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Kembalikan Pinjaman',
+      message: 'Apakah Anda yakin barang pinjaman ini sudah dikembalikan secara utuh?',
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/sarpras/loans/${loanId}/return`, {
+            method: 'POST'
+          });
+          const data = await res.json();
+          if (res.ok) {
+            setLoans(data.sarprasLoans);
+            setItems(data.sarprasItems);
+            showMsg('success', 'Barang telah dikembalikan dan kuantitas tersedia disinkronkan kembali.');
+          } else {
+            showMsg('error', data.error || 'Gagal memperbarui status pengembalian.');
+          }
+        } catch (err) {
+          showMsg('error', 'Gagal memproses pengembalian barang.');
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
       }
-    } catch (err) {
-      showMsg('error', 'Gagal memproses pengembalian barang.');
-    }
+    });
   };
 
   // Filter computations
@@ -564,14 +614,14 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
         </div>
       )}
 
-      {/* Printable Barcode Overlay / Preview Modal */}
+      {/* Printable Barcode/QR Overlay / Preview Modal */}
       {barcodePrintData && (
         <div id="print-report-section" className="fixed inset-0 bg-slate-900/80 backdrop-blur-xs flex items-center justify-center z-50 p-4 overflow-y-auto print:absolute print:inset-0 print:bg-white print:p-0">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 print:border-none print:shadow-none print:p-0 print:max-w-full">
             <div className="flex justify-between items-center border-b pb-3 print:hidden">
               <div className="text-left">
-                <h3 className="font-extrabold text-slate-900 text-sm">🖨️ Pratinjau Barcode Barang Kebutuhan</h3>
-                <p className="text-xs text-slate-500">Jumlah barcode yang siap dicetak: {barcodePrintData.length} label.</p>
+                <h3 className="font-extrabold text-slate-900 text-sm">🖨️ Pratinjau Label QR Code Inventaris</h3>
+                <p className="text-xs text-slate-500">Jumlah label QR Code yang siap dicetak: {barcodePrintData.length} label.</p>
               </div>
               <button 
                 onClick={() => setBarcodePrintData(null)}
@@ -586,26 +636,26 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 {barcodePrintData.map((item) => (
                   <div 
                     key={item.id || item.code} 
-                    className="border-2 border-slate-350 p-4 rounded-xl flex flex-col items-center justify-center text-center bg-white relative shadow-xs print:shadow-none print:border-slate-800 gap-1"
-                    style={{ minHeight: '165px', breakInside: 'avoid' }}
+                    className="border-2 border-slate-350 p-4 rounded-xl flex flex-col items-center justify-between text-center bg-white relative shadow-xs print:shadow-none print:border-slate-800 gap-1.5"
+                    style={{ minHeight: '190px', breakInside: 'avoid' }}
                   >
-                    {/* 1. Barcode visual lines & its code */}
-                    <div className="select-none scale-100 transform origin-center my-0.5">
-                      <BarcodeSVG value={item.code} />
+                    {/* 1. Barcode / QR Code */}
+                    <div className="select-none my-0.5">
+                      <QRCodeElement value={item.code} />
                     </div>
 
-                    {/* Item Name context */}
-                    <div className="text-[10px] font-extrabold text-slate-800 uppercase tracking-tight truncate w-full mt-1">
+                    {/* Nama Barang context */}
+                    <div className="text-[10px] font-extrabold text-slate-700 uppercase tracking-tight truncate w-full leading-tight mt-1">
                       {item.name}
                     </div>
                     
                     {/* 2. School Identity */}
-                    <div className="text-[9.5px] font-black tracking-normal text-slate-900 uppercase">
+                    <div className="text-[9.5px] font-black tracking-normal text-slate-905 uppercase">
                       SMP MAARIF NU PANDAAN
                     </div>
                     
                     {/* 3. Lokasi Barang | Tahun Pembelian */}
-                    <div className="text-[9px] font-bold tracking-wide text-indigo-700 w-full truncate border-t border-dashed border-slate-300 pt-1 uppercase font-mono mt-1">
+                    <div className="text-[9px] font-bold tracking-wide text-indigo-700 w-full truncate border-t border-dashed border-slate-300 pt-1.5 uppercase font-mono mt-1">
                       {item.location || "Gudang Utama"} | {item.purchaseYear || "-"}
                     </div>
                   </div>
@@ -626,7 +676,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 }}
                 className="px-5 py-2.5 bg-slate-900 hover:bg-slate-805 text-white font-extrabold text-xs rounded-xl cursor-pointer flex items-center justify-center gap-1.5 shadow-md"
               >
-                <Printer size={13} /> Mulai Cetak Label Barcode ({barcodePrintData.length} Unit)
+                <Printer size={13} /> Mulai Cetak Label QR Code ({barcodePrintData.length} Unit)
               </button>
             </div>
           </div>
@@ -1200,15 +1250,15 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                   </div>
                 </div>
 
-                {/* Bulk actions banner */}
+                 {/* Bulk actions banner */}
                 {selectedBarcodeItems.length > 0 && (
                   <div className="bg-indigo-50 border border-indigo-200 rounded-xl p-3.5 flex justify-between items-center animate-fade-in mb-4">
                     <div className="text-left">
-                      <span className="text-[10px] font-black uppercase text-indigo-700 tracking-wider block">Kolektif Cetak Barcode</span>
-                      <p className="text-xs font-bold text-slate-700">{selectedBarcodeItems.length} barang siap dikompilasi ke lembar cetak barcode.</p>
+                      <span className="text-[10px] font-black uppercase text-indigo-700 tracking-wider block">Kolektif Cetak QR Code</span>
+                      <p className="text-xs font-bold text-slate-700">{selectedBarcodeItems.length} barang siap dikompilasi ke lembar cetak QR Code.</p>
                     </div>
                     <div className="flex gap-2">
-                      <button
+                       <button
                         type="button"
                         onClick={() => setSelectedBarcodeItems([])}
                         className="px-3 py-1.5 text-slate-500 hover:bg-slate-100 font-bold text-xs rounded-lg cursor-pointer"
@@ -1223,7 +1273,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                         }}
                         className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-lg shadow-sm cursor-pointer flex items-center gap-1.5"
                       >
-                        <Printer size={12} /> Cetak Kolektif ({selectedBarcodeItems.length})
+                        <Printer size={12} /> Cetak Kolektif QR ({selectedBarcodeItems.length})
                       </button>
                     </div>
                   </div>
@@ -1328,7 +1378,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                                   <button
                                     onClick={() => setBarcodePrintData([it])}
                                     className="p-2 text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
-                                    title="Cetak Barcode Satuan (Baras)"
+                                    title="Cetak QR Code Satuan"
                                   >
                                     <Printer size={12} className="text-slate-550" />
                                   </button>
@@ -2028,6 +2078,51 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 </div>
               </motion.div>
             </>
+          )}
+        </AnimatePresence>
+
+        {/* Non-blocking Elegant confirmation modal */}
+        <AnimatePresence>
+          {confirmDialog.isOpen && (
+            <div className="fixed inset-0 bg-slate-900/65 backdrop-blur-xs z-250 flex items-center justify-center p-4 no-print">
+              <motion.div
+                initial={{ opacity: 0, scale: 0.95, y: 15 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.95, y: 15 }}
+                className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-sm w-full overflow-hidden flex flex-col"
+              >
+                <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-2 text-slate-800">
+                  <AlertTriangle size={16} className="text-amber-500" />
+                  <h4 className="font-extrabold text-xs tracking-wider uppercase">{confirmDialog.title}</h4>
+                </div>
+
+                <div className="p-5.5 text-left text-xs font-semibold text-slate-600 leading-relaxed">
+                  {confirmDialog.message}
+                </div>
+
+                <div className="p-3 bg-slate-50 border-t border-slate-100 flex items-center justify-end gap-2 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => setConfirmDialog(p => ({ ...p, isOpen: false }))}
+                    className="px-4 py-2 bg-white border border-slate-200 text-slate-500 font-extrabold rounded-xl hover:bg-slate-150 cursor-pointer transition-colors"
+                  >
+                    Kembali
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const res = confirmDialog.onConfirm();
+                      if (res instanceof Promise) {
+                        res.catch(err => console.error("Confirm callback error:", err));
+                      }
+                    }}
+                    className="px-4 py-2 bg-rose-650 text-white font-extrabold rounded-xl hover:bg-rose-700 cursor-pointer transition-colors"
+                  >
+                    Konfirmasi
+                  </button>
+                </div>
+              </motion.div>
+            </div>
           )}
         </AnimatePresence>
       </div>

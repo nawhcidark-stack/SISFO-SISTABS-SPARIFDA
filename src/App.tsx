@@ -12,7 +12,7 @@ import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
-import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle } from 'lucide-react';
+import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode } from 'lucide-react';
 
 export default function App() {
   // Authed state persistence
@@ -108,6 +108,100 @@ export default function App() {
   const [showPaymentSuccessScreen, setShowPaymentSuccessScreen] = useState<boolean>(false);
   const [successCountdown, setSuccessCountdown] = useState<number>(5);
 
+  // States for scanning QR item lookup
+  const [scannedItem, setScannedItem] = useState<any | null>(null);
+  const [isScanningActive, setIsScanningActive] = useState<boolean>(false);
+  const [scanErrorMsg, setScanErrorMsg] = useState<string | null>(null);
+
+  useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('scan');
+    const orderId = params.get('order_id');
+
+    if (code) {
+      // Clear "?scan=X" from browser URL dynamically without full page reload
+      const newUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+      
+      setIsLoading(true);
+      fetch(`/api/sarpras/items/by-code/${encodeURIComponent(code)}`)
+        .then(res => {
+          if (!res.ok) throw new Error("Barang tidak terdaftar atau bermasalah.");
+          return res.json();
+        })
+        .then(item => {
+          setScannedItem(item);
+          setIsScanningActive(true);
+          setScanErrorMsg(null);
+        })
+        .catch(() => {
+          setScannedItem(null);
+          setScanErrorMsg(`Aset/Barang dengan kode QR "${code}" tidak terdaftar di sistem inventaris SMP Ma'arif NU Pandaan.`);
+          setIsScanningActive(true);
+        })
+        .finally(() => {
+          setIsLoading(false);
+        });
+    }
+
+    if (orderId) {
+      // Clear "?order_id=X..." from browser URL dynamically without full page reload
+      const newUrl = window.location.origin + window.location.pathname;
+      window.history.replaceState({}, document.title, newUrl);
+
+      setIsLoading(true);
+      fetch('/api/simulate-payment-success', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId, paymentType: 'Midtrans Redirect' })
+      })
+      .then(res => res.json())
+      .then(data => {
+        if (data.success) {
+          let targetStudentId = '';
+          if (orderId.startsWith('SAV-')) {
+            const middle = orderId.slice(4);
+            const lastHyphenIndex = middle.lastIndexOf("-");
+            targetStudentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+          } else if (orderId.startsWith('SPP-')) {
+            if (data.bill && data.bill.studentId) {
+              targetStudentId = data.bill.studentId;
+            }
+          }
+
+          if (targetStudentId) {
+            localStorage.setItem('smp_maarif_logged_in', 'true');
+            localStorage.setItem('smp_maarif_role', 'student');
+            localStorage.setItem('smp_maarif_student_id', targetStudentId);
+            setIsLoggedIn(true);
+            setRole('student');
+            setLoggedStudentId(targetStudentId);
+            fetchStudentFullData(targetStudentId, false);
+          }
+
+          // Show elegant toast and sound beep
+          const successNotif: RealtimeNotification = {
+            id: 'pay-success-toast-' + Date.now(),
+            title: 'Pembayaran Terkonfirmasi ✓',
+            message: orderId.startsWith('SAV-')
+              ? `Top up tabungan dengan order ID ${orderId} sukses terverifikasi!`
+              : `Pembayaran SPP dengan order ID ${orderId} lunas terverifikasi!`,
+            type: 'success',
+            createdAt: new Date().toISOString()
+          };
+          setActiveToasts(prev => [successNotif, ...prev]);
+          triggerBeep();
+        }
+      })
+      .catch(err => {
+        console.error("Gagal melakukan sinkronisasi pembayaran via redirect:", err);
+      })
+      .finally(() => {
+        setIsLoading(false);
+      });
+    }
+  }, []);
+
   useEffect(() => {
     let interval: any;
     if (showPaymentSuccessScreen) {
@@ -117,8 +211,8 @@ export default function App() {
           if (prev <= 1) {
             clearInterval(interval);
             setShowPaymentSuccessScreen(false);
-            if (role === 'student') {
-              handleLogout();
+            if (role === 'student' && currentStudent) {
+              fetchStudentFullData(currentStudent.id, false);
             }
             return 0;
           }
@@ -129,7 +223,7 @@ export default function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [showPaymentSuccessScreen, role]);
+  }, [showPaymentSuccessScreen, role, currentStudent]);
 
   // Sound generator
   const triggerBeep = () => {
@@ -161,23 +255,31 @@ export default function App() {
       setIsLoading(true);
       
       // Load Students
-      const stdRes = await fetch('/api/students');
-      if (stdRes.ok) {
-        const stdData = await stdRes.json();
-        setStudentsList(stdData);
-        // Default select first student or the stored logged-in student ID
-        if (stdData.length > 0) {
-          const storedStudentId = localStorage.getItem('smp_maarif_student_id');
-          const targetId = storedStudentId || stdData[0].id;
-          fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
+      try {
+        const stdRes = await fetch('/api/students');
+        if (stdRes.ok) {
+          const stdData = await stdRes.json();
+          setStudentsList(stdData);
+          // Default select first student or the stored logged-in student ID
+          if (stdData.length > 0) {
+            const storedStudentId = localStorage.getItem('smp_maarif_student_id');
+            const targetId = storedStudentId || stdData[0].id;
+            fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
+          }
         }
+      } catch (e) {
+        console.error("Gagal memuat data siswa", e);
       }
 
       // Load Recent notifications history
-      const notifRes = await fetch('/api/notifications');
-      if (notifRes.ok) {
-        const notifData = await notifRes.json();
-        setGlobalNotifications(notifData);
+      try {
+        const notifRes = await fetch('/api/notifications');
+        if (notifRes.ok) {
+          const notifData = await notifRes.json();
+          setGlobalNotifications(notifData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat notifikasi", e);
       }
 
       // Load School Identity configuration
@@ -194,10 +296,14 @@ export default function App() {
       }
 
       // Load Midtrans integration keys metadata
-      const keysRes = await fetch('/api/midtrans-config');
-      if (keysRes.ok) {
-        const keysData = await keysRes.json();
-        setSysStatus(keysData);
+      try {
+        const keysRes = await fetch('/api/midtrans-config');
+        if (keysRes.ok) {
+          const keysData = await keysRes.json();
+          setSysStatus(keysData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat konfigurasi midtrans", e);
       }
 
       // Load Attendance Logs
@@ -477,7 +583,7 @@ export default function App() {
       const res = await fetch('/api/pay-spp-snap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ billId: bill.id })
+        body: JSON.stringify({ billId: bill.id, origin: window.location.origin })
       });
 
       if (!res.ok) {
@@ -517,7 +623,8 @@ export default function App() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           studentId: sId,
-          amount
+          amount,
+          origin: window.location.origin
         })
       });
 
@@ -1222,6 +1329,116 @@ export default function App() {
         )}
       </AnimatePresence>
 
+      {/* QR Scanned Item Details Modal Overlay */}
+      <AnimatePresence>
+        {isScanningActive && (
+          <div className="fixed inset-0 bg-slate-900/80 backdrop-blur-md z-50 flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95, y: 15 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95, y: 15 }}
+              className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-md w-full overflow-hidden flex flex-col"
+            >
+              <div className="p-4.5 bg-indigo-600 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 bg-white/10 rounded-lg text-white">
+                    <QrCode size={18} />
+                  </div>
+                  <h3 className="font-extrabold text-xs tracking-wider uppercase">Spesifikasi Detail Aset</h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsScanningActive(false)}
+                  className="p-1.5 rounded-lg hover:bg-white/10 text-white cursor-pointer transition-colors"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              <div className="p-6 flex flex-col text-left">
+                {scanErrorMsg ? (
+                  <div className="flex flex-col items-center text-center py-6 gap-3">
+                    <div className="w-12 h-12 rounded-full bg-rose-50 flex items-center justify-center text-rose-500 border border-rose-100">
+                      <AlertTriangle size={24} />
+                    </div>
+                    <p className="text-xs font-bold text-slate-700 max-w-sm">{scanErrorMsg}</p>
+                    <button
+                      type="button"
+                      onClick={() => setIsScanningActive(false)}
+                      className="mt-2 px-5 py-2 bg-indigo-600 text-white text-xs font-bold rounded-xl hover:bg-indigo-700 cursor-pointer"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+                ) : scannedItem ? (
+                  <div className="flex flex-col gap-4">
+                    <div className="border-b border-slate-100 pb-3">
+                      <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest block mb-0.5">Identitas Barang</span>
+                      <h4 className="text-base font-extrabold text-slate-900 leading-tight">{scannedItem.name}</h4>
+                      <p className="text-xs font-mono font-bold text-slate-400 mt-1 uppercase">🌐 {scannedItem.code}</p>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-x-4 gap-y-3.5 text-xs">
+                      <div>
+                        <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Kategori</span>
+                        <span className="font-extrabold text-slate-800">{scannedItem.category || "Umum"}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Tahun Beli</span>
+                        <span className="font-mono font-extrabold text-indigo-700 inline-block px-1.5 py-0.5 bg-indigo-50 rounded">
+                          📅 {scannedItem.purchaseYear || "-"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Lokasi Fisik</span>
+                        <span className="font-extrabold text-slate-800">📍 {scannedItem.location || "Gudang Utama"}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Kondisi Fisik</span>
+                        <span className={`inline-block px-2 py-0.5 rounded-full font-black text-[9px] uppercase tracking-wider ${
+                          scannedItem.condition === 'Baik' 
+                            ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' 
+                            : scannedItem.condition === 'Rusak Ringan'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                              : 'bg-rose-50 text-rose-800 border border-rose-250'
+                        }`}>
+                          {scannedItem.condition || "Baik"}
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Stok Inventaris</span>
+                        <div className="font-mono font-black text-slate-800 text-sm">
+                          {scannedItem.availableQty} <span className="text-slate-400 text-xs font-bold font-sans">unit / {scannedItem.totalQty} total</span>
+                        </div>
+                      </div>
+                      <div>
+                        <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Estimasi Harga Unit</span>
+                        <span className="font-mono font-extrabold text-slate-800">
+                          Rp {(scannedItem.price || 0).toLocaleString('id-ID')}
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="mt-2 p-3 bg-slate-50 border border-slate-100 rounded-xl flex items-start gap-2 text-[10.5px] text-slate-500 font-medium pb-4">
+                      <CheckCircle2 size={14} className="text-emerald-500 shrink-0 mt-0.5" />
+                      <span>Scan QR Berhasil. Data resmi terverifikasi dari Unit Sarana Prasarana (Sarpras) SMP Ma'arif NU Pandaan.</span>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => setIsScanningActive(false)}
+                      className="mt-2 w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white text-xs font-black rounded-xl tracking-wider uppercase cursor-pointer transition-colors shadow-sm"
+                    >
+                      Selesai
+                    </button>
+                  </div>
+                ) : null}
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* Midtrans Snap Popup Orchestration (Supports both mock sandbox and real token inputs) */}
       <MidtransPayModal
         isOpen={isPayModalOpen}
@@ -1325,7 +1542,7 @@ export default function App() {
               <div className="flex flex-col gap-3 mt-2">
                 <p className="text-[11px] text-slate-500 font-semibold bg-slate-50 border border-slate-100 py-1.5 px-3 rounded-lg">
                   {role === 'student' ? (
-                    `Mengalihkan Anda ke halaman login dalam ${successCountdown} detik...`
+                    `Kembali ke panel utama dalam ${successCountdown} detik...`
                   ) : (
                     `Menutup jendela sukses dalam ${successCountdown} detik...`
                   )}
@@ -1335,13 +1552,13 @@ export default function App() {
                   type="button"
                   onClick={() => {
                     setShowPaymentSuccessScreen(false);
-                    if (role === 'student') {
-                      handleLogout();
+                    if (role === 'student' && currentStudent) {
+                      fetchStudentFullData(currentStudent.id, false);
                     }
                   }}
                   className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-md transition-all cursor-pointer flex items-center justify-center gap-2"
                 >
-                  {role === 'student' ? 'Selesai & Ke Halaman Utama' : 'Tutup & Kembali'}
+                  {role === 'student' ? 'Selesai & Ke Panel Utama' : 'Tutup & Kembali'}
                 </button>
               </div>
             </motion.div>
@@ -1626,6 +1843,7 @@ export default function App() {
             onDeleteSubjectTeacher={handleDeleteSubjectTeacher}
             onAutoGenerateSubjectTeachers={handleAutoGenerateSubjectTeachers}
             onLogout={handleLogout}
+            attendanceLogs={attendanceList}
           />
         )}
       </main>

@@ -39,6 +39,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   });
   const [formAmount, setFormAmount] = useState('');
   const [formDescription, setFormDescription] = useState('');
+  const [formRecipientName, setFormRecipientName] = useState('');
   const [formDate, setFormDate] = useState(() => new Date().toISOString().substring(0, 10));
 
   // Filter configurations
@@ -260,6 +261,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     setFormCategory(categories[0] || 'Operasional');
     setFormAmount('');
     setFormDescription('');
+    setFormRecipientName('');
     setFormDate(new Date().toISOString().substring(0, 10));
     setShowFormModal(true);
   };
@@ -271,6 +273,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     setFormCategory(tx.category);
     setFormAmount(tx.amount.toString());
     setFormDescription(tx.description);
+    setFormRecipientName(tx.recipientName || '');
     setFormDate(tx.date);
     setShowFormModal(true);
   };
@@ -282,13 +285,19 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       return;
     }
 
+    if (formType === 'outgoing' && !formRecipientName.trim()) {
+      alert('Harap isi nama penerima dana untuk transaksi pengeluaran.');
+      return;
+    }
+
     setIsSubmitting(true);
     const bodyArgs = {
       type: formType,
       category: formCategory,
       amount: Number(formAmount),
       description: formDescription,
-      date: formDate
+      date: formDate,
+      recipientName: formType === 'outgoing' ? formRecipientName : ''
     };
 
     try {
@@ -310,8 +319,12 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       }
 
       if (res.ok) {
+        const data = await res.json();
         setShowFormModal(false);
         fetchTransactions();
+        if (data.transaction) {
+          setActivePrintTransaction(data.transaction);
+        }
       } else {
         const err = await res.json();
         alert(err.error || 'Aksi gagal dieksekusi.');
@@ -543,6 +556,9 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   {tx.studentName && (
                     <div className="text-[9px] text-slate-500 font-semibold">Siswa: {tx.studentName} ({tx.nis})</div>
                   )}
+                  {tx.recipientName && (
+                    <div className="text-[9px] text-indigo-600 font-extrabold">Penerima: {tx.recipientName}</div>
+                  )}
                 </td>
                 <td className="border border-slate-300 p-2 font-bold uppercase">{tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : `Manual (${tx.category})`}</td>
                 <td className="border border-slate-300 p-2 text-right font-mono text-emerald-700 font-bold">
@@ -598,12 +614,14 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
               <p className="text-[9px] text-slate-500 font-semibold">{schoolIdentity.subheading} &bull; {schoolIdentity.address}</p>
             </div>
             <div className="text-right text-[9px] font-bold text-slate-400">
-              KUITANSI BENDAHARA ASLI
+              {activePrintTransaction.type === 'incoming' ? 'BUKTI PENERIMAAN KAS ASLI' : 'BUKTI PENGELUARAN KAS ASLI'}
             </div>
           </div>
 
           <div className="text-center py-2 bg-slate-50 border rounded-lg mb-4">
-            <h4 className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">BUKTI TRANSAKSI KAS</h4>
+            <h4 className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">
+              {activePrintTransaction.type === 'incoming' ? 'KUITANSI PENERIMAAN RESMI' : 'NOTA PENGELUARAN RESMI'}
+            </h4>
             <div className="text-xs font-mono text-slate-900 font-bold">
               ID REF: {activePrintTransaction.id.toUpperCase()}
             </div>
@@ -637,6 +655,14 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   </td>
                 </tr>
               )}
+              {activePrintTransaction.recipientName && (
+                <tr className="border-b">
+                  <td className="p-2 font-bold text-slate-500 uppercase bg-slate-50/50 border border-slate-300">Penerima Dana</td>
+                  <td className="p-2 font-bold text-rose-700 border border-slate-300">
+                    {activePrintTransaction.recipientName}
+                  </td>
+                </tr>
+              )}
               <tr>
                 <td className="p-3 font-bold bg-slate-100/50 text-[11px] border border-slate-300">Jumlah Dana (Rupiah)</td>
                 <td className="p-3 font-black text-sm text-emerald-800 font-mono bg-slate-100/50 border border-slate-300">
@@ -656,14 +682,35 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
               </div>
               <p className="font-bold text-slate-900 underline">{schoolIdentity.principal}</p>
             </div>
-            <div>
-              <p>Penerima / Teller,</p>
-              <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
-              <div className="h-12 flex items-center justify-center">
-                {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-10 object-contain" alt="Signature" referrerPolicy="no-referrer" />}
+            {activePrintTransaction.type === 'outgoing' && activePrintTransaction.recipientName ? (
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <p>Penerima Dana,</p>
+                  <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Ybs. Yang Menerima</p>
+                  <div className="h-12 flex items-center justify-center">
+                    <div className="w-16 border-b border-dashed border-slate-300 pt-10"></div>
+                  </div>
+                  <p className="font-bold text-slate-900 underline uppercase">{activePrintTransaction.recipientName}</p>
+                </div>
+                <div>
+                  <p>Bendahara Keuangan / Pengeluaran,</p>
+                  <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
+                  <div className="h-12 flex items-center justify-center">
+                    {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-10 object-contain" alt="Signature" referrerPolicy="no-referrer" />}
+                  </div>
+                  <p className="font-bold text-slate-900 underline">{schoolIdentity.treasurer}</p>
+                </div>
               </div>
-              <p className="font-bold text-slate-900 underline">{schoolIdentity.treasurer}</p>
-            </div>
+            ) : (
+              <div>
+                <p>{activePrintTransaction.type === 'incoming' ? 'Penerima / Teller Kas,' : 'Bendahara Keuangan / Pengeluaran,'}</p>
+                <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
+                <div className="h-12 flex items-center justify-center">
+                  {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-10 object-contain" alt="Signature" referrerPolicy="no-referrer" />}
+                </div>
+                <p className="font-bold text-slate-900 underline">{schoolIdentity.treasurer}</p>
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1306,6 +1353,12 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                                 <span>{tx.studentName} (NIS: {tx.nis || '-'})</span>
                               </div>
                             )}
+                            {tx.recipientName && (
+                              <div className="text-[10px] text-amber-700 font-extrabold mt-0.5 inline-flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                                <UserCheck size={9} />
+                                <span>Penerima: {tx.recipientName}</span>
+                              </div>
+                            )}
                           </td>
 
                           {/* 4. Type (Debit/Kredit) */}
@@ -1330,6 +1383,14 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                           <td className="py-3 px-6 whitespace-nowrap text-slate-500 font-semibold text-center">
                             {tx.source === 'custom' ? (
                               <div className="flex items-center justify-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => setActivePrintTransaction(tx)}
+                                  className="p-1.5 text-indigo-600 hover:bg-indigo-50 border border-transparent hover:border-indigo-200 rounded-lg cursor-pointer transition-all"
+                                  title="Cetak Kuitansi / Nota Resmi"
+                                >
+                                  <Printer size={13} />
+                                </button>
                                 <button
                                   type="button"
                                   onClick={() => handleOpenEditModal(tx)}
@@ -1711,6 +1772,31 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   />
                 </div>
 
+                {/* 5.5. Nama Penerima Dana (Pengeluaran Only) */}
+                {formType === 'outgoing' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden"
+                  >
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NAMA PENERIMA DANA (PENANGGUNG JAWAB)</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        required={formType === 'outgoing'}
+                        placeholder="Nama personil penerima / PJ / instansi luar..."
+                        value={formRecipientName}
+                        onChange={(e) => setFormRecipientName(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
+                      />
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <UserCheck size={14} />
+                      </div>
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* Trigger Buttons */}
                 <div className="flex gap-2.5 mt-2.5">
                   <button
@@ -1735,7 +1821,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
         )}
       </AnimatePresence>
 
-      {/* Modal 2: Visual Printable Kuitansi (Invoice receipt) Modal for the Teller systems */}
+       {/* Modal 2: Visual Printable Kuitansi (Invoice receipt) Modal for the Teller systems */}
       <AnimatePresence>
         {activePrintTransaction && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs print:hidden">
@@ -1758,14 +1844,16 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   <h3 className="text-xs font-extrabold uppercase">{schoolIdentity.name}</h3>
                   <p className="text-[9px] text-slate-500 font-medium">{schoolIdentity.subheading}</p>
                 </div>
-                <div className="text-right text-[9px] text-slate-400">
-                  KUITANSI ASLI
+                <div className="text-right text-[9px] font-bold text-slate-400">
+                  {activePrintTransaction.type === 'incoming' ? 'BUKTI PENERIMAAN' : 'BUKTI PENGELUARAN'}
                 </div>
               </div>
 
               {/* Card Contents */}
               <div className="text-center py-2 bg-slate-50 rounded-lg">
-                <h4 className="text-[10px] text-slate-400 uppercase tracking-widest leading-none font-bold">KUITANSI BENDAHARA RESMI</h4>
+                <h4 className="text-[10px] text-slate-400 uppercase tracking-widest leading-none font-bold">
+                  {activePrintTransaction.type === 'incoming' ? 'KUITANSI PENERIMAAN' : 'NOTA PENGELUARAN BENDAHARA'}
+                </h4>
                 <div className="text-xs font-mono text-slate-900 border-b border-dashed w-fit mx-auto px-4 py-1 font-bold">
                   REF: {activePrintTransaction.id.toUpperCase()}
                 </div>
@@ -1778,7 +1866,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
 
                 <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Jenis Mutasi:</span>
                 <span className="col-span-8 font-bold text-slate-800">
-                  {activePrintTransaction.type === 'incoming' ? 'DEBIT (Uang Masuk / Pembayaran)' : 'KREDIT (Uang Keluar / Tarikan)'}
+                  {activePrintTransaction.type === 'incoming' ? 'DEBIT (Uang Masuk / Pembayaran)' : 'KREDIT (Uang Keluar / Pengeluaran)'}
                 </span>
 
                 <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Kategori Pos:</span>
@@ -1796,6 +1884,15 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   </>
                 )}
 
+                {activePrintTransaction.recipientName && (
+                  <>
+                    <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Penerima Dana:</span>
+                    <span className="col-span-8 font-bold text-rose-700">
+                      {activePrintTransaction.recipientName}
+                    </span>
+                  </>
+                )}
+
                 <span className="col-span-12 border-t border-slate-150 my-1"></span>
 
                 <span className="col-span-4 text-slate-400 font-extrabold uppercase text-[9px] self-center">Jumlah Dana:</span>
@@ -1805,7 +1902,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
               </div>
 
               {/* Signatures */}
-              <div className="flex items-center justify-between mt-3 text-[10px] text-center">
+              <div className="grid grid-cols-2 mt-3 text-[10px] text-center gap-4">
                 <div>
                   <p>Mengetahui,</p>
                   <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Kepala Sekolah</p>
@@ -1815,14 +1912,35 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.principal}</p>
                 </div>
 
-                <div>
-                  <p>Teller Kas Penerima,</p>
-                  <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
-                  <div className="h-10 flex items-center justify-center">
-                    {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-9 object-contain" alt="Stamp" referrerPolicy="no-referrer" />}
+                {activePrintTransaction.type === 'outgoing' && activePrintTransaction.recipientName ? (
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <p>Penerima Dana,</p>
+                      <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Ybs. Penerima</p>
+                      <div className="h-10 flex items-center justify-center">
+                        <div className="w-12 border-b border-dashed border-slate-300 pt-8"></div>
+                      </div>
+                      <p className="underline underline-offset-1 font-extrabold font-display leading-none uppercase text-rose-700 truncate">{activePrintTransaction.recipientName}</p>
+                    </div>
+                    <div>
+                      <p>Bendahara,</p>
+                      <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Kas Keluar</p>
+                      <div className="h-10 flex items-center justify-center">
+                        {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-9 object-contain" alt="Stamp" referrerPolicy="no-referrer" />}
+                      </div>
+                      <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.treasurer}</p>
+                    </div>
                   </div>
-                  <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.treasurer}</p>
-                </div>
+                ) : (
+                  <div>
+                    <p>{activePrintTransaction.type === 'incoming' ? 'Teller Kas Penerima,' : 'Bendahara Keuangan / Pengeluaran,'}</p>
+                    <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
+                    <div className="h-10 flex items-center justify-center">
+                      {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-9 object-contain" alt="Stamp" referrerPolicy="no-referrer" />}
+                    </div>
+                    <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.treasurer}</p>
+                  </div>
+                )}
               </div>
 
               {/* Close Button */}

@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher, AttendanceLog, StudentInfractionLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
+import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, Apple, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
 import StudentManagement from './StudentManagement';
 import QRScannerModal from './QRScannerModal';
 import QRCode from 'qrcode';
@@ -901,6 +901,8 @@ export default function AdminPanel({
   const [schoolLetterhead, setSchoolLetterhead] = useState("");
   const [schoolTreasurerSignature, setSchoolTreasurerSignature] = useState("");
   const [schoolStamp, setSchoolStamp] = useState("");
+  const [apkUrl, setApkUrl] = useState("");
+  const [iosUrl, setIosUrl] = useState("");
   const [isSavingSchoolIdentity, setIsSavingSchoolIdentity] = useState(false);
   const [schoolIdentityMsg, setSchoolIdentityMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -918,6 +920,8 @@ export default function AdminPanel({
       setSchoolLetterhead(schoolIdentity.letterhead || "");
       setSchoolTreasurerSignature(schoolIdentity.treasurerSignature || "");
       setSchoolStamp(schoolIdentity.schoolStamp || "");
+      setApkUrl(schoolIdentity.apkUrl || "");
+      setIosUrl(schoolIdentity.iosUrl || "");
       if (schoolIdentity.sppRates) {
         setSppConfigRates(schoolIdentity.sppRates);
       }
@@ -1511,7 +1515,9 @@ export default function AdminPanel({
       logo2: schoolLogo2,
       letterhead: schoolLetterhead,
       treasurerSignature: schoolTreasurerSignature,
-      schoolStamp: schoolStamp
+      schoolStamp: schoolStamp,
+      apkUrl: apkUrl,
+      iosUrl: iosUrl
     });
 
     if (success) {
@@ -1686,6 +1692,56 @@ export default function AdminPanel({
               <span className="text-slate-400 uppercase font-bold tracking-wider">Metode Bayar:</span>
               <span className="text-slate-700 font-bold font-sans">WEBHOOK</span>
             </div>
+          </div>
+        </div>
+
+        {/* Unduh Aplikasi Mobile Block */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col gap-2 text-left">
+          <h4 className="font-bold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+            <Smartphone size={14} className="text-emerald-600" /> Aplikasi Mobile Sekolah
+          </h4>
+          <p className="text-[10px] text-slate-500 leading-normal">
+            Akses portal instan di smartphone Anda menggunakan aplikasi mobile resmi.
+          </p>
+          <div className="grid grid-cols-2 gap-2 mt-1">
+            <a
+              href={schoolIdentity?.apkUrl || "#"}
+              target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!schoolIdentity?.apkUrl) {
+                  e.preventDefault();
+                  alert("Link unduhan Android belum diatur oleh Administrator.");
+                }
+              }}
+              className={`px-1.5 py-2 rounded-lg border text-center transition-all flex flex-col items-center gap-1 cursor-pointer select-none group font-bold ${
+                schoolIdentity?.apkUrl 
+                  ? "bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 text-emerald-800 border-emerald-250 shadow-3xs" 
+                  : "bg-slate-50/50 text-slate-400 border-slate-100 opacity-70"
+              }`}
+            >
+              <Smartphone size={16} className={`${schoolIdentity?.apkUrl ? "text-emerald-500 drop-shadow-[0_0_4px_rgba(16,185,129,0.4)] group-hover:scale-110" : "text-emerald-300/60"} transition-transform stroke-[2.5]`} />
+              <span className="text-[8.5px]">Android APK</span>
+            </a>
+            <a
+              href={schoolIdentity?.iosUrl || "#"}
+              target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!schoolIdentity?.iosUrl) {
+                  e.preventDefault();
+                  alert("Link unduhan iOS belum diatur oleh Administrator.");
+                }
+              }}
+              className={`px-1.5 py-2 rounded-lg border text-center transition-all flex flex-col items-center gap-1 cursor-pointer select-none group font-bold ${
+                schoolIdentity?.iosUrl 
+                  ? "bg-sky-50 hover:bg-sky-100 hover:border-sky-300 text-sky-800 border-sky-250 shadow-3xs" 
+                  : "bg-slate-50/50 text-slate-400 border-slate-100 opacity-70"
+              }`}
+            >
+              <Apple size={16} className={`${schoolIdentity?.iosUrl ? "text-sky-500 drop-shadow-[0_0_4px_rgba(14,165,233,0.4)] group-hover:scale-110" : "text-sky-300/60"} transition-transform stroke-[2.5]`} />
+              <span className="text-[8.5px]">iOS Apple</span>
+            </a>
           </div>
         </div>
       </div>
@@ -3661,6 +3717,37 @@ export default function AdminPanel({
                       onChange={(e) => setSchoolTreasurer(e.target.value)}
                       placeholder="Contoh: Bendahara Sekolah"
                       className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-xs"
+                    />
+                  </div>
+                </div>
+
+                {/* Mobile App Download Links Config */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4 bg-slate-50/50 p-4 rounded-xl border border-slate-200/60">
+                  <div className="md:col-span-2">
+                    <h4 className="text-[10.5px] font-extrabold text-slate-800 uppercase tracking-wider mb-1">🔗 Link Unduhan Aplikasi Mobile Sekolah</h4>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Masukkan tautan unduhan resmi untuk APK Android dan App Store iOS. Link ini akan otomatis ditampilkan dan dapat diakses langsung oleh seluruh akun (Siswa, Wali Kelas, Guru Mapel, Bendahara, Sarpras, Kepala Sekolah) di portal masing-masing.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left">Link Unduhan APK Android</label>
+                    <input
+                      type="url"
+                      value={apkUrl}
+                      onChange={(e) => setApkUrl(e.target.value)}
+                      placeholder="Contoh: https://link-download-apk.com/smp-maarif.apk"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:border-indigo-600 shadow-xs"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left">Link Unduhan Aplikasi iOS</label>
+                    <input
+                      type="url"
+                      value={iosUrl}
+                      onChange={(e) => setIosUrl(e.target.value)}
+                      placeholder="Contoh: https://apps.apple.com/id/app/smp-maarif"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:border-indigo-600 shadow-xs"
                     />
                   </div>
                 </div>

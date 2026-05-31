@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Package, ShoppingCart, Users2, Search, Plus, Edit2, Trash2, 
   Printer, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Loader2, LogOut, Check, X,
-  Home, LayoutGrid, Key, Lock
+  Home, LayoutGrid, Key, Lock, Smartphone, Apple
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -786,6 +786,57 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
         </header>
 
         <main className="max-w-7xl mx-auto px-4 md:px-6 py-8 pb-24 md:pb-8">
+          {/* Unduh Aplikasi Mobile Banner */}
+          <div className="bg-slate-50 border border-slate-200/80 rounded-2xl p-4 mb-6 flex flex-col md:flex-row md:items-center justify-between gap-3 text-left">
+            <div className="flex items-center gap-3">
+              <Smartphone size={20} className="text-emerald-600 shrink-0" />
+              <div>
+                <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wide">Aplikasi Mobile Resmi Portal Sekolah</h4>
+                <p className="text-[10px] text-slate-500 leading-normal">Unduh aplikasi mobile resmi sekolah untuk mengakses log sarpras, peminjaman & pengadaan langsung dari smartphone Anda.</p>
+              </div>
+            </div>
+            <div className="flex gap-2 items-center shrink-0">
+              <a
+                href={schoolIdentity?.apkUrl || "#"}
+                target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  if (!schoolIdentity?.apkUrl) {
+                    e.preventDefault();
+                    alert("Link unduhan Android belum diatur oleh Administrator.");
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none group ${
+                  schoolIdentity?.apkUrl 
+                    ? "bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                    : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                }`}
+              >
+                <Smartphone size={14} className={`${schoolIdentity?.apkUrl ? "text-emerald-500 drop-shadow-[0_0_4px_rgba(16,185,129,0.4)] group-hover:scale-110" : "text-emerald-300/60"} transition-transform stroke-[2.5]`} />
+                <span>Android APK</span>
+              </a>
+              <a
+                href={schoolIdentity?.iosUrl || "#"}
+                target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                rel="noopener noreferrer"
+                onClick={(e) => {
+                  if (!schoolIdentity?.iosUrl) {
+                    e.preventDefault();
+                    alert("Link unduhan iOS belum diatur oleh Administrator.");
+                  }
+                }}
+                className={`px-3 py-1.5 rounded-lg border text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer select-none group ${
+                  schoolIdentity?.iosUrl 
+                    ? "bg-sky-50 hover:bg-sky-100 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                    : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                }`}
+              >
+                <Apple size={14} className={`${schoolIdentity?.iosUrl ? "text-sky-500 drop-shadow-[0_0_4px_rgba(14,165,233,0.4)] group-hover:scale-110" : "text-sky-300/60"} transition-transform stroke-[2.5]`} />
+                <span>iOS Apple</span>
+              </a>
+            </div>
+          </div>
+
           {/* Action Alerts messages */}
           {actionMessage && (
             <div className={`mb-6 p-4 rounded-xl border flex items-center gap-3 text-sm font-bold animate-fade-in ${

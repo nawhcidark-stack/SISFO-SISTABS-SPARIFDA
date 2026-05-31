@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple } from 'lucide-react';
 import QRCode from 'qrcode';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
@@ -947,6 +947,56 @@ export default function StudentPanel({
             Silakan pilih siswa di atas terlebih dahulu untuk memuat portal.
           </div>
         )}
+
+        {/* Unduh Aplikasi Mobile Block */}
+        <div className="bg-white p-5 rounded-xl border border-slate-200 shadow-sm text-xs flex flex-col gap-2.5 text-left select-none">
+          <h4 className="font-extrabold text-slate-800 text-[11px] uppercase tracking-wider flex items-center gap-1.5">
+            <Smartphone size={14} className="text-emerald-700" /> Aplikasi Mobile Sekolah
+          </h4>
+          <p className="text-[10px] text-slate-500 leading-normal">
+            Gunakan aplikasi mobile resmi untuk kemudahan monitor laporan presensi, aktivitas, & pembayaran SPP langsung dari handphone Anda.
+          </p>
+          <div className="grid grid-cols-2 gap-2">
+            <a
+              href={schoolIdentity?.apkUrl || "#"}
+              target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!schoolIdentity?.apkUrl) {
+                  e.preventDefault();
+                  alert("Link unduhan Android belum diatur oleh Administrator.");
+                }
+              }}
+              className={`px-1.5 py-2 rounded-lg border text-center transition-all flex flex-col items-center gap-1 cursor-pointer select-none group font-bold ${
+                schoolIdentity?.apkUrl 
+                  ? "bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 text-emerald-800 border-emerald-250 shadow-3xs" 
+                  : "bg-slate-50/50 text-slate-400 border-slate-100 opacity-70"
+              }`}
+            >
+              <Smartphone size={16} className={`${schoolIdentity?.apkUrl ? "text-emerald-500 drop-shadow-[0_0_4px_rgba(16,185,129,0.4)] group-hover:scale-110" : "text-emerald-300/60"} transition-transform stroke-[2.5]`} />
+              <span className="text-[8.5px]">Android APK</span>
+            </a>
+            <a
+              href={schoolIdentity?.iosUrl || "#"}
+              target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+              rel="noopener noreferrer"
+              onClick={(e) => {
+                if (!schoolIdentity?.iosUrl) {
+                  e.preventDefault();
+                  alert("Link unduhan iOS belum diatur oleh Administrator.");
+                }
+              }}
+              className={`px-1.5 py-2 rounded-lg border text-center transition-all flex flex-col items-center gap-1 cursor-pointer select-none group font-bold ${
+                schoolIdentity?.iosUrl 
+                  ? "bg-sky-50 hover:bg-sky-100 hover:border-sky-300 text-sky-800 border-sky-250 shadow-3xs" 
+                  : "bg-slate-50/50 text-slate-400 border-slate-100 opacity-70"
+              }`}
+            >
+              <Apple size={16} className={`${schoolIdentity?.iosUrl ? "text-sky-500 drop-shadow-[0_0_4px_rgba(14,165,233,0.4)] group-hover:scale-110" : "text-sky-300/60"} transition-transform stroke-[2.5]`} />
+              <span className="text-[8.5px]">iOS Apple</span>
+            </a>
+          </div>
+        </div>
       </div>
 
       {/* Right Column: SPP Checklist / Deposits Form & History */}

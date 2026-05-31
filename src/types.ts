@@ -69,6 +69,8 @@ export interface SchoolIdentity {
   letterhead?: string;
   treasurerSignature?: string;
   schoolStamp?: string;
+  apkUrl?: string;
+  iosUrl?: string;
   sppRates?: {
     grade7: number;
     grade8: number;

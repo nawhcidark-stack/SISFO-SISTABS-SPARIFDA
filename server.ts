@@ -468,7 +468,9 @@ let schoolIdentity = {
   logo2: "", // base64 string or image url containing the second school logo
   letterhead: "", // base64 string or image url containing the school kop surat
   treasurerSignature: "", // base64 string or image url of treasurer signature
-  schoolStamp: "" // base64 string or image url of school official stamp
+  schoolStamp: "", // base64 string or image url of school official stamp
+  apkUrl: "",
+  iosUrl: ""
 };
 
 // WhatsApp API notification settings
@@ -1509,7 +1511,7 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp } = req.body;
+    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl } = req.body;
     
     if (name !== undefined) schoolIdentity.name = String(name).trim();
     if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
@@ -1523,6 +1525,8 @@ async function startServer() {
     if (letterhead !== undefined) schoolIdentity.letterhead = String(letterhead); // can be empty or base64 data URI
     if (treasurerSignature !== undefined) (schoolIdentity as any).treasurerSignature = String(treasurerSignature);
     if (schoolStamp !== undefined) (schoolIdentity as any).schoolStamp = String(schoolStamp);
+    if (apkUrl !== undefined) (schoolIdentity as any).apkUrl = String(apkUrl).trim();
+    if (iosUrl !== undefined) (schoolIdentity as any).iosUrl = String(iosUrl).trim();
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {

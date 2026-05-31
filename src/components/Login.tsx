@@ -200,10 +200,10 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         <div className="md:col-span-5 flex flex-col gap-6 text-slate-800">
           <div className="flex flex-col gap-2">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-150 text-emerald-800 font-bold text-[10px] w-fit uppercase tracking-wider">
-              <Sparkles size={11} className="text-emerald-700 animate-pulse" /> LP MA'ARIF NU PANDAAN
+              <Sparkles size={11} className="text-emerald-700 animate-pulse" /> SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN
             </span>
             <h2 className="text-2xl font-black text-slate-900 tracking-tight leading-tight">
-              Selamat Datang di Portal Kas &amp; SPP Terpadu
+              Selamat Datang di Portal Administrasi Inspiratif
             </h2>
             <p className="text-xs text-slate-500 leading-relaxed">
               Sistem informasi monitoring kas tabungan mandiri siswa, pembayaran SPP bulanan instan, serta manajemen logistik inventaris sarana prasarana sekolah.

@@ -3520,7 +3520,7 @@ async function startServer() {
         `No. Transaksi: *${bill.orderId}*\n` +
         `Status: *LUNAS (PAID)*\n\n` +
         `Terima kasih atas partisipasi aktif Anda dalam memenuhi iuran pendidikan putra/putri Anda.\n` +
-        `-- LP MA'ARIF NU PANDAAN --`;
+        `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending auto payment WA:", err));
     }
 
@@ -3568,7 +3568,7 @@ async function startServer() {
         `Transaksi pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* (No. Transaksi: ${prevOrderId}) telah *DIBATALKAN / DIKOREKSI* oleh pihak teller sekolah karena kesalahan administrasi.\n\n` +
         `Status tagihan Anda kembali menjadi: *BELUM LUNAS (UNPAID)*.\n\n` +
         `Silakan abaikan kuitansi sebelumnya. Hubungi bagian keuangan jika ada pertanyaan.\n` +
-        `-- LP MA'ARIF NU PANDAAN --`;
+        `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending void SPP WA:", err));
     }
 
@@ -3670,7 +3670,7 @@ async function startServer() {
           `• Memo: *${transaction.notes}*\n` +
           `• *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
           `Terima kasih.\n` +
-          `-- LP MA'ARIF NU PANDAAN --`;
+          `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
         sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings WA:", err));
       }
     } else {
@@ -3750,7 +3750,7 @@ async function startServer() {
         `• Memo: *${transaction.notes}*\n` +
         `• *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
         `Terima kasih telah menabung untuk masa depan pendidikan yang cemerlang.\n` +
-        `-- LP MA'ARIF NU PANDAAN --`;
+        `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings WA:", err));
     }
 
@@ -3839,7 +3839,7 @@ async function startServer() {
           `• Status: *BERHASIL*\n` +
           `• *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
           `Terima kasih.\n` +
-          `-- LP MA'ARIF NU PANDAAN --`;
+          `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
         sendWhatsappNotification(student.phone, waMsg).catch(err => console.error(`Error sending bulk savings WA for ${student.name}:`, err));
       }
     }
@@ -4775,7 +4775,7 @@ async function startServer() {
             `• Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
             `• Status: *LUNAS (PAID)*\n\n` +
             `Terima kasih atas tertib administrasi pembayaran iuran sekolah.\n` +
-            `-- LP MA'ARIF NU PANDAAN --`;
+            `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
           sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online payment WA:", err));
         }
 
@@ -4817,7 +4817,7 @@ async function startServer() {
               `• Kode Order: *${transaction.orderId}*\n` +
               `• Waktu Transaksi: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n\n` +
               `Terima kasih telah mendorong budaya menabung pada putra-putri Anda.\n` +
-              `-- LP MA'ARIF NU PANDAAN --`;
+              `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
             sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online savings WA:", err));
           }
 
@@ -4884,7 +4884,7 @@ async function startServer() {
               `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
               `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
               `• Status: *LUNAS (PAID)*\n\n` +
-              `-- LP MA'ARIF NU PANDAAN --`;
+              `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
             sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online payment web WA:", err));
           }
         } else if (transaction_status === "pending") {
@@ -4951,7 +4951,7 @@ async function startServer() {
               `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
               `• Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
               `• Kode Order: *${transaction.orderId}*\n\n` +
-              `-- LP MA'ARIF NU PANDAAN --`;
+              `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
             sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online savings web WA:", err));
           }
           isHandled = true;

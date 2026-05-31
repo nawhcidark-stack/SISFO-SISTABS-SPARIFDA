@@ -2848,6 +2848,15 @@ export default function SubjectTeacherPanel({
                                     {s > 0 && <span className="text-amber-600 font-medium">S: {s}</span>}
                                     {i > 0 && <span className="text-blue-600 font-medium">I: {i}</span>}
                                     {a > 0 && <span className="text-rose-600 font-black">A: {a}</span>}
+                                    {journalToPrint.attendance.filter(st => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa').length > 0 && (
+                                      <div className="text-[7.5px] leading-tight text-slate-500 mt-1 pb-0.5 font-sans border-t border-slate-200/40 pt-1 text-center font-normal">
+                                        {journalToPrint.attendance
+                                          .filter(st => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa')
+                                          .map(st => `${st.studentName} (${st.status.substring(0, 1)})`)
+                                          .join(', ')
+                                        }
+                                      </div>
+                                    )}
                                   </div>
                                 );
                               })()}

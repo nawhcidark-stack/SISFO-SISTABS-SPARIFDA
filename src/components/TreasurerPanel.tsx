@@ -34,8 +34,18 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   const [formType, setFormType] = useState<'incoming' | 'outgoing'>('incoming');
   const [formCategory, setFormCategory] = useState(() => {
     const saved = localStorage.getItem('treasurer_categories');
-    const parsed = saved ? JSON.parse(saved) : ['Operasional', 'Gaji Guru', 'Pembangunan', 'Ujian', 'Lainnya'];
-    return parsed[0] || 'Operasional';
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          const first = parsed[0];
+          return typeof first === 'string' ? first : first.name;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+    return 'Operasional';
   });
   const [formAmount, setFormAmount] = useState('');
   const [formDescription, setFormDescription] = useState('');
@@ -103,13 +113,64 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   };
 
   // Custom expandable Budget Categories (POS BUDGET) saved in localStorage
-  const [categories, setCategories] = useState<string[]>(() => {
+  interface BudgetCategory {
+    name: string;
+    type: 'incoming' | 'outgoing' | 'both';
+  }
+
+  const [categories, setCategories] = useState<BudgetCategory[]>(() => {
     const saved = localStorage.getItem('treasurer_categories');
-    return saved ? JSON.parse(saved) : ['Operasional', 'Gaji Guru', 'Pembangunan', 'Ujian', 'Lainnya'];
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          return parsed.map(c => {
+            if (typeof c === 'string') {
+              let type: 'incoming' | 'outgoing' | 'both' = 'both';
+              const nameLower = c.toLowerCase();
+              if (nameLower.includes('gaji') || nameLower.includes('operasional') || nameLower.includes('pembangunan') || nameLower.includes('ujian')) {
+                type = 'outgoing';
+              } else if (nameLower.includes('utama')) {
+                type = 'both';
+              }
+              return { name: c, type };
+            }
+            return c as BudgetCategory;
+          });
+        }
+      } catch (e) {
+        console.error("Gagal parse kategori disimpan: ", e);
+      }
+    }
+    return [
+      { name: 'Operasional', type: 'outgoing' },
+      { name: 'Gaji Guru', type: 'outgoing' },
+      { name: 'Pembangunan', type: 'outgoing' },
+      { name: 'Ujian', type: 'outgoing' },
+      { name: 'Utama', type: 'both' }
+    ];
   });
+
+  useEffect(() => {
+    const matching = categories.filter(c => c.type === 'both' || c.type === formType);
+    if (matching.length > 0 && !matching.some(c => c.name === formCategory)) {
+      setFormCategory(matching[0].name);
+    }
+  }, [formType, categories, formCategory]);
+
   const [showManageBudgetPos, setShowManageBudgetPos] = useState(false);
   const [newBudgetCatInput, setNewBudgetCatInput] = useState('');
+  const [newBudgetCatType, setNewBudgetCatType] = useState<'incoming' | 'outgoing' | 'both'>('both');
   const [budgetCatMessage, setBudgetCatMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Budget Transfer states
+  const [transferSource, setTransferSource] = useState('');
+  const [transferTarget, setTransferTarget] = useState('');
+  const [transferAmount, setTransferAmount] = useState('');
+  const [transferDescription, setTransferDescription] = useState('');
+  const [transferDate, setTransferDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [transferMessage, setTransferMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [isTransferring, setIsTransferring] = useState(false);
 
   const showBudgetMsg = (type: 'success' | 'error', text: string) => {
     setBudgetCatMessage({ type, text });
@@ -125,41 +186,42 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     
     // Check duplication across categories + system ones
     const isReserved = ['spp', 'tabungan'].includes(clean.toLowerCase());
-    if (isReserved || categories.some(c => c.toLowerCase() === clean.toLowerCase())) {
+    if (isReserved || categories.some(c => c.name.toLowerCase() === clean.toLowerCase())) {
       showBudgetMsg('error', 'Kategori POS BUDGET tersebut sudah terdaftar.');
       return;
     }
-    const updated = [...categories, clean];
+    const updated: BudgetCategory[] = [...categories, { name: clean, type: newBudgetCatType }];
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
     setNewBudgetCatInput('');
-    showBudgetMsg('success', `Sukses mendaftarkan POS BUDGET baru: ${clean}`);
+    setNewBudgetCatType('both');
+    showBudgetMsg('success', `Sukses mendaftarkan POS BUDGET baru: ${clean} (${newBudgetCatType === 'incoming' ? 'Pemasukan' : newBudgetCatType === 'outgoing' ? 'Pengeluaran' : 'Umum/Keduanya'})`);
   };
 
-  const handleDeleteBudgetCategory = async (cat: string) => {
+  const handleDeleteBudgetCategory = async (catName: string) => {
     if (categories.length <= 1) {
       showBudgetMsg('error', 'Harus menyisakan minimal satu kategori POS BUDGET.');
       return;
     }
-    if (cat.toLowerCase() === 'lainnya') {
-      showBudgetMsg('error', 'Kategori POS "Lainnya" tidak boleh dihapus karena merupakan lokasi penampungan dana default.');
+    if (catName.toLowerCase() === 'utama') {
+      showBudgetMsg('error', 'Kategori POS "Utama" tidak boleh dihapus karena merupakan lokasi penampungan dana default.');
       return;
     }
 
-    const confirmMessage = `Apakah Anda yakin ingin menghapus POS BUDGET "${cat}"?\n\nPERINGATAN: Semua riwayat transaksi dan saldo dana di dalam pos ini akan otomatis dipindahkan ke POS "Lainnya". Tindakan ini tidak dapat dibatalkan.`;
+    const confirmMessage = `Apakah Anda yakin ingin menghapus POS BUDGET "${catName}"?\n\nPERINGATAN: Semua riwayat transaksi dan saldo dana di dalam pos ini akan otomatis dipindahkan ke POS "Utama". Tindakan ini tidak dapat dibatalkan.`;
     if (!window.confirm(confirmMessage)) return;
 
-    const updated = categories.filter(c => c !== cat);
-    if (!updated.some(c => c.toLowerCase() === 'lainnya')) {
-      updated.push('Lainnya');
+    const updated = categories.filter(c => c.name !== catName);
+    if (!updated.some(c => c.name.toLowerCase() === 'utama')) {
+      updated.push({ name: 'Utama', type: 'both' });
     }
 
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
 
-    const affectedTxs = transactions.filter(t => t.category === cat && t.source === 'custom');
+    const affectedTxs = transactions.filter(t => t.category === catName && t.source === 'custom');
     if (affectedTxs.length > 0) {
-      showBudgetMsg('success', `Memindahkan ${affectedTxs.length} transaksi terkait ke POS "Lainnya"...`);
+      showBudgetMsg('success', `Memindahkan ${affectedTxs.length} transaksi terkait ke POS "Utama"...`);
       try {
         await Promise.all(affectedTxs.map(async (t) => {
           await fetch(`/api/treasurer/transactions/${t.id}`, {
@@ -167,8 +229,8 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               ...t,
-              category: 'Lainnya'
-			})
+              category: 'Utama'
+            })
           });
         }));
         await fetchTransactions();
@@ -177,11 +239,63 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       }
     }
 
-    showBudgetMsg('success', `Sukses menghapus POS BUDGET "${cat}" dan memindahkan seluruh saldo dananya ke POS "Lainnya".`);
+    showBudgetMsg('success', `Sukses menghapus POS BUDGET "${catName}" dan memindahkan seluruh saldo dananya ke POS "Utama".`);
+  };
+
+  const handleTransferBudget = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!transferSource || !transferTarget || !transferAmount || !transferDescription) {
+      setTransferMessage({ type: 'error', text: 'Mohon lengkapi seluruh field formulir transfer dana.' });
+      return;
+    }
+    if (transferSource === transferTarget) {
+      setTransferMessage({ type: 'error', text: 'POS sumber dan POS tujuan tidak boleh sama.' });
+      return;
+    }
+    const amt = Number(transferAmount);
+    if (isNaN(amt) || amt <= 0) {
+      setTransferMessage({ type: 'error', text: 'Jumlah dana transfer harus lebih besar dari Rp 0.' });
+      return;
+    }
+
+    setIsTransferring(true);
+    setTransferMessage(null);
+
+    try {
+      const res = await fetch('/api/treasurer/transactions/transfer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          sourceCategory: transferSource,
+          targetCategory: transferTarget,
+          amount: amt,
+          description: transferDescription,
+          date: transferDate
+        })
+      });
+
+      if (res.ok) {
+        setTransferMessage({
+          type: 'success',
+          text: `🎉 Berhasil memindahkan Rp ${amt.toLocaleString('id-ID')} dari POS "${transferSource}" ke POS "${transferTarget}" secara aman!`
+        });
+        setTransferAmount('');
+        setTransferDescription('');
+        await fetchTransactions();
+      } else {
+        const d = await res.json();
+        setTransferMessage({ type: 'error', text: d.error || 'Gagal memproses pemindahan dana.' });
+      }
+    } catch (err) {
+      setTransferMessage({ type: 'error', text: 'Hubungan komunikasi dengan server terganggu.' });
+    } finally {
+      setIsTransferring(false);
+    }
   };
 
   const [editingCategory, setEditingCategory] = useState<string | null>(null);
   const [editCategoryInput, setEditCategoryInput] = useState('');
+  const [editCategoryType, setEditCategoryType] = useState<'incoming' | 'outgoing' | 'both'>('both');
 
   const handleEditBudgetCategory = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -198,12 +312,12 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       return;
     }
 
-    if (clean.toLowerCase() !== editingCategory.toLowerCase() && categories.some(c => c.toLowerCase() === clean.toLowerCase())) {
+    if (clean.toLowerCase() !== editingCategory.toLowerCase() && categories.some(c => c.name.toLowerCase() === clean.toLowerCase())) {
       showBudgetMsg('error', 'Kategori POS BUDGET tersebut sudah terdaftar.');
       return;
     }
 
-    const updated = categories.map(c => c === editingCategory ? clean : c);
+    const updated = categories.map(c => c.name === editingCategory ? { name: clean, type: editCategoryType } : c);
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
 
@@ -229,7 +343,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
 
     setEditingCategory(null);
     setEditCategoryInput('');
-    showBudgetMsg('success', `Sukses mengubah "${editingCategory}" menjadi "${clean}"`);
+    showBudgetMsg('success', `Sukses mengubah "${editingCategory}" menjadi "${clean}" (${editCategoryType === 'incoming' ? 'Pemasukan' : editCategoryType === 'outgoing' ? 'Pengeluaran' : 'Umum/Keduanya'})`);
   };
 
 
@@ -258,7 +372,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   const handleOpenAddModal = () => {
     setEditingTransaction(null);
     setFormType('incoming');
-    setFormCategory(categories[0] || 'Operasional');
+    setFormCategory(categories[0]?.name || 'Operasional');
     setFormAmount('');
     setFormDescription('');
     setFormRecipientName('');
@@ -394,14 +508,14 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     const balances: Record<string, { incoming: number; outgoing: number; balance: number }> = {};
     
     // Explicit list of all categories including SPP and Tabungan so they are all represented nicely in the overview
-    const allUniqueCategories = Array.from(new Set(['SPP', 'Tabungan', ...categories]));
+    const allUniqueCategories = Array.from(new Set(['SPP', 'Tabungan', ...categories.map(c => c.name)]));
     
     allUniqueCategories.forEach(c => {
       balances[c] = { incoming: 0, outgoing: 0, balance: 0 };
     });
 
     transactions.forEach(t => {
-      const cat = t.category || 'Lainnya';
+      const cat = t.category || 'Utama';
       if (!balances[cat]) {
         balances[cat] = { incoming: 0, outgoing: 0, balance: 0 };
       }
@@ -904,7 +1018,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
             {/* Card 4: Other tactical cashbook items */}
             <div className="bg-white p-5 rounded-2xl border border-slate-200 flex flex-col justify-between shadow-xs">
               <div className="flex items-center justify-between">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Kas Operasional Lainnya</span>
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Kas Operasional Utama</span>
                 <span className="p-1 px-1.5 bg-purple-50 text-purple-700 rounded-lg text-[9px] font-bold tracking-wider uppercase">Pencatatan Manual</span>
               </div>
               <div className="my-3">
@@ -960,94 +1074,140 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   </div>
                 )}
 
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                   {/* Form to add */}
-                  <form onSubmit={handleAddBudgetCategory} className="md:col-span-4 flex flex-col gap-2">
-                    <label className="text-[10px] font-bold text-slate-400 uppercase">Nama POS BUDGET Baru</label>
-                    <div className="flex gap-2">
+                  <form onSubmit={handleAddBudgetCategory} className="md:col-span-5 flex flex-col gap-3 p-4 bg-slate-150/40 border border-slate-200 rounded-2xl">
+                    <h5 className="text-[11px] font-black text-slate-750 uppercase tracking-wide">🆕 Daftarkan POS Baru</h5>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase">Nama POS BUDGET Baru</label>
                       <input
                         type="text"
                         placeholder="Contoh: Dana BOS, Kegiatan Siswa..."
                         value={newBudgetCatInput}
                         onChange={(e) => setNewBudgetCatInput(e.target.value)}
-                        className="flex-1 p-2 bg-white text-xs border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
+                        className="w-full mt-1 p-2 bg-white text-xs border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
+                        required
                       />
-                      <button
-                        type="submit"
-                        className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer shadow-sm transition-all whitespace-nowrap"
-                      >
-                        Daftarkan
-                      </button>
                     </div>
+                    <div>
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Penentuan Aliran Kas POS</label>
+                      <select
+                        value={newBudgetCatType}
+                        onChange={(e) => setNewBudgetCatType(e.target.value as 'incoming' | 'outgoing' | 'both')}
+                        className="w-full mt-1 p-2 bg-white text-xs border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800 cursor-pointer"
+                      >
+                        <option value="both">Keduanya / Umum (Pemasukan &amp; Pengeluaran)</option>
+                        <option value="incoming">Hanya Pemasukan / Penerimaan Dana (+)</option>
+                        <option value="outgoing">Hanya Pengeluaran / Penyaluran Dana (-)</option>
+                      </select>
+                    </div>
+                    <button
+                      type="submit"
+                      className="w-full py-2 mt-1 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-black rounded-xl cursor-pointer shadow-xs transition-all text-center"
+                    >
+                      Daftarkan POS BUDGET
+                    </button>
                   </form>
 
                   {/* Registered List */}
-                  <div className="md:col-span-8">
+                  <div className="md:col-span-7">
                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Kategori POS Aktif saat ini</label>
                     <div className="flex flex-wrap gap-2">
-                      <span className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl font-bold text-[11px] select-none border border-slate-300">
-                        🔒 SPP (Sistem)
+                      <span className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl font-bold text-[11px] select-none border border-slate-300 flex items-center gap-1.5 shadow-3xs">
+                        <span>🔒 SPP (Sistem)</span>
+                        <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.2 rounded text-[8px] font-black">Pemasukan</span>
                       </span>
-                      <span className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl font-bold text-[11px] select-none border border-slate-300">
-                        🔒 Tabungan (Sistem)
+                      <span className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl font-bold text-[11px] select-none border border-slate-300 flex items-center gap-1.5 shadow-3xs">
+                        <span>🔒 Tabungan (Sistem)</span>
+                        <span className="bg-slate-100 text-slate-600 border border-slate-200 px-1 py-0.2 rounded text-[8px] font-black">Umum</span>
                       </span>
                       {categories.map((cat) => {
-                        if (editingCategory === cat) {
+                        if (editingCategory === cat.name) {
                           return (
                             <form 
-                              key={cat} 
+                              key={cat.name} 
                               onSubmit={handleEditBudgetCategory} 
-                              className="inline-flex items-center gap-1.5 px-3 py-1 bg-white border-2 border-slate-800 rounded-xl text-[11px] font-extrabold text-slate-800 shadow-3xs"
+                              className="w-full max-w-xs flex flex-col gap-2 p-3.5 bg-slate-100 border border-slate-350 rounded-2xl text-[11px] font-extrabold text-slate-800 shadow-xs animate-fade-in text-left"
                             >
-                              <input
-                                type="text"
-                                value={editCategoryInput}
-                                onChange={(e) => setEditCategoryInput(e.target.value)}
-                                className="w-24 p-0.5 bg-slate-50 text-[11px] font-bold text-slate-900 border border-slate-300 rounded focus:outline-none focus:border-indigo-500 font-bold"
-                                autoFocus
-                                required
-                              />
-                              <button
-                                type="submit"
-                                className="px-1.5 py-0.5 bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-[10px] rounded cursor-pointer leading-none"
-                                title="Simpan"
-                              >
-                                ✓
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setEditingCategory(null);
-                                  setEditCategoryInput('');
-                                }}
-                                className="px-1.5 py-0.5 bg-slate-250 hover:bg-slate-300 text-slate-700 font-bold text-[10px] rounded cursor-pointer leading-none"
-                                title="Batal"
-                              >
-                                &times;
-                              </button>
+                              <div className="text-slate-800 font-extrabold text-[10px] border-b pb-1 border-slate-200">
+                                ⚙️ Ubah POS BUDGET
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-slate-450 block mb-0.5 uppercase tracking-wide">Nama POS</label>
+                                <input
+                                  type="text"
+                                  value={editCategoryInput}
+                                  onChange={(e) => setEditCategoryInput(e.target.value)}
+                                  className="w-full p-1.5 bg-white text-[11px] font-bold text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 font-bold"
+                                  autoFocus
+                                  required
+                                />
+                              </div>
+                              <div>
+                                <label className="text-[9px] text-slate-450 block mb-0.5 uppercase tracking-wide">Tipe Aliran</label>
+                                <select
+                                  value={editCategoryType}
+                                  onChange={(e) => setEditCategoryType(e.target.value as 'incoming' | 'outgoing' | 'both')}
+                                  className="w-full p-1.5 bg-white text-[11px] font-bold text-slate-900 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-500 font-bold cursor-pointer"
+                                >
+                                  <option value="both">Keduanya (Pemasukan &amp; Pengeluaran)</option>
+                                  <option value="incoming">Hanya Pemasukan (+)</option>
+                                  <option value="outgoing">Hanya Pengeluaran (-)</option>
+                                </select>
+                              </div>
+                              <div className="flex gap-1.5 justify-end mt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setEditingCategory(null);
+                                    setEditCategoryInput('');
+                                  }}
+                                  className="px-2.5 py-1 bg-slate-200 hover:bg-slate-250 text-slate-700 font-bold text-[10px] rounded-lg cursor-pointer transition-all"
+                                >
+                                  Batal
+                                </button>
+                                <button
+                                  type="submit"
+                                  className="px-2.5 py-1 bg-indigo-650 hover:bg-indigo-700 text-white font-bold text-[10px] rounded-lg cursor-pointer transition-all"
+                                >
+                                  Simpan
+                                </button>
+                              </div>
                             </form>
                           );
                         }
 
                         return (
-                          <div key={cat} className="group inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100/55 border border-slate-200 rounded-xl text-[11px] font-extrabold text-slate-800 shadow-3xs transition-all">
-                            <span>{cat}</span>
+                          <div key={cat.name} className="group inline-flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100/55 border border-slate-200 rounded-xl text-[11px] font-extrabold text-slate-800 shadow-3xs transition-all animate-fade-in">
+                            <span className="flex items-center gap-1.5">
+                              <span>{cat.name}</span>
+                              {cat.type === 'incoming' && (
+                                <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.2 rounded text-[8.5px] font-black">Pemasukan</span>
+                              )}
+                              {cat.type === 'outgoing' && (
+                                <span className="bg-rose-50 text-rose-700 border border-rose-200 px-1 py-0.2 rounded text-[8.5px] font-black">Pengeluaran</span>
+                              )}
+                              {cat.type === 'both' && (
+                                <span className="bg-slate-100 text-slate-600 border border-slate-200 px-1 py-0.2 rounded text-[8.5px] font-black">Umum</span>
+                              )}
+                            </span>
                             <button
                               type="button"
                               onClick={() => {
-                                setEditingCategory(cat);
-                                setEditCategoryInput(cat);
+                                setEditingCategory(cat.name);
+                                setEditCategoryInput(cat.name);
+                                setEditCategoryType(cat.type);
                               }}
-                              className="p-0.5 hover:bg-indigo-100 hover:text-indigo-600 rounded text-slate-400 font-bold cursor-pointer transition-all inline-flex items-center justify-center"
-                              title={`Ubah Nama Seluruh ${cat}`}
+                              className="p-0.5 hover:bg-indigo-100 hover:text-indigo-600 rounded text-slate-400 font-bold cursor-pointer transition-all inline-flex items-center justify-center ml-1"
+                              title={`Ubah Nama & Tipe ${cat.name}`}
                             >
                               <Edit3 size={11} />
                             </button>
                             <button
                               type="button"
-                              onClick={() => handleDeleteBudgetCategory(cat)}
-                              className="p-0.5 hover:bg-rose-100 hover:text-rose-600 rounded text-slate-400 font-black cursor-pointer leading-none text-xs"
-                              title={`Hapus Pos ${cat}`}
+                              onClick={() => handleDeleteBudgetCategory(cat.name)}
+                              className="p-0.5 hover:bg-rose-100 hover:text-rose-600 rounded text-slate-400 font-black cursor-pointer leading-none text-xs ml-0.5"
+                              title={`Hapus Pos ${cat.name}`}
                             >
                               &times;
                             </button>
@@ -1056,6 +1216,99 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                       })}
                     </div>
                   </div>
+                </div>
+
+                {/* Horizontal rule splitter */}
+                <hr className="my-5 border-slate-205" />
+
+                {/* Transfer Form block */}
+                <div>
+                  <h4 className="text-xs font-black text-slate-950 uppercase tracking-wider mb-1 flex items-center gap-1.5">
+                    💸 Pindahkan Dana Antar POS BUDGET
+                  </h4>
+                  <p className="text-[11.5px] text-slate-500 font-medium leading-relaxed mb-4">
+                    Pindahkan anggaran saldo netto dari satu POS (sumber) ke POS lainnya (tujuan) secara langsung. Sistem akan mendebit POS sumber dan mengkredit POS tujuan secara otomatis dan tercatat aman di riwayat buku kas.
+                  </p>
+
+                  {transferMessage && (
+                    <div className={`p-3 rounded-xl text-xs font-bold flex items-center gap-2 mb-4 ${
+                      transferMessage.type === 'success' ? 'bg-emerald-50 text-emerald-800 border border-emerald-200 animate-fade-in' : 'bg-rose-50 text-rose-800 border border-rose-200 animate-fade-in'
+                    }`}>
+                      {transferMessage.type === 'success' ? <CheckCircle2 size={14} className="text-emerald-600" /> : <AlertTriangle size={14} className="text-rose-600" />}
+                      <span>{transferMessage.text}</span>
+                    </div>
+                  )}
+
+                  <form onSubmit={handleTransferBudget} className="grid grid-cols-1 md:grid-cols-5 gap-4 items-end bg-white p-4 border border-slate-200 rounded-2xl text-left shadow-2xs">
+                    {/* Source POS */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">POS Angg. Sumber</label>
+                      <select
+                        required
+                        value={transferSource}
+                        onChange={(e) => setTransferSource(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-bold text-slate-850 text-xs cursor-pointer"
+                      >
+                        <option value="">-- Pilih POS Sumber --</option>
+                         {categories.map(c => (
+                          <option key={`src-${c.name}`} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Target POS */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">POS Angg. Tujuan</label>
+                      <select
+                        required
+                        value={transferTarget}
+                        onChange={(e) => setTransferTarget(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-bold text-slate-850 text-xs cursor-pointer"
+                      >
+                        <option value="">-- Pilih POS Tujuan --</option>
+                        {categories.filter(c => c.name !== transferSource).map(c => (
+                          <option key={`tgt-${c.name}`} value={c.name}>{c.name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Amount */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Jumlah Pindahan (Rp)</label>
+                      <input
+                        type="number"
+                        required
+                        min="1"
+                        placeholder="Contoh: 50000"
+                        value={transferAmount}
+                        onChange={(e) => setTransferAmount(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 text-xs border border-slate-200 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
+                      />
+                    </div>
+
+                    {/* Description */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="text-[10px] font-bold text-slate-400 uppercase block">Keterangan / Memo</label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Keterangan alokasi..."
+                        value={transferDescription}
+                        onChange={(e) => setTransferDescription(e.target.value)}
+                        className="w-full p-2.5 bg-slate-50 text-xs border border-slate-200 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
+                      />
+                    </div>
+
+                    {/* Submit Button */}
+                    <button
+                      type="submit"
+                      disabled={isTransferring}
+                      className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl cursor-pointer transition-all inline-flex items-center justify-center gap-1.5 shadow-sm shadow-indigo-500/10"
+                    >
+                      <span>🔄</span>
+                      <span>{isTransferring ? 'Memproses...' : 'Kirim Dana'}</span>
+                    </button>
+                  </form>
                 </div>
               </div>
             )}
@@ -1272,7 +1525,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                     <option value="SPP">SPP</option>
                     <option value="Tabungan">Tabungan</option>
                     {categories.map(c => (
-                      <option key={c} value={c}>{c}</option>
+                      <option key={c.name} value={c.name}>{c.name}</option>
                     ))}
                   </select>
                 </div>
@@ -1711,15 +1964,21 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
 
                 {/* 2. Category Dropdown */}
                 <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">KATEGORI POS BUDGET</label>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">
+                    KATEGORI POS BUDGET ({formType === 'incoming' ? 'MASUK' : 'KELUAR'})
+                  </label>
                   <select
                     value={formCategory}
                     onChange={(e) => setFormCategory(e.target.value)}
-                    className="w-full p-2.5 border border-slate-200 rounded-lg bg-white"
+                    className="w-full p-2.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-800 text-xs focus:outline-none focus:border-slate-800 cursor-pointer"
                   >
-                    {categories.map((c) => (
-                      <option key={c} value={c}>{c}</option>
-                    ))}
+                    {categories
+                      .filter((c) => c.type === 'both' || c.type === formType)
+                      .map((c) => (
+                        <option key={c.name} value={c.name}>
+                          📊 {c.name} ({c.type === 'both' ? 'Umum' : c.type === 'incoming' ? 'Pemasukan saja' : 'Pengeluaran saja'})
+                        </option>
+                      ))}
                   </select>
                 </div>
 

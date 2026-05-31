@@ -7,6 +7,10 @@ export interface Student {
   phone: string;
   savingsBalance: number;
   password?: string;
+  gender?: string;
+  mutationDate?: string;
+  mutationReason?: string;
+  mutationDestination?: string;
 }
 
 export interface SppBill {
@@ -123,7 +127,7 @@ export interface SubjectAttendanceEntry {
 export interface TreasurerTransaction {
   id: string;
   type: 'incoming' | 'outgoing';
-  category: string; // 'SPP', 'Tabungan', 'Operasional', 'Gaji Guru', 'Pembangunan', 'Ujan', 'Lainnya'
+  category: string; // 'SPP', 'Tabungan', 'Operasional', 'Gaji Guru', 'Pembangunan', 'Ujan', 'Utama'
   amount: number;
   description: string;
   date: string; // "YYYY-MM-DD"

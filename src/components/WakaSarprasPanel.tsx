@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Package, ShoppingCart, Users2, Search, Plus, Edit2, Trash2, 
   Printer, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Loader2, LogOut, Check, X,
-  Home, LayoutGrid
+  Home, LayoutGrid, Key, Lock
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -93,6 +93,15 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   const [loans, setLoans] = useState<SarprasLoan[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [actionMessage, setActionMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Password change states
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [oldPassword, setOldPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmNewPassword, setConfirmNewPassword] = useState('');
+  const [isChangingPassword, setIsChangingPassword] = useState(false);
+  const [passwordError, setPasswordError] = useState('');
+  const [passwordSuccess, setPasswordSuccess] = useState('');
 
   // Custom dialog confirmation state to bypass blocked window.confirm inside iframes
   const [confirmDialog, setConfirmDialog] = useState<{
@@ -238,6 +247,55 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
       setItemForm(prev => ({ ...prev, code: generated }));
     }
   }, [autoCode, itemForm.category, itemForm.name, isEditingItem]);
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setPasswordError('');
+    setPasswordSuccess('');
+
+    if (!oldPassword.trim()) {
+      setPasswordError('Sandi lama wajib diisi.');
+      return;
+    }
+    if (!newPassword.trim()) {
+      setPasswordError('Sandi baru wajib diisi.');
+      return;
+    }
+    if (newPassword.trim().length < 5) {
+      setPasswordError('Sandi baru minimal 5 karakter.');
+      return;
+    }
+    if (newPassword !== confirmNewPassword) {
+      setPasswordError('Konfirmasi sandi baru tidak cocok.');
+      return;
+    }
+
+    setIsChangingPassword(true);
+    try {
+      const res = await fetch('/api/sarpras/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPassword: oldPassword.trim(), newPassword: newPassword.trim() })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setPasswordSuccess('🎉 Kata sandi berhasil diperbarui secara aman!');
+        setOldPassword('');
+        setNewPassword('');
+        setConfirmNewPassword('');
+        setTimeout(() => {
+          setShowPasswordModal(false);
+          setPasswordSuccess('');
+        }, 1500);
+      } else {
+        setPasswordError(data.error || 'Gagal mengubah kata sandi.');
+      }
+    } catch {
+      setPasswordError('Gangguan komunikasi dengan server.');
+    } finally {
+      setIsChangingPassword(false);
+    }
+  };
 
   // Categories submit & delete actions
   const handleAddCategory = (e: React.FormEvent) => {
@@ -702,12 +760,28 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               </div>
             </div>
 
-            <button
-              onClick={onLogout}
-              className="px-5 py-2.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white border border-rose-500/20 text-rose-300 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-sm transition-all"
-            >
-              <LogOut size={13} strokeWidth={2.5} /> Keluar Portal
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => {
+                  setPasswordError('');
+                  setPasswordSuccess('');
+                  setOldPassword('');
+                  setNewPassword('');
+                  setConfirmNewPassword('');
+                  setShowPasswordModal(true);
+                }}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-sm transition-all"
+              >
+                <Key size={13} strokeWidth={2.5} /> Ubah Sandi
+              </button>
+
+              <button
+                onClick={onLogout}
+                className="px-5 py-2.5 bg-rose-500/10 hover:bg-rose-500 hover:text-white border border-rose-500/20 text-rose-300 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-sm transition-all"
+              >
+                <LogOut size={13} strokeWidth={2.5} /> Keluar Portal
+              </button>
+            </div>
           </div>
         </header>
 
@@ -2121,6 +2195,105 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     Konfirmasi
                   </button>
                 </div>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Change Password Modal */}
+          {showPasswordModal && (
+            <div className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs print:hidden">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                exit={{ scale: 0.95, opacity: 0 }}
+                className="bg-white border text-left border-slate-250 w-full max-w-sm rounded-2xl overflow-hidden shadow-2xl animate-fade-in"
+              >
+                <div className="p-4 bg-slate-950 border-b border-slate-800 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-indigo-950 border border-indigo-800 text-indigo-400">
+                      <Key size={14} />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-xs tracking-tight">Ubah Sandi Waka Sarpras</h3>
+                      <p className="text-[9px] text-slate-400 font-bold uppercase tracking-wider">Keamanan Akun</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowPasswordModal(false)}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer transition-all text-sm font-bold"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <form onSubmit={handleChangePassword} className="p-5 flex flex-col gap-3.5 text-xs font-semibold">
+                  {passwordError && (
+                    <div className="p-3 bg-rose-50 border border-rose-150 text-rose-850 rounded-xl text-[11px] font-bold">
+                      {passwordError}
+                    </div>
+                  )}
+                  
+                  {passwordSuccess && (
+                    <div className="p-3 bg-emerald-50 border border-emerald-150 text-emerald-855 rounded-xl text-[11px] font-bold">
+                      {passwordSuccess}
+                    </div>
+                  )}
+
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">KATA SANDI SEBELUMNYA</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Masukkan sandi saat ini"
+                      value={oldPassword}
+                      onChange={(e) => setOldPassword(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl text-slate-800 bg-slate-50/50"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">KATA SANDI BARU</label>
+                    <input
+                      type="password"
+                      required
+                      maxLength={32}
+                      placeholder="Minimal 5 karakter"
+                      value={newPassword}
+                      onChange={(e) => setNewPassword(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1">KONFIRMASI SANDI BARU</label>
+                    <input
+                      type="password"
+                      required
+                      placeholder="Ulangi sandi baru"
+                      value={confirmNewPassword}
+                      onChange={(e) => setConfirmNewPassword(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl text-slate-800"
+                    />
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowPasswordModal(false)}
+                      className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer transition-all text-center"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isChangingPassword}
+                      className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white rounded-xl font-bold cursor-pointer transition-all text-center"
+                    >
+                      {isChangingPassword ? 'Menyimpan...' : 'Simpan Sandi'}
+                    </button>
+                  </div>
+                </form>
               </motion.div>
             </div>
           )}

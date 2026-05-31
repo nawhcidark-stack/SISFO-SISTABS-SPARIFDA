@@ -67,15 +67,20 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         }
       } else if (activeRole === 'waka_sarpras') {
         // Waka Sarpras Validation
-        const cleanUser = username.trim().toLowerCase();
-        if ((cleanUser === 'sarpras' || cleanUser === 'waka') && password === 'sarpras123') {
+        const res = await fetch('/api/sarpras/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (res.ok) {
           setTimeout(() => {
             setIsValidating(false);
             onLoginSuccess('waka_sarpras', null, null, null);
           }, 600);
         } else {
+          const errData = await res.json();
           setIsValidating(false);
-          setErrorMsg('Username atau Password Waka Sarpras salah. Coba: sarpras / sarpras123.');
+          setErrorMsg(errData.error || 'Username atau Password Waka Sarpras salah.');
         }
       } else if (activeRole === 'admin') {
         // Admin Validation

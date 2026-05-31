@@ -1,5 +1,5 @@
 {
-  "name": "SMP Maarif NU Pandaan - SPP & Tabungan",
+  "name": "Portal Administrasi Inspiratif",
   "description": "Aplikasi pembayaran SPP dan Tabungan SMP Maarif NU Pandaan Terintegrasi dengan Midtrans dan Notifikasi Real-time",
   "requestFramePermissions": ["camera"],
   "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]

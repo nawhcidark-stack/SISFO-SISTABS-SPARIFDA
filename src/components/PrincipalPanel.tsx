@@ -500,6 +500,49 @@ export default function PrincipalPanel({
 
   // Global statistics and metrics calculations
   const totalStudents = students.length;
+
+  // Gender stats
+  const genderStats = useMemo(() => {
+    let laki = 0;
+    let perempuan = 0;
+    let unspecified = 0;
+    students.forEach(s => {
+      if (s.gender === 'Laki-laki') {
+        laki++;
+      } else if (s.gender === 'Perempuan') {
+        perempuan++;
+      } else {
+        unspecified++;
+      }
+    });
+    return { laki, perempuan, unspecified };
+  }, [students]);
+
+  // Class stats
+  const classStats = useMemo(() => {
+    const counts: { [className: string]: { total: number; laki: number; perempuan: number } } = {};
+    students.forEach(s => {
+      const cls = s.class || 'Tanpa Kelas';
+      if (!counts[cls]) {
+        counts[cls] = { total: 0, laki: 0, perempuan: 0 };
+      }
+      counts[cls].total++;
+      if (s.gender === 'Laki-laki') {
+        counts[cls].laki++;
+      } else if (s.gender === 'Perempuan') {
+        counts[cls].perempuan++;
+      }
+    });
+
+    // Sort classes
+    const sortedClasses = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+    return sortedClasses.map(className => ({
+      class: className,
+      total: counts[className].total,
+      laki: counts[className].laki,
+      perempuan: counts[className].perempuan
+    }));
+  }, [students]);
   
   // SPP statistics
   const sppTotalInvoiced = bills.length;
@@ -851,6 +894,90 @@ export default function PrincipalPanel({
                 <span className="text-[10px] font-mono font-bold text-indigo-600">Staff</span>
               </div>
               <p className="text-[9px] text-slate-500 font-extrabold">{homerooms.length} Wali / {subjectTeachers.length} Mapel</p>
+            </div>
+
+          </div>
+
+          {/* Statistik Siswa Lengkap (Jenis Kelamin & Per Kelas) */}
+          <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+            
+            {/* Ringkasan Demografi Laki-laki / Perempuan (4 cols) */}
+            <div className="lg:col-span-4 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col justify-between min-h-[300px]">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-950 flex items-center gap-1.5">
+                  🚻 Statistik Jenis Kelamin Siswa
+                </h3>
+                <p className="text-slate-400 text-[10px] mt-0.5">Ringkasan total murid berdasarkan gender di seluruh tingkat kelas.</p>
+              </div>
+
+              <div className="grid grid-cols-2 gap-4 my-4">
+                <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-4 text-center">
+                  <span className="text-[10px] font-extrabold uppercase text-indigo-600 tracking-wider block">Laki-laki (L)</span>
+                  <div className="text-3xl font-black text-indigo-900 mt-1">{genderStats.laki}</div>
+                  <span className="text-[9px] font-bold text-slate-500 block mt-1">
+                    {totalStudents > 0 ? ((genderStats.laki/totalStudents)*100).toFixed(1) : 0}% dari siswa
+                  </span>
+                </div>
+                <div className="bg-rose-50/50 border border-rose-100 rounded-2xl p-4 text-center">
+                  <span className="text-[10px] font-extrabold uppercase text-rose-600 tracking-wider block">Perempuan (P)</span>
+                  <div className="text-3xl font-black text-rose-900 mt-1">{genderStats.perempuan}</div>
+                  <span className="text-[9px] font-bold text-slate-500 block mt-1">
+                    {totalStudents > 0 ? ((genderStats.perempuan/totalStudents)*100).toFixed(1) : 0}% dari siswa
+                  </span>
+                </div>
+              </div>
+
+              {genderStats.unspecified > 0 ? (
+                <div className="text-[10px] text-slate-400 text-center font-medium">
+                  *Terdapat {genderStats.unspecified} siswa belum ditentukan jenis kelaminnya.
+                </div>
+              ) : (
+                <div className="text-[10px] text-slate-400 text-center font-bold text-emerald-800">
+                  ✓ Semua data jenis kelamin siswa tersinkronisasi murni
+                </div>
+              )}
+            </div>
+
+            {/* Statistik Detil Distribusi Per Kelas (8 cols) */}
+            <div className="lg:col-span-8 bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-3 min-h-[300px]">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-950 flex items-center gap-1.5">
+                  🏫 Jumlah Siswa Aktif Per Kelas
+                </h3>
+                <p className="text-slate-400 text-[10px] mt-0.5">Proporsi dan perincian jenis kelamin (L/P) di masing-masing rombongan belajar (rombel).</p>
+              </div>
+
+              <div className="overflow-y-auto max-h-[220px] pr-1">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase tracking-wider text-[9px]">
+                      <th className="py-2 px-3">Rombel / Kelas</th>
+                      <th className="py-2 px-3 text-center">Laki-laki (L)</th>
+                      <th className="py-2 px-3 text-center">Perempuan (P)</th>
+                      <th className="py-2 px-3 text-right">Total Murid</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-slate-700 font-medium text-[11px]">
+                    {classStats.length > 0 ? (
+                      classStats.map((cStat, index) => (
+                        <tr key={index} className="hover:bg-slate-50/40">
+                          <td className="py-2.5 px-3 font-bold text-slate-900 flex items-center gap-1.5">
+                            <span className="h-2 w-2 rounded-full bg-emerald-600" />
+                            Kelas {cStat.class}
+                          </td>
+                          <td className="py-2.5 px-3 text-center text-indigo-700 font-bold">{cStat.laki} siswa</td>
+                          <td className="py-2.5 px-3 text-center text-rose-700 font-bold">{cStat.perempuan} siswa</td>
+                          <td className="py-2.5 px-3 text-right text-slate-900 font-black text-sm">{cStat.total} siswa</td>
+                        </tr>
+                      ))
+                    ) : (
+                      <tr>
+                        <td colSpan={4} className="py-4 text-center text-slate-400">Belum ada data siswa aktif terdaftar.</td>
+                      </tr>
+                    )}
+                  </tbody>
+                </table>
+              </div>
             </div>
 
           </div>
@@ -1649,49 +1776,215 @@ export default function PrincipalPanel({
               <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Histori Hasil Penilaian Guru Resmi</span>
             </div>
 
-            <table className="w-full text-left text-xs border-collapse font-medium">
-              <thead>
-                <tr className="bg-slate-900 text-white font-black uppercase text-[9px] tracking-wide">
-                  <th className="px-4 py-3">Nama Guru</th>
-                  <th className="px-3 py-3 text-center">Pedagogis</th>
-                  <th className="px-3 py-3 text-center">Profesional</th>
-                  <th className="px-3 py-3 text-center">Kepribadian</th>
-                  <th className="px-3 py-3 text-center">Sosial</th>
-                  <th className="px-3 py-3 text-center">Total Rata²</th>
-                  <th className="px-4 py-3">Catatan / Arahan</th>
-                  <th className="px-4 py-3 text-right">Opsi</th>
-                </tr>
-              </thead>
-              <tbody>
-                {evaluations.length === 0 ? (
-                  <tr>
-                    <td colSpan={8} className="py-12 text-center text-slate-400 font-semibold italic">Belum ada evaluasi guru terdaftar.</td>
+            {/* Desktop View */}
+            <div className="hidden md:block">
+              <table className="w-full text-left text-xs border-collapse font-medium">
+                <thead>
+                  <tr className="bg-slate-900 text-white font-black uppercase text-[9px] tracking-wide">
+                    <th className="px-4 py-3">Nama Guru</th>
+                    <th className="px-3 py-3 text-center">Pedagogis</th>
+                    <th className="px-3 py-3 text-center">Profesional</th>
+                    <th className="px-3 py-3 text-center">Kepribadian</th>
+                    <th className="px-3 py-3 text-center">Sosial</th>
+                    <th className="px-3 py-3 text-center">Total Rata²</th>
+                    <th className="px-4 py-3">Catatan / Arahan</th>
+                    <th className="px-4 py-3 text-right">Opsi</th>
                   </tr>
-                ) : (
-                  evaluations.map((ev) => {
+                </thead>
+                <tbody>
+                  {evaluations.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-12 text-center text-slate-400 font-semibold italic">Belum ada evaluasi guru terdaftar.</td>
+                    </tr>
+                  ) : (
+                    evaluations.map((ev) => {
+                      const avgScore = Math.round((ev.pedagogicScore + ev.professionalScore + ev.personalScore + ev.socialScore) / 4);
+                      return (
+                        <tr key={ev.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors text-slate-800">
+                          <td className="px-4 py-3 font-black text-slate-900 leading-none">
+                            {ev.teacherName}
+                            <span className="block text-[8px] uppercase tracking-wider text-indigo-650 font-bold mt-1">
+                              {ev.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mapel'} • TA: {ev.academicYear}
+                            </span>
+                          </td>
+                          <td className="px-3 py-3 text-center font-mono font-bold">{ev.pedagogicScore}</td>
+                          <td className="px-3 py-3 text-center font-mono font-bold">{ev.professionalScore}</td>
+                          <td className="px-3 py-3 text-center font-mono font-bold">{ev.personalScore}</td>
+                          <td className="px-3 py-3 text-center font-mono font-bold">{ev.socialScore}</td>
+                          <td className="px-3 py-3 text-center">
+                            <span className={`px-2 py-0.5 rounded font-mono font-black text-[10px] ${
+                              avgScore >= 85 ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-700'
+                            }`}>
+                              {avgScore}
+                            </span>
+                          </td>
+                          <td className="px-4 py-3 text-slate-500 text-[10px] font-semibold max-w-xs truncate" title={ev.notes}>{ev.notes}</td>
+                          <td className="px-4 py-3 text-right">
+                            <div className="flex items-center justify-end gap-2 inline-flex">
+                              <button
+                                onClick={() => {
+                                  const pWin = window.open("", "_blank");
+                                  if (!pWin) return;
+                                  
+                                  const rowG = `
+                                    <tr><td>Kompetensi Pedagogis (KBM & Psikologi)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.pedagogicScore}</td></tr>
+                                    <tr><td>Kompetensi Profesional (Materi Ajar)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.professionalScore}</td></tr>
+                                    <tr><td>Kompetensi Kepribadian (Budi Pekerti/Sikap)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.personalScore}</td></tr>
+                                    <tr><td>Kompetensi Sosial (Paguyuban/Interaksi)</td><td style="text-align:center;">80</td><td style="text-align:center; font-weight:bold;">${ev.socialScore}</td></tr>
+                                    <tr style="background:#f1f5f9; font-weight:bold;"><td>NILAI RATA-RATA EVALUASI</td><td style="text-align:center;">80</td><td style="text-align:center; color:#10b981;">${avgScore}</td></tr>
+                                  `;
+
+                                  pWin.document.write(`
+                                    <html>
+                                      <head>
+                                        <title>OFFICIAL PKG - ${ev.teacherName}</title>
+                                        <style>
+                                          body { font-family: sans-serif; padding:40px; color:#333; font-size:12px; line-height:1.6; }
+                                          .head-school { text-align:center; font-weight:bold; font-size:15px; border-bottom:3px double #000; padding-bottom:12px; margin-bottom:20px; }
+                                          .meta-grid { width:100%; border-collapse:collapse; margin-bottom:20px; }
+                                          .meta-grid td { padding:5px; }
+                                          .rep-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+                                          .rep-table th, .rep-table td { border:1px solid #64748b; padding:8px; }
+                                          .recom-box { border: 1px solid #000; padding:15px; background:#f8fafc; font-weight:bold; margin-bottom:40px; }
+                                          .sigs { width:100%; margin-top:50px; }
+                                          .sigs td { text-align:center; width:50%; }
+                                        </style>
+                                      </head>
+                                      <body>
+                                        <div class="head-school">
+                                          ${schoolIdentity.name}<br/>
+                                          <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity.address} | Phone: ${schoolIdentity.phone}</span>
+                                        </div>
+                                        
+                                        <h3 style="text-align:center; text-transform:uppercase; text-decoration:underline;">LEMBAR HASIL PENILAIAN KINERJA GURU (PKG)</h3>
+                                        <p style="text-align:center; font-weight:bold; font-size:10px; margin-top:-10px;">TAHUN AJARAN / AKADEMIK: ${ev.academicYear}</p>
+                                        
+                                        <table class="meta-grid">
+                                          <tr><td style="width:20%; font-weight:bold;">Nama Pendidik</td><td>: <strong>${ev.teacherName}</strong></td></tr>
+                                          <tr><td style="font-weight:bold;">Tugas Jabatan</td><td>: ${ev.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mata Pelajaran'}</td></tr>
+                                          <tr><td style="font-weight:bold;">Penilai / Jabatan</td><td>: ${schoolIdentity.principal || ev.evaluatorName || "H. Ahmad Fuad, S.Pd, M.PdI"} / Kepala Sekolah</td></tr>
+                                          <tr><td style="font-weight:bold;">Tanggal Sinkron</td><td>: ${ev.date}</td></tr>
+                                        </table>
+
+                                        <h4>A. INDEKS KOMPETENSI RUJUKAN</h4>
+                                        <table class="rep-table">
+                                          <thead>
+                                            <tr style="background:#f1f5f9;"><th>Aspek Kompetensi Utama</th><th style="width:15%">KKM Min</th><th style="width:15%">Nilai Dicapai</th></tr>
+                                          </thead>
+                                          <tbody>
+                                            ${rowG}
+                                          </tbody>
+                                        </table>
+
+                                        <h4>B. REKOMENDASI KARIR & CATATAN KHUSUS</h4>
+                                        <div class="recom-box">
+                                          "${ev.notes}"
+                                        </div>
+
+                                        <table class="sigs">
+                                          <tr>
+                                            <td>Guru yang Dinilai<div style="height:70px"></div><strong>( ${ev.teacherName} )</strong></td>
+                                            <td>Mengetahui,<br/>Kepala Sekolah<div style="height:70px"></div><strong><u>${schoolIdentity.principal || ev.evaluatorName || "H. Ahmad Fuad, S.Pd, M.PdI"}</u></strong><br/>NIP. Demonstration Creds</td>
+                                          </tr>
+                                        </table>
+                                        <script>window.print();</script>
+                                      </body>
+                                    </html>
+                                  `);
+                                  pWin.document.close();
+                                }}
+                                className="p-1 px-2.5 bg-slate-100 hover:bg-slate-200 rounded text-[9.5px] font-black text-slate-800 cursor-pointer inline-flex items-center gap-1 leading-none shadow-3xs"
+                                title="Print Hasil Rubrik"
+                              >
+                                <Printer size={10} /> Print
+                              </button>
+                              <button
+                                onClick={() => handleDeleteEvaluation(ev.id)}
+                                className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-900 rounded cursor-pointer shrink-0"
+                                title="Detele Record"
+                              >
+                                <Trash2 size={11} />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
+                  )}
+                </tbody>
+              </table>
+            </div>
+
+            {/* Mobile View - Card Layout */}
+            <div className="block md:hidden">
+              {evaluations.length === 0 ? (
+                <div className="py-12 text-center text-slate-400 font-semibold italic border-t border-slate-100">
+                  Belum ada evaluasi guru terdaftar.
+                </div>
+              ) : (
+                <div className="flex flex-col gap-4 p-4 border-t border-slate-100 bg-slate-50/30">
+                  {evaluations.map((ev) => {
                     const avgScore = Math.round((ev.pedagogicScore + ev.professionalScore + ev.personalScore + ev.socialScore) / 4);
                     return (
-                      <tr key={ev.id} className="border-b border-slate-100 hover:bg-slate-50 transition-colors text-slate-800">
-                        <td className="px-4 py-3 font-black text-slate-900 leading-none">
-                          {ev.teacherName}
-                          <span className="block text-[8px] uppercase tracking-wider text-indigo-650 font-bold mt-1">
-                            {ev.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mapel'} • TA: {ev.academicYear}
+                      <div
+                        key={`mob-ev-${ev.id}`}
+                        className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3 hover:border-slate-300 transition-colors text-left"
+                      >
+                        <div className="flex justify-between items-start">
+                          <div className="flex flex-col gap-1">
+                            <span className="font-extrabold text-slate-900 text-sm leading-tight">
+                              {ev.teacherName}
+                            </span>
+                            <span className="inline-block text-[9px] uppercase tracking-wider text-indigo-600 font-bold mt-1">
+                              {ev.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mapel'} • TA: {ev.academicYear}
+                            </span>
+                          </div>
+                          <div className="text-right flex flex-col items-end shrink-0">
+                            <span className={`px-2 py-1 rounded font-mono font-black text-xs ${
+                              avgScore >= 85 ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-700'
+                            }`}>
+                              {avgScore}
+                            </span>
+                            <span className="text-[7.5px] text-slate-400 uppercase tracking-widest font-bold mt-1">
+                              Rata-Rata
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Rating Parameters Grid */}
+                        <div className="grid grid-cols-2 gap-2.5 bg-slate-50 p-2.5 rounded-lg border border-slate-200/60 text-[10px] select-none">
+                          <div className="flex justify-between items-center pr-2 border-r border-slate-200/60">
+                            <span className="text-slate-500 font-semibold">Pedagogis</span>
+                            <span className="font-mono font-bold text-slate-900">{ev.pedagogicScore}</span>
+                          </div>
+                          <div className="flex justify-between items-center pl-2">
+                            <span className="text-slate-500 font-semibold">Profesional</span>
+                            <span className="font-mono font-bold text-slate-900">{ev.professionalScore}</span>
+                          </div>
+                          <div className="flex justify-between items-center pr-2 border-r border-slate-200/60 pt-2 border-t border-slate-200/40">
+                            <span className="text-slate-500 font-semibold">Kepribadian</span>
+                            <span className="font-mono font-bold text-slate-900">{ev.personalScore}</span>
+                          </div>
+                          <div className="flex justify-between items-center pl-2 pt-2 border-t border-slate-200/40">
+                            <span className="text-slate-500 font-semibold">Sosial</span>
+                            <span className="font-mono font-bold text-slate-900">{ev.socialScore}</span>
+                          </div>
+                        </div>
+
+                        {/* Note Section */}
+                        {ev.notes && (
+                          <div className="text-[10px] text-slate-600 italic bg-amber-50/20 p-2.5 rounded-lg border border-amber-100/50 leading-relaxed font-sans">
+                            <span className="font-extrabold text-[8px] uppercase tracking-wider text-amber-700 block mb-0.5 not-italic">Catatan Kepala Sekolah</span>
+                            &ldquo;{ev.notes}&rdquo;
+                          </div>
+                        )}
+
+                        {/* Divider and Actions */}
+                        <div className="border-t border-slate-100 pt-3 flex justify-between items-center">
+                          <span className="text-[8.5px] font-mono text-slate-400">
+                            Tgl: {ev.date}
                           </span>
-                        </td>
-                        <td className="px-3 py-3 text-center font-mono font-bold">{ev.pedagogicScore}</td>
-                        <td className="px-3 py-3 text-center font-mono font-bold">{ev.professionalScore}</td>
-                        <td className="px-3 py-3 text-center font-mono font-bold">{ev.personalScore}</td>
-                        <td className="px-3 py-3 text-center font-mono font-bold">{ev.socialScore}</td>
-                        <td className="px-3 py-3 text-center">
-                          <span className={`px-2 py-0.5 rounded font-mono font-black text-[10px] ${
-                            avgScore >= 85 ? 'bg-emerald-100 text-emerald-800' : 'bg-indigo-100 text-indigo-805 text-indigo-700'
-                          }`}>
-                            {avgScore}
-                          </span>
-                        </td>
-                        <td className="px-4 py-3 text-slate-500 text-[10px] font-semibold max-w-xs truncate" title={ev.notes}>{ev.notes}</td>
-                        <td className="px-4 py-3 text-right">
-                          <div className="flex items-center justify-end gap-2 inline-flex">
+                          <div className="flex items-center gap-2">
                             <button
                               onClick={() => {
                                 const pWin = window.open("", "_blank");
@@ -1764,26 +2057,25 @@ export default function PrincipalPanel({
                                 `);
                                 pWin.document.close();
                               }}
-                              className="p-1 px-2.5 bg-slate-100 hover:bg-slate-200 rounded text-[9.5px] font-black text-slate-800 cursor-pointer inline-flex items-center gap-1 leading-none shadow-3xs"
-                              title="Print Hasil Rubrik"
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 hover:text-slate-950 font-bold text-[10px] uppercase tracking-wider rounded-lg border border-slate-200 shadow-3xs cursor-pointer flex items-center justify-center gap-1 transition-colors"
                             >
-                              <Printer size={10} /> Print
+                              <Printer size={11} className="text-slate-600" /> Web Cetak
                             </button>
                             <button
                               onClick={() => handleDeleteEvaluation(ev.id)}
-                              className="p-1 bg-rose-50 hover:bg-rose-100 text-rose-705 text-rose-700 hover:text-rose-900 rounded cursor-pointer shrink-0"
-                              title="Detele Record"
+                              className="p-1 px-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-900 rounded border border-rose-200 cursor-pointer flex items-center justify-center transition-colors"
+                              title="Hapus Penilaian"
                             >
                               <Trash2 size={11} />
                             </button>
                           </div>
-                        </td>
-                      </tr>
+                        </div>
+                      </div>
                     );
-                  })
-                )}
-              </tbody>
-            </table>
+                  })}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
@@ -2114,7 +2406,7 @@ export default function PrincipalPanel({
                       data={(() => {
                         const categories: { [key: string]: number } = {};
                         financialTransactions.filter(t => t.type === 'incoming').forEach(t => {
-                          const cat = t.category || 'Lainnya';
+                          const cat = t.category || 'Utama';
                           categories[cat] = (categories[cat] || 0) + Number(t.amount);
                         });
                         return Object.entries(categories).map(([name, value]) => ({ name, value }));
@@ -2139,7 +2431,7 @@ export default function PrincipalPanel({
                   {(() => {
                     const categories: { [key: string]: number } = {};
                     financialTransactions.filter(t => t.type === 'incoming').forEach(t => {
-                      const cat = t.category || 'Lainnya';
+                      const cat = t.category || 'Utama';
                       categories[cat] = (categories[cat] || 0) + Number(t.amount);
                     });
                     const colorPalette = ['text-emerald-500', 'text-blue-500', 'text-amber-500', 'text-purple-500', 'text-pink-500', 'text-teal-500'];

@@ -5,10 +5,10 @@ import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRig
 
 interface StudentManagementProps {
   students: Student[];
-  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }) => Promise<boolean>;
-  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string }) => Promise<boolean>;
+  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }) => Promise<boolean>;
+  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string; gender?: string; mutationDate?: string; mutationReason?: string; mutationDestination?: string }) => Promise<boolean>;
   onDeleteStudent: (id: string) => Promise<boolean>;
-  onImportStudents: (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }>) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
+  onImportStudents: (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }>) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
   onRefresh: () => void;
 }
 
@@ -37,7 +37,8 @@ export default function StudentManagement({
     email: '',
     phone: '',
     initialSavings: '0',
-    password: ''
+    password: '',
+    gender: 'Laki-laki'
   });
 
   const [saving, setSaving] = useState(false);
@@ -213,7 +214,8 @@ export default function StudentManagement({
       email: '',
       phone: '',
       initialSavings: '0',
-      password: ''
+      password: '',
+      gender: 'Laki-laki'
     });
     setErrorMsg('');
   };
@@ -239,7 +241,8 @@ export default function StudentManagement({
         class: formData.class.trim(),
         email: formData.email.trim(),
         phone: formData.phone.trim(),
-        initialSavings: Number(formData.initialSavings) || 0
+        initialSavings: Number(formData.initialSavings) || 0,
+        gender: formData.gender
       });
 
       if (success) {
@@ -280,6 +283,7 @@ export default function StudentManagement({
         class: formData.class.trim(),
         email: formData.email.trim(),
         phone: formData.phone.trim(),
+        gender: formData.gender,
         password: formData.password && formData.password.trim().length >= 6 ? formData.password.trim() : undefined
       });
 
@@ -325,12 +329,21 @@ export default function StudentManagement({
       email: student.email || '',
       phone: student.phone || '',
       initialSavings: '0', // Not editable
-      password: ''
+      password: '',
+      gender: student.gender || 'Laki-laki'
     });
   };
 
   // Filter students list
   const filteredStudents = students.filter(student => {
+    if (student.class && (
+      student.class.toLowerCase() === 'lulus' || 
+      student.class.toLowerCase() === 'lulusan' || 
+      student.class.toLowerCase() === 'mutasi' || 
+      student.class.toLowerCase() === 'mutasi keluar'
+    )) {
+      return false; // exclude alumni and mutated students from general student management list
+    }
     const matchesSearch = 
       student.name.toLowerCase().includes(searchQuery.toLowerCase()) || 
       student.nis.includes(searchQuery);
@@ -437,6 +450,7 @@ export default function StudentManagement({
               <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-150">
                 <th className="px-5 py-3">NIS</th>
                 <th className="px-5 py-3">Nama Siswa</th>
+                <th className="px-5 py-3">L/P</th>
                 <th className="px-5 py-3">Kelas</th>
                 <th className="px-5 py-3">Email Wali</th>
                 <th className="px-5 py-3">Telepon</th>
@@ -450,6 +464,11 @@ export default function StudentManagement({
                   <tr key={std.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3.5 font-mono font-bold text-slate-800">{std.nis}</td>
                     <td className="px-5 py-3.5 font-semibold text-slate-900">{std.name}</td>
+                    <td className="px-5 py-3.5">
+                      <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${std.gender === 'Laki-laki' ? 'bg-indigo-50 text-indigo-705 border border-indigo-100' : std.gender === 'Perempuan' ? 'bg-rose-50 text-rose-705 border border-rose-100' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}>
+                        {std.gender === 'Laki-laki' ? 'L' : std.gender === 'Perempuan' ? 'P' : '-'}
+                      </span>
+                    </td>
                     <td className="px-5 py-3.5">
                       <span className="px-2.5 py-0.5 bg-slate-100 text-slate-700 border border-slate-200 rounded text-[10px] font-bold">
                         {std.class}
@@ -557,16 +576,29 @@ export default function StudentManagement({
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Nama Lengkap Murid *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: Muhammad Akhyar"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-slate-800 focus:bg-white"
-                  />
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 flex flex-col gap-1">
+                    <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Nama Lengkap Murid *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: Muhammad Akhyar"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-slate-800 focus:bg-white"
+                    />
+                  </div>
+                  <div className="col-span-1 flex flex-col gap-1">
+                    <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Jenis Kelamin *</label>
+                    <select
+                      value={formData.gender || 'Laki-laki'}
+                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                      className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-slate-800 focus:bg-white font-sans"
+                    >
+                      <option value="Laki-laki">Laki-laki</option>
+                      <option value="Perempuan">Perempuan</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">
@@ -696,16 +728,29 @@ export default function StudentManagement({
                   </div>
                 </div>
 
-                <div className="flex flex-col gap-1">
-                  <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Nama Lengkap Murid *</label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: Muhammad Akhyar"
-                    value={formData.name}
-                    onChange={(e) => setFormData({ ...formData, name: e.target.value })}
-                    className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-slate-800 focus:bg-white"
-                  />
+                <div className="grid grid-cols-3 gap-3">
+                  <div className="col-span-2 flex flex-col gap-1">
+                    <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Nama Lengkap Murid *</label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: Muhammad Akhyar"
+                      value={formData.name}
+                      onChange={(e) => setFormData({ ...formData, name: e.target.value })}
+                      className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-slate-800 focus:bg-white"
+                    />
+                  </div>
+                  <div className="col-span-1 flex flex-col gap-1">
+                    <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Jenis Kelamin *</label>
+                    <select
+                      value={formData.gender || 'Laki-laki'}
+                      onChange={(e) => setFormData({ ...formData, gender: e.target.value })}
+                      className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold outline-none focus:border-slate-800 focus:bg-white font-sans"
+                    >
+                      <option value="Laki-laki">Laki-laki</option>
+                      <option value="Perempuan">Perempuan</option>
+                    </select>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-2 gap-3">

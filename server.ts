@@ -4,14 +4,7 @@ dotenv.config();
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { initializeApp } from "firebase/app";
-import { getFirestore, doc, setDoc, getDocs, collection, deleteDoc, terminate, setLogLevel } from "firebase/firestore";
-
-try {
-  setLogLevel("silent");
-} catch (e) {
-  console.warn("Could not set firebase log level to silent:", e);
-}
+import { MongoClient } from "mongodb";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
@@ -29,7 +22,8 @@ const students: Student[] = [
     class: "7-A",
     email: "ahmad.fauzi@example.org",
     phone: "081234567890",
-    savingsBalance: 120000
+    savingsBalance: 120000,
+    gender: "Laki-laki"
   },
   {
     id: "std-2",
@@ -38,7 +32,8 @@ const students: Student[] = [
     class: "7-B",
     email: "siti.aminah@example.org",
     phone: "081298765432",
-    savingsBalance: 250000
+    savingsBalance: 250000,
+    gender: "Perempuan"
   },
   {
     id: "std-3",
@@ -47,7 +42,8 @@ const students: Student[] = [
     class: "8-A",
     email: "rian.smp@example.org",
     phone: "085612345678",
-    savingsBalance: 450000
+    savingsBalance: 450000,
+    gender: "Laki-laki"
   },
   {
     id: "std-4",
@@ -56,7 +52,8 @@ const students: Student[] = [
     class: "9-C",
     email: "laila.fit@example.org",
     phone: "089912341234",
-    savingsBalance: 80000
+    savingsBalance: 80000,
+    gender: "Perempuan"
   }
 ];
 
@@ -496,6 +493,11 @@ let principalConfig = {
   password: "kepala123"
 };
 
+// Waka Sarpras Credentials Config
+let sarprasConfig = {
+  password: "sarpras123"
+};
+
 // Server configuration values (Midtrans Keys)
 let midtransConfig: MidtransConfig = {
   merchantId: process.env.MIDTRANS_MERCHANT_ID || "",
@@ -522,339 +524,477 @@ function getSppAmountForClass(className: string): number {
 
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
 
-// Firebase SDK Database connection initialization
-enum OperationType {
-  CREATE = 'create',
-  UPDATE = 'update',
-  DELETE = 'delete',
-  LIST = 'list',
-  GET = 'get',
-  WRITE = 'write',
-}
-
-interface FirestoreErrorInfo {
-  error: string;
-  operationType: OperationType;
-  path: string | null;
-  authInfo: {
-    userId?: string | null;
-    email?: string | null;
-    emailVerified?: boolean | null;
-    isAnonymous?: boolean | null;
-    tenantId?: string | null;
-    providerInfo?: {
-      providerId?: string | null;
-      email?: string | null;
-    }[];
-  }
-}
-
-function handleFirestoreError(error: unknown, operationType: OperationType, rpath: string | null) {
-  const errMsg = error instanceof Error ? error.message : String(error);
-  const isQuota = errMsg.includes("RESOURCE_EXHAUSTED") ||
-    errMsg.includes("resource-exhausted") ||
-    errMsg.includes("quota") ||
-    errMsg.includes("Quota limit exceeded") ||
-    (error && (error as any).code === "resource-exhausted") ||
-    (error && String((error as any).code) === "8");
-
-  if (isQuota) {
-    suspendFirestoreAndCleanup();
-    return; // Recover gracefully by turning off the DB without throwing an exception
-  }
-
-  const errInfo: FirestoreErrorInfo = {
-    error: errMsg,
-    authInfo: {
-      userId: "SERVER_SERVICE",
-      email: "server-agent@demo.com",
-      emailVerified: true
-    },
-    operationType,
-    path: rpath
-  };
-  console.error('Firestore Error: ', JSON.stringify(errInfo));
-  throw new Error(JSON.stringify(errInfo));
-}
-
-let db: any = null;
+// MongoDB Database connection initialization
+let mongoClient: MongoClient | null = null;
+let mongoDb: any = null;
 let dbSyncStatus = "Initial";
 let dbSyncError: string | null = null;
 let lastSyncTime: string | null = null;
 let isInitialSyncCompleted = false;
 
-try {
-  let firebaseConfig: any = null;
-  const firebaseConfigPath = path.join(process.cwd(), "firebase-applet-config.json");
-  if (fs.existsSync(firebaseConfigPath)) {
-    firebaseConfig = JSON.parse(fs.readFileSync(firebaseConfigPath, "utf-8"));
-  } else {
-    console.warn("firebase-applet-config.json not found. Using embedded fallback Firebase credentials to auto-connect database...");
-    firebaseConfig = {
-      "projectId": "ungoogly-impulse-271nt",
-      "appId": "1:77575326547:web:93e4b8ce8b1361adcc2fa6",
-      "apiKey": "AIzaSyCz_48fPfLgDHX62T_ClnVAb6Ca1fl_xZI",
-      "authDomain": "ungoogly-impulse-271nt.firebaseapp.com",
-      "firestoreDatabaseId": "ai-studio-7ff6ffdf-833a-490d-a519-ec4364d0517f",
-      "storageBucket": "ungoogly-impulse-271nt.firebasestorage.app",
-      "messagingSenderId": "77575326547",
-      "measurementId": ""
-    };
-  }
-
-  if (firebaseConfig) {
-    const firebaseApp = initializeApp(firebaseConfig);
-    db = getFirestore(firebaseApp, firebaseConfig.firestoreDatabaseId);
-    console.log("Firebase initialized successfully on server. DB ID:", firebaseConfig.firestoreDatabaseId);
-    dbSyncStatus = "Firebase SDK Initialized";
-  }
-} catch (error) {
-  console.error("Failed to initialize Firebase on server:", error);
-  dbSyncStatus = "Initialization Failed";
-  dbSyncError = error instanceof Error ? error.message : String(error);
-}
-
-let isFirestoreSuspended = false;
-
-async function suspendFirestoreAndCleanup() {
-  if (isFirestoreSuspended) return;
-  isFirestoreSuspended = true;
-  dbSyncStatus = "Suspended (Firestore Quota Exceeded)";
-  dbSyncError = "Batas kuota database Firestore tercapai (RESOURCE_EXHAUSTED). Sistem otomatis beralih menggunakan Penyimpanan Lokal Berkecepatan Tinggi.";
-  console.warn("⚠️ Firestore Quota Exceeded detected! Suspending all Firestore operations to prevent spamming errors.");
-  if (db) {
-    try {
-      const dbToTerminate = db;
-      db = null; // Instantly prevent new references
-      await terminate(dbToTerminate);
-      console.log("Firestore client successfully terminated to shut down active gRPC write/read streams.");
-    } catch (err) {
-      console.error("Failed to gracefully terminate active Firestore client:", err);
-    }
-  }
-}
-
-function checkQuotaExceeded(err: any): boolean {
-  const errMsg = err instanceof Error ? err.message : String(err);
-  if (
-    errMsg.includes("RESOURCE_EXHAUSTED") ||
-    errMsg.includes("resource-exhausted") ||
-    errMsg.includes("quota") ||
-    errMsg.includes("Quota limit exceeded") ||
-    (err && err.code === "resource-exhausted") ||
-    (err && String(err.code) === "8")
-  ) {
-    suspendFirestoreAndCleanup();
-    return true;
-  }
-  return false;
-}
-
-async function saveDocToFirestore(colName: string, docId: string, data: any) {
-  if (!db || isFirestoreSuspended) return;
-  try {
-    await setDoc(doc(db, colName, docId), data);
-  } catch (err) {
-    if (checkQuotaExceeded(err)) return;
-    handleFirestoreError(err, OperationType.WRITE, `${colName}/${docId}`);
-  }
-}
-
 async function deleteDocFromFirestore(colName: string, docId: string) {
-  if (!db || isFirestoreSuspended) return;
+  if (!mongoDb) return;
   try {
-    await deleteDoc(doc(db, colName, docId));
-    console.log(`Deleted document ${docId} from ${colName} in Firestore`);
+    const col = mongoDb.collection(colName);
+    await col.deleteOne({ _id: docId });
+    console.log(`Deleted document ${docId} from ${colName} in MongoDB`);
   } catch (err) {
-    if (checkQuotaExceeded(err)) return;
-    handleFirestoreError(err, OperationType.DELETE, `${colName}/${docId}`);
+    console.error(`Failed to delete document ${docId} from ${colName} in MongoDB:`, err);
   }
 }
 
 async function saveStateToFirestore() {
-  if (!db || isFirestoreSuspended || !isInitialSyncCompleted) return;
+  if (!mongoDb || !isInitialSyncCompleted) return;
   try {
-    console.log("Syncing database state to Firebase Firestore...");
+    console.log("Syncing database state to MongoDB Cluster...");
     
-    // Save students
-    for (const item of students) {
-      await saveDocToFirestore("students", item.id, item);
-    }
-    // Save sppBills
-    for (const item of sppBills) {
-      await saveDocToFirestore("sppBills", item.id, item);
-    }
-    // Save savingsTransactions
-    for (const item of savingsTransactions) {
-      await saveDocToFirestore("savingsTransactions", item.id, item);
-    }
-    // Save notifications (limit to newest 100 entries to optimize)
-    const newestNotifications = notifications.slice(0, 100);
-    for (const item of newestNotifications) {
-      await saveDocToFirestore("realtimeNotifications", item.id, item);
-    }
-    // Save attendanceLogs
-    for (const item of attendanceLogs) {
-      await saveDocToFirestore("attendanceLogs", item.id, item);
-    }
-    // Save homeroomTeachers
-    for (const item of homeroomTeachers) {
-      await saveDocToFirestore("homeroomTeachers", item.id, item);
-    }
-    // Save treasurerTransactions
-    for (const item of treasurerTransactions) {
-      await saveDocToFirestore("treasurerTransactions", item.id, item);
-    }
-    // Save all key configuration documents
-    await saveDocToFirestore("configs", "sppRates", sppRates);
-    await saveDocToFirestore("configs", "schoolIdentity", schoolIdentity);
-    await saveDocToFirestore("configs", "midtransConfig", midtransConfig);
-    await saveDocToFirestore("configs", "whatsappConfig", whatsappConfig);
-    await saveDocToFirestore("configs", "treasurerConfig", treasurerConfig);
-    await saveDocToFirestore("configs", "principalConfig", principalConfig);
+    // Save list helper
+    const saveList = async (collectionName: string, list: any[]) => {
+      const col = mongoDb.collection(collectionName);
+      // Clean collection and bulk insert to mirror current in-memory state cleanly
+      await col.deleteMany({});
+      if (list.length > 0) {
+        const docs = list.map(item => {
+          const doc = { ...item };
+          if (doc.id) {
+            doc._id = doc.id;
+          }
+          return doc;
+        });
+        await col.insertMany(docs);
+      }
+    };
 
-    console.log("All state collections synced to Firestore.");
+    await saveList("students", students);
+    await saveList("sppBills", sppBills);
+    await saveList("savingsTransactions", savingsTransactions);
+    
+    // Notifications (capped at newest 100 for network performance)
+    const newestNotifications = notifications.slice(0, 100);
+    await saveList("realtimeNotifications", newestNotifications);
+    
+    await saveList("attendanceLogs", attendanceLogs);
+    await saveList("homeroomTeachers", homeroomTeachers);
+    await saveList("subjectTeachers", subjectTeachers);
+    await saveList("teachingJournals", teachingJournals);
+    await saveList("treasurerTransactions", treasurerTransactions);
+    await saveList("studentDevelopmentLogs", studentDevelopmentLogs);
+    await saveList("studentInfractionLogs", studentInfractionLogs);
+    await saveList("studentCounselingLogs", studentCounselingLogs);
+    await saveList("classAnnouncements", classAnnouncements);
+    await saveList("classMeetingLogs", classMeetingLogs);
+    await saveList("merdekaAssessments", merdekaAssessments);
+    await saveList("principalWorkPrograms", principalWorkPrograms);
+    await saveList("teacherEvaluations", teacherEvaluations);
+    await saveList("infractionRules", infractionRules);
+    await saveList("sarprasItems", sarprasItems);
+    await saveList("sarprasProposals", sarprasProposals);
+    await saveList("sarprasLoans", sarprasLoans);
+
+    // Save configurations as individual upserted documents in the configs collection
+    const configCol = mongoDb.collection("configs");
+    const saveConfig = async (id: string, configData: any) => {
+      const { _id, ...cleanedData } = configData;
+      await configCol.replaceOne({ id }, { ...cleanedData, id }, { upsert: true });
+    };
+
+    await saveConfig("sppRates", sppRates);
+    await saveConfig("schoolIdentity", schoolIdentity);
+    await saveConfig("midtransConfig", midtransConfig);
+    await saveConfig("whatsappConfig", whatsappConfig);
+    await saveConfig("treasurerConfig", treasurerConfig);
+    await saveConfig("principalConfig", principalConfig);
+    await saveConfig("sarprasConfig", sarprasConfig);
+    await saveConfig("systemMetadata", { seeded: true });
+
+    console.log("All state collections successfully synced to MongoDB.");
   } catch (err) {
-    console.error("Failed executing batch state sync to Firestore:", err);
+    console.error("Failed executing batch state sync to MongoDB:", err);
+  }
+}
+
+let isSavingToFirestore = false;
+let hasPendingFirestoreSave = false;
+let firestoreSyncTimeout: NodeJS.Timeout | null = null;
+
+function triggerFirestoreSync() {
+  if (!mongoDb || !isInitialSyncCompleted) return;
+
+  if (firestoreSyncTimeout) {
+    clearTimeout(firestoreSyncTimeout);
+  }
+
+  // Debounce sync execution by 300 ms to aggregate overlapping requests
+  firestoreSyncTimeout = setTimeout(async () => {
+    firestoreSyncTimeout = null;
+
+    if (isSavingToFirestore) {
+      hasPendingFirestoreSave = true;
+      return;
+    }
+
+    isSavingToFirestore = true;
+    hasPendingFirestoreSave = false;
+
+    console.log("[SYNC ENGINE] Initiating debounced background state sync to MongoDB...");
+    try {
+      await saveStateToFirestore();
+    } catch (err) {
+      console.error("[SYNC ENGINE] Background state sync failed:", err);
+    } finally {
+      isSavingToFirestore = false;
+      if (hasPendingFirestoreSave) {
+        // Trigger next sync loop
+        triggerFirestoreSync();
+      }
+    }
+  }, 300);
+}
+
+function sanitizeMongoUri(uriString: string): string {
+  if (!uriString) return uriString;
+  try {
+    let processed = uriString.trim();
+    if ((processed.startsWith('"') && processed.endsWith('"')) || (processed.startsWith("'") && processed.endsWith("'"))) {
+      processed = processed.slice(1, -1);
+    }
+    
+    // Replace angle brackets if wrapped
+    processed = processed.replace(/<([^>]+)>/g, "$1");
+
+    // Parse scheme, credentials, host, options
+    const match = processed.match(/^(mongodb(?:\+srv)?:\/\/)([^:]+):(.*)@([^/]+)(.*)$/);
+    if (!match) {
+      return processed;
+    }
+
+    const scheme = match[1];
+    const username = match[2];
+    let password = match[3];
+    const host = match[4];
+    const rest = match[5];
+
+    const decodedPassword = decodeURIComponent(password);
+    const encodedPassword = encodeURIComponent(decodedPassword);
+
+    // Ensure database name spp_maarif with retryWrites
+    let pathAndOptions = rest || "/spp_maarif?retryWrites=true&w=majority";
+    if (pathAndOptions === "" || pathAndOptions === "/" || pathAndOptions === "/?" || pathAndOptions.startsWith("/?")) {
+      const query = pathAndOptions.startsWith("/?") ? pathAndOptions.slice(2) : (pathAndOptions === "/?" ? "" : pathAndOptions.slice(1));
+      pathAndOptions = "/spp_maarif" + (query ? "?" + query : "?retryWrites=true&w=majority");
+    }
+
+    const sanitized = `${scheme}${username}:${encodedPassword}@${host}${pathAndOptions}`;
+    console.log(`Sanitized MongoDB URI: ${scheme}${username}:***@${host}${pathAndOptions}`);
+    return sanitized;
+  } catch (e) {
+    console.warn("Failed to sanitize MongoDB URI:", e);
+    return uriString;
   }
 }
 
 async function syncWithFirestore() {
-  if (!db) {
-    dbSyncStatus = "Disabled (No DB)";
-    isInitialSyncCompleted = true;
-    return;
-  }
-  if (isFirestoreSuspended) {
-    dbSyncStatus = "Suspended (Firestore Quota Exceeded)";
-    isInitialSyncCompleted = true;
-    return;
-  }
-  try {
-    console.log("Connecting database to Firestore...");
-    dbSyncStatus = "Connecting...";
-    let snapshot;
-    try {
-      snapshot = await getDocs(collection(db, "students"));
-    } catch (err) {
-      if (checkQuotaExceeded(err)) return;
-      handleFirestoreError(err, OperationType.GET, "students");
-    }
+  const rawUri = process.env.MONGODB_URI || "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
+  
+  // Build a distinct pool of Connection Candidate URIs to attempt
+  const candidates: string[] = [];
 
-    if (snapshot && !snapshot.empty) {
-      console.log("Cloud documents found. Pulling state from Firestore...");
+  // 1. Initial Candidate: exact sanitized rawUri from the active environment
+  const firstSanitized = sanitizeMongoUri(rawUri);
+  if (firstSanitized) candidates.push(firstSanitized);
+
+  // Parse rawUri to generate alternate password password variations
+  try {
+    let urlToParse = rawUri.trim().replace(/<([^>]+)>/g, "$1");
+    if ((urlToParse.startsWith('"') && urlToParse.endsWith('"')) || (urlToParse.startsWith("'") && urlToParse.endsWith("'"))) {
+      urlToParse = urlToParse.slice(1, -1);
+    }
+    const match = urlToParse.match(/^(mongodb(?:\+srv)?:\/\/)([^:]+):(.*)@([^/]+)(.*)$/);
+    if (match) {
+      const scheme = match[1];
+      const username = match[2];
+      const host = match[4];
+      const rest = match[5];
+
+      // Try these password variations:
+      const alternatePasswords = [
+        "Sparifda20519113",
+        "Sparifda%4020519113",  // Sparifda@20519113 encoded
+        "Sparifda@20519113",    // Sparifda@20519113 raw (gets auto-encoded in sanitize)
+        "Sparifda92"
+      ];
+
+      for (const pass of alternatePasswords) {
+        const candidateUri = sanitizeMongoUri(`${scheme}${username}:${pass}@${host}${rest}`);
+        if (candidateUri && !candidates.includes(candidateUri)) {
+          candidates.push(candidateUri);
+        }
+      }
+    }
+  } catch (e) {
+    console.warn("Error generating password candidates:", e);
+  }
+
+  // Fallback defaults if they aren't already included
+  const def1 = "mongodb+srv://portalinspiratif_db_user:Sparifda%4020519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
+  const def2 = "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
+  if (!candidates.includes(def1)) candidates.push(def1);
+  if (!candidates.includes(def2)) candidates.push(def2);
+
+  let connectSuccess = false;
+  let connectionError: any = null;
+  let resolvedUri = "";
+
+  for (let i = 0; i < candidates.length; i++) {
+    const uriCandidate = candidates[i];
+    try {
+      if (mongoClient) {
+        try {
+          await mongoClient.close();
+        } catch (e) {
+          console.warn("Failed to close existing MongoClient:", e);
+        }
+        mongoClient = null;
+        mongoDb = null;
+      }
+
+      console.log(`Connecting database with MongoDB Candidate URI #${i + 1}/${candidates.length}...`);
+      dbSyncStatus = `Connecting (Try #${i + 1})...`;
+      
+      mongoClient = new MongoClient(uriCandidate);
+      await mongoClient.connect();
+      mongoDb = mongoClient.db("spp_maarif");
+      console.log(`MongoDB connection verified on candidate #${i + 1}.`);
+      resolvedUri = uriCandidate;
+      connectSuccess = true;
+      break;
+    } catch (err: any) {
+      connectionError = err;
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`Connection Candidate #${i + 1} failed: ${msg.substring(0, 150)}`);
+    }
+  }
+
+  if (!connectSuccess) {
+    throw connectionError || new Error("Failed connecting to MongoDB after trying all password candidate streams");
+  }
+
+  const uri = resolvedUri;
+
+  try {
+    const studentCol = mongoDb.collection("students");
+    const count = await studentCol.countDocuments();
+
+    // Check if configuration collection already has documents to detect as seeded
+    const configCol = mongoDb.collection("configs");
+    const configCount = await configCol.countDocuments();
+    const isSeeded = configCount > 0 || count > 0;
+
+    if (isSeeded) {
+      console.log("MongoDB is previously seeded. Pulling state from MongoDB...");
       dbSyncStatus = "Syncing (Loading state)...";
       
-      // Clear and populate students
+      // Load Students
+      const loadedStudents = await studentCol.find({}).toArray();
       students.length = 0;
-      snapshot.forEach(d => {
-        students.push(d.data() as Student);
+      loadedStudents.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        students.push(rest as Student);
       });
 
-      // Clear and populate bills
-      if (!db || isFirestoreSuspended) return;
-      try {
-        const billsSnap = await getDocs(collection(db, "sppBills"));
-        sppBills.length = 0;
-        billsSnap.forEach(d => sppBills.push(d.data() as SppBill));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, "sppBills");
-      }
+      // Load SPP Bills
+      const loadedBills = await mongoDb.collection("sppBills").find({}).toArray();
+      sppBills.length = 0;
+      loadedBills.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        sppBills.push(rest as SppBill);
+      });
 
-      // Clear and populate transactions
-      if (!db || isFirestoreSuspended) return;
-      try {
-        const txsSnap = await getDocs(collection(db, "savingsTransactions"));
-        savingsTransactions.length = 0;
-        txsSnap.forEach(d => savingsTransactions.push(d.data() as SavingsTransaction));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, "savingsTransactions");
-      }
+      // Load Savings Transactions
+      const loadedSav = await mongoDb.collection("savingsTransactions").find({}).toArray();
+      savingsTransactions.length = 0;
+      loadedSav.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        savingsTransactions.push(rest as SavingsTransaction);
+      });
 
-      // Clear and populate notifications
-      if (!db || isFirestoreSuspended) return;
-      try {
-        const notifsSnap = await getDocs(collection(db, "realtimeNotifications"));
-        notifications.length = 0;
-        notifsSnap.forEach(d => notifications.push(d.data() as RealtimeNotification));
-        notifications.sort((a, b) => b.createdAt.localeCompare(a.createdAt));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, "realtimeNotifications");
-      }
+      // Load Notifications
+      const loadedNotif = await mongoDb.collection("realtimeNotifications").find({}).toArray();
+      notifications.length = 0;
+      loadedNotif.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        notifications.push(rest as RealtimeNotification);
+      });
+      notifications.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
-      // Clear and populate attendance logs
-      if (!db || isFirestoreSuspended) return;
-      try {
-        const attSnap = await getDocs(collection(db, "attendanceLogs"));
-        attendanceLogs.length = 0;
-        attSnap.forEach(d => attendanceLogs.push(d.data() as AttendanceLog));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, "attendanceLogs");
-      }
+      // Load Attendance Logs
+      const loadedAtt = await mongoDb.collection("attendanceLogs").find({}).toArray();
+      attendanceLogs.length = 0;
+      loadedAtt.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        attendanceLogs.push(rest as AttendanceLog);
+      });
 
-      // Clear and populate homeroom teachers
-      if (!db || isFirestoreSuspended) return;
-      try {
-        const htSnap = await getDocs(collection(db, "homeroomTeachers"));
-        homeroomTeachers.length = 0;
-        htSnap.forEach(d => homeroomTeachers.push(d.data() as HomeroomTeacher));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, "homeroomTeachers");
-      }
+      // Load Homeroom Teachers
+      const loadedHt = await mongoDb.collection("homeroomTeachers").find({}).toArray();
+      homeroomTeachers.length = 0;
+      loadedHt.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        homeroomTeachers.push(rest as HomeroomTeacher);
+      });
 
-      // Clear and populate treasurerTransactions
-      if (!db || isFirestoreSuspended) return;
-      try {
-        const bndSnap = await getDocs(collection(db, "treasurerTransactions"));
-        treasurerTransactions.length = 0;
-        bndSnap.forEach(d => treasurerTransactions.push(d.data() as TreasurerTransaction));
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, "treasurerTransactions");
-      }
+      // Load Subject Teachers
+      const loadedSt = await mongoDb.collection("subjectTeachers").find({}).toArray();
+      subjectTeachers.length = 0;
+      loadedSt.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        subjectTeachers.push(rest as SubjectTeacher);
+      });
 
-      // Populate config settings
-      if (!db || isFirestoreSuspended) return;
-      try {
-        const configSnap = await getDocs(collection(db, "configs"));
-        configSnap.forEach(d => {
-          const cid = d.id;
-          const cdata = d.data();
-          if (cid === "sppRates") Object.assign(sppRates, cdata);
-          else if (cid === "schoolIdentity") Object.assign(schoolIdentity, cdata);
-          else if (cid === "midtransConfig") Object.assign(midtransConfig, cdata);
-          else if (cid === "whatsappConfig") Object.assign(whatsappConfig, cdata);
-          else if (cid === "treasurerConfig") Object.assign(treasurerConfig, cdata);
-          else if (cid === "principalConfig") Object.assign(principalConfig, cdata);
-        });
-      } catch (err) {
-        handleFirestoreError(err, OperationType.GET, "configs");
-      }
+      // Load Teaching Journals
+      const loadedTj = await mongoDb.collection("teachingJournals").find({}).toArray();
+      teachingJournals.length = 0;
+      loadedTj.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        teachingJournals.push(rest as TeachingJournal);
+      });
 
-      if (!db || isFirestoreSuspended) {
-        isInitialSyncCompleted = true;
-        return;
-      }
+      // Load Treasurer Transactions
+      const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
+      treasurerTransactions.length = 0;
+      loadedBnd.forEach((d: any) => {
+        const { _id, ...rest } = d;
+        treasurerTransactions.push(rest as TreasurerTransaction);
+      });
 
-      dbSyncStatus = "Synced (Loaded from Cloud)";
+      // Load other logs
+      const loadedDev = await mongoDb.collection("studentDevelopmentLogs").find({}).toArray();
+      studentDevelopmentLogs.length = 0;
+      loadedDev.forEach((d: any) => { const { _id, ...rest } = d; studentDevelopmentLogs.push(rest as any); });
+
+      const loadedInf = await mongoDb.collection("studentInfractionLogs").find({}).toArray();
+      studentInfractionLogs.length = 0;
+      loadedInf.forEach((d: any) => { const { _id, ...rest } = d; studentInfractionLogs.push(rest as any); });
+
+      const loadedCouns = await mongoDb.collection("studentCounselingLogs").find({}).toArray();
+      studentCounselingLogs.length = 0;
+      loadedCouns.forEach((d: any) => { const { _id, ...rest } = d; studentCounselingLogs.push(rest as any); });
+
+      const loadedAnn = await mongoDb.collection("classAnnouncements").find({}).toArray();
+      classAnnouncements.length = 0;
+      loadedAnn.forEach((d: any) => { const { _id, ...rest } = d; classAnnouncements.push(rest as any); });
+
+      const loadedMtg = await mongoDb.collection("classMeetingLogs").find({}).toArray();
+      classMeetingLogs.length = 0;
+      loadedMtg.forEach((d: any) => { const { _id, ...rest } = d; classMeetingLogs.push(rest as any); });
+
+      const loadedAss = await mongoDb.collection("merdekaAssessments").find({}).toArray();
+      merdekaAssessments.length = 0;
+      loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); });
+
+      const loadedProg = await mongoDb.collection("principalWorkPrograms").find({}).toArray();
+      principalWorkPrograms.length = 0;
+      loadedProg.forEach((d: any) => { const { _id, ...rest } = d; principalWorkPrograms.push(rest as any); });
+
+      const loadedEval = await mongoDb.collection("teacherEvaluations").find({}).toArray();
+      teacherEvaluations.length = 0;
+      loadedEval.forEach((d: any) => { const { _id, ...rest } = d; teacherEvaluations.push(rest as any); });
+
+      const loadedRules = await mongoDb.collection("infractionRules").find({}).toArray();
+      infractionRules.length = 0;
+      loadedRules.forEach((d: any) => { const { _id, ...rest } = d; infractionRules.push(rest as any); });
+
+      const loadedSItems = await mongoDb.collection("sarprasItems").find({}).toArray();
+      sarprasItems.length = 0;
+      loadedSItems.forEach((d: any) => { const { _id, ...rest } = d; sarprasItems.push(rest as any); });
+
+      const loadedSProp = await mongoDb.collection("sarprasProposals").find({}).toArray();
+      sarprasProposals.length = 0;
+      loadedSProp.forEach((d: any) => { const { _id, ...rest } = d; sarprasProposals.push(rest as any); });
+
+      const loadedSLoans = await mongoDb.collection("sarprasLoans").find({}).toArray();
+      sarprasLoans.length = 0;
+      loadedSLoans.forEach((d: any) => { const { _id, ...rest } = d; sarprasLoans.push(rest as any); });
+
+      // Load configurations
+      const loadedConfigs = await mongoDb.collection("configs").find({}).toArray();
+      loadedConfigs.forEach((d: any) => {
+        const id = d.id;
+        const { _id, ...cleaned } = d;
+        if (id === "sppRates") Object.assign(sppRates, cleaned);
+        else if (id === "schoolIdentity") Object.assign(schoolIdentity, cleaned);
+        else if (id === "midtransConfig") Object.assign(midtransConfig, cleaned);
+        else if (id === "whatsappConfig") Object.assign(whatsappConfig, cleaned);
+        else if (id === "treasurerConfig") Object.assign(treasurerConfig, cleaned);
+        else if (id === "principalConfig") Object.assign(principalConfig, cleaned);
+        else if (id === "sarprasConfig") Object.assign(sarprasConfig, cleaned);
+      });
+
+      dbSyncStatus = "Synced (Loaded from MongoDB)";
       lastSyncTime = new Date().toISOString();
       dbSyncError = null;
       isInitialSyncCompleted = true;
-      console.log("Connected successfully. State has been loaded from Firestore.");
+      console.log("Connected successfully. State has been loaded from MongoDB.");
     } else {
-      console.log("No remote database documents. Performing initial Firestore migration...");
+      console.log("No remote database documents. Performing initial MongoDB seeding...");
       dbSyncStatus = "Syncing (Uploading Seed)";
-      isInitialSyncCompleted = true; // Set to true so saveStateToFirestore isn't blocked of writes
+      isInitialSyncCompleted = true;
       await saveStateToFirestore();
       dbSyncStatus = "Synced (Initial Seed Completed)";
       lastSyncTime = new Date().toISOString();
       dbSyncError = null;
-      console.log("Initial Firestore seed and migration completed.");
+      console.log("Initial MongoDB seed completed.");
     }
-  } catch (err) {
-    dbSyncStatus = "Failed";
-    dbSyncError = err instanceof Error ? err.message : String(err);
-    console.error("Firestore database sync error:", err);
-    isInitialSyncCompleted = true; // Allow local operations if sync fails
+  } catch (err: any) {
+    const rawError = err instanceof Error ? err.message : String(err);
+    
+    // Create a masked version of the URI we attempted
+    let maskedUri = "unknown";
+    try {
+      const match = uri.match(/^(mongodb(?:\+srv)?:\/\/)([^:]+):(.*)@([^/]+)(.*)$/);
+      if (match) {
+        const scheme = match[1];
+        const username = match[2];
+        const pass = match[3];
+        const host = match[4];
+        const rest = match[5];
+        const maskedPass = pass.substring(0, Math.min(3, pass.length)) + "*".repeat(Math.max(0, pass.length - 4)) + pass.substring(Math.max(0, pass.length - 1));
+        maskedUri = `${scheme}${username}:${maskedPass}@${host}${rest}`;
+      }
+    } catch (_) {}
+
+    if (rawError.includes("bad auth") || rawError.includes("authentication failed") || rawError.includes("auth failed")) {
+      dbSyncStatus = "Blocked (Bad Credentials)";
+      dbSyncError = "Koneksi ke MongoDB Atlas gagal karena autentikasi (username/password) ditolak oleh basis data Anda.\n\n" +
+                    `URI yang dicoba (Masked): ${maskedUri}\n\n` +
+                    "⚠️ CARA MEMPERBAIKI:\n" +
+                    "1. Buka Settings -> Secrets di panel sebelah kanan AI Studio Anda.\n" +
+                    "2. Cari variabel bernama MONGODB_URI.\n" +
+                    "3. Jika ada, edit nilainya dengan string koneksi baru Anda, pastikan password ditulis dengan benar (contoh: Sparifda20519113).\n" +
+                    "4. Jika tidak ada, tambahkan MONGODB_URI baru atau periksa apakah konfigurasi di server.ts sudah benar.\n" +
+                    "5. Setelah itu, klik tombol 'SINKRONISASI DATABASES' di menu konfigurasi Admin untuk mencoba kembali.";
+    } else if (
+      rawError.includes("alert internal error") ||
+      rawError.includes("SSL routines") ||
+      rawError.includes("MongoServerSelectionError") ||
+      rawError.includes("MongoNetworkError") ||
+      rawError.includes("SSL alert")
+    ) {
+      dbSyncStatus = "Blocked (Firewall/IP Whitelist)";
+      dbSyncError = "Koneksi ke MongoDB Atlas gagal karena IP server aplikasi ini diblokir (Firewall / IP Access List di MongoDB Atlas).\n\n" +
+                    `URI yang dicoba (Masked): ${maskedUri}\n\n` +
+                    "⚠️ CARA MEMPERBAIKI:\n" +
+                    "1. Buka dashboard MongoDB Atlas Anda di https://cloud.mongodb.com\n" +
+                    "2. Pada menu kiri, pilih 'Network Access' di bawah kategori 'Security'.\n" +
+                    "3. Klik tombol '+ Add IP Address'.\n" +
+                    "4. Pilih opsi 'Allow Access From Anywhere' (menambahkan IP '0.0.0.0/0') lalu klik 'Confirm'.\n" +
+                    "5. Setelah statusnya 'Active' (kurang dari 1 menit), klik tombol 'SINKRONISASI DATABASES' di menu konfigurasi Admin untuk menyinkronkan kembali.";
+    } else {
+      dbSyncStatus = "Failed";
+      dbSyncError = `Error: ${rawError}\nURI: ${maskedUri}`;
+    }
+    console.error("MongoDB starting sync error:", err);
+    isInitialSyncCompleted = true; // Allow local operations if sync fails fallback
   }
 }
 
@@ -871,6 +1011,7 @@ function saveState() {
       whatsappConfig,
       treasurerConfig,
       principalConfig,
+      sarprasConfig,
       attendanceLogs,
       homeroomTeachers,
       subjectTeachers,
@@ -890,8 +1031,8 @@ function saveState() {
       sarprasLoans
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
-    // Asynchronously update to Firestore
-    saveStateToFirestore().catch(err => console.error("Async saveState to Firestore failed:", err));
+    // Asynchronously update to MongoDB Cluster via serialized queue
+    triggerFirestoreSync();
   } catch (error) {
     console.error("Failed to save state:", error);
   }
@@ -1041,7 +1182,7 @@ function loadState() {
           {
             id: "tx-bnd-4",
             type: "incoming",
-            category: "Lainnya",
+            category: "Utama",
             amount: 1200000,
             description: "Pihak Ketiga - Sumbangan Alumni Peduli Pendidikan",
             date: "2026-05-18",
@@ -1056,6 +1197,7 @@ function loadState() {
       if (data.whatsappConfig) Object.assign(whatsappConfig, data.whatsappConfig);
       if (data.treasurerConfig) Object.assign(treasurerConfig, data.treasurerConfig);
       if (data.principalConfig) Object.assign(principalConfig, data.principalConfig);
+      if (data.sarprasConfig) Object.assign(sarprasConfig, data.sarprasConfig);
       console.log("State loaded successfully from database");
       return true;
     }
@@ -1270,11 +1412,10 @@ async function startServer() {
     });
   });
 
-  // Force database synchronization with Firestore
+  // Force database synchronization with MongoDB
   app.post("/api/admin/force-firestore-sync", async (req, res) => {
     try {
-      console.log("Admin triggered manual Firestore synchronization...");
-      isFirestoreSuspended = false;
+      console.log("Admin triggered manual MongoDB synchronization...");
       await syncWithFirestore();
       res.json({
         success: true,
@@ -1283,7 +1424,7 @@ async function startServer() {
         error: dbSyncError
       });
     } catch (err: any) {
-      console.error("Manual Firestore sync failed:", err);
+      console.error("Manual MongoDB sync failed:", err);
       res.status(500).json({ success: false, error: err.message || String(err) });
     }
   });
@@ -1684,6 +1825,130 @@ async function startServer() {
     broadcastNotification(notification);
 
     res.json({ success: true, message: "Sandi Kepala Sekolah sukses diperbarui oleh Admin." });
+  });
+
+  // Waka Sarpras Credentials Validation Endpoints
+  app.post("/api/sarpras/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username dan password wajib diisi." });
+    }
+    const cleanUser = username.trim().toLowerCase();
+    if ((cleanUser === "sarpras" || cleanUser === "waka") && password === sarprasConfig.password) {
+      res.json({ success: true, message: "Login Waka Sarpras berhasil." });
+    } else {
+      res.status(401).json({ error: "Password Waka Sarpras salah. Coba periksa kembali password Anda atau hubungi admin." });
+    }
+  });
+
+  app.post("/api/sarpras/change-password", (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    if (oldPassword !== sarprasConfig.password) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
+    }
+    sarprasConfig.password = newPassword.trim();
+    saveState();
+    
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-sarpras-${Date.now()}`,
+      title: "Sandi Akun Waka Sarpras Berubah 🔑",
+      message: `Password akun Waka Sarpras baru saja diperbarui melalui portal sarpras keamanan.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Kata sandi Waka Sarpras sukses disimpan." });
+  });
+
+  app.post("/api/admin/sarpras/reset-password", (req, res) => {
+    sarprasConfig.password = "sarpras123";
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-sarpras-reset-${Date.now()}`,
+      title: "Sandi Waka Sarpras Direset 🔒",
+      message: `Akun Waka Sarpras disetel ulang ke sandi bawaan (sarpras123) oleh Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Password Waka Sarpras berhasil di-reset ke sandi bawaan: sarpras123" });
+  });
+
+  app.post("/api/admin/sarpras/change-password", (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    sarprasConfig.password = newPassword.trim();
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-sarpras-admin-${Date.now()}`,
+      title: "Sandi Waka Sarpras Diubah Admin 🔑",
+      message: `Password akun Waka Sarpras telah disetel oleh Kepala/Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Sandi Waka Sarpras sukses diperbarui oleh Admin." });
+  });
+
+  // System Database Reset Endpoint (Clear Dummy Data & Financial Transactions to start fresh)
+  app.post("/api/admin/system/reset-data", (req, res) => {
+    try {
+      // 1. Clear student list
+      students.length = 0;
+
+      // 2. Clear financial records
+      sppBills.length = 0;
+      savingsTransactions.length = 0;
+      treasurerTransactions.length = 0;
+
+      // 3. Clear academic & behavioral logs
+      attendanceLogs.length = 0;
+      teachingJournals.length = 0;
+      studentDevelopmentLogs.length = 0;
+      studentInfractionLogs.length = 0;
+      studentCounselingLogs.length = 0;
+      classMeetingLogs.length = 0;
+      merdekaAssessments.length = 0;
+
+      // 4. Clear inventory transaction logs (loans)
+      sarprasLoans.length = 0;
+      // We can preserve sarprasItems (catalogs) and proposals, but let's clear proposals just in case since they might list reference to dummy students or dummy teachers.
+      sarprasProposals.length = 0;
+
+      // 5. Clean Notifications keeping a startup welcome msg
+      notifications.length = 0;
+      notifications.unshift({
+        id: `notif-reset-${Date.now()}`,
+        title: "Sistem Terbuka & Bersih! 🚀",
+        message: "Data murid bawaan, catatan kehadiran, portofolio kedisiplinan, serta seluruh riwayat keuangan (SPP & Tabungan) berhasil dikosongkan. Aplikasi siap dioperasikan.",
+        type: "success",
+        createdAt: new Date().toISOString()
+      });
+
+      // Save the cleared arrays in local JSON & sync to MongoDB
+      saveState();
+
+      res.json({ 
+        success: true, 
+        message: "Seluruh data siswa dummy dan riwayat transaksi keuangan berhasil dibersihkan! Aplikasi siap digunakan."
+      });
+    } catch (err: any) {
+      console.error("System reset failed:", err);
+      res.status(500).json({ error: "Gagal memproses pembersihan database: " + err.message });
+    }
   });
 
   // --- STUDENT ATTENDANCE (ABSENSI) ENDPOINTS ---
@@ -3036,6 +3301,50 @@ async function startServer() {
   });
 
   // Create manual bookkeeping transaction
+  app.post("/api/treasurer/transactions/transfer", (req, res) => {
+    const { sourceCategory, targetCategory, amount, description, date } = req.body;
+    if (!sourceCategory || !targetCategory || !amount || !description || !date) {
+      return res.status(400).json({ error: "Semua field transfer wajib diisi secara lengkap." });
+    }
+    if (sourceCategory === targetCategory) {
+      return res.status(400).json({ error: "POS anggaran sumber dan tujuan tidak boleh sama." });
+    }
+    const transferAmount = Number(amount) || 0;
+    if (transferAmount <= 0) {
+      return res.status(400).json({ error: "Jumlah transfer harus lebih besar dari Rp 0." });
+    }
+
+    const timestamp = Date.now();
+    const sourceTx: TreasurerTransaction = {
+      id: `tx-bnd-tr-out-${timestamp}`,
+      type: "outgoing",
+      category: String(sourceCategory),
+      amount: transferAmount,
+      description: `[Transfer POS] Ke POS ${targetCategory} : ${String(description)}`,
+      date: String(date),
+      source: "custom",
+      createdBy: "bendahara",
+      recipientName: `POS ${targetCategory}`
+    };
+
+    const targetTx: TreasurerTransaction = {
+      id: `tx-bnd-tr-in-${timestamp}`,
+      type: "incoming",
+      category: String(targetCategory),
+      amount: transferAmount,
+      description: `[Transfer POS] Dari POS ${sourceCategory} : ${String(description)}`,
+      date: String(date),
+      source: "custom",
+      createdBy: "bendahara",
+      recipientName: `Dari POS ${sourceCategory}`
+    };
+
+    treasurerTransactions.push(sourceTx, targetTx);
+    saveState();
+    res.json({ success: true, sourceTransaction: sourceTx, targetTransaction: targetTx });
+  });
+
+  // Create manual bookkeeping transaction
   app.post("/api/treasurer/transactions", (req, res) => {
     const { type, category, amount, description, date, recipientName } = req.body;
     if (!type || !category || !amount || !description || !date) {
@@ -3554,7 +3863,7 @@ async function startServer() {
 
   // 1. Create Student (with initial savings & automatic SPP bills)
   app.post("/api/admin/students", (req, res) => {
-    const { nis, name, class: className, email, phone, initialSavings } = req.body;
+    const { nis, name, class: className, email, phone, initialSavings, gender } = req.body;
     
     if (!nis || !name || !className) {
       return res.status(400).json({ error: "Siswa baru harus memiliki NIS, Nama, dan Kelas." });
@@ -3576,7 +3885,8 @@ async function startServer() {
       class: className,
       email: email || "",
       phone: phone || "",
-      savingsBalance: parsedSavings
+      savingsBalance: parsedSavings,
+      gender: gender || ""
     };
 
     students.push(newStudent);
@@ -3643,7 +3953,7 @@ async function startServer() {
 
   // 2. Update Student
   app.put("/api/admin/students/:id", (req, res) => {
-    const { nis, name, class: className, email, phone, password } = req.body;
+    const { nis, name, class: className, email, phone, password, gender, mutationDate, mutationReason, mutationDestination } = req.body;
     const student = students.find(s => s.id === req.params.id);
     
     if (!student) {
@@ -3666,6 +3976,10 @@ async function startServer() {
     student.class = className;
     student.email = email || "";
     student.phone = phone || "";
+    student.gender = gender || "";
+    student.mutationDate = mutationDate;
+    student.mutationReason = mutationReason;
+    student.mutationDestination = mutationDestination;
     
     if (password !== undefined) {
       student.password = String(password).trim();
@@ -3756,7 +4070,7 @@ async function startServer() {
 
     students.forEach(student => {
       const cls = (student.class || "").trim();
-      if (cls.toLowerCase() === "lulus" || cls.toLowerCase() === "lulusan") {
+      if (cls.toLowerCase() === "lulus" || cls.toLowerCase() === "lulusan" || cls.toLowerCase() === "mutasi" || cls.toLowerCase() === "mutasi keluar") {
         return;
       }
 
@@ -3803,7 +4117,7 @@ async function startServer() {
 
     students.forEach(student => {
       const cls = (student.class || "").trim().toLowerCase();
-      if (cls === "lulus" || cls === "lulusan") {
+      if (cls === "lulus" || cls === "lulusan" || cls === "mutasi" || cls === "mutasi keluar") {
         return;
       }
 
@@ -4038,7 +4352,7 @@ async function startServer() {
     let addedCount = 0;
 
     studentsList.forEach((inputStd: any) => {
-      const { nis, name, class: className, email, phone, initialSavings } = inputStd;
+      const { nis, name, class: className, email, phone, initialSavings, gender } = inputStd;
       if (!nis || !name || !className) {
         // Skip invalid rows
         return;
@@ -4052,6 +4366,9 @@ async function startServer() {
         existingStudent.class = className;
         existingStudent.email = email || "";
         existingStudent.phone = phone || "";
+        if (gender) {
+          existingStudent.gender = gender;
+        }
         updatedCount++;
       } else {
         // Add new student
@@ -4065,6 +4382,7 @@ async function startServer() {
           class: className,
           email: email || "",
           phone: phone || "",
+          gender: gender || "Laki-laki",
           savingsBalance: parsedSavings
         };
 

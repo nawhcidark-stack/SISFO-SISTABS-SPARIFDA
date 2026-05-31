@@ -5719,6 +5719,15 @@ Wassalamualaikum Wr. Wb.
                                       {sakit > 0 && <span className="text-amber-500 font-semibold text-[8px]">S:{sakit}</span>}
                                       {izin > 0 && <span className="text-blue-600 font-semibold text-[8px]">I:{izin}</span>}
                                       {alpa > 0 && <span className="text-rose-600 font-bold text-[8.5px]">A:{alpa}</span>}
+                                      {journal.attendance && journal.attendance.filter((st: any) => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa').length > 0 && (
+                                        <div className="w-full text-[7.5px] leading-tight text-slate-500 mt-1 pb-0.5 font-sans border-t border-slate-200/40 pt-1 text-center font-normal">
+                                          {journal.attendance
+                                            .filter((st: any) => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa')
+                                            .map((st: any) => `${st.studentName} (${st.status.substring(0, 1)})`)
+                                            .join(', ')
+                                          }
+                                        </div>
+                                      )}
                                     </div>
                                   )}
                                 </td>

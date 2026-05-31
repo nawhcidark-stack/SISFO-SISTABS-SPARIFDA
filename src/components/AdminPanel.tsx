@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher, AttendanceLog } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher, AttendanceLog, StudentInfractionLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
 import StudentManagement from './StudentManagement';
@@ -71,10 +71,23 @@ interface AdminPanelProps {
   onBulkWithdrawSavings?: (grade: string, amount: number, notes: string, allowDebt: boolean) => Promise<any>;
   onBroadcastNotification: (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment') => Promise<boolean>;
   onRefresh: () => void;
-  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }) => Promise<boolean>;
-  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string }) => Promise<boolean>;
+  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }) => Promise<boolean>;
+  onUpdateStudent: (
+    id: string,
+    data: {
+      nis: string;
+      name: string;
+      class: string;
+      email: string;
+      phone: string;
+      gender?: string;
+      mutationDate?: string;
+      mutationReason?: string;
+      mutationDestination?: string;
+    }
+  ) => Promise<boolean>;
   onDeleteStudent: (id: string) => Promise<boolean>;
-  onImportStudents: (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number }>) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
+  onImportStudents: (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }>) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
   onImportTeachers?: (
     homerooms: Array<{ username: string; name: string; className: string; password?: string }>,
     subjectTeachers: Array<{ username: string; name: string; subject: string; password?: string }>
@@ -133,10 +146,21 @@ export default function AdminPanel({
   attendanceLogs = []
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [adminTab, setAdminTab] = useState<'roster' | 'broadcast' | 'config' | 'student_mgmt' | 'laporan' | 'homeroom_mgmt' | 'subject_teacher_mgmt' | 'student_qr'>('roster');
+  const [adminTab, setAdminTab] = useState<'roster' | 'broadcast' | 'config' | 'student_mgmt' | 'laporan' | 'homeroom_mgmt' | 'subject_teacher_mgmt' | 'student_qr' | 'alumni' | 'mutasi'>('roster');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [studentSearch, setStudentSearch] = useState('');
+  const [alumniSearch, setAlumniSearch] = useState('');
+  const [mutatedSearch, setMutatedSearch] = useState('');
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
+
+  // States for student mutation modal
+  const [isMutateModalOpen, setIsMutateModalOpen] = useState(false);
+  const [mutateStudentId, setMutateStudentId] = useState('');
+  const [mutateDate, setMutateDate] = useState(new Date().toISOString().split('T')[0]);
+  const [mutateReason, setMutateReason] = useState('');
+  const [mutateDestination, setMutateDestination] = useState('');
+  const [isMutatingSubmit, setIsMutatingSubmit] = useState(false);
+  const [mutateError, setMutateError] = useState('');
 
   // Batch Import Teacher states
   const [isImportTeacherOpen, setIsImportTeacherOpen] = useState(false);
@@ -372,9 +396,17 @@ export default function AdminPanel({
   };
 
   const filteredStudents = useMemo(() => {
-    if (!studentSearch.trim()) return students;
+    const activeStudents = students.filter(
+      (s) => !s.class || (
+        s.class.toLowerCase() !== 'lulus' && 
+        s.class.toLowerCase() !== 'lulusan' && 
+        s.class.toLowerCase() !== 'mutasi' && 
+        s.class.toLowerCase() !== 'mutasi keluar'
+      )
+    );
+    if (!studentSearch.trim()) return activeStudents;
     const query = studentSearch.toLowerCase().trim();
-    return students.filter(
+    return activeStudents.filter(
       (s) => s.name.toLowerCase().includes(query) || s.nis.toLowerCase().includes(query)
     );
   }, [students, studentSearch]);
@@ -382,12 +414,40 @@ export default function AdminPanel({
   const uniqueClasses = useMemo(() => {
     const cls = new Set<string>();
     students.forEach((s) => {
-      if (s.class) {
+      if (
+        s.class && 
+        s.class.toLowerCase() !== 'lulus' && 
+        s.class.toLowerCase() !== 'lulusan' &&
+        s.class.toLowerCase() !== 'mutasi' &&
+        s.class.toLowerCase() !== 'mutasi keluar'
+      ) {
         cls.add(s.class);
       }
     });
     return Array.from(cls).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [students]);
+
+  const filteredAlumni = useMemo(() => {
+    const alumniList = students.filter(
+      (s) => s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan')
+    );
+    if (!alumniSearch.trim()) return alumniList;
+    const query = alumniSearch.toLowerCase().trim();
+    return alumniList.filter(
+      (s) => s.name.toLowerCase().includes(query) || s.nis.toLowerCase().includes(query)
+    );
+  }, [students, alumniSearch]);
+
+  const filteredMutatedStudents = useMemo(() => {
+    const mutatedList = students.filter(
+      (s) => s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar')
+    );
+    if (!mutatedSearch.trim()) return mutatedList;
+    const query = mutatedSearch.toLowerCase().trim();
+    return mutatedList.filter(
+      (s) => s.name.toLowerCase().includes(query) || s.nis.toLowerCase().includes(query)
+    );
+  }, [students, mutatedSearch]);
 
   const [confirmingTxId, setConfirmingTxId] = useState<string | null>(null);
 
@@ -585,6 +645,29 @@ export default function AdminPanel({
 
   // Laporan & Rekap states
   const [activeReportSubTab, setActiveReportSubTab] = useState<'harian' | 'rekap-spp' | 'rekap-tabungan' | 'rekap-absen'>('harian');
+  const [infractionList, setInfractionList] = useState<StudentInfractionLog[]>([]);
+
+  const fetchInfractionList = async () => {
+    try {
+      const res = await fetch('/api/student-infraction-logs');
+      if (res.ok) {
+        const data = await res.json();
+        setInfractionList(data);
+      }
+    } catch (err) {
+      console.error("Gagal mengambil data pelanggaran", err);
+    }
+  };
+
+  React.useEffect(() => {
+    fetchInfractionList();
+  }, []);
+
+  React.useEffect(() => {
+    if (activeReportSubTab === 'rekap-absen') {
+      fetchInfractionList();
+    }
+  }, [activeReportSubTab]);
   const [currentDateFilter, setCurrentDateFilter] = useState<string>(new Date().toISOString().split('T')[0]);
   const [rekapSppGradeFilter, setRekapSppGradeFilter] = useState<string>('all');
   const [rekapSppYearFilter, setRekapSppYearFilter] = useState<string>('all');
@@ -770,6 +853,17 @@ export default function AdminPanel({
   const [adminPrincipalPasswordInput, setAdminPrincipalPasswordInput] = useState('');
   const [principalActionMsg, setPrincipalActionMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [isOperatingPrincipalPwd, setIsOperatingPrincipalPwd] = useState(false);
+
+  // Waka Sarpras Account credentials security states
+  const [adminSarprasPasswordInput, setAdminSarprasPasswordInput] = useState('');
+  const [sarprasActionMsg, setSarprasActionMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [isOperatingSarprasPwd, setIsOperatingSarprasPwd] = useState(false);
+
+  // System Data Reset States
+  const [showResetModal, setShowResetModal] = useState(false);
+  const [resetValidationInput, setResetValidationInput] = useState('');
+  const [isResettingSystem, setIsResettingSystem] = useState(false);
+  const [resetSystemMsg, setResetSystemMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
   // Midtrans Gateways & Fees States
   const [adminFeeInput, setAdminFeeInput] = useState<number>(4000);
@@ -1180,6 +1274,95 @@ export default function AdminPanel({
     }
   };
 
+  const handleAdminUpdateSarprasPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminSarprasPasswordInput.trim()) {
+      setSarprasActionMsg({ type: 'error', text: 'Sandi baru tidak boleh kosong.' });
+      return;
+    }
+    if (adminSarprasPasswordInput.trim().length < 5) {
+      setSarprasActionMsg({ type: 'error', text: 'Password minimal 5 karakter.' });
+      return;
+    }
+    setIsOperatingSarprasPwd(true);
+    setSarprasActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/sarpras/change-password', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ newPassword: adminSarprasPasswordInput.trim() })
+      });
+      if (res.ok) {
+         setSarprasActionMsg({ type: 'success', text: 'Sandi Waka Sarpras berhasil diperbarui secara aman!' });
+         setAdminSarprasPasswordInput('');
+      } else {
+         const d = await res.json();
+         setSarprasActionMsg({ type: 'error', text: d.error || 'Gagal mengubah sandi Waka Sarpras.' });
+      }
+    } catch {
+       setSarprasActionMsg({ type: 'error', text: 'Gangguan jaringan/server.' });
+    } finally {
+       setIsOperatingSarprasPwd(false);
+    }
+  };
+
+  const handleAdminResetSarprasPassword = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin menyetel ulang sandi Waka Sarpras kembali ke bawaan default (sarpras123)?')) {
+      return;
+    }
+    setIsOperatingSarprasPwd(true);
+    setSarprasActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/sarpras/reset-password', {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setSarprasActionMsg({ type: 'success', text: 'Sandi Waka Sarpras sukses di-reset ke bawaan default: sarpras123' });
+      } else {
+        const d = await res.json();
+        setSarprasActionMsg({ type: 'error', text: d.error || 'Gagal melakukan reset sandi.' });
+      }
+    } catch {
+      setSarprasActionMsg({ type: 'error', text: 'Gangguan komunikasi dengan server.' });
+    } finally {
+      setIsOperatingSarprasPwd(false);
+    }
+  };
+
+  const handleResetSystemData = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (resetValidationInput.trim() !== 'KONFIRMASI') {
+      setResetSystemMsg({ type: 'error', text: 'Silakan ketik kata KONFIRMASI secara tepat untuk melanjutkan.' });
+      return;
+    }
+
+    setIsResettingSystem(true);
+    setResetSystemMsg(null);
+    try {
+      const res = await fetch('/api/admin/system/reset-data', {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setResetSystemMsg({ 
+          type: 'success', 
+          text: '🎉 Sukses! Seluruh data transaksi keuangan & siswa dummy berhasil dikosongkan. Sistem akan memuat ulang halaman...' 
+        });
+        setResetValidationInput('');
+        setTimeout(() => {
+          setShowResetModal(false);
+          window.location.reload();
+        }, 2500);
+      } else {
+        setResetSystemMsg({ type: 'error', text: data.error || 'Terjadi kesalahan saat mengosongkan data.' });
+      }
+    } catch {
+      setResetSystemMsg({ type: 'error', text: 'Gagal menghubungi server untuk memproses reset data.' });
+    } finally {
+      setIsResettingSystem(false);
+    }
+  };
+
   const handleSaveMidtransFees = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingFees(true);
@@ -1396,6 +1579,38 @@ export default function AdminPanel({
           >
             <GraduationCap size={15} />
            Akun Siswa
+          </button>
+
+          <button
+            id="admin-menu-alumni"
+            onClick={() => {
+              setAdminTab('alumni');
+              setSelectedStudent(null); // Reset when switching to avoid mismatch
+            }}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === 'alumni'
+                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <GraduationCap size={15} className="text-yellow-500" />
+            <span>Alumni (Lulusan)</span>
+          </button>
+
+          <button
+            id="admin-menu-mutasi"
+            onClick={() => {
+              setAdminTab('mutasi');
+              setSelectedStudent(null); // Reset when switching to avoid mismatch
+            }}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === 'mutasi'
+                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <RefreshCw size={15} className="text-orange-500" />
+            <span>Siswa Mutasi</span>
           </button>
 
           <button
@@ -2720,23 +2935,23 @@ export default function AdminPanel({
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
                   <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
-                    <UploadCloud className="text-emerald-400" size={18} /> Cloud Database-Sync Integration
+                    <UploadCloud className="text-emerald-400" size={18} /> Cloud Database-Sync Integration (MongoDB Atlas)
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed font-medium">
-                    Sistem ini terintegrasi langsung dengan database awan Google Firebase Firestore menggunakan koneksi tersemat (Embedded Fallback) otomatis tanpa konfigurasi manual.
+                    Sistem ini terintegrasi langsung dengan database awan MongoDB Atlas Cluster Anda agar setiap perubahan data tersimpan secara permanen.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 self-start md:self-center">
                   <span className="text-[10px] uppercase font-bold text-slate-400">Status Gateway:</span>
                   <span className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold ${
-                    systemStatus?.firestore?.status?.includes('Synced') || systemStatus?.firestore?.status === 'Firebase SDK Initialized'
+                    systemStatus?.firestore?.status?.includes('Synced') || systemStatus?.firestore?.status === 'Synced (Loaded from MongoDB)'
                       ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
                       : systemStatus?.firestore?.status === 'Connecting...' || systemStatus?.firestore?.status?.includes('Syncing')
                       ? "bg-amber-500/10 border border-amber-500/30 text-amber-400 animate-pulse"
                       : "bg-red-500/10 border border-red-500/30 text-red-400"
                   }`}>
                     <span className={`w-1.5 h-1.5 rounded-full ${
-                      systemStatus?.firestore?.status?.includes('Synced') || systemStatus?.firestore?.status === 'Firebase SDK Initialized'
+                      systemStatus?.firestore?.status?.includes('Synced') || systemStatus?.firestore?.status === 'Synced (Loaded from MongoDB)'
                         ? "bg-emerald-450"
                         : systemStatus?.firestore?.status === 'Connecting...' || systemStatus?.firestore?.status?.includes('Syncing')
                         ? "bg-amber-400"
@@ -2758,12 +2973,12 @@ export default function AdminPanel({
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">PROJECT-ID CLOUD</span>
-                  <span className="font-mono text-[11px] text-slate-200 truncate font-semibold">ungoogly-impulse-271nt</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">DATABASE ENGINE</span>
+                  <span className="font-mono text-[11px] text-emerald-400 truncate font-semibold">MongoDB Atlas Cluster (vSrv)</span>
                 </div>
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
-                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">FIRESTORE SUITE DATABASE ID</span>
-                  <span className="font-mono text-[11px] text-emerald-400 truncate font-semibold">ai-studio-7ff6ffdf-833a-490d-a519-ec4364d0517f</span>
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">CLUSTER HOSTNAME</span>
+                  <span className="font-mono text-[11px] text-slate-200 truncate font-semibold">cluster0.0hekxl2.mongodb.net</span>
                 </div>
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">TERAKHIR DISINKRONKAN (WIB)</span>
@@ -2774,9 +2989,9 @@ export default function AdminPanel({
               </div>
 
               {systemStatus?.firestore?.error && (
-                <div className="p-3 bg-red-950/40 border border-red-900/30 rounded-lg flex flex-col gap-1 text-red-300">
-                  <span className="text-[10px] font-bold uppercase tracking-wider">DETAIL OPERASIONAL ERROR:</span>
-                  <p className="font-mono text-[10px] break-all leading-normal text-red-200 select-all font-semibold">
+                <div className="p-4 bg-red-950/40 border border-red-900/30 rounded-lg flex flex-col gap-2 text-red-300">
+                  <span className="text-[10px] font-bold uppercase tracking-wider flex items-center gap-1.5"><AlertCircle size={14} className="text-red-400" /> DETAIL OPERASIONAL & PETUNJUK SOLUSI:</span>
+                  <p className="font-mono text-xs whitespace-pre-wrap leading-relaxed text-red-200 select-all font-semibold">
                     {systemStatus.firestore.error}
                   </p>
                 </div>
@@ -2786,7 +3001,7 @@ export default function AdminPanel({
                 <div className="flex items-start gap-2.5">
                   <span className="p-1 bg-emerald-500/10 text-emerald-400 rounded">💡</span>
                   <div className="text-[11px] text-slate-300 leading-relaxed font-medium">
-                    Setiap pembaruan data murid, pembayaran tagihan SPP, transaksi tabungan, maupun jurnal absensi, <strong>otomatis langsung tersinkronkan</strong> ke database awan secara real-time. Jika Anda mendapati basis data awan kosong, tekan tombol sinkronkan untuk memigrasikan database memori server secara instan.
+                    Setiap pembaruan data murid, pembayaran tagihan SPP, transaksi tabungan, maupun jurnal absensi, <strong>otomatis langsung tersinkronkan</strong> ke database awan MongoDB secara real-time. Jika Anda mendapati basis data awan kosong, tekan tombol sinkronkan untuk memigrasikan database memori server secara instan.
                   </div>
                 </div>
                 <button
@@ -3038,6 +3253,76 @@ export default function AdminPanel({
                   >
                     <RefreshCw size={12} className={isOperatingPrincipalPwd ? 'animate-spin' : ''} />
                     <span>Reset Password ke Default (kepala123) 🔄</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Pengaturan Keamanan Akses Waka Sarana & Prasarana (Sarpras) */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-5 text-xs text-left text-slate-800"
+            >
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <Key size={16} className="text-indigo-600" /> Pengaturan Keamanan Akun Waka Sarpras
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  Kelola keamanan kredensial login untuk <strong>Waka Sarana &amp; Prasarana (Sarpras)</strong>. Anda dapat memperbarui password secara langsung di bawah ini atau meresetnya kembali ke sandi bawaan default (<code className="bg-slate-100 px-1 py-0.5 rounded font-mono font-bold text-indigo-700">sarpras123</code>).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Form to change password directly */}
+                <form onSubmit={handleAdminUpdateSarprasPassword} className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">Atur Kata Sandi Baru Khusus</span>
+                  
+                  {sarprasActionMsg && (
+                    <div className={`p-3 rounded-lg font-bold text-xs ${
+                      sarprasActionMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-250 text-emerald-800' : 'bg-rose-50 border border-rose-200 text-rose-700'
+                    }`}>
+                      {sarprasActionMsg.text}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-extrabold text-slate-400">Kata Sandi Baru</label>
+                    <input
+                      type="password"
+                      placeholder="Masukkan sandi baru Waka Sarpras (Min 5 karakter)"
+                      value={adminSarprasPasswordInput}
+                      onChange={(e) => setAdminSarprasPasswordInput(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 bg-white rounded-xl text-slate-800 focus:outline-none focus:border-indigo-600 font-semibold"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isOperatingSarprasPwd}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isOperatingSarprasPwd ? 'Menyimpan...' : 'Perbarui Sandi Waka Sarpras 🔑'}
+                  </button>
+                </form>
+
+                {/* Reset to Default */}
+                <div className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl h-full justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">Setel Ulang Sandi Kembali ke Bawaan</span>
+                    <p className="text-[11px] text-slate-500 mt-2 leading-relaxed font-semibold">
+                      Lupa password Waka Sarpras aktif? Klik tombol di bawah ini untuk mengembalikan sandi Waka Sarpras kembali ke standar bawaan sistem: <strong className="font-mono text-indigo-700">sarpras123</strong>.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAdminResetSarprasPassword}
+                    disabled={isOperatingSarprasPwd}
+                    className="w-full mt-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw size={12} className={isOperatingSarprasPwd ? 'animate-spin' : ''} />
+                    <span>Reset Password ke Default (sarpras123) 🔄</span>
                   </button>
                 </div>
               </div>
@@ -3786,6 +4071,131 @@ export default function AdminPanel({
               </form>
             </div>
           </motion.div>
+
+          {/* Pembersihan Data & Reset Sistem Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white p-6 rounded-xl border-2 border-rose-100 shadow-sm flex flex-col gap-5 text-xs text-left"
+          >
+            <div className="flex items-start gap-3">
+              <div className="p-2.5 rounded-xl bg-rose-50 border border-rose-100 text-rose-600 shrink-0">
+                <Trash2 size={20} />
+              </div>
+              <div>
+                <h3 className="font-bold text-rose-750 text-slate-900 text-sm flex items-center gap-1.5">
+                  ⚠️ Pembersihan Data &amp; Inisialisasi Sistem Baru
+                </h3>
+                <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed font-semibold">
+                  Gunakan opsi ini jika Anda ingin memulai penggunaan resmi SMP Ma'arif NU Pandaan di lembaga Anda secara ril. Pembersihan ini akan mengosongkan seluruh data transaksi keuangan bawaan (SPP &amp; Tabungan) serta murid dummy bawaan secara aman tanpa memengaruhi data kredensial akses utama.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50/50 rounded-xl p-4 border border-rose-100 text-slate-700 font-semibold text-xs leading-relaxed flex flex-col gap-2">
+              <span className="text-[10px] font-bold text-rose-800 uppercase tracking-wider block">⚠️ DATA YANG AKAN DIHAPUS PERMANEN:</span>
+              <ul className="list-disc list-inside flex flex-col gap-1 text-[11px] text-slate-600 ml-1">
+                <li><strong className="text-rose-950">Semua Data Siswa</strong> (4 dummy murid bawaan beserta saldo tabungan mereka).</li>
+                <li><strong className="text-rose-950">Seluruh Transaksi SPP &amp; Tabungan</strong> (riwayat kwitansi lunas, tagihan bulanan, tarikan &amp; setoran kas).</li>
+                <li><strong className="text-rose-950">Seluruh Catatan Kehadiran (Absensi) &amp; Jurnal Guru</strong> (data absensi harian, jurnal mengajar mapel).</li>
+                <li><strong className="text-rose-950">Portofolio Kedisiplinan &amp; Bimbingan Konseling</strong> (catatan poin pelanggaran &amp; log bimbingan BK).</li>
+                <li><strong className="text-rose-950">Aktivitas Sarpras</strong> (seluruh log pengajuan usulan aset &amp; transaksi peminjaman sarana prasarana).</li>
+              </ul>
+              <div className="mt-2 border-t border-rose-150 pt-2 text-[10.5px] text-slate-500 italic font-bold">
+                *Catatan: Konfigurasi sistem (seperti nominal tarif SPP, info identitas &amp; cap sekolah, API key Midtrans &amp; WhatsApp, serta password login guru) AKAN TETAP TERJAGA agar Anda tidak perlu mengaturnya ulang dari awal.
+              </div>
+            </div>
+
+            <div className="flex justify-end pt-2">
+              <button
+                type="button"
+                onClick={() => {
+                  setResetValidationInput('');
+                  setResetSystemMsg(null);
+                  setShowResetModal(true);
+                }}
+                className="px-5 py-3 bg-rose-600 hover:bg-rose-700 active:bg-rose-850 text-white font-extrabold rounded-xl uppercase tracking-wider text-[11px] cursor-pointer shadow-md shadow-rose-600/10 flex items-center gap-2 transition-all"
+              >
+                <Trash2 size={14} /> Kosongkan Data Dummy &amp; Mulai Penggunaan Ril 🔄
+              </button>
+            </div>
+          </motion.div>
+
+          {/* Reset Confirmation Overlay Modal */}
+          {showResetModal && (
+            <div className="fixed inset-0 z-250 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs">
+              <motion.div
+                initial={{ scale: 0.95, opacity: 0 }}
+                animate={{ scale: 1, opacity: 1 }}
+                tabIndex={-1}
+                className="bg-white border text-left border-slate-250 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+              >
+                <div className="p-4 bg-rose-950 border-b border-rose-800 text-white flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="p-1.5 rounded-lg bg-rose-900 border border-rose-800 text-rose-200">
+                      <AlertCircle size={15} />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-xs tracking-tight">Konfirmasi Pembersihan Data</h3>
+                      <p className="text-[9px] text-rose-300 font-bold uppercase tracking-wider">Perhatian Sangat Penting!</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowResetModal(false)}
+                    className="p-1 text-slate-350 hover:bg-rose-900 rounded-lg text-rose-200 hover:text-white cursor-pointer transition-all text-sm font-extrabold"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                <form onSubmit={handleResetSystemData} className="p-5 flex flex-col gap-4 text-xs font-semibold">
+                  <div className="p-3 bg-rose-50 rounded-xl text-rose-800 text-[11px] leading-relaxed font-bold border border-rose-100">
+                    Sistem akan menghapus seluruh data siswa dummy beserta seluruh data transaksi keuangan (SPP &amp; Tabungan) agar aplikasi SMP Ma'arif NU Pandaan siap dipergunakan ril secara bersih di lembaga Anda. Tindakan ini TIDAK DAPAT DIBATALKAN.
+                  </div>
+
+                  {resetSystemMsg && (
+                    <div className={`p-3 rounded-xl text-[11px] font-extrabold ${
+                      resetSystemMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-150 text-emerald-850' : 'bg-rose-100 border border-rose-200 text-rose-800'
+                    }`}>
+                      {resetSystemMsg.text}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] font-bold text-slate-405 uppercase text-slate-500">
+                      KETIK KATA "<strong className="text-rose-700 tracking-wider">KONFIRMASI</strong>" UNTUK MELANJUTKAN:
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Ketik KONFIRMASI di sini"
+                      value={resetValidationInput}
+                      onChange={(e) => setResetValidationInput(e.target.value)}
+                      className="w-full p-2.5 border-2 border-slate-200 focus:border-rose-600 rounded-xl text-slate-800 font-bold uppercase text-center placeholder-slate-400"
+                    />
+                  </div>
+
+                  <div className="flex gap-2.5 pt-2 border-t border-slate-100">
+                    <button
+                      type="button"
+                      onClick={() => setShowResetModal(false)}
+                      className="flex-1 py-3 border border-slate-205 hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer transition-all text-center"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isResettingSystem}
+                      className="flex-1 py-3 bg-rose-600 hover:bg-rose-700 disabled:opacity-50 text-white rounded-xl font-extrabold cursor-pointer transition-all text-center uppercase tracking-wide inline-flex items-center justify-center gap-1.5"
+                    >
+                      {isResettingSystem ? 'Mengosongkan...' : 'Mulai Bersih 🔄'}
+                    </button>
+                  </div>
+                </form>
+              </motion.div>
+            </div>
+          )}
           </div>
         )}
 
@@ -3803,6 +4213,928 @@ export default function AdminPanel({
               onImportStudents={onImportStudents}
               onRefresh={onRefresh}
             />
+          </motion.div>
+        )}
+
+        {/* Tab: Alumni Center & Arrears Resolver */}
+        {adminTab === 'alumni' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col gap-6 text-slate-800 text-left"
+          >
+            {/* Header Card */}
+            <div className="bg-slate-900 rounded-2xl p-6 text-white border border-slate-800 shadow-sm relative overflow-hidden">
+              <div className="absolute right-[-20px] top-[-20px] opacity-10">
+                <GraduationCap size={160} />
+              </div>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <span className="inline-flex px-2.5 py-1 text-[9px] font-black tracking-widest bg-yellow-500/10 text-yellow-400 border border-yellow-500/20 rounded-lg uppercase mb-3">
+                    🎓 PORTAL ALUMNI & REKONSILIASI ADMINISTRASI
+                  </span>
+                  <h3 className="text-xl font-extrabold tracking-tight font-sans text-slate-100">
+                    Buku Alumni Kelas 9 (Siswa Lulus)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                    Siswa kelas 9 yang dinyatakan Lulus dipindahkan secara otomatis ke basis data Alumni untuk menghindari penumpukan antrean siswa aktif. Dashboard ini disediakan khusus untuk memantau sisa saldo tabungan serta mempermudah penagihan sisa tunggakan iuran SPP siswa yang sudah lulus.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stat Indicators */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-yellow-50 text-yellow-600 rounded-xl">
+                  <GraduationCap size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Alumni</span>
+                  <span className="text-lg font-black text-slate-800 font-mono">
+                    {students.filter(s => s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan')).length} Siswa
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+                  <ShieldAlert size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Masih Punya Tunggakan</span>
+                  <span className="text-lg font-black text-rose-600 font-mono">
+                    {students.filter(s => {
+                      const isAl = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                      if (!isAl) return false;
+                      return bills.filter(b => b.studentId === s.id && b.status === 'unpaid').length > 0;
+                    }).length} Siswa
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <Banknote size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Tunggakan SPP</span>
+                  <span className="text-lg font-black text-slate-800 font-mono">
+                    Rp {bills.filter(b => {
+                      const student = students.find(s => s.id === b.studentId);
+                      const isAl = student?.class && (student.class.toLowerCase() === 'lulus' || student.class.toLowerCase() === 'lulusan');
+                      return isAl && b.status === 'unpaid';
+                    }).reduce((sum, b) => sum + b.amount, 0).toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-emerald-50 text-emerald-600 rounded-xl">
+                  <RefreshCw size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Dana Tabungan Alumni</span>
+                  <span className="text-lg font-black text-emerald-600 font-mono">
+                    Rp {students.filter(s => s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan')).reduce((sum, s) => sum + s.savingsBalance, 0).toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Alumni Search & List */}
+            <div className="bg-white rounded-2xl border border-slate-200 shadow-2xs overflow-hidden flex flex-col">
+              <div className="p-4 bg-slate-50 border-b border-slate-200 flex flex-col sm:flex-row gap-3">
+                <div className="relative flex-grow">
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                    <Search size={14} />
+                  </span>
+                  <input
+                    type="text"
+                    placeholder="Cari alumni berdasarkan Nama Lengkap atau NIS..."
+                    value={alumniSearch}
+                    onChange={(e) => setAlumniSearch(e.target.value)}
+                    className="w-full pl-9 pr-4 py-1.5 text-xs bg-white border border-slate-200 rounded-lg focus:border-slate-800 focus:ring-1 focus:ring-slate-800 outline-none transition-all font-medium"
+                  />
+                </div>
+                {alumniSearch && (
+                  <button
+                    type="button"
+                    onClick={() => setAlumniSearch('')}
+                    className="px-3 bg-white border border-slate-200 hover:bg-slate-100 rounded-lg text-xs font-bold text-slate-500 hover:text-slate-800 transition-all"
+                  >
+                    Reset Pencarian
+                  </button>
+                )}
+              </div>
+
+              <div className="overflow-x-auto text-[11px] sm:text-xs">
+                <table className="w-full text-left border-collapse">
+                  <thead>
+                    <tr className="bg-slate-50 text-slate-400 font-bold uppercase tracking-wider text-[10px] border-b border-slate-150">
+                      <th className="px-5 py-3.5">Nama Alumni</th>
+                      <th className="px-5 py-3.5">NIS</th>
+                      <th className="px-5 py-3.5 text-right">Sisa Saldo Tabungan</th>
+                      <th className="px-5 py-3.5 text-center">Bulan Tunggakan</th>
+                      <th className="px-5 py-3.5 text-right">Jumlah Tunggakan</th>
+                      <th className="px-5 py-3.5 text-center">Status Keuangan</th>
+                      <th className="px-5 py-3.5 text-center">Aksi Administrasi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-150">
+                    {filteredAlumni.length === 0 ? (
+                      <tr>
+                        <td colSpan={7} className="px-5 py-12 text-center text-slate-400 font-medium bg-slate-50/10">
+                          <div className="flex flex-col items-center justify-center gap-2">
+                            <GraduationCap size={24} className="text-slate-300" />
+                            <span>Tidak ditemukan data alumni di bawah kriteria pencarian.</span>
+                          </div>
+                        </td>
+                      </tr>
+                    ) : (
+                      filteredAlumni.map((alumnus) => {
+                        const sBills = bills.filter(b => b.studentId === alumnus.id);
+                        const unpaidBills = sBills.filter(b => b.status === 'unpaid');
+                        const totalUnpaid = unpaidBills.reduce((sum, b) => sum + b.amount, 0);
+                        const hasDebt = unpaidBills.length > 0;
+
+                        return (
+                          <tr 
+                            key={alumnus.id} 
+                            className={`hover:bg-slate-100/30 transition-colors ${selectedStudent?.id === alumnus.id ? 'bg-indigo-50/10 font-bold' : ''}`}
+                          >
+                            <td className="px-5 py-3.5 font-bold text-slate-800 flex items-center gap-2">
+                              <span>🎓</span>
+                              <span>{alumnus.name}</span>
+                            </td>
+                            <td className="px-5 py-3.5 font-mono text-slate-500">{alumnus.nis}</td>
+                            <td className="px-5 py-3.5 text-right font-mono font-bold text-emerald-600">
+                              Rp {alumnus.savingsBalance.toLocaleString('id-ID')}
+                            </td>
+                            <td className="px-5 py-3.5 text-center font-bold">
+                              {unpaidBills.length > 0 ? (
+                                <span className="text-rose-600 bg-rose-50 border border-rose-100 rounded px-2 py-0.5 font-mono">
+                                  {unpaidBills.length} Bulan
+                                </span>
+                              ) : (
+                                <span className="text-slate-400 font-normal">-</span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3.5 text-right font-mono font-bold text-rose-605 text-rose-600">
+                              Rp {totalUnpaid.toLocaleString('id-ID')}
+                            </td>
+                            <td className="px-5 py-3.5 text-center">
+                              {hasDebt ? (
+                                <span className="inline-flex px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-rose-50 text-rose-700 border border-rose-200/80 rounded-md">
+                                  ⚠️ Ada Tunggakan
+                                </span>
+                              ) : (
+                                <span className="inline-flex px-2 py-0.5 text-[9px] font-black uppercase tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-200/80 rounded-md">
+                                  ✔️ Lunas Lengkap
+                                </span>
+                              )}
+                            </td>
+                            <td className="px-5 py-3.5 text-center">
+                              <button
+                                type="button"
+                                onClick={() => setSelectedStudent(alumnus)}
+                                className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow-2xs hover:scale-[1.02]"
+                              >
+                                Buka Kuitansi & Rekening
+                              </button>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Detailed Selected Alumnus Financial Logs */}
+            <AnimatePresence>
+              {selectedStudent && (selectedStudent.class === 'Lulus' || selectedStudent.class === 'Lulusan') && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 flex flex-col gap-5 text-xs text-left"
+                >
+                  <div className="flex justify-between items-start pb-4 border-b border-slate-200 gap-4 flex-wrap">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                        <User size={16} className="text-yellow-600" /> Profil & Buku Kas Alumni: {selectedStudent.name}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 mt-1">
+                        Status: <strong className="text-yellow-600">ALUMNI LULUSAN</strong> &bull; NIS: <strong className="font-mono">{selectedStudent.nis}</strong> &bull; Kelola sisa tagihan/tunggakan dan sisa tabungan.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSelectedStudent(null)}
+                      className="text-slate-500 hover:text-slate-950 font-extrabold border border-slate-250 rounded-xl px-3 py-1.5 text-[10px] uppercase tracking-wider bg-slate-55 bg-slate-50 hover:bg-slate-100 transition-all cursor-pointer shadow-3xs"
+                    >
+                      Sembunyikan Panel
+                    </button>
+                  </div>
+
+                  {/* Switcher Tab Alumni SPP vs Tabungan */}
+                  <div className="flex border border-slate-200 p-1 bg-slate-50 rounded-xl gap-2 font-sans">
+                    <button
+                      type="button"
+                      onClick={() => setStudentDetailTab('spp')}
+                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                        studentDetailTab === 'spp'
+                          ? 'bg-slate-900 text-white border-transparent shadow-md font-extrabold'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <BookOpen size={14} />
+                      Tunggakan SPP Alumni ({bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').length} Bulan)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStudentDetailTab('savings')}
+                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                        studentDetailTab === 'savings'
+                          ? 'bg-slate-900 text-white border-transparent shadow-md font-extrabold'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900'
+                      }`}
+                    >
+                      <Banknote size={14} />
+                      Rekening Tabungan (Sisa Rp {selectedStudent.savingsBalance.toLocaleString('id-ID')})
+                    </button>
+                  </div>
+
+                  {studentDetailTab === 'spp' ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left: Alumnus Spp Stat Block */}
+                      <div className="lg:col-span-4 flex flex-col gap-4">
+                        <div className="p-4 rounded-xl bg-gradient-to-br from-rose-950 to-slate-900 text-white shadow-md flex flex-col justify-between min-h-[110px] relative overflow-hidden text-left">
+                          <div className="absolute right-[-10px] bottom-[-10px] opacity-10">
+                            <ShieldAlert size={100} />
+                          </div>
+                          <div>
+                            <span className="text-[9px] uppercase tracking-widest font-extrabold text-rose-300">TOTAL TUNGGAKAN ALUMNI</span>
+                            <span className="text-xl font-mono font-black block mt-2">
+                              Rp {bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').reduce((sum, b) => sum + b.amount, 0).toLocaleString('id-ID')}
+                            </span>
+                          </div>
+                          <div className="mt-4 pt-2 border-t border-rose-800/40 text-[9px] text-rose-300 font-semibold uppercase tracking-wide">
+                            {bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').length} Bulan Belum Diselesaikan
+                          </div>
+                        </div>
+
+                        <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl leading-relaxed text-slate-505 dark:text-slate-600 text-left">
+                          <h5 className="font-extrabold text-slate-800 text-[10px] tracking-wider uppercase mb-2">💡 Kebijakan Tunggakan Alumni</h5>
+                          <p className="text-[11px] leading-relaxed">
+                            Alumni yang dinyatakan Lulus diwajibkan menyelesaikan seluruh iuran tagihannya untuk kelancaran administrasi (cetak ijazah, rekomendasi, dsb). Bukukan transaksi pembayaran di tabel sebelah kanan.
+                          </p>
+                        </div>
+                      </div>
+
+                      {/* Right: SPP Bills List Table & Manual Payment Option */}
+                      <div className="lg:col-span-8 bg-slate-50/50 p-4 border border-slate-200 rounded-xl text-left">
+                        <h4 className="font-black text-slate-900 uppercase text-[10px] tracking-widest mb-3">
+                          Daftar Detail Tagihan & Kuitansi SPP
+                        </h4>
+
+                        <div className="overflow-y-auto max-h-[300px] border border-slate-150 rounded-lg">
+                          <table className="w-full text-left bg-white text-xs">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-400 font-bold uppercase text-[9px] border-b border-slate-150">
+                                <th className="px-4 py-2">Bulan & Tahun</th>
+                                <th className="px-4 py-2 text-right">Tarif Tagihan</th>
+                                <th className="px-4 py-2 text-center">Status</th>
+                                <th className="px-4 py-2 text-right">Tindakan Pembayaran</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {bills.filter(b => b.studentId === selectedStudent.id).length === 0 ? (
+                                <tr>
+                                  <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
+                                    Tidak ada riwayat tagihan SPP untuk siswa ini.
+                                  </td>
+                                </tr>
+                              ) : (
+                                [...bills.filter(b => b.studentId === selectedStudent.id)].sort((a, b) => b.year - a.year).map((bill) => (
+                                  <tr key={bill.id} className="hover:bg-slate-50/50">
+                                    <td className="px-4 py-3 font-semibold text-slate-800">
+                                      {bill.month} {bill.year}
+                                    </td>
+                                    <td className="px-4 py-3 text-right font-mono font-bold text-slate-700">
+                                      Rp {bill.amount.toLocaleString('id-ID')}
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                      {bill.status === 'paid' ? (
+                                        <span className="inline-flex px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[9px] font-black uppercase tracking-wide">
+                                          Terbayar Lunas
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex px-2 py-0.5 bg-rose-50 text-rose-800 border border-rose-200 rounded text-[9px] font-black uppercase tracking-wide">
+                                          Belum Lunas
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                      {bill.status === 'paid' ? (
+                                        <button
+                                          type="button"
+                                          onClick={() => {
+                                            setReceiptToPrint({ type: 'spp', detail: bill, student: selectedStudent });
+                                            setPrintId('print-receipt-section');
+                                          }}
+                                          className="px-2.5 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded font-bold text-[9px] uppercase tracking-wider transition-all shadow-3xs cursor-pointer inline-flex items-center gap-1 leading-none"
+                                        >
+                                          <Printer size={10} className="text-slate-600" /> Cetak 🖨
+                                        </button>
+                                      ) : (
+                                        <div className="flex items-center justify-end gap-1.5">
+                                          <button
+                                            type="button"
+                                            disabled={processingBillId !== null}
+                                            onClick={async () => {
+                                              setProcessingBillId(bill.id);
+                                              const resB = await onPaySppManual(bill.id);
+                                              setProcessingBillId(null);
+                                              if (resB) {
+                                                setReceiptToPrint({
+                                                  type: 'spp',
+                                                  detail: {
+                                                    ...bill,
+                                                    status: 'paid',
+                                                    paidAt: new Date().toISOString(),
+                                                    paymentMethod: 'Manual Teller (Sekolah) Alumni',
+                                                    orderId: resB.orderId || `ORD-MANUAL-${Date.now()}`
+                                                  },
+                                                  student: selectedStudent
+                                                });
+                                                setPrintId('print-receipt-section');
+                                              }
+                                            }}
+                                            className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white rounded font-extrabold text-[9px] uppercase tracking-wider transition-all disabled:opacity-50 cursor-pointer shadow-3xs inline-flex items-center gap-1"
+                                          >
+                                            {processingBillId === bill.id ? (
+                                              <RefreshCw size={9} className="animate-spin" />
+                                            ) : (
+                                              <span>Bayar Manual</span>
+                                            )}
+                                          </button>
+                                        </div>
+                                      )}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                      {/* Left: Tabungan Mutation Form */}
+                      <div className="lg:col-span-5 bg-slate-50 p-4 border border-slate-200 rounded-xl text-left">
+                        <h4 className="font-extrabold text-slate-900 uppercase text-[10px] tracking-widest mb-3 flex items-center gap-1.5">
+                          💼 Mutasi Saldo Tabungan
+                        </h4>
+
+                        <form onSubmit={handleSavingsSubmit} className="flex flex-col gap-3.5">
+                          <div className="grid grid-cols-2 p-1 bg-slate-200 rounded-lg text-slate-700">
+                            <button
+                              type="button"
+                              onClick={() => setTxType('deposit')}
+                              className={`py-1.5 text-center font-extrabold text-[10px] uppercase rounded-md transition-all cursor-pointer ${
+                                txType === 'deposit' ? 'bg-slate-900 text-white shadow-xs' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              Setor Tabungan
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setTxType('withdrawal')}
+                              className={`py-1.5 text-center font-extrabold text-[10px] uppercase rounded-md transition-all cursor-pointer ${
+                                txType === 'withdrawal' ? 'bg-slate-900 text-white shadow-xs' : 'hover:bg-slate-50'
+                              }`}
+                            >
+                              Tarik Tabungan
+                            </button>
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Jumlah Transaksi (Rp)</label>
+                            <input
+                              type="number"
+                              required
+                              min="500"
+                              placeholder="Contoh: 50000"
+                              value={txAmount}
+                              onChange={(e) => setTxAmount(e.target.value)}
+                              className="p-2 bg-white text-xs border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
+                            />
+                          </div>
+
+                          <div className="flex flex-col gap-1">
+                            <label className="text-[10px] font-black text-slate-400 uppercase">Memo / Keterangan Tambahan</label>
+                            <input
+                              type="text"
+                              placeholder="Tulis alasan, contoh: Pengembalian sisa tabungan kelulusan..."
+                              value={txNotes}
+                              onChange={(e) => setTxNotes(e.target.value)}
+                              className="p-2 bg-white text-xs border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
+                            />
+                          </div>
+
+                          <button
+                            type="submit"
+                            disabled={txProcessing || !txAmount}
+                            className={`w-full py-2.5 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md inline-flex items-center justify-center gap-1 ${
+                              txType === 'deposit'
+                                ? 'bg-indigo-600 hover:bg-indigo-750'
+                                : 'bg-rose-600 hover:bg-rose-700'
+                            }`}
+                          >
+                            {txProcessing ? (
+                              <RefreshCw size={11} className="animate-spin" />
+                            ) : (
+                              <>
+                                <span>{txType === 'deposit' ? '📥 Simpan Setoran' : '📤 Eksekusi Penarikan'}</span>
+                              </>
+                            )}
+                          </button>
+                        </form>
+                      </div>
+
+                      {/* Right: Tabungan History List */}
+                      <div className="lg:col-span-7 bg-slate-50/50 p-4 border border-slate-200 rounded-xl text-left">
+                        <h4 className="font-black text-slate-900 uppercase text-[10px] tracking-widest mb-3">
+                          Histori Tabungan Alumni
+                        </h4>
+
+                        <div className="overflow-y-auto max-h-[300px] border border-slate-150 rounded-lg">
+                          <table className="w-full text-left bg-white text-xs">
+                            <thead>
+                              <tr className="bg-slate-100 text-slate-400 font-bold uppercase text-[9px] border-b border-slate-150">
+                                <th className="px-4 py-2">Tanggal Mutasi</th>
+                                <th className="px-4 py-2 text-center">Jenis</th>
+                                <th className="px-4 py-2 text-right">Nominal</th>
+                                <th className="px-4 py-2 text-right">Kuitansi</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success').length === 0 ? (
+                                <tr>
+                                  <td colSpan={4} className="px-4 py-8 text-center text-slate-400">
+                                    Tidak ada catatan transaksi tabungan untuk siswa ini.
+                                  </td>
+                                </tr>
+                              ) : (
+                                [...transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success')].sort((a, b) => b.createdAt.localeCompare(a.createdAt)).map((tx) => (
+                                  <tr key={tx.id} className="hover:bg-slate-50/50">
+                                    <td className="px-4 py-3 font-semibold text-slate-800">
+                                      {new Date(tx.createdAt).toLocaleDateString('id-ID', {
+                                        day: 'numeric',
+                                        month: 'short',
+                                        year: 'numeric'
+                                      })}
+                                      <div className="text-[9px] text-slate-400 max-w-[150px] truncate" title={tx.notes}>
+                                        {tx.notes || '-'}
+                                      </div>
+                                    </td>
+                                    <td className="px-4 py-3 text-center">
+                                      {tx.type === 'deposit' ? (
+                                        <span className="inline-flex px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[9px] font-black uppercase tracking-wide">
+                                          Setor 📥
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex px-1.5 py-0.5 bg-rose-50 text-rose-800 border border-rose-200 rounded text-[9px] font-black uppercase tracking-wide">
+                                          Tarik 📤
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className={`px-4 py-3 text-right font-mono font-bold ${tx.type === 'deposit' ? 'text-emerald-600' : 'text-slate-800'}`}>
+                                      Rp {tx.amount.toLocaleString('id-ID')}
+                                    </td>
+                                    <td className="px-4 py-3 text-right">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReceiptToPrint({ type: 'savings', detail: tx, student: selectedStudent });
+                                          setPrintId('print-receipt-section');
+                                        }}
+                                        className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded font-bold text-[9px] uppercase tracking-wider shadow-3xs cursor-pointer inline-flex items-center gap-1 leading-none"
+                                      >
+                                        <Printer size={10} className="text-slate-600" /> Cetak
+                                      </button>
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      </div>
+                    </div>
+                  )}
+                </motion.div>
+              )}
+            </AnimatePresence>
+          </motion.div>
+        )}
+
+        {/* Tab: Siswa Mutasi Center & Reconciliator */}
+        {adminTab === 'mutasi' && (
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="flex flex-col gap-6 text-slate-800 text-left"
+          >
+            {/* Header Card */}
+            <div className="bg-gradient-to-r from-orange-850 to-orange-900 bg-orange-950 rounded-2xl p-6 text-white border border-orange-800 shadow-sm relative overflow-hidden">
+              <div className="absolute right-[-20px] top-[-20px] opacity-10">
+                <RefreshCw size={160} />
+              </div>
+              <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div>
+                  <span className="inline-flex px-2.5 py-1 text-[9px] font-black tracking-widest bg-orange-500/20 text-orange-400 border border-orange-500/35 rounded-lg uppercase mb-3">
+                    🔁 PORTAL SISWA MUTASI & REKONSILIASI
+                  </span>
+                  <h3 className="text-xl font-extrabold tracking-tight font-sans text-slate-100">
+                    Siswa Mutasi (Keluar Sekolah)
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-1 max-w-2xl leading-relaxed">
+                    Menu administrasi khusus untuk mencatat dan mengelola status kepindahan (mutasi keluar) siswa. Di sini Anda dapat memindahkan siswa ke luar sekolah serta memantau dan menyelesaikan sisa tunggakan SPP maupun penarikan sisa dana tabungannya.
+                  </p>
+                </div>
+                <div>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setMutateStudentId('');
+                      setMutateReason('');
+                      setMutateDestination('');
+                      setMutateError('');
+                      setIsMutateModalOpen(true);
+                    }}
+                    className="px-4.5 py-2.5 bg-orange-600 hover:bg-orange-700 text-white font-black text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer whitespace-nowrap"
+                  >
+                    <PlusCircle size={15} />
+                    Proses Mutasi Baru
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* Quick Stat Indicators */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-orange-50 text-orange-600 rounded-xl">
+                  <RefreshCw size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Siswa Mutasi</span>
+                  <span className="text-lg font-black text-slate-800 font-mono">
+                    {students.filter(s => s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar')).length} Siswa
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-rose-50 text-rose-600 rounded-xl">
+                  <ShieldAlert size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Ada Tunggakan SPP</span>
+                  <span className="text-lg font-black text-rose-600 font-mono">
+                    {students.filter(s => {
+                      const isMut = s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar');
+                      if (!isMut) return false;
+                      return bills.filter(b => b.studentId === s.id && b.status === 'unpaid').length > 0;
+                    }).length} Siswa
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl">
+                  <TrendingUp size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Sisa Tabungan</span>
+                  <span className="text-lg font-black text-indigo-700 font-mono">
+                    Rp {students.filter(s => s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar')).reduce((sum, s) => sum + s.savingsBalance, 0).toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+
+              <div className="bg-white p-4.5 rounded-2xl border border-slate-200 shadow-2xs flex items-center gap-4">
+                <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">
+                  <Banknote size={20} className="stroke-[2.5px]" />
+                </div>
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wide">Total Tunggakan SPP</span>
+                  <span className="text-lg font-black text-amber-700 font-mono">
+                    Rp {(() => {
+                      const mutatedIds = students.filter(s => s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar')).map(s => s.id);
+                      return bills.filter(b => mutatedIds.includes(b.studentId) && b.status === 'unpaid').reduce((sum, b) => sum + b.amount, 0);
+                    })().toLocaleString('id-ID')}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Main Content Split Area */}
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+              {/* Left Column: Mutated Student Lists */}
+              <div className={`${selectedStudent && (selectedStudent.class?.toLowerCase() === 'mutasi' || selectedStudent.class?.toLowerCase() === 'mutasi keluar') ? 'lg:col-span-5' : 'lg:col-span-12'} bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs flex flex-col gap-4 text-left`}>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
+                  <div>
+                    <h4 className="font-extrabold text-slate-900 text-sm">Buku Catatan Siswa Mutasi Keluar</h4>
+                    <p className="text-[10px] text-slate-400 mt-0.5">Daftar siswa yang telah berpindah sekolah</p>
+                  </div>
+                  <div className="relative">
+                    <Search className="absolute left-3 top-2 text-slate-400" size={14} />
+                    <input
+                      type="text"
+                      placeholder="Cari Nama/NIS..."
+                      value={mutatedSearch}
+                      onChange={(e) => setMutatedSearch(e.target.value)}
+                      className="pl-8 pr-3 py-1.5 w-full sm:w-[180px] text-xs font-semibold text-slate-700 border border-slate-200 rounded-lg focus:border-orange-500 focus:outline-hidden placeholder-slate-400"
+                    />
+                  </div>
+                </div>
+
+                <div className="overflow-x-auto rounded-xl border border-slate-150">
+                  <table className="w-full text-xs text-left">
+                    <thead>
+                      <tr className="bg-slate-50 text-slate-500 font-bold uppercase text-[9px] border-b border-slate-150 tracking-wider">
+                        <th className="px-4 py-3">Siswa</th>
+                        <th className="px-4 py-3">Info Mutasi</th>
+                        <th className="px-4 py-3 text-right">Sisa Tabungan</th>
+                        <th className="px-4 py-3 text-right">Tunggakan SPP</th>
+                        <th className="px-4 py-3 text-center">Aksi</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-medium">
+                      {filteredMutatedStudents.length === 0 ? (
+                        <tr>
+                          <td colSpan={5} className="px-4 py-12 text-center text-slate-400">
+                            Tidak menemukan data siswa mutasi yang sesuai.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredMutatedStudents.map((student) => {
+                          const sUnpaid = bills.filter(b => b.studentId === student.id && b.status === 'unpaid');
+                          const hasDebt = sUnpaid.length > 0;
+                          const totalDebt = sUnpaid.reduce((sum, b) => sum + b.amount, 0);
+                          const isCurrentlySelected = selectedStudent?.id === student.id;
+
+                          return (
+                            <tr
+                              key={student.id}
+                              className={`transition-all hover:bg-orange-50/5 ${isCurrentlySelected ? 'bg-orange-50/10' : ''}`}
+                            >
+                              <td className="px-4 py-4">
+                                <div className="font-extrabold text-slate-900 text-sm">{student.name}</div>
+                                <div className="text-[10px] font-bold text-slate-400 mt-0.5 font-mono">NIS: {student.nis}</div>
+                              </td>
+                              <td className="px-4 py-4">
+                                <div className="text-[11px] font-bold text-slate-700">Tgl: {student.mutationDate || '-'}</div>
+                                <div className="text-[10px] text-slate-500 mt-0.5 truncate max-w-[150px]" title={student.mutationDestination}>
+                                  Ke: {student.mutationDestination || 'Tidak disebutkan'}
+                                </div>
+                              </td>
+                              <td className="px-4 py-4 text-right font-mono font-bold text-slate-850">
+                                Rp {student.savingsBalance.toLocaleString('id-ID')}
+                              </td>
+                              <td className="px-4 py-4 text-right font-mono">
+                                <span className={hasDebt ? 'font-extrabold text-rose-600' : 'text-slate-400'}>
+                                  Rp {totalDebt.toLocaleString('id-ID')}
+                                </span>
+                                {hasDebt && (
+                                  <div className="text-[9px] font-extrabold text-rose-500 uppercase tracking-tight mt-0.5">
+                                    {sUnpaid.length} Bulan
+                                  </div>
+                                )}
+                              </td>
+                              <td className="px-4 py-4 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  <button
+                                    type="button"
+                                    onClick={() => setSelectedStudent(student)}
+                                    className="px-2.5 py-1.5 bg-orange-600 hover:bg-orange-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition-all cursor-pointer inline-flex items-center gap-1"
+                                  >
+                                    Keuangan 💳
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (confirm(`Akan membatalkan status mutasi ${student.name}?\n\nSiswa akan dikembalikan sebagai siswa aktif.`)) {
+                                        const nomClass = prompt("Masukkan kembali Kelas tempat siswa tersebut ditempatkan (Contoh: 7-A, 8-B, 9-C):", "7-A");
+                                        if (nomClass) {
+                                          const success = await onUpdateStudent(student.id, {
+                                            nis: student.nis,
+                                            name: student.name,
+                                            class: nomClass,
+                                            email: student.email || '',
+                                            phone: student.phone || '',
+                                            mutationDate: '',
+                                            mutationReason: '',
+                                            mutationDestination: ''
+                                          });
+                                          if (success) {
+                                            alert(`Status mutasi siswa ${student.name} berhasil dibatalkan.`);
+                                            setSelectedStudent(null);
+                                          } else {
+                                            alert("Gagal memperbarui status siswa.");
+                                          }
+                                        }
+                                      }
+                                    }}
+                                    className="px-1.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-[10px] rounded-lg transition-all cursor-pointer"
+                                    title="Batalkan Mutasi (Kembalikan Aktif)"
+                                  >
+                                    Batal 🔄
+                                  </button>
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Right Column: Mutated Student Detail Panel */}
+              {selectedStudent && (selectedStudent.class?.toLowerCase() === 'mutasi' || selectedStudent.class?.toLowerCase() === 'mutasi keluar') && (
+                <div className="lg:col-span-7 bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs flex flex-col gap-6 text-left animate-fade-in">
+                  {/* Top Bar Detail */}
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2.5 bg-orange-50 text-orange-600 rounded-xl">
+                        <RefreshCw size={20} className="stroke-[2.5px]" />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-sm">
+                          {selectedStudent.name}
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5 font-mono">
+                          NIS: {selectedStudent.nis} • Status Mutasi Keluar
+                        </p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedStudent(null)}
+                      className="p-1 px-2 border border-slate-200 hover:bg-slate-50 text-slate-550 rounded-lg text-xs cursor-pointer transition-all font-semibold"
+                    >
+                      Tutup
+                    </button>
+                  </div>
+
+                  {/* Passport Metadata Box */}
+                  <div className="p-4 bg-orange-50/30 rounded-xl border border-orange-100 flex flex-col gap-2.5">
+                    <h5 className="font-extrabold text-xs text-orange-850 uppercase tracking-widest leading-none">
+                      📋 Berita Acara & Fakta Mutasi Keluar
+                    </h5>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 mt-2">
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Tanggal Keluar</span>
+                        <span className="text-xs font-black text-slate-800 block mt-0.5">{selectedStudent.mutationDate || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Sekolah Penerima/Tujuan</span>
+                        <span className="text-xs font-black text-slate-800 block mt-0.5">{selectedStudent.mutationDestination || '-'}</span>
+                      </div>
+                      <div>
+                        <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wide block">Alasan Kepindahan</span>
+                        <span className="text-xs font-black text-slate-800 block mt-0.5 italic">{selectedStudent.mutationReason || '-'}</span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Financial State Details Tabs */}
+                  <div className="flex flex-col gap-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      {/* Left Block SPP debt summary */}
+                      <div className="p-4 bg-amber-50 rounded-xl border border-amber-100 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="p-1 bg-amber-100 text-amber-805 rounded-md text-[9px] font-black uppercase tracking-wider">TUNGGAKAN SPP</span>
+                            <span className="text-[10px] font-extrabold text-amber-700 font-mono">
+                              {bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').length} Bulan
+                            </span>
+                          </div>
+                          <span className="text-xl font-mono font-black text-amber-900 block mt-3">
+                            Rp {bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').reduce((sum, b) => sum + b.amount, 0).toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <p className="text-[10px] mt-4 text-amber-800 leading-relaxed font-semibold">
+                          Segera bukukan pembayaran jika siswa yang mutasi melunasi sisa tagihan yang masih tertunggak.
+                        </p>
+                      </div>
+
+                      {/* Right Block Savings balance summary */}
+                      <div className="p-4 bg-indigo-50 rounded-xl border border-indigo-100 flex flex-col justify-between">
+                        <div>
+                          <div className="flex items-center justify-between">
+                            <span className="p-1 bg-indigo-100 text-indigo-805 rounded-md text-[9px] font-black uppercase tracking-wider font-sans">SISA TABUNGAN</span>
+                            <span className="text-[10px] font-extrabold text-indigo-700 font-mono">Saldo</span>
+                          </div>
+                          <span className="text-xl font-mono font-black text-indigo-900 block mt-3">
+                            Rp {selectedStudent.savingsBalance.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={selectedStudent.savingsBalance <= 0}
+                          onClick={() => {
+                            const noteStr = `Penarikan penutupan sisa dana tabungan mutasi keluar: ${selectedStudent.name}`;
+                            onSavingsManual(selectedStudent.id, 'withdrawal', selectedStudent.savingsBalance, noteStr);
+                          }}
+                          className="mt-4 w-full py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[10px] tracking-wider uppercase rounded-lg shadow-2xs transition-all cursor-pointer text-center disabled:opacity-50 disabled:cursor-not-allowed"
+                        >
+                          Tarik Tutup Tabungan 💸
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Left Column SPP Bills & Savings log tables */}
+                    <div className="border border-slate-150 rounded-2xl overflow-hidden mt-2 bg-slate-50/30 p-4">
+                      <h4 className="font-extrabold text-slate-800 text-[10px] tracking-wider uppercase mb-3">
+                        Daftar Kewajiban SPP yang Harus Selesai
+                      </h4>
+                      <div className="overflow-y-auto max-h-[220px] rounded-lg border border-slate-200 bg-white">
+                        <table className="w-full text-xs text-left">
+                          <thead className="bg-slate-50 text-slate-500 font-bold uppercase text-[9px]">
+                            <tr>
+                              <th className="px-4 py-2 bg-slate-100">Bulan</th>
+                              <th className="px-4 py-2 bg-slate-100 text-right">Jumlah</th>
+                              <th className="px-4 py-2 bg-slate-100 text-center">Status</th>
+                              <th className="px-4 py-2 bg-slate-100 text-right">Tindakan</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-150 text-slate-705">
+                            {bills.filter(b => b.studentId === selectedStudent.id).length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="px-4 py-6 text-center text-slate-400">
+                                  Tidak ada riwayat tagihan SPP.
+                                </td>
+                              </tr>
+                            ) : (
+                              [...bills.filter(b => b.studentId === selectedStudent.id)].sort((a,b)=>b.year-a.year).map((b) => (
+                                <tr key={b.id} className="hover:bg-slate-50/50">
+                                  <td className="px-4 py-2.5 font-bold">{b.month} {b.year}</td>
+                                  <td className="px-4 py-2.5 text-right font-mono font-bold">Rp {b.amount.toLocaleString('id-ID')}</td>
+                                  <td className="px-4 py-2.5 text-center">
+                                    <span className={`inline-flex px-2 py-0.5 rounded text-[8px] font-bold ${b.status==='paid'?'bg-emerald-50 text-emerald-705 border border-emerald-100':'bg-rose-50 text-rose-705 border border-rose-100'}`}>
+                                      {b.status==='paid'?'Lunas':'Belum Lunas'}
+                                    </span>
+                                  </td>
+                                  <td className="px-4 py-2.5 text-right">
+                                    {b.status==='paid' ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReceiptToPrint({ type: 'spp', detail: b, student: selectedStudent });
+                                          setPrintId('print-receipt-section');
+                                        }}
+                                        className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded font-bold text-[9px] uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-0.5"
+                                      >
+                                        <Printer size={9} /> Cetak
+                                      </button>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        disabled={processingBillId !== null}
+                                        onClick={async () => {
+                                          setProcessingBillId(b.id);
+                                          const success = await onPaySppManual(b.id);
+                                          setProcessingBillId(null);
+                                          if (success) {
+                                            setReceiptToPrint({ type: 'spp', detail: b, student: selectedStudent });
+                                            setPrintId('print-receipt-section');
+                                          }
+                                        }}
+                                        className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[9px] uppercase tracking-wider rounded transition-all cursor-pointer"
+                                      >
+                                        Bayar 💸
+                                      </button>
+                                    )}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
           </motion.div>
         )}
 
@@ -5398,6 +6730,11 @@ export default function AdminPanel({
                     total: studentLogs.length
                   };
 
+                  const studentInfractions = infractionList.filter(l => l.studentId === student.id);
+                  const periodInfractions = studentInfractions.filter(l => l.date >= absenStartDate && l.date <= absenEndDate);
+                  const infractionPointsPeriod = periodInfractions.reduce((sum, item) => sum + (item.points || 0), 0);
+                  const infractionPointsTotal = studentInfractions.reduce((sum, item) => sum + (item.points || 0), 0);
+
                   const homeroom = homerooms.find(h => h.className === student.class);
                   const homeroomName = homeroom ? homeroom.name : "Belum Ditentukan";
 
@@ -5407,7 +6744,9 @@ export default function AdminPanel({
                     name: student.name,
                     class: student.class,
                     homeroomName,
-                    ...counts
+                    ...counts,
+                    infractionPointsPeriod,
+                    infractionPointsTotal
                   };
                 });
 
@@ -5460,11 +6799,11 @@ export default function AdminPanel({
                   </head>
                   <body>
                     <table>
-                      <tr><td colspan="11" class="title">LAPORAN REKAPITULASI PRESENSI SISWA (REKAP JUMLAH)</td></tr>
-                      <tr><td colspan="11" class="meta">SMP MA'ARIF NU PANDAAN</td></tr>
-                      <tr><td colspan="11" class="meta">Periode Tanggal: ${formatIndonesianDateLocal(absenStartDate)} s.d ${formatIndonesianDateLocal(absenEndDate)}</td></tr>
-                      <tr><td colspan="11" class="meta">Wali Kelas / Kelas Filter: ${absenClassFilter === 'all' ? 'Semua Wali Kelas' : `Kelas ${absenClassFilter}`}</td></tr>
-                      <tr><td colspan="11"></td></tr>
+                      <tr><td colspan="13" class="title">LAPORAN REKAPITULASI PRESENSI SISWA (REKAP JUMLAH)</td></tr>
+                      <tr><td colspan="13" class="meta">SMP MA'ARIF NU PANDAAN</td></tr>
+                      <tr><td colspan="13" class="meta">Periode Tanggal: ${formatIndonesianDateLocal(absenStartDate)} s.d ${formatIndonesianDateLocal(absenEndDate)}</td></tr>
+                      <tr><td colspan="13" class="meta">Wali Kelas / Kelas Filter: ${absenClassFilter === 'all' ? 'Semua Wali Kelas' : `Kelas ${absenClassFilter}`}</td></tr>
+                      <tr><td colspan="13"></td></tr>
                       <thead>
                         <tr>
                           <th>No</th>
@@ -5478,6 +6817,8 @@ export default function AdminPanel({
                           <th style="background-color: #ef4444; color: white;">Alpa (A)</th>
                           <th style="background-color: #8b5cf6; color: white;">Terlambat (T)</th>
                           <th>Total Presensi</th>
+                          <th style="background-color: #e11d48; color: white;">Poin Pelanggaran (Periode)</th>
+                          <th style="background-color: #be123c; color: white;">Poin Pelanggaran (Total)</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -5497,6 +6838,8 @@ export default function AdminPanel({
                       <td class="alpa center">${row.A}</td>
                       <td class="terlambat center">${row.T}</td>
                       <td class="center" style="font-weight: bold;">${row.total}</td>
+                      <td class="center" style="color: #e11d48; font-weight: bold;">${row.infractionPointsPeriod}</td>
+                      <td class="center" style="color: #be123c; font-weight: bold;">${row.infractionPointsTotal}</td>
                     </tr>
                   `;
                 });
@@ -5530,7 +6873,7 @@ export default function AdminPanel({
                   `Periode: ${absenStartDate} s.d ${absenEndDate}`,
                   `Wali Kelas Filter: ${absenClassFilter === 'all' ? 'Semua Kelas' : `Kelas ${absenClassFilter}`}`,
                   "",
-                  "No;NIS;Nama Siswa;Kelas;Wali Kelas;Hadir (H);Sakit (S);Izin (I);Alpa (A);Terlambat (T);Total Presensi"
+                  "No;NIS;Nama Siswa;Kelas;Wali Kelas;Hadir (H);Sakit (S);Izin (I);Alpa (A);Terlambat (T);Total Presensi;Poin Pelanggaran (Periode);Poin Pelanggaran (Total)"
                 ];
 
                 recapList.forEach((row, index) => {
@@ -5545,7 +6888,9 @@ export default function AdminPanel({
                     row.I,
                     row.A,
                     row.T,
-                    row.total
+                    row.total,
+                    row.infractionPointsPeriod,
+                    row.infractionPointsTotal
                   ];
                   csvRows.push(csvLine.join(";"));
                 });
@@ -5676,44 +7021,57 @@ export default function AdminPanel({
                         <span className="text-[10px] text-slate-400 max-w-xs mt-1">Ubah rentang tanggal pencarian atau filter kelas untuk mendapatkan log presensi siswa.</span>
                       </div>
                     ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
-                          <thead>
-                            <tr className="text-slate-455 font-extrabold uppercase text-[9px] tracking-wider pb-2 border-b border-slate-100">
-                              <th className="pb-2 text-center">No</th>
-                              <th className="pb-2">NIS</th>
-                              <th className="pb-2">Nama Siswa</th>
-                              <th className="pb-2 text-center">Kelas</th>
-                              <th className="pb-2">Wali Kelas</th>
-                              <th className="pb-2 text-center text-emerald-600">H</th>
-                              <th className="pb-2 text-center text-blue-600">S</th>
-                              <th className="pb-2 text-center text-amber-600">I</th>
-                              <th className="pb-2 text-center text-rose-600">A</th>
-                              <th className="pb-2 text-center text-purple-600">T</th>
-                              <th className="pb-2 text-center font-black">Total</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100 font-medium">
-                            {recapList.map((row, idx) => {
-                              return (
-                                <tr key={row.id} className="hover:bg-slate-50/40 select-none">
-                                  <td className="py-2.5 text-center font-bold text-slate-400">{idx + 1}</td>
-                                  <td className="py-2.5 font-mono text-slate-500 font-extrabold">{row.nis}</td>
-                                  <td className="py-2.5 font-bold text-slate-800 whitespace-nowrap">{row.name}</td>
-                                  <td className="py-2.5 text-center text-slate-755 font-extrabold whitespace-nowrap">{row.class}</td>
-                                  <td className="py-2.5 text-slate-655 font-bold whitespace-nowrap">{row.homeroomName}</td>
-                                  <td className="py-2.5 text-center font-black text-emerald-600 font-mono text-xs">{row.H}</td>
-                                  <td className="py-2.5 text-center font-black text-blue-600 font-mono text-xs">{row.S}</td>
-                                  <td className="py-2.5 text-center font-black text-amber-600 font-mono text-xs">{row.I}</td>
-                                  <td className="py-2.5 text-center font-black text-rose-600 font-mono text-xs">{row.A}</td>
-                                  <td className="py-2.5 text-center font-black text-purple-600 font-mono text-xs">{row.T}</td>
-                                  <td className="py-2.5 text-center font-black text-slate-800 font-mono text-xs bg-slate-50/{20}">{row.total}</td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
-                        </table>
-                      </div>
+                      <>
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
+                            <thead>
+                              <tr className="text-slate-455 font-extrabold uppercase text-[9px] tracking-wider pb-2 border-b border-slate-100">
+                                <th className="pb-2 text-center">No</th>
+                                <th className="pb-2">NIS</th>
+                                <th className="pb-2">Nama Siswa</th>
+                                <th className="pb-2 text-center">Kelas</th>
+                                <th className="pb-2">Wali Kelas</th>
+                                <th className="pb-2 text-center text-emerald-600">H</th>
+                                <th className="pb-2 text-center text-blue-600">S</th>
+                                <th className="pb-2 text-center text-amber-600">I</th>
+                                <th className="pb-2 text-center text-rose-600">A</th>
+                                <th className="pb-2 text-center text-purple-600">T</th>
+                                <th className="pb-2 text-center font-black">Total</th>
+                                <th className="pb-2 text-center text-rose-500 font-bold">Poin Pd.</th>
+                                <th className="pb-2 text-center text-rose-700 font-black">Poin Tot.</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100 font-medium">
+                              {recapList.map((row, idx) => {
+                                return (
+                                  <tr key={row.id} className="hover:bg-slate-50/40 select-none">
+                                    <td className="py-2.5 text-center font-bold text-slate-400">{idx + 1}</td>
+                                    <td className="py-2.5 font-mono text-slate-500 font-extrabold">{row.nis}</td>
+                                    <td className="py-2.5 font-bold text-slate-800 whitespace-nowrap">{row.name}</td>
+                                    <td className="py-2.5 text-center text-slate-755 font-extrabold whitespace-nowrap">{row.class}</td>
+                                    <td className="py-2.5 text-slate-655 font-bold whitespace-nowrap">{row.homeroomName}</td>
+                                    <td className="py-2.5 text-center font-black text-emerald-600 font-mono text-xs">{row.H}</td>
+                                    <td className="py-2.5 text-center font-black text-blue-600 font-mono text-xs">{row.S}</td>
+                                    <td className="py-2.5 text-center font-black text-amber-600 font-mono text-xs">{row.I}</td>
+                                    <td className="py-2.5 text-center font-black text-rose-600 font-mono text-xs">{row.A}</td>
+                                    <td className="py-2.5 text-center font-black text-purple-600 font-mono text-xs">{row.T}</td>
+                                    <td className="py-2.5 text-center font-black text-slate-800 font-mono text-xs bg-slate-50/{20}">{row.total}</td>
+                                    <td className="py-2.5 text-center font-bold text-rose-500 font-mono text-xs bg-rose-50/30">{row.infractionPointsPeriod}</td>
+                                    <td className="py-2.5 text-center font-black text-rose-700 font-mono text-xs bg-rose-50/60">{row.infractionPointsTotal}</td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
+                          </table>
+                        </div>
+                        <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center justify-between text-[10px] text-slate-455 mt-1 pt-3 border-t border-slate-100">
+                          <div className="flex flex-wrap gap-x-4 gap-y-1 leading-relaxed">
+                            <span><strong>Keterangan Kolom Poin:</strong></span>
+                            <span><span className="inline-block w-2.5 h-2.5 bg-rose-50 border border-rose-100 rounded-xs mr-1 text-center font-bold text-[8px] leading-tight text-rose-600">P</span><strong>Poin Pd.</strong> &mdash; Jumlah poin pelanggaran dalam tanggal terfilter</span>
+                            <span><span className="inline-block w-2.5 h-2.5 bg-rose-200 border border-rose-300 rounded-xs mr-1 text-center font-bold text-[8px] leading-tight text-rose-800">T</span><strong>Poin Tot.</strong> &mdash; Total semua poin pelanggaran kumulatif murid</span>
+                          </div>
+                        </div>
+                      </>
                     )}
                   </div>
                 </div>
@@ -6952,6 +8310,38 @@ export default function AdminPanel({
                 <button
                   type="button"
                   onClick={() => {
+                    setAdminTab('alumni');
+                    setSelectedStudent(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-yellow-50 rounded-xl text-yellow-650 text-lg">🎓</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Alumni (Lulusan)</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pantau data alumni &amp; bantu penyelesaian tunggakan</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab('mutasi');
+                    setSelectedStudent(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-orange-50 rounded-xl text-orange-600 text-lg">🔁</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Siswa Mutasi</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Proses siswa keluar & kelola rekonsiliasi keuangannya</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
                     setAdminTab('config');
                     setShowMoreMenu(false);
                   }}
@@ -6983,6 +8373,160 @@ export default function AdminPanel({
           </>
         )}
       </AnimatePresence>
+
+      {/* Modal: Proses Mutasi Baru */}
+      {isMutateModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            className="w-full max-w-md bg-white border border-slate-100 rounded-2xl shadow-xl overflow-hidden text-slate-800 text-left font-sans"
+          >
+            <div className="bg-orange-600 text-white p-4.5">
+              <h3 className="text-sm font-extrabold flex items-center gap-1.5 uppercase tracking-wider">
+                <RefreshCw size={17} className="animate-spin-slow" />
+                Borang Mutasi Siswa Keluar
+              </h3>
+              <p className="text-[11px] text-orange-100 mt-1">
+                Isian berita acara pemindahan / berakhirnya pendaftaran siswa aktif di sekolah.
+              </p>
+            </div>
+
+            <form
+              onSubmit={async (e) => {
+                e.preventDefault();
+                if (!mutateStudentId) {
+                  setMutateError('Anda harus memilih siswa aktif!');
+                  return;
+                }
+                if (!mutateDestination.trim()) {
+                  setMutateError('Masukkan Sekolah Tujuan mutasi!');
+                  return;
+                }
+                if (!mutateReason.trim()) {
+                  setMutateError('Sebutkan alasan mutasi siswa!');
+                  return;
+                }
+
+                setIsMutatingSubmit(true);
+                setMutateError('');
+
+                // Find student matching selected ID
+                const stdToMutate = students.find(s => s.id === mutateStudentId);
+                if (stdToMutate) {
+                  const success = await onUpdateStudent(mutateStudentId, {
+                    nis: stdToMutate.nis,
+                    name: stdToMutate.name,
+                    class: 'Mutasi Keluar',
+                    email: stdToMutate.email || '',
+                    phone: stdToMutate.phone || '',
+                    mutationDate: mutateDate,
+                    mutationReason: mutateReason,
+                    mutationDestination: mutateDestination
+                  });
+
+                  if (success) {
+                    setIsMutateModalOpen(false);
+                    setMutateStudentId('');
+                    setMutateReason('');
+                    setMutateDestination('');
+                    alert(`Prosedur mutasi keluar untuk siswa ${stdToMutate.name} berhasil dibukukan.`);
+                  } else {
+                    setMutateError('Gagal mengirimkan pembaruan status ke server.');
+                  }
+                } else {
+                  setMutateError('Siswa tidak ditemukan.');
+                }
+                setIsMutatingSubmit(false);
+              }}
+              className="p-5 flex flex-col gap-4"
+            >
+              {mutateError && (
+                <div className="p-3 bg-rose-50 border border-rose-200 text-rose-700 font-bold text-xs rounded-xl flex items-center gap-1.5 leading-tight">
+                  <AlertCircle size={14} className="shrink-0" />
+                  <span>{mutateError}</span>
+                </div>
+              )}
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase text-slate-400">Pilih Siswa Aktif</label>
+                <select
+                  value={mutateStudentId}
+                  onChange={(e) => setMutateStudentId(e.target.value)}
+                  className="w-full p-2.5 border-2 border-slate-150 focus:border-orange-500 hover:border-slate-300 font-semibold rounded-xl text-xs bg-white text-slate-800"
+                  required
+                >
+                  <option value="">-- Pilih Siswa --</option>
+                  {students
+                    .filter(s => !s.class || (
+                      s.class.toLowerCase() !== 'lulus' &&
+                      s.class.toLowerCase() !== 'lulusan' &&
+                      s.class.toLowerCase() !== 'mutasi' &&
+                      s.class.toLowerCase() !== 'mutasi keluar'
+                    ))
+                    .sort((a,b) => a.name.localeCompare(b.name))
+                    .map(s => (
+                      <option key={s.id} value={s.id}>
+                        {s.name} ({s.class}) - NIS: {s.nis}
+                      </option>
+                    ))}
+                </select>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase text-slate-400">Tanggal Mutasi Keluar</label>
+                <input
+                  type="date"
+                  value={mutateDate}
+                  onChange={(e) => setMutateDate(e.target.value)}
+                  className="w-full p-2.5 border-2 border-slate-150 focus:border-orange-500 font-semibold rounded-xl text-xs text-slate-800 bg-white"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase text-slate-400">Sekolah Tujuan / Penerima</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: SMP Negeri 2 Pandaan"
+                  value={mutateDestination}
+                  onChange={(e) => setMutateDestination(e.target.value)}
+                  className="w-full p-2.5 border-2 border-slate-150 focus:border-orange-500 font-semibold rounded-xl text-xs text-slate-800 placeholder-slate-400 bg-white"
+                  required
+                />
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black uppercase text-slate-400">Alasan Mutasi</label>
+                <textarea
+                  placeholder="Tulis alasan kepindahan, contoh: Mengikuti kepindahan domisili orang tua ke Malang..."
+                  value={mutateReason}
+                  onChange={(e) => setMutateReason(e.target.value)}
+                  className="w-full p-2.5 border-2 border-slate-150 focus:border-orange-500 font-semibold rounded-xl text-xs text-slate-800 placeholder-slate-400 min-h-[75px] bg-white"
+                  required
+                />
+              </div>
+
+              <div className="flex gap-2.5 pt-3 border-t border-slate-100 mt-1">
+                <button
+                  type="button"
+                  onClick={() => setIsMutateModalOpen(false)}
+                  className="flex-1 py-2.5 border border-slate-205 hover:bg-slate-50 text-slate-600 rounded-xl font-bold text-xs cursor-pointer transition-all text-center"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isMutatingSubmit}
+                  className="flex-1 py-2.5 bg-orange-600 hover:bg-orange-700 text-white rounded-xl font-extrabold text-xs cursor-pointer transition-all text-center uppercase tracking-wider disabled:opacity-50"
+                >
+                  {isMutatingSubmit ? 'Memproses...' : 'Proses Mutasi 🔁'}
+                </button>
+              </div>
+            </form>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
 }

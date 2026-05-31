@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Student, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
-import { ShieldCheck, User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, ClipboardCheck } from 'lucide-react';
+import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
 
 interface LoginProps {
   students: Student[];
@@ -21,20 +21,6 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
   const [password, setPassword] = useState('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
   const [isValidating, setIsValidating] = useState(false);
-
-  const handleQuickFill = (role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras', userVal: string, passVal: string) => {
-    setActiveRole(role);
-    if (role === 'student') {
-      setActiveGroup('student');
-    } else if (role === 'homeroom' || role === 'subject_teacher' || role === 'principal') {
-      setActiveGroup('teacher');
-    } else {
-      setActiveGroup('staff');
-    }
-    setUsername(userVal);
-    setPassword(passVal);
-    setErrorMsg(null);
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -222,92 +208,6 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
             <p className="text-xs text-slate-500 leading-relaxed">
               Sistem informasi monitoring kas tabungan mandiri siswa, pembayaran SPP bulanan instan, serta manajemen logistik inventaris sarana prasarana sekolah.
             </p>
-          </div>
-
-          <div className="border border-slate-200 bg-white/70 backdrop-blur-sm rounded-xl p-4 flex flex-col gap-3 shadow-sm">
-            <h4 className="font-bold text-[11px] text-slate-400 uppercase tracking-wider">
-              Kredensial Demo Cepat (Klik untuk masuk)
-            </h4>
-
-            {/* Student Account chips */}
-            <div className="flex flex-col gap-1.5">
-              <span className="text-[10px] font-bold text-slate-400">Portal Wali Murid &amp; Siswa (NIS):</span>
-              <div className="flex flex-wrap gap-1">
-                {students.slice(0, 3).map((s) => (
-                  <button
-                    key={s.id}
-                    type="button"
-                    onClick={() => handleQuickFill('student', s.nis, '123456')}
-                    className="px-2 py-1 bg-white border border-slate-250 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[9.5px] text-slate-705 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
-                  >
-                    <User size={9} className="text-emerald-600" />
-                    <span>{s.name.split(' ')[0]} ({s.nis})</span>
-                  </button>
-                ))}
-              </div>
-            </div>
-
-            {/* Staff / Management quick fill */}
-            <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2.5">
-              <span className="text-[10px] font-bold text-slate-400">Manajemen Sekolah &amp; Sarpras:</span>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('waka_sarpras', 'sarpras', 'sarpras123')}
-                  className="px-2 py-1 bg-white border border-amber-200 hover:border-amber-500 hover:bg-amber-50 rounded-lg text-left text-[9.5px] text-amber-900 transition-all font-bold flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <ShieldCheck size={9} className="text-amber-600" />
-                  <span>Waka Sarpras (sarpras/sarpras123)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('principal', 'kepala', 'kepala123')}
-                  className="px-2 py-1 bg-white border border-indigo-200 hover:border-indigo-500 hover:bg-indigo-50 rounded-lg text-left text-[9.5px] text-indigo-950 transition-all font-bold flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <ShieldCheck size={9} className="text-indigo-600" />
-                  <span>Kepala Sekolah (kepala)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('treasurer', 'bendahara', 'bendahara123')}
-                  className="px-2 py-1 bg-white border border-emerald-200 hover:border-emerald-500 hover:bg-emerald-50 rounded-lg text-left text-[9.5px] text-emerald-950 transition-all font-bold flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <ShieldCheck size={9} className="text-emerald-600" />
-                  <span>Bendahara (bendahara)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('admin', 'admin', 'admin123')}
-                  className="px-2 py-1 bg-white border border-slate-200 hover:border-slate-805 rounded-lg text-left text-[9.5px] text-slate-705 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <ShieldCheck size={9} className="text-slate-600" />
-                  <span>Admin Staf</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Teachers quick fill */}
-            <div className="flex flex-col gap-1.5 border-t border-slate-100 pt-2.5">
-              <span className="text-[10px] font-bold text-slate-400">Tenaga Pendidik / Guru Kelas:</span>
-              <div className="flex flex-wrap gap-1">
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('homeroom', 'wali7a', 'wali123')}
-                  className="px-2 py-1 bg-white border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[9.5px] text-slate-705 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <ClipboardCheck size={9} className="text-amber-500" />
-                  <span>Wali 7-A (wali7a)</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => handleQuickFill('subject_teacher', 'guru_math', 'mapel123')}
-                  className="px-2 py-1 bg-white border border-slate-250 hover:border-slate-800 hover:bg-slate-50 rounded-lg text-left text-[9.5px] text-slate-700 transition-all font-semibold flex items-center gap-1 shadow-xs cursor-pointer"
-                >
-                  <ClipboardCheck size={9} className="text-indigo-500" />
-                  <span>Guru MTK (guru_math)</span>
-                </button>
-              </div>
-            </div>
           </div>
         </div>
 

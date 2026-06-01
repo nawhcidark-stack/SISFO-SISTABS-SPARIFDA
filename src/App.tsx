@@ -112,6 +112,7 @@ export default function App() {
   const [playNotificationSound, setPlayNotificationSound] = useState(true);
   const [showPaymentSuccessScreen, setShowPaymentSuccessScreen] = useState<boolean>(false);
   const [successCountdown, setSuccessCountdown] = useState<number>(5);
+  const [isFromRedirect, setIsFromRedirect] = useState<boolean>(false);
 
   // States for scanning QR item lookup
   const [scannedItem, setScannedItem] = useState<any | null>(null);
@@ -150,8 +151,9 @@ export default function App() {
     }
 
     if (orderId) {
-      // Clear "?order_id=X..." from browser URL dynamically without full page reload
-      const newUrl = window.location.origin + window.location.pathname;
+      // Keep the browser path as '/pembayaran-sukses' if they came from it, but clear query strings
+      const isRedirectPath = window.location.pathname === '/pembayaran-sukses';
+      const newUrl = window.location.origin + (isRedirectPath ? '/pembayaran-sukses' : window.location.pathname);
       window.history.replaceState({}, document.title, newUrl);
 
       setIsLoading(true);
@@ -184,6 +186,32 @@ export default function App() {
             fetchStudentFullData(targetStudentId, false);
           }
 
+          // Populate the successful payment invoice display states
+          setPayOrderId(orderId);
+          if (data.type === 'spp' && data.bill) {
+            setPayAmount(data.bill.amount);
+            setPayItemName(`SPP Bulan ${data.bill.month} ${data.bill.year}`);
+          } else if (data.type === 'savings' && data.transaction) {
+            setPayAmount(data.transaction.amount);
+            setPayItemName('Simpanan Tabungan Mandiri');
+          } else if (orderId.startsWith('SAV-')) {
+            // fallback if transaction is already success and parsed differently
+            const amountStr = orderId.split('-').pop() || '50000';
+            const parsedNum = parseInt(amountStr, 10);
+            setPayAmount(isNaN(parsedNum) ? 50000 : parsedNum);
+            setPayItemName('Simpanan Tabungan Mandiri');
+          }
+
+          if (data.student) {
+            setPayStudentName(data.student.name);
+            setPayStudentNis(data.student.nis);
+            setPayStudentClass(data.student.class);
+          }
+
+          // Explicitly trigger persistent show of the success screen
+          setIsFromRedirect(true);
+          setShowPaymentSuccessScreen(true);
+
           // Show elegant toast and sound beep
           const successNotif: RealtimeNotification = {
             id: 'pay-success-toast-' + Date.now(),
@@ -204,12 +232,24 @@ export default function App() {
       .finally(() => {
         setIsLoading(false);
       });
+    } else if (window.location.pathname === '/pembayaran-sukses') {
+      // If we are on /pembayaran-sukses but no orderId is in url parameters, check if there is general session success
+      const storeId = localStorage.getItem('smp_maarif_student_id');
+      if (storeId) {
+        localStorage.setItem('smp_maarif_logged_in', 'true');
+        localStorage.setItem('smp_maarif_role', 'student');
+        setIsLoggedIn(true);
+        setRole('student');
+        setLoggedStudentId(storeId);
+        fetchStudentFullData(storeId, false);
+      }
     }
   }, []);
 
   useEffect(() => {
     let interval: any;
-    if (showPaymentSuccessScreen) {
+    // Disable automatic countdown close if we are on the dedicated redirect success page!
+    if (showPaymentSuccessScreen && !isFromRedirect) {
       setSuccessCountdown(5);
       interval = setInterval(() => {
         setSuccessCountdown((prev) => {
@@ -232,7 +272,7 @@ export default function App() {
     return () => {
       if (interval) clearInterval(interval);
     };
-  }, [showPaymentSuccessScreen, role, currentStudent]);
+  }, [showPaymentSuccessScreen, role, currentStudent, isFromRedirect]);
 
   // Sound generator
   const triggerBeep = () => {
@@ -1681,6 +1721,11 @@ export default function App() {
                       if (role === 'student' && currentStudent) {
                         fetchStudentFullData(currentStudent.id, false);
                       }
+                      if (isFromRedirect) {
+                        const cleanUrl = window.location.origin + '/';
+                        window.history.replaceState({}, document.title, cleanUrl);
+                        setIsFromRedirect(false);
+                      }
                     }}
                     className="py-2.5 px-4 bg-slate-900 hover:bg-slate-850 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl shadow-xs hover:shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
                   >
@@ -1689,22 +1734,30 @@ export default function App() {
                   </button>
                 </div>
 
-                <div className="w-full bg-slate-100 rounded-full h-1 mt-1.5 overflow-hidden relative">
-                  <motion.div 
-                    initial={{ width: "100%" }}
-                    animate={{ width: "0%" }}
-                    transition={{ duration: 5, ease: "linear" }}
-                    className="absolute top-0 bottom-0 left-0 bg-emerald-500"
-                  />
-                </div>
-                
-                <p className="text-[10px] text-slate-400 font-semibold text-center mt-1">
-                  {role === 'student' ? (
-                    `Kembali ke panel utama dalam ${successCountdown} detik...`
-                  ) : (
-                    `Menutup kuitansi digital dalam ${successCountdown} detik...`
-                  )}
-                </p>
+                {!isFromRedirect ? (
+                  <>
+                    <div className="w-full bg-slate-100 rounded-full h-1 mt-1.5 overflow-hidden relative">
+                      <motion.div 
+                        initial={{ width: "100%" }}
+                        animate={{ width: "0%" }}
+                        transition={{ duration: 5, ease: "linear" }}
+                        className="absolute top-0 bottom-0 left-0 bg-emerald-500"
+                      />
+                    </div>
+                    
+                    <p className="text-[10px] text-slate-400 font-semibold text-center mt-1">
+                      {role === 'student' ? (
+                        `Kembali ke panel utama dalam ${successCountdown} detik...`
+                      ) : (
+                        `Menutup kuitansi digital dalam ${successCountdown} detik...`
+                      )}
+                    </p>
+                  </>
+                ) : (
+                  <p className="text-[10px] text-slate-500 font-bold text-center mt-2 bg-emerald-50/65 border border-emerald-150 px-3 py-1 rounded-xl">
+                    📌 Mode Tinjau Kuitansi Terverifikasi &amp; Siap Diunduh/Dicetak
+                  </p>
+                )}
               </div>
 
             </motion.div>

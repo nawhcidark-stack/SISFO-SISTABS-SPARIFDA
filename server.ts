@@ -5,6 +5,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import { MongoClient } from "mongodb";
+import multer from "multer";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
@@ -1412,6 +1413,106 @@ async function startServer() {
       systemMaintenanceFee: 0,
       chargeFeesToUser: false
     });
+  });
+
+  // Setup directory for uploads
+  const uploadDir = path.join(process.cwd(), "uploads");
+  if (!fs.existsSync(uploadDir)) {
+    fs.mkdirSync(uploadDir, { recursive: true });
+  }
+
+  // Configure multer disk storage
+  const storage = multer.diskStorage({
+    destination: (req, file, cb) => {
+      cb(null, uploadDir);
+    },
+    filename: (req, file, cb) => {
+      // Clean target name to avoid potential malicious path names
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9.\-_]/g, "_");
+      cb(null, `${Date.now()}-${safeName}`);
+    }
+  });
+  const upload = multer({ storage });
+
+  // Serve static files from /uploads
+  app.use("/uploads", express.static(uploadDir));
+
+  // Upload file API for admin user
+  app.post("/api/admin/upload-file", upload.single("file"), (req, res) => {
+    if (!req.file) {
+      return res.status(400).json({ error: "Tidak ada file yang diunggah" });
+    }
+    const uploadedFile = req.file;
+    const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+    const host = req.get("host");
+    const fileUrl = `${protocol}://${host}/uploads/${uploadedFile.filename}`;
+
+    res.json({
+      success: true,
+      url: fileUrl,
+      filename: uploadedFile.filename,
+      originalName: uploadedFile.originalname,
+      size: uploadedFile.size,
+      mimetype: uploadedFile.mimetype
+    });
+  });
+
+  // Get list of uploaded files for admin
+  app.get("/api/admin/uploaded-files", (req, res) => {
+    try {
+      if (!fs.existsSync(uploadDir)) {
+        return res.json({ files: [] });
+      }
+      const files = fs.readdirSync(uploadDir);
+      const fileList = files
+        .filter(file => !file.startsWith("."))
+        .map(file => {
+          const filePath = path.join(uploadDir, file);
+          const stats = fs.statSync(filePath);
+          const protocol = req.headers["x-forwarded-proto"] || req.protocol;
+          const host = req.get("host");
+          const fileUrl = `${protocol}://${host}/uploads/${file}`;
+          
+          let displayName = file;
+          const match = file.match(/^(\d+)-(.*)$/);
+          if (match) {
+            displayName = match[2];
+          }
+
+          return {
+            filename: file,
+            displayName,
+            url: fileUrl,
+            size: stats.size,
+            createdAt: stats.mtime.toISOString()
+          };
+        })
+        .sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+
+      res.json({ files: fileList });
+    } catch (err) {
+      console.error("Error reading uploads directory:", err);
+      res.status(500).json({ error: "Gagal membaca daftar file" });
+    }
+  });
+
+  // Delete an uploaded file
+  app.delete("/api/admin/delete-file/:filename", (req, res) => {
+    try {
+      const filename = req.params.filename;
+      const safeFilename = path.basename(filename);
+      const filePath = path.join(uploadDir, safeFilename);
+
+      if (fs.existsSync(filePath)) {
+        fs.unlinkSync(filePath);
+        res.json({ success: true, message: "File berhasil dihapus" });
+      } else {
+        res.status(404).json({ error: "File tidak ditemukan" });
+      }
+    } catch (err) {
+      console.error("Error deleting file:", err);
+      res.status(500).json({ error: "Gagal menghapus file" });
+    }
   });
 
   // Force database synchronization with MongoDB

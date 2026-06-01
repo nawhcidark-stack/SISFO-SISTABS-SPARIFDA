@@ -350,6 +350,123 @@ export default function AdminPanel({
   const [isSyncingLive, setIsSyncingLive] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
+  // File Upload states and hooks
+  const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
+  const [isClassFilesLoading, setIsClassFilesLoading] = useState<boolean>(false);
+  const [fileToUpload, setFileToUpload] = useState<File | null>(null);
+  const [fileUploadProgress, setFileUploadProgress] = useState<number>(-1);
+  const [fileUploadError, setFileUploadError] = useState<string | null>(null);
+  const [fileUploadSuccess, setFileUploadSuccess] = useState<string | null>(null);
+  const [copiedFileUrl, setCopiedFileUrl] = useState<string | null>(null);
+  const [fileDeletingName, setFileDeletingName] = useState<string | null>(null);
+
+  const fetchUploadedFiles = async () => {
+    setIsClassFilesLoading(true);
+    try {
+      const res = await fetch("/api/admin/uploaded-files");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.files) {
+          setUploadedFiles(data.files);
+        }
+      }
+    } catch (err) {
+      console.error("Gagal memuat berkas:", err);
+    } finally {
+      setIsClassFilesLoading(false);
+    }
+  };
+
+  const handleUploadFile = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!fileToUpload) return;
+
+    setFileUploadError(null);
+    setFileUploadSuccess(null);
+    setFileUploadProgress(0);
+
+    const formData = new FormData();
+    formData.append("file", fileToUpload);
+
+    try {
+      const xhr = new XMLHttpRequest();
+      xhr.open("POST", "/api/admin/upload-file", true);
+
+      xhr.upload.onprogress = (event) => {
+        if (event.lengthComputable) {
+          const percentComplete = Math.round((event.loaded / event.total) * 100);
+          setFileUploadProgress(percentComplete);
+        }
+      };
+
+      xhr.onload = () => {
+        if (xhr.status === 200) {
+          try {
+            const response = JSON.parse(xhr.responseText);
+            if (response.success) {
+              setFileUploadSuccess(response.url);
+              setFileToUpload(null);
+              const fileInput = document.getElementById("admin-apk-file-input") as HTMLInputElement;
+              if (fileInput) fileInput.value = "";
+              fetchUploadedFiles();
+            } else {
+              setFileUploadError(response.error || "Gagal menggunggah file");
+            }
+          } catch (pErr) {
+            setFileUploadError("Kesalahan parsing respon server");
+          }
+        } else {
+          setFileUploadError(`Gagal mengunggah file (Kode Status: ${xhr.status})`);
+        }
+        setFileUploadProgress(-1);
+      };
+
+      xhr.onerror = () => {
+        setFileUploadError("Kesalahan koneksi jaringan saat mengunggah file");
+        setFileUploadProgress(-1);
+      };
+
+      xhr.send(formData);
+    } catch (err) {
+      console.error("Error uploading file:", err);
+      setFileUploadError("Kesalahan internal saat memproses unggahan");
+      setFileUploadProgress(-1);
+    }
+  };
+
+  const handleDeleteUploadedFile = async (filename: string) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus file ini?\n" + filename)) return;
+    setFileDeletingName(filename);
+    try {
+      const res = await fetch(`/api/admin/delete-file/${encodeURIComponent(filename)}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (data.success) {
+        fetchUploadedFiles();
+        if (fileUploadSuccess && fileUploadSuccess.includes(filename)) {
+          setFileUploadSuccess(null);
+        }
+      } else {
+        alert(data.error || "Gagal menghapus file");
+      }
+    } catch (err) {
+      console.error("Error deleting file:", err);
+      alert("Kesalahan koneksi saat menghapus file");
+    } finally {
+      setFileDeletingName(null);
+    }
+  };
+
+  const copyToClipboard = (url: string) => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopiedFileUrl(url);
+      setTimeout(() => setCopiedFileUrl(null), 2000);
+    }).catch(err => {
+      console.error("Failed to copy url:", err);
+    });
+  };
+
   const fetchSystemStatus = async () => {
     try {
       const res = await fetch('/api/system-status');
@@ -365,6 +482,7 @@ export default function AdminPanel({
   useEffect(() => {
     if (adminTab === 'config') {
       fetchSystemStatus();
+      fetchUploadedFiles();
       const interval = setInterval(fetchSystemStatus, 6000);
       return () => clearInterval(interval);
     }
@@ -3955,6 +4073,15 @@ export default function AdminPanel({
                     {window.location.origin}/api/midtrans-webhook
                   </div>
                 </li>
+                <li>
+                  Gunakan URL Pengalihan Selesai (Finish Return/Redirect URL) berikut ini pada Dashboard Midtrans Anda di menu <strong className="text-blue-950">Settings &gt; Payment &gt; Redirection URL</strong> agar wali murid otomatis diarahkan ke halaman kuitansi digital interaktif setelah transaksi berhasil diselesaikan:
+                  <div className="mt-1.5 bg-slate-900 text-emerald-400 font-mono text-[10px] py-1.5 px-3 rounded-lg border border-slate-800 font-semibold break-all select-all">
+                    {window.location.origin}/pembayaran-sukses
+                  </div>
+                  <span className="text-[10px] text-blue-700 mt-1 block">
+                    💡 <em>Sistem secara otomatis mengaktifkan Mode Tinjau Kuitansi Terverifikasi yang persisten, meminta detail verifikasi status pembayaran real-time via API, dan mematikan timer auto-close agar wali murid dapat mengunduh atau mencetak kuitansi digital mereka secara santai.</em>
+                  </span>
+                </li>
               </ol>
             </motion.div>
 
@@ -4156,6 +4283,214 @@ export default function AdminPanel({
                   </div>
                 )}
               </form>
+            </div>
+          </motion.div>
+
+          {/* File Upload & Manager Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-5 text-xs text-left"
+          >
+            <div>
+              <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                <UploadCloud size={16} className="text-indigo-600" /> Pengelola Berkas &amp; Unggah APK Aplikasi
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                Unggah berkas aplikasi (.apk) Android sekolah, gambar pengumuman, atau dokumen panduan ke server ini. Berkas yang diunggah akan memiliki tautan unduhan langsung (Direct Link) yang siap dibagikan ke wali murid atau dipasang di tombol web.
+              </p>
+            </div>
+
+            <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+              {/* Left Column: Upload Form */}
+              <div className="lg:col-span-5 border-r border-slate-100 lg:pr-6 flex flex-col gap-4">
+                <span className="font-bold text-slate-800 text-xs block uppercase tracking-wide">
+                  📤 Unggah Berkas Baru
+                </span>
+
+                <form onSubmit={handleUploadFile} className="flex flex-col gap-3.5">
+                  <div className="flex flex-col gap-1.5 text-left">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      Pilih Berkas (.apk, .png, .pdf, dsb)
+                    </label>
+                    <div 
+                      className="border-2 border-dashed border-slate-250 hover:border-indigo-500 bg-slate-50/50 hover:bg-slate-50 rounded-xl p-5 text-center cursor-pointer transition-all flex flex-col items-center justify-center gap-2"
+                      onClick={() => document.getElementById("admin-apk-file-input")?.click()}
+                    >
+                      <UploadCloud size={28} className="text-slate-400" />
+                      <div>
+                        <p className="font-bold text-slate-700 text-xs">
+                          {fileToUpload ? fileToUpload.name : "Klik atau seret file ke sini"}
+                        </p>
+                        <p className="text-[10px] text-slate-450 font-semibold mt-0.5">
+                          {fileToUpload ? `${(fileToUpload.size / (1024 * 1024)).toFixed(2)} MB` : "Ukuran maks. 50 MB"}
+                        </p>
+                      </div>
+                      <input
+                        id="admin-apk-file-input"
+                        type="file"
+                        className="hidden"
+                        onChange={(e) => {
+                          if (e.target.files && e.target.files[0]) {
+                            setFileToUpload(e.target.files[0]);
+                            setFileUploadError(null);
+                            setFileUploadSuccess(null);
+                          }
+                        }}
+                      />
+                    </div>
+                  </div>
+
+                  {fileUploadError && (
+                    <div className="p-3 rounded-lg bg-red-50 border border-red-200 text-red-700 font-bold text-xs flex items-center gap-1.5">
+                      <AlertCircle size={14} className="shrink-0" />
+                      <span>{fileUploadError}</span>
+                    </div>
+                  )}
+
+                  {fileUploadSuccess && (
+                    <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 font-bold text-xs flex flex-col gap-1.5">
+                      <div className="flex items-center gap-1.5">
+                        <Check size={14} className="text-emerald-700 shrink-0" />
+                        <span>Dokumen berhasil diunggah!</span>
+                      </div>
+                      <div className="mt-1 bg-white p-2 rounded border border-emerald-150 font-mono text-[9px] break-all text-slate-700 select-all flex items-center justify-between gap-2 shadow-3xs">
+                        <span className="truncate">{fileUploadSuccess}</span>
+                        <button
+                          type="button"
+                          onClick={() => copyToClipboard(fileUploadSuccess)}
+                          className="px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-black rounded uppercase text-[8px] tracking-wide cursor-pointer flex items-center gap-0.5 shrink-0"
+                        >
+                          {copiedFileUrl === fileUploadSuccess ? "Copied!" : "Salin Link"}
+                        </button>
+                      </div>
+                    </div>
+                  )}
+
+                  {fileUploadProgress >= 0 && (
+                    <div className="flex flex-col gap-1">
+                      <div className="flex justify-between text-[10px] font-extrabold text-slate-500">
+                        <span>Mengirim file ke server...</span>
+                        <span>{fileUploadProgress}%</span>
+                      </div>
+                      <div className="w-full bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                        <div 
+                          className="bg-indigo-600 h-full transition-all duration-150" 
+                          style={{ width: `${fileUploadProgress}%` }}
+                        />
+                      </div>
+                    </div>
+                  )}
+
+                  <div className="flex gap-2 justify-end">
+                    {fileToUpload && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setFileToUpload(null);
+                          const fileInput = document.getElementById("admin-apk-file-input") as HTMLInputElement;
+                          if (fileInput) fileInput.value = "";
+                        }}
+                        className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-lg uppercase tracking-wider text-[10px] cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                    )}
+                    <button
+                      type="submit"
+                      disabled={!fileToUpload || fileUploadProgress >= 0}
+                      className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-lg uppercase tracking-wider text-[10px] cursor-pointer shadow-xs transition-colors"
+                    >
+                      Mulai Unggah Berkas 🚀
+                    </button>
+                  </div>
+                </form>
+              </div>
+
+              {/* Right Column: Files List */}
+              <div className="lg:col-span-7 flex flex-col gap-4">
+                <div className="flex items-center justify-between">
+                  <span className="font-bold text-slate-800 text-xs block uppercase tracking-wide">
+                    📁 Daftar Berkas Terunggah ({uploadedFiles.length})
+                  </span>
+                  <button
+                    onClick={fetchUploadedFiles}
+                    disabled={isClassFilesLoading}
+                    className="p-1 px-2.5 rounded-lg bg-slate-50 hover:bg-slate-100 text-slate-600 font-bold border border-slate-200 text-[10px] uppercase tracking-wider flex items-center gap-1 cursor-pointer transition-all active:scale-95 disabled:opacity-55"
+                  >
+                    <RefreshCw size={10} className={`${isClassFilesLoading ? "animate-spin" : ""}`} />
+                    <span>Segarkan</span>
+                  </button>
+                </div>
+
+                {isClassFilesLoading && uploadedFiles.length === 0 ? (
+                  <div className="flex-1 min-h-[150px] flex items-center justify-center border border-slate-150 rounded-xl bg-slate-50/20 text-slate-400 font-bold text-xs">
+                    Memuat daftar file dari server...
+                  </div>
+                ) : uploadedFiles.length === 0 ? (
+                  <div className="flex-1 min-h-[150px] flex flex-col gap-1.5 items-center justify-center border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/15 text-slate-400 font-bold text-xs p-5 text-center">
+                    <span>Belum ada berkas terunggah yang disimpan.</span>
+                    <span className="text-[10px] font-semibold text-slate-400">Gunakan form di sebelah kiri untuk mengunggah file APK Anda pertama kali!</span>
+                  </div>
+                ) : (
+                  <div className="max-h-[280px] overflow-y-auto border border-slate-150 rounded-xl divide-y divide-slate-100 flex flex-col">
+                    {uploadedFiles.map((file) => {
+                      const isApk = file.filename.toLowerCase().endsWith(".apk");
+                      return (
+                        <div key={file.filename} className="p-3 flex items-center justify-between gap-3 bg-white hover:bg-slate-50/50 transition-all text-left">
+                          <div className="flex items-center gap-2.5 min-w-0 flex-1">
+                            <div className={`p-2 rounded-lg ${isApk ? "bg-emerald-50 text-emerald-600 border border-emerald-100" : "bg-indigo-50 text-indigo-600 border border-indigo-100"} shrink-0`}>
+                              <FileText size={16} />
+                            </div>
+                            <div className="min-w-0 flex-1">
+                              <p className="font-bold text-slate-800 text-xs truncate" title={file.displayName}>
+                                {file.displayName}
+                              </p>
+                              <p className="text-[10px] text-slate-400 font-semibold mt-0.5 flex items-center gap-2">
+                                <span>{(file.size / (1024 * 1024)).toFixed(2)} MB</span>
+                                <span className="opacity-40">•</span>
+                                <span>{new Date(file.createdAt).toLocaleDateString("id-ID", { day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit" })}</span>
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center gap-1 shrink-0">
+                            <button
+                              onClick={() => copyToClipboard(file.url)}
+                              className={`p-1.5 px-2.5 rounded-lg border font-bold text-[10px] transition-all flex items-center gap-1 cursor-pointer select-none ${
+                                copiedFileUrl === file.url
+                                  ? "bg-emerald-500 border-emerald-600 text-white"
+                                  : "bg-slate-50 border-slate-200 hover:bg-slate-100 text-slate-700"
+                              }`}
+                              title="Salin Tautan Langsung"
+                            >
+                              <ClipboardCheck size={11} className="mr-0.5" />
+                              <span>{copiedFileUrl === file.url ? "Selesai!" : "Salin Link"}</span>
+                            </button>
+
+                            <button
+                              onClick={() => window.open(file.url, "_blank")}
+                              className="p-1.5 rounded-lg bg-slate-50 border border-slate-200 hover:bg-slate-100 text-indigo-600 flex items-center justify-center cursor-pointer transition-all"
+                              title="Unduh / Buka di Tab Baru"
+                            >
+                              <ArrowUpRight size={13} />
+                            </button>
+
+                            <button
+                              onClick={() => handleDeleteUploadedFile(file.filename)}
+                              disabled={fileDeletingName === file.filename}
+                              className="p-1.5 rounded-lg bg-rose-50 border border-rose-100 hover:bg-rose-100 text-rose-600 disabled:opacity-50 flex items-center justify-center cursor-pointer transition-all"
+                              title="Hapus Berkas Permanen"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+              </div>
             </div>
           </motion.div>
 

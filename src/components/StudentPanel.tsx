@@ -2263,41 +2263,50 @@ export default function StudentPanel({
                             </div>
                           ) : (
                             <div className="space-y-4">
-                              {infractionLogs.map((log) => {
-                                const statusColors: Record<string, string> = {
-                                  'Selesai': 'bg-emerald-50 text-emerald-700 border-emerald-200',
-                                  'Dalam Proses': 'bg-amber-50 text-amber-700 border-amber-200',
-                                  'Belum Selesai': 'bg-rose-50 text-rose-700 border-rose-200'
-                                };
-                                const statusCol = statusColors[log.resolutionStatus] || 'bg-slate-50 text-slate-705';
-                                return (
-                                  <div key={log.id} className="bg-white border border-slate-150 rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-shadow text-left flex flex-col md:flex-row md:items-start justify-between gap-4">
-                                    <div className="flex-grow flex flex-col gap-2">
-                                      <div className="flex items-center gap-2 flex-wrap">
-                                        <span className="text-[11px] font-black text-rose-950 bg-rose-50 border border-rose-150 px-2.5 py-0.5 rounded-lg">
-                                          🚨 {log.infractionType}
-                                        </span>
-                                        {log.points !== undefined && (
-                                          <span className="text-[10px] bg-red-50 text-red-700 border border-red-200 px-2 py-0.5 rounded-lg font-black font-mono">
-                                            Penalti: {log.points} pt
-                                          </span>
-                                        )}
-                                        <span className="text-[10px] text-slate-400 font-bold font-mono">
-                                          ⏱️ {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} pukul {log.time}
-                                        </span>
-                                      </div>
-                                      
-                                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
-                                        <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-left">
-                                          <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Tempat Kejadian</div>
-                                          <p className="text-xs font-bold text-slate-750 mt-0.5">{log.location}</p>
-                                        </div>
-                                        <div className="bg-amber-50/40 p-2.5 rounded-xl border border-amber-100/60 text-left">
-                                          <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">Tindak Lanjut / Sanksi</div>
-                                          <p className="text-xs font-bold text-slate-750 mt-0.5">{log.actionTaken}</p>
-                                        </div>
-                                      </div>
-                                    </div>
+                               {infractionLogs.map((log) => {
+                                 const statusColors: Record<string, string> = {
+                                   'Selesai': 'bg-green-50 text-green-700 border-green-200',
+                                   'Dalam Proses': 'bg-amber-50 text-amber-700 border-amber-200',
+                                   'Belum Selesai': 'bg-rose-50 text-rose-700 border-rose-200'
+                                 };
+                                 const statusCol = statusColors[log.resolutionStatus] || 'bg-slate-50 text-slate-705';
+                                 const isReduction = log.points !== undefined && log.points < 0;
+                                 return (
+                                   <div key={log.id} className={`bg-white border border-slate-150 rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-shadow text-left flex flex-col md:flex-row md:items-start justify-between gap-4 ${isReduction ? 'bg-emerald-50/5 border-emerald-100' : ''}`}>
+                                     <div className="flex-grow flex flex-col gap-2">
+                                       <div className="flex items-center gap-2 flex-wrap">
+                                         {isReduction ? (
+                                           <span className="text-[11px] font-black text-emerald-950 bg-emerald-50 border border-emerald-150 px-2.5 py-0.5 rounded-lg">
+                                             ❇️ {log.infractionType}
+                                           </span>
+                                         ) : (
+                                           <span className="text-[11px] font-black text-rose-950 bg-rose-50 border border-rose-150 px-2.5 py-0.5 rounded-lg">
+                                             🚨 {log.infractionType}
+                                           </span>
+                                         )}
+                                         {log.points !== undefined && (
+                                           <span className={`text-[10px] px-2 py-0.5 rounded-lg font-black font-mono border ${isReduction ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
+                                             {isReduction ? 'Pengurangan:' : 'Penalti:'} {log.points} pt
+                                           </span>
+                                         )}
+                                         <span className="text-[10px] text-slate-400 font-bold font-mono">
+                                           ⏱️ {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} pukul {log.time}
+                                         </span>
+                                       </div>
+                                       
+                                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 mt-1">
+                                         <div className="bg-slate-50 p-2.5 rounded-xl border border-slate-100 text-left">
+                                           <div className="text-[9px] uppercase font-bold text-slate-400 tracking-wider">Tempat Kejadian</div>
+                                           <p className="text-xs font-bold text-slate-750 mt-0.5">{log.location}</p>
+                                         </div>
+                                         <div className={`p-2.5 rounded-xl border text-left ${isReduction ? 'bg-emerald-50/40 border-emerald-100/60' : 'bg-amber-50/40 border-amber-100/60'}`}>
+                                           <div className="text-[9px] uppercase font-bold text-slate-500 tracking-wider">
+                                             {isReduction ? 'Apresiasi / Hasil Pembinaan BK' : 'Tindak Lanjut / Sanksi'}
+                                           </div>
+                                           <p className="text-xs font-bold text-slate-755 text-slate-750 mt-0.5">{log.actionTaken}</p>
+                                         </div>
+                                       </div>
+                                     </div>
 
                                     <div className="shrink-0 flex md:flex-col justify-between items-center md:items-end gap-2 border-t md:border-t-0 border-slate-110 pt-3 md:pt-0">
                                       <span className="text-[9px] font-medium text-slate-400 hidden md:block">Status Penanganan</span>
@@ -2778,6 +2787,58 @@ export default function StudentPanel({
                   </button>
                 </form>
               </div>
+
+              {/* Mobile app download on Mobile Profile Tab */}
+              <div className="bg-slate-50 border border-slate-200 p-5 rounded-2xl flex flex-col gap-3 text-left">
+                <div className="flex items-center gap-1.5">
+                  <Smartphone size={15} className="text-emerald-700" />
+                  <span className="font-extrabold text-[11px] uppercase tracking-wider text-slate-800">Unduh Aplikasi Mobile Resmi</span>
+                </div>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Siswa &amp; wali murid disarankan menggunakan aplikasi Android (.apk) atau iOS (.ipa/App Store) resmi untuk kemudahan akses monitoring langsung tanpa browser.
+                </p>
+                <div className="grid grid-cols-2 gap-2.5">
+                  <a
+                    href={schoolIdentity?.apkUrl || "#"}
+                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.apkUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan Android belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.apkUrl 
+                        ? "bg-emerald-50 hover:bg-emerald-100 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Smartphone size={14} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10.5px]">Android APK</span>
+                  </a>
+
+                  <a
+                    href={schoolIdentity?.iosUrl || "#"}
+                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.iosUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan iOS belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2.5 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.iosUrl 
+                        ? "bg-sky-50 hover:bg-sky-100 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Apple size={14} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10.5px]">iOS Apple</span>
+                  </a>
+                </div>
+              </div>
             </div>
           )}
         </div>
@@ -2978,6 +3039,57 @@ export default function StudentPanel({
                     <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar dengan aman serta akhiri pengalihan akses siswa</p>
                   </div>
                 </button>
+              </div>
+
+              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
+              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                  📲 Unduh Aplikasi Mobile Resmi
+                </span>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor laporan tagihan SPP, presensi kelas, &amp; dana tabungan langsung lewat HP.
+                </p>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <a
+                    href={schoolIdentity?.apkUrl || "#"}
+                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.apkUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan Android belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.apkUrl 
+                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">Android APK</span>
+                  </a>
+
+                  <a
+                    href={schoolIdentity?.iosUrl || "#"}
+                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.iosUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan iOS belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.iosUrl 
+                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">iOS Apple</span>
+                  </a>
+                </div>
               </div>
             </motion.div>
           </>

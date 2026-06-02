@@ -18,6 +18,7 @@ export default function QRScannerModal({ students, onSelectStudentByNis, onClose
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [scannedResult, setScannedResult] = useState<string | null>(null);
   const [scannedStudent, setScannedStudent] = useState<Student | null>(null);
+  const [isMirrored, setIsMirrored] = useState(false);
   
   // Manual NIS fallback
   const [manualNis, setManualNis] = useState('');
@@ -225,6 +226,33 @@ export default function QRScannerModal({ students, onSelectStudentByNis, onClose
         {/* Camera Stage */}
         <div className="relative bg-slate-950 aspect-[4/3] flex flex-col items-center justify-center overflow-hidden border-b border-slate-800">
           
+          {/* Style to mirror video if active */}
+          {isMirrored && (
+            <style dangerouslySetInnerHTML={{ __html: `
+              #qr-video-container video {
+                transform: scaleX(-1) !important;
+                -webkit-transform: scaleX(-1) !important;
+              }
+            `}} />
+          )}
+
+          {/* Floating Mirror Toggle directly on Camera View */}
+          {!cameraError && !isInitializing && !scannedResult && (
+            <button
+              type="button"
+              onClick={() => setIsMirrored(prev => !prev)}
+              className={`absolute top-4 left-4 z-10 px-3 py-1.5 rounded-full text-[10px] font-bold tracking-wider uppercase border flex items-center gap-1.5 backdrop-blur-md transition-all active:scale-95 cursor-pointer shadow-lg ${
+                isMirrored 
+                  ? 'bg-indigo-600/90 hover:bg-indigo-600 border-indigo-400 text-white' 
+                  : 'bg-slate-900/80 hover:bg-slate-950/90 border-slate-700 text-slate-300'
+              }`}
+              title="Cerminkan tampilan kamera"
+            >
+              <RefreshCw size={10} className={`shrink-0 ${isMirrored ? 'rotate-180 transition-transform duration-500' : ''}`} />
+              <span>{isMirrored ? 'Mirror: Aktif 🔄' : 'Mirror: Nonaktif'}</span>
+            </button>
+          )}
+
           {/* Main Scanning container */}
           <div id="qr-video-container" className="w-full h-full object-cover [&_video]:object-cover [&_video]:w-full [&_video]:h-full" />
 
@@ -326,24 +354,44 @@ export default function QRScannerModal({ students, onSelectStudentByNis, onClose
         {/* Bottom Options / Controls */}
         <div className="p-5 flex flex-col gap-4 bg-slate-950/50">
           
-          {/* Camera devices select */}
-          {availableCameras.length > 1 && !cameraError && (
-            <div className="flex items-center justify-between gap-3 text-[11px] border-b border-slate-800 pb-3">
-              <span className="text-slate-400 font-bold flex items-center gap-1">
-                <RefreshCw size={11} className="shrink-0" />
-                <span>PILIH KAMERA:</span>
-              </span>
-              <select
-                value={selectedCameraId}
-                onChange={handleCameraChange}
-                className="bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-slate-200 outline-none max-w-[200px]"
-              >
-                {availableCameras.map((device) => (
-                  <option key={device.deviceId} value={device.deviceId}>
-                    {device.label || `Camera ${availableCameras.indexOf(device) + 1}`}
-                  </option>
-                ))}
-              </select>
+          {/* Camera devices & mirror select options */}
+          {!cameraError && (
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 text-[11px] border-b border-slate-800 pb-3 flex-wrap">
+              {availableCameras.length > 1 ? (
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-400 font-bold flex items-center gap-1 shrink-0">
+                    <RefreshCw size={11} className="shrink-0" />
+                    <span>PILIH KAMERA:</span>
+                  </span>
+                  <select
+                    value={selectedCameraId}
+                    onChange={handleCameraChange}
+                    className="bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-slate-250 outline-none max-w-[200px] cursor-pointer"
+                  >
+                    {availableCameras.map((device) => (
+                      <option key={device.deviceId} value={device.deviceId}>
+                        {device.label || `Kamera ${availableCameras.indexOf(device) + 1}`}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              ) : (
+                <div className="text-slate-500 font-bold flex items-center gap-1.5">
+                  <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full animate-pulse" />
+                  <span>Kamera Utama Aktif</span>
+                </div>
+              )}
+
+              {/* Mirror Camera Toggle Block */}
+              <label className="flex items-center gap-2.5 cursor-pointer select-none py-1.5 px-3 bg-slate-900 hover:bg-slate-850 border border-slate-800 rounded-xl transition-all shrink-0">
+                <input
+                  type="checkbox"
+                  checked={isMirrored}
+                  onChange={(e) => setIsMirrored(e.target.checked)}
+                  className="rounded bg-slate-950 border-slate-700 text-indigo-500 focus:ring-0 cursor-pointer h-3.5 w-3.5"
+                />
+                <span className="font-extrabold text-slate-300 text-[10px] tracking-wide uppercase">Cerminkan Kamera (Mirror)</span>
+              </label>
             </div>
           )}
 

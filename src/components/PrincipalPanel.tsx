@@ -1336,26 +1336,29 @@ export default function PrincipalPanel({
                               </span>
                             )}
                           </div>
-                          <div className="max-h-24 overflow-y-auto flex flex-col gap-1.5 font-semibold text-slate-705 text-slate-700 pr-1 text-[10px]">
+                          <div className="max-h-24 overflow-y-auto flex flex-col gap-1.5 font-semibold text-slate-700 pr-1 text-[10px]">
                             {inspectedStudentInfractions.length === 0 ? (
                               <p className="text-slate-400 py-4 italic text-emerald-700">Sempurna. Tidak ada riwayat pelanggaran.</p>
                             ) : (
-                              inspectedStudentInfractions.map((i, idx) => (
-                                <div key={idx} className="bg-white border border-slate-200 p-2 rounded-lg">
-                                  <div className="flex justify-between font-bold text-[9px] text-slate-400 mb-0.5 font-mono">
-                                    <span>Tgl: {i.date} | Status: {i.resolutionStatus}</span>
+                              inspectedStudentInfractions.map((i, idx) => {
+                                const isReduction = i.points !== undefined && i.points < 0;
+                                return (
+                                  <div key={idx} className={`border p-2 rounded-lg ${isReduction ? 'bg-emerald-50/5 border-emerald-150 bg-white' : 'bg-white border-slate-200'}`}>
+                                    <div className="flex justify-between font-bold text-[9px] text-slate-400 mb-0.5 font-mono">
+                                      <span>Tgl: {i.date} | Status: {i.resolutionStatus}</span>
+                                    </div>
+                                    <strong className={`block text-[10px] flex items-center justify-between gap-1 ${isReduction ? 'text-emerald-800' : 'text-rose-800'}`}>
+                                      <span>Jenis: {i.infractionType}</span>
+                                      {i.points !== undefined && (
+                                        <span className={`px-1 py-0.5 border rounded text-[8px] font-black font-mono uppercase ${isReduction ? 'bg-emerald-50 text-emerald-700 border-emerald-100' : 'bg-red-50 text-red-700 border-red-100'}`}>
+                                          {isReduction ? '' : '+'}{i.points} pt
+                                        </span>
+                                      )}
+                                    </strong>
+                                    <p className="text-[9px] text-slate-500 mt-0.5">Sanksi/Hasil: {i.actionTaken}</p>
                                   </div>
-                                  <strong className="text-slate-800 block text-[10px] text-rose-800 flex items-center justify-between gap-1">
-                                    <span>Jenis: {i.infractionType}</span>
-                                    {i.points !== undefined && (
-                                      <span className="bg-red-50 text-red-650 px-1 py-0.5 border border-red-100 rounded text-[8px] font-black font-mono">
-                                        {i.points} pt
-                                      </span>
-                                    )}
-                                  </strong>
-                                  <p className="text-[9px] text-slate-550 text-slate-500 mt-0.5">Sanksi: {i.actionTaken}</p>
-                                </div>
-                              ))
+                                );
+                              })
                             )}
                           </div>
                         </div>
@@ -2280,38 +2283,51 @@ export default function PrincipalPanel({
                 {infractionLogs.length === 0 ? (
                   <p className="text-slate-405 text-slate-400 py-12 italic text-center text-xs">Bersih. Tidak ada kasus kedisiplinan dilaporkan.</p>
                 ) : (
-                  infractionLogs.map((i) => (
-                    <div key={i.id} className="border border-slate-200 p-4 rounded-2xl flex flex-col gap-2.5 bg-rose-50/10 border-rose-200/50 hover:border-rose-300 transition-colors">
-                      <div className="flex justify-between text-[10px] font-bold text-slate-400 font-mono">
-                        <span>Tgl: {i.date} | Jam Ke: {i.time || '-'}</span>
-                        <span className={`px-1 rounded-sm text-[8px] uppercase font-black tracking-widest ${
-                          i.resolutionStatus === 'Selesai' 
-                            ? 'bg-emerald-100 text-emerald-800' 
-                            : 'bg-rose-100 text-rose-800 animate-pulse'
-                        }`}>
-                          {i.resolutionStatus}
-                        </span>
-                      </div>
-                      <h4 className="font-extrabold text-slate-900 text-[12px] leading-tight flex items-center justify-between gap-2">
-                        <span>Pelanggar: {i.studentName} (Kelas {i.className})</span>
-                        {i.points !== undefined && (
-                          <span className="px-1.5 py-0.5 bg-rose-100 text-rose-700 border border-rose-200 text-[9px] rounded-md font-black font-mono shrink-0">
-                            Poin: {i.points} pt
+                  infractionLogs.map((i) => {
+                    const isReduction = i.points !== undefined && i.points < 0;
+                    return (
+                      <div key={i.id} className={`border p-4 rounded-2xl flex flex-col gap-2.5 transition-colors ${
+                        isReduction 
+                          ? 'bg-emerald-50/10 border-emerald-200/50 hover:border-emerald-350' 
+                          : 'bg-rose-50/10 border-rose-200/50 hover:border-rose-300'
+                      }`}>
+                        <div className="flex justify-between text-[10px] font-bold text-slate-400 font-mono">
+                          <span>Tgl: {i.date} | Jam Ke: {i.time || '-'}</span>
+                          <span className={`px-1 rounded-sm text-[8px] uppercase font-black tracking-widest ${
+                            i.resolutionStatus === 'Selesai' 
+                              ? 'bg-emerald-100 text-emerald-800' 
+                              : 'bg-rose-100 text-rose-800 animate-pulse'
+                          }`}>
+                            {i.resolutionStatus}
                           </span>
-                        )}
-                      </h4>
-                      
-                      <div className="border-l-2 border-rose-500 pl-3 py-1 text-[11px] leading-relaxed">
-                        <span className="block text-[8.5px] uppercase tracking-wider font-extrabold text-rose-700">Jenis Pelanggaran Disiplin</span>
-                        <p className="font-bold text-slate-800 mt-0.5">{i.infractionType}</p>
-                      </div>
+                        </div>
+                        <h4 className="font-extrabold text-slate-900 text-[12px] leading-tight flex items-center justify-between gap-2">
+                          <span>Pelanggar: {i.studentName} (Kelas {i.className})</span>
+                          {i.points !== undefined && (
+                            <span className={`px-1.5 py-0.5 border text-[9px] rounded-md font-black font-mono shrink-0 ${
+                              isReduction ? 'bg-emerald-100 text-emerald-800 border-emerald-300' : 'bg-rose-100 text-rose-700 border-rose-200'
+                            }`}>
+                              {isReduction ? 'Pengurangan:' : 'Poin:'} {i.points} pt
+                            </span>
+                          )}
+                        </h4>
+                        
+                        <div className={`border-l-2 pl-3 py-1 text-[11px] leading-relaxed ${isReduction ? 'border-emerald-500' : 'border-rose-500'}`}>
+                          <span className={`block text-[8.5px] uppercase tracking-wider font-extrabold ${isReduction ? 'text-emerald-700' : 'text-rose-700'}`}>
+                            {isReduction ? 'Pengurangan Poin oleh Guru BK' : 'Jenis Pelanggaran Disiplin'}
+                          </span>
+                          <p className="font-bold text-slate-800 mt-0.5">{i.infractionType}</p>
+                        </div>
 
-                      <div className="text-[10px] text-slate-600 leading-normal font-medium bg-slate-50 p-2.5 rounded-lg border border-slate-150">
-                        <strong className="text-slate-900 block text-[9px] font-black uppercase tracking-wider text-slate-400">Tindak Lanjut & Sanksi Diberikan</strong>
-                        <p className="mt-0.5">{i.actionTaken}</p>
+                        <div className="text-[10px] text-slate-600 leading-normal font-medium bg-slate-50 p-2.5 rounded-lg border border-slate-150">
+                          <strong className="text-slate-900 block text-[9px] font-black uppercase tracking-wider text-slate-400">
+                            {isReduction ? 'Hasil Pembinaan & Pembiasaan Selesai' : 'Tindak Lanjut & Sanksi Diberikan'}
+                          </strong>
+                          <p className="mt-0.5">{i.actionTaken}</p>
+                        </div>
                       </div>
-                    </div>
-                  ))
+                    );
+                  })
                 )}
               </div>
             </div>
@@ -3366,6 +3382,57 @@ export default function PrincipalPanel({
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Perbarui identitas kop surat &amp; nama lembaga</p>
                   </div>
                 </button>
+              </div>
+
+              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
+              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                  📲 Unduh Aplikasi Mobile Resmi
+                </span>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor seluruh kegiatan pengajaran &amp; pelaporan keuangan langsung lewat HP.
+                </p>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <a
+                    href={schoolIdentity?.apkUrl || "#"}
+                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.apkUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan Android belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.apkUrl 
+                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">Android APK</span>
+                  </a>
+
+                  <a
+                    href={schoolIdentity?.iosUrl || "#"}
+                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.iosUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan iOS belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.iosUrl 
+                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">iOS Apple</span>
+                  </a>
+                </div>
               </div>
             </motion.div>
           </>

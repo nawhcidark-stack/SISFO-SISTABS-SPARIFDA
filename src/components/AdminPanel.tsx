@@ -977,6 +977,11 @@ export default function AdminPanel({
   const [sarprasActionMsg, setSarprasActionMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [isOperatingSarprasPwd, setIsOperatingSarprasPwd] = useState(false);
 
+  // Guru BK Account credentials security states
+  const [adminBkPasswordInput, setAdminBkPasswordInput] = useState('');
+  const [bkActionMsg, setBkActionMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+  const [isOperatingBkPwd, setIsOperatingBkPwd] = useState(false);
+
   // System Data Reset States
   const [showResetModal, setShowResetModal] = useState(false);
   const [resetValidationInput, setResetValidationInput] = useState('');
@@ -1448,6 +1453,61 @@ export default function AdminPanel({
       setSarprasActionMsg({ type: 'error', text: 'Gangguan komunikasi dengan server.' });
     } finally {
       setIsOperatingSarprasPwd(false);
+    }
+  };
+
+  const handleAdminUpdateBkPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminBkPasswordInput.trim()) {
+      setBkActionMsg({ type: 'error', text: 'Sandi baru tidak boleh kosong.' });
+      return;
+    }
+    if (adminBkPasswordInput.trim().length < 5) {
+      setBkActionMsg({ type: 'error', text: 'Password minimal 5 karakter.' });
+      return;
+    }
+    setIsOperatingBkPwd(true);
+    setBkActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/bk/change-password', {
+         method: 'POST',
+         headers: { 'Content-Type': 'application/json' },
+         body: JSON.stringify({ newPassword: adminBkPasswordInput.trim() })
+      });
+      if (res.ok) {
+         setBkActionMsg({ type: 'success', text: 'Sandi Guru BK berhasil diperbarui secara aman!' });
+         setAdminBkPasswordInput('');
+      } else {
+         const d = await res.json();
+         setBkActionMsg({ type: 'error', text: d.error || 'Gagal mengubah sandi Guru BK.' });
+      }
+    } catch {
+       setBkActionMsg({ type: 'error', text: 'Gangguan jaringan/server.' });
+    } finally {
+       setIsOperatingBkPwd(false);
+    }
+  };
+
+  const handleAdminResetBkPassword = async () => {
+    if (!window.confirm('Apakah Anda yakin ingin menyetel ulang sandi Guru BK kembali ke bawaan default (bk123)?')) {
+      return;
+    }
+    setIsOperatingBkPwd(true);
+    setBkActionMsg(null);
+    try {
+      const res = await fetch('/api/admin/bk/reset-password', {
+        method: 'POST'
+      });
+      if (res.ok) {
+        setBkActionMsg({ type: 'success', text: 'Sandi Guru BK sukses di-reset ke bawaan default: bk123' });
+      } else {
+        const d = await res.json();
+        setBkActionMsg({ type: 'error', text: d.error || 'Gagal melakukan reset sandi Guru BK.' });
+      }
+    } catch {
+      setBkActionMsg({ type: 'error', text: 'Gangguan komunikasi dengan server.' });
+    } finally {
+      setIsOperatingBkPwd(false);
     }
   };
 
@@ -3497,6 +3557,76 @@ export default function AdminPanel({
                   >
                     <RefreshCw size={12} className={isOperatingSarprasPwd ? 'animate-spin' : ''} />
                     <span>Reset Password ke Default (sarpras123) 🔄</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+
+            {/* Pengaturan Keamanan Akses Guru Bimbingan Konseling (BK) */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-5 text-xs text-left text-slate-800"
+            >
+              <div>
+                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
+                  <Key size={16} className="text-indigo-600" /> Pengaturan Keamanan Akun Guru BK / Konselor
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
+                  Kelola keamanan kredensial login untuk <strong>Guru BK (Konselor Bimbingan Konseling)</strong>. Anda dapat memperbarui password secara langsung di bawah ini atau meresetnya kembali ke sandi bawaan default (<code className="bg-slate-100 px-1 py-0.5 rounded font-mono font-bold text-indigo-700">bk123</code>).
+                </p>
+              </div>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-start">
+                {/* Form to change password directly */}
+                <form onSubmit={handleAdminUpdateBkPassword} className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">Atur Kata Sandi Baru Khusus</span>
+                  
+                  {bkActionMsg && (
+                    <div className={`p-3 rounded-lg font-bold text-xs ${
+                      bkActionMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-250 text-emerald-800' : 'bg-rose-50 border border-rose-200 text-rose-700'
+                    }`}>
+                      {bkActionMsg.text}
+                    </div>
+                  )}
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-extrabold text-slate-400">Kata Sandi Baru BK</label>
+                    <input
+                      type="password"
+                      placeholder="Masukkan sandi baru Guru BK (Min 5 karakter)"
+                      value={adminBkPasswordInput}
+                      onChange={(e) => setAdminBkPasswordInput(e.target.value)}
+                      className="w-full p-2.5 border border-slate-200 bg-white rounded-xl text-slate-800 focus:outline-none focus:border-indigo-600 font-semibold"
+                    />
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isOperatingBkPwd}
+                    className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50"
+                  >
+                    {isOperatingBkPwd ? 'Menyimpan...' : 'Perbarui Sandi Guru BK 🔑'}
+                  </button>
+                </form>
+
+                {/* Reset to Default */}
+                <div className="flex flex-col gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl h-full justify-between">
+                  <div>
+                    <span className="text-[10px] font-bold text-rose-700 uppercase tracking-wider block">Setel Ulang Sandi Kembali ke Bawaan</span>
+                    <p className="text-[11px] text-slate-500 mt-2 leading-relaxed font-semibold">
+                      Lupa password Guru BK aktif? Klik tombol di bawah ini untuk mengembalikan sandi kembali ke standar bawaan sistem: <strong className="font-mono text-indigo-700">bk123</strong>.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={handleAdminResetBkPassword}
+                    disabled={isOperatingBkPwd}
+                    className="w-full mt-4 py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-bold rounded-xl uppercase tracking-wider text-[10px] transition-all cursor-pointer disabled:opacity-50 inline-flex items-center justify-center gap-1.5"
+                  >
+                    <RefreshCw size={12} className={isOperatingBkPwd ? 'animate-spin' : ''} />
+                    <span>Reset Password ke Default (bk123) 🔄</span>
                   </button>
                 </div>
               </div>
@@ -8790,6 +8920,57 @@ export default function AdminPanel({
                     <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar aman dari portal kontrol admin pusat</p>
                   </div>
                 </button>
+              </div>
+
+              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
+              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                  📲 Unduh Aplikasi Mobile Resmi
+                </span>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor laporan, setup admin, &amp; data lembaga langsung lewat HP.
+                </p>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <a
+                    href={schoolIdentity?.apkUrl || "#"}
+                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.apkUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan Android belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.apkUrl 
+                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">Android APK</span>
+                  </a>
+
+                  <a
+                    href={schoolIdentity?.iosUrl || "#"}
+                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.iosUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan iOS belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.iosUrl 
+                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">iOS Apple</span>
+                  </a>
+                </div>
               </div>
             </motion.div>
           </>

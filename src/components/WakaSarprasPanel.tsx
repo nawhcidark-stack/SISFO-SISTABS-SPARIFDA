@@ -2201,6 +2201,57 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     </div>
                   </button>
                 </div>
+
+                {/* Quick access to download Mobile Apps in the bottom sheet menu */}
+                <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
+                  <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                    📲 Unduh Aplikasi Mobile Resmi
+                  </span>
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    Gunakan aplikasi mobile resmi untuk kemudahan akses monitor laporan logistik sarana prasarana &amp; data lembaga langsung lewat HP.
+                  </p>
+                  <div className="grid grid-cols-2 gap-2 mt-1">
+                    <a
+                      href={schoolIdentity?.apkUrl || "#"}
+                      target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        if (!schoolIdentity?.apkUrl) {
+                          e.preventDefault();
+                          alert("Link unduhan Android belum diatur oleh Administrator.");
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                        schoolIdentity?.apkUrl 
+                          ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                          : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                      }`}
+                    >
+                      <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                      <span className="text-[10px]">Android APK</span>
+                    </a>
+
+                    <a
+                      href={schoolIdentity?.iosUrl || "#"}
+                      target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                      rel="noopener noreferrer"
+                      onClick={(e) => {
+                        if (!schoolIdentity?.iosUrl) {
+                          e.preventDefault();
+                          alert("Link unduhan iOS belum diatur oleh Administrator.");
+                        }
+                      }}
+                      className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                        schoolIdentity?.iosUrl 
+                          ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                          : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                      }`}
+                    >
+                      <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                      <span className="text-[10px]">iOS Apple</span>
+                    </a>
+                  </div>
+                </div>
               </motion.div>
             </>
           )}

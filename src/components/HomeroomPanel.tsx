@@ -251,6 +251,13 @@ function printSingleCounselingLog(log: StudentCounselingLog, schoolIdentity?: Sc
           <h4>III. Hasil Konseling Serta Komitmen Siswa</h4>
           <div>"${log.result}"</div>
         </div>
+        ${log.bkFeedback ? `
+        <div class="block" style="border-color: #10b981; background-color: #f0fdf4;">
+          <h4 style="color: #047857;">IV. Saran Profesional, Intervensi &amp; Solusi Rekomendatif Guru BK</h4>
+          <div style="font-weight: bold; color: #065f46;">"${log.bkFeedback}"</div>
+          ${log.bkFeedbackAt ? `<div style="font-size: 10px; color: #047857; margin-top: 5px;">Diselesaikan pada: ${new Date(log.bkFeedbackAt).toLocaleString('id-ID')}</div>` : ''}
+        </div>
+        ` : ''}
         <table class="footer">
           <tr>
             <td style="width:40%">Siswa Bersangkutan<div style="height:65px"></div>( <u>${log.studentName}</u> )</td>
@@ -3781,15 +3788,16 @@ Wassalamualaikum Wr. Wb.
                               'Dalam Proses': 'bg-yellow-50 text-yellow-700 border-yellow-200',
                               'Belum Selesai': 'bg-red-50 text-red-700 border-red-200'
                             };
+                            const isReduction = log.points !== undefined && log.points < 0;
                             return (
-                              <div key={log.id} className="border border-slate-200 rounded-xl p-4 bg-white flex flex-col gap-2 shadow-xxs">
+                              <div key={log.id} className={`border border-slate-200 rounded-xl p-4 bg-white flex flex-col gap-2 shadow-xxs ${isReduction ? 'bg-emerald-50/5 border-emerald-250' : ''}`}>
                                 <div className="flex justify-between items-start gap-4">
                                   <div>
                                     <h4 className="text-xs font-black text-slate-900 flex items-center gap-2">
                                       <span>{log.studentName}</span>
                                       {log.points !== undefined && (
-                                        <span className="px-2 py-0.5 bg-rose-100 text-rose-700 border border-rose-200 text-[9px] rounded-full font-black font-mono shrink-0">
-                                          Poin: {log.points} pt
+                                        <span className={`px-2 py-0.5 text-[9px] rounded-full font-black font-mono shrink-0 border ${isReduction ? 'bg-emerald-100 text-emerald-800 border-emerald-200' : 'bg-rose-100 text-rose-700 border-rose-200'}`}>
+                                          {isReduction ? 'Pengurangan:' : 'Poin:'} {log.points} pt
                                         </span>
                                       )}
                                     </h4>
@@ -3803,11 +3811,15 @@ Wassalamualaikum Wr. Wb.
                                 </div>
                                 <div className="text-[11px] leading-relaxed mt-1 text-slate-700 grid grid-cols-1 md:grid-cols-2 gap-3.5 bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
                                   <div>
-                                    <span className="text-[9.5px] font-bold text-rose-600 block mb-0.5">⚠️ JENIS PELANGGARAN</span>
+                                    <span className={`text-[9.5px] font-bold block mb-0.5 ${isReduction ? 'text-emerald-700' : 'text-rose-600'}`}>
+                                      {isReduction ? '❇️ ALASAN PENGURANGAN BK' : '⚠️ JENIS PELANGGARAN'}
+                                    </span>
                                     {log.infractionType}
                                   </div>
                                   <div>
-                                    <span className="text-[9.5px] font-bold text-emerald-600 block mb-0.5">🤝 TINDAK LANJUT / SANKSI</span>
+                                    <span className={`text-[9.5px] font-bold block mb-0.5 ${isReduction ? 'text-emerald-750' : 'text-emerald-600'}`}>
+                                      {isReduction ? '🤝 STATUS APRESIASI' : '🤝 TINDAK LANJUT / SANKSI'}
+                                    </span>
                                     {log.actionTaken}
                                   </div>
                                 </div>
@@ -4012,6 +4024,21 @@ Wassalamualaikum Wr. Wb.
                                 <div><strong>🧭 Rencana tindakan:</strong> "{log.actionPlan}"</div>
                                 <div><strong>🏆 Hasil &amp; Komitmen siswa:</strong> "{log.result}"</div>
                               </div>
+                              {log.bkFeedback && (
+                                <div className="mt-1 p-3 bg-indigo-50 border border-indigo-150 rounded-xl flex flex-col gap-1.5 animate-fade-in text-left">
+                                  <div className="flex justify-between items-center text-[10px] font-black text-indigo-900 tracking-wide uppercase">
+                                    <span className="flex items-center gap-1">🧠 SARAN &amp; INTERVENSI GURU BK:</span>
+                                    {log.bkFeedbackAt && (
+                                      <span className="text-[9px] text-indigo-400 font-mono font-medium lowercase">
+                                        ({new Date(log.bkFeedbackAt).toLocaleDateString('id-ID')} {new Date(log.bkFeedbackAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-indigo-950 font-bold text-[11px] leading-relaxed italic">
+                                    "{log.bkFeedback}"
+                                  </p>
+                                </div>
+                              )}
                               <div className="flex justify-end gap-2 border-t border-slate-100 pt-2 pb-1 mt-1">
                                 <button
                                   onClick={() => printSingleCounselingLog(log, schoolIdentity, currentTeacher.name)}
@@ -5306,6 +5333,57 @@ Wassalamualaikum Wr. Wb.
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru oleh Kepala Sekolah</p>
                   </div>
                 </button>
+              </div>
+
+              {/* Quick access to download Mobile Apps in the bottom sheet menu */}
+              <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
+                <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
+                  📲 Unduh Aplikasi Mobile Resmi
+                </span>
+                <p className="text-[10px] text-slate-500 leading-normal">
+                  Gunakan aplikasi mobile resmi untuk kemudahan akses monitor seluruh kegiatan kelas, presensi, &amp; dana tabungan wali murid langsung lewat HP.
+                </p>
+                <div className="grid grid-cols-2 gap-2 mt-1">
+                  <a
+                    href={schoolIdentity?.apkUrl || "#"}
+                    target={schoolIdentity?.apkUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.apkUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan Android belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.apkUrl 
+                        ? "bg-emerald-50 hover:bg-emerald-105 hover:border-emerald-300 text-emerald-850 border-emerald-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Smartphone size={13} className={schoolIdentity?.apkUrl ? "text-emerald-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">Android APK</span>
+                  </a>
+
+                  <a
+                    href={schoolIdentity?.iosUrl || "#"}
+                    target={schoolIdentity?.iosUrl ? "_blank" : undefined}
+                    rel="noopener noreferrer"
+                    onClick={(e) => {
+                      if (!schoolIdentity?.iosUrl) {
+                        e.preventDefault();
+                        alert("Link unduhan iOS belum diatur oleh Administrator.");
+                      }
+                    }}
+                    className={`py-2 px-3 rounded-xl border text-center transition-all flex items-center justify-center gap-1.5 cursor-pointer select-none group font-extrabold ${
+                      schoolIdentity?.iosUrl 
+                        ? "bg-sky-50 hover:bg-sky-105 hover:border-sky-300 text-sky-850 border-sky-250 shadow-3xs" 
+                        : "bg-slate-100 text-slate-400 border-slate-200 opacity-60"
+                    }`}
+                  >
+                    <Apple size={13} className={schoolIdentity?.iosUrl ? "text-sky-600 group-hover:scale-110 transition-transform" : "text-slate-350"} />
+                    <span className="text-[10px]">iOS Apple</span>
+                  </a>
+                </div>
               </div>
             </motion.div>
           </>

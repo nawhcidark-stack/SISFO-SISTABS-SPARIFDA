@@ -1,12 +1,12 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Student, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
-import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles } from 'lucide-react';
+import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, Smartphone, Apple } from 'lucide-react';
 
 interface LoginProps {
   students: Student[];
   onLoginSuccess: (
-    role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras', 
+    role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk', 
     student: Student | null, 
     homeroom: HomeroomTeacher | null, 
     subjectTeacher?: SubjectTeacher | null
@@ -15,7 +15,7 @@ interface LoginProps {
 }
 
 export default function Login({ students, onLoginSuccess, schoolIdentity }: LoginProps) {
-  const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras'>('student');
+  const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk'>('student');
   const [activeGroup, setActiveGroup] = useState<'student' | 'teacher' | 'staff'>('student');
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
@@ -34,7 +34,24 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
     setIsValidating(true);
 
     try {
-      if (activeRole === 'principal') {
+      if (activeRole === 'bk') {
+        // BK Counselor Validation
+        const res = await fetch('/api/bk/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('bk', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Username atau Password Guru BK salah.');
+        }
+      } else if (activeRole === 'principal') {
         // Principal Validation
         const res = await fetch('/api/principal/login', {
           method: 'POST',
@@ -260,7 +277,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                   setActiveRole(r);
                   if (r === 'student') {
                     setActiveGroup('student');
-                  } else if (['homeroom', 'subject_teacher', 'principal'].includes(r)) {
+                  } else if (['homeroom', 'subject_teacher', 'principal', 'bk'].includes(r)) {
                     setActiveGroup('teacher');
                   } else {
                     setActiveGroup('staff');
@@ -272,6 +289,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                 <option value="student">🎓 Portal Wali Murid / Siswa (Gunakan NIS)</option>
                 <option value="homeroom">🍎 Wali Kelas (Bimbingan Rapor &amp; Absensi)</option>
                 <option value="subject_teacher">📚 Guru Mata Pelajaran (KBM &amp; Catatan Mapel)</option>
+                <option value="bk">🧠 Guru BK / Konselor Pelayanan Bimbingan</option>
                 <option value="waka_sarpras">📦 Waka Sarana &amp; Prasarana (Sarpras Inventaris)</option>
                 <option value="treasurer">💰 Bendahara Keuangan (Mutasi SPP &amp; Tabungan)</option>
                 <option value="principal">👑 Kepala Sekolah / Yayasan (Executive Board)</option>
@@ -301,7 +319,9 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                         ? 'Masukkan NIS Anda (cth: 20241001)' 
                         : activeRole === 'waka_sarpras'
                           ? 'Gunakan username waka sarpras (sarpras)'
-                          : 'Masukkan username login Anda'
+                          : activeRole === 'bk'
+                            ? 'Gunakan username guru BK (bk)'
+                            : 'Masukkan username login Anda'
                     }
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}

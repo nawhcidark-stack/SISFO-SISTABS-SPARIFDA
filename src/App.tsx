@@ -8,6 +8,7 @@ import SubjectTeacherPanel from './components/SubjectTeacherPanel';
 import TreasurerPanel from './components/TreasurerPanel';
 import PrincipalPanel from './components/PrincipalPanel';
 import WakaSarprasPanel from './components/WakaSarprasPanel';
+import CounselorPanel from './components/CounselorPanel';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
@@ -19,8 +20,8 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('smp_maarif_logged_in') === 'true';
   });
-  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras'>(() => {
-    return (localStorage.getItem('smp_maarif_role') as 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras') || 'student';
+  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk'>(() => {
+    return (localStorage.getItem('smp_maarif_role') as any) || 'student';
   });
   const [loggedStudentId, setLoggedStudentId] = useState<string | null>(() => {
     return localStorage.getItem('smp_maarif_student_id');
@@ -446,7 +447,7 @@ export default function App() {
   };
 
   const handleLoginSuccess = (
-    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras', 
+    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk', 
     student: Student | null, 
     homeroom: HomeroomTeacher | null,
     subjectTeacher?: SubjectTeacher | null
@@ -1871,6 +1872,11 @@ export default function App() {
                   <ShieldCheck size={13} className="text-indigo-700" />
                   <span>Kepala Sekolah: {schoolIdentity.principal}</span>
                 </div>
+              ) : role === 'bk' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-850 border border-indigo-150 rounded-lg text-xs font-bold shadow-sm">
+                  <ShieldCheck size={13} className="text-indigo-700" />
+                  <span>Guru BK</span>
+                </div>
               ) : (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-850 border border-indigo-150 rounded-lg text-xs font-bold shadow-sm animate-pulse">
                   <ShieldCheck size={13} className="text-indigo-700" />
@@ -2004,6 +2010,12 @@ export default function App() {
             onLogout={handleLogout}
             homerooms={homeroomsList}
             subjectTeachers={subjectTeachersList}
+          />
+        ) : role === 'bk' ? (
+          <CounselorPanel
+            schoolIdentity={schoolIdentity}
+            onLogout={handleLogout}
+            onRefresh={handleReload}
           />
         ) : (
           <AdminPanel

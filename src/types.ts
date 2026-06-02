@@ -203,6 +203,8 @@ export interface StudentCounselingLog {
   topic: string; // Topik / permasalahan
   actionPlan: string; // Tindakan / solusi
   result: string; // Hasil dan tindak lanjut
+  bkFeedback?: string;
+  bkFeedbackAt?: string;
   createdAt: string;
 }
 

@@ -501,6 +501,11 @@ let sarprasConfig = {
   password: "sarpras123"
 };
 
+// Guru BK Credentials Config
+let bkConfig = {
+  password: "bk123"
+};
+
 // Server configuration values (Midtrans Keys)
 let midtransConfig: MidtransConfig = {
   merchantId: process.env.MIDTRANS_MERCHANT_ID || "",
@@ -608,6 +613,7 @@ async function saveStateToFirestore() {
     await saveConfig("treasurerConfig", treasurerConfig);
     await saveConfig("principalConfig", principalConfig);
     await saveConfig("sarprasConfig", sarprasConfig);
+    await saveConfig("bkConfig", bkConfig);
     await saveConfig("systemMetadata", { seeded: true });
 
     console.log("All state collections successfully synced to MongoDB.");
@@ -931,6 +937,7 @@ async function syncWithFirestore() {
         else if (id === "treasurerConfig") Object.assign(treasurerConfig, cleaned);
         else if (id === "principalConfig") Object.assign(principalConfig, cleaned);
         else if (id === "sarprasConfig") Object.assign(sarprasConfig, cleaned);
+        else if (id === "bkConfig") Object.assign(bkConfig, cleaned);
       });
 
       dbSyncStatus = "Synced (Loaded from MongoDB)";
@@ -1201,6 +1208,7 @@ function loadState() {
       if (data.treasurerConfig) Object.assign(treasurerConfig, data.treasurerConfig);
       if (data.principalConfig) Object.assign(principalConfig, data.principalConfig);
       if (data.sarprasConfig) Object.assign(sarprasConfig, data.sarprasConfig);
+      if (data.bkConfig) Object.assign(bkConfig, data.bkConfig);
       console.log("State loaded successfully from database");
       return true;
     }
@@ -2008,6 +2016,82 @@ async function startServer() {
     res.json({ success: true, message: "Sandi Waka Sarpras sukses diperbarui oleh Admin." });
   });
 
+  // Guru BK Credentials Validation Endpoints
+  app.post("/api/bk/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username dan password wajib diisi." });
+    }
+    const cleanUser = username.trim().toLowerCase();
+    if (cleanUser === "bk" && password === bkConfig.password) {
+      res.json({ success: true, message: "Login Guru BK berhasil." });
+    } else {
+      res.status(401).json({ error: "Password Guru BK salah. Coba periksa kembali password Anda atau hubungi admin." });
+    }
+  });
+
+  app.post("/api/bk/change-password", (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    if (oldPassword !== bkConfig.password) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
+    }
+    bkConfig.password = newPassword.trim();
+    saveState();
+    
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-bk-${Date.now()}`,
+      title: "Sandi Akun Guru BK Berubah 🔑",
+      message: `Password akun Guru BK baru saja diperbarui melalui portal keamanan.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Kata sandi Guru BK sukses disimpan." });
+  });
+
+  app.post("/api/admin/bk/reset-password", (req, res) => {
+    bkConfig.password = "bk123";
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-bk-reset-${Date.now()}`,
+      title: "Sandi Guru BK Direset 🔒",
+      message: `Akun Guru BK disetel ulang ke sandi bawaan (bk123) oleh Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Password Guru BK berhasil di-reset ke sandi bawaan: bk123" });
+  });
+
+  app.post("/api/admin/bk/change-password", (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    bkConfig.password = newPassword.trim();
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-bk-admin-${Date.now()}`,
+      title: "Sandi Guru BK Diubah Admin 🔑",
+      message: `Password akun Guru BK telah disetel oleh Kepala/Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Sandi Guru BK sukses diperbarui oleh Admin." });
+  });
+
   // System Database Reset Endpoint (Clear Dummy Data & Financial Transactions to start fresh)
   app.post("/api/admin/system/reset-data", (req, res) => {
     try {
@@ -2627,6 +2711,32 @@ async function startServer() {
     studentCounselingLogs.splice(index, 1);
     saveState();
     res.json({ success: true, studentCounselingLogs });
+  });
+
+  app.put("/api/student-counseling-logs/:id/feedback", (req, res) => {
+    const { id } = req.params;
+    const { bkFeedback } = req.body;
+    
+    const index = studentCounselingLogs.findIndex(l => l.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Catatan bimbingan konseling tidak ditemukan." });
+    }
+    
+    studentCounselingLogs[index].bkFeedback = bkFeedback;
+    studentCounselingLogs[index].bkFeedbackAt = new Date().toISOString();
+    saveState();
+
+    // Broadcast SSE notification for counselor feedback
+    const notification: RealtimeNotification = {
+      id: `notif-bk-feedback-${id}-${Date.now()}`,
+      title: `Saran Guru BK Masuk 🧠`,
+      message: `Guru BK memberikan saran & solusi untuk bimbingan konseling siswa ${studentCounselingLogs[index].studentName}.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, studentCounselingLogs, updatedLog: studentCounselingLogs[index] });
   });
 
 

@@ -944,6 +944,7 @@ async function syncWithFirestore() {
         else if (id === "principalConfig") Object.assign(principalConfig, cleaned);
         else if (id === "sarprasConfig") Object.assign(sarprasConfig, cleaned);
         else if (id === "bkConfig") Object.assign(bkConfig, cleaned);
+        else if (id === "adminConfig") Object.assign(adminConfig, cleaned);
       });
 
       dbSyncStatus = "Synced (Loaded from MongoDB)";
@@ -4329,6 +4330,8 @@ async function startServer() {
     const currentMaxStartYear = existingStartYears.length > 0 ? Math.max(...existingStartYears) : 2025;
     const nextStartYear = currentMaxStartYear + 1;
 
+    const { clearPreviousBills, generateNewBills } = req.body || {};
+
     students.forEach(student => {
       const cls = (student.class || "").trim();
       if (cls.toLowerCase() === "lulus" || cls.toLowerCase() === "lulusan" || cls.toLowerCase() === "mutasi" || cls.toLowerCase() === "mutasi keluar") {
@@ -4359,60 +4362,91 @@ async function startServer() {
       }
     });
 
+    // Option to clear old unpaid bills prior to nextStartYear
+    let deletedBillsCount = 0;
+    if (clearPreviousBills === true) {
+      const initialBillsCount = sppBills.length;
+      const filteredBills = sppBills.filter(b => {
+        const isFirstHalf = ["Juli", "Agustus", "September", "Oktober", "November", "Desember"].includes(b.month);
+        const billStartYear = isFirstHalf ? b.year : b.year - 1;
+        const isOlder = billStartYear < nextStartYear;
+        // Delete older unpaid bills
+        if (isOlder && b.status === "unpaid") {
+          return false;
+        }
+        return true;
+      });
+      deletedBillsCount = initialBillsCount - filteredBills.length;
+      sppBills.length = 0;
+      sppBills.push(...filteredBills);
+    }
+
     // 2. Automatically generate 12 months unpaid SPP bills for the next academic year for all non-graduated students
     let autoBillsGenerated = 0;
-    const schoolMonths = [
-      { name: "Juli", isNextYear: false },
-      { name: "Agustus", isNextYear: false },
-      { name: "September", isNextYear: false },
-      { name: "Oktober", isNextYear: false },
-      { name: "November", isNextYear: false },
-      { name: "Desember", isNextYear: false },
-      { name: "Januari", isNextYear: true },
-      { name: "Februari", isNextYear: true },
-      { name: "Maret", isNextYear: true },
-      { name: "April", isNextYear: true },
-      { name: "Mei", isNextYear: true },
-      { name: "Juni", isNextYear: true }
-    ];
+    const shouldGenerate = generateNewBills !== false;
 
-    students.forEach(student => {
-      const cls = (student.class || "").trim().toLowerCase();
-      if (cls === "lulus" || cls === "lulusan" || cls === "mutasi" || cls === "mutasi keluar") {
-        return;
-      }
+    if (shouldGenerate) {
+      const schoolMonths = [
+        { name: "Juli", isNextYear: false },
+        { name: "Agustus", isNextYear: false },
+        { name: "September", isNextYear: false },
+        { name: "Oktober", isNextYear: false },
+        { name: "November", isNextYear: false },
+        { name: "Desember", isNextYear: false },
+        { name: "Januari", isNextYear: true },
+        { name: "Februari", isNextYear: true },
+        { name: "Maret", isNextYear: true },
+        { name: "April", isNextYear: true },
+        { name: "Mei", isNextYear: true },
+        { name: "Juni", isNextYear: true }
+      ];
 
-      schoolMonths.forEach((m, mIdx) => {
-        const billYear = m.isNextYear ? nextStartYear + 1 : nextStartYear;
-        // Check if bill already exists
-        const exists = sppBills.some(b => 
-          b.studentId === student.id && 
-          b.month === m.name && 
-          b.year === billYear
-        );
-
-        if (!exists) {
-          sppBills.push({
-            id: `bill-${student.id}-${nextStartYear}-${mIdx}-${Date.now().toString().slice(-3)}`,
-            studentId: student.id,
-            month: m.name,
-            year: billYear,
-            amount: getSppAmountForClass(student.class),
-            status: "unpaid"
-          });
-          autoBillsGenerated++;
+      students.forEach(student => {
+        const cls = (student.class || "").trim().toLowerCase();
+        if (cls === "lulus" || cls === "lulusan" || cls === "mutasi" || cls === "mutasi keluar") {
+          return;
         }
+
+        schoolMonths.forEach((m, mIdx) => {
+          const billYear = m.isNextYear ? nextStartYear + 1 : nextStartYear;
+          // Check if bill already exists
+          const exists = sppBills.some(b => 
+            b.studentId === student.id && 
+            b.month === m.name && 
+            b.year === billYear
+          );
+
+          if (!exists) {
+            sppBills.push({
+              id: `bill-${student.id}-${nextStartYear}-${mIdx}-${Date.now().toString().slice(-3)}`,
+              studentId: student.id,
+              month: m.name,
+              year: billYear,
+              amount: getSppAmountForClass(student.class),
+              status: "unpaid"
+            });
+            autoBillsGenerated++;
+          }
+        });
       });
-    });
+    }
 
     // Save changes
     saveState();
 
     // Broadcast SSE notification
+    let sseMsg = `Prosedur Kenaikan Kelas & Aktivasi Tahun Ajaran ${nextStartYear}/${nextStartYear + 1} berhasil dijalankan secara otomatis. ${promotedCount} siswa naik kelas, ${graduatedCount} siswa lulus.`;
+    if (shouldGenerate) {
+      sseMsg += ` Total ${autoBillsGenerated} lembar tagihan baru otomatis dibuat.`;
+    }
+    if (clearPreviousBills) {
+      sseMsg += ` Sebanyak ${deletedBillsCount} lembar tagihan belum lunas dari tahun sebelumnya telah dibersihkan agar data awal siap pakai.`;
+    }
+
     const notification: RealtimeNotification = {
       id: `notif-promote-std-${Date.now()}`,
       title: "Kenaikan Kelas Selesai",
-      message: `Prosedur Kenaikan Kelas & Aktivasi Tahun Ajaran ${nextStartYear}/${nextStartYear + 1} berhasil dijalankan secara otomatis. ${promotedCount} siswa naik kelas, ${graduatedCount} siswa lulus, dan ${autoBillsGenerated} lembar tagihan baru otomatis digenerate.`,
+      message: sseMsg,
       type: "success",
       createdAt: new Date().toISOString()
     };
@@ -4424,6 +4458,7 @@ async function startServer() {
       graduatedCount, 
       updatedBillsCount, 
       autoBillsGenerated,
+      deletedBillsCount,
       nextStartYear,
       students 
     });
@@ -4431,76 +4466,108 @@ async function startServer() {
 
   // 3b. Pengaktifan Tahun Ajaran Baru & Bulk SPP Bill Generation
   app.post("/api/admin/activate-academic-year", (req, res) => {
-    const { startYear } = req.body;
+    const { startYear, clearPreviousBills, generateNewBills } = req.body || {};
     const yearNum = Number(startYear);
     
     if (!yearNum || yearNum < 2020 || yearNum > 2100) {
       return res.status(400).json({ error: "Tahun akademik awal tidak valid." });
     }
 
-    const schoolMonths = [
-      { name: "Juli", isNextYear: false },
-      { name: "Agustus", isNextYear: false },
-      { name: "September", isNextYear: false },
-      { name: "Oktober", isNextYear: false },
-      { name: "November", isNextYear: false },
-      { name: "Desember", isNextYear: false },
-      { name: "Januari", isNextYear: true },
-      { name: "Februari", isNextYear: true },
-      { name: "Maret", isNextYear: true },
-      { name: "April", isNextYear: true },
-      { name: "Mei", isNextYear: true },
-      { name: "Juni", isNextYear: true }
-    ];
+    let deletedBillsCount = 0;
+    if (clearPreviousBills === true) {
+      const initialBillsCount = sppBills.length;
+      const filteredBills = sppBills.filter(b => {
+        const isFirstHalf = ["Juli", "Agustus", "September", "Oktober", "November", "Desember"].includes(b.month);
+        const billStartYear = isFirstHalf ? b.year : b.year - 1;
+        const isOlder = billStartYear < yearNum;
+        // Delete older unpaid bills
+        if (isOlder && b.status === "unpaid") {
+          return false;
+        }
+        return true;
+      });
+      deletedBillsCount = initialBillsCount - filteredBills.length;
+      sppBills.length = 0;
+      sppBills.push(...filteredBills);
+    }
 
     let billsGenerated = 0;
     let skippedBillsCount = 0;
+    const shouldGenerate = generateNewBills !== false;
 
-    students.forEach(student => {
-      const cls = (student.class || "").trim().toLowerCase();
-      // Skip graduated students
-      if (cls === "lulus" || cls === "lulusan") {
-        return;
-      }
+    if (shouldGenerate) {
+      const schoolMonths = [
+        { name: "Juli", isNextYear: false },
+        { name: "Agustus", isNextYear: false },
+        { name: "September", isNextYear: false },
+        { name: "Oktober", isNextYear: false },
+        { name: "November", isNextYear: false },
+        { name: "Desember", isNextYear: false },
+        { name: "Januari", isNextYear: true },
+        { name: "Februari", isNextYear: true },
+        { name: "Maret", isNextYear: true },
+        { name: "April", isNextYear: true },
+        { name: "Mei", isNextYear: true },
+        { name: "Juni", isNextYear: true }
+      ];
 
-      schoolMonths.forEach(m => {
-        const billYear = m.isNextYear ? yearNum + 1 : yearNum;
-        
-        // Check if bill already exists
-        const exists = sppBills.some(b => 
-          b.studentId === student.id && 
-          b.month === m.name && 
-          b.year === billYear
-        );
-
-        if (!exists) {
-          const isGrade7 = student.class.trim().startsWith("7") || student.class.trim().toUpperCase().startsWith("VII");
-          const isJuly = m.name === "Juli";
-          const isPaid = isGrade7 && isJuly;
-
-          sppBills.push({
-            id: `bill-${student.id}-${m.name}-${billYear}-${Date.now().toString().slice(-4)}`,
-            studentId: student.id,
-            month: m.name,
-            year: billYear,
-            amount: getSppAmountForClass(student.class),
-            status: isPaid ? "paid" : "unpaid",
-            paidAt: isPaid ? new Date().toISOString() : undefined,
-            paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
-            orderId: isPaid ? `ORD-REGISTRATION-${student.id}-${billYear}` : undefined
-          });
-          billsGenerated++;
-        } else {
-          skippedBillsCount++;
+      students.forEach(student => {
+        const cls = (student.class || "").trim().toLowerCase();
+        // Skip graduated students
+        if (cls === "lulus" || cls === "lulusan") {
+          return;
         }
+
+        schoolMonths.forEach(m => {
+          const billYear = m.isNextYear ? yearNum + 1 : yearNum;
+          
+          // Check if bill already exists
+          const exists = sppBills.some(b => 
+            b.studentId === student.id && 
+            b.month === m.name && 
+            b.year === billYear
+          );
+
+          if (!exists) {
+            const isGrade7 = student.class.trim().startsWith("7") || student.class.trim().toUpperCase().startsWith("VII");
+            const isJuly = m.name === "Juli";
+            const isPaid = isGrade7 && isJuly;
+
+            sppBills.push({
+              id: `bill-${student.id}-${m.name}-${billYear}-${Date.now().toString().slice(-4)}`,
+              studentId: student.id,
+              month: m.name,
+              year: billYear,
+              amount: getSppAmountForClass(student.class),
+              status: isPaid ? "paid" : "unpaid",
+              paidAt: isPaid ? new Date().toISOString() : undefined,
+              paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
+              orderId: isPaid ? `ORD-REGISTRATION-${student.id}-${billYear}` : undefined
+            });
+            billsGenerated++;
+          } else {
+            skippedBillsCount++;
+          }
+        });
       });
-    });
+    }
+
+    // Save changes
+    saveState();
 
     // Broadcast SSE notification
+    let sseMsg = `Tahun Ajaran ${yearNum}/${yearNum + 1} berhasil diaktifkan.`;
+    if (shouldGenerate) {
+      sseMsg += ` Total ${billsGenerated} lembar tagihan baru dihasilkan.`;
+    }
+    if (clearPreviousBills) {
+      sseMsg += ` Sebanyak ${deletedBillsCount} lembar tagihan belum lunas dari tahun sebelumnya telah dibersihkan agar persiapan data awal bersih.`;
+    }
+
     const notification: RealtimeNotification = {
       id: `notif-new-year-${Date.now()}`,
       title: `Tahun Ajaran Baru ${yearNum}/${yearNum + 1} Aktif`,
-      message: `Tahun Ajaran ${yearNum}/${yearNum + 1} berhasil diaktifkan. SPP Bulanan siap dibayar. Total ${billsGenerated} lembar tagihan baru dihasilkan.`,
+      message: sseMsg,
       type: "success",
       createdAt: new Date().toISOString()
     };
@@ -4510,7 +4577,8 @@ async function startServer() {
       success: true, 
       message: `Tahun Ajaran ${yearNum}/${yearNum + 1} berhasil diaktifkan!`,
       billsGenerated,
-      skippedBillsCount
+      skippedBillsCount,
+      deletedBillsCount
     });
   });
 

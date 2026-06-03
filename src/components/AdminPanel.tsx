@@ -1063,10 +1063,21 @@ export default function AdminPanel({
   const [isActivatingYear, setIsActivatingYear] = useState(false);
   const [activatingYearMessage, setActivatingYearMessage] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   const [newYearInput, setNewYearInput] = useState('2026');
+  const [clearPastYearBills, setClearPastYearBills] = useState(false);
+  const [generateNewActiveBills, setGenerateNewActiveBills] = useState(true);
 
   // Class Promotion massal handler
   const handlePromoteClasses = async () => {
-    if (!window.confirm("⚠️ APAKAH ANDA YAKIN?\n\nTindakan ini akan menaikkan kelas semua siswa secara otomatis:\n- Kelas 7 -> Kelas 8\n- Kelas 8 -> Kelas 9\n- Kelas 9 -> Lulus\n\nProses ini tidak dapat dibatalkan (irreversible). Lanjutkan?")) {
+    let confirmMsg = "⚠️ APAKAH ANDA YAKIN?\n\nTindakan ini akan menaikkan kelas semua siswa secara otomatis:\n- Kelas 7 -> Kelas 8\n- Kelas 8 -> Kelas 9\n- Kelas 9 -> Lulus";
+    if (clearPastYearBills) {
+      confirmMsg += "\n\nSerta MENGHAPUS seluruh lembar tagihan sisa/belum lunas dari tahun ajaran sebelum-sebelumnya.";
+    }
+    if (generateNewActiveBills) {
+      confirmMsg += "\n\nSerta otomatis menghasilkan 12 bulan tagihan SPP baru siap bayar pada semester aktif berikutnya.";
+    }
+    confirmMsg += "\n\nProses ini tidak dapat dibatalkan (irreversible). Lanjutkan?";
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
     
@@ -1075,13 +1086,24 @@ export default function AdminPanel({
     try {
       const res = await fetch('/api/admin/students/promote-all', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' }
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          clearPreviousBills: clearPastYearBills,
+          generateNewBills: generateNewActiveBills
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        let textMsg = `🎉 Sukses! Kenaikan kelas massal selesai. ${data.promotedCount} siswa naik kelas, dan ${data.graduatedCount} siswa kelas 9 berhasil dinyatakan Lulus.`;
+        if (generateNewActiveBills) {
+          textMsg += ` Menghasilkan ${data.autoBillsGenerated || 0} lembar tagihan baru.`;
+        }
+        if (clearPastYearBills && data.deletedBillsCount !== undefined) {
+          textMsg += ` Menyapu/membersihkan ${data.deletedBillsCount} lembar tagihan belum lunas dari periode sebelumnya agar bersih.`;
+        }
         setPromotionMessage({
           type: 'success',
-          text: `🎉 Sukses! Kenaikan kelas massal selesai. ${data.promotedCount} siswa naik kelas, dan ${data.graduatedCount} siswa kelas 9 berhasil dinyatakan Lulus.`
+          text: textMsg
         });
         onRefresh();
       } else {
@@ -1104,7 +1126,16 @@ export default function AdminPanel({
       return;
     }
 
-    if (!window.confirm(`⚠️ AKTIFKAN TAHUN AJARAN ${yearNum}/${yearNum + 1}?\n\nTindakan ini akan mengaktifkan tahun ajaran baru dan menghasilkan 12 bulan tagihan SPP untuk semua siswa aktif yang belum lulus.\n\nLanjutkan?`)) {
+    let confirmMsg = `⚠️ AKTIFKAN TAHUN AJARAN ${yearNum}/${yearNum + 1}?`;
+    if (clearPastYearBills) {
+      confirmMsg += "\n\nTindakan ini akan MENGHAPUS seluruh lembar tagihan sisa/belum lunas dari tahun ajaran sebelum-sebelumnya.";
+    }
+    if (generateNewActiveBills) {
+      confirmMsg += `\n\nSistem akan menghasilkan 12 bulan tagihan SPP baru siap bayar untuk tahun ajaran ${yearNum}/${yearNum + 1}.`;
+    }
+    confirmMsg += "\n\nLanjutkan?";
+
+    if (!window.confirm(confirmMsg)) {
       return;
     }
 
@@ -1114,13 +1145,24 @@ export default function AdminPanel({
       const res = await fetch('/api/admin/activate-academic-year', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ startYear: yearNum })
+        body: JSON.stringify({
+          startYear: yearNum,
+          clearPreviousBills: clearPastYearBills,
+          generateNewBills: generateNewActiveBills
+        })
       });
       const data = await res.json();
       if (res.ok && data.success) {
+        let textMsg = `🎉 Sukses! Tahun Ajaran ${yearNum}/${yearNum + 1} aktif.`;
+        if (generateNewActiveBills) {
+          textMsg += ` Menghasilkan ${data.billsGenerated} lembar tagihan baru bagi seluruh siswa.`;
+        }
+        if (clearPastYearBills && data.deletedBillsCount !== undefined) {
+          textMsg += ` Membersihkan ${data.deletedBillsCount} lembar tagihan belum lunas dari tahun/periode sebelumnya.`;
+        }
         setActivatingYearMessage({
           type: 'success',
-          text: `🎉 Sukses! Tahun Ajaran ${yearNum}/${yearNum + 1} aktif. Menghasilkan ${data.billsGenerated} lembar tagihan baru bagi seluruh siswa.`
+          text: textMsg
         });
         onRefresh();
       } else {
@@ -4051,48 +4093,151 @@ export default function AdminPanel({
 
             {/* Academic Operations: Kenaikan Kelas & Aktivasi Tahun Ajaran Otomatis */}
             <div className="w-full">
-              {/* Card Operation: Kenaikan Kelas */}
               <motion.div
                 initial={{ opacity: 0, y: 15 }}
                 animate={{ opacity: 1, y: 0 }}
-                className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col justify-between gap-5 text-xs"
+                className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-6 text-xs text-left"
               >
                 <div>
                   <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                    <GraduationCap size={16} className="text-emerald-600 animate-pulse" /> Operasi Kenaikan Kelas Massal & Tahun Ajaran Baru
+                    <GraduationCap size={18} className="text-emerald-600" /> Operasi Kenaikan Kelas Massal & Manajemen Tahun Ajaran Baru
                   </h3>
                   <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
-                    Membantu naik kelas seluruh siswa dalam satu klik: Kelas 7A/B naik ke Kelas 8A/B, Kelas 8A/B naik ke Kelas 9A/B, dan Kelas 9A/B dinyatakan lulus (Lulus). 
-                    <strong className="text-indigo-650 text-indigo-600 ml-1">Sistem akan secara otomatis mendeteksi dan mengaktifkan tahun ajaran berikutnya serta membuat 12 bulan tagihan SPP baru siap bayar bagi seluruh siswa aktif non-graduated.</strong>
+                    Atur kenaikan kelas siswa dan konfigurasi penagihan SPP Anda saat berpindah semester atau tahun ajaran baru.
                   </p>
                 </div>
 
-                <div className="flex flex-col gap-3">
-                  {promotionMessage && (
-                    <div className={`p-3 rounded-lg font-bold text-xs flex items-center gap-2 ${
-                      promotionMessage.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-700'
-                    }`}>
-                      {promotionMessage.type === 'success' ? <Check size={14} className="text-emerald-700" /> : <AlertCircle size={14} className="text-red-700" />}
-                      {promotionMessage.text}
-                    </div>
-                  )}
+                {/* Persiapan Data Awal & Perilaku Tagihan Form */}
+                <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex flex-col gap-3">
+                  <span className="font-bold text-slate-700 text-xs flex items-center gap-1.5 hover:text-indigo-600 transition-colors">
+                    <Settings size={14} className="text-indigo-600" /> Opsi Persiapan Data Awal & Konfigurasi Tagihan
+                  </span>
+                  <p className="text-[10px] text-slate-500 leading-normal">
+                    Gunakan pengaturan di bawah ini untuk mengontrol apakah sisa tagihan lama dihapus atau apakah tagihan baru langsung digenerate otomatis. Sangat membantu saat persiapan awal menggunakan aplikasi.
+                  </p>
 
-                  <button
-                    type="button"
-                    onClick={handlePromoteClasses}
-                    disabled={isPromoting}
-                    className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold rounded-lg text-xs uppercase tracking-wide cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xs"
-                  >
-                    {isPromoting ? (
-                      <>
-                        <RefreshCw size={14} className="animate-spin" /> Memproses Kenaikan & Aktivasi...
-                      </>
-                    ) : (
-                      <>
-                        <TrendingUp size={14} /> Proses Kenaikan Kelas & Aktivasi Tahun Ajaran Baru 👨‍🎓🚀
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-col gap-2.5 mt-1 text-left">
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                      <input
+                        type="checkbox"
+                        checked={clearPastYearBills}
+                        onChange={(e) => setClearPastYearBills(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-slate-700 text-[11px]">Bersihkan/Hapus seluruh tagihan lama siswa di tahun ajaran sebelumnya</span>
+                        <span className="text-[9.5px] text-slate-500 leading-normal">Apabila diaktifkan, seluruh lembar tagihan sisa yang belum terbayar di tahun-tahun ajaran terdahulu akan dibersihkan agar database Anda bersih (bebas tunggakan masa lalu). Sempurna untuk data awal pemakaian aplikasi.</span>
+                      </div>
+                    </label>
+
+                    <label className="flex items-start gap-2.5 cursor-pointer select-none border-t border-slate-200/60 pt-2.5">
+                      <input
+                        type="checkbox"
+                        checked={generateNewActiveBills}
+                        onChange={(e) => setGenerateNewActiveBills(e.target.checked)}
+                        className="mt-0.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                      />
+                      <div className="flex flex-col">
+                        <span className="font-semibold text-slate-700 text-[11px]">Hasilkan 12 bulan tagihan SPP baru siap bayar secara otomatis</span>
+                        <span className="text-[9.5px] text-slate-500 leading-normal">Secara otomatis menerbitkan lembar SPP 12 bulan (Juli s.d Juni) untuk seluruh siswa aktif non-keluaran/lulusan pada tahun akademik baru yang aktif.</span>
+                      </div>
+                    </label>
+                  </div>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                  {/* CARD OPSI 1: Kenaikan Kelas Massal */}
+                  <div className="flex flex-col justify-between gap-4 p-4 border border-slate-250 rounded-xl bg-orange-50/20 text-left">
+                    <div>
+                      <h4 className="font-extrabold text-slate-850 text-[11px] uppercase tracking-wider flex items-center gap-1">
+                        🚀 PILIHAN A: Kenaikan Kelas Massal
+                      </h4>
+                      <p className="text-[10.5px] text-slate-500 leading-relaxed mt-1">
+                        Menaikkan tingkat siswa dalam satu klik: <strong>Kelas 7 naik ke 8</strong>, <strong>Kelas 8 naik ke 9</strong>, dan <strong>Kelas 9 dinyatakan Lulus</strong>. Serta mengaktifkan tahun ajaran berikutnya secara kumulatif.
+                      </p>
+                    </div>
+
+                    <div className="flex flex-col gap-2">
+                      {promotionMessage && (
+                        <div className={`p-2.5 rounded-lg font-bold text-[10.5px] leading-relaxed flex items-start gap-1.5 ${
+                          promotionMessage.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-700'
+                        }`}>
+                          {promotionMessage.type === 'success' ? <Check size={14} className="text-emerald-700 mt-0.5 flex-shrink-0" /> : <AlertCircle size={14} className="text-red-700 mt-0.5 flex-shrink-0" />}
+                          <div>{promotionMessage.text}</div>
+                        </div>
+                      )}
+
+                      <button
+                        type="button"
+                        onClick={handlePromoteClasses}
+                        disabled={isPromoting}
+                        className="w-full py-2.5 bg-slate-900 hover:bg-slate-800 disabled:bg-slate-400 text-white font-bold rounded-lg text-xs uppercase tracking-wider cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        {isPromoting ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> Memproses Kenaikan...
+                          </>
+                        ) : (
+                          <>
+                            <TrendingUp size={14} /> Proses Kenaikan Kelas Massal 👨‍🎓
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* CARD OPSI 2: Aktivasi Tahun Ajaran Saja */}
+                  <div className="flex flex-col justify-between gap-4 p-4 border border-slate-250 rounded-xl bg-indigo-50/10 text-left">
+                    <div>
+                      <h4 className="font-extrabold text-slate-850 text-[11px] uppercase tracking-wider flex items-center gap-1">
+                        ⚙️ PILIHAN B: Aktifkan Tahun Ajaran Baru Saja
+                      </h4>
+                      <p className="text-[10.5px] text-slate-500 leading-relaxed mt-1">
+                        Gunakan ini untuk mengaktifkan tahun ajaran baru secara manual <strong>tanpa menaikkan kelas siswa</strong>. Sangat cocok saat input perdana siswa baru atau penyesuaian data awal.
+                      </p>
+                    </div>
+
+                    <form onSubmit={handleActivateNewYear} className="flex flex-col gap-3">
+                      <div className="flex items-center gap-2">
+                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-widest shrink-0">Tahun Mulai (Juli):</label>
+                        <input
+                          type="number"
+                          min="2020"
+                          max="2100"
+                          value={newYearInput}
+                          onChange={(e) => setNewYearInput(e.target.value)}
+                          className="w-24 px-2 py-1 bg-white border border-slate-200 rounded text-slate-800 font-bold focus:outline-none focus:border-indigo-600 text-center"
+                          placeholder="2026"
+                        />
+                        <span className="text-[11px] text-slate-500 font-semibold">/ {Number(newYearInput) + 1}</span>
+                      </div>
+
+                      {activatingYearMessage && (
+                        <div className={`p-2.5 rounded-lg font-bold text-[10.5px] leading-relaxed flex items-start gap-1.5 ${
+                          activatingYearMessage.type === 'success' ? 'bg-emerald-50 border border-emerald-200 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-700'
+                        }`}>
+                          {activatingYearMessage.type === 'success' ? <Check size={14} className="text-emerald-700 mt-0.5 flex-shrink-0" /> : <AlertCircle size={14} className="text-red-700 mt-0.5 flex-shrink-0" />}
+                          <div>{activatingYearMessage.text}</div>
+                        </div>
+                      )}
+
+                      <button
+                        type="submit"
+                        disabled={isActivatingYear}
+                        className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-400 text-white font-bold rounded-lg text-xs uppercase tracking-wider cursor-pointer transition-all flex items-center justify-center gap-2 shadow-xs"
+                      >
+                        {isActivatingYear ? (
+                          <>
+                            <RefreshCw size={14} className="animate-spin" /> Mengaktifkan...
+                          </>
+                        ) : (
+                          <>
+                            <Check size={14} /> Aktifkan Tahun Ajaran Saja ✔️
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
                 </div>
               </motion.div>
             </div>

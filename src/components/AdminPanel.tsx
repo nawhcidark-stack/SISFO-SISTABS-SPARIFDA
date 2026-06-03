@@ -57,7 +57,7 @@ interface AdminPanelProps {
   bills: SppBill[];
   transactions: SavingsTransaction[];
   isLoading: boolean;
-  midtransStatus: { merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean } | null;
+  midtransStatus: { merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean } | null;
   onPaySppManual: (billId: string) => Promise<any>;
   onCancelSppManual?: (billId: string) => Promise<any>;
   onPaySppViaMidtrans?: (bill: SppBill) => Promise<void>;

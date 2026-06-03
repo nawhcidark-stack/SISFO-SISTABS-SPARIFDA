@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal } from './types';
 import StudentPanel from './components/StudentPanel';
@@ -38,6 +38,11 @@ export default function App() {
   // School data states
   const [studentsList, setStudentsList] = useState<Student[]>([]);
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
+
+  const currentStudentRef = useRef<Student | null>(null);
+  useEffect(() => {
+    currentStudentRef.current = currentStudent;
+  }, [currentStudent]);
   const [studentBills, setStudentBills] = useState<SppBill[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<SavingsTransaction[]>([]);
   const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>([]);
@@ -621,7 +626,8 @@ export default function App() {
 
         // Bidirectional reactive sync: If the transaction belongs to our currently selected student profile,
         // we automatically trigger an API query to sync the screen with the new funds or paid bills!
-        const relatedToActiveStud = currentStudent && (rawNotification.studentId === undefined || rawNotification.studentId === currentStudent.id);
+        const activeStud = currentStudentRef.current;
+        const relatedToActiveStud = activeStud && (rawNotification.studentId === undefined || rawNotification.studentId === activeStud.id);
         
         // Update general catalog (student balances/bills might have shifted)
         fetch('/api/students')
@@ -629,8 +635,9 @@ export default function App() {
           .then(dataList => {
             setStudentsList(dataList);
             // Also sync active student's specific sub-cards
-            if (currentStudent) {
-              const freshActive = dataList.find((s: any) => s.id === currentStudent.id);
+            const freshActiveStud = currentStudentRef.current;
+            if (freshActiveStud) {
+              const freshActive = dataList.find((s: any) => s.id === freshActiveStud.id);
               if (freshActive) {
                 // Fetch bills and transactions
                 fetchStudentFullData(freshActive.id);
@@ -657,7 +664,7 @@ export default function App() {
       sse.close();
       clearInterval(clockInterval);
     };
-  }, [currentStudent?.id]);
+  }, []);
 
   // Dismiss dynamic toast alert manually
   const handleDismissToast = (id: string) => {

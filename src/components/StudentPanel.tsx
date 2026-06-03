@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple } from 'lucide-react';
 import QRCode from 'qrcode';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency

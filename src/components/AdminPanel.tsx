@@ -988,6 +988,12 @@ export default function AdminPanel({
   const [isResettingSystem, setIsResettingSystem] = useState(false);
   const [resetSystemMsg, setResetSystemMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
+  // Admin credentials update states
+  const [currentAdminPass, setCurrentAdminPass] = useState('');
+  const [newAdminPass, setNewAdminPass] = useState('');
+  const [isUpdatingAdminPass, setIsUpdatingAdminPass] = useState(false);
+  const [adminPassFeedback, setAdminPassFeedback] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
   // Midtrans Gateways & Fees States
   const [adminFeeInput, setAdminFeeInput] = useState<number>(4000);
   const [systemMaintenanceFeeInput, setSystemMaintenanceFeeInput] = useState<number>(1500);
@@ -1343,6 +1349,39 @@ export default function AdminPanel({
       setTreasurerActionMsg({ type: 'error', text: 'Gangguan komunikasi dengan server.' });
     } finally {
       setIsOperatingTreasurerPwd(false);
+    }
+  };
+
+  const handleUpdateAdminPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!currentAdminPass.trim() || !newAdminPass.trim()) {
+      setAdminPassFeedback({ type: 'error', text: 'Semua kolom kata sandi wajib diisi.' });
+      return;
+    }
+    if (newAdminPass.trim().length < 6) {
+      setAdminPassFeedback({ type: 'error', text: 'Sandi baru minimal harus 6 karakter.' });
+      return;
+    }
+    setIsUpdatingAdminPass(true);
+    setAdminPassFeedback(null);
+    try {
+      const res = await fetch('/api/admin/change-password', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ oldPassword: currentAdminPass.trim(), newPassword: newAdminPass.trim() })
+      });
+      if (res.ok) {
+        setAdminPassFeedback({ type: 'success', text: 'Kredensial Password Administrator Utama sukses diperbarui!' });
+        setCurrentAdminPass('');
+        setNewAdminPass('');
+      } else {
+        const d = await res.json();
+        setAdminPassFeedback({ type: 'error', text: d.error || 'Autentikasi gagal atau sandi lama salah.' });
+      }
+    } catch {
+      setAdminPassFeedback({ type: 'error', text: 'Sistem mengalami kegagalan hubung/jaringan.' });
+    } finally {
+      setIsUpdatingAdminPass(false);
     }
   };
 
@@ -4622,6 +4661,70 @@ export default function AdminPanel({
                 )}
               </div>
             </div>
+          </motion.div>
+
+          {/* Admin Password Update Configuration Card */}
+          <motion.div
+            initial={{ opacity: 0, y: 15 }}
+            animate={{ opacity: 1, y: 0 }}
+            className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-5 text-xs text-left"
+          >
+            <div>
+              <h3 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                <Key size={16} className="text-indigo-650" /> Pengaturan Kata Sandi Akun Administrator Utama
+              </h3>
+              <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed font-semibold">
+                Demi keamanan data institusi, perbarui sandi default Staf Administrasi (admin123) dengan password baru yang lebih kuat.
+              </p>
+            </div>
+
+            <form onSubmit={handleUpdateAdminPassword} className="flex flex-col gap-4">
+              {adminPassFeedback && (
+                <div className={`p-3 rounded-lg font-bold text-xs flex items-center gap-2 ${
+                  adminPassFeedback.type === 'success' ? 'bg-emerald-50 border border-emerald-205 text-emerald-800' : 'bg-red-50 border border-red-200 text-red-750'
+                }`}>
+                  {adminPassFeedback.type === 'success' ? <Check size={14} className="text-emerald-700" /> : <AlertCircle size={14} className="text-red-700" />}
+                  <span>{adminPassFeedback.text}</span>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <div className="flex flex-col gap-1.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">KATA SANDI SEKARANG (LAMA)</span>
+                  <input
+                    type="password"
+                    required
+                    placeholder="Masukkan sandi saat ini"
+                    value={currentAdminPass}
+                    onChange={(e) => setCurrentAdminPass(e.target.value)}
+                    className="mt-1 w-full p-2.5 bg-white border border-slate-200 rounded-lg text-slate-800 font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5 p-3.5 bg-slate-50 border border-slate-200 rounded-xl">
+                  <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block">KATA SANDI BARU</span>
+                  <input
+                    type="password"
+                    required
+                    minLength={6}
+                    placeholder="Minimal 6 karakter"
+                    value={newAdminPass}
+                    onChange={(e) => setNewAdminPass(e.target.value)}
+                    className="mt-1 w-full p-2.5 bg-white border border-slate-200 rounded-lg text-slate-800 font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2">
+                <button
+                  type="submit"
+                  disabled={isUpdatingAdminPass}
+                  className="w-full md:w-auto px-5 py-2.5 bg-indigo-600 hover:bg-slate-800 text-white font-extrabold rounded-lg uppercase tracking-wider text-[11px] transition-all cursor-pointer disabled:opacity-50 select-none flex items-center justify-center gap-2"
+                >
+                  {isUpdatingAdminPass ? 'Memproses...' : 'Perbarui Sandi Admin 🔑'}
+                </button>
+              </div>
+            </form>
           </motion.div>
 
           {/* Pembersihan Data & Reset Sistem Card */}

@@ -506,6 +506,11 @@ let bkConfig = {
   password: "bk123"
 };
 
+// Admin Credentials Config
+let adminConfig = {
+  password: "admin123"
+};
+
 // Server configuration values (Midtrans Keys)
 let midtransConfig: MidtransConfig = {
   merchantId: process.env.MIDTRANS_MERCHANT_ID || "",
@@ -614,6 +619,7 @@ async function saveStateToFirestore() {
     await saveConfig("principalConfig", principalConfig);
     await saveConfig("sarprasConfig", sarprasConfig);
     await saveConfig("bkConfig", bkConfig);
+    await saveConfig("adminConfig", adminConfig);
     await saveConfig("systemMetadata", { seeded: true });
 
     console.log("All state collections successfully synced to MongoDB.");
@@ -1209,6 +1215,7 @@ function loadState() {
       if (data.principalConfig) Object.assign(principalConfig, data.principalConfig);
       if (data.sarprasConfig) Object.assign(sarprasConfig, data.sarprasConfig);
       if (data.bkConfig) Object.assign(bkConfig, data.bkConfig);
+      if (data.adminConfig) Object.assign(adminConfig, data.adminConfig);
       console.log("State loaded successfully from database");
       return true;
     }
@@ -2090,6 +2097,43 @@ async function startServer() {
     broadcastNotification(notification);
 
     res.json({ success: true, message: "Sandi Guru BK sukses diperbarui oleh Admin." });
+  });
+
+  // Administrator Utama Credentials Validation Endpoints
+  app.post("/api/admin/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username dan password wajib diisi." });
+    }
+    if (username.slice().toLowerCase() === "admin" && password === adminConfig.password) {
+      res.json({ success: true, message: "Login Administrator berhasil." });
+    } else {
+      res.status(401).json({ error: "Password Administrator salah. Coba periksa kembali password Anda." });
+    }
+  });
+
+  app.post("/api/admin/change-password", (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    if (oldPassword !== adminConfig.password) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
+    }
+    adminConfig.password = newPassword.trim();
+    saveState();
+    
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-admin-${Date.now()}`,
+      title: "Sandi Administrator Utama Diperbarui ⚙️",
+      message: `Password akun Utama Administrator telah berhasil diperbarui secara mandiri oleh Staf Administrasi.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Kata sandi Administrator Utama sukses disimpan." });
   });
 
   // System Database Reset Endpoint (Clear Dummy Data & Financial Transactions to start fresh)

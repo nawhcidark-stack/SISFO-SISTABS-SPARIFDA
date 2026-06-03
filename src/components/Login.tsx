@@ -87,14 +87,20 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         }
       } else if (activeRole === 'admin') {
         // Admin Validation
-        if (username.toLowerCase() === 'admin' && password === 'admin123') {
+        const res = await fetch('/api/admin/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password })
+        });
+        if (res.ok) {
           setTimeout(() => {
             setIsValidating(false);
             onLoginSuccess('admin', null, null);
           }, 600);
         } else {
+          const errData = await res.json();
           setIsValidating(false);
-          setErrorMsg('Username atau Password Kepala/Staf Administrasi salah.');
+          setErrorMsg(errData.error || 'Username atau Password Kepala/Staf Administrasi salah.');
         }
       } else if (activeRole === 'treasurer') {
         // Treasurer/Bendahara Validation

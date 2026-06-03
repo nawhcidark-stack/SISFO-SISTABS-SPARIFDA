@@ -105,7 +105,7 @@ export default function App() {
   const [adminSavingsToPrint, setAdminSavingsToPrint] = useState<{ studentId: string; orderId: string; amount: number } | null>(null);
 
   // System indicators
-  const [sysStatus, setSysStatus] = useState<{ merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean } | null>(null);
+  const [sysStatus, setSysStatus] = useState<{ merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean } | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [timeStr, setTimeStr] = useState<string>('');
 
@@ -2040,6 +2040,7 @@ export default function App() {
             attendanceLogs={attendanceList.filter(l => l.studentId === currentStudent?.id)}
             notifications={globalNotifications}
             onLogout={handleLogout}
+            midtransStatus={sysStatus}
           />
         ) : role === 'homeroom' ? (
           <HomeroomPanel

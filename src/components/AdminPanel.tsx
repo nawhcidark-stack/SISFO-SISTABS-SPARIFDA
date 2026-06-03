@@ -1019,6 +1019,7 @@ export default function AdminPanel({
   const [midtransClientKeyInput, setMidtransClientKeyInput] = useState<string>('');
   const [midtransServerKeyInput, setMidtransServerKeyInput] = useState<string>('');
   const [midtransIsProduction, setMidtransIsProduction] = useState<boolean>(false);
+  const [midtransIsDisabled, setMidtransIsDisabled] = useState<boolean>(false);
 
   React.useEffect(() => {
     if (midtransStatus) {
@@ -1028,6 +1029,7 @@ export default function AdminPanel({
       if (midtransStatus.merchantId !== undefined) setMidtransMerchantIdInput(midtransStatus.merchantId);
       if (midtransStatus.clientKey !== undefined) setMidtransClientKeyInput(midtransStatus.clientKey);
       if (midtransStatus.isProduction !== undefined) setMidtransIsProduction(midtransStatus.isProduction);
+      if (midtransStatus.isDisabled !== undefined) setMidtransIsDisabled(midtransStatus.isDisabled);
     }
   }, [midtransStatus]);
 
@@ -1655,6 +1657,7 @@ export default function AdminPanel({
           clientKey: midtransClientKeyInput,
           serverKey: midtransServerKeyInput,
           isProduction: midtransIsProduction,
+          isDisabled: midtransIsDisabled,
           systemMaintenanceFee: 0,
           chargeFeesToUser: false
         })
@@ -4348,6 +4351,24 @@ export default function AdminPanel({
                       </select>
                     </div>
                   </div>
+
+                  {/* Temporary Disable Midtrans Checkbox/Switch Option */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-4">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="text-xs font-black text-slate-800">Nonaktifkan Sementara Pembayaran Online Midtrans</span>
+                      <span className="text-[10px] text-slate-400 font-medium">
+                        Jika diaktifkan, wali murid tidak dapat melakukan pembayaran lewat Midtrans untuk sementara waktu.
+                      </span>
+                    </div>
+                    <div>
+                      <input
+                        type="checkbox"
+                        checked={midtransIsDisabled}
+                        onChange={(e) => setMidtransIsDisabled(e.target.checked)}
+                        className="w-4.5 h-4.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                      />
+                    </div>
+                  </div>
                 </div>
 
                 {/* Midtrans Info Surcharge */}
@@ -4359,9 +4380,13 @@ export default function AdminPanel({
                 </div>
 
                 <div className="flex justify-between items-center bg-slate-50 p-4 rounded-xl border border-slate-200">
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <span className="text-slate-500 font-bold font-sans">Status Koneksi Gateway:</span>
-                    {midtransStatus?.hasServerKey && midtransStatus?.clientKey ? (
+                    {midtransStatus?.isDisabled ? (
+                      <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-black bg-rose-150 text-rose-800 border border-rose-250">
+                        ● DINONAKTIFKAN SEMENTARA
+                      </span>
+                    ) : midtransStatus?.hasServerKey && midtransStatus?.clientKey ? (
                       <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded text-[10px] font-black bg-emerald-100 text-emerald-800 border border-emerald-200 animate-pulse">
                         ● AKTIF ({midtransStatus.isProduction ? 'PRODUCTION' : 'SANDBOX'})
                       </span>

@@ -51,6 +51,7 @@ export interface MidtransConfig {
   clientKey: string;
   serverKey: string;
   isProduction: boolean;
+  isDisabled?: boolean;
   adminFee?: number;
   systemMaintenanceFee?: number;
   chargeFeesToUser?: boolean;

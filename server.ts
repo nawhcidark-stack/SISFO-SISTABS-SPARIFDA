@@ -517,6 +517,7 @@ let midtransConfig: MidtransConfig = {
   clientKey: process.env.MIDTRANS_CLIENT_KEY || "",
   serverKey: process.env.MIDTRANS_SERVER_KEY || "",
   isProduction: false,
+  isDisabled: false,
   adminFee: 4000,
   systemMaintenanceFee: 0,
   chargeFeesToUser: false
@@ -946,6 +947,33 @@ async function syncWithFirestore() {
         else if (id === "bkConfig") Object.assign(bkConfig, cleaned);
         else if (id === "adminConfig") Object.assign(adminConfig, cleaned);
       });
+
+      // Reconstruct missing uploaded files back onto physical disk from MongoDB backup
+      try {
+        const uploadDir = path.join(process.cwd(), "uploads");
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const filesCol = mongoDb.collection("uploadedFiles");
+        const storedFiles = await filesCol.find({}).toArray();
+        console.log(`[BOOT] Found ${storedFiles.length} backed-up files in MongoDB. Verifying local disk files...`);
+        storedFiles.forEach((fileDoc: any) => {
+          if (fileDoc.filename && fileDoc.base64Data) {
+            const destPath = path.join(uploadDir, fileDoc.filename);
+            if (!fs.existsSync(destPath)) {
+              try {
+                const fileBuffer = Buffer.from(fileDoc.base64Data, "base64");
+                fs.writeFileSync(destPath, fileBuffer);
+                console.log(`[BOOT] Successfully restored missing file onto disk: ${fileDoc.filename} (${fileDoc.size} bytes)`);
+              } catch (writeErr: any) {
+                console.error(`[BOOT] Failed to write file ${fileDoc.filename} back to disk:`, writeErr.message || writeErr);
+              }
+            }
+          }
+        });
+      } catch (errFile: any) {
+        console.error("[BOOT] Failed to query and reconstruct backed-up files from MongoDB:", errFile.message || errFile);
+      }
 
       dbSyncStatus = "Synced (Loaded from MongoDB)";
       lastSyncTime = new Date().toISOString();
@@ -1427,6 +1455,7 @@ async function startServer() {
       clientKey: midtransConfig.clientKey,
       hasServerKey: !!midtransConfig.serverKey,
       isProduction: midtransConfig.isProduction,
+      isDisabled: !!midtransConfig.isDisabled,
       adminFee: 0, // Automated/Handled directly by Midtrans
       systemMaintenanceFee: 0,
       chargeFeesToUser: false
@@ -1456,7 +1485,7 @@ async function startServer() {
   app.use("/uploads", express.static(uploadDir));
 
   // Upload file API for admin user
-  app.post("/api/admin/upload-file", upload.single("file"), (req, res) => {
+  app.post("/api/admin/upload-file", upload.single("file"), async (req, res) => {
     if (!req.file) {
       return res.status(400).json({ error: "Tidak ada file yang diunggah" });
     }
@@ -1464,6 +1493,35 @@ async function startServer() {
     const protocol = req.headers["x-forwarded-proto"] || req.protocol;
     const host = req.get("host");
     const fileUrl = `${protocol}://${host}/uploads/${uploadedFile.filename}`;
+
+    try {
+      // Save file binary as base64 to MongoDB for permanent persistent recovery across ephemeral restarts
+      if (mongoDb) {
+        const filePath = path.join(uploadDir, uploadedFile.filename);
+        if (fs.existsSync(filePath)) {
+          const fileBuffer = fs.readFileSync(filePath);
+          const base64Data = fileBuffer.toString("base64");
+          
+          const filesCol = mongoDb.collection("uploadedFiles");
+          await filesCol.replaceOne(
+            { id: uploadedFile.filename },
+            {
+              id: uploadedFile.filename,
+              filename: uploadedFile.filename,
+              originalName: uploadedFile.originalname,
+              size: uploadedFile.size,
+              mimetype: uploadedFile.mimetype,
+              base64Data: base64Data,
+              createdAt: new Date().toISOString()
+            },
+            { upsert: true }
+          );
+          console.log(`Successfully backed up uploaded file to MongoDB: ${uploadedFile.filename}`);
+        }
+      }
+    } catch (err: any) {
+      console.error("Failed to back up uploaded file to MongoDB:", err.message || err);
+    }
 
     res.json({
       success: true,
@@ -1515,17 +1573,28 @@ async function startServer() {
   });
 
   // Delete an uploaded file
-  app.delete("/api/admin/delete-file/:filename", (req, res) => {
+  app.delete("/api/admin/delete-file/:filename", async (req, res) => {
     try {
       const filename = req.params.filename;
       const safeFilename = path.basename(filename);
       const filePath = path.join(uploadDir, safeFilename);
 
-      if (fs.existsSync(filePath)) {
+      let fileExistsOnDisk = fs.existsSync(filePath);
+      if (fileExistsOnDisk) {
         fs.unlinkSync(filePath);
+      }
+
+      // Explicitly clean from MongoDB of any backup as well
+      if (mongoDb) {
+        const filesCol = mongoDb.collection("uploadedFiles");
+        await filesCol.deleteOne({ id: safeFilename });
+        console.log(`Successfully removed uploaded file backup from MongoDB: ${safeFilename}`);
+      }
+
+      if (fileExistsOnDisk) {
         res.json({ success: true, message: "File berhasil dihapus" });
       } else {
-        res.status(404).json({ error: "File tidak ditemukan" });
+        res.json({ success: true, message: "File dibersihkan dari backup basis data" });
       }
     } catch (err) {
       console.error("Error deleting file:", err);
@@ -1552,12 +1621,13 @@ async function startServer() {
 
   // Update dynamic midtrans credentials
   app.post("/api/set-midtrans-config", (req, res) => {
-    const { merchantId, clientKey, serverKey, isProduction } = req.body;
+    const { merchantId, clientKey, serverKey, isProduction, isDisabled } = req.body;
     midtransConfig = {
       merchantId: merchantId || "",
       clientKey: clientKey || "",
       serverKey: serverKey ? serverKey : (midtransConfig.serverKey || ""),
       isProduction: !!isProduction,
+      isDisabled: !!isDisabled,
       adminFee: 0, // Automated/Handled directly by Midtrans
       systemMaintenanceFee: 0,
       chargeFeesToUser: false
@@ -1566,7 +1636,7 @@ async function startServer() {
     const notif: RealtimeNotification = {
       id: `notif-sys-${Date.now()}`,
       title: "Konfigurasi Gateway Diupdate ⚙️",
-      message: "Kredensial dan pengaturan Midtrans berhasil diperbarui oleh Administrator.",
+      message: `Konfigurasi Midtrans diperbarui. Pembayaran online sekarang ${isDisabled ? 'NONAKTIF' : 'AKTIF'}.`,
       type: "info",
       createdAt: new Date().toISOString()
     };
@@ -4786,6 +4856,9 @@ async function startServer() {
   // Midtrans Payment Gateway Proxy & Token Endpoint
   // Generate snap payment token for SPP payment
   app.post("/api/pay-spp-snap", async (req, res) => {
+    if (midtransConfig.isDisabled) {
+      return res.status(400).json({ error: "Pembayaran online mandiri via Midtrans sedang dinonaktifkan sementara oleh Administrator sekolah." });
+    }
     const { billId, origin } = req.body;
     const bill = sppBills.find(b => b.id === billId);
     if (!bill) {
@@ -4926,6 +4999,9 @@ async function startServer() {
 
   // Deposit savings generate snap token
   app.post("/api/deposit-savings-snap", async (req, res) => {
+    if (midtransConfig.isDisabled) {
+      return res.status(400).json({ error: "Deposit tabungan mandiri via Midtrans sedang dinonaktifkan sementara oleh Administrator sekolah." });
+    }
     const { studentId, amount, origin } = req.body;
     const student = students.find(s => s.id === studentId);
     if (!student) {

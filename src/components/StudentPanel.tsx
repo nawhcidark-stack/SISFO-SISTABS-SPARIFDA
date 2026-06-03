@@ -67,6 +67,16 @@ interface StudentPanelProps {
   attendanceLogs?: AttendanceLog[];
   notifications?: RealtimeNotification[];
   onLogout?: () => void;
+  midtransStatus?: {
+    merchantId: string;
+    clientKey: string;
+    hasServerKey: boolean;
+    isProduction: boolean;
+    isDisabled?: boolean;
+    adminFee?: number;
+    systemMaintenanceFee?: number;
+    chargeFeesToUser?: boolean;
+  } | null;
 }
 
 export default function StudentPanel({
@@ -85,7 +95,8 @@ export default function StudentPanel({
   schoolIdentity,
   attendanceLogs = [],
   notifications = [],
-  onLogout
+  onLogout,
+  midtransStatus
 }: StudentPanelProps) {
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr' | 'jurnal_catatan'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
@@ -1121,6 +1132,17 @@ export default function StudentPanel({
             <div className="p-6 flex-1">
               {activeTab === 'spp' && (
                 <div>
+                  {midtransStatus?.isDisabled && (
+                    <div className="mb-4 p-3.5 bg-rose-50 border border-rose-150 rounded-xl flex items-start gap-2.5 text-rose-900 shadow-3xs animate-fade-in text-xs shrink-0">
+                      <Info size={14} className="text-rose-600 shrink-0 mt-0.5 animate-pulse" />
+                      <div>
+                        <span className="font-extrabold text-rose-950 block">⚠️ Pembayaran Online Midtrans Dinonaktifkan Sementara</span>
+                        <p className="m-0 text-slate-500 font-medium mt-0.5 leading-relaxed">
+                          Sistem pembayaran SPP online via gerbang pembayaran elektronik Midtrans dibatalkan/dinonaktifkan sementara oleh Administrator demi kelancaran rekonsiliasi manual kas keuangan sekolah. Sementara waktu, silakan melakukan pembayaran tunai langsung di loket Teller SMP Maarif NU Pandaan.
+                        </p>
+                      </div>
+                    </div>
+                  )}
                   <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                     <div>
                       <h4 className="font-bold text-slate-800 text-sm">Tagihan SPP Bulanan Siswa</h4>
@@ -1362,56 +1384,67 @@ export default function StudentPanel({
                     </div>
 
                     <div className="flex flex-col gap-2.5 mt-4">
-                      <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pilih Nominal Cepat</label>
-                      <div className="grid grid-cols-4 gap-1.5">
-                        {presetAmounts.map((preset) => (
+                      {midtransStatus?.isDisabled ? (
+                        <div className="p-4 bg-rose-50 border border-rose-150 rounded-xl flex flex-col gap-1.5 text-xs text-rose-900 leading-relaxed font-sans">
+                          <span className="font-extrabold text-rose-950 flex items-center gap-1">⚠️ Fitur Online Nonaktif Sementara</span>
+                          <p className="m-0 text-rose-800 font-medium font-sans">
+                            Deposit tabungan online via Midtrans sedang dinonaktifkan sementara oleh Administrator keuangan demi kelancaran penyesuaian saldo berkala. Silakan berkoordinasi langsung dengan bagian kasir/bendahara sekolah untuk penyetoran manual secara tunai.
+                          </p>
+                        </div>
+                      ) : (
+                        <>
+                          <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Pilih Nominal Cepat</label>
+                          <div className="grid grid-cols-4 gap-1.5">
+                            {presetAmounts.map((preset) => (
+                              <button
+                                key={preset}
+                                type="button"
+                                onClick={() => {
+                                  setTopUpAmount(preset);
+                                  setCustomTopUp('');
+                                }}
+                                className={`py-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
+                                  topUpAmount === preset && !customTopUp
+                                    ? 'border-slate-900 bg-slate-900 text-white'
+                                    : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-600'
+                                }`}
+                              >
+                                {Number(preset) / 1000}K
+                              </button>
+                            ))}
+                          </div>
+
+                          <div className="relative mt-1">
+                            <input
+                              id="topup-amount-input"
+                              type="number"
+                              placeholder="Atau masukkan jumlah kustom..."
+                              value={customTopUp}
+                              onChange={(e) => {
+                                setCustomTopUp(e.target.value);
+                                setTopUpAmount('');
+                              }}
+                              className="w-full pl-8 pr-4 py-2 text-xs border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 font-semibold text-slate-800"
+                            />
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-[10px]">Rp</span>
+                          </div>
+
                           <button
-                            key={preset}
-                            type="button, button"
+                            id="btn-deposit-savings"
                             onClick={() => {
-                              setTopUpAmount(preset);
-                              setCustomTopUp('');
+                              const amt = customTopUp ? Number(customTopUp) : Number(topUpAmount);
+                              if (isNaN(amt) || amt < 10000) {
+                                alert('Minimum setoran tabungan online adalah Rp 10.000');
+                                return;
+                              }
+                              onDepositSavings(amt);
                             }}
-                            className={`py-2 text-[11px] font-bold rounded-lg border transition-all cursor-pointer ${
-                              topUpAmount === preset && !customTopUp
-                                ? 'border-slate-900 bg-slate-900 text-white'
-                                : 'border-slate-200 bg-white hover:bg-slate-100 text-slate-600'
-                            }`}
+                            className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs rounded-lg transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-1.5"
                           >
-                            {Number(preset) / 1000}K
+                            <Wallet size={13} /> Setor Rp {(customTopUp ? Number(customTopUp) : Number(topUpAmount)).toLocaleString('id-ID')}
                           </button>
-                        ))}
-                      </div>
-
-                      <div className="relative mt-1">
-                        <input
-                          id="topup-amount-input"
-                          type="number"
-                          placeholder="Atau masukkan jumlah kustom..."
-                          value={customTopUp}
-                          onChange={(e) => {
-                            setCustomTopUp(e.target.value);
-                            setTopUpAmount('');
-                          }}
-                          className="w-full pl-8 pr-4 py-2 text-xs border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 font-semibold text-slate-800"
-                        />
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-[10px]">Rp</span>
-                      </div>
-
-                      <button
-                        id="btn-deposit-savings"
-                        onClick={() => {
-                          const amt = customTopUp ? Number(customTopUp) : Number(topUpAmount);
-                          if (isNaN(amt) || amt < 10000) {
-                            alert('Minimum setoran tabungan online adalah Rp 10.000');
-                            return;
-                          }
-                          onDepositSavings(amt);
-                        }}
-                        className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs rounded-lg transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-1.5"
-                      >
-                        <Wallet size={13} /> Setor Rp {(customTopUp ? Number(customTopUp) : Number(topUpAmount)).toLocaleString('id-ID')}
-                      </button>
+                        </>
+                      )}
                     </div>
                   </div>
 

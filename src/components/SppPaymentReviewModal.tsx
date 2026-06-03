@@ -14,6 +14,7 @@ interface SppPaymentReviewModalProps {
     clientKey: string;
     hasServerKey: boolean;
     isProduction: boolean;
+    isDisabled?: boolean;
     adminFee?: number;
     systemMaintenanceFee?: number;
     chargeFeesToUser?: boolean;
@@ -136,6 +137,17 @@ export default function SppPaymentReviewModal({
               </div>
             </div>
 
+             {/* Temporary Disabled Warning */}
+            {midtransStatus?.isDisabled && (
+              <div className="p-3.5 rounded-xl bg-rose-50 border border-rose-150 text-[11px] text-rose-900 leading-relaxed font-sans flex gap-2 items-start shrink-0">
+                <Info size={14} className="text-rose-600 shrink-0 mt-0.5" />
+                <div>
+                  <span className="font-extrabold text-rose-950">Pembayaran Online Dinonaktifkan Sementara</span>
+                  <p className="m-0 text-rose-800 font-medium mt-0.5">Gerbang pembayaran elektronik SMP Maarif NU Pandaan sedang dinonaktifkan sementara oleh Administrator. Silakan lakukan penyetoran tunai ke Teller sekolah.</p>
+                </div>
+              </div>
+            )}
+
             {/* SSL Safe Badge */}
             <div className="p-3 rounded-lg bg-indigo-50/30 border border-indigo-150 text-[10px] text-indigo-800 leading-relaxed font-sans flex gap-2 items-start shrink-0">
               <Info size={14} className="text-indigo-600 shrink-0 mt-0.5" />
@@ -148,6 +160,11 @@ export default function SppPaymentReviewModal({
 
           {/* Action Buttons */}
           <div className="p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
+            {midtransStatus?.isDisabled && (
+              <div className="mr-auto text-[10px] text-rose-600 font-bold bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100 flex items-center gap-1.5 animate-pulse uppercase tracking-wider font-mono">
+                ⚠️ GERBANG NONAKTIF
+              </div>
+            )}
             <button
               onClick={onCancel}
               className="px-4 py-2.5 font-bold rounded-xl text-xs hover:bg-slate-100 text-slate-700 border border-slate-250 transition-all cursor-pointer bg-white shadow-xs"
@@ -156,9 +173,10 @@ export default function SppPaymentReviewModal({
             </button>
             <button
               onClick={onConfirm}
-              className="px-5 py-2.5 font-black rounded-xl text-xs bg-indigo-600 hover:bg-indigo-700 text-white shadow-md shadow-indigo-100 transition-all cursor-pointer flex items-center gap-1.5"
+              disabled={!!midtransStatus?.isDisabled}
+              className="px-5 py-2.5 font-black rounded-xl text-xs bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white shadow-md disabled:shadow-none transition-all cursor-pointer disabled:cursor-not-allowed flex items-center gap-1.5"
             >
-              Lanjutkan ke Pembayaran <ChevronRight size={14} />
+              {midtransStatus?.isDisabled ? "Pembayaran Nonaktif" : <>Lanjutkan ke Pembayaran <ChevronRight size={14} /></>}
             </button>
           </div>
         </motion.div>

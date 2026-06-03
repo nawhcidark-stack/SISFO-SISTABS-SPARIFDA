@@ -599,6 +599,8 @@ interface HomeroomPanelProps {
   onSaveBatchAttendance: (logs: { studentId: string; date: string; status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }[]) => Promise<boolean>;
   onRefresh: () => void;
   isLoading: boolean;
+  scannedStudentNis?: string | null;
+  scannedStudentAt?: number | null;
 }
 
 export default function HomeroomPanel({
@@ -610,7 +612,9 @@ export default function HomeroomPanel({
   onLogout,
   onSaveBatchAttendance,
   onRefresh,
-  isLoading
+  isLoading,
+  scannedStudentNis,
+  scannedStudentAt
 }: HomeroomPanelProps) {
   const todayStr = new Date().toISOString().substring(0, 10);
 
@@ -625,6 +629,23 @@ export default function HomeroomPanel({
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
   const [selectedReportStudentId, setSelectedReportStudentId] = useState<string | null>(null);
+
+  // Filter students who are in this homeroom teacher's class
+  const classStudents = useMemo(() => {
+    return students.filter(
+      (s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase()
+    );
+  }, [students, currentTeacher.className]);
+
+  useEffect(() => {
+    if (scannedStudentNis) {
+      const match = classStudents.find(s => s.nis?.toLowerCase() === scannedStudentNis.toLowerCase() || s.id === scannedStudentNis);
+      if (match) {
+        setSelectedReportStudentId(match.id);
+        setActiveSubTab('profile');
+      }
+    }
+  }, [scannedStudentNis, scannedStudentAt, classStudents]);
   const [selectedReportSemester, setSelectedReportSemester] = useState<string>('Genap');
   const [selectedReportYear, setSelectedReportYear] = useState<string>('2025/2026');
   const [waliKelasNotes, setWaliKelasNotes] = useState<Record<string, string>>({
@@ -1384,13 +1405,6 @@ export default function HomeroomPanel({
       fetchEvaluations();
     }
   }, [activeSubTab, currentTeacher.className]);
-  
-  // Filter students who are in this homeroom teacher's class
-  const classStudents = useMemo(() => {
-    return students.filter(
-      (s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase()
-    );
-  }, [students, currentTeacher.className]);
 
   useEffect(() => {
     if (classStudents.length > 0 && !selectedReportStudentId) {

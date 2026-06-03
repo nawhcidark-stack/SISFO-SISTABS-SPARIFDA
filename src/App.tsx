@@ -120,6 +120,83 @@ export default function App() {
   const [isScanningActive, setIsScanningActive] = useState<boolean>(false);
   const [scanErrorMsg, setScanErrorMsg] = useState<string | null>(null);
 
+  // States for physical student QR card scan
+  const [scannedStudentNis, setScannedStudentNis] = useState<string | null>(null);
+  const [scannedStudentAt, setScannedStudentAt] = useState<number | null>(null);
+
+  useEffect(() => {
+    let buffer = "";
+    let lastKeyTime = Date.now();
+
+    const handleGlobalKeyDown = (e: KeyboardEvent) => {
+      // Ignore complex control buttons or keys
+      if (e.key.length > 1 && e.key !== 'Enter' && e.key !== 'Backspace') {
+        return;
+      }
+
+      const now = Date.now();
+      const diff = now - lastKeyTime;
+      lastKeyTime = now;
+
+      // Reset buffer if delay is too long (above 1 second between keystrokes indicates separate inputs)
+      if (diff > 1200) {
+        buffer = "";
+      }
+
+      if (e.key === 'Backspace') {
+        buffer = buffer.slice(0, -1);
+        return;
+      }
+
+      if (e.key === 'Enter') {
+        const cleanCode = buffer.trim();
+        if (cleanCode.length >= 2) {
+          const matchedStudent = studentsList.find(s => 
+            (s.nis && s.nis.toLowerCase() === cleanCode.toLowerCase()) || 
+            (s.id && s.id === cleanCode)
+          );
+          if (matchedStudent) {
+            e.preventDefault();
+            e.stopPropagation();
+            buffer = "";
+            setScannedStudentNis(matchedStudent.nis);
+            setScannedStudentAt(Date.now());
+            
+            // Trigger confirmation beep sound!
+            triggerBeep();
+
+            // Push a beautiful floating dynamic toast notification
+            const scanNotif: RealtimeNotification = {
+              id: 'qr-scan-toast-' + Date.now(),
+              title: 'Kartu QR Terdeteksi 🔍',
+              message: `Menampilkan profil ${matchedStudent.name} (Kelas ${matchedStudent.class}).`,
+              type: 'success',
+              createdAt: new Date().toISOString()
+            };
+            setActiveToasts(prev => {
+              // Flush other previous QR scan toasts to keep it clean, then add
+              const cleanPrevs = prev.filter(t => !t.id.startsWith('qr-scan-toast-'));
+              return [scanNotif, ...cleanPrevs];
+            });
+
+            // Blur active elements to remove keyboard focus from text fields
+            if (document.activeElement instanceof HTMLElement) {
+              document.activeElement.blur();
+            }
+          }
+        }
+        buffer = "";
+      } else {
+        buffer += e.key;
+      }
+    };
+
+    window.addEventListener('keydown', handleGlobalKeyDown, true);
+    return () => {
+      window.removeEventListener('keydown', handleGlobalKeyDown, true);
+    };
+  }, [studentsList, playNotificationSound]);
+
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     const code = params.get('scan');
@@ -1975,6 +2052,8 @@ export default function App() {
             onSaveBatchAttendance={handleSaveBatchAttendance}
             onRefresh={handleReload}
             isLoading={isLoading}
+            scannedStudentNis={scannedStudentNis}
+            scannedStudentAt={scannedStudentAt}
           />
         ) : role === 'subject_teacher' ? (
           <SubjectTeacherPanel
@@ -2024,6 +2103,8 @@ export default function App() {
             transactions={studentTransactions}
             isLoading={isLoading}
             midtransStatus={sysStatus}
+            scannedStudentNis={scannedStudentNis}
+            scannedStudentAt={scannedStudentAt}
             onPaySppManual={handlePaySppManual}
             onCancelSppManual={handleCancelSppManual}
             onPaySppViaMidtrans={handlePaySpp}

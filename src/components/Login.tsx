@@ -281,10 +281,6 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
           </div>
 
           <div className="p-8 flex flex-col gap-5">
-            <div className="text-center md:text-left bg-indigo-50 border border-indigo-100 p-3 rounded-xl text-[11px] text-indigo-800 font-semibold leading-relaxed">
-              🔑 <b>Satu Form Login untuk Semua Peran:</b> Cukup masukkan Username atau NIS Anda. Sistem kami akan secara otomatis mendeteksi peran akses Anda.
-            </div>
-
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
               {errorMsg && (
                 <div className="p-3 bg-rose-50 text-rose-700 border border-rose-100 rounded-lg text-xs font-semibold flex items-start gap-2 animate-fade-in">

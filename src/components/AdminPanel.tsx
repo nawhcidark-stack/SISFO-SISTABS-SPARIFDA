@@ -1809,6 +1809,19 @@ export default function AdminPanel({
           <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1 mb-2.5 block">Menu Administrasi</span>
           
           <button
+            id="admin-menu-roster"
+            onClick={() => setAdminTab('roster')}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === 'roster'
+                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Users size={15} />
+            Daftar Siswa & SPP
+          </button>
+
+          <button
             id="admin-menu-subject-teacher-mgmt"
             onClick={() => setAdminTab('subject_teacher_mgmt')}
             className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
@@ -1861,19 +1874,6 @@ export default function AdminPanel({
           >
             <GraduationCap size={15} className="text-yellow-500" />
             <span>Alumni (Lulusan)</span>
-          </button>
-
-          <button
-            id="admin-menu-roster"
-            onClick={() => setAdminTab('roster')}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
-              adminTab === 'roster'
-                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Users size={15} />
-            Daftar Siswa & SPP
           </button>
 
           <button

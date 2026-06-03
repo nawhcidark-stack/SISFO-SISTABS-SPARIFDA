@@ -1044,7 +1044,9 @@ function saveState() {
       infractionRules,
       sarprasItems,
       sarprasProposals,
-      sarprasLoans
+      sarprasLoans,
+      bkConfig,
+      adminConfig
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
     // Asynchronously update to MongoDB Cluster via serialized queue

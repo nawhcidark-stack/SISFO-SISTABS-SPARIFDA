@@ -34,63 +34,15 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
     setIsValidating(true);
 
     try {
-      if (activeRole === 'bk') {
-        // BK Counselor Validation
-        const res = await fetch('/api/bk/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-        if (res.ok) {
-          setTimeout(() => {
-            setIsValidating(false);
-            onLoginSuccess('bk', null, null, null);
-          }, 600);
-        } else {
-          const errData = await res.json();
-          setIsValidating(false);
-          setErrorMsg(errData.error || 'Username atau Password Guru BK salah.');
-        }
-      } else if (activeRole === 'principal') {
-        // Principal Validation
-        const res = await fetch('/api/principal/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-        if (res.ok) {
-          setTimeout(() => {
-            setIsValidating(false);
-            onLoginSuccess('principal', null, null, null);
-          }, 600);
-        } else {
-          const errData = await res.json();
-          setIsValidating(false);
-          setErrorMsg(errData.error || 'Username atau Password Kepala Sekolah salah.');
-        }
-      } else if (activeRole === 'waka_sarpras') {
-        // Waka Sarpras Validation
-        const res = await fetch('/api/sarpras/login', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
-        });
-        if (res.ok) {
-          setTimeout(() => {
-            setIsValidating(false);
-            onLoginSuccess('waka_sarpras', null, null, null);
-          }, 600);
-        } else {
-          const errData = await res.json();
-          setIsValidating(false);
-          setErrorMsg(errData.error || 'Username atau Password Waka Sarpras salah.');
-        }
-      } else if (activeRole === 'admin') {
-        // Admin Validation
+      const cleanUser = username.trim().toLowerCase();
+      const rawUser = username.trim();
+
+      // 1. Detect built-in system administration roles
+      if (cleanUser === 'admin') {
         const res = await fetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({ username: rawUser, password })
         });
         if (res.ok) {
           setTimeout(() => {
@@ -100,14 +52,16 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         } else {
           const errData = await res.json();
           setIsValidating(false);
-          setErrorMsg(errData.error || 'Username atau Password Kepala/Staf Administrasi salah.');
+          setErrorMsg(errData.error || 'Password Administrator salah.');
         }
-      } else if (activeRole === 'treasurer') {
-        // Treasurer/Bendahara Validation
+        return;
+      }
+
+      if (cleanUser === 'bendahara') {
         const res = await fetch('/api/treasurer/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username, password })
+          body: JSON.stringify({ username: rawUser, password })
         });
         if (res.ok) {
           setTimeout(() => {
@@ -117,101 +71,157 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         } else {
           const errData = await res.json();
           setIsValidating(false);
-          setErrorMsg(errData.error || 'Username atau Password Bendahara Keuangan salah.');
+          setErrorMsg(errData.error || 'Password Bendahara Keuangan salah.');
         }
-      } else if (activeRole === 'homeroom') {
-        // Homeroom Teacher Validation
-        const res = await fetch('/api/homerooms');
-        if (res.ok) {
-          const teachers: HomeroomTeacher[] = await res.json();
-          const cleanUser = username.trim().toLowerCase();
-          const found = teachers.find(t => t.username.toLowerCase() === cleanUser);
-          
-          if (found) {
-            const expectedPassword = found.password || '123456';
-            if (password === expectedPassword || password === '123456' || password === cleanUser) {
-              setTimeout(() => {
-                setIsValidating(false);
-                onLoginSuccess('homeroom', null, found, null);
-              }, 600);
-            } else {
-              setIsValidating(false);
-              setErrorMsg('Sandi Wali Kelas Anda salah.');
-            }
-          } else {
-            setIsValidating(false);
-            setErrorMsg('Username Wali Kelas tidak terdaftar.');
-          }
-        } else {
-          setIsValidating(false);
-          setErrorMsg('Gagal terhubung ke modul otentikasi Wali Kelas.');
-        }
-      } else if (activeRole === 'subject_teacher') {
-        // Subject Teacher Validation
-        const res = await fetch('/api/subject-teachers');
-        if (res.ok) {
-          const teachers: SubjectTeacher[] = await res.json();
-          const cleanUser = username.trim().toLowerCase();
-          const found = teachers.find(t => t.username.toLowerCase() === cleanUser);
-          
-          if (found) {
-            const expectedPassword = found.password || 'mapel123';
-            if (password === expectedPassword || password === 'mapel123' || password === cleanUser) {
-              setTimeout(() => {
-                setIsValidating(false);
-                onLoginSuccess('subject_teacher', null, null, found);
-              }, 600);
-            } else {
-              setIsValidating(false);
-              setErrorMsg('Sandi Guru Mata Pelajaran Anda salah.');
-            }
-          } else {
-            setIsValidating(false);
-            setErrorMsg('Username Guru Mata Pelajaran tidak terdaftar.');
-          }
-        } else {
-          setIsValidating(false);
-          setErrorMsg('Gagal terhubung ke modul otentikasi Guru Mata Pelajaran.');
-        }
-      } else {
-        // Student/Parent Validation
-        const cleanNIS = username.trim();
-        const found = students.find((s) => s.nis === cleanNIS);
+        return;
+      }
 
-        if (found) {
-          const expectedPassword = found.password || '123456';
-          if (password === expectedPassword || password === '123456' || password === cleanNIS) {
+      if (cleanUser === 'kepala') {
+        const res = await fetch('/api/principal/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('principal', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Password Kepala Sekolah salah.');
+        }
+        return;
+      }
+
+      if (cleanUser === 'sarpras' || cleanUser === 'waka') {
+        const res = await fetch('/api/sarpras/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_sarpras', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Password Waka Sarpras salah.');
+        }
+        return;
+      }
+
+      if (cleanUser === 'bk') {
+        const res = await fetch('/api/bk/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('bk', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Password Guru BK salah.');
+        }
+        return;
+      }
+
+      // 2. Fetch other dynamic actors: Wali Kelas / Guru Mapel
+      const [homeroomsRes, subjectTeachersRes] = await Promise.all([
+        fetch('/api/homerooms'),
+        fetch('/api/subject-teachers')
+      ]);
+
+      let homeroomTeachers: HomeroomTeacher[] = [];
+      let subjectTeachers: SubjectTeacher[] = [];
+
+      if (homeroomsRes.ok) {
+        homeroomTeachers = await homeroomsRes.json();
+      }
+      if (subjectTeachersRes.ok) {
+        subjectTeachers = await subjectTeachersRes.json();
+      }
+
+      const matchHomeroom = homeroomTeachers.find(t => t.username.toLowerCase() === cleanUser);
+      if (matchHomeroom) {
+        const expectedPassword = matchHomeroom.password || '123456';
+        if (password === expectedPassword || password === '123456' || password === cleanUser) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('homeroom', null, matchHomeroom, null);
+          }, 600);
+        } else {
+          setIsValidating(false);
+          setErrorMsg('Kata sandi Wali Kelas salah.');
+        }
+        return;
+      }
+
+      const matchSubject = subjectTeachers.find(t => t.username.toLowerCase() === cleanUser);
+      if (matchSubject) {
+        const expectedPassword = matchSubject.password || 'mapel123';
+        if (password === expectedPassword || password === 'mapel123' || password === cleanUser) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('subject_teacher', null, null, matchSubject);
+          }, 600);
+        } else {
+          setIsValidating(false);
+          setErrorMsg('Kata sandi Guru Mata Pelajaran salah.');
+        }
+        return;
+      }
+
+      // 3. Match against Students / NIS
+      const foundStudentLocal = students.find((s) => s.nis === rawUser);
+      if (foundStudentLocal) {
+        const expectedPassword = foundStudentLocal.password || '123456';
+        if (password === expectedPassword || password === '123456' || password === rawUser) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('student', foundStudentLocal, null, null);
+          }, 600);
+        } else {
+          setIsValidating(false);
+          setErrorMsg(foundStudentLocal.password ? 'Sandi Siswa Anda salah.' : 'Sandinya salah. Coba gunakan: 123456');
+        }
+        return;
+      }
+
+      // Check online database
+      const onlineStudentRes = await fetch(`/api/students/nis/${rawUser}`);
+      if (onlineStudentRes.ok) {
+        const data = await onlineStudentRes.json();
+        const loadedStudent = data.student as Student;
+        if (loadedStudent) {
+          const expectedPassword = loadedStudent.password || '123456';
+          if (password === expectedPassword || password === '123456' || password === rawUser) {
             setTimeout(() => {
               setIsValidating(false);
-              onLoginSuccess('student', found, null, null);
+              onLoginSuccess('student', loadedStudent, null, null);
             }, 600);
           } else {
             setIsValidating(false);
-            setErrorMsg(found.password ? 'Sandi Anda salah.' : 'Sandinya salah. Coba gunakan: 123456');
+            setErrorMsg(loadedStudent.password ? 'Sandi Siswa Anda salah.' : 'Sandinya salah. Coba gunakan: 123456');
           }
-        } else {
-          const res = await fetch(`/api/students/nis/${cleanNIS}`);
-          if (res.ok) {
-            const data = await res.json();
-            const loadedStudent = data.student as Student;
-            const expectedPassword = loadedStudent?.password || '123456';
-            if (password === expectedPassword || password === '123456' || password === cleanNIS) {
-              setIsValidating(false);
-              onLoginSuccess('student', loadedStudent, null, null);
-            } else {
-              setIsValidating(false);
-              setErrorMsg(loadedStudent?.password ? 'Sandi Anda salah.' : 'Sandinya salah. Coba gunakan: 123456');
-            }
-          } else {
-            setIsValidating(false);
-            setErrorMsg('Nomor Induk Siswa (NIS) tidak terdaftar di database.');
-          }
+          return;
         }
       }
+
+      setIsValidating(false);
+      setErrorMsg('Username atau Nomor Induk Siswa (NIS) tidak dikenali di sistem.');
+
     } catch (err) {
       console.error('Error logging in', err);
       setIsValidating(false);
-      setErrorMsg('Koneksi server gagal. Silakan coba kembali.');
+      setErrorMsg('Gagal terhubung ke server untuk otentikasi. Silakan coba lagi.');
     }
   };
 
@@ -271,36 +281,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
           </div>
 
           <div className="p-8 flex flex-col gap-5">
-            {/* Consolidated & Clean unified Dropdown roles selector - Eliminates too many tabs */}
-            <div className="flex flex-col gap-1.5">
-              <label className="block text-[10px] font-black tracking-widest text-slate-450 uppercase text-left">
-                📦 PERAN AKSES KEAMANAN (ROLE):
-              </label>
-              <select
-                value={activeRole}
-                onChange={(e) => {
-                  const r = e.target.value as any;
-                  setActiveRole(r);
-                  if (r === 'student') {
-                    setActiveGroup('student');
-                  } else if (['homeroom', 'subject_teacher', 'principal', 'bk'].includes(r)) {
-                    setActiveGroup('teacher');
-                  } else {
-                    setActiveGroup('staff');
-                  }
-                  setErrorMsg(null);
-                }}
-                className="w-full px-4 py-3 text-xs font-bold border border-slate-200 rounded-xl bg-slate-50 text-slate-800 focus:outline-slate-905 focus:border-slate-805 cursor-pointer hover:bg-slate-100 transition-all font-display shadow-inner"
-              >
-                <option value="student">🎓 Portal Wali Murid / Siswa (Gunakan NIS)</option>
-                <option value="homeroom">🍎 Wali Kelas (Bimbingan Rapor &amp; Absensi)</option>
-                <option value="subject_teacher">📚 Guru Mata Pelajaran (KBM &amp; Catatan Mapel)</option>
-                <option value="bk">🧠 Guru BK / Konselor Pelayanan Bimbingan</option>
-                <option value="waka_sarpras">📦 Waka Sarana &amp; Prasarana (Sarpras Inventaris)</option>
-                <option value="treasurer">💰 Bendahara Keuangan (Mutasi SPP &amp; Tabungan)</option>
-                <option value="principal">👑 Kepala Sekolah / Yayasan (Executive Board)</option>
-                <option value="admin">🛡️ Staf Administrasi / Admin Sekolah</option>
-              </select>
+            <div className="text-center md:text-left bg-indigo-50 border border-indigo-100 p-3 rounded-xl text-[11px] text-indigo-800 font-semibold leading-relaxed">
+              🔑 <b>Satu Form Login untuk Semua Peran:</b> Cukup masukkan Username atau NIS Anda. Sistem kami akan secara otomatis mendeteksi peran akses Anda.
             </div>
 
             <form onSubmit={handleSubmit} className="flex flex-col gap-4">
@@ -313,22 +295,14 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
 
               {/* Form Input fields */}
               <div>
-                <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5 text-left">
-                  {activeRole === 'student' ? 'Nomor Induk Siswa (NIS)' : 'Username Akun'}
+                <label className="block text-[10px] font-bold text-slate-450 uppercase tracking-widest mb-1.5 text-left">
+                  USERNAME LOGIN / NIS SISWA
                 </label>
                 <div className="relative text-left">
                   <input
                     type="text"
                     required
-                    placeholder={
-                      activeRole === 'student' 
-                        ? 'Masukkan NIS Anda (cth: 20241001)' 
-                        : activeRole === 'waka_sarpras'
-                          ? 'Gunakan username waka sarpras (sarpras)'
-                          : activeRole === 'bk'
-                            ? 'Gunakan username guru BK (bk)'
-                            : 'Masukkan username login Anda'
-                    }
+                    placeholder="Masukkan NIS (cth: 21102) atau Username anda"
                     value={username}
                     onChange={(e) => setUsername(e.target.value)}
                     className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
@@ -347,7 +321,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                   <input
                     type="password"
                     required
-                    placeholder="Masukkan kata sandi sandi otentikasi Anda"
+                    placeholder="Masukkan kata sandi otentikasi Anda"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-xl focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs text-slate-800 font-semibold"
@@ -361,7 +335,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               <button
                 type="submit"
                 disabled={isValidating}
-                className="w-full mt-4 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isValidating ? (
                   'Menghubungkan...'
@@ -373,6 +347,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                 )}
               </button>
             </form>
+
+
           </div>
         </div>
 

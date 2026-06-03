@@ -30,6 +30,7 @@ import {
 import { 
   GraduationCap, 
   Users, 
+  User,
   BookOpen, 
   ClipboardCheck, 
   Landmark, 
@@ -2617,7 +2618,15 @@ export default function PrincipalPanel({
                             </span>
                           </td>
                           <td className="py-3 font-extrabold text-slate-900">{item.category}</td>
-                          <td className="py-3 font-semibold text-slate-700 leading-normal">{item.description}</td>
+                          <td className="py-3 font-semibold text-slate-700 leading-normal">
+                            <div>{item.description}</div>
+                            {item.type === 'outgoing' && (item.recipientName || item.studentName) && (
+                              <div className="mt-1 inline-flex items-center gap-1.5 bg-amber-50 text-amber-800 border border-amber-200 px-1.5 py-0.5 rounded text-[9.5px] font-extrabold">
+                                <User size={10} className="stroke-[2.5px] text-amber-700" />
+                                <span>Penerima: {item.recipientName || item.studentName}</span>
+                              </div>
+                            )}
+                          </td>
                           <td className={`py-3 text-right font-black text-[12px] font-mono ${
                             item.type === 'incoming' ? 'text-emerald-700' : 'text-rose-700'
                           }`}>

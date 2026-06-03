@@ -57,6 +57,8 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   const [filterType, setFilterType] = useState<'all' | 'incoming' | 'outgoing'>('all');
   const [filterSource, setFilterSource] = useState<'all' | 'spp' | 'savings' | 'custom'>('all');
   const [filterCategory, setFilterCategory] = useState<'all' | string>('all');
+  const [filterStartDate, setFilterStartDate] = useState('');
+  const [filterEndDate, setFilterEndDate] = useState('');
   
   // Invoice state to print
   const [activePrintTransaction, setActivePrintTransaction] = useState<TreasurerTransaction | null>(null);
@@ -546,10 +548,12 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       const matchType = filterType === 'all' || t.type === filterType;
       const matchSource = filterSource === 'all' || t.source === filterSource;
       const matchCategory = filterCategory === 'all' || t.category === filterCategory;
+      const matchStartDate = !filterStartDate || t.date >= filterStartDate;
+      const matchEndDate = !filterEndDate || t.date <= filterEndDate;
 
-      return matchTerm && matchType && matchSource && matchCategory;
+      return matchTerm && matchType && matchSource && matchCategory && matchStartDate && matchEndDate;
     });
-  }, [transactions, term, filterType, filterSource, filterCategory]);
+  }, [transactions, term, filterType, filterSource, filterCategory, filterStartDate, filterEndDate]);
 
   // Chart data formatting: Category distribution
   const chartCategoryData = useMemo(() => {
@@ -593,9 +597,139 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
 
   const COLORS = ['#e11d48', '#d97706', '#2563eb', '#059669', '#7c3aed', '#db2777', '#4b5563'];
 
+  // Derived filtered metrics for printing target category/POS reports
+  const filteredMetrics = useMemo(() => {
+    let totalInflow = 0;
+    let totalOutflow = 0;
+
+    filteredTransactions.forEach(t => {
+      if (t.type === 'incoming') {
+        totalInflow += t.amount;
+      } else {
+        totalOutflow += t.amount;
+      }
+    });
+
+    return {
+      totalInflow,
+      totalOutflow,
+      netBalance: totalInflow - totalOutflow
+    };
+  }, [filteredTransactions]);
+
   // Print summary document function
   const handlePrintLedger = () => {
     window.print();
+  };
+
+  const handleDownloadExcelLedger = () => {
+    const schoolNameUpper = (schoolIdentity?.name || 'SMP MAARIF NU PANDAAN').toUpperCase();
+    const catStr = filterCategory === 'all' ? 'SEMUA KATEGORI POS' : filterCategory.toUpperCase();
+    const sourceStr = filterSource === 'all' ? 'SEMUA SUMBER' : filterSource.toUpperCase();
+    const typeStr = filterType === 'all' ? 'SEMUA ARUS KAS' : filterType === 'incoming' ? 'DEBIT (UANG MASUK)' : 'KREDIT (UANG KELUAR)';
+    const dateRangeStr = filterStartDate || filterEndDate ? `Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : 'Semua Periode';
+    
+    let excelHtml = `
+<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
+<head>
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Buku Kas Global</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
+<style>
+  table { border-collapse: collapse; }
+  .table-header { background-color: #4f46e5; color: white; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; }
+  td { border: 1px solid #cbd5e1; padding: 6px; font-size: 10pt; }
+  .title { font-size: 14pt; font-weight: bold; text-align: center; }
+  .subtitle { font-size: 11pt; font-weight: bold; text-align: center; color: #475569; }
+  .text-right { text-align: right; }
+  .font-bold { font-weight: bold; }
+  .bg-gray { background-color: #f1f5f9; }
+</style>
+</head>
+<body>
+  <table>
+    <tr><td colspan="7" class="title">BUKU KAS BESAR GLOBAL TERPADU</td></tr>
+    <tr><td colspan="7" class="subtitle">${schoolNameUpper} - PORTAL BK & KEUANGAN</td></tr>
+    <tr><td colspan="7" style="text-align: center; font-style: italic; color: #64748b;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')}</td></tr>
+    <tr><td colspan="7" style="text-align: center; font-weight: bold;">Kategori Pos: ${catStr} | Sumber: ${sourceStr} | Arus Kas: ${typeStr}</td></tr>
+    <tr><td colspan="7" style="text-align: center; font-weight: bold; color: #dc2626;">${dateRangeStr}</td></tr>
+    <tr></tr>
+    <tr class="bg-gray">
+      <td colspan="3" class="font-bold">TOTAL DEBIT (+)</td>
+      <td colspan="4" class="font-bold text-right" style="color: #047857;">Rp ${filteredMetrics.totalInflow.toLocaleString('id-ID')}</td>
+    </tr>
+    <tr class="bg-gray">
+      <td colspan="3" class="font-bold">TOTAL KREDIT (-)</td>
+      <td colspan="4" class="font-bold text-right" style="color: #be123c;">Rp ${filteredMetrics.totalOutflow.toLocaleString('id-ID')}</td>
+    </tr>
+    <tr class="bg-gray">
+      <td colspan="3" class="font-bold">SALDO NETO</td>
+      <td colspan="4" class="font-bold text-right" style="color: #1d4ed8;">Rp ${filteredMetrics.netBalance.toLocaleString('id-ID')}</td>
+    </tr>
+    <tr></tr>
+    <tr>
+      <td class="table-header" style="width: 50px;">No</td>
+      <td class="table-header" style="width: 100px;">Tanggal</td>
+      <td class="table-header" style="width: 300px;">Deskripsi Transaksi</td>
+      <td class="table-header" style="width: 150px;">Kategori / Pos</td>
+      <td class="table-header" style="width: 120px;">Sumber Pos</td>
+      <td class="table-header" style="width: 130px; text-align: right;">Debit (+)</td>
+      <td class="table-header" style="width: 130px; text-align: right;">Kredit (-)</td>
+    </tr>
+`;
+
+    filteredTransactions.forEach((tx, idx) => {
+      const srcDisplay = tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : 'Manual (Bendahara)';
+      const debitVal = tx.type === 'incoming' ? tx.amount : 0;
+      const kreditVal = tx.type === 'outgoing' ? tx.amount : 0;
+      
+      let descWord = tx.description;
+      if (tx.studentName) {
+        descWord += ` (Siswa: ${tx.studentName} - NIS: ${tx.nis})`;
+      }
+      if (tx.recipientName) {
+        descWord += ` (Penerima: ${tx.recipientName})`;
+      }
+
+      excelHtml += `
+    <tr>
+      <td style="text-align: center;">${idx + 1}</td>
+      <td style="text-align: center;">${tx.date}</td>
+      <td>${descWord}</td>
+      <td style="text-align: center; text-transform: uppercase;">${tx.category}</td>
+      <td style="text-align: center;">${srcDisplay}</td>
+      <td class="text-right" style="color: #047857;">${debitVal ? 'Rp ' + debitVal.toLocaleString('id-ID') : '-'}</td>
+      <td class="text-right" style="color: #be123c;">${kreditVal ? 'Rp ' + kreditVal.toLocaleString('id-ID') : '-'}</td>
+    </tr>
+`;
+    });
+
+    excelHtml += `
+    <tr></tr>
+    <tr>
+      <td colspan="3" style="text-align: center; border: none;">
+        <br/>Mengetahui,<br/>Kepala Sekolah<br/><br/><br/><br/>
+        <b>${schoolIdentity.principal || '-'}</b>
+      </td>
+      <td colspan="1" style="border: none;"></td>
+      <td colspan="3" style="text-align: center; border: none;">
+        <br/>Pandaan, ${new Date().toLocaleDateString('id-ID')}<br/>Bendahara Kas Sekolah<br/><br/><br/><br/>
+        <b>${schoolIdentity.treasurer || '-'}</b>
+      </td>
+    </tr>
+  </table>
+</body>
+</html>
+`;
+
+    const blob = new Blob([excelHtml], { type: "application/vnd.ms-excel;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    const catNameFilename = filterCategory === 'all' ? 'GLOBAL' : filterCategory.toUpperCase().replace(/\s+/g, '_');
+    const dateSuffix = filterStartDate || filterEndDate ? `_PERIOD_${filterStartDate || 'AWAL'}_TO_${filterEndDate || 'AKHIR'}` : `_${new Date().toISOString().split('T')[0]}`;
+    link.download = `BUKU_KAS_${catNameFilename}${dateSuffix}.xls`;
+    link.click();
+    URL.revokeObjectURL(url);
   };
 
   return (
@@ -630,23 +764,23 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
         <div className="text-center mb-6">
           <h2 className="text-sm font-bold uppercase decoration-solid underline">LAPORAN BUKU KAS BESAR TERPADU</h2>
           <p className="text-[10px] text-slate-500 mt-1 font-semibold">
-            Tanggal Cetak: {new Date().toLocaleDateString('id-ID')} | Filter: {filterSource === 'all' ? 'Semua Sumber' : filterSource.toUpperCase()} ({filterType === 'all' ? 'Semua Arus Kas' : filterType === 'incoming' ? 'Hanya Pemasukan' : 'Hanya Pengeluaran'})
+            Tanggal Cetak: {new Date().toLocaleDateString('id-ID')} {filterStartDate || filterEndDate ? `| Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : ''} | POS Kategori: {filterCategory === 'all' ? 'SEMUA POS KATEGORI' : filterCategory.toUpperCase()} | Sumber: {filterSource === 'all' ? 'Semua Sumber' : filterSource.toUpperCase()} ({filterType === 'all' ? 'Semua Arus Kas' : filterType === 'incoming' ? 'Hanya Pemasukan' : 'Hanya Pengeluaran'})
           </p>
         </div>
 
         {/* Printable summary card */}
         <div className="grid grid-cols-3 gap-2 border p-3 rounded-lg bg-slate-50 mb-6 font-semibold">
           <div>
-            <div className="text-slate-500 text-[9px] uppercase">TOTAL PEMASUKAN</div>
-            <div className="text-xs font-bold text-emerald-800">Rp {metrics.totalInflow.toLocaleString('id-ID')}</div>
+            <div className="text-slate-500 text-[9px] uppercase">TOTAL PEMASUKAN (DEBIT)</div>
+            <div className="text-xs font-bold text-emerald-800">Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</div>
           </div>
           <div>
-            <div className="text-slate-500 text-[9px] uppercase">TOTAL PENGELUARAN</div>
-            <div className="text-xs font-bold text-rose-800">Rp {metrics.totalOutflow.toLocaleString('id-ID')}</div>
+            <div className="text-slate-500 text-[9px] uppercase">TOTAL PENGELUARAN (KREDIT)</div>
+            <div className="text-xs font-bold text-rose-800">Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</div>
           </div>
           <div>
-            <div className="text-slate-500 text-[9px] uppercase">SALDO KAS NETO</div>
-            <div className="text-xs font-extrabold text-blue-800">Rp {metrics.netBalance.toLocaleString('id-ID')}</div>
+            <div className="text-slate-500 text-[9px] uppercase">SALDO KAS NETO BERJALAN</div>
+            <div className="text-xs font-extrabold text-blue-800">Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}</div>
           </div>
         </div>
 
@@ -995,9 +1129,20 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                 type="button"
                 onClick={handlePrintLedger}
                 className="p-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display"
+                title="Cetak Buku Kas / Simpan PDF Sesuai Hasil Filter Kategori/Pos Saat Ini"
               >
                 <Printer size={13} />
-                <span>Cetak Buku Kas</span>
+                <span>Cetak Buku Kas ({filterCategory === 'all' ? 'Global' : filterCategory})</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleDownloadExcelLedger}
+                className="p-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display"
+                title="Ekspor Buku Kas Sesuai Hasil Filter Kategori/Pos ke Spreadsheet Excel"
+              >
+                <Download size={13} className="text-emerald-700" />
+                <span>Unduh Excel ({filterCategory === 'all' ? 'Global' : filterCategory})</span>
               </button>
 
               <button
@@ -1583,6 +1728,39 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   </select>
                 </div>
 
+              </div>
+
+              {/* Date Filters Row */}
+              <div className="flex flex-wrap items-center gap-3 p-3 bg-indigo-50/45 rounded-xl border border-indigo-100 mt-1">
+                <span className="text-[10px] font-extrabold text-indigo-700 uppercase tracking-wider flex items-center gap-1.5 pl-1 shrink-0">
+                  <Calendar size={13} className="text-indigo-650" /> Filter Rentang Tanggal:
+                </span>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="date"
+                    value={filterStartDate}
+                    onChange={(e) => setFilterStartDate(e.target.value)}
+                    className="text-xs font-bold p-1.5 border border-slate-250 rounded-lg bg-white text-slate-700 outline-none w-[130px]"
+                    title="Tanggal Mulai"
+                  />
+                  <span className="text-slate-400 text-xs font-semibold">s/d</span>
+                  <input
+                    type="date"
+                    value={filterEndDate}
+                    onChange={(e) => setFilterEndDate(e.target.value)}
+                    className="text-xs font-bold p-1.5 border border-slate-250 rounded-lg bg-white text-slate-700 outline-none w-[130px]"
+                    title="Tanggal Selesai"
+                  />
+                </div>
+                {(filterStartDate || filterEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }}
+                    className="text-[10px] text-rose-600 hover:text-rose-700 font-extrabold uppercase hover:underline ml-auto cursor-pointer"
+                  >
+                    Hapus Filter Tanggal ×
+                  </button>
+                )}
               </div>
             </div>
 

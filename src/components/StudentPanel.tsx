@@ -758,6 +758,18 @@ export default function StudentPanel({
     }
   };
 
+  if (!currentStudent) {
+    return (
+      <div id="student-panel-loading" className="col-span-12 flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-3xs">
+        <RefreshCw className="w-8 h-8 text-indigo-600 animate-spin mb-3" />
+        <h3 className="font-extrabold text-sm text-slate-800 tracking-tight">Memuat Data Siswa...</h3>
+        <p className="text-[10px] text-slate-400 mt-1 leading-relaxed max-w-sm">
+          Silakan tunggu sebentar sementara sistem menyinkronkan profil Anda dari Server SMP Maarif NU Pandaan.
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div id="student-panel-root" className="grid grid-cols-1 md:grid-cols-12 gap-6 pb-24 md:pb-0">
       {/* Left Column: Account Selector and Profile Details */}

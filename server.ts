@@ -1700,7 +1700,7 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl } = req.body;
+    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl } = req.body;
     
     if (name !== undefined) schoolIdentity.name = String(name).trim();
     if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
@@ -1716,6 +1716,8 @@ async function startServer() {
     if (schoolStamp !== undefined) (schoolIdentity as any).schoolStamp = String(schoolStamp);
     if (apkUrl !== undefined) (schoolIdentity as any).apkUrl = String(apkUrl).trim();
     if (iosUrl !== undefined) (schoolIdentity as any).iosUrl = String(iosUrl).trim();
+    if (treasurerSkUrl !== undefined) (schoolIdentity as any).treasurerSkUrl = String(treasurerSkUrl).trim();
+    if (sarprasSkUrl !== undefined) (schoolIdentity as any).sarprasSkUrl = String(sarprasSkUrl).trim();
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
@@ -2328,7 +2330,7 @@ async function startServer() {
   });
 
   app.post("/api/admin/homerooms", (req, res) => {
-    const { username, name, className, password } = req.body;
+    const { username, name, className, password, skUrl } = req.body;
     if (!username || !name || !className) {
       return res.status(400).json({ error: "Informasi Wali Kelas tidak lengkap." });
     }
@@ -2343,7 +2345,8 @@ async function startServer() {
       username: username.trim(),
       name: name.trim(),
       className: className.trim(),
-      password: password ? String(password).trim() : "wali123"
+      password: password ? String(password).trim() : "wali123",
+      skUrl: skUrl ? String(skUrl).trim() : ""
     };
 
     homeroomTeachers.push(newHt);
@@ -2364,7 +2367,7 @@ async function startServer() {
 
   app.put("/api/admin/homerooms/:id", (req, res) => {
     const id = req.params.id;
-    const { username, name, className, password } = req.body;
+    const { username, name, className, password, skUrl } = req.body;
     
     const htIndex = homeroomTeachers.findIndex(ht => ht.id === id);
     if (htIndex === -1) {
@@ -2382,6 +2385,7 @@ async function startServer() {
     if (name) homeroomTeachers[htIndex].name = name.trim();
     if (className) homeroomTeachers[htIndex].className = className.trim();
     if (password !== undefined) homeroomTeachers[htIndex].password = String(password).trim();
+    if (skUrl !== undefined) homeroomTeachers[htIndex].skUrl = String(skUrl).trim();
 
     saveState();
     res.json({ success: true, homeroomTeachers, updated: homeroomTeachers[htIndex] });
@@ -2406,7 +2410,7 @@ async function startServer() {
   });
 
   app.post("/api/admin/subject-teachers", (req, res) => {
-    const { username, name, subject, password } = req.body;
+    const { username, name, subject, password, skUrl } = req.body;
     if (!username || !name || !subject) {
       return res.status(400).json({ error: "Informasi Guru Mata Pelajaran tidak lengkap." });
     }
@@ -2421,7 +2425,8 @@ async function startServer() {
       username: username.trim(),
       name: name.trim(),
       subject: subject.trim(),
-      password: password ? String(password).trim() : "mapel123"
+      password: password ? String(password).trim() : "mapel123",
+      skUrl: skUrl ? String(skUrl).trim() : ""
     };
 
     subjectTeachers.push(newSt);
@@ -2441,7 +2446,7 @@ async function startServer() {
 
   app.put("/api/admin/subject-teachers/:id", (req, res) => {
     const id = req.params.id;
-    const { username, name, subject, password } = req.body;
+    const { username, name, subject, password, skUrl } = req.body;
     
     const stIndex = subjectTeachers.findIndex(st => st.id === id);
     if (stIndex === -1) {
@@ -2459,6 +2464,7 @@ async function startServer() {
     if (name) subjectTeachers[stIndex].name = name.trim();
     if (subject) subjectTeachers[stIndex].subject = subject.trim();
     if (password !== undefined) subjectTeachers[stIndex].password = String(password).trim();
+    if (skUrl !== undefined) subjectTeachers[stIndex].skUrl = String(skUrl).trim();
 
     saveState();
     res.json({ success: true, subjectTeachers, updated: subjectTeachers[stIndex] });

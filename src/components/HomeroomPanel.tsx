@@ -4620,6 +4620,19 @@ Wassalamualaikum Wr. Wb.
                         <span className="opacity-40">•</span>
                         <span>Username: <strong className="text-white font-mono font-bold">@{currentTeacher.username}</strong></span>
                       </div>
+                      {currentTeacher.skUrl && (
+                        <div className="mt-3">
+                          <a
+                            href={currentTeacher.skUrl}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black transition-all shadow-xs"
+                          >
+                            <Download size={12} />
+                            Unduh SK Penugasan 📋
+                          </a>
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

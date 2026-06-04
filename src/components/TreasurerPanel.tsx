@@ -926,6 +926,17 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                 <span className="text-[10px] block font-bold text-slate-400 uppercase">AKSES AKTIF: BENDAHARA</span>
                 <span className="text-xs font-bold text-slate-200">{schoolIdentity.treasurer}</span>
               </div>
+              {schoolIdentity.treasurerSkUrl && (
+                <a
+                  href={schoolIdentity.treasurerSkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="inline-flex items-center gap-1.5 px-3 py-2 bg-emerald-990/30 hover:bg-emerald-950/65 text-emerald-300 border border-emerald-800 hover:border-emerald-600 font-bold text-xs rounded-xl cursor-pointer transition-all"
+                >
+                  <Download size={13} />
+                  <span>Unduh SK</span>
+                </a>
+              )}
               <button
                 type="button"
                 onClick={() => setShowPasswordModal(true)}

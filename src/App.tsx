@@ -2051,7 +2051,7 @@ export default function App() {
           />
         ) : role === 'homeroom' ? (
           <HomeroomPanel
-            currentTeacher={loggedHomeroom!}
+            currentTeacher={homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom!}
             students={studentsList}
             attendanceLogs={attendanceList}
             bills={studentBills}
@@ -2065,7 +2065,7 @@ export default function App() {
           />
         ) : role === 'subject_teacher' ? (
           <SubjectTeacherPanel
-            currentTeacher={loggedSubjectTeacher!}
+            currentTeacher={subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher!}
             students={studentsList}
             attendanceLogs={attendanceList}
             schoolIdentity={schoolIdentity}

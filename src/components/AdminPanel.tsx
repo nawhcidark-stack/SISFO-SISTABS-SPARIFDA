@@ -95,12 +95,12 @@ interface AdminPanelProps {
   schoolIdentity?: SchoolIdentity;
   onUpdateSchoolIdentity?: (updatedData: Partial<SchoolIdentity>) => Promise<boolean>;
   homerooms?: HomeroomTeacher[];
-  onCreateHomeroom?: (data: { username: string; name: string; className: string; password?: string }) => Promise<boolean>;
-  onUpdateHomeroom?: (id: string, data: { username?: string; name?: string; className?: string; password?: string }) => Promise<boolean>;
+  onCreateHomeroom?: (data: { username: string; name: string; className: string; password?: string; skUrl?: string }) => Promise<boolean>;
+  onUpdateHomeroom?: (id: string, data: { username?: string; name?: string; className?: string; password?: string; skUrl?: string }) => Promise<boolean>;
   onDeleteHomeroom?: (id: string) => Promise<boolean>;
   subjectTeachers?: SubjectTeacher[];
-  onCreateSubjectTeacher?: (data: { username: string; name: string; subject: string; password?: string }) => Promise<boolean>;
-  onUpdateSubjectTeacher?: (id: string, data: { username?: string; name?: string; subject?: string; password?: string }) => Promise<boolean>;
+  onCreateSubjectTeacher?: (data: { username: string; name: string; subject: string; password?: string; skUrl?: string }) => Promise<boolean>;
+  onUpdateSubjectTeacher?: (id: string, data: { username?: string; name?: string; subject?: string; password?: string; skUrl?: string }) => Promise<boolean>;
   onDeleteSubjectTeacher?: (id: string) => Promise<boolean>;
   onAutoGenerateSubjectTeachers?: () => Promise<boolean>;
   onLogout?: () => void;
@@ -617,6 +617,7 @@ export default function AdminPanel({
   const [formSubject, setFormSubject] = useState('');
   const [formUsername, setFormUsername] = useState('');
   const [formPassword, setFormPassword] = useState('');
+  const [formSkUrl, setFormSkUrl] = useState('');
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [mgmtError, setMgmtError] = useState<string | null>(null);
   const [mgmtSuccess, setMgmtSuccess] = useState<string | null>(null);
@@ -629,6 +630,7 @@ export default function AdminPanel({
     setFormSubject('');
     setFormUsername('');
     setFormPassword('');
+    setFormSkUrl('');
     setMgmtError(null);
     setMgmtSuccess(null);
   };
@@ -1048,6 +1050,8 @@ export default function AdminPanel({
   const [schoolStamp, setSchoolStamp] = useState("");
   const [apkUrl, setApkUrl] = useState("");
   const [iosUrl, setIosUrl] = useState("");
+  const [treasurerSkUrl, setTreasurerSkUrl] = useState("");
+  const [sarprasSkUrl, setSarprasSkUrl] = useState("");
   const [isSavingSchoolIdentity, setIsSavingSchoolIdentity] = useState(false);
   const [schoolIdentityMsg, setSchoolIdentityMsg] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
@@ -1067,6 +1071,8 @@ export default function AdminPanel({
       setSchoolStamp(schoolIdentity.schoolStamp || "");
       setApkUrl(schoolIdentity.apkUrl || "");
       setIosUrl(schoolIdentity.iosUrl || "");
+      setTreasurerSkUrl(schoolIdentity.treasurerSkUrl || "");
+      setSarprasSkUrl(schoolIdentity.sarprasSkUrl || "");
       if (schoolIdentity.sppRates) {
         setSppConfigRates(schoolIdentity.sppRates);
       }
@@ -1793,7 +1799,9 @@ export default function AdminPanel({
       treasurerSignature: schoolTreasurerSignature,
       schoolStamp: schoolStamp,
       apkUrl: apkUrl,
-      iosUrl: iosUrl
+      iosUrl: iosUrl,
+      treasurerSkUrl: treasurerSkUrl,
+      sarprasSkUrl: sarprasSkUrl
     });
 
     if (success) {
@@ -4098,6 +4106,37 @@ export default function AdminPanel({
                   </div>
                 </div>
 
+                {/* SK Penugasan Config for Treasurer & Sarpras */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4 bg-slate-50/50 p-4 rounded-xl border border-slate-200/60">
+                  <div className="md:col-span-2">
+                    <h4 className="text-[10.5px] font-extrabold text-slate-800 uppercase tracking-wider mb-1">📋 Link SK Penugasan Bendahara &amp; Waka Sarpras</h4>
+                    <p className="text-[10px] text-slate-500 leading-normal">
+                      Masukkan tautan unduhan SK Penugasan resmi untuk Bendahara Keuangan dan Waka Sarpras. Tautan ini akan dapat diunduh langsung di halaman panel dashboard masing-masing.
+                    </p>
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left">Link SK Penugasan Bendahara</label>
+                    <input
+                      type="url"
+                      value={treasurerSkUrl}
+                      onChange={(e) => setTreasurerSkUrl(e.target.value)}
+                      placeholder="Contoh: https://drive.google.com/file/... (Link Download)"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:border-indigo-600 shadow-xs"
+                    />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider text-left">Link SK Penugasan Waka Sarpras</label>
+                    <input
+                      type="url"
+                      value={sarprasSkUrl}
+                      onChange={(e) => setSarprasSkUrl(e.target.value)}
+                      placeholder="Contoh: https://drive.google.com/file/... (Link Download)"
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-medium focus:outline-none focus:border-indigo-600 shadow-xs"
+                    />
+                  </div>
+                </div>
+
                 <button
                   type="submit"
                   disabled={isSavingSchoolIdentity}
@@ -6035,7 +6074,8 @@ export default function AdminPanel({
                             username: formUsername,
                             name: formName,
                             className: formClassName,
-                            password: formPassword || undefined
+                            password: formPassword || undefined,
+                            skUrl: formSkUrl
                           });
                           if (res) {
                             setMgmtSuccess('Berhasil memperbarui data Wali Kelas!');
@@ -6051,7 +6091,8 @@ export default function AdminPanel({
                             username: formUsername,
                             name: formName,
                             className: formClassName,
-                            password: formPassword
+                            password: formPassword,
+                            skUrl: formSkUrl
                           });
                           if (res) {
                             setMgmtSuccess('Berhasil mendaftarkan Wali Kelas baru!');
@@ -6123,6 +6164,17 @@ export default function AdminPanel({
                     )}
                   </div>
 
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-bold text-slate-650">Link Unduhan SK Penugasan (URL) <span className="text-slate-400 font-normal">(Opsional)</span></label>
+                    <input
+                      type="url"
+                      placeholder="Contoh: https://drive.google.com/file/... (Link Download)"
+                      value={formSkUrl}
+                      onChange={(e) => setFormSkUrl(e.target.value)}
+                      className="px-3 py-2 border border-slate-200 rounded-lg font-semibold text-slate-800 bg-white focus:outline-none focus:border-slate-800"
+                    />
+                  </div>
+
                   {mgmtError && (
                     <div className="p-3 bg-rose-50 border border-rose-150 text-rose-800 rounded-lg font-medium">
                       ⚠️ {mgmtError}
@@ -6187,14 +6239,29 @@ export default function AdminPanel({
                             <tr key={hr.id} className="hover:bg-slate-55">
                               <td className="py-3 px-4 text-left">
                                 <span className="font-bold text-slate-800 block">{hr.name}</span>
-                                <span className="text-[10px] text-slate-400 font-normal">ID: {hr.id}</span>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] text-slate-400 font-normal">ID: {hr.id}</span>
+                                  {hr.skUrl && (
+                                    <>
+                                      <span className="text-slate-300">|</span>
+                                      <a
+                                        href={hr.skUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[10px] font-bold text-emerald-650 hover:underline inline-flex items-center gap-0.5"
+                                      >
+                                        SK Penugasan
+                                      </a>
+                                    </>
+                                  )}
+                                </div>
                               </td>
                               <td className="py-3 px-4 text-center">
                                 <span className="inline-flex px-2 py-0.5 rounded font-black text-[10px] uppercase bg-indigo-50 border border-indigo-100 text-indigo-700">
                                   Kelas {hr.className}
                                 </span>
                               </td>
-                              <td className="py-3 px-4 font-mono font-bold text-slate-600 text-left">
+                              <td className="py-3 px-4 font-mono font-bold text-slate-650 text-left">
                                 {hr.username}
                               </td>
                               <td className="py-3 px-4">
@@ -6207,6 +6274,7 @@ export default function AdminPanel({
                                       setFormClassName(hr.className);
                                       setFormUsername(hr.username);
                                       setFormPassword('');
+                                      setFormSkUrl(hr.skUrl || '');
                                     }}
                                     className="p-1 px-2 border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded text-[10px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1 transition-all"
                                   >
@@ -6341,7 +6409,8 @@ export default function AdminPanel({
                             username: formUsername,
                             name: formName,
                             subject: formSubject,
-                            password: formPassword || undefined
+                            password: formPassword || undefined,
+                            skUrl: formSkUrl
                           });
                           if (res) {
                             setMgmtSuccess('Berhasil memperbarui data Guru Mapel!');
@@ -6357,7 +6426,8 @@ export default function AdminPanel({
                             username: formUsername,
                             name: formName,
                             subject: formSubject,
-                            password: formPassword || 'sandi123'
+                            password: formPassword || 'sandi123',
+                            skUrl: formSkUrl
                           });
                           if (res) {
                             setMgmtSuccess('Berhasil mendaftarkan Guru Mapel baru!');
@@ -6426,6 +6496,17 @@ export default function AdminPanel({
                     </p>
                   </div>
 
+                  <div className="flex flex-col gap-1.5">
+                    <label className="font-bold text-slate-650">Link Unduhan SK Penugasan (URL) <span className="text-slate-400 font-normal">(Opsional)</span></label>
+                    <input
+                      type="url"
+                      placeholder="Contoh: https://drive.google.com/file/... (Link Download)"
+                      value={formSkUrl}
+                      onChange={(e) => setFormSkUrl(e.target.value)}
+                      className="px-3 py-2 border border-slate-200 rounded-lg font-semibold text-slate-800 bg-white focus:outline-none focus:border-slate-800"
+                    />
+                  </div>
+
                   {mgmtError && (
                     <div className="p-3 bg-rose-50 border border-rose-150 text-rose-800 rounded-lg font-medium">
                       ⚠️ {mgmtError}
@@ -6491,7 +6572,22 @@ export default function AdminPanel({
                             <tr key={st.id} className="hover:bg-slate-50 transition-colors">
                               <td className="px-5 py-3">
                                 <div className="font-extrabold text-slate-900">{st.name}</div>
-                                <div className="text-[10px] text-slate-400 font-mono">ID: {st.id}</div>
+                                <div className="flex items-center gap-2 mt-0.5">
+                                  <span className="text-[10px] text-slate-400 font-normal">ID: {st.id}</span>
+                                  {st.skUrl && (
+                                    <>
+                                      <span className="text-slate-300">|</span>
+                                      <a
+                                        href={st.skUrl}
+                                        target="_blank"
+                                        rel="noopener noreferrer"
+                                        className="text-[10px] font-bold text-emerald-650 hover:underline inline-flex items-center gap-0.5"
+                                      >
+                                        SK Penugasan
+                                      </a>
+                                    </>
+                                  )}
+                                </div>
                               </td>
                               <td className="px-5 py-3">
                                 <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-teal-50 text-teal-850 border border-teal-200">
@@ -6509,6 +6605,7 @@ export default function AdminPanel({
                                       setFormSubject(st.subject);
                                       setFormUsername(st.username);
                                       setFormPassword('');
+                                      setFormSkUrl(st.skUrl || '');
                                     }}
                                     className="p-1 px-2 border border-slate-200 hover:border-slate-800 bg-white rounded text-[10px] font-bold text-slate-700 hover:text-slate-900 cursor-pointer flex items-center gap-1 transition-all"
                                   >

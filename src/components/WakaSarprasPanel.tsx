@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { 
   Package, ShoppingCart, Users2, Search, Plus, Edit2, Trash2, 
   Printer, CheckCircle2, AlertTriangle, HelpCircle, ArrowLeft, Loader2, LogOut, Check, X,
-  Home, LayoutGrid, Key, Lock, Smartphone, Apple
+  Home, LayoutGrid, Key, Lock, Smartphone, Apple, Download
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import QRCode from 'qrcode';
@@ -761,6 +761,17 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
             </div>
 
             <div className="flex items-center gap-3">
+              {schoolIdentity?.sarprasSkUrl && (
+                <a
+                  href={schoolIdentity.sarprasSkUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-5 py-2.5 bg-emerald-600/20 hover:bg-emerald-600 hover:text-white border border-emerald-500/30 text-emerald-300 font-extrabold text-xs rounded-xl flex items-center gap-2 cursor-pointer shadow-sm transition-all"
+                >
+                  <Download size={13} strokeWidth={2.5} /> Unduh SK
+                </a>
+              )}
+
               <button
                 onClick={() => {
                   setPasswordError('');

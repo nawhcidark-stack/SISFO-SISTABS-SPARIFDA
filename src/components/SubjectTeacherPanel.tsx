@@ -5,7 +5,7 @@ import {
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
   Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer,
-  User, Bell, LayoutGrid, Home, Smartphone, Apple
+  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download
 } from 'lucide-react';
 
 interface SubjectTeacherPanelProps {
@@ -1609,6 +1609,18 @@ export default function SubjectTeacherPanel({
                   <span className="font-black text-slate-900 text-indigo-650">{journals.length} Kali</span>
                 </div>
               </div>
+
+              {currentTeacher.skUrl && (
+                <a
+                  href={currentTeacher.skUrl}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="w-full mb-3 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-xs"
+                >
+                  <Download size={13} />
+                  <span>Unduh SK Penugasan 📋</span>
+                </a>
+              )}
 
               <button
                 type="button"

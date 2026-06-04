@@ -72,6 +72,8 @@ export interface SchoolIdentity {
   schoolStamp?: string;
   apkUrl?: string;
   iosUrl?: string;
+  treasurerSkUrl?: string;
+  sarprasSkUrl?: string;
   sppRates?: {
     grade7: number;
     grade8: number;
@@ -110,6 +112,7 @@ export interface HomeroomTeacher {
   name: string;
   className: string; // e.g., "7-A", "7-B", "8-A", "9-C"
   password?: string;
+  skUrl?: string;
 }
 
 export interface SubjectTeacher {
@@ -118,6 +121,7 @@ export interface SubjectTeacher {
   name: string;
   subject: string; // e.g., "Matematika", "Bahasa Inggris", "IPA", etc.
   password?: string;
+  skUrl?: string;
 }
 
 export interface SubjectAttendanceEntry {

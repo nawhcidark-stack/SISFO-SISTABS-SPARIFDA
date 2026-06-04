@@ -137,7 +137,17 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
               }
               return { name: c, type };
             }
-            return c as BudgetCategory;
+            const obj = c as any;
+            const name = obj.name || '';
+            let type = obj.type;
+            if (!type || !['incoming', 'outgoing', 'both'].includes(type)) {
+              type = 'both';
+              const nameLower = name.toLowerCase();
+              if (nameLower.includes('gaji') || nameLower.includes('operasional') || nameLower.includes('pembangunan') || nameLower.includes('ujian')) {
+                type = 'outgoing';
+              }
+            }
+            return { name, type };
           });
         }
       } catch (e) {
@@ -154,11 +164,10 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   });
 
   useEffect(() => {
-    const matching = categories.filter(c => c.type === 'both' || c.type === formType);
-    if (matching.length > 0 && !matching.some(c => c.name === formCategory)) {
-      setFormCategory(matching[0].name);
+    if (categories.length > 0 && !categories.some(c => c.name === formCategory)) {
+      setFormCategory(categories[0].name);
     }
-  }, [formType, categories, formCategory]);
+  }, [categories, formCategory]);
 
   const [showManageBudgetPos, setShowManageBudgetPos] = useState(false);
   const [newBudgetCatInput, setNewBudgetCatInput] = useState('');
@@ -2139,13 +2148,11 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                     onChange={(e) => setFormCategory(e.target.value)}
                     className="w-full p-2.5 border border-slate-200 rounded-lg bg-white font-bold text-slate-800 text-xs focus:outline-none focus:border-slate-800 cursor-pointer"
                   >
-                    {categories
-                      .filter((c) => c.type === 'both' || c.type === formType)
-                      .map((c) => (
-                        <option key={c.name} value={c.name}>
-                          📊 {c.name} ({c.type === 'both' ? 'Umum' : c.type === 'incoming' ? 'Pemasukan saja' : 'Pengeluaran saja'})
-                        </option>
-                      ))}
+                    {categories.map((c) => (
+                      <option key={c.name} value={c.name}>
+                        📊 {c.name} ({c.type === 'both' ? 'Umum' : c.type === 'incoming' ? 'Pemasukan saja' : 'Pengeluaran saja'})
+                      </option>
+                    ))}
                   </select>
                 </div>
 

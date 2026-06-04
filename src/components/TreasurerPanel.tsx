@@ -370,6 +370,47 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       if (res.ok) {
         const data = await res.json();
         setTransactions(data);
+
+        // Auto-detect any missing category in existing transactions and add it to the active POS categories list
+        if (Array.isArray(data)) {
+          const fetchedCategories = new Set<string>();
+          data.forEach((tx: any) => {
+            if (tx.category && typeof tx.category === 'string') {
+              const trimmed = tx.category.trim();
+              if (trimmed && !['SPP', 'Tabungan'].includes(trimmed)) {
+                fetchedCategories.add(trimmed);
+              }
+            }
+          });
+
+          if (fetchedCategories.size > 0) {
+            setCategories(prev => {
+              const currentNames = new Set(prev.map(c => c.name.toLowerCase()));
+              const newlyDetected: BudgetCategory[] = [];
+              fetchedCategories.forEach((catName: string) => {
+                if (!currentNames.has(catName.toLowerCase())) {
+                  const sameCatTxs = data.filter((tx: any) => tx.category === catName);
+                  const hasIncoming = sameCatTxs.some((tx: any) => tx.type === 'incoming');
+                  const hasOutgoing = sameCatTxs.some((tx: any) => tx.type === 'outgoing');
+                  let type: 'incoming' | 'outgoing' | 'both' = 'both';
+                  if (hasIncoming && !hasOutgoing) {
+                    type = 'incoming';
+                  } else if (hasOutgoing && !hasIncoming) {
+                    type = 'outgoing';
+                  }
+                  newlyDetected.push({ name: catName, type });
+                }
+              });
+
+              if (newlyDetected.length > 0) {
+                const updated = [...prev, ...newlyDetected];
+                localStorage.setItem('treasurer_categories', JSON.stringify(updated));
+                return updated;
+              }
+              return prev;
+            });
+          }
+        }
       } else {
         setErrorMsg('Gagal memuat pembukuan bendahara.');
       }

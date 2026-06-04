@@ -41,16 +41,20 @@ h1, h2, h3, h4, h5, h6 {
     margin: 5mm 8mm 5mm 8mm !important; /* Extremely compact page margins to eliminate blank spaces */
   }
 
-  /* Reset body and layout wrapper dimensions */
-  html, body {
+  /* Reset body and layout wrapper dimensions to fully collapse inactive vertical spaces */
+  html, body, #root, .min-h-screen, main,
+  #admin-panel-root, #student-panel-root, #homeroom-panel-root, 
+  #homeroom-dashboard-root, #treasurer-panel-root, #counselor-panel-root, 
+  #subject-teacher-panel-container, #principal-panel-root, #waka-sarpras-panel-root {
     background: white !important;
+    background-color: white !important;
     color: black !important;
     font-size: 10pt !important;
     line-height: 1.35 !important;
     margin: 0 !important;
     padding: 0 !important;
     height: auto !important;
-    min-height: 100% !important;
+    min-height: 0 !important;
     overflow: visible !important;
   }
 
@@ -65,9 +69,15 @@ h1, h2, h3, h4, h5, h6 {
   span.animate-ping,
   nav,
   aside,
-  #admin-panel-root > div:not(.fixed),
-  #student-panel-root > div:not(.fixed),
-  #homeroom-panel-root > div:not(.fixed),
+  #admin-panel-root > div:not(.fixed):not([id*="print"]),
+  #student-panel-root > div:not(.fixed):not([id*="print"]),
+  #homeroom-panel-root > div:not(.fixed):not([id*="print"]),
+  #homeroom-dashboard-root > div:not(.fixed):not([id*="print"]),
+  #treasurer-panel-root > div:not(.fixed):not([id*="print"]),
+  #counselor-panel-root > div:not(.fixed):not([id*="print"]),
+  #subject-teacher-panel-container > div:not(.fixed):not([id*="print"]),
+  #principal-panel-root > div:not(.fixed):not([id*="print"]),
+  #waka-sarpras-panel-root > div:not(.fixed):not([id*="print"]),
   div[class*="bg-white border-b border-slate-200 py-3"],
   div[class*="NotificationToast"] {
     display: none !important;

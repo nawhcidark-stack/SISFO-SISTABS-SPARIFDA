@@ -734,116 +734,117 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
 
   return (
     <div id="treasurer-panel-root" className="min-h-screen bg-slate-50 text-slate-800 pb-16 font-sans">
-      
-      {/* Printable Area 1: Ledger/Buku Kas - Only active when not printing an individual receipt */}
-      <div id={activePrintTransaction ? undefined : "print-report-section"} className="hidden print:block bg-white p-8 text-black text-xs leading-relaxed">
-        {/* Letterhead */}
-        <div className="flex items-center justify-between border-b-2 border-double border-slate-900 pb-4 mb-6">
-          <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
-            {schoolIdentity.logo ? (
-              <img src={schoolIdentity.logo} className="w-full h-full object-contain" alt="Logo" referrerPolicy="no-referrer" />
-            ) : (
-              <span className="font-extrabold text-[10px] text-slate-400">LOGO LP</span>
-            )}
-          </div>
-          <div className="flex-1 text-center px-4">
-            <h2 className="text-sm font-extrabold tracking-tight uppercase">{schoolIdentity.subheading}</h2>
-            <h1 className="text-lg font-black tracking-tight text-slate-900 leading-tight">{schoolIdentity.name}</h1>
-            <p className="text-[10px] text-slate-500 font-semibold">{schoolIdentity.address} | Telp: {schoolIdentity.phone}</p>
-            <span className="text-[9px] px-2 py-0.5 rounded border bg-slate-50 font-bold tracking-wider uppercase mt-1 inline-block">{schoolIdentity.accreditation}</span>
-          </div>
-          <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
-            {schoolIdentity.logo2 ? (
-              <img src={schoolIdentity.logo2} className="w-full h-full object-contain" alt="Logo 2" referrerPolicy="no-referrer" />
-            ) : (
-              <span className="font-extrabold text-[10px] text-slate-400">LOGO NU</span>
-            )}
-          </div>
-        </div>
-
-        <div className="text-center mb-6">
-          <h2 className="text-sm font-bold uppercase decoration-solid underline">LAPORAN BUKU KAS BESAR TERPADU</h2>
-          <p className="text-[10px] text-slate-500 mt-1 font-semibold">
-            Tanggal Cetak: {new Date().toLocaleDateString('id-ID')} {filterStartDate || filterEndDate ? `| Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : ''} | POS Kategori: {filterCategory === 'all' ? 'SEMUA POS KATEGORI' : filterCategory.toUpperCase()} | Sumber: {filterSource === 'all' ? 'Semua Sumber' : filterSource.toUpperCase()} ({filterType === 'all' ? 'Semua Arus Kas' : filterType === 'incoming' ? 'Hanya Pemasukan' : 'Hanya Pengeluaran'})
-          </p>
-        </div>
-
-        {/* Printable summary card */}
-        <div className="grid grid-cols-3 gap-2 border p-3 rounded-lg bg-slate-50 mb-6 font-semibold">
-          <div>
-            <div className="text-slate-500 text-[9px] uppercase">TOTAL PEMASUKAN (DEBIT)</div>
-            <div className="text-xs font-bold text-emerald-800">Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</div>
-          </div>
-          <div>
-            <div className="text-slate-500 text-[9px] uppercase">TOTAL PENGELUARAN (KREDIT)</div>
-            <div className="text-xs font-bold text-rose-800">Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</div>
-          </div>
-          <div>
-            <div className="text-slate-500 text-[9px] uppercase">SALDO KAS NETO BERJALAN</div>
-            <div className="text-xs font-extrabold text-blue-800">Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}</div>
-          </div>
-        </div>
-
-        {/* Books Table */}
-        <table className="w-full border-collapse border border-slate-300 text-[10px] text-left">
-          <thead>
-            <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-              <th className="border border-slate-300 p-2">Tgl</th>
-              <th className="border border-slate-300 p-2">Deskripsi Transaksi Pokok</th>
-              <th className="border border-slate-300 p-2">Sumber / Pos</th>
-              <th className="border border-slate-300 p-2 text-right">Debit (+)</th>
-              <th className="border border-slate-300 p-2 text-right">Kredit (-)</th>
-            </tr>
-          </thead>
-          <tbody>
-            {filteredTransactions.map((tx) => (
-              <tr key={tx.id} className="border-b border-slate-250 hover:bg-slate-50">
-                <td className="border border-slate-300 p-2 font-mono whitespace-nowrap">{tx.date}</td>
-                <td className="border border-slate-300 p-2">
-                  <div className="font-bold">{tx.description}</div>
-                  {tx.studentName && (
-                    <div className="text-[9px] text-slate-500 font-semibold">Siswa: {tx.studentName} ({tx.nis})</div>
-                  )}
-                  {tx.recipientName && (
-                    <div className="text-[9px] text-indigo-600 font-extrabold">Penerima: {tx.recipientName}</div>
-                  )}
-                </td>
-                <td className="border border-slate-300 p-2 font-bold uppercase">{tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : `Manual (${tx.category})`}</td>
-                <td className="border border-slate-300 p-2 text-right font-mono text-emerald-700 font-bold">
-                  {tx.type === 'incoming' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
-                </td>
-                <td className="border border-slate-300 p-2 text-right font-mono text-rose-700 font-bold">
-                  {tx.type === 'outgoing' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-
-        {/* Footers for signature */}
-        <div className="mt-12 grid grid-cols-2 text-center text-[10px]">
-          <div>
-            <p>Mengetahui,</p>
-            <p className="font-bold mt-2">Kepala Sekolah</p>
-            <div className="h-16 flex items-center justify-center">
-              {/* Stamp removed per request */}
-            </div>
-            <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.principal}</p>
-            <p className="text-[9px] text-slate-500">NIP. -</p>
-          </div>
-          <div>
-            <p>Pandaan, {new Date().toLocaleDateString('id-ID')}</p>
-            <p className="font-bold mt-2">Bendahara Keuangan / Kas</p>
-            <div className="h-16 flex items-center justify-center">
-              {schoolIdentity.treasurerSignature && (
-                <img src={schoolIdentity.treasurerSignature} className="h-14 object-contain" alt="Signature" referrerPolicy="no-referrer" />
+          {/* Printable Area 1: Ledger/Buku Kas - Only active when not printing an individual receipt */}
+      {!activePrintTransaction && (
+        <div id="print-report-section" className="hidden print:block bg-white p-8 text-black text-xs leading-relaxed">
+          {/* Letterhead */}
+          <div className="flex items-center justify-between border-b-2 border-double border-slate-900 pb-4 mb-6">
+            <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
+              {schoolIdentity.logo ? (
+                <img src={schoolIdentity.logo} className="w-full h-full object-contain" alt="Logo" referrerPolicy="no-referrer" />
+              ) : (
+                <span className="font-extrabold text-[10px] text-slate-400">LOGO LP</span>
               )}
             </div>
-            <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.treasurer}</p>
-            <p className="text-[9px] text-slate-500 font-medium">SMP Ma\'arif NU Pandaan</p>
+            <div className="flex-1 text-center px-4">
+              <h2 className="text-sm font-extrabold tracking-tight uppercase">{schoolIdentity.subheading}</h2>
+              <h1 className="text-lg font-black tracking-tight text-slate-900 leading-tight">{schoolIdentity.name}</h1>
+              <p className="text-[10px] text-slate-500 font-semibold">{schoolIdentity.address} | Telp: {schoolIdentity.phone}</p>
+              <span className="text-[9px] px-2 py-0.5 rounded border bg-slate-50 font-bold tracking-wider uppercase mt-1 inline-block">{schoolIdentity.accreditation}</span>
+            </div>
+            <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
+              {schoolIdentity.logo2 ? (
+                <img src={schoolIdentity.logo2} className="w-full h-full object-contain" alt="Logo 2" referrerPolicy="no-referrer" />
+              ) : (
+                <span className="font-extrabold text-[10px] text-slate-400">LOGO NU</span>
+              )}
+            </div>
+          </div>
+
+          <div className="text-center mb-6">
+            <h2 className="text-sm font-bold uppercase decoration-solid underline">LAPORAN BUKU KAS BESAR TERPADU</h2>
+            <p className="text-[10px] text-slate-500 mt-1 font-semibold">
+              Tanggal Cetak: {new Date().toLocaleDateString('id-ID')} {filterStartDate || filterEndDate ? `| Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : ''} | POS Kategori: {filterCategory === 'all' ? 'SEMUA POS KATEGORI' : filterCategory.toUpperCase()} | Sumber: {filterSource === 'all' ? 'Semua Sumber' : filterSource.toUpperCase()} ({filterType === 'all' ? 'Semua Arus Kas' : filterType === 'incoming' ? 'Hanya Pemasukan' : 'Hanya Pengeluaran'})
+            </p>
+          </div>
+
+          {/* Printable summary card */}
+          <div className="grid grid-cols-3 gap-2 border p-3 rounded-lg bg-slate-50 mb-6 font-semibold">
+            <div>
+              <div className="text-slate-500 text-[9px] uppercase">TOTAL PEMASUKAN (DEBIT)</div>
+              <div className="text-xs font-bold text-emerald-800">Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</div>
+            </div>
+            <div>
+              <div className="text-slate-500 text-[9px] uppercase">TOTAL PENGELUARAN (KREDIT)</div>
+              <div className="text-xs font-bold text-rose-800">Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</div>
+            </div>
+            <div>
+              <div className="text-slate-500 text-[9px] uppercase">SALDO KAS NETO BERJALAN</div>
+              <div className="text-xs font-extrabold text-blue-800">Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}</div>
+            </div>
+          </div>
+
+          {/* Books Table */}
+          <table className="w-full border-collapse border border-slate-300 text-[10px] text-left">
+            <thead>
+              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
+                <th className="border border-slate-300 p-2">Tgl</th>
+                <th className="border border-slate-300 p-2">Deskripsi Transaksi Pokok</th>
+                <th className="border border-slate-300 p-2">Sumber / Pos</th>
+                <th className="border border-slate-300 p-2 text-right">Debit (+)</th>
+                <th className="border border-slate-300 p-2 text-right">Kredit (-)</th>
+              </tr>
+            </thead>
+            <tbody>
+              {filteredTransactions.map((tx) => (
+                <tr key={tx.id} className="border-b border-slate-250 hover:bg-slate-50">
+                  <td className="border border-slate-300 p-2 font-mono whitespace-nowrap">{tx.date}</td>
+                  <td className="border border-slate-300 p-2">
+                    <div className="font-bold">{tx.description}</div>
+                    {tx.studentName && (
+                      <div className="text-[9px] text-slate-500 font-semibold">Siswa: {tx.studentName} ({tx.nis})</div>
+                    )}
+                    {tx.recipientName && (
+                      <div className="text-[9px] text-indigo-600 font-extrabold">Penerima: {tx.recipientName}</div>
+                    )}
+                  </td>
+                  <td className="border border-slate-300 p-2 font-bold uppercase">{tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : `Manual (${tx.category})`}</td>
+                  <td className="border border-slate-300 p-2 text-right font-mono text-emerald-700 font-bold">
+                    {tx.type === 'incoming' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
+                  </td>
+                  <td className="border border-slate-300 p-2 text-right font-mono text-rose-700 font-bold">
+                    {tx.type === 'outgoing' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          {/* Footers for signature */}
+          <div className="mt-12 grid grid-cols-2 text-center text-[10px]">
+            <div>
+              <p>Mengetahui,</p>
+              <p className="font-bold mt-2">Kepala Sekolah</p>
+              <div className="h-16 flex items-center justify-center">
+                {/* Stamp removed per request */}
+              </div>
+              <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.principal}</p>
+              <p className="text-[9px] text-slate-500">NIP. -</p>
+            </div>
+            <div>
+              <p>Pandaan, {new Date().toLocaleDateString('id-ID')}</p>
+              <p className="font-bold mt-2">Bendahara Keuangan / Kas</p>
+              <div className="h-16 flex items-center justify-center">
+                {schoolIdentity.treasurerSignature && (
+                  <img src={schoolIdentity.treasurerSignature} className="h-14 object-contain" alt="Signature" referrerPolicy="no-referrer" />
+                )}
+              </div>
+              <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.treasurer}</p>
+              <p className="text-[9px] text-slate-500 font-medium">SMP Ma'arif NU Pandaan</p>
+            </div>
           </div>
         </div>
-      </div>
+      )}
 
       {/* Printable Area 2: Receipt/Kuitansi - Managed inside the modal directly to prevent styling mismatch */}
 

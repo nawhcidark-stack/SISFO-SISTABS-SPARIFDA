@@ -54,6 +54,7 @@ export default function StudentManagement({
     email: string;
     phone: string;
     initialSavings: number;
+    gender?: string;
     isExisting: boolean;
   }>>([]);
   const [isImporting, setIsImporting] = useState(false);
@@ -62,11 +63,11 @@ export default function StudentManagement({
 
   // Download CSV template
   const handleDownloadTemplate = () => {
-    const headers = "nis,nama,kelas,email,telepon,saldo_awal\n";
+    const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,saldo_awal\n";
     const rows = [
-      "20261010,Budi Santoso,7-A,budi@example.com,081234567812,100000",
-      "20261011,Aisyah Putri,7-B,aisyah@example.com,081234567813,0",
-      "20241001,Ahmad Fauzi,7-A,ahmad.new_email@example.org,081234567890,0"
+      "20261010,Budi Santoso,7-A,Laki-laki,budi@example.com,081234567812,100000",
+      "20261011,Aisyah Putri,7-B,Perempuan,aisyah@example.com,081234567813,0",
+      "20241001,Ahmad Fauzi,7-A,Laki-laki,ahmad.new_email@example.org,081234567890,0"
     ].join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -113,6 +114,7 @@ export default function StudentManagement({
         const nisIdx = headers.findIndex(h => h.includes('nis'));
         const nameIdx = headers.findIndex(h => h.includes('nama') || h.includes('name'));
         const classIdx = headers.findIndex(h => h.includes('kelas') || h.includes('class'));
+        const genderIdx = headers.findIndex(h => h.includes('gender') || h.includes('jenis_kelamin') || h.includes('jk') || h.includes('kelamin') || h.includes('sex'));
         const emailIdx = headers.findIndex(h => h.includes('email'));
         const phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('telepon') || h.includes('hp'));
         const savingsIdx = headers.findIndex(h => h.includes('saldo') || h.includes('savings') || h.includes('tabungan') || h.includes('awal'));
@@ -129,6 +131,7 @@ export default function StudentManagement({
           email: string;
           phone: string;
           initialSavings: number;
+          gender?: string;
           isExisting: boolean;
         }> = [];
 
@@ -142,6 +145,7 @@ export default function StudentManagement({
           const nisVal = cols[nisIdx];
           const nameVal = cols[nameIdx];
           const classVal = cols[classIdx];
+          const genderVal = genderIdx !== -1 ? cols[genderIdx] : '';
           const emailVal = emailIdx !== -1 ? cols[emailIdx] : '';
           const phoneVal = phoneIdx !== -1 ? cols[phoneIdx] : '';
           const initSalVal = savingsIdx !== -1 ? (Number(cols[savingsIdx]) || 0) : 0;
@@ -151,6 +155,19 @@ export default function StudentManagement({
           // Check duplicate NIS
           const isExist = students.some(s => s.nis.toString().trim() === nisVal.toString().trim());
 
+          // Normalize gender
+          let resolvedGender = 'Laki-laki';
+          if (genderVal) {
+            const cleanGen = genderVal.trim().toLowerCase();
+            if (cleanGen === 'p' || cleanGen.startsWith('perem') || cleanGen === 'female' || cleanGen === 'wita' || cleanGen === 'wanita') {
+              resolvedGender = 'Perempuan';
+            } else if (cleanGen === 'l' || cleanGen.startsWith('laki') || cleanGen === 'male' || cleanGen === 'pria') {
+              resolvedGender = 'Laki-laki';
+            } else {
+              resolvedGender = genderVal; // fallback
+            }
+          }
+
           parsedRows.push({
             nis: nisVal.trim(),
             name: nameVal.trim(),
@@ -158,6 +175,7 @@ export default function StudentManagement({
             email: emailVal.trim(),
             phone: phoneVal.trim(),
             initialSavings: initSalVal,
+            gender: resolvedGender,
             isExisting: isExist
           });
         }
@@ -220,8 +238,25 @@ export default function StudentManagement({
     setErrorMsg('');
   };
 
-  // Class selection list
-  const classes = ['7-A', '7-B', '7-C', '8-A', '8-B', '8-C', '9-A', '9-B', '9-C'];
+  // Class selection list (dynamically generated from active students data with sensible fallback defaults)
+  const classes = React.useMemo(() => {
+    const baseClasses = ['7-A', '7-B', '7-C', '8-A', '8-B', '8-C', '9-A', '9-B', '9-C'];
+    const activeStudentClasses = students
+      .map(s => s.class ? s.class.trim() : '')
+      .filter(cls => {
+        if (!cls) return false;
+        const lower = cls.toLowerCase();
+        return !(lower === 'lulus' || lower === 'lulusan' || lower === 'mutasi' || lower === 'mutasi keluar' || lower === 'all');
+      });
+    
+    // Merge base classes and classes found in students to ensure nothing is missed
+    const allUniqueClasses = Array.from(new Set([...baseClasses, ...activeStudentClasses]));
+    
+    // Sort classes naturally (e.g. 7-A, 7-B, 8-A, 9-A)
+    return allUniqueClasses.sort((a, b) => {
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' });
+    });
+  }, [students]);
 
   // Handle Create Submit
   const handleCreateSubmit = async (e: React.FormEvent) => {
@@ -353,6 +388,34 @@ export default function StudentManagement({
     return matchesSearch && matchesClass;
   });
 
+  // Statistics Calculations
+  const activeStudentsList = students.filter(student => {
+    return student.class && !(
+      student.class.toLowerCase() === 'lulus' || 
+      student.class.toLowerCase() === 'lulusan' || 
+      student.class.toLowerCase() === 'mutasi' || 
+      student.class.toLowerCase() === 'mutasi keluar'
+    );
+  });
+
+  const totalActive = activeStudentsList.length;
+
+  let maleCount = 0;
+  let femaleCount = 0;
+  activeStudentsList.forEach(s => {
+    const g = (s.gender || 'Laki-laki').trim().toLowerCase();
+    if (g.startsWith('p') || g === 'perempuan') {
+      femaleCount++;
+    } else {
+      maleCount++;
+    }
+  });
+
+  const classCounts = classes.reduce((acc, cls) => {
+    acc[cls] = activeStudentsList.filter(s => s.class === cls).length;
+    return acc;
+  }, {} as Record<string, number>);
+
   return (
     <div id="student-crud-root" className="flex flex-col gap-5 text-slate-800">
       {/* Upper header section */}
@@ -402,6 +465,82 @@ export default function StudentManagement({
             <UserPlus size={14} />
             <span>Tambah Siswa</span>
           </button>
+        </div>
+      </div>
+
+      {/* Statistics Section */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Card 1: Total Students */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center text-emerald-850 shrink-0">
+              <GraduationCap size={20} />
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 leading-none">Total Siswa Aktif</p>
+              <h4 className="text-xl font-bold text-slate-800 mt-1 leading-none">{totalActive} <span className="text-[11px] font-normal text-slate-500">Siswa</span></h4>
+            </div>
+          </div>
+        </div>
+
+        {/* Card 2: Laki-laki */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-indigo-50 flex items-center justify-center text-indigo-700 font-black text-xs shrink-0 border border-indigo-100">
+              L
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 leading-none">Siswa Laki-laki (L)</p>
+              <h4 className="text-xl font-bold text-slate-800 mt-1 leading-none">{maleCount} <span className="text-[11px] font-normal text-slate-500">Siswa</span></h4>
+            </div>
+          </div>
+          <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-full">
+            {totalActive > 0 ? ((maleCount / totalActive) * 100).toFixed(0) : 0}%
+          </span>
+        </div>
+
+        {/* Card 3: Perempuan */}
+        <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-lg bg-rose-50 flex items-center justify-center text-rose-600 font-black text-xs shrink-0 border border-rose-100">
+              P
+            </div>
+            <div>
+              <p className="text-[10px] uppercase tracking-wider font-extrabold text-slate-400 leading-none">Siswa Perempuan (P)</p>
+              <h4 className="text-xl font-bold text-slate-800 mt-1 leading-none">{femaleCount} <span className="text-[11px] font-normal text-slate-500">Siswa</span></h4>
+            </div>
+          </div>
+          <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">
+            {totalActive > 0 ? ((femaleCount / totalActive) * 100).toFixed(0) : 0}%
+          </span>
+        </div>
+      </div>
+
+      {/* Rincian Per Kelas */}
+      <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-3">
+          <h4 className="text-xs font-bold text-slate-805 uppercase tracking-wider">Distribusi Jumlah Siswa per-Kelas</h4>
+          <span className="text-[9px] bg-slate-100 text-slate-550 px-2 py-0.5 rounded font-extrabold tracking-wider uppercase">Tahun Ajaran Aktif</span>
+        </div>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-9 gap-2">
+          {classes.map((cls) => {
+            const count = classCounts[cls] || 0;
+            const classMale = activeStudentsList.filter(s => s.class === cls && (!s.gender || s.gender.toLowerCase().startsWith('l') || s.gender === 'Laki-laki')).length;
+            const classFemale = activeStudentsList.filter(s => s.class === cls && s.gender && (s.gender.toLowerCase().startsWith('p') || s.gender === 'Perempuan')).length;
+            return (
+              <div key={cls} className="bg-slate-50/60 p-2.5 rounded-lg border border-slate-150 hover:border-slate-305 transition-all text-center flex flex-col justify-between min-h-[64px]">
+                <p className="text-[11px] font-extrabold text-slate-700">Kelas {cls}</p>
+                <div className="mt-1">
+                  <span className="text-sm font-black text-slate-800 block leading-tight">{count}</span>
+                  <div className="flex items-center justify-center gap-1 text-[8.5px] text-slate-405 font-bold mt-0.5 leading-none">
+                    <span className="text-indigo-600 font-extrabold">L:{classMale}</span>
+                    <span>&bull;</span>
+                    <span className="text-rose-500 font-extrabold">P:{classFemale}</span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
         </div>
       </div>
 
@@ -988,6 +1127,7 @@ export default function StudentManagement({
                             <th className="px-3 py-2">NIS</th>
                             <th className="px-3 py-2">Nama</th>
                             <th className="px-3 py-2">Kelas</th>
+                            <th className="px-3 py-2">JK</th>
                             <th className="px-3 py-2">Email</th>
                             <th className="px-3 py-2 text-right">Saldo Awal</th>
                             <th className="px-3 py-2 text-center">Status</th>
@@ -1000,6 +1140,11 @@ export default function StudentManagement({
                               <td className="px-3 py-2 font-semibold text-slate-900">{row.name}</td>
                               <td className="px-3 py-2">
                                 <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded font-bold">{row.class}</span>
+                              </td>
+                              <td className="px-3 py-2">
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] font-bold ${row.gender === 'Laki-laki' ? 'bg-indigo-50 text-indigo-705 border border-indigo-100' : row.gender === 'Perempuan' ? 'bg-rose-50 text-rose-705 border border-rose-100' : 'bg-slate-50 text-slate-400 border border-slate-100'}`}>
+                                  {row.gender === 'Laki-laki' ? 'L' : row.gender === 'Perempuan' ? 'P' : row.gender || '-'}
+                                </span>
                               </td>
                               <td className="px-3 py-2 text-slate-500">{row.email || '-'}</td>
                               <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800">

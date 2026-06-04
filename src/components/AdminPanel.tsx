@@ -5,6 +5,7 @@ import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle
 import StudentManagement from './StudentManagement';
 import QRScannerModal from './QRScannerModal';
 import QRCode from 'qrcode';
+import JSZip from 'jszip';
 
 // Component for rendering beautifully styled, local QR Codes without API dependancy
 function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
@@ -6724,12 +6725,28 @@ export default function AdminPanel({
                       setCollectiveQrTotal(listToDownload.length);
                       setCollectiveQrProgress(0);
                       
+                      const zip = new JSZip();
                       let currentIndex = 0;
+                      
                       const downloadNext = () => {
                         if (currentIndex >= listToDownload.length) {
-                          setDownloadingCollectiveQr(false);
+                          // Generate and download ZIP file
+                          zip.generateAsync({ type: 'blob' }).then((content) => {
+                            const link = document.createElement('a');
+                            const timestamp = new Date().toISOString().slice(0, 10);
+                            const classSuffix = studentQrClassFilter === 'all' ? 'Semua_Kelas' : `Kelas_${studentQrClassFilter}`;
+                            link.download = `QR_Siswa_Masal_${classSuffix}_${timestamp}.zip`;
+                            link.href = URL.createObjectURL(content);
+                            link.click();
+                            setDownloadingCollectiveQr(false);
+                          }).catch((err) => {
+                            console.error('Error creating ZIP:', err);
+                            alert('Gagal mengemas program QR Code ke ZIP.');
+                            setDownloadingCollectiveQr(false);
+                          });
                           return;
                         }
+                        
                         const student = listToDownload[currentIndex];
                         const tempCanvas = document.createElement('canvas');
                         QRCode.toCanvas(tempCanvas, student.nis, { 
@@ -6748,40 +6765,15 @@ export default function AdminPanel({
                             return;
                           }
                           
-                          const finalCanvas = document.createElement('canvas');
-                          finalCanvas.width = 400;
-                          finalCanvas.height = 490;
-                          const ctx = finalCanvas.getContext('2d');
-                          if (ctx) {
-                            ctx.fillStyle = '#ffffff';
-                            ctx.fillRect(0, 0, 400, 490);
-                            ctx.drawImage(tempCanvas, 0, 0);
-                            
-                            ctx.fillStyle = '#0f172a';
-                            ctx.textAlign = 'center';
-                            
-                            // Name
-                            ctx.font = 'bold 20px "Inter", "Helvetica Neue", sans-serif';
-                            let displayName = student.name.toUpperCase();
-                            if (displayName.length > 28) {
-                              displayName = displayName.substring(0, 25) + '...';
-                            }
-                            ctx.fillText(displayName, 200, 425);
-                            
-                            // NIS
-                            ctx.font = 'bold 16px "JetBrains Mono", monospace';
-                            ctx.fillStyle = '#64748b';
-                            ctx.fillText(`NIS: ${student.nis}`, 200, 455);
-                            
-                            const link = document.createElement('a');
-                            link.download = `${student.nis}.png`;
-                            link.href = finalCanvas.toDataURL('image/png');
-                            link.click();
-                          }
+                          // Convert canvas to base64 and append to JSZip (QR Code only)
+                          const dataUrl = tempCanvas.toDataURL('image/png');
+                          const base64Data = dataUrl.replace(/^data:image\/png;base64,/, "");
+                          const filename = `Kelas_${student.class}/${student.nis}.png`;
+                          zip.file(filename, base64Data, { base64: true });
                           
                           currentIndex++;
                           setCollectiveQrProgress(currentIndex);
-                          setTimeout(downloadNext, 120);
+                          setTimeout(downloadNext, 15); // Faster execution because browser downloads aren't triggered iteratively
                         });
                       };
                       
@@ -6796,8 +6788,8 @@ export default function AdminPanel({
                     <Download size={13} />
                     <span>
                       {downloadingCollectiveQr 
-                        ? `Mengunduh (${collectiveQrProgress}/${collectiveQrTotal})` 
-                        : `Unduh Kolektif QR Saja (${
+                        ? `Memproses ZIP (${collectiveQrProgress}/${collectiveQrTotal})` 
+                        : `Unduh Masal QR (ZIP) (${
                             students.filter(s => {
                               const matchSearch = !studentQrSearch.trim() || 
                                 s.name.toLowerCase().includes(studentQrSearch.toLowerCase().trim()) ||
@@ -6898,36 +6890,10 @@ export default function AdminPanel({
                           console.error(error);
                           return;
                         }
-                        const finalCanvas = document.createElement('canvas');
-                        finalCanvas.width = 400;
-                        finalCanvas.height = 490;
-                        const ctx = finalCanvas.getContext('2d');
-                        if (ctx) {
-                          ctx.fillStyle = '#ffffff';
-                          ctx.fillRect(0, 0, 400, 490);
-                          ctx.drawImage(tempCanvas, 0, 0);
-                          
-                          ctx.fillStyle = '#0f172a';
-                          ctx.textAlign = 'center';
-                          
-                          // Name
-                          ctx.font = 'bold 20px "Inter", "Helvetica Neue", sans-serif';
-                          let displayName = student.name.toUpperCase();
-                          if (displayName.length > 28) {
-                            displayName = displayName.substring(0, 25) + '...';
-                          }
-                          ctx.fillText(displayName, 200, 425);
-                          
-                          // NIS
-                          ctx.font = 'bold 16px "JetBrains Mono", monospace';
-                          ctx.fillStyle = '#64748b';
-                          ctx.fillText(`NIS: ${student.nis}`, 200, 455);
-                          
-                          const link = document.createElement('a');
-                          link.download = `QR_${student.nis}_KELAS_${student.class}_${student.name.replace(/\s+/g, '_')}.png`;
-                          link.href = finalCanvas.toDataURL('image/png');
-                          link.click();
-                        }
+                        const link = document.createElement('a');
+                        link.download = `${student.nis}.png`;
+                        link.href = tempCanvas.toDataURL('image/png');
+                        link.click();
                       });
                     };
 

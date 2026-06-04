@@ -2112,36 +2112,10 @@ export default function StudentPanel({
                                 console.error(error);
                                 return;
                               }
-                              const finalCanvas = document.createElement('canvas');
-                              finalCanvas.width = 400;
-                              finalCanvas.height = 490;
-                              const ctx = finalCanvas.getContext('2d');
-                              if (ctx) {
-                                ctx.fillStyle = '#ffffff';
-                                ctx.fillRect(0, 0, 400, 490);
-                                ctx.drawImage(tempCanvas, 0, 0);
-                                
-                                ctx.fillStyle = '#0f172a';
-                                ctx.textAlign = 'center';
-                                
-                                // Name
-                                ctx.font = 'bold 20px "Inter", "Helvetica Neue", sans-serif';
-                                let displayName = currentStudent.name.toUpperCase();
-                                if (displayName.length > 28) {
-                                  displayName = displayName.substring(0, 25) + '...';
-                                }
-                                ctx.fillText(displayName, 200, 425);
-                                
-                                // NIS
-                                ctx.font = 'bold 16px "JetBrains Mono", monospace';
-                                ctx.fillStyle = '#64748b';
-                                ctx.fillText(`NIS: ${currentStudent.nis}`, 200, 455);
-                                
-                                const link = document.createElement('a');
-                                link.download = `QR_${currentStudent.nis}_KELAS_${currentStudent.class}_${currentStudent.name.replace(/\s+/g, '_')}.png`;
-                                link.href = finalCanvas.toDataURL('image/png');
-                                link.click();
-                              }
+                              const link = document.createElement('a');
+                              link.download = `${currentStudent.nis}.png`;
+                              link.href = tempCanvas.toDataURL('image/png');
+                              link.click();
                             });
                           }}
                           className="flex-1 py-3 bg-white hover:bg-indigo-50 border-2 border-indigo-150 hover:border-indigo-500 text-indigo-700 font-extrabold rounded-2xl text-[11px] uppercase tracking-wider flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm"

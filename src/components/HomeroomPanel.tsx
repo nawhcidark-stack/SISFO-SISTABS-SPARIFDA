@@ -2357,7 +2357,23 @@ Wassalamualaikum Wr. Wb.
                           </div>
 
                           <div className="flex flex-col gap-1.5 text-left">
-                            <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Status Kehadiran:</span>
+                            <div className="flex items-center justify-between">
+                              <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Status Kehadiran:</span>
+                              {(() => {
+                                const activePillColors = {
+                                  'Hadir': 'bg-emerald-50 text-emerald-700 border-emerald-250 text-[10px]',
+                                  'Terlambat': 'bg-purple-50 text-purple-700 border-purple-250 text-[10px]',
+                                  'Sakit': 'bg-amber-50 text-amber-700 border-amber-250 text-[10px]',
+                                  'Izin': 'bg-indigo-50 text-indigo-700 border-indigo-250 text-[10px]',
+                                  'Alpa': 'bg-rose-50 text-rose-700 border-rose-250 text-[10px]'
+                                };
+                                return (
+                                  <span className={`font-black px-2 py-0.5 rounded-full border ${activePillColors[currentData.status]}`}>
+                                    {currentData.status}
+                                  </span>
+                                );
+                              })()}
+                            </div>
                             <div className="grid grid-cols-5 gap-1 bg-slate-50 p-1 border border-slate-200 rounded-lg">
                               {(['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Alpa'] as const).map((st) => {
                                 const activeColors = {

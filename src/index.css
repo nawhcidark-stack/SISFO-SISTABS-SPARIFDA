@@ -167,6 +167,22 @@ h1, h2, h3, h4, h5, h6 {
     z-index: 99999 !important;
   }
 
+  /* Specific style adjustment when thermal receipt format is selected */
+  #print-receipt-section.print-thermal {
+    width: 76mm !important;
+    max-width: 76mm !important;
+    margin: 0 auto !important;
+    padding: 1mm 2mm !important;
+    font-family: monospace, ui-monospace, Courier, monospace !important;
+    font-size: 8.5pt !important;
+    line-height: 1.25 !important;
+    color: black !important;
+    background: white !important;
+  }
+  #print-receipt-section.print-thermal * {
+    font-family: monospace, ui-monospace, Courier, monospace !important;
+  }
+
   #print-report-section {
     display: block !important;
     position: static !important;

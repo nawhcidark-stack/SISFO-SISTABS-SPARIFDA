@@ -287,6 +287,7 @@ export default function StudentPanel({
 
   // Invoice/Receipt state & download helpers
   const [receiptToPrint, setReceiptToPrint] = useState<{ type: 'spp' | 'savings'; detail: any; student: Student } | null>(null);
+  const [receiptPrintFormat, setReceiptPrintFormat] = useState<'standard' | 'thermal'>('standard');
 
   const wordifyAmount = (nominal: number): string => {
     const words = ["", "satu", "dua", "tiga", "empat", "lima", "enam", "tujuh", "delapan", "sembilan", "sepuluh", "sebelas"];
@@ -3291,175 +3292,291 @@ export default function StudentPanel({
           </motion.div>
         </div>
       )}
+
       {receiptToPrint && (
         <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 md:p-8 max-w-xl w-full flex flex-col gap-6 relative select-none">
+          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 md:p-8 max-w-xl w-full flex flex-col gap-5 relative select-none">
             
-            {/* Receipt Preview */}
-            <div id="print-receipt-section" className="bg-white text-slate-900 p-6 rounded-lg font-sans border border-slate-100 flex flex-col gap-5 text-[11px] leading-relaxed relative">
-              {/* Paid Status Watermark Badge on the Receipt itself */}
-              {((receiptToPrint.type === 'spp' && receiptToPrint.detail.status === 'paid') || 
-                (receiptToPrint.type === 'savings' && (receiptToPrint.detail.status === 'success' || !receiptToPrint.detail.status || receiptToPrint.detail.status === 'completed'))) && (
-                <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-12 border-4 border-dashed border-emerald-500/15 rounded-2xl px-6 py-2 pointer-events-none select-none z-0">
-                  <span className="font-sans font-black tracking-widest text-[36px] uppercase text-emerald-500/15">
-                    {receiptToPrint.type === 'spp' ? 'LUNAS' : 'SUKSES'}
-                  </span>
-                </div>
-              )}
+            {/* Format Selection Switcher */}
+            <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl no-print text-[11px] font-bold text-slate-650 w-full justify-center">
+              <button
+                type="button"
+                onClick={() => setReceiptPrintFormat('standard')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === 'standard' ? 'bg-white text-slate-900 shadow-xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                Format Standar (Kuitansi PDF)
+              </button>
+              <button
+                type="button"
+                onClick={() => setReceiptPrintFormat('thermal')}
+                className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === 'thermal' ? 'bg-white text-slate-900 shadow-xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
+              >
+                Format Thermal (Roll Kasir)
+              </button>
+            </div>
 
-              {/* Receipt Header */}
-              {schoolIdentity?.letterhead ? (
-                <div className="border-b-2 border-slate-900 pb-2 flex flex-col items-center">
-                  <img 
-                    src={schoolIdentity.letterhead} 
-                    className="w-full max-h-24 object-contain" 
-                    alt="Kop Surat" 
-                    referrerPolicy="no-referrer"
-                  />
-                  <div className="w-full text-right font-mono mt-1 text-[8px] text-slate-400 flex justify-between items-center">
-                    <span className="font-extrabold text-slate-800 text-[9px]">KUITANSI RESMI</span>
-                    <span>Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
+            {/* Receipt Preview */}
+            <div 
+              id="print-receipt-section" 
+              className={receiptPrintFormat === 'thermal'
+                ? "bg-white text-slate-900 p-2 font-mono flex flex-col gap-2.5 text-[10px] leading-tight text-center relative print-thermal w-full max-w-[76mm] mx-auto border-none select-all"
+                : "bg-white text-slate-900 p-6 rounded-lg font-sans border border-slate-100 flex flex-col gap-6 text-[11px] leading-relaxed relative"
+              }
+            >
+              {receiptPrintFormat === 'thermal' ? (
+                /* THERMAL RECEIPT LAYOUT */
+                <div className="flex flex-col gap-2.5 text-slate-900 font-mono text-left select-all">
+                  {/* Small Header */}
+                  <div className="text-center font-black uppercase text-xs tracking-wider border-b border-dashed border-slate-900 pb-2.5">
+                    <span className="block text-sm font-extrabold">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                    <span className="block text-[8px] font-normal normal-case leading-none mt-1">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</span>
+                    <span className="block text-[7.5px] font-normal mt-0.5">{schoolIdentity?.address || "Pasuruan, Jawa Timur"}</span>
+                  </div>
+
+                  <div className="text-center font-mono font-bold uppercase text-[9px] py-1 border-b border-dashed border-slate-900">
+                    <span>* BUKTI PEMBAYARAN RESMI *</span>
+                    <p className="text-[8px] font-mono normal-case tracking-tight mt-0.5">Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</p>
+                    <p className="text-[8.5px] font-normal normal-case mt-0.5">Tgl: {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})} &bull; Jam: {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}</p>
+                  </div>
+
+                  {/* Student details */}
+                  <div className="flex flex-col gap-0.5 text-[8.5px] pb-1.5 border-b border-dashed border-slate-900 uppercase">
+                    <div className="flex justify-between">
+                      <span>Murid:</span>
+                      <span className="font-bold">{receiptToPrint.student.name}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>NIS:</span>
+                      <span className="font-mono">{receiptToPrint.student.nis}</span>
+                    </div>
+                    <div className="flex justify-between">
+                      <span>Kelas:</span>
+                      <span>Kelas {receiptToPrint.student.class}</span>
+                    </div>
+                  </div>
+
+                  {/* Items list */}
+                  <div className="flex flex-col gap-1.5 py-1 text-[8.5px] border-b border-dashed border-slate-900">
+                    <div className="flex justify-between font-bold uppercase border-b border-dotted border-slate-950 pb-0.5">
+                      <span>Pesanan / Item</span>
+                      <span>Subtotal</span>
+                    </div>
+                    <div className="flex justify-between font-bold py-0.5 uppercase">
+                      <div>
+                        {receiptToPrint.type === 'spp' ? (
+                          <>
+                            <span>Iuran SPP Bulanan</span>
+                            <p className="text-[7.5px] text-slate-650 normal-case">Bulan: {receiptToPrint.detail.month} {receiptToPrint.detail.year}</p>
+                          </>
+                        ) : (
+                          <>
+                            <span>Tabungan ({receiptToPrint.detail.type === 'deposit' ? 'Penyetoran' : 'Penarikan'})</span>
+                            <p className="text-[7.5px] text-slate-650 normal-case">Memo: "{receiptToPrint.detail.notes || 'Transaksi Tabungan'}"</p>
+                          </>
+                        )}
+                      </div>
+                      <span className="font-mono shrink-0">Rp {receiptToPrint.detail.amount.toLocaleString('id-ID')}</span>
+                    </div>
+                  </div>
+
+                  {/* Grand total */}
+                  <div className="flex justify-between items-center text-[10px] font-bold uppercase py-1 border-b border-dashed border-slate-900">
+                    <span>Total Pembayaran:</span>
+                    <span className="font-mono text-xs">Rp {receiptToPrint.detail.amount.toLocaleString('id-ID')}</span>
+                  </div>
+
+                  {/* Words */}
+                  <div className="text-[7.5px] leading-tight italic pb-2 border-b border-dashed border-slate-900">
+                    Terbilang: {indonesianWordsForRupiah(receiptToPrint.detail.amount)}
+                  </div>
+
+                  {/* Signatures */}
+                  <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-2 pt-2">
+                    <div className="flex flex-col justify-between h-[45px]">
+                      <span>Penyetor/Murid</span>
+                      <div className="h-4"></div>
+                      <span className="font-bold border-t border-slate-900 pt-0.5 truncate">({receiptToPrint.student.name.substring(0,12)})</span>
+                    </div>
+                    <div className="flex flex-col justify-between h-[45px]">
+                      <span>Bendahara/Admin</span>
+                      <div className="h-4"></div>
+                      <span className="font-bold border-t border-slate-900 pt-0.5">({schoolIdentity?.treasurer || "Bendahara"})</span>
+                    </div>
+                  </div>
+
+                  <div className="text-center text-[7px] leading-none tracking-tight mt-4 text-slate-550 border-t border-dotted border-slate-900 pt-2 uppercase">
+                    *** TERIMA KASIH ***
+                    <p className="mt-1 font-mono text-[6.5px] tracking-widest text-[6px]">SMP Ma'arif NU Pandaan</p>
                   </div>
                 </div>
               ) : (
-                <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-center gap-3">
-                  <div className="flex items-center gap-3">
-                    {schoolIdentity?.logo && (
-                      <img 
-                        src={schoolIdentity.logo} 
-                        className="w-10 h-10 object-contain" 
-                        alt="Logo" 
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <div className="flex flex-col gap-0.5 text-left">
-                      <span className="text-xs font-black uppercase tracking-wider text-slate-800">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
-                      <span className="text-[9px] text-slate-500 uppercase tracking-widest leading-none block">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</span>
-                      <span className="text-[8px] text-slate-400 block font-medium mt-0.5">{schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur"}</span>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-3 shrink-0">
-                    {schoolIdentity?.logo2 && (
-                      <img 
-                        src={schoolIdentity.logo2} 
-                        className="w-10 h-10 object-contain" 
-                        alt="Logo 2" 
-                        referrerPolicy="no-referrer"
-                      />
-                    )}
-                    <div className="text-right flex flex-col gap-0.5 font-mono">
-                      <span className="text-xs font-extrabold text-slate-850">KUITANSI RESMI</span>
-                      <span className="text-[8px] text-slate-400 block">Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Patient/Student Data Row */}
-              <div className="flex flex-col gap-1 text-left pb-3 border-b border-dashed border-slate-300 text-slate-700 font-sans text-xs">
-                <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
-                  <span className="font-bold text-slate-500">Wali Murid/Siswa</span>
-                  <span className="text-slate-400 font-bold">:</span>
-                  <span className="font-bold text-slate-900">{receiptToPrint.student.name}</span>
-                </div>
-                <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
-                  <span className="font-bold text-slate-500">NIS</span>
-                  <span className="text-slate-400 font-bold">:</span>
-                  <span className="font-mono font-bold text-slate-800">{receiptToPrint.student.nis}</span>
-                </div>
-                <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
-                  <span className="font-bold text-slate-500">Kelas</span>
-                  <span className="text-slate-400 font-bold">:</span>
-                  <span className="font-bold text-slate-800 text-normal">{receiptToPrint.student.class}</span>
-                </div>
-              </div>
-
-              {/* Transactions details */}
-              <div className="flex flex-col gap-2 py-1">
-                <div className="flex justify-between font-bold border-b border-slate-200 pb-1 text-[9px] uppercase text-slate-400">
-                  <span>Deskripsi Item Pembayaran</span>
-                  <span>Total Rupiah</span>
-                </div>
-                <div className="flex justify-between items-center text-slate-800">
-                  <div className="flex flex-col gap-0.5 text-left">
-                    {receiptToPrint.type === 'spp' ? (
-                      <>
-                        <span className="font-bold text-slate-800 text-xs">Pembayaran Iuran SPP Wajib Bulanan</span>
-                        <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">Bulan periodik: {receiptToPrint.detail.month} {receiptToPrint.detail.year} &bull; Metode: {receiptToPrint.detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}</span>
-                      </>
-                    ) : (
-                      <>
-                        <span className="font-bold text-slate-800 text-xs">Mutasi Keuangan Rekening Tabungan</span>
-                        <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">{receiptToPrint.detail.type === 'deposit' ? 'Penyetoran Saldo Tunai' : 'Penarikan Saldo Tunai'} &bull; Memo: "{receiptToPrint.detail.notes || 'Transaksi Teller Tabungan'}"</span>
-                      </>
-                    )}
-                  </div>
-                  <span className="font-mono font-bold text-slate-800 text-xs">Rp {receiptToPrint.detail.amount.toLocaleString('id-ID')},00</span>
-                </div>
-              </div>
-
-              {/* Wordify Terbilang Words */}
-              <div className="flex flex-col gap-2">
-                <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 font-medium italic text-slate-600 text-[10px] text-left">
-                  Terbilang: <span className="font-bold not-italic font-sans text-indigo-700">#{indonesianWordsForRupiah(receiptToPrint.detail.amount)}#</span>
-                </div>
-                <div className="text-[9px] text-slate-500 font-semibold pl-1 text-left">
-                  Tanggal Cetak: {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
-                </div>
-              </div>
-
-              {/* Signatures */}
-              <div className="grid grid-cols-2 mt-4 pt-3 border-t border-slate-100 text-[10px]">
-                <div className="flex flex-col justify-between h-[120px] text-left">
-                  <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Wali Murid / Penyetor</span>
-                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({receiptToPrint.student.name.substring(0, 16)})</span>
-                </div>
-                <div className="flex flex-col justify-between items-end h-[120px] text-right relative">
-                  <div className="flex flex-col items-end gap-0.5">
-                    <span className="text-[10px] font-bold text-slate-800 font-sans">
-                      Pandaan, {receiptToPrint.type === 'spp'
-                        ? (receiptToPrint.detail.paidAt 
-                            ? new Date(receiptToPrint.detail.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})
-                            : (receiptToPrint.detail.status === 'paid' ? new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : 'Belum Lunas'))
-                        : new Date(receiptToPrint.detail.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
-                    </span>
-                    <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
-                  </div>
-                  
-                  {/* Signature and Stamp layer for paid/completed receipts */}
+                /* STANDARD RECEIPT LAYOUT */
+                <>
+                  {/* Paid Status Watermark Badge on the Receipt itself */}
                   {((receiptToPrint.type === 'spp' && receiptToPrint.detail.status === 'paid') || 
                     (receiptToPrint.type === 'savings' && (receiptToPrint.detail.status === 'success' || !receiptToPrint.detail.status || receiptToPrint.detail.status === 'completed'))) && (
-                    <div className="absolute top-[28px] right-2 w-32 h-[55px] pointer-events-none select-none z-10 flex items-center justify-center">
-                      {/* Treasurer signature */}
-                      {schoolIdentity?.treasurerSignature && (
-                        <img 
-                          src={schoolIdentity.treasurerSignature} 
-                          alt="Ttd Bendahara" 
-                          className="absolute -bottom-1 right-2 max-h-12 max-w-[90px] object-contain z-10 mix-blend-multiply" 
-                          referrerPolicy="no-referrer"
-                        />
-                      )}
-                      
-                      {/* School stamp */}
-                      {schoolIdentity?.schoolStamp && (
-                        <img 
-                          src={schoolIdentity.schoolStamp} 
-                          alt="Stempel Sekolah" 
-                          className="absolute -bottom-2 right-[60px] max-h-[70px] max-w-[112px] object-contain z-20 mix-blend-multiply opacity-85" 
-                          referrerPolicy="no-referrer"
-                        />
-                      )}
+                    <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-12 border-4 border-dashed border-emerald-500/15 rounded-2xl px-6 py-2 pointer-events-none select-none z-0">
+                      <span className="font-sans font-black tracking-widest text-[36px] uppercase text-emerald-500/15">
+                        {receiptToPrint.type === 'spp' ? 'LUNAS' : 'SUKSES'}
+                      </span>
                     </div>
                   )}
 
-                  <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({schoolIdentity?.treasurer || "Bendahara Sekolah"})</span>
-                </div>
-              </div>
+                  {/* Receipt Header */}
+                  {schoolIdentity?.letterhead ? (
+                    <div className="border-b-2 border-slate-900 pb-2 flex flex-col items-center">
+                      <img 
+                        src={schoolIdentity.letterhead} 
+                        className="w-full max-h-24 object-contain" 
+                        alt="Kop Surat" 
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="w-full text-right font-mono mt-1 text-[8px] text-slate-400 flex justify-between items-center">
+                        <span className="font-extrabold text-slate-800 text-[9px]">KUITANSI RESMI</span>
+                        <span>Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="border-b-2 border-slate-900 pb-3 flex justify-between items-center gap-3">
+                      <div className="flex items-center gap-3">
+                        {schoolIdentity?.logo && (
+                          <img 
+                            src={schoolIdentity.logo} 
+                            className="w-10 h-10 object-contain" 
+                            alt="Logo" 
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        <div className="flex flex-col gap-0.5 text-left">
+                          <span className="text-xs font-black uppercase tracking-wider text-slate-800">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                          <span className="text-[9px] text-slate-500 uppercase tracking-widest leading-none block">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</span>
+                          <span className="text-[8px] text-slate-400 block font-medium mt-0.5">{schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur"}</span>
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-3 shrink-0">
+                        {schoolIdentity?.logo2 && (
+                          <img 
+                            src={schoolIdentity.logo2} 
+                            className="w-10 h-10 object-contain" 
+                            alt="Logo 2" 
+                            referrerPolicy="no-referrer"
+                          />
+                        )}
+                        <div className="text-right flex flex-col gap-0.5 font-mono">
+                          <span className="text-xs font-extrabold text-slate-850">KUITANSI RESMI</span>
+                          <span className="text-[8px] text-slate-400 block">Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</span>
+                        </div>
+                      </div>
+                    </div>
+                  )}
 
-              {/* Footer */}
-              <div className="text-center text-[8px] text-slate-400 mt-1 font-medium">
-                Bukti pembayaran sah diterbitkan otomatis oleh {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.
-              </div>
+                  {/* Patient/Student Data Row */}
+                  <div className="flex flex-col gap-1 text-left pb-3 border-b border-dashed border-slate-300 text-slate-700 font-sans text-xs">
+                    <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
+                      <span className="font-bold text-slate-500">Wali Murid/Siswa</span>
+                      <span className="text-slate-400 font-bold">:</span>
+                      <span className="font-bold text-slate-900">{receiptToPrint.student.name}</span>
+                    </div>
+                    <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
+                      <span className="font-bold text-slate-500">NIS</span>
+                      <span className="text-slate-400 font-bold">:</span>
+                      <span className="font-mono font-bold text-slate-800">{receiptToPrint.student.nis}</span>
+                    </div>
+                    <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
+                      <span className="font-bold text-slate-500">Kelas</span>
+                      <span className="text-slate-400 font-bold">:</span>
+                      <span className="font-bold text-slate-800 text-normal">{receiptToPrint.student.class}</span>
+                    </div>
+                  </div>
+
+                  {/* Transactions details */}
+                  <div className="flex flex-col gap-2 py-1">
+                    <div className="flex justify-between font-bold border-b border-slate-200 pb-1 text-[9px] uppercase text-slate-400">
+                      <span>Deskripsi Item Pembayaran</span>
+                      <span>Total Rupiah</span>
+                    </div>
+                    <div className="flex justify-between items-center text-slate-800">
+                      <div className="flex flex-col gap-0.5 text-left">
+                        {receiptToPrint.type === 'spp' ? (
+                          <>
+                            <span className="font-bold text-slate-800 text-xs">Pembayaran Iuran SPP Wajib Bulanan</span>
+                            <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">Bulan periodik: {receiptToPrint.detail.month} {receiptToPrint.detail.year} &bull; Metode: {receiptToPrint.detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}</span>
+                          </>
+                        ) : (
+                          <>
+                            <span className="font-bold text-slate-800 text-xs">Mutasi Keuangan Rekening Tabungan</span>
+                            <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">{receiptToPrint.detail.type === 'deposit' ? 'Penyetoran Saldo Tunai' : 'Penarikan Saldo Tunai'} &bull; Memo: "{receiptToPrint.detail.notes || 'Transaksi Teller Tabungan'}"</span>
+                          </>
+                        )}
+                      </div>
+                      <span className="font-mono font-bold text-slate-800 text-xs">Rp {receiptToPrint.detail.amount.toLocaleString('id-ID')},00</span>
+                    </div>
+                  </div>
+
+                  {/* Wordify Terbilang Words */}
+                  <div className="flex flex-col gap-2">
+                    <div className="bg-slate-50 p-2.5 rounded-lg border border-slate-100 font-medium italic text-slate-650 text-[10px] text-left">
+                      Terbilang: <span className="font-bold not-italic font-sans text-indigo-700">#{indonesianWordsForRupiah(receiptToPrint.detail.amount)}#</span>
+                    </div>
+                    <div className="text-[9px] text-slate-500 font-semibold pl-1 text-left">
+                      Tanggal Cetak: {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
+                    </div>
+                  </div>
+
+                  {/* Signatures */}
+                  <div className="grid grid-cols-2 mt-4 pt-3 border-t border-slate-100 text-[10px]">
+                    <div className="flex flex-col justify-between h-[120px] text-left">
+                      <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">Wali Murid / Penyetor</span>
+                      <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({receiptToPrint.student.name.substring(0, 16)})</span>
+                    </div>
+                    <div className="flex flex-col justify-between items-end h-[120px] text-right relative">
+                      <div className="flex flex-col items-end gap-0.5">
+                        <span className="text-[10px] font-bold text-slate-800 font-sans">
+                          Pandaan, {receiptToPrint.type === 'spp'
+                            ? (receiptToPrint.detail.paidAt 
+                                ? new Date(receiptToPrint.detail.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})
+                                : (receiptToPrint.detail.status === 'paid' ? new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'}) : 'Belum Lunas'))
+                            : new Date(receiptToPrint.detail.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'})}
+                        </span>
+                        <span className="text-[8px] font-bold text-slate-400 uppercase tracking-wider block">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                      </div>
+                      
+                      {/* Signature and Stamp layer for paid/completed receipts */}
+                      {((receiptToPrint.type === 'spp' && receiptToPrint.detail.status === 'paid') || 
+                        (receiptToPrint.type === 'savings' && (receiptToPrint.detail.status === 'success' || !receiptToPrint.detail.status || receiptToPrint.detail.status === 'completed'))) && (
+                        <div className="absolute top-[28px] right-2 w-32 h-[55px] pointer-events-none select-none z-10 flex items-center justify-center">
+                          {/* Treasurer signature */}
+                          {schoolIdentity?.treasurerSignature && (
+                            <img 
+                              src={schoolIdentity.treasurerSignature} 
+                              alt="Ttd Bendahara" 
+                              className="absolute -bottom-1 right-2 max-h-12 max-w-[90px] object-contain z-10 mix-blend-multiply" 
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
+                          
+                          {/* School stamp */}
+                          {schoolIdentity?.schoolStamp && (
+                            <img 
+                              src={schoolIdentity.schoolStamp} 
+                              alt="Stempel Sekolah" 
+                              className="absolute -bottom-2 right-[60px] max-h-[70px] max-w-[112px] object-contain z-20 mix-blend-multiply opacity-85" 
+                              referrerPolicy="no-referrer"
+                            />
+                          )}
+                        </div>
+                      )}
+
+                      <span className="font-bold text-slate-700 font-sans border-t border-slate-300 w-28 pt-1 text-center font-bold">({schoolIdentity?.treasurer || "Bendahara Sekolah"})</span>
+                    </div>
+                  </div>
+
+                  {/* Footer */}
+                  <div className="text-center text-[8px] text-slate-400 mt-1 font-medium">
+                    Bukti pembayaran sah diterbitkan otomatis oleh {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.
+                  </div>
+                </>
+              )}
             </div>
 
             {/* Modal Actions at the Bottom */}

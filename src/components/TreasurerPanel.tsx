@@ -62,6 +62,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   
   // Invoice state to print
   const [activePrintTransaction, setActivePrintTransaction] = useState<TreasurerTransaction | null>(null);
+  const [receiptPrintFormat, setReceiptPrintFormat] = useState<'standard' | 'thermal'>('standard');
 
   // Password alteration states
   const [showPasswordModal, setShowPasswordModal] = useState(false);
@@ -2314,118 +2315,221 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
-              id="print-receipt-section"
               className="bg-white text-left w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl p-6 border flex flex-col gap-4 font-semibold text-xs text-slate-800"
             >
-              {/* Receipt Kop */}
-              <div className="flex items-center gap-3 border-b-2 border-double border-slate-300 pb-3">
-                <div className="p-1 px-1.5 bg-slate-100 text-slate-900 rounded font-bold flex items-center justify-center">
-                  {schoolIdentity.logo ? (
-                    <img src={schoolIdentity.logo} className="h-8 w-8 object-contain" alt="Logo" referrerPolicy="no-referrer" />
-                  ) : (
-                    <BookOpen size={16} />
-                  )}
-                </div>
-                <div className="flex-1 leading-tight">
-                  <h3 className="text-xs font-extrabold uppercase">{schoolIdentity.name}</h3>
-                  <p className="text-[9px] text-slate-500 font-medium">{schoolIdentity.subheading}</p>
-                </div>
-                <div className="text-right text-[9px] font-bold text-slate-400">
-                  {activePrintTransaction.type === 'incoming' ? 'BUKTI PENERIMAAN' : 'BUKTI PENGELUARAN'}
-                </div>
+              
+              {/* Format Selection Switcher */}
+              <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl no-print text-[11px] font-bold text-slate-650 w-full justify-center">
+                <button
+                  type="button"
+                  onClick={() => setReceiptPrintFormat('standard')}
+                  className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === 'standard' ? 'bg-white text-slate-900 shadow-xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Format Standar (A4/Kuitansi)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceiptPrintFormat('thermal')}
+                  className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === 'thermal' ? 'bg-white text-slate-900 shadow-xs border border-slate-200/50' : 'text-slate-500 hover:text-slate-800'}`}
+                >
+                  Format Thermal (Roll Kasir)
+                </button>
               </div>
 
-              {/* Card Contents */}
-              <div className="text-center py-2 bg-slate-50 rounded-lg">
-                <h4 className="text-[10px] text-slate-400 uppercase tracking-widest leading-none font-bold">
-                  {activePrintTransaction.type === 'incoming' ? 'KUITANSI PENERIMAAN' : 'NOTA PENGELUARAN BENDAHARA'}
-                </h4>
-                <div className="text-xs font-mono text-slate-900 border-b border-dashed w-fit mx-auto px-4 py-1 font-bold">
-                  REF: {activePrintTransaction.id.toUpperCase()}
-                </div>
-              </div>
-
-              {/* Details table mapping */}
-              <div className="grid grid-cols-12 gap-y-2 border border-slate-150 p-4 rounded-xl text-xs bg-slate-50/50">
-                <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Tanggal Transaksi:</span>
-                <span className="col-span-8 font-mono font-bold text-slate-800">{activePrintTransaction.date}</span>
-
-                <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Jenis Mutasi:</span>
-                <span className="col-span-8 font-bold text-slate-800">
-                  {activePrintTransaction.type === 'incoming' ? 'DEBIT (Uang Masuk / Pembayaran)' : 'KREDIT (Uang Keluar / Pengeluaran)'}
-                </span>
-
-                <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Kategori Pos:</span>
-                <span className="col-span-8 font-bold uppercase text-indigo-700">{activePrintTransaction.category}</span>
-
-                <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Rincian Keterangan:</span>
-                <span className="col-span-8 font-black text-slate-900 leading-tight">{activePrintTransaction.description}</span>
-
-                {activePrintTransaction.studentName && (
-                  <>
-                    <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Atas Nama Siswa:</span>
-                    <span className="col-span-8 font-bold text-slate-800">
-                      {activePrintTransaction.studentName} (NIS: {activePrintTransaction.nis || '-'})
-                    </span>
-                  </>
-                )}
-
-                {activePrintTransaction.recipientName && (
-                  <>
-                    <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Penerima Dana:</span>
-                    <span className="col-span-8 font-bold text-rose-700">
-                      {activePrintTransaction.recipientName}
-                    </span>
-                  </>
-                )}
-
-                <span className="col-span-12 border-t border-slate-150 my-1"></span>
-
-                <span className="col-span-4 text-slate-400 font-extrabold uppercase text-[9px] self-center">Jumlah Dana:</span>
-                <span className="col-span-8 font-black text-sm text-emerald-800 font-mono">
-                  Rp {activePrintTransaction.amount.toLocaleString('id-ID')}
-                </span>
-              </div>
-
-              {/* Signatures */}
-              <div className="grid grid-cols-2 mt-3 text-[10px] text-center gap-4">
-                <div>
-                  <p>Mengetahui,</p>
-                  <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Kepala Sekolah</p>
-                  <div className="h-10 flex items-center justify-center">
-                    {/* Stamp removed per request */}
-                  </div>
-                  <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.principal}</p>
-                </div>
-
-                {activePrintTransaction.type === 'outgoing' && activePrintTransaction.recipientName ? (
-                  <div className="grid grid-cols-2 gap-2">
-                    <div>
-                      <p>Penerima Dana,</p>
-                      <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Ybs. Penerima</p>
-                      <div className="h-10 flex items-center justify-center">
-                        <div className="w-12 border-b border-dashed border-slate-300 pt-8"></div>
-                      </div>
-                      <p className="underline underline-offset-1 font-extrabold font-display leading-none uppercase text-rose-700 truncate">{activePrintTransaction.recipientName}</p>
+              {/* Receipt Wrapper div with print-receipt-section id */}
+              <div 
+                id="print-receipt-section"
+                className={receiptPrintFormat === 'thermal'
+                  ? "bg-white text-slate-900 p-2 font-mono flex flex-col gap-2.5 text-[10px] leading-tight text-center relative print-thermal w-full max-w-[76mm] mx-auto border-none select-all"
+                  : "bg-white text-left w-full flex flex-col gap-4 font-semibold text-xs text-slate-800"
+                }
+              >
+                {receiptPrintFormat === 'thermal' ? (
+                  /* THERMAL SYSTEM FOR TREASURER TRANSACTIONS */
+                  <div className="flex flex-col gap-2.5 text-slate-900 font-mono text-left select-all">
+                    {/* Small Header */}
+                    <div className="text-center font-black uppercase text-xs tracking-wider border-b border-dashed border-slate-900 pb-2.5">
+                      <span className="block text-sm font-extrabold">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                      <span className="block text-[8px] font-normal normal-case leading-none mt-1">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</span>
+                      <span className="block text-[7.5px] font-normal mt-0.5">{schoolIdentity?.address || "Pasuruan, Jawa Timur"}</span>
                     </div>
-                    <div>
-                      <p>Bendahara,</p>
-                      <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Kas Keluar</p>
-                      <div className="h-10 flex items-center justify-center">
-                        {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-9 object-contain" alt="Stamp" referrerPolicy="no-referrer" />}
+
+                    <div className="text-center font-mono font-bold uppercase text-[9px] py-1 border-b border-dashed border-slate-900">
+                      <span>* {activePrintTransaction.type === 'incoming' ? 'BUKTI PENERIMAAN' : 'BUKTI PENGELUARAN'} *</span>
+                      <p className="text-[8px] font-mono normal-case tracking-tight mt-0.5">REF: {activePrintTransaction.id.toUpperCase()}</p>
+                      <p className="text-[8.5px] font-normal normal-case mt-0.5">Tgl: {activePrintTransaction.date}</p>
+                    </div>
+
+                    {/* Transaction Details */}
+                    <div className="flex flex-col gap-0.5 text-[8.5px] pb-1.5 border-b border-dashed border-slate-900 uppercase">
+                      <div className="flex justify-between">
+                        <span>Kategori Pos:</span>
+                        <span className="font-bold">{activePrintTransaction.category}</span>
                       </div>
-                      <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.treasurer}</p>
+                      {activePrintTransaction.studentName && (
+                        <div className="flex justify-between">
+                          <span>Siswa:</span>
+                          <span className="font-bold">{activePrintTransaction.studentName}</span>
+                        </div>
+                      )}
+                      {activePrintTransaction.nis && (
+                        <div className="flex justify-between">
+                          <span>NIS:</span>
+                          <span className="font-mono">{activePrintTransaction.nis}</span>
+                        </div>
+                      )}
+                      {activePrintTransaction.recipientName && (
+                        <div className="flex justify-between">
+                          <span>Penerima Dana:</span>
+                          <span className="font-bold text-rose-700">{activePrintTransaction.recipientName}</span>
+                        </div>
+                      )}
+                      <div className="flex flex-col gap-0.5 mt-1 normal-case text-slate-650 font-normal">
+                        <span>Rincian/Keterangan:</span>
+                        <p className="font-bold uppercase text-slate-900 text-[8.5px]">{activePrintTransaction.description}</p>
+                      </div>
+                    </div>
+
+                    {/* Numeric price summary */}
+                    <div className="flex justify-between items-center text-[10px] font-bold uppercase py-1 border-b border-dashed border-slate-900">
+                      <span>Jumlah Dana:</span>
+                      <span className="font-mono text-xs">Rp {activePrintTransaction.amount.toLocaleString('id-ID')}</span>
+                    </div>
+
+                    {/* Signatures */}
+                    <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-2 pt-2">
+                      <div className="flex flex-col justify-between h-[45px]">
+                        <span>Kepala Sekolah</span>
+                        <div className="h-4"></div>
+                        <span className="font-bold border-t border-slate-900 pt-0.5 truncate">({schoolIdentity.principal.substring(0, 12)})</span>
+                      </div>
+                      <div className="flex flex-col justify-between h-[45px]">
+                        <span>{activePrintTransaction.type === 'incoming' ? 'Teller / Penerima' : 'Ybs / Penerima Dana'}</span>
+                        <div className="h-4"></div>
+                        <span className="font-bold border-t border-slate-900 pt-0.5">({schoolIdentity.treasurer.substring(0, 12)})</span>
+                      </div>
+                    </div>
+
+                    <div className="text-center text-[7px] leading-none tracking-tight mt-4 text-slate-550 border-t border-dotted border-slate-900 pt-2 uppercase">
+                      *** TERIMA KASIH ***
+                      <p className="mt-1 font-mono text-[6.5px] tracking-widest text-[6px]">SMP Ma'arif NU Pandaan</p>
                     </div>
                   </div>
                 ) : (
-                  <div>
-                    <p>{activePrintTransaction.type === 'incoming' ? 'Teller Kas Penerima,' : 'Bendahara Keuangan / Pengeluaran,'}</p>
-                    <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
-                    <div className="h-10 flex items-center justify-center">
-                      {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-9 object-contain" alt="Stamp" referrerPolicy="no-referrer" />}
+                  /* STANDARD LAYOUT */
+                  <>
+                    {/* Receipt Kop */}
+                    <div className="flex items-center gap-3 border-b-2 border-double border-slate-300 pb-3">
+                      <div className="p-1 px-1.5 bg-slate-100 text-slate-900 rounded font-bold flex items-center justify-center">
+                        {schoolIdentity.logo ? (
+                          <img src={schoolIdentity.logo} className="h-8 w-8 object-contain" alt="Logo" referrerPolicy="no-referrer" />
+                        ) : (
+                          <BookOpen size={16} />
+                        )}
+                      </div>
+                      <div className="flex-1 leading-tight">
+                        <h3 className="text-xs font-extrabold uppercase">{schoolIdentity.name}</h3>
+                        <p className="text-[9px] text-slate-500 font-medium">{schoolIdentity.subheading}</p>
+                      </div>
+                      <div className="text-right text-[9px] font-bold text-slate-400">
+                        {activePrintTransaction.type === 'incoming' ? 'BUKTI PENERIMAAN' : 'BUKTI PENGELUARAN'}
+                      </div>
                     </div>
-                    <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.treasurer}</p>
-                  </div>
+
+                    {/* Card Contents */}
+                    <div className="text-center py-2 bg-slate-50 rounded-lg">
+                      <h4 className="text-[10px] text-slate-400 uppercase tracking-widest leading-none font-bold">
+                        {activePrintTransaction.type === 'incoming' ? 'KUITANSI PENERIMAAN' : 'NOTA PENGELUARAN BENDAHARA'}
+                      </h4>
+                      <div className="text-xs font-mono text-slate-900 border-b border-dashed w-fit mx-auto px-4 py-1 font-bold">
+                        REF: {activePrintTransaction.id.toUpperCase()}
+                      </div>
+                    </div>
+
+                    {/* Details table mapping */}
+                    <div className="grid grid-cols-12 gap-y-2 border border-slate-150 p-4 rounded-xl text-xs bg-slate-50/50">
+                      <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Tanggal Transaksi:</span>
+                      <span className="col-span-8 font-mono font-bold text-slate-800">{activePrintTransaction.date}</span>
+
+                      <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Jenis Mutasi:</span>
+                      <span className="col-span-8 font-bold text-slate-800">
+                        {activePrintTransaction.type === 'incoming' ? 'DEBIT (Uang Masuk / Pembayaran)' : 'KREDIT (Uang Keluar / Pengeluaran)'}
+                      </span>
+
+                      <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Kategori Pos:</span>
+                      <span className="col-span-8 font-bold uppercase text-indigo-700">{activePrintTransaction.category}</span>
+
+                      <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Rincian Keterangan:</span>
+                      <span className="col-span-8 font-black text-slate-900 leading-tight">{activePrintTransaction.description}</span>
+
+                      {activePrintTransaction.studentName && (
+                        <>
+                          <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Atas Nama Siswa:</span>
+                          <span className="col-span-8 font-bold text-slate-800">
+                            {activePrintTransaction.studentName} (NIS: {activePrintTransaction.nis || '-'})
+                          </span>
+                        </>
+                      )}
+
+                      {activePrintTransaction.recipientName && (
+                        <>
+                          <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Penerima Dana:</span>
+                          <span className="col-span-8 font-bold text-rose-700">
+                            {activePrintTransaction.recipientName}
+                          </span>
+                        </>
+                      )}
+
+                      <span className="col-span-12 border-t border-slate-150 my-1"></span>
+
+                      <span className="col-span-4 text-slate-400 font-extrabold uppercase text-[9px] self-center">Jumlah Dana:</span>
+                      <span className="col-span-8 font-black text-sm text-emerald-800 font-mono">
+                        Rp {activePrintTransaction.amount.toLocaleString('id-ID')}
+                      </span>
+                    </div>
+
+                    {/* Signatures */}
+                    <div className="grid grid-cols-2 mt-3 text-[10px] text-center gap-4">
+                      <div>
+                        <p>Mengetahui,</p>
+                        <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Kepala Sekolah</p>
+                        <div className="h-10 flex items-center justify-center">
+                          {/* Stamp removed per request */}
+                        </div>
+                        <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.principal}</p>
+                      </div>
+
+                      {activePrintTransaction.type === 'outgoing' && activePrintTransaction.recipientName ? (
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <p>Penerima Dana,</p>
+                            <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Ybs. Penerima</p>
+                            <div className="h-10 flex items-center justify-center">
+                              <div className="w-12 border-b border-dashed border-slate-300 pt-8"></div>
+                            </div>
+                            <p className="underline underline-offset-1 font-extrabold font-display leading-none uppercase text-rose-700 truncate">{activePrintTransaction.recipientName}</p>
+                          </div>
+                          <div>
+                            <p>Bendahara,</p>
+                            <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Kas Keluar</p>
+                            <div className="h-10 flex items-center justify-center">
+                              {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-9 object-contain" alt="Stamp" referrerPolicy="no-referrer" />}
+                            </div>
+                            <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.treasurer}</p>
+                          </div>
+                        </div>
+                      ) : (
+                        <div>
+                          <p>{activePrintTransaction.type === 'incoming' ? 'Teller Kas Penerima,' : 'Bendahara Keuangan / Pengeluaran,'}</p>
+                          <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
+                          <div className="h-10 flex items-center justify-center">
+                            {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-9 object-contain" alt="Stamp" referrerPolicy="no-referrer" />}
+                          </div>
+                          <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.treasurer}</p>
+                        </div>
+                      )}
+                    </div>
+                  </>
                 )}
               </div>
 

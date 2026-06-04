@@ -845,123 +845,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
         </div>
       </div>
 
-      {/* Printable Area 2: Receipt/Kuitansi - Only active when printing an individual receipt */}
-      {activePrintTransaction && (
-        <div id="print-receipt-section" className="hidden print:block bg-white p-8 text-black text-xs leading-relaxed max-w-xl mx-auto border border-slate-300 rounded-xl my-4">
-          {/* Receipt Letterhead */}
-          <div className="flex items-center gap-3 border-b-2 border-double border-slate-300 pb-3 mb-4">
-            <div className="w-12 h-12 flex items-center justify-center bg-slate-100 rounded border">
-              {schoolIdentity.logo ? (
-                <img src={schoolIdentity.logo} className="w-full h-full object-contain" alt="Logo" referrerPolicy="no-referrer" />
-              ) : (
-                <BookOpen size={16} className="text-emerald-700" />
-              )}
-            </div>
-            <div className="flex-1 leading-tight">
-              <h3 className="text-xs font-extrabold uppercase">{schoolIdentity.name}</h3>
-              <p className="text-[9px] text-slate-500 font-semibold">{schoolIdentity.subheading} &bull; {schoolIdentity.address}</p>
-            </div>
-            <div className="text-right text-[9px] font-bold text-slate-400">
-              {activePrintTransaction.type === 'incoming' ? 'BUKTI PENERIMAAN KAS ASLI' : 'BUKTI PENGELUARAN KAS ASLI'}
-            </div>
-          </div>
-
-          <div className="text-center py-2 bg-slate-50 border rounded-lg mb-4">
-            <h4 className="text-[9px] text-slate-400 uppercase tracking-wider font-bold">
-              {activePrintTransaction.type === 'incoming' ? 'KUITANSI PENERIMAAN RESMI' : 'NOTA PENGELUARAN RESMI'}
-            </h4>
-            <div className="text-xs font-mono text-slate-900 font-bold">
-              ID REF: {activePrintTransaction.id.toUpperCase()}
-            </div>
-          </div>
-
-          <table className="w-full border-collapse border border-slate-300 text-[10px] text-left mb-6">
-            <tbody>
-              <tr className="border-b">
-                <td className="p-2 font-bold text-slate-500 uppercase bg-slate-50/50 w-1/3 border border-slate-300">Tanggal</td>
-                <td className="p-2 font-mono border border-slate-300">{activePrintTransaction.date}</td>
-              </tr>
-              <tr className="border-b">
-                <td className="p-2 font-bold text-slate-500 uppercase bg-slate-50/50 border border-slate-300">Jenis Transaksi</td>
-                <td className="p-2 font-bold border border-slate-300">
-                  {activePrintTransaction.type === 'incoming' ? 'MASUK / DEBET' : 'KELUAR / KREDIT'}
-                </td>
-              </tr>
-              <tr className="border-b">
-                <td className="p-2 font-bold text-slate-500 uppercase bg-slate-50/50 border border-slate-300">Kategori / Pos</td>
-                <td className="p-2 font-bold text-indigo-750 uppercase border border-slate-300">{activePrintTransaction.category}</td>
-              </tr>
-              <tr className="border-b">
-                <td className="p-2 font-bold text-slate-500 uppercase bg-slate-50/50 border border-slate-300">Keterangan</td>
-                <td className="p-2 font-bold border border-slate-300">{activePrintTransaction.description}</td>
-              </tr>
-              {activePrintTransaction.studentName && (
-                <tr className="border-b">
-                  <td className="p-2 font-bold text-slate-500 uppercase bg-slate-50/50 border border-slate-300">Siswa Terkait</td>
-                  <td className="p-2 font-bold border border-slate-300">
-                    {activePrintTransaction.studentName} (NIS: {activePrintTransaction.nis || '-'})
-                  </td>
-                </tr>
-              )}
-              {activePrintTransaction.recipientName && (
-                <tr className="border-b">
-                  <td className="p-2 font-bold text-slate-500 uppercase bg-slate-50/50 border border-slate-300">Penerima Dana</td>
-                  <td className="p-2 font-bold text-rose-700 border border-slate-300">
-                    {activePrintTransaction.recipientName}
-                  </td>
-                </tr>
-              )}
-              <tr>
-                <td className="p-3 font-bold bg-slate-100/50 text-[11px] border border-slate-300">Jumlah Dana (Rupiah)</td>
-                <td className="p-3 font-black text-sm text-emerald-800 font-mono bg-slate-100/50 border border-slate-300">
-                  Rp {activePrintTransaction.amount.toLocaleString('id-ID')}
-                </td>
-              </tr>
-            </tbody>
-          </table>
-
-          {/* Signatures */}
-          <div className="mt-8 grid grid-cols-2 text-center text-[10px]">
-            <div>
-              <p>Mengetahui,</p>
-              <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Kepala Sekolah</p>
-              <div className="h-12 flex items-center justify-center">
-                {/* Stamp removed per request */}
-              </div>
-              <p className="font-bold text-slate-900 underline">{schoolIdentity.principal}</p>
-            </div>
-            {activePrintTransaction.type === 'outgoing' && activePrintTransaction.recipientName ? (
-              <div className="grid grid-cols-2 gap-4">
-                <div>
-                  <p>Penerima Dana,</p>
-                  <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Ybs. Yang Menerima</p>
-                  <div className="h-12 flex items-center justify-center">
-                    <div className="w-16 border-b border-dashed border-slate-300 pt-10"></div>
-                  </div>
-                  <p className="font-bold text-slate-900 underline uppercase">{activePrintTransaction.recipientName}</p>
-                </div>
-                <div>
-                  <p>Bendahara Keuangan / Pengeluaran,</p>
-                  <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
-                  <div className="h-12 flex items-center justify-center">
-                    {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-10 object-contain" alt="Signature" referrerPolicy="no-referrer" />}
-                  </div>
-                  <p className="font-bold text-slate-900 underline">{schoolIdentity.treasurer}</p>
-                </div>
-              </div>
-            ) : (
-              <div>
-                <p>{activePrintTransaction.type === 'incoming' ? 'Penerima / Teller Kas,' : 'Bendahara Keuangan / Pengeluaran,'}</p>
-                <p className="font-bold mt-1 text-slate-400 uppercase text-[8px]">Bendahara</p>
-                <div className="h-12 flex items-center justify-center">
-                  {schoolIdentity.treasurerSignature && <img src={schoolIdentity.treasurerSignature} className="h-10 object-contain" alt="Signature" referrerPolicy="no-referrer" />}
-                </div>
-                <p className="font-bold text-slate-900 underline">{schoolIdentity.treasurer}</p>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {/* Printable Area 2: Receipt/Kuitansi - Managed inside the modal directly to prevent styling mismatch */}
 
       {/* Screen Interactive Panel (Hidden on Print layout) */}
       <div className="print:hidden">
@@ -2365,11 +2249,12 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
        {/* Modal 2: Visual Printable Kuitansi (Invoice receipt) Modal for the Teller systems */}
       <AnimatePresence>
         {activePrintTransaction && (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs print:hidden">
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
             <motion.div
               initial={{ scale: 0.95, opacity: 0 }}
               animate={{ scale: 1, opacity: 1 }}
               exit={{ scale: 0.95, opacity: 0 }}
+              id="print-receipt-section"
               className="bg-white text-left w-full max-w-lg rounded-2xl overflow-hidden shadow-2xl p-6 border flex flex-col gap-4 font-semibold text-xs text-slate-800"
             >
               {/* Receipt Kop */}
@@ -2485,7 +2370,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
               </div>
 
               {/* Close Button */}
-              <div className="flex gap-2 mt-4">
+              <div className="flex gap-2 mt-4 no-print">
                 <button
                   type="button"
                   onClick={() => window.print()}

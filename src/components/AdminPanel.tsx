@@ -2133,6 +2133,558 @@ export default function AdminPanel({
               </motion.div>
             )}
 
+            {/* Profil Keuangan & Mutasi Detail Panel */}
+            <AnimatePresence>
+              {selectedStudent && (
+                <motion.div
+                  initial={{ opacity: 0, y: -10 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -10 }}
+                  className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col gap-5 text-xs"
+                >
+                  <div className="flex justify-between items-center pb-3 border-b border-slate-200">
+                    <div>
+                      <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
+                        <User size={16} className="text-indigo-600" /> Profil & Buku Rekening Keuangan: {selectedStudent.name}
+                      </h4>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Siswa Kelas <strong>{selectedStudent.class}</strong> &bull; NIS: <strong className="font-mono">{selectedStudent.nis}</strong> &bull; Kelola tabungan dan kuitansi pembayaran SPP secara mandiri.
+                      </p>
+                    </div>
+                    <button
+                      onClick={() => setSelectedStudent(null)}
+                      className="text-slate-500 hover:text-slate-900 font-bold border border-slate-200 rounded-lg px-2.5 py-1 text-[10px] uppercase tracking-wider hover:bg-slate-50 transition-all cursor-pointer"
+                    >
+                      Sembunyikan Panel
+                    </button>
+                  </div>
+
+                  {/* RINGKASAN KERANJANG BELANJA PEMBAYARAN GABUNGAN/KOLEKTIF */}
+                  {paymentCart.length > 0 && (
+                    <motion.div
+                      initial={{ opacity: 0, scale: 0.98 }}
+                      animate={{ opacity: 1, scale: 1 }}
+                      className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 flex flex-col gap-3 relative shadow-xs"
+                    >
+                      <div className="flex flex-wrap justify-between items-center border-b border-amber-200 pb-2 gap-2">
+                        <div className="flex items-center gap-2">
+                          <div className="p-1 px-2.5 bg-amber-500 text-white rounded-xl text-[10px] font-black flex items-center gap-1.5 shadow-sm">
+                            <ShoppingCart size={12} className="animate-bounce" />
+                            <span>KERANJANG PEMBAYARAN TUNAI ({paymentCart.length})</span>
+                          </div>
+                          <span className="text-[10px] text-amber-700 font-bold tracking-wide">
+                            (Digabung Menjadi 1 Kuitansi Kolektif)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => setPaymentCart([])}
+                          className="text-rose-600 hover:text-rose-800 text-[10px] font-black uppercase hover:underline cursor-pointer transition-colors"
+                        >
+                          Kosongkan Keranjang
+                        </button>
+                      </div>
+
+                      <div className="divide-y divide-amber-200/50 max-h-48 overflow-y-auto pr-1">
+                        {paymentCart.map((item) => (
+                          <div key={item.id} className="py-2.5 flex justify-between items-center text-xs">
+                            <div className="flex flex-col text-left">
+                              <span className="font-extrabold text-slate-800">
+                                {item.type === 'spp' ? `SPP Bulanan (${item.month} ${item.year})` : 'Setoran Tabungan Tunai'}
+                              </span>
+                              <span className="text-[10px] text-slate-550 font-medium">
+                                Siswa: <strong className="text-slate-700">{item.student.name}</strong> ({item.student.nis} - Kelas {item.student.class})
+                                {item.notes && ` • Memo: "${item.notes}"`}
+                              </span>
+                            </div>
+                            <div className="flex items-center gap-4 shrink-0">
+                              <span className="font-mono font-extrabold text-slate-900">
+                                Rp {item.amount.toLocaleString('id-ID')},00
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => removeFromCart(item.id)}
+                                className="text-slate-400 hover:text-rose-600 cursor-pointer p-1 transition-colors hover:bg-rose-50 rounded"
+                                title="Hapus dari keranjang"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+
+                      <div className="flex flex-wrap justify-between items-center pt-3 border-t border-amber-200 gap-3 font-bold text-sm bg-amber-100/30 -mx-4 -mb-4 p-4 rounded-b-2xl">
+                        <div className="flex flex-col text-left">
+                          <span className="text-[9px] uppercase tracking-wider text-amber-800">Total Nominal Pembayaran</span>
+                          <span className="font-mono text-slate-900 font-extrabold text-base">
+                            Rp {paymentCart.reduce((total, item) => total + item.amount, 0).toLocaleString('id-ID')},00
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          disabled={processingCart}
+                          onClick={handleProcessCartCheckout}
+                          className={`px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md ${
+                            processingCart ? 'opacity-50 cursor-not-allowed shadow-none' : 'hover:from-amber-600 hover:to-orange-600 active:scale-95 cursor-pointer'
+                          }`}
+                        >
+                          {processingCart ? (
+                            <>
+                              <RefreshCw size={13} className="animate-spin" />
+                              <span>Sedang Memproses ({paymentCart.length} Item)...</span>
+                            </>
+                          ) : (
+                            <>
+                              <CheckCircle size={13} />
+                              <span>Bayar & Cetak 1 Kuitansi Kolektif 🖨</span>
+                            </>
+                          )}
+                        </button>
+                      </div>
+                    </motion.div>
+                  )}
+
+                  {/* Switcher Tab utama: Memisahkan tampilan SPP Bulanan dan Histori Tabungan secara mandiri */}
+                  <div className="flex border border-slate-200 p-1 bg-slate-50 rounded-xl gap-2 font-sans">
+                    <button
+                      type="button"
+                      onClick={() => setStudentDetailTab('spp')}
+                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                        studentDetailTab === 'spp'
+                          ? 'bg-indigo-650 bg-indigo-600 text-white border-transparent shadow-md font-extrabold'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900 font-bold'
+                      }`}
+                    >
+                      <BookOpen size={14} />
+                      Iuran SPP Bulanan ({bills.filter(b => b.studentId === selectedStudent.id).length} Bulan)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStudentDetailTab('savings')}
+                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                        studentDetailTab === 'savings'
+                          ? 'bg-indigo-650 bg-indigo-600 text-white border-transparent shadow-md font-extrabold'
+                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900 font-bold'
+                      }`}
+                    >
+                      <Banknote size={14} />
+                      Histori Tabungan ({transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success').length} Transaksi)
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    {studentDetailTab === 'spp' ? (
+                      <>
+                        {/* TAMPILAN SPP: 100% Hanya informasi dan aksi terkait SPP */}
+                        <div className="lg:col-span-5 flex flex-col gap-4">
+                          {/* Card SPP khusus */}
+                          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-950 to-slate-900 text-white shadow-md flex flex-col justify-between min-h-[110px] relative overflow-hidden">
+                            <div className="absolute right-[-20px] bottom-[-20px] opacity-10">
+                              <BookOpen size={120} />
+                            </div>
+                            <div>
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-300">STATUS BUKU IURAN SPP SISWA</span>
+                              <span className="text-lg md:text-xl font-bold font-mono block mt-1">
+                                {bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').length} Bulan Tunggakan
+                              </span>
+                            </div>
+                            <div className="mt-4 pt-2 border-t border-emerald-800/40 flex justify-between items-center text-[10px] text-emerald-300">
+                              <span className="font-semibold uppercase tracking-wide">Tingkat Kelas: {selectedStudent.class}</span>
+                              <span className="font-bold font-mono">
+                                Tarif: Rp {
+                                  (() => {
+                                    const clsStr = String(selectedStudent.class || '').toLowerCase();
+                                    if (clsStr.includes('7')) return sppConfigRates.grade7.toLocaleString('id-ID');
+                                    if (clsStr.includes('8')) return sppConfigRates.grade8.toLocaleString('id-ID');
+                                    if (clsStr.includes('9')) return sppConfigRates.grade9.toLocaleString('id-ID');
+                                    return sppConfigRates.grade7.toLocaleString('id-ID');
+                                  })()
+                                }/bln
+                              </span>
+                            </div>
+                          </div>
+
+                          {/* Informasi & Kebijakan SPP */}
+                          <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl flex flex-col gap-3 text-xs leading-relaxed text-slate-600">
+                            <h5 className="font-bold text-slate-800 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
+                              <ShieldAlert size={14} className="text-emerald-600" /> Aturan Tagihan SPP
+                            </h5>
+                            <ul className="list-disc list-inside space-y-1.5 text-[11px] text-slate-500">
+                              <li>Iuran SPP wajib diselesaikan paling lambat tanggal <strong>10 setiap bulan</strong>.</li>
+                              <li>Pembayaran online via <strong className="text-emerald-700 font-bold">Midtrans</strong> akan disinkronisasi lunas secara instan.</li>
+                              <li>Teller sekolah berhak mencatatkan pembayaran tunai manual jika siswa membawa uang kas ke loket tata usaha.</li>
+                              <li>Kuitansi resmi dapat dicetak seketika setelah pembayaran berhasil diverifikasi.</li>
+                            </ul>
+                          </div>
+                        </div>
+
+                        {/* LIST SPP DI KANAN */}
+                        <div className="lg:col-span-7 flex flex-col gap-3 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                            <span className="font-bold text-slate-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                              <BookOpen size={13} className="text-emerald-600" /> Daftar Rekap Tagihan SPP Bulanan
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
+                              Total {bills.filter(b => b.studentId === selectedStudent.id).length} Tagihan
+                            </span>
+                          </div>
+
+                          <div className="p-3 max-h-[350px] overflow-y-auto">
+                            <div className="flex flex-col gap-2">
+                              {bills.filter(b => b.studentId === selectedStudent.id).length === 0 ? (
+                                <div className="text-center py-6 text-[11px] text-slate-400">Tidak ada tagihan SPP bagi siswa ini.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left font-sans text-[11px]">
+                                    <thead>
+                                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
+                                        <th className="pb-2">Bulan/Tahun</th>
+                                        <th className="pb-2">Nominal</th>
+                                        <th className="pb-2 text-center">Status</th>
+                                        <th className="pb-2 text-right">Aksi Pembayaran / Kuitansi</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {bills
+                                        .filter(b => b.studentId === selectedStudent.id)
+                                        .sort((a,b) => {
+                                          if (b.year !== a.year) return b.year - a.year;
+                                          const monthsOrdered = [
+                                            "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+                                            "Januari", "Februari", "Maret", "April", "Mei", "Juni"
+                                          ];
+                                          return monthsOrdered.indexOf(b.month) - monthsOrdered.indexOf(a.month);
+                                        })
+                                        .map((b) => (
+                                          <tr key={b.id} className="hover:bg-slate-50/50">
+                                            <td className="py-2.5 font-bold text-slate-700">{b.month} {b.year}</td>
+                                            <td className="py-2.5 font-mono text-slate-600 font-bold">Rp {b.amount.toLocaleString('id-ID')}</td>
+                                            <td className="py-2.5 text-center">
+                                              {b.status === 'paid' ? (
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">LUNAS</span>
+                                               ) : b.status === 'pending' ? (
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">PENDING</span>
+                                               ) : !checkIsBillActive(b, selectedStudent.id) ? (
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 uppercase flex items-center gap-0.5 justify-center"><Lock size={8} /> Nonaktif</span>
+                                               ) : (
+                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-100">UNPAID</span>
+                                               )}
+                                            </td>
+                                            <td className="py-2.5 text-right">
+                                              {b.status === 'paid' ? (
+                                                <div className="flex gap-1.5 justify-end items-center">
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => {
+                                                      setReceiptToPrint({ type: 'spp', detail: b, student: selectedStudent });
+                                                      setPrintId('print-receipt-section');
+                                                    }}
+                                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
+                                                  >
+                                                    <Printer size={10} className="text-indigo-600" /> Cetak 🖨
+                                                  </button>
+                                                  {b.paymentMethod === 'Manual Teller (Sekolah)' && onCancelSppManual && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setBillToCancel(b);
+                                                        setCancelFeedback(null);
+                                                      }}
+                                                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all"
+                                                      title="Batalkan pembayaran manual teller ini"
+                                                    >
+                                                      Batal ↩
+                                                    </button>
+                                                  )}
+                                                </div>
+                                              ) : !checkIsBillActive(b, selectedStudent.id) ? (
+                                                   <div className="flex justify-end items-center">
+                                                     <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 flex items-center gap-1" title="Siswa harus melunasi SPP bulan berjalan terlebih dahulu">
+                                                       <Lock size={9} /> SPP berjalan belum lunas
+                                                     </span>
+                                                   </div>
+                                                 ) : (
+                                                   <div className="flex gap-1 justify-end items-center">
+                                                     <button
+                                                       type="button"
+                                                       onClick={(e) => {
+                                                         e.stopPropagation();
+                                                         addToCartSpp(b, selectedStudent);
+                                                       }}
+                                                       className="px-1.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
+                                                       title="Tambahkan tagihan ini ke Ringkasan Keranjang Pembayaran"
+                                                     >
+                                                       <ShoppingCart size={9} />
+                                                       <span>+ Keranjang</span>
+                                                     </button>
+                                                     <button
+                                                       type="button"
+                                                       disabled={processingBillId !== null}
+                                                       onClick={async (e) => {
+                                                         e.stopPropagation();
+                                                         if (onPaySppViaMidtrans) {
+                                                           setProcessingBillId(b.id);
+                                                           await onPaySppViaMidtrans(b);
+                                                           setProcessingBillId(null);
+                                                         }
+                                                       }}
+                                                       className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-sm"
+                                                       title="Bayar online menggunakan gerbang pembayaran Midtrans"
+                                                     >
+                                                       <Zap size={9} className="text-yellow-355 fill-yellow-355 fill-yellow-350 animate-pulse" />
+                                                       <span>Midtrans</span>
+                                                     </button>
+                                                     <button
+                                                       type="button"
+                                                       disabled={processingBillId !== null}
+                                                       onClick={async (e) => {
+                                                         e.stopPropagation();
+                                                         setProcessingBillId(b.id);
+                                                         const resBill = await onPaySppManual(b.id);
+                                                         setProcessingBillId(null);
+                                                         if (resBill) {
+                                                           setReceiptToPrint({
+                                                             type: 'spp',
+                                                             detail: {
+                                                               ...b,
+                                                               status: 'paid',
+                                                               paidAt: new Date().toISOString(),
+                                                               paymentMethod: 'Manual Teller (Sekolah)',
+                                                               orderId: resBill.orderId || `ORD-MANUAL-${Date.now()}`
+                                                             },
+                                                             student: selectedStudent
+                                                           });
+                                                           setPrintId('print-receipt-section');
+                                                         }
+                                                       }}
+                                                       className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
+                                                       title="Bayar Manual Tunai langsung"
+                                                     >
+                                                       Manual
+                                                     </button>
+                                                   </div>
+                                                 )}
+                                            </td>
+                                          </tr>
+                                        ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* TAMPILAN TABUNGAN: 100% Hanya informasi dan aksi terkait Saldo & Mutasi Tabungan */}
+                        <div className="lg:col-span-5 flex flex-col gap-4">
+                          {/* Card Saldo Tabungan */}
+                          <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-900 to-slate-900 text-white shadow-md flex flex-col justify-between min-h-[110px] relative overflow-hidden">
+                            <div className="absolute right-[-20px] bottom-[-20px] opacity-10">
+                              <Banknote size={120} />
+                            </div>
+                            <div>
+                              <span className="text-[9px] uppercase tracking-wider font-bold text-indigo-350 text-indigo-200">TOTAL SALDO TABUNGAN SISWA</span>
+                              <span className="text-lg md:text-xl font-bold font-mono block mt-1">
+                                Rp {selectedStudent.savingsBalance.toLocaleString('id-ID')}
+                              </span>
+                            </div>
+                            <div className="mt-4 pt-2 border-t border-indigo-800/50 flex justify-between items-center text-[10px] text-indigo-300">
+                              <span>SMP Maarif Pandaan</span>
+                              <span className="font-mono uppercase text-[9px] font-bold bg-indigo-950/40 px-2 py-0.5 rounded text-indigo-200">REKENING AKTIF</span>
+                            </div>
+                          </div>
+
+                          {/* Formulir Mutasi Tabungan Manual */}
+                          <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl flex flex-col gap-3">
+                            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Mutasi Tabungan Manual</span>
+                            
+                            <div className="grid grid-cols-2 gap-1 bg-white p-0.5 border border-slate-200 rounded-lg">
+                              <button
+                                type="button"
+                                onClick={() => setTxType('deposit')}
+                                className={`py-1.5 rounded font-bold text-[10px] text-center cursor-pointer transition-all ${
+                                  txType === 'deposit' ? 'bg-indigo-660 bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                                }`}
+                              >
+                                SETOR TUNAI
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setTxType('withdrawal')}
+                                className={`py-1.5 rounded font-bold text-[10px] text-center cursor-pointer transition-all ${
+                                  txType === 'withdrawal' ? 'bg-indigo-660 bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
+                                }`}
+                              >
+                                TARIK TUNAI
+                              </button>
+                            </div>
+
+                            <form onSubmit={handleSavingsSubmit} className="flex flex-col gap-3">
+                              <div>
+                                <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Nominal Uang (Rp)</label>
+                                <div className="relative">
+                                  <input
+                                    type="number"
+                                    required
+                                    placeholder="cth: 50000"
+                                    value={txAmount}
+                                    onChange={(e) => setTxAmount(e.target.value)}
+                                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
+                                  />
+                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[10px]">Rp</span>
+                                </div>
+                              </div>
+
+                              <div>
+                                <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Memo / Keterangan</label>
+                                <input
+                                  type="text"
+                                  required
+                                  placeholder="cth: Tabungan harian saku"
+                                  value={txNotes}
+                                  onChange={(e) => setTxNotes(e.target.value)}
+                                  className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
+                                />
+                              </div>
+
+                              {txType === 'deposit' ? (
+                                <div className="flex flex-col gap-2">
+                                  <button
+                                    type="button"
+                                    disabled={txProcessing || !txAmount || !onDepositSavingsViaMidtrans}
+                                    onClick={async () => {
+                                      if (onDepositSavingsViaMidtrans && selectedStudent) {
+                                        setTxProcessing(true);
+                                        await onDepositSavingsViaMidtrans(Number(txAmount), selectedStudent.id);
+                                        setTxProcessing(false);
+                                        setTxAmount('');
+                                        setTxNotes('');
+                                      }
+                                    }}
+                                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
+                                    title="Proses setoran tabungan via Gerbang Pembayaran Midtrans"
+                                  >
+                                    <Zap size={11} className="text-yellow-400 fill-yellow-400 animate-pulse" />
+                                    <span>Bayar via Midtrans (Online)</span>
+                                  </button>
+                                  
+                                  <button
+                                    type="submit"
+                                    disabled={txProcessing || !txAmount}
+                                    className="w-full py-1.5 bg-slate-100 hover:bg-slate-205 border border-slate-300 text-slate-700 font-semibold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
+                                  >
+                                    {txProcessing ? 'Menyimpan...' : 'Atau Terima Tunai / Manual (Teller)'}
+                                  </button>
+                                  <button
+                                    type="button"
+                                    disabled={txProcessing || !txAmount}
+                                    onClick={() => {
+                                      addToCartSavings(Number(txAmount), txNotes, selectedStudent);
+                                      setTxAmount('');
+                                      setTxNotes('');
+                                    }}
+                                    className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm mt-1.5"
+                                  >
+                                    <ShoppingCart size={11} />
+                                    <span>+ Tambahkan Setoran ke Keranjang</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    className="hidden"
+                                  >
+                                    {txProcessing ? 'Menyimpan...' : 'Atau Terima Tunai / Manual (Teller)'}
+                                  </button>
+                                </div>
+                              ) : (
+                                <button
+                                  type="submit"
+                                  disabled={txProcessing || !txAmount}
+                                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50"
+                                >
+                                  {txProcessing ? 'Menyimpan...' : 'Catat Penarikan Tunai / Manual (Teller) 💸'}
+                                </button>
+                              )}
+                            </form>
+                          </div>
+                        </div>
+
+                        {/* LIST MUTASI TABUNGAN DI KANAN */}
+                        <div className="lg:col-span-7 flex flex-col gap-3 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                            <span className="font-bold text-slate-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                              <Banknote size={13} className="text-indigo-650 text-indigo-600" /> Histori Arus Rekening Tabungan
+                            </span>
+                            <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
+                              {transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success').length} Transaksi
+                            </span>
+                          </div>
+
+                          <div className="p-3 max-h-[350px] overflow-y-auto">
+                            <div className="flex flex-col gap-2">
+                              {transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success').length === 0 ? (
+                                <div className="text-center py-6 text-[11px] text-slate-400">Belum ada riwayat mutasi tabungan terverifikasi.</div>
+                              ) : (
+                                <div className="overflow-x-auto">
+                                  <table className="w-full text-left font-sans text-[11px]">
+                                    <thead>
+                                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
+                                        <th className="pb-2">Waktu/Nota</th>
+                                        <th className="pb-2">Tipe</th>
+                                        <th className="pb-2">Nominal</th>
+                                        <th className="pb-2 text-right">Aksi Kuitansi</th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="divide-y divide-slate-100">
+                                      {transactions
+                                        .filter(t => t.studentId === selectedStudent.id && t.status === 'success')
+                                        .map((t) => (
+                                          <tr key={t.id} className="hover:bg-slate-50/50">
+                                            <td className="py-2.5">
+                                              <div className="font-bold text-slate-700">{new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
+                                              <div className="text-[9px] text-slate-400 max-w-[120px] truncate" title={t.notes}>{t.notes || 'Mutasi Tabungan'}</div>
+                                            </td>
+                                            <td className="py-2.5">
+                                              {t.type === 'deposit' ? (
+                                                <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold"><ArrowDownLeft size={10} /> Setor</span>
+                                              ) : (
+                                                <span className="inline-flex items-center gap-0.5 text-rose-700 font-bold"><ArrowUpRight size={10} /> Tarik</span>
+                                              )}
+                                            </td>
+                                            <td className="py-2.5 font-mono text-slate-700 font-bold">
+                                              Rp {t.amount.toLocaleString('id-ID')}
+                                            </td>
+                                            <td className="py-2.5 text-right">
+                                              <button
+                                                type="button"
+                                                onClick={() => {
+                                                  setReceiptToPrint({ type: 'savings', detail: t, student: selectedStudent });
+                                                  setPrintId('print-receipt-section');
+                                                }}
+                                                className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-705 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 ml-auto cursor-pointer"
+                                              >
+                                                <Printer size={10} className="text-indigo-650" /> Cetak 🖨
+                                              </button>
+                                            </td>
+                                          </tr>
+                                        ))}
+                                    </tbody>
+                                  </table>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
              {/* Left table of students list */}
             <div className="bg-white rounded-xl border border-slate-200 shadow-sm overflow-hidden flex flex-col">
               <div className="p-4 bg-slate-50/50 border-b border-slate-200 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
@@ -2607,558 +3159,6 @@ export default function AdminPanel({
                 </table>
               </div>
             </div>
-
-            {/* Profil Keuangan & Mutasi Detail Panel */}
-            <AnimatePresence>
-              {selectedStudent && (
-                <motion.div
-                  initial={{ opacity: 0, y: -10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: -10 }}
-                  className="bg-white rounded-xl border border-slate-200 shadow-sm p-5 flex flex-col gap-5 text-xs"
-                >
-                  <div className="flex justify-between items-center pb-3 border-b border-slate-200">
-                    <div>
-                      <h4 className="font-bold text-slate-900 text-sm flex items-center gap-2">
-                        <User size={16} className="text-indigo-600" /> Profil & Buku Rekening Keuangan: {selectedStudent.name}
-                      </h4>
-                      <p className="text-[11px] text-slate-500 mt-0.5">
-                        Siswa Kelas <strong>{selectedStudent.class}</strong> &bull; NIS: <strong className="font-mono">{selectedStudent.nis}</strong> &bull; Kelola tabungan dan kuitansi pembayaran SPP secara mandiri.
-                      </p>
-                    </div>
-                    <button
-                      onClick={() => setSelectedStudent(null)}
-                      className="text-slate-500 hover:text-slate-900 font-bold border border-slate-200 rounded-lg px-2.5 py-1 text-[10px] uppercase tracking-wider hover:bg-slate-50 transition-all cursor-pointer"
-                    >
-                      Sembunyikan Panel
-                    </button>
-                  </div>
-
-                  {/* RINGKASAN KERANJANG BELANJA PEMBAYARAN GABUNGAN/KOLEKTIF */}
-                  {paymentCart.length > 0 && (
-                    <motion.div
-                      initial={{ opacity: 0, scale: 0.98 }}
-                      animate={{ opacity: 1, scale: 1 }}
-                      className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 flex flex-col gap-3 relative shadow-xs"
-                    >
-                      <div className="flex flex-wrap justify-between items-center border-b border-amber-200 pb-2 gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1 px-2.5 bg-amber-500 text-white rounded-xl text-[10px] font-black flex items-center gap-1.5 shadow-sm">
-                            <ShoppingCart size={12} className="animate-bounce" />
-                            <span>KERANJANG PEMBAYARAN TUNAI ({paymentCart.length})</span>
-                          </div>
-                          <span className="text-[10px] text-amber-700 font-bold tracking-wide">
-                            (Digabung Menjadi 1 Kuitansi Kolektif)
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          onClick={() => setPaymentCart([])}
-                          className="text-rose-600 hover:text-rose-800 text-[10px] font-black uppercase hover:underline cursor-pointer transition-colors"
-                        >
-                          Kosongkan Keranjang
-                        </button>
-                      </div>
-
-                      <div className="divide-y divide-amber-200/50 max-h-48 overflow-y-auto pr-1">
-                        {paymentCart.map((item) => (
-                          <div key={item.id} className="py-2.5 flex justify-between items-center text-xs">
-                            <div className="flex flex-col text-left">
-                              <span className="font-extrabold text-slate-800">
-                                {item.type === 'spp' ? `SPP Bulanan (${item.month} ${item.year})` : 'Setoran Tabungan Tunai'}
-                              </span>
-                              <span className="text-[10px] text-slate-550 font-medium">
-                                Siswa: <strong className="text-slate-700">{item.student.name}</strong> ({item.student.nis} - Kelas {item.student.class})
-                                {item.notes && ` • Memo: "${item.notes}"`}
-                              </span>
-                            </div>
-                            <div className="flex items-center gap-4 shrink-0">
-                              <span className="font-mono font-extrabold text-slate-900">
-                                Rp {item.amount.toLocaleString('id-ID')},00
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => removeFromCart(item.id)}
-                                className="text-slate-400 hover:text-rose-600 cursor-pointer p-1 transition-colors hover:bg-rose-50 rounded"
-                                title="Hapus dari keranjang"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-
-                      <div className="flex flex-wrap justify-between items-center pt-3 border-t border-amber-200 gap-3 font-bold text-sm bg-amber-100/30 -mx-4 -mb-4 p-4 rounded-b-2xl">
-                        <div className="flex flex-col text-left">
-                          <span className="text-[9px] uppercase tracking-wider text-amber-800">Total Nominal Pembayaran</span>
-                          <span className="font-mono text-slate-900 font-extrabold text-base">
-                            Rp {paymentCart.reduce((total, item) => total + item.amount, 0).toLocaleString('id-ID')},00
-                          </span>
-                        </div>
-                        <button
-                          type="button"
-                          disabled={processingCart}
-                          onClick={handleProcessCartCheckout}
-                          className={`px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md ${
-                            processingCart ? 'opacity-50 cursor-not-allowed shadow-none' : 'hover:from-amber-600 hover:to-orange-600 active:scale-95 cursor-pointer'
-                          }`}
-                        >
-                          {processingCart ? (
-                            <>
-                              <RefreshCw size={13} className="animate-spin" />
-                              <span>Sedang Memproses ({paymentCart.length} Item)...</span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle size={13} />
-                              <span>Bayar & Cetak 1 Kuitansi Kolektif 🖨</span>
-                            </>
-                          )}
-                        </button>
-                      </div>
-                    </motion.div>
-                  )}
-
-                  {/* Switcher Tab utama: Memisahkan tampilan SPP Bulanan dan Histori Tabungan secara mandiri */}
-                  <div className="flex border border-slate-200 p-1 bg-slate-50 rounded-xl gap-2 font-sans">
-                    <button
-                      type="button"
-                      onClick={() => setStudentDetailTab('spp')}
-                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
-                        studentDetailTab === 'spp'
-                          ? 'bg-indigo-650 bg-indigo-600 text-white border-transparent shadow-md font-extrabold'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900 font-bold'
-                      }`}
-                    >
-                      <BookOpen size={14} />
-                      Iuran SPP Bulanan ({bills.filter(b => b.studentId === selectedStudent.id).length} Bulan)
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => setStudentDetailTab('savings')}
-                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
-                        studentDetailTab === 'savings'
-                          ? 'bg-indigo-650 bg-indigo-600 text-white border-transparent shadow-md font-extrabold'
-                          : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900 font-bold'
-                      }`}
-                    >
-                      <Banknote size={14} />
-                      Histori Tabungan ({transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success').length} Transaksi)
-                    </button>
-                  </div>
-
-                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                    {studentDetailTab === 'spp' ? (
-                      <>
-                        {/* TAMPILAN SPP: 100% Hanya informasi dan aksi terkait SPP */}
-                        <div className="lg:col-span-5 flex flex-col gap-4">
-                          {/* Card SPP khusus */}
-                          <div className="p-4 rounded-xl bg-gradient-to-br from-emerald-950 to-slate-900 text-white shadow-md flex flex-col justify-between min-h-[110px] relative overflow-hidden">
-                            <div className="absolute right-[-20px] bottom-[-20px] opacity-10">
-                              <BookOpen size={120} />
-                            </div>
-                            <div>
-                              <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-300">STATUS BUKU IURAN SPP SISWA</span>
-                              <span className="text-lg md:text-xl font-bold font-mono block mt-1">
-                                {bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').length} Bulan Tunggakan
-                              </span>
-                            </div>
-                            <div className="mt-4 pt-2 border-t border-emerald-800/40 flex justify-between items-center text-[10px] text-emerald-300">
-                              <span className="font-semibold uppercase tracking-wide">Tingkat Kelas: {selectedStudent.class}</span>
-                              <span className="font-bold font-mono">
-                                Tarif: Rp {
-                                  (() => {
-                                    const clsStr = String(selectedStudent.class || '').toLowerCase();
-                                    if (clsStr.includes('7')) return sppConfigRates.grade7.toLocaleString('id-ID');
-                                    if (clsStr.includes('8')) return sppConfigRates.grade8.toLocaleString('id-ID');
-                                    if (clsStr.includes('9')) return sppConfigRates.grade9.toLocaleString('id-ID');
-                                    return sppConfigRates.grade7.toLocaleString('id-ID');
-                                  })()
-                                }/bln
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Informasi & Kebijakan SPP */}
-                          <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl flex flex-col gap-3 text-xs leading-relaxed text-slate-600">
-                            <h5 className="font-bold text-slate-800 flex items-center gap-1.5 uppercase text-[10px] tracking-wider">
-                              <ShieldAlert size={14} className="text-emerald-600" /> Aturan Tagihan SPP
-                            </h5>
-                            <ul className="list-disc list-inside space-y-1.5 text-[11px] text-slate-500">
-                              <li>Iuran SPP wajib diselesaikan paling lambat tanggal <strong>10 setiap bulan</strong>.</li>
-                              <li>Pembayaran online via <strong className="text-emerald-700 font-bold">Midtrans</strong> akan disinkronisasi lunas secara instan.</li>
-                              <li>Teller sekolah berhak mencatatkan pembayaran tunai manual jika siswa membawa uang kas ke loket tata usaha.</li>
-                              <li>Kuitansi resmi dapat dicetak seketika setelah pembayaran berhasil diverifikasi.</li>
-                            </ul>
-                          </div>
-                        </div>
-
-                        {/* LIST SPP DI KANAN */}
-                        <div className="lg:col-span-7 flex flex-col gap-3 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
-                          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                            <span className="font-bold text-slate-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                              <BookOpen size={13} className="text-emerald-600" /> Daftar Rekap Tagihan SPP Bulanan
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
-                              Total {bills.filter(b => b.studentId === selectedStudent.id).length} Tagihan
-                            </span>
-                          </div>
-
-                          <div className="p-3 max-h-[350px] overflow-y-auto">
-                            <div className="flex flex-col gap-2">
-                              {bills.filter(b => b.studentId === selectedStudent.id).length === 0 ? (
-                                <div className="text-center py-6 text-[11px] text-slate-400">Tidak ada tagihan SPP bagi siswa ini.</div>
-                              ) : (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left font-sans text-[11px]">
-                                    <thead>
-                                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
-                                        <th className="pb-2">Bulan/Tahun</th>
-                                        <th className="pb-2">Nominal</th>
-                                        <th className="pb-2 text-center">Status</th>
-                                        <th className="pb-2 text-right">Aksi Pembayaran / Kuitansi</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                      {bills
-                                        .filter(b => b.studentId === selectedStudent.id)
-                                        .sort((a,b) => {
-                                          if (b.year !== a.year) return b.year - a.year;
-                                          const monthsOrdered = [
-                                            "Juli", "Agustus", "September", "Oktober", "November", "Desember",
-                                            "Januari", "Februari", "Maret", "April", "Mei", "Juni"
-                                          ];
-                                          return monthsOrdered.indexOf(b.month) - monthsOrdered.indexOf(a.month);
-                                        })
-                                        .map((b) => (
-                                          <tr key={b.id} className="hover:bg-slate-50/50">
-                                            <td className="py-2.5 font-bold text-slate-700">{b.month} {b.year}</td>
-                                            <td className="py-2.5 font-mono text-slate-600 font-bold">Rp {b.amount.toLocaleString('id-ID')}</td>
-                                            <td className="py-2.5 text-center">
-                                              {b.status === 'paid' ? (
-                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">LUNAS</span>
-                                               ) : b.status === 'pending' ? (
-                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">PENDING</span>
-                                               ) : !checkIsBillActive(b, selectedStudent.id) ? (
-                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-semibold bg-slate-100 text-slate-500 border border-slate-200 uppercase flex items-center gap-0.5 justify-center"><Lock size={8} /> Nonaktif</span>
-                                               ) : (
-                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-100">UNPAID</span>
-                                               )}
-                                            </td>
-                                            <td className="py-2.5 text-right">
-                                              {b.status === 'paid' ? (
-                                                <div className="flex gap-1.5 justify-end items-center">
-                                                  <button
-                                                    type="button"
-                                                    onClick={() => {
-                                                      setReceiptToPrint({ type: 'spp', detail: b, student: selectedStudent });
-                                                      setPrintId('print-receipt-section');
-                                                    }}
-                                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer"
-                                                  >
-                                                    <Printer size={10} className="text-indigo-600" /> Cetak 🖨
-                                                  </button>
-                                                  {b.paymentMethod === 'Manual Teller (Sekolah)' && onCancelSppManual && (
-                                                    <button
-                                                      type="button"
-                                                      onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setBillToCancel(b);
-                                                        setCancelFeedback(null);
-                                                      }}
-                                                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all"
-                                                      title="Batalkan pembayaran manual teller ini"
-                                                    >
-                                                      Batal ↩
-                                                    </button>
-                                                  )}
-                                                </div>
-                                              ) : !checkIsBillActive(b, selectedStudent.id) ? (
-                                                   <div className="flex justify-end items-center">
-                                                     <span className="text-[10px] text-slate-400 bg-slate-50 px-2 py-1 rounded border border-slate-100 flex items-center gap-1" title="Siswa harus melunasi SPP bulan berjalan terlebih dahulu">
-                                                       <Lock size={9} /> SPP berjalan belum lunas
-                                                     </span>
-                                                   </div>
-                                                 ) : (
-                                                   <div className="flex gap-1 justify-end items-center">
-                                                     <button
-                                                       type="button"
-                                                       onClick={(e) => {
-                                                         e.stopPropagation();
-                                                         addToCartSpp(b, selectedStudent);
-                                                       }}
-                                                       className="px-1.5 py-1 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-xs"
-                                                       title="Tambahkan tagihan ini ke Ringkasan Keranjang Pembayaran"
-                                                     >
-                                                       <ShoppingCart size={9} />
-                                                       <span>+ Keranjang</span>
-                                                     </button>
-                                                     <button
-                                                       type="button"
-                                                       disabled={processingBillId !== null}
-                                                       onClick={async (e) => {
-                                                         e.stopPropagation();
-                                                         if (onPaySppViaMidtrans) {
-                                                           setProcessingBillId(b.id);
-                                                           await onPaySppViaMidtrans(b);
-                                                           setProcessingBillId(null);
-                                                         }
-                                                       }}
-                                                       className="px-2 py-1 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-colors shadow-sm"
-                                                       title="Bayar online menggunakan gerbang pembayaran Midtrans"
-                                                     >
-                                                       <Zap size={9} className="text-yellow-350 fill-yellow-350 animate-pulse" />
-                                                       <span>Midtrans</span>
-                                                     </button>
-                                                     <button
-                                                       type="button"
-                                                       disabled={processingBillId !== null}
-                                                       onClick={async (e) => {
-                                                         e.stopPropagation();
-                                                         setProcessingBillId(b.id);
-                                                         const resBill = await onPaySppManual(b.id);
-                                                         setProcessingBillId(null);
-                                                         if (resBill) {
-                                                           setReceiptToPrint({
-                                                             type: 'spp',
-                                                             detail: {
-                                                               ...b,
-                                                               status: 'paid',
-                                                               paidAt: new Date().toISOString(),
-                                                               paymentMethod: 'Manual Teller (Sekolah)',
-                                                               orderId: resBill.orderId || `ORD-MANUAL-${Date.now()}`
-                                                             },
-                                                             student: selectedStudent
-                                                           });
-                                                           setPrintId('print-receipt-section');
-                                                         }
-                                                       }}
-                                                       className="px-1.5 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-300 disabled:bg-slate-50 text-slate-600 font-bold rounded text-[8px] uppercase tracking-wider flex items-center justify-center cursor-pointer transition-colors"
-                                                       title="Bayar Manual Tunai langsung"
-                                                     >
-                                                       Manual
-                                                     </button>
-                                                   </div>
-                                                 )}
-                                            </td>
-                                          </tr>
-                                        ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    ) : (
-                      <>
-                        {/* TAMPILAN TABUNGAN: 100% Hanya informasi dan aksi terkait Saldo & Mutasi Tabungan */}
-                        <div className="lg:col-span-5 flex flex-col gap-4">
-                          {/* Card Saldo Tabungan */}
-                          <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-900 to-slate-900 text-white shadow-md flex flex-col justify-between min-h-[110px] relative overflow-hidden">
-                            <div className="absolute right-[-20px] bottom-[-20px] opacity-10">
-                              <Banknote size={120} />
-                            </div>
-                            <div>
-                              <span className="text-[9px] uppercase tracking-wider font-bold text-indigo-350 text-indigo-200">TOTAL SALDO TABUNGAN SISWA</span>
-                              <span className="text-lg md:text-xl font-bold font-mono block mt-1">
-                                Rp {selectedStudent.savingsBalance.toLocaleString('id-ID')}
-                              </span>
-                            </div>
-                            <div className="mt-4 pt-2 border-t border-indigo-800/50 flex justify-between items-center text-[10px] text-indigo-300">
-                              <span>SMP Maarif Pandaan</span>
-                              <span className="font-mono uppercase text-[9px] font-bold bg-indigo-950/40 px-2 py-0.5 rounded text-indigo-200">REKENING AKTIF</span>
-                            </div>
-                          </div>
-
-                          {/* Formulir Mutasi Tabungan Manual */}
-                          <div className="bg-slate-50 p-4 border border-slate-200 rounded-xl flex flex-col gap-3">
-                            <span className="text-[10px] uppercase font-bold text-slate-500 tracking-wider block">Mutasi Tabungan Manual</span>
-                            
-                            <div className="grid grid-cols-2 gap-1 bg-white p-0.5 border border-slate-200 rounded-lg">
-                              <button
-                                type="button"
-                                onClick={() => setTxType('deposit')}
-                                className={`py-1.5 rounded font-bold text-[10px] text-center cursor-pointer transition-all ${
-                                  txType === 'deposit' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-                                }`}
-                              >
-                                SETOR TUNAI
-                              </button>
-                              <button
-                                type="button"
-                                onClick={() => setTxType('withdrawal')}
-                                className={`py-1.5 rounded font-bold text-[10px] text-center cursor-pointer transition-all ${
-                                  txType === 'withdrawal' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-600 hover:bg-slate-50'
-                                }`}
-                              >
-                                TARIK TUNAI
-                              </button>
-                            </div>
-
-                            <form onSubmit={handleSavingsSubmit} className="flex flex-col gap-3">
-                              <div>
-                                <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Nominal Uang (Rp)</label>
-                                <div className="relative">
-                                  <input
-                                    type="number"
-                                    required
-                                    placeholder="cth: 50000"
-                                    value={txAmount}
-                                    onChange={(e) => setTxAmount(e.target.value)}
-                                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
-                                  />
-                                  <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400 font-bold text-[10px]">Rp</span>
-                                </div>
-                              </div>
-
-                              <div>
-                                <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">Memo / Keterangan</label>
-                                <input
-                                  type="text"
-                                  required
-                                  placeholder="cth: Tabungan harian saku"
-                                  value={txNotes}
-                                  onChange={(e) => setTxNotes(e.target.value)}
-                                  className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
-                                />
-                              </div>
-
-                              {txType === 'deposit' ? (
-                                <div className="flex flex-col gap-2">
-                                  <button
-                                    type="button"
-                                    disabled={txProcessing || !txAmount || !onDepositSavingsViaMidtrans}
-                                    onClick={async () => {
-                                      if (onDepositSavingsViaMidtrans && selectedStudent) {
-                                        setTxProcessing(true);
-                                        await onDepositSavingsViaMidtrans(Number(txAmount), selectedStudent.id);
-                                        setTxProcessing(false);
-                                        setTxAmount('');
-                                        setTxNotes('');
-                                      }
-                                    }}
-                                    className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
-                                    title="Proses setoran tabungan via Gerbang Pembayaran Midtrans"
-                                  >
-                                    <Zap size={11} className="text-yellow-400 fill-yellow-400 animate-pulse" />
-                                    <span>Bayar via Midtrans (Online)</span>
-                                  </button>
-                                  
-                                  <button
-                                    type="submit"
-                                    disabled={txProcessing || !txAmount}
-                                    className="w-full py-1.5 bg-slate-100 hover:bg-slate-205 border border-slate-300 text-slate-700 font-semibold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50"
-                                  >
-                                    {txProcessing ? 'Menyimpan...' : 'Atau Terima Tunai / Manual (Teller)'}
-                                  </button>
-                                  <button
-                                    type="button"
-                                    disabled={txProcessing || !txAmount}
-                                    onClick={() => {
-                                      addToCartSavings(Number(txAmount), txNotes, selectedStudent);
-                                      setTxAmount('');
-                                      setTxNotes('');
-                                    }}
-                                    className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm mt-1.5"
-                                  >
-                                    <ShoppingCart size={11} />
-                                    <span>+ Tambahkan Setoran ke Keranjang</span>
-                                  </button>
-                                  <button
-                                    type="button"
-                                    className="hidden"
-                                  >
-                                    {txProcessing ? 'Menyimpan...' : 'Atau Terima Tunai / Manual (Teller)'}
-                                  </button>
-                                </div>
-                              ) : (
-                                <button
-                                  type="submit"
-                                  disabled={txProcessing || !txAmount}
-                                  className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50"
-                                >
-                                  {txProcessing ? 'Menyimpan...' : 'Catat Penarikan Tunai / Manual (Teller) 💸'}
-                                </button>
-                              )}
-                            </form>
-                          </div>
-                        </div>
-
-                        {/* LIST MUTASI TABUNGAN DI KANAN */}
-                        <div className="lg:col-span-7 flex flex-col gap-3 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
-                          <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
-                            <span className="font-bold text-slate-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
-                              <Banknote size={13} className="text-indigo-650 text-indigo-600" /> Histori Arus Rekening Tabungan
-                            </span>
-                            <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
-                              {transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success').length} Transaksi
-                            </span>
-                          </div>
-
-                          <div className="p-3 max-h-[350px] overflow-y-auto">
-                            <div className="flex flex-col gap-2">
-                              {transactions.filter(t => t.studentId === selectedStudent.id && t.status === 'success').length === 0 ? (
-                                <div className="text-center py-6 text-[11px] text-slate-400">Belum ada riwayat mutasi tabungan terverifikasi.</div>
-                              ) : (
-                                <div className="overflow-x-auto">
-                                  <table className="w-full text-left font-sans text-[11px]">
-                                    <thead>
-                                      <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
-                                        <th className="pb-2">Waktu/Nota</th>
-                                        <th className="pb-2">Tipe</th>
-                                        <th className="pb-2">Nominal</th>
-                                        <th className="pb-2 text-right">Aksi Kuitansi</th>
-                                      </tr>
-                                    </thead>
-                                    <tbody className="divide-y divide-slate-100">
-                                      {transactions
-                                        .filter(t => t.studentId === selectedStudent.id && t.status === 'success')
-                                        .map((t) => (
-                                          <tr key={t.id} className="hover:bg-slate-50/50">
-                                            <td className="py-2.5">
-                                              <div className="font-bold text-slate-700">{new Date(t.createdAt).toLocaleDateString('id-ID')}</div>
-                                              <div className="text-[9px] text-slate-400 max-w-[120px] truncate" title={t.notes}>{t.notes || 'Mutasi Tabungan'}</div>
-                                            </td>
-                                            <td className="py-2.5">
-                                              {t.type === 'deposit' ? (
-                                                <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold"><ArrowDownLeft size={10} /> Setor</span>
-                                              ) : (
-                                                <span className="inline-flex items-center gap-0.5 text-rose-700 font-bold"><ArrowUpRight size={10} /> Tarik</span>
-                                              )}
-                                            </td>
-                                            <td className="py-2.5 font-mono text-slate-700 font-bold">
-                                              Rp {t.amount.toLocaleString('id-ID')}
-                                            </td>
-                                            <td className="py-2.5 text-right">
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setReceiptToPrint({ type: 'savings', detail: t, student: selectedStudent });
-                                                  setPrintId('print-receipt-section');
-                                                }}
-                                                className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 ml-auto cursor-pointer"
-                                              >
-                                                <Printer size={10} className="text-indigo-600" /> Cetak 🖨
-                                              </button>
-                                            </td>
-                                          </tr>
-                                        ))}
-                                    </tbody>
-                                  </table>
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        </div>
-                      </>
-                    )}
-                  </div>
-                </motion.div>
-              )}
-            </AnimatePresence>
           </div>
         )}
 

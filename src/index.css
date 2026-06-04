@@ -42,7 +42,7 @@ h1, h2, h3, h4, h5, h6 {
   }
 
   /* Reset body and layout wrapper dimensions to fully collapse inactive vertical spaces */
-  html, body, #root, .min-h-screen, main,
+  html, body, #root, #application-container, .min-h-screen, main,
   #admin-panel-root, #student-panel-root, #homeroom-panel-root, 
   #homeroom-dashboard-root, #treasurer-panel-root, #counselor-panel-root, 
   #subject-teacher-panel-container, #principal-panel-root, #waka-sarpras-panel-root {
@@ -56,6 +56,7 @@ h1, h2, h3, h4, h5, h6 {
     height: auto !important;
     min-height: 0 !important;
     overflow: visible !important;
+    position: static !important;
   }
 
   /* Hide the entire main app template chrome and dashboard panels completely */
@@ -149,8 +150,23 @@ h1, h2, h3, h4, h5, h6 {
     visibility: visible !important;
   }
 
-  /* Style the report and receipt to flow as standard block elements at the very top of the page */
-  #print-receipt-section, 
+  /* Style the report and receipt to flow cleanly at the very top of the page without any blank page offset */
+  #print-receipt-section {
+    display: block !important;
+    position: absolute !important;
+    top: 0 !important;
+    left: 0 !important;
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    background: white !important;
+    color: black !important;
+    z-index: 99999 !important;
+  }
+
   #print-report-section {
     display: block !important;
     position: static !important;

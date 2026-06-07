@@ -5688,31 +5688,10 @@ async function startServer() {
     });
   });
 
-  // Endpoint to serve the Base64 uploaded favicon/logo as a real, cacheable file target for PWA manifest & browser tab
-  app.get("/api/school-favicon.png", (req, res) => {
-    const iconData = schoolIdentity.favicon || schoolIdentity.logo;
-    if (iconData && iconData.startsWith("data:")) {
-      const matches = iconData.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-      if (matches && matches.length === 3) {
-        const contentType = matches[1];
-        const base64Data = matches[2];
-        const buffer = Buffer.from(base64Data, "base64");
-        res.setHeader("Content-Type", contentType);
-        res.setHeader("Cache-Control", "public, max-age=3600");
-        return res.send(buffer);
-      }
-    }
-    
-    // Default fallback to public static icon
-    res.setHeader("Cache-Control", "public, max-age=3600");
-    res.sendFile(path.join(process.cwd(), "public", "icon-512.png"));
-  });
-
   // Dynamic PWA manifest.json generation synchronized with the current School Identity
   app.get("/manifest.json", (req, res) => {
-    const rawIcon = schoolIdentity.favicon || schoolIdentity.logo;
-    const version = rawIcon ? rawIcon.length : "default";
-    const iconUrl = `/api/school-favicon.png?v=${version}`;
+    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "/icon-512.png";
+    const isSvg = pwaIcon.startsWith("data:image/svg") || pwaIcon.toLowerCase().endsWith(".svg");
     
     res.json({
       name: schoolIdentity.name || "SMP MA'ARIF NU PANDAAN",
@@ -5725,16 +5704,14 @@ async function startServer() {
       orientation: "portrait-primary",
       icons: [
         {
-          src: iconUrl,
-          type: "image/png",
-          sizes: "512x512",
-          purpose: "any maskable"
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "512x512"
         },
         {
-          src: iconUrl,
-          type: "image/png",
-          sizes: "192x192",
-          purpose: "any maskable"
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "192x192"
         }
       ]
     });

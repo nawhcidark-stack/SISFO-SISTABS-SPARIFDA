@@ -129,6 +129,22 @@ export default function App() {
   const [scannedStudentNis, setScannedStudentNis] = useState<string | null>(null);
   const [scannedStudentAt, setScannedStudentAt] = useState<number | null>(null);
 
+  // Dynamic Browser Title & Favicon Synchronization with the uploaded School Identity
+  useEffect(() => {
+    if (schoolIdentity) {
+      if (schoolIdentity.logo) {
+        const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link');
+        link.type = 'image/png';
+        link.rel = 'icon';
+        link.href = schoolIdentity.logo;
+        document.getElementsByTagName('head')[0].appendChild(link);
+      }
+      if (schoolIdentity.name) {
+        document.title = `${schoolIdentity.name} - Portal Administrasi`;
+      }
+    }
+  }, [schoolIdentity?.logo, schoolIdentity?.name]);
+
   useEffect(() => {
     let buffer = "";
     let lastKeyTime = Date.now();

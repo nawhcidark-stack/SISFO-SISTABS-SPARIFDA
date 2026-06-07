@@ -141,10 +141,37 @@ export default function StudentManagement({
         // Clean quotes helper
         const clean = (val: string) => (val || "").replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
 
+        // Helper function to split a string by delimiter while ignoring delimiters inside double quotes
+        const parseCSVLineRobust = (rawLine: string, delim: string): string[] => {
+          const result: string[] = [];
+          let currentVal = '';
+          let insideQuotes = false;
+          
+          for (let idx = 0; idx < rawLine.length; idx++) {
+            const char = rawLine[idx];
+            
+            if (char === '"') {
+              if (idx + 1 < rawLine.length && rawLine[idx + 1] === '"') {
+                currentVal += '"';
+                idx++; // skip the escaped quote
+              } else {
+                insideQuotes = !insideQuotes;
+              }
+            } else if (char === delim && !insideQuotes) {
+              result.push(currentVal);
+              currentVal = '';
+            } else {
+              currentVal += char;
+            }
+          }
+          result.push(currentVal);
+          return result;
+        };
+
         // Detect delimiter: comma (,) or semicolon (;)
         const firstLine = lines[0];
         const delimiter = firstLine.includes(';') ? ';' : ',';
-        const headers = firstLine.split(delimiter).map(h => clean(h).toLowerCase());
+        const headers = parseCSVLineRobust(firstLine, delimiter).map(h => clean(h).toLowerCase());
 
         // Find matches for column indexes
         const nisIdx = headers.findIndex(h => h.includes('nis'));
@@ -175,7 +202,7 @@ export default function StudentManagement({
           const line = lines[i].trim();
           if (!line) continue;
 
-          const cols = line.split(delimiter).map(c => clean(c));
+          const cols = parseCSVLineRobust(line, delimiter).map(c => clean(c));
           if (cols.length < 3) continue;
 
           const nisVal = cols[nisIdx];

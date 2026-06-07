@@ -133,8 +133,9 @@ export default function App() {
   useEffect(() => {
     if (schoolIdentity) {
       const hasFavicon = schoolIdentity.favicon || schoolIdentity.logo;
+      const version = hasFavicon ? hasFavicon.length : (schoolIdentity.name ? schoolIdentity.name.length : "default");
+
       if (hasFavicon) {
-        const version = hasFavicon.length;
         const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link');
         link.type = 'image/png';
         link.rel = 'icon';
@@ -143,6 +144,14 @@ export default function App() {
       }
       if (schoolIdentity.name) {
         document.title = `${schoolIdentity.name} - Portal Administrasi`;
+      }
+
+      // Update manifest link dynamically to force browser manifest invalidation/refresh
+      const manifestLink = document.querySelector("link[rel='manifest']") as HTMLLinkElement || document.createElement('link');
+      manifestLink.rel = 'manifest';
+      manifestLink.href = `/manifest.json?v=${version}`;
+      if (!document.querySelector("link[rel='manifest']")) {
+        document.getElementsByTagName('head')[0].appendChild(manifestLink);
       }
     }
   }, [schoolIdentity?.favicon, schoolIdentity?.logo, schoolIdentity?.name]);

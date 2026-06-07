@@ -1,9 +1,7 @@
 const CACHE_NAME = 'sipas-cache-v1';
 const ASSETS_TO_CACHE = [
   '/',
-  '/index.html',
-  '/manifest.json',
-  '/icon-512.png'
+  '/index.html'
 ];
 
 self.addEventListener('install', (event) => {

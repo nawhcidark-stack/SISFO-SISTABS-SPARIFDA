@@ -613,6 +613,7 @@ export default function SubjectTeacherPanel({
         body: JSON.stringify({
           teacherId: currentTeacher.id,
           teacherName: currentTeacher.name,
+          teacherType: 'subject_teacher',
           subject: currentTeacher.subject,
           className: selectedClass,
           date: selectedDate,

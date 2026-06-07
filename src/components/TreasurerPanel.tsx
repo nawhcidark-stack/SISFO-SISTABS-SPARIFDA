@@ -11,7 +11,7 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
-import { SchoolIdentity, TreasurerTransaction } from '../types';
+import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig } from '../types';
 
 interface TreasurerPanelProps {
   schoolIdentity: SchoolIdentity;
@@ -19,7 +19,7 @@ interface TreasurerPanelProps {
 }
 
 export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPanelProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [transactions, setTransactions] = useState<TreasurerTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -50,6 +50,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   const [formAmount, setFormAmount] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formRecipientName, setFormRecipientName] = useState('');
+  const [formFundingSource, setFormFundingSource] = useState('');
   const [formDate, setFormDate] = useState(() => new Date().toISOString().substring(0, 10));
 
   // Filter configurations
@@ -57,6 +58,74 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   const [filterType, setFilterType] = useState<'all' | 'incoming' | 'outgoing'>('all');
   const [filterSource, setFilterSource] = useState<'all' | 'spp' | 'savings' | 'custom'>('all');
   const [filterCategory, setFilterCategory] = useState<'all' | string>('all');
+
+  // --- STATE PENGGAJIAN GURU ---
+  const [salaries, setSalaries] = useState<TeacherSalary[]>([]);
+  const [salaryConfig, setSalaryConfig] = useState<SalaryConfig | null>(null);
+  const [salaryMonth, setSalaryMonth] = useState(() => {
+    const d = new Date();
+    const mm = String(d.getMonth() + 1).padStart(2, '0');
+    return `${d.getFullYear()}-${mm}`;
+  });
+  const [isGeneratingGaji, setIsGeneratingGaji] = useState(false);
+  const [gajiSearch, setGajiSearch] = useState('');
+  const [gajiTypeFilter, setGajiTypeFilter] = useState<'all' | 'homeroom' | 'subject_teacher'>('all');
+  const [gajiStatusFilter, setGajiStatusFilter] = useState<'all' | 'paid' | 'unpaid'>('all');
+  const [showConfigModal, setShowConfigModal] = useState(false);
+  const [showEditPayModal, setShowEditPayModal] = useState(false);
+  const [editingGaji, setEditingGaji] = useState<TeacherSalary | null>(null);
+  const [showReceiptModal, setShowReceiptModal] = useState(false);
+  const [receiptGaji, setReceiptGaji] = useState<TeacherSalary | null>(null);
+
+  // Edit salary form fields
+  const [editBaseSalary, setEditBaseSalary] = useState('');
+  const [editHomeroomAllowance, setEditHomeroomAllowance] = useState('');
+  const [editTunjanganMasaKerja, setEditTunjanganMasaKerja] = useState('');
+  const [editVakasi, setEditVakasi] = useState('');
+  const [editPotonganDanaSosial, setEditPotonganDanaSosial] = useState('');
+  const [editPotonganAbsen, setEditPotonganAbsen] = useState('');
+  const [editPotonganLain, setEditPotonganLain] = useState('');
+  const [editOtherAllowance, setEditOtherAllowance] = useState('');
+  const [editDeductions, setEditDeductions] = useState('');
+  const [editNotes, setEditNotes] = useState('');
+
+  // Config salary form fields
+  const [cfgBaseSalaryHomeroom, setCfgBaseSalaryHomeroom] = useState('');
+  const [cfgBaseSalarySubject, setCfgBaseSalarySubject] = useState('');
+  const [cfgHomeroomAllowanceRate, setCfgHomeroomAllowanceRate] = useState('');
+  const [cfgJournalRate, setCfgJournalRate] = useState('');
+  const [cfgDefaultTunjanganMasaKerja, setCfgDefaultTunjanganMasaKerja] = useState('');
+  const [cfgDefaultPotonganDanaSosial, setCfgDefaultPotonganDanaSosial] = useState('');
+
+  const filteredSalaries = useMemo(() => {
+    return salaries.filter(s => {
+      if (s.month !== salaryMonth) return false;
+      if (gajiSearch && !s.teacherName.toLowerCase().includes(gajiSearch.toLowerCase())) return false;
+      if (gajiTypeFilter !== 'all' && s.teacherType !== gajiTypeFilter) return false;
+      if (gajiStatusFilter !== 'all' && s.status !== gajiStatusFilter) return false;
+      return true;
+    });
+  }, [salaries, salaryMonth, gajiSearch, gajiTypeFilter, gajiStatusFilter]);
+
+  const statsGaji = useMemo(() => {
+    let paidSum = 0;
+    let unpaidSum = 0;
+    let paidCount = 0;
+    let unpaidCount = 0;
+    salaries.forEach(s => {
+      if (s.month === salaryMonth) {
+        if (s.status === 'paid') {
+          paidSum += s.totalAmount;
+          paidCount++;
+        } else {
+          unpaidSum += s.totalAmount;
+          unpaidCount++;
+        }
+      }
+    });
+    return { paidSum, unpaidSum, paidCount, unpaidCount, totalCount: paidCount + unpaidCount };
+  }, [salaries, salaryMonth]);
+
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
   
@@ -361,7 +430,161 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
 
   useEffect(() => {
     fetchTransactions();
+    fetchSalaries();
   }, []);
+
+  const fetchSalaries = async () => {
+    try {
+      const sRes = await fetch('/api/treasurer/salaries');
+      if (sRes.ok) {
+        const sData = await sRes.json();
+        setSalaries(sData);
+      }
+      const cRes = await fetch('/api/treasurer/salary-config');
+      if (cRes.ok) {
+        const cData = await cRes.json();
+        setSalaryConfig(cData);
+        setCfgBaseSalaryHomeroom(String(cData.baseSalaryHomeroom || ''));
+        setCfgBaseSalarySubject(String(cData.baseSalarySubject || ''));
+        setCfgHomeroomAllowanceRate(String(cData.homeroomAllowanceRate || ''));
+        setCfgJournalRate(String(cData.journalRate || ''));
+        setCfgDefaultTunjanganMasaKerja(String(cData.defaultTunjanganMasaKerja || ''));
+        setCfgDefaultPotonganDanaSosial(String(cData.defaultPotonganDanaSosial || ''));
+      }
+    } catch (e) {
+      console.error("Gagal memuat data keuangan gaji: ", e);
+    }
+  };
+
+  const handleGenerateGaji = async () => {
+    setIsGeneratingGaji(true);
+    try {
+      const res = await fetch('/api/treasurer/salaries/generate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ month: salaryMonth })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || 'Berhasil menjumlahkan dan menghasilkan berkas penggajian.');
+        await fetchSalaries();
+      } else {
+        alert(data.error || 'Gagal menghasilkan data gaji.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Terganggu koneksi jaringan dalam menjalankan generate.');
+    } finally {
+      setIsGeneratingGaji(false);
+    }
+  };
+
+  const handleSaveConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    try {
+      const res = await fetch('/api/treasurer/salary-config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseSalaryHomeroom: Number(cfgBaseSalaryHomeroom),
+          baseSalarySubject: Number(cfgBaseSalarySubject),
+          homeroomAllowanceRate: Number(cfgHomeroomAllowanceRate),
+          journalRate: Number(cfgJournalRate),
+          defaultTunjanganMasaKerja: Number(cfgDefaultTunjanganMasaKerja),
+          defaultPotonganDanaSosial: Number(cfgDefaultPotonganDanaSosial)
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Konfigurasi tarif gaji pokok & insentif berhasil diperbarui.');
+        setSalaryConfig(data.salaryConfig);
+        setShowConfigModal(false);
+      } else {
+        alert(data.error || 'Gagal menyimpan konfigurasi.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Terganggu koneksi dalam menyimpan konfigurasi.');
+    }
+  };
+
+  const handlePayGaji = async (id: string) => {
+    if (!window.confirm('Apakah Anda yakin ingin memproses pembayaran gaji ini? Tindakan ini akan mencatat mutasi pengeluaran kas otomatis di Buku Kas.')) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/treasurer/salaries/${id}/pay`, {
+        method: 'POST'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Pembayaran gaji sukses diproses dan mutasi pengeluaran didaftarkan.');
+        await fetchSalaries();
+        await fetchTransactions(); // Refresh cash ledger too!
+      } else {
+        alert(data.error || 'Gagal memproses pembayaran.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Terganggu koneksi.');
+    }
+  };
+
+  const handleUpdateGaji = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingGaji) return;
+    try {
+      const res = await fetch(`/api/treasurer/salaries/${editingGaji.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          baseSalary: Number(editBaseSalary),
+          homeroomAllowance: Number(editHomeroomAllowance),
+          tunjanganMasaKerja: Number(editTunjanganMasaKerja),
+          vakasi: Number(editVakasi),
+          potonganDanaSosial: Number(editPotonganDanaSosial),
+          potonganAbsen: Number(editPotonganAbsen),
+          potonganLain: Number(editPotonganLain),
+          otherAllowance: Number(editOtherAllowance),
+          deductions: Number(editDeductions),
+          notes: editNotes
+        })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Data penyesuaian gaji berhasil diubah.');
+        setShowEditPayModal(false);
+        setEditingGaji(null);
+        await fetchSalaries();
+      } else {
+        alert(data.error || 'Gagal mengubah data gaji.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Terganggu koneksi.');
+    }
+  };
+
+  const handleDeleteGaji = async (id: string) => {
+    if (!window.confirm('Yakin ingin menghapus draf gaji ini?')) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/treasurer/salaries/${id}`, {
+        method: 'DELETE'
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert('Data gaji berhasil dihapus.');
+        await fetchSalaries();
+      } else {
+        alert(data.error || 'Gagal menghapus data.');
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Terganggu koneksi.');
+    }
+  };
 
   const fetchTransactions = async () => {
     setIsLoading(true);
@@ -429,6 +652,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     setFormAmount('');
     setFormDescription('');
     setFormRecipientName('');
+    setFormFundingSource('');
     setFormDate(new Date().toISOString().substring(0, 10));
     setShowFormModal(true);
   };
@@ -441,6 +665,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     setFormAmount(tx.amount.toString());
     setFormDescription(tx.description);
     setFormRecipientName(tx.recipientName || '');
+    setFormFundingSource(tx.fundingSource || '');
     setFormDate(tx.date);
     setShowFormModal(true);
   };
@@ -464,7 +689,8 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       amount: Number(formAmount),
       description: formDescription,
       date: formDate,
-      recipientName: formType === 'outgoing' ? formRecipientName : ''
+      recipientName: formType === 'outgoing' ? formRecipientName : '',
+      fundingSource: formType === 'incoming' ? formFundingSource : ''
     };
 
     try {
@@ -740,6 +966,9 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
       if (tx.recipientName) {
         descWord += ` (Penerima: ${tx.recipientName})`;
       }
+      if (tx.fundingSource) {
+        descWord += ` (Sumber Dana: ${tx.fundingSource})`;
+      }
 
       excelHtml += `
     <tr>
@@ -857,6 +1086,9 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                     )}
                     {tx.recipientName && (
                       <div className="text-[9px] text-indigo-600 font-extrabold">Penerima: {tx.recipientName}</div>
+                    )}
+                    {tx.fundingSource && (
+                      <div className="text-[9px] text-emerald-800 font-extrabold">Sumber Dana: {tx.fundingSource}</div>
                     )}
                   </td>
                   <td className="border border-slate-300 p-2 font-bold uppercase">{tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : `Manual (${tx.category})`}</td>
@@ -1046,6 +1278,17 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
               }`}
             >
               Ubah Sandi Akun
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('gaji_guru')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                activeTab === 'gaji_guru'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              💵 Gaji Guru
             </button>
           </div>
         </div>
@@ -1790,6 +2033,12 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                                 <span>Penerima: {tx.recipientName}</span>
                               </div>
                             )}
+                            {tx.fundingSource && (
+                              <div className="text-[10px] text-emerald-800 font-extrabold mt-0.5 inline-flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                                <DollarSign size={9} />
+                                <span>Sumber Dana: {tx.fundingSource}</span>
+                              </div>
+                            )}
                           </td>
 
                           {/* 4. Type (Debit/Kredit) */}
@@ -1940,6 +2189,290 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
             </div>
           )}
 
+          {/* ================= TAB 4: TEACHER PAYROLL SYSTEM ================= */}
+          {activeTab === 'gaji_guru' && (
+            <div className="flex flex-col gap-6 text-slate-800 text-left bg-transparent animate-none">
+              
+              {/* Header Info */}
+              <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-black text-slate-900 tracking-tight">💵 Sistem Penggajian Guru (Payroll)</h2>
+                  <p className="text-xs text-slate-500 mt-1">
+                    Manajemen penggajian terpadu Guru Mata Pelajaran (berdasarkan pencantuman teaching journal) dan Wali Kelas yang terhubung langsung ke Buku Kas Pengeluaran.
+                  </p>
+                </div>
+
+                <div className="flex gap-2 w-full md:w-auto">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCfgBaseSalaryHomeroom(String(salaryConfig?.baseSalaryHomeroom || '1500000'));
+                      setCfgBaseSalarySubject(String(salaryConfig?.baseSalarySubject || '1200000'));
+                      setCfgHomeroomAllowanceRate(String(salaryConfig?.homeroomAllowanceRate || '500000'));
+                      setCfgJournalRate(String(salaryConfig?.journalRate || '50000'));
+                      setShowConfigModal(true);
+                    }}
+                    className="flex-1 md:flex-initial p-2.5 px-4 bg-white border border-slate-250 hover:bg-slate-100 text-slate-750 font-semibold rounded-xl text-xs font-sans inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
+                  >
+                    <span>⚙️ Atur Tarif Standar</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Stats Cards */}
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                <div className="p-4 bg-slate-900 text-white rounded-3xl flex flex-col justify-between shadow-xs">
+                  <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">TOTAL DRAF GAJI</span>
+                  <div className="mt-2.5 flex items-baseline gap-1">
+                    <h3 className="font-extrabold text-base tracking-tight font-mono">{statsGaji.totalCount}</h3>
+                    <span className="text-[9px] text-slate-400">gTT/PTT</span>
+                  </div>
+                  <p className="text-[10px] text-slate-400 mt-1 leading-tight">Total draf gaji bulan {salaryMonth}</p>
+                </div>
+
+                <div className="p-4 bg-emerald-50 border border-emerald-150 rounded-3xl flex flex-col justify-between shadow-2xs">
+                  <span className="text-[9px] font-bold text-emerald-600 uppercase tracking-wider">TOTAL SUDAH DIBAYAR</span>
+                  <div className="mt-2.5 flex items-baseline gap-1 text-emerald-850">
+                    <h3 className="font-extrabold text-sm md:text-base tracking-tight font-mono">Rp {statsGaji.paidSum.toLocaleString('id-ID')}</h3>
+                  </div>
+                  <p className="text-[10px] text-emerald-650 font-bold mt-1 leading-tight">{statsGaji.paidCount} data telah ditransfer/dicairkan</p>
+                </div>
+
+                <div className="p-4 bg-amber-50 border border-amber-150 rounded-3xl flex flex-col justify-between shadow-2xs">
+                  <span className="text-[9px] font-bold text-amber-600 uppercase tracking-wider">TOTAL BELUM DIBAYAR</span>
+                  <div className="mt-2.5 flex items-baseline gap-1 text-amber-850">
+                    <h3 className="font-extrabold text-sm md:text-base tracking-tight font-mono">Rp {statsGaji.unpaidSum.toLocaleString('id-ID')}</h3>
+                  </div>
+                  <p className="text-[10px] text-amber-655 font-bold mt-1 leading-tight">{statsGaji.unpaidCount} data draf gaji berstatus antrean</p>
+                </div>
+
+                <div className="p-4 bg-sky-50 border border-sky-150 rounded-3xl flex flex-col justify-between shadow-2xs">
+                  <span className="text-[9px] font-bold text-sky-605 uppercase tracking-wider">HARGA JASA JURNAL</span>
+                  <div className="mt-2.5 flex items-baseline gap-1 text-sky-850">
+                    <h3 className="font-extrabold text-sm md:text-base tracking-tight font-mono">Rp {(salaryConfig?.journalRate || 50000).toLocaleString('id-ID')}</h3>
+                  </div>
+                  <p className="text-[10px] text-sky-650 font-bold mt-1 leading-tight">Insentif per mengajar (teaching journal)</p>
+                </div>
+              </div>
+
+              {/* Generator & Filtering Bar */}
+              <div className="p-5 bg-white border border-slate-200 rounded-3xl flex flex-col gap-4 shadow-3xs text-left">
+                <div className="flex flex-col md:flex-row items-start md:items-end gap-3 justify-between pb-3 border-b border-slate-100">
+                  <div className="flex flex-col gap-1 w-full md:w-auto">
+                    <label className="text-[9px] font-bold text-slate-400 uppercase tracking-wide">PILIH BULAN PENGGAJIAN</label>
+                    <div className="flex flex-wrap gap-2">
+                      <input
+                        type="month"
+                        value={salaryMonth}
+                        onChange={(e) => setSalaryMonth(e.target.value)}
+                        className="p-2.5 border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none text-xs font-bold font-mono text-slate-800"
+                      />
+                      <button
+                        type="button"
+                        onClick={handleGenerateGaji}
+                        disabled={isGeneratingGaji}
+                        className="p-2.5 px-4 bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs inline-flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
+                      >
+                        {isGeneratingGaji ? 'Memproses...' : '📥 Generate Gaji Bulanan'}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="text-slate-500 text-[10.5px] leading-relaxed max-w-md md:text-right">
+                    Sistem otomatis mendaftar wali kelas dan menghitung teaching journal guru mapel selama periode yang ditentukan untuk menerbitkan draf penggajian.
+                  </div>
+                </div>
+
+                {/* Filters */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">Cari Nama Guru</label>
+                    <div className="relative">
+                      <Search size={13} className="absolute left-3 top-3.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Nama guru..."
+                        value={gajiSearch}
+                        onChange={(e) => setGajiSearch(e.target.value)}
+                        className="w-full p-2.5 pl-8 border border-slate-200 rounded-xl focus:border-indigo-500 focus:outline-none bg-slate-50/50 text-xs font-bold text-slate-800"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">Peran Guru</label>
+                    <select
+                      value={gajiTypeFilter}
+                      onChange={(e) => setGajiTypeFilter(e.target.value as any)}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl focus:border-indigo-500 focus:outline-none bg-white text-xs font-bold text-slate-705"
+                    >
+                      <option value="all">Semua Guru (Wali &amp; Mapel)</option>
+                      <option value="homeroom">Wali Kelas</option>
+                      <option value="subject_teacher">Guru Mapel</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">Status Pencairan</label>
+                    <select
+                      value={gajiStatusFilter}
+                      onChange={(e) => setGajiStatusFilter(e.target.value as any)}
+                      className="w-full p-2.5 border border-slate-200 rounded-xl focus:border-indigo-500 focus:outline-none bg-white text-xs font-bold text-slate-705"
+                    >
+                      <option value="all">Semua Status</option>
+                      <option value="paid">Paid (Sudah Ditransfer)</option>
+                      <option value="unpaid">Unpaid (Antrean / Draf)</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Data Table */}
+              <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
+                <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between flex-wrap gap-2">
+                  <h4 className="text-xs font-extrabold text-slate-800 tracking-tight flex items-center gap-1.5">
+                    <span>🧾 Daftar Gaji Guru</span>
+                    <span className="p-1 px-2.5 bg-indigo-50 text-indigo-600 rounded-lg text-[9px] font-mono font-black">{filteredSalaries.length} Records</span>
+                  </h4>
+                  <span className="text-[10px] text-slate-500 font-bold font-mono">Periode Bulan: {salaryMonth}</span>
+                </div>
+
+                <div className="overflow-x-auto text-[11px]">
+                  <table className="w-full text-left border-collapse">
+                    <thead>
+                      <tr className="bg-slate-50 border-b border-slate-200 text-slate-450 text-[9px] font-bold uppercase tracking-wider select-none">
+                        <th className="p-3.5 pl-5">NAMA GURU</th>
+                        <th className="p-3.5">PERAN</th>
+                        <th className="p-3.5 text-right">GAJI POKOK</th>
+                        <th className="p-3.5 text-right">TUNJANGAN</th>
+                        <th className="p-3.5 text-center">JURNAL (MAPEL)</th>
+                        <th className="p-3.5 text-right">POTONGAN</th>
+                        <th className="p-3.5 text-right">NET DITERIMA</th>
+                        <th className="p-3.5 text-center">STATUS</th>
+                        <th className="p-3.5 pr-5 text-center">AKSI</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-150 font-semibold text-slate-705">
+                      {filteredSalaries.length === 0 ? (
+                        <tr>
+                          <td colSpan={9} className="p-12 text-center text-slate-400">
+                             Tidak ada draf penggajian ditemukan untuk kriteria filter bulan ini. Silakan klik <strong>Generate Gaji Bulanan</strong> di atas untuk kalkulasi berkas perdana.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredSalaries.map((s) => {
+                          const totalTunjangan = s.homeroomAllowance + s.otherAllowance;
+                          return (
+                            <tr key={s.id} className="hover:bg-slate-50/50 transition-colors">
+                              <td className="p-3.5 pl-5 font-black text-slate-900">{s.teacherName}</td>
+                              <td className="p-3.5">
+                                {s.teacherType === 'homeroom' ? (
+                                  <span className="p-1 px-2 bg-purple-50 text-purple-600 rounded-lg text-[10px] font-bold">Wali Kelas</span>
+                                ) : (
+                                  <span className="p-1 px-2 bg-sky-50 text-sky-600 rounded-lg text-[10px] font-bold">Guru Mapel</span>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-right font-mono text-slate-900">Rp {s.baseSalary.toLocaleString('id-ID')}</td>
+                              <td className="p-3.5 text-right font-mono text-slate-650">
+                                {totalTunjangan > 0 ? `Rp ${totalTunjangan.toLocaleString('id-ID')}` : '-'}
+                              </td>
+                              <td className="p-3.5 text-center">
+                                {s.teacherType === 'subject_teacher' ? (
+                                  <span className="text-[11px]" title={`Mengajar: ${s.journalCount} jurnal @ Rp ${s.journalRate.toLocaleString('id-ID')}`}>
+                                    <strong className="font-mono text-indigo-650">{s.journalCount}</strong> <span className="text-slate-400">× Rp {s.journalRate.toLocaleString('id-ID')}</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-slate-350">-</span>
+                                )}
+                              </td>
+                              <td className="p-3.5 text-right font-mono text-rose-600">
+                                {s.deductions > 0 ? `Rp ${s.deductions.toLocaleString('id-ID')}` : '-'}
+                              </td>
+                              <td className="p-3.5 text-right font-black font-mono text-slate-900 bg-indigo-50/20">
+                                Rp {s.totalAmount.toLocaleString('id-ID')}
+                              </td>
+                              <td className="p-3.5 text-center">
+                                {s.status === 'paid' ? (
+                                  <span className="p-1 px-2.5 bg-emerald-50 text-emerald-600 rounded-xl text-[9px] font-extrabold inline-flex items-center gap-1">
+                                    <span className="w-1.5 h-1.5 bg-emerald-500 rounded-full"></span>
+                                    <span>PAID</span>
+                                  </span>
+                                ) : (
+                                  <span className="p-1 px-2.5 bg-amber-50 text-amber-600 rounded-xl text-[9px] font-extrabold inline-flex items-center gap-1 animate-pulse">
+                                    <span className="w-1.5 h-1.5 bg-amber-500 rounded-full"></span>
+                                    <span>UNPAID</span>
+                                  </span>
+                                )}
+                              </td>
+                              <td className="p-3.5 pr-5 text-center">
+                                <div className="flex items-center justify-center gap-1">
+                                  {s.status === 'unpaid' ? (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handlePayGaji(s.id)}
+                                        className="p-1 px-2 bg-emerald-600 hover:bg-emerald-750 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-colors shadow-2xs"
+                                        title="Bayarkan Gaji"
+                                      >
+                                        💸 Bayar
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setEditingGaji(s);
+                                          setEditBaseSalary(String(s.baseSalary));
+                                          setEditHomeroomAllowance(String(s.homeroomAllowance));
+                                          setEditTunjanganMasaKerja(String(s.tunjanganMasaKerja || 0));
+                                          setEditVakasi(String(s.vakasi || (s.journalCount * s.journalRate)));
+                                          setEditPotonganDanaSosial(String(s.potonganDanaSosial || 0));
+                                          setEditPotonganAbsen(String(s.potonganAbsen || 0));
+                                          setEditPotonganLain(String(s.potonganLain || 0));
+                                          setEditOtherAllowance(String(s.otherAllowance));
+                                          setEditDeductions(String(s.deductions));
+                                          setEditNotes(s.notes || '');
+                                          setShowEditPayModal(true);
+                                        }}
+                                        className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg cursor-pointer transition-colors"
+                                        title="Sesuaikan/Penyesuaian"
+                                      >
+                                        <Edit3 size={11} />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleDeleteGaji(s.id)}
+                                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg cursor-pointer transition-colors"
+                                        title="Hapus"
+                                      >
+                                        <Trash2 size={11} />
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReceiptGaji(s);
+                                        setShowReceiptModal(true);
+                                      }}
+                                      className="p-1 px-2.5 bg-indigo-50 border border-indigo-150 text-indigo-650 hover:bg-indigo-100 rounded-lg text-[9.5px] font-bold cursor-pointer transition-all flex items-center gap-1"
+                                      title="Cetak Slip Gaji Resmi"
+                                    >
+                                      <Printer size={11} className="stroke-[2.5]" />
+                                      <span>Slip Gaji</span>
+                                    </button>
+                                  )}
+                                </div>
+                              </td>
+                            </tr>
+                          );
+                        })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          )}
+
         </main>
       </div>
 
@@ -2062,6 +2595,21 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Cetak Laporan</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ekspor cetakan Buku Kas Besar Resmi lembaga</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('gaji_guru');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">💵</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Gaji Guru (Payroll)</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kelola dan bayarkan gaji guru mapel &amp; wali kelas</p>
                   </div>
                 </button>
 
@@ -2258,6 +2806,46 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   />
                 </div>
 
+                {/* 5.1. Sumber Dana (Penerimaan/Pemasukan Only) */}
+                {formType === 'incoming' && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="overflow-hidden mb-1"
+                  >
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">SUMBER DANA PENERIMAAN</label>
+                    <div className="relative">
+                      <input
+                        type="text"
+                        placeholder="Contoh: Dana BOS, Komite/SPP, Yayasan, Donatur, Koperasi..."
+                        value={formFundingSource}
+                        onChange={(e) => setFormFundingSource(e.target.value)}
+                        className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
+                      />
+                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                        <DollarSign size={14} />
+                      </div>
+                    </div>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {['Dana BOS', 'Iuran SPP / Komite', 'Yayasan', 'Donasi / Hibah', 'Hasil Kantin / Usaha'].map((srcOption) => (
+                        <button
+                          key={srcOption}
+                          type="button"
+                          onClick={() => setFormFundingSource(srcOption)}
+                          className={`px-2 py-1 text-[10px] font-bold rounded-lg border cursor-pointer transition-all ${
+                            formFundingSource === srcOption 
+                              ? 'bg-emerald-600 text-white border-emerald-600' 
+                              : 'bg-slate-50 text-slate-600 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {srcOption}
+                        </button>
+                      ))}
+                    </div>
+                  </motion.div>
+                )}
+
                 {/* 5.5. Nama Penerima Dana (Pengeluaran Only) */}
                 {formType === 'outgoing' && (
                   <motion.div
@@ -2384,6 +2972,12 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                           <span className="font-bold text-rose-700">{activePrintTransaction.recipientName}</span>
                         </div>
                       )}
+                      {activePrintTransaction.fundingSource && (
+                        <div className="flex justify-between">
+                          <span>Sumber Dana:</span>
+                          <span className="font-bold text-emerald-800">{activePrintTransaction.fundingSource}</span>
+                        </div>
+                      )}
                       <div className="flex flex-col gap-0.5 mt-1 normal-case text-slate-650 font-normal">
                         <span>Rincian/Keterangan:</span>
                         <p className="font-bold uppercase text-slate-900 text-[8.5px]">{activePrintTransaction.description}</p>
@@ -2476,6 +3070,15 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                           <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Penerima Dana:</span>
                           <span className="col-span-8 font-bold text-rose-700">
                             {activePrintTransaction.recipientName}
+                          </span>
+                        </>
+                      )}
+                      
+                      {activePrintTransaction.fundingSource && (
+                        <>
+                          <span className="col-span-4 text-slate-400 font-semibold uppercase text-[9px]">Sumber Dana Penerimaan:</span>
+                          <span className="col-span-8 font-bold text-emerald-800">
+                            {activePrintTransaction.fundingSource}
                           </span>
                         </>
                       )}
@@ -2640,19 +3243,569 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                   <button
                     type="button"
                     onClick={() => setShowPasswordModal(false)}
-                    className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer transition-all text-center"
+                    className="flex-1 py-1.5 border border-slate-205 hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer transition-all text-center"
                   >
                     Batal
                   </button>
                   <button
                     type="submit"
                     disabled={isChangingPwd}
-                    className="flex-1 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold cursor-pointer transition-all text-center"
+                    className="flex-1 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-bold cursor-pointer transition-all text-center"
                   >
                     {isChangingPwd ? 'Menyimpan...' : 'Simpan Sandi'}
                   </button>
                 </div>
               </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 1. Global Standard Tariff Configuration Modal */}
+      <AnimatePresence>
+        {showConfigModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs print:hidden">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border text-left border-slate-250 w-full max-w-md rounded-3xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="text-sm">⚙️</span>
+                  <div>
+                    <h3 className="font-extrabold text-xs tracking-tight text-white">Tarif Standar Penggajian</h3>
+                    <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-none mt-0.5">Konfigurasi Finansial</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowConfigModal(false)}
+                  className="p-1 text-slate-400 hover:text-white cursor-pointer transition-all text-base"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <form onSubmit={handleSaveConfig} className="p-6 flex flex-col gap-4 text-xs font-semibold">
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1 tracking-wider">GAJI POKOK WALI KELAS (BULANAN)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Contoh: 1500000"
+                    value={cfgBaseSalaryHomeroom}
+                    onChange={(e) => setCfgBaseSalaryHomeroom(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-mono font-bold text-slate-800"
+                  />
+                  <p className="text-[9.5px] text-slate-500 font-normal mt-1 leading-tight">Gaji pokok dasar guru berstatus wali kelas.</p>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1 tracking-wider">GAJI POKOK GURU MAPEL (BULANAN)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Contoh: 1200000"
+                    value={cfgBaseSalarySubject}
+                    onChange={(e) => setCfgBaseSalarySubject(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-mono font-bold text-slate-800"
+                  />
+                  <p className="text-[9.5px] text-slate-500 font-normal mt-1 leading-tight">Gaji pokok dasar guru pengajar (bukan wali kelas).</p>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1 tracking-wider">TUNJANGAN JABATAN WALI KELAS</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Contoh: 500000"
+                    value={cfgHomeroomAllowanceRate}
+                    onChange={(e) => setCfgHomeroomAllowanceRate(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-mono font-bold text-slate-800"
+                  />
+                  <p className="text-[9.5px] text-slate-500 font-normal mt-1 leading-tight">Insentif bulanan tambahan kualifikasi wali kelas.</p>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1 tracking-wider">JASA GURU MAPEL PER JURNAL (MENGAJAR)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Contoh: 50000"
+                    value={cfgJournalRate}
+                    onChange={(e) => setCfgJournalRate(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-mono font-bold text-slate-800"
+                  />
+                  <p className="text-[9.5px] text-slate-500 font-normal mt-1 leading-tight">Tarif yang dikalikan dengan jumlah teaching journal guru mapel.</p>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1 tracking-wider">TUNJANGAN MASA KERJA STANDAR (BULANAN)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Contoh: 150000"
+                    value={cfgDefaultTunjanganMasaKerja}
+                    onChange={(e) => setCfgDefaultTunjanganMasaKerja(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-mono font-bold text-slate-800"
+                  />
+                  <p className="text-[9.5px] text-slate-500 font-normal mt-1 leading-tight">Nilai bawaan tunjangan pengabdian masa kerja guru.</p>
+                </div>
+
+                <div>
+                  <label className="block text-[9px] font-bold text-slate-400 uppercase mb-1 tracking-wider">POTONGAN DANA SOSIAL STANDAR (BULANAN)</label>
+                  <input
+                    type="number"
+                    required
+                    placeholder="Contoh: 20000"
+                    value={cfgDefaultPotonganDanaSosial}
+                    onChange={(e) => setCfgDefaultPotonganDanaSosial(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 font-mono font-bold text-slate-800"
+                  />
+                  <p className="text-[9.5px] text-slate-500 font-normal mt-1 leading-tight">Nilai bawaan potongan kas iuran sosial kemanusiaan.</p>
+                </div>
+
+                <div className="flex gap-2.5 pt-2 border-t border-slate-100 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowConfigModal(false)}
+                    className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer transition-all text-center"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 bg-slate-905 hover:bg-slate-950 text-white rounded-xl font-bold cursor-pointer transition-all text-center"
+                  >
+                    Simpan Tarif
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 2. Individual Salary Adjustment Modal */}
+      <AnimatePresence>
+        {showEditPayModal && editingGaji && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs print:hidden">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border text-left border-slate-250 w-full max-w-md rounded-2xl overflow-hidden shadow-2xl"
+            >
+              <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <span className="p-1 px-1.5 bg-indigo-950 rounded-lg text-indigo-400">✏️</span>
+                  <div>
+                    <h3 className="font-extrabold text-xs tracking-tight text-white">Sesuaikan Nominal Gaji</h3>
+                    <p className="text-[9px] text-indigo-200 uppercase font-bold tracking-wider leading-none mt-0.5">{editingGaji.teacherName}</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowEditPayModal(false);
+                    setEditingGaji(null);
+                  }}
+                  className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer transition-all"
+                >
+                  &times;
+                </button>
+              </div>
+
+              <form onSubmit={handleUpdateGaji} className="p-6 flex flex-col gap-4 text-xs font-semibold bg-white max-h-[80vh] overflow-y-auto">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="col-span-2 border-b border-dashed border-slate-200 pb-1 text-[9px] font-bold text-indigo-700 uppercase tracking-wider">
+                    💰 Rincian Pendapatan &amp; Penerimaan
+                  </div>
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">GAJI POKOK (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editBaseSalary}
+                      onChange={(e) => setEditBaseSalary(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">TUNJ. JABATAN (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editHomeroomAllowance}
+                      onChange={(e) => setEditHomeroomAllowance(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-slate-800"
+                      disabled={editingGaji.teacherType !== 'homeroom'}
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">TUNJ. MASA KERJA (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editTunjanganMasaKerja}
+                      onChange={(e) => setEditTunjanganMasaKerja(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">VAKASI (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editVakasi}
+                      onChange={(e) => setEditVakasi(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-slate-800"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">INSENTIF LAIN (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editOtherAllowance}
+                      onChange={(e) => setEditOtherAllowance(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-slate-800"
+                    />
+                  </div>
+
+                  <div className="col-span-2 border-b border-dashed border-slate-200 pb-1 mt-2 text-[9px] font-bold text-rose-700 uppercase tracking-wider">
+                    💸 Rincian Pemotongan Gaji
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">DANA SOSIAL (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editPotonganDanaSosial}
+                      onChange={(e) => setEditPotonganDanaSosial(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-rose-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">KETIDAKHADIRAN (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editPotonganAbsen}
+                      onChange={(e) => setEditPotonganAbsen(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-rose-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">POTONGAN LAIN (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editPotonganLain}
+                      onChange={(e) => setEditPotonganLain(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-rose-700"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">ADMIN/KOMITE LAIN (RP)</label>
+                    <input
+                      type="number"
+                      required
+                      value={editDeductions}
+                      onChange={(e) => setEditDeductions(e.target.value)}
+                      className="w-full p-2 border border-slate-200 rounded-lg font-mono text-xs text-rose-700"
+                    />
+                  </div>
+                </div>
+
+                <div>
+                  <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">CATATAN PENYESUAIAN</label>
+                  <textarea
+                    placeholder="Alasan penyesuaian nominal, misal: Bonus Hari Raya, Potongan BPJS Ketenagakerjaan..."
+                    value={editNotes}
+                    onChange={(e) => setEditNotes(e.target.value)}
+                    className="w-full p-2.5 border border-slate-200 rounded-xl text-xs font-semibold text-slate-705 h-16 resize-none focus:outline-none"
+                  />
+                </div>
+
+                <div className="flex gap-2.5 pt-2 border-t border-slate-100 mt-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setShowEditPayModal(false);
+                      setEditingGaji(null);
+                    }}
+                    className="flex-1 py-2.5 border border-slate-200 hover:bg-slate-50 text-slate-700 rounded-xl font-bold cursor-pointer transition-all text-center"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="submit"
+                    className="flex-1 py-2.5 bg-indigo-650 hover:bg-indigo-700 text-white rounded-xl font-bold cursor-pointer transition-all text-center shadow-xs"
+                  >
+                    Simpan Penyesuaian
+                  </button>
+                </div>
+              </form>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* 3. Official Teacher Salary Slip Print Representation Overlay */}
+      <AnimatePresence>
+        {showReceiptModal && receiptGaji && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-xs print:p-0 print:bg-white print:backdrop-blur-none transition-all">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white border text-left border-slate-250 w-full max-w-xl rounded-3xl overflow-hidden shadow-2xl print:shadow-none print:border-none print:w-full print:max-w-none print:rounded-none"
+            >
+              {/* Header inside overlay modal, hidden on print */}
+              <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between print:hidden">
+                <div className="flex items-center gap-2">
+                  <span className="p-1 px-1.5 bg-slate-850 rounded-lg text-slate-355">📄</span>
+                  <div>
+                    <h3 className="font-extrabold text-xs tracking-tight text-white">Slip Gaji Resmi Guru</h3>
+                    <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider leading-none mt-0.5">Preview &amp; Cetak Berkas</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setShowReceiptModal(false);
+                    setReceiptGaji(null);
+                  }}
+                  className="p-1 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer transition-all text-base leading-none"
+                >
+                  &times;
+                </button>
+              </div>
+
+              {/* Action controller bar - Hidden during print */}
+              <div className="p-3 bg-slate-50 border-b border-slate-100 flex justify-between items-center print:hidden">
+                <span className="text-[10px] text-slate-500 font-bold">Tekan tombol cetak untuk mencatat fisik kuitansi</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const style = document.createElement('style');
+                    style.id = 'salary-print-style';
+                    style.innerHTML = `@media print {
+                      body * { visibility: hidden; }
+                      #print-salary-slip, #print-salary-slip * { visibility: visible; }
+                      #print-salary-slip { position: absolute; left: 0; top: 0; width: 100%; height: auto; padding: 0 !important; margin: 0 !important; }
+                    }`;
+                    document.head.appendChild(style);
+                    window.print();
+                    setTimeout(() => {
+                      const element = document.getElementById('salary-print-style');
+                      if (element) element.remove();
+                    }, 500);
+                  }}
+                  className="p-1.5 px-3 bg-indigo-650 hover:bg-indigo-755 text-white text-[11px] font-bold rounded-lg cursor-pointer transition-all flex items-center gap-1.5 shadow-2xs"
+                >
+                  <Printer size={12} />
+                  <span>Cetak Slip Gaji</span>
+                </button>
+              </div>
+
+              {/* Exact printable segment using CSS print utility */}
+              <div id="print-salary-slip" className="p-8 bg-white text-slate-900 font-sans leading-relaxed select-all">
+                
+                {/* Letterhead */}
+                <div className="flex items-center justify-between border-b-2 border-slate-900 pb-3.5 mb-5 select-none">
+                  <div className="flex items-center gap-3">
+                    <div className="w-12 h-12 bg-slate-900 text-white rounded-xl flex flex-col items-center justify-center font-extrabold tracking-tighter text-[11px] uppercase">
+                      <span>MA'ARIF</span>
+                      <span className="text-[7.5px] font-bold -mt-1 text-yellow-350">NU</span>
+                    </div>
+                    <div>
+                      <h2 className="text-xs uppercase md:text-sm font-black tracking-tight text-slate-955">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
+                      <p className="text-[9.5px] font-bold text-slate-500 leading-tight">{schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}</p>
+                      <p className="text-[8px] text-slate-400 mt-0.5">{schoolIdentity?.address || "Jl. Pandaan Pasuruan Jawa Timur"}</p>
+                    </div>
+                  </div>
+                  <div className="text-right">
+                    <span className="p-1 px-2.5 bg-slate-900 text-white font-mono font-black text-[8px] tracking-widest rounded-md uppercase">SLIP GAJI RESMI</span>
+                    <p className="text-[9.5px] text-slate-500 font-bold font-mono mt-2">Bulan: {receiptGaji.month}</p>
+                  </div>
+                </div>
+
+                {/* Sub Metadata Info */}
+                <div className="grid grid-cols-2 gap-4 bg-slate-50 border border-slate-200 rounded-2xl p-4 text-[11px] font-semibold text-slate-705 mb-5 ">
+                  <div>
+                    <div className="flex justify-between py-1 border-b border-slate-100">
+                      <span className="text-slate-400">Penerima Gaji:</span>
+                      <span className="font-extrabold text-slate-900">{receiptGaji.teacherName}</span>
+                    </div>
+                    <div className="flex justify-between py-1 mt-1 border-b border-slate-100">
+                      <span className="text-slate-400">Tipe/Peran Guru:</span>
+                      <span className="font-bold text-slate-800 capitalize">
+                        {receiptGaji.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mata Pelajaran'}
+                      </span>
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between py-1 border-b border-slate-100 font-mono">
+                      <span className="text-slate-400">ID Berkas:</span>
+                      <span className="font-bold text-slate-700">{receiptGaji.id.substring(0, 10).toUpperCase()}</span>
+                    </div>
+                    <div className="flex justify-between py-1 mt-1 border-b border-slate-100 font-mono">
+                      <span className="text-slate-400">Tanggal Bayar:</span>
+                      <span className="font-bold text-emerald-800">{receiptGaji.paidAt ? receiptGaji.paidAt.substring(0, 10) : '-'}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Main Ledger Calculations */}
+                <div className="border border-slate-200 rounded-2xl overflow-hidden mb-5 text-[11px] font-semibold">
+                  <div className="bg-slate-50 p-2.5 border-b border-slate-200 font-black text-slate-850 uppercase tracking-wider text-[9px]">
+                    RINCIAN PENDAPATAN & potongan
+                  </div>
+
+                  {/* Lines */}
+                  <div className="divide-y divide-slate-100">
+                    <div className="flex justify-between p-3 bg-white">
+                      <div>
+                        <span>Gaji Pokok Dasar</span>
+                        <p className="text-[9.5px] text-slate-400 font-normal">Sesuai status {receiptGaji.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mapel'}</p>
+                      </div>
+                      <span className="font-bold font-mono text-slate-900">Rp {receiptGaji.baseSalary.toLocaleString('id-ID')}</span>
+                    </div>
+
+                    {receiptGaji.homeroomAllowance > 0 && (
+                      <div className="flex justify-between p-3 bg-white">
+                        <div>
+                          <span>Tunjangan Tugas Tambahan Wali Kelas</span>
+                          <p className="text-[9.5px] text-slate-400 font-normal">Tunjangan intensif jabatan</p>
+                        </div>
+                        <span className="font-bold font-mono text-slate-900">Rp {receiptGaji.homeroomAllowance.toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+
+                    {(receiptGaji.tunjanganMasaKerja || 0) > 0 && (
+                      <div className="flex justify-between p-3 bg-white">
+                        <div>
+                          <span>Tunjangan Masa Kerja</span>
+                          <p className="text-[9.5px] text-slate-400 font-normal">Tunjangan pengabdian masa kerja mengajar</p>
+                        </div>
+                        <span className="font-bold font-mono text-slate-900">Rp {(receiptGaji.tunjanganMasaKerja || 0).toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+
+                    {(receiptGaji.vakasi || (receiptGaji.journalCount * receiptGaji.journalRate)) > 0 && (
+                      <div className="flex justify-between p-3 bg-white">
+                        <div>
+                          <span>Vakasi (Jasa Jam Mengajar Jurnal)</span>
+                          <p className="text-[9.5px] text-slate-400 font-normal">
+                             Total {receiptGaji.journalCount} laporan teaching journal × Rp {(receiptGaji.journalRate || 0).toLocaleString('id-ID')}
+                          </p>
+                        </div>
+                        <span className="font-bold font-mono text-slate-900">Rp {(receiptGaji.vakasi || (receiptGaji.journalCount * receiptGaji.journalRate)).toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+
+                    {receiptGaji.otherAllowance > 0 && (
+                      <div className="flex justify-between p-3 bg-white">
+                        <div>
+                          <span>Insentif / Penyesuaian Lain</span>
+                          <p className="text-[9.5px] text-slate-400 font-normal">Uang saku / insentif khusus kebijakan lembaga</p>
+                        </div>
+                        <span className="font-bold font-mono text-slate-900 flex items-center gap-1">
+                          <span>Rp {receiptGaji.otherAllowance.toLocaleString('id-ID')}</span>
+                        </span>
+                      </div>
+                    )}
+
+                    {(receiptGaji.potonganDanaSosial || 0) > 0 && (
+                      <div className="flex justify-between p-3 bg-rose-50/10">
+                        <div>
+                          <span className="text-rose-900">Potongan Dana Sosial</span>
+                          <p className="text-[9.5px] text-rose-505 font-normal">Iuran sosial wajib rutin bulanan</p>
+                        </div>
+                        <span className="font-bold font-mono text-rose-605">- Rp {(receiptGaji.potonganDanaSosial || 0).toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+
+                    {(receiptGaji.potonganAbsen || 0) > 0 && (
+                      <div className="flex justify-between p-3 bg-rose-50/10">
+                        <div>
+                          <span className="text-rose-900">Potongan Ketidakhadiran</span>
+                          <p className="text-[9.5px] text-rose-505 font-normal">Pinalti denda ketidakhadiran/absen</p>
+                        </div>
+                        <span className="font-bold font-mono text-rose-605">- Rp {(receiptGaji.potonganAbsen || 0).toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+
+                    {(receiptGaji.potonganLain || 0) > 0 && (
+                      <div className="flex justify-between p-3 bg-rose-50/10">
+                        <div>
+                          <span className="text-rose-900">Potongan Lain-lain</span>
+                          <p className="text-[9.5px] text-rose-505 font-normal">Pemotongan kredit koperasi / simpan pinjam / denda lain</p>
+                        </div>
+                        <span className="font-bold font-mono text-rose-605">- Rp {(receiptGaji.potonganLain || 0).toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+
+                    {receiptGaji.deductions > 0 && (
+                      <div className="flex justify-between p-3 bg-rose-50/10">
+                        <div>
+                          <span className="text-rose-900">Potongan Administrasi Umum</span>
+                          <p className="text-[9.5px] text-rose-505 font-normal">{receiptGaji.notes || 'Potongan iuran komite / simpanan wajib'}</p>
+                        </div>
+                        <span className="font-bold font-mono text-rose-605">- Rp {receiptGaji.deductions.toLocaleString('id-ID')}</span>
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Net Amount Bar */}
+                  <div className="p-4 bg-slate-900 text-white flex justify-between items-center text-xs font-black">
+                    <span className="uppercase tracking-widest text-[10px]">TOTAL NET GAJI DITERIMA (NETO)</span>
+                    <span className="text-sm font-mono tracking-tight font-black">Rp {receiptGaji.totalAmount.toLocaleString('id-ID')}</span>
+                  </div>
+                </div>
+
+                {receiptGaji.notes && (
+                  <div className="p-3.5 bg-slate-50 border border-slate-200 rounded-2xl text-[10.5px] font-medium text-slate-650 leading-normal mb-8">
+                     <strong>Catatan Gaji:</strong> {receiptGaji.notes}
+                  </div>
+                )}
+
+                {/* Bottom Signatures */}
+                <div className="grid grid-cols-2 text-center text-[11px] font-semibold text-slate-705 mt-10">
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-widest text-[8px] font-bold">Penerima Gaji (Guru)</p>
+                    <div className="h-16"></div>
+                    <p className="font-black text-slate-905 border-b border-dashed border-slate-300 w-32 mx-auto pb-1">{receiptGaji.teacherName}</p>
+                    <p className="text-[9.5px] text-slate-400 leading-none mt-1">Guru {receiptGaji.teacherType === 'homeroom' ? 'Wali' : 'Mapel'}</p>
+                  </div>
+
+                  <div>
+                    <p className="text-slate-400 uppercase tracking-widest text-[8px] font-bold">Petugas Bendahara</p>
+                    <div className="h-16 flex items-center justify-center font-serif text-[10px] text-slate-400 italic">
+                      <span>Tercairkan Sistem</span>
+                    </div>
+                    <p className="font-black text-slate-905 border-b border-dashed border-slate-300 w-32 mx-auto pb-1">Uliyah Fitriyani, S.Pd</p>
+                    <p className="text-[9.5px] text-slate-400 leading-none mt-1">Staf Keuangan Lembaga</p>
+                  </div>
+                </div>
+
+                {/* Footer Legal */}
+                <div className="text-center text-[8px] text-slate-350 tracking-widest uppercase mt-12 pt-4 border-t border-slate-105 select-none">
+                  Bukti pembayaran sah secara komparatif sistem informasi keuangan Ma'arif NU
+                </div>
+              </div>
             </motion.div>
           </div>
         )}

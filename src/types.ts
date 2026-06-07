@@ -143,6 +143,7 @@ export interface TreasurerTransaction {
   nis?: string;
   createdBy?: string;
   recipientName?: string;
+  fundingSource?: string;
 }
 
 
@@ -150,6 +151,7 @@ export interface TeachingJournal {
   id: string;
   teacherId: string;
   teacherName: string;
+  teacherType?: 'homeroom' | 'subject_teacher';
   subject: string;
   className: string;
   date: string;
@@ -323,6 +325,40 @@ export interface SarprasLoan {
   status: 'dipinjam' | 'kembali';
   notes?: string;
 }
+
+export interface TeacherSalary {
+  id: string;
+  teacherId: string;
+  teacherName: string;
+  teacherType: 'homeroom' | 'subject_teacher';
+  month: string; // e.g. "2026-06"
+  baseSalary: number;
+  homeroomAllowance: number; // Tunjangan Jabatan Wali Kelas
+  journalCount: number;
+  journalRate: number;
+  tunjanganMasaKerja: number; // Tunjangan masa kerja
+  vakasi: number; // Vakasi / insentif mengajar jam jilid
+  potonganDanaSosial: number; // Potongan Dana Sosial
+  potonganAbsen: number; // Potongan Ketidakhadiran
+  potonganLain: number; // Potongan Lain-lain
+  otherAllowance: number;
+  deductions: number;
+  totalAmount: number;
+  status: 'paid' | 'unpaid';
+  paymentDate?: string;
+  notes?: string;
+  createdAt: string;
+}
+
+export interface SalaryConfig {
+  baseSalaryHomeroom: number;
+  baseSalarySubject: number;
+  homeroomAllowanceRate: number;
+  journalRate: number;
+  defaultTunjanganMasaKerja: number;
+  defaultPotonganDanaSosial: number;
+}
+
 
 
 

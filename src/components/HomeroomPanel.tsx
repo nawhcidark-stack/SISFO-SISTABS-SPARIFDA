@@ -857,6 +857,104 @@ export default function HomeroomPanel({
   const [selectedJournalToPrint, setSelectedJournalToPrint] = useState<any | null>(null);
   const [compiledJournalPrint, setCompiledJournalPrint] = useState<boolean>(false);
 
+  // Create Journal For Homeroom state
+  const [isAddJournalOpen, setIsAddJournalOpen] = useState(false);
+  const [journalSubject, setJournalSubject] = useState('Bimbingan Wali Kelas');
+  const [journalDate, setJournalDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [journalTopic, setJournalTopic] = useState('');
+  const [journalFase, setJournalFase] = useState('D');
+  const [journalSemester, setJournalSemester] = useState('Genap');
+  const [journalPertemuanKe, setJournalPertemuanKe] = useState('');
+  const [journalJamKe, setJournalJamKe] = useState('');
+  const [journalAlokasiWaktu, setJournalAlokasiWaktu] = useState('2 JP');
+  const [journalTujuanPembelajaran, setJournalTujuanPembelajaran] = useState('');
+  const [journalPencapaianKktp, setJournalPencapaianKktp] = useState('Tercapai');
+  const [journalNotes, setJournalNotes] = useState('');
+  const [journalAttendanceMap, setJournalAttendanceMap] = useState<Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }>>({});
+  const [savingJournal, setSavingJournal] = useState(false);
+  const [journalSearchQuery, setJournalSearchQuery] = useState('');
+
+  const handleOpenAddJournalModal = () => {
+    // Initialize attendance map for all students in class as "Hadir"
+    const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
+    classStudents.forEach(st => {
+      initialMap[st.id] = { status: 'Hadir', notes: '' };
+    });
+    setJournalAttendanceMap(initialMap);
+    setJournalSubject('Bimbingan Wali Kelas');
+    setJournalDate(new Date().toISOString().substring(0, 10));
+    setJournalTopic('');
+    setJournalPertemuanKe('');
+    setJournalJamKe('');
+    setJournalAlokasiWaktu('2 JP');
+    setJournalTujuanPembelajaran('');
+    setJournalPencapaianKktp('Tercapai');
+    setJournalNotes('');
+    setIsAddJournalOpen(true);
+  };
+
+  const handleSaveHomeroomJournal = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!journalSubject.trim()) {
+      setNotifMsg({ type: 'error', text: 'Nama Mata Pelajaran atau Bimbingan tidak boleh kosong.' });
+      return;
+    }
+    if (!journalTopic.trim()) {
+      setNotifMsg({ type: 'error', text: 'Materi KBM / Topik Pembelajaran harus diisi.' });
+      return;
+    }
+
+    setSavingJournal(true);
+    try {
+      const attendanceList = classStudents.map(student => {
+        const record = journalAttendanceMap[student.id] || { status: 'Hadir', notes: '' };
+        return {
+          studentId: student.id,
+          studentName: student.name,
+          status: record.status,
+          notes: record.notes
+        };
+      });
+
+      const response = await fetch('/api/teaching-journals', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          teacherId: currentTeacher.id,
+          teacherName: currentTeacher.name,
+          teacherType: 'homeroom',
+          subject: journalSubject.trim(),
+          className: currentTeacher.className,
+          date: journalDate,
+          topic: journalTopic.trim(),
+          notes: journalNotes.trim(),
+          fase: journalFase,
+          semester: journalSemester,
+          alokasiWaktu: journalAlokasiWaktu,
+          jamKe: journalJamKe,
+          pertemuanKe: journalPertemuanKe,
+          tujuanPembelajaran: journalTujuanPembelajaran,
+          pencapaianKktp: journalPencapaianKktp,
+          attendance: attendanceList
+        })
+      });
+
+      if (response.ok) {
+        setNotifMsg({ type: 'success', text: 'Jurnal KBM & Absensi Wali Kelas berhasil disimpan!' });
+        setIsAddJournalOpen(false);
+        fetchTeachingJournals();
+      } else {
+        const errData = await response.json();
+        setNotifMsg({ type: 'error', text: errData.error || 'Gagal menyimpan Jurnal Pembelajaran.' });
+      }
+    } catch (err) {
+      console.error(err);
+      setNotifMsg({ type: 'error', text: 'Koneksi gagal saat menyimpan jurnal.' });
+    } finally {
+      setSavingJournal(false);
+    }
+  };
+
   const fetchTeachingJournals = async () => {
     setLoadingJournals(true);
     try {
@@ -2594,6 +2692,14 @@ Wassalamualaikum Wr. Wb.
                         className="px-3.5 py-2 border border-slate-300 hover:bg-white text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all bg-white/70"
                       >
                         🔄 {loadingJournals ? 'Memuat...' : 'Muat Ulang'}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={handleOpenAddJournalModal}
+                        className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-emerald-700 transition-all font-sans"
+                      >
+                        <Plus size={13} strokeWidth={2.5} />
+                        <span>Isi Jurnal Mengajar</span>
                       </button>
                       {teachingJournalsList.length > 0 && (
                         <button
@@ -5927,6 +6033,356 @@ Wassalamualaikum Wr. Wb.
                   </div>
 
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL TAMBAH JURNAL MENGAJAR WALI KELAS */}
+      <AnimatePresence>
+        {isAddJournalOpen && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-4 overflow-y-auto font-sans">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="bg-slate-50 w-full max-w-6xl rounded-3xl overflow-hidden shadow-2xl flex flex-col my-8 max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between">
+                <div className="text-left animate-fade-in">
+                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-extrabold text-[9px] rounded-full uppercase tracking-wider">
+                    Jurnal Mengajar Wali Kelas
+                  </span>
+                  <h3 className="font-extrabold text-slate-950 text-base mt-0.5">
+                    Buat Jurnal & Presensi Kelas {currentTeacher.className}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setIsAddJournalOpen(false)}
+                  className="p-1 px-2.5 text-slate-400 hover:text-slate-800 font-bold transition-all hover:bg-slate-100 rounded-lg cursor-pointer text-xs"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              {/* Form Content Scrollable */}
+              <div className="flex-1 overflow-y-auto p-6 flex flex-col lg:grid lg:grid-cols-12 gap-6">
+                
+                {/* Left side: Meta details */}
+                <div className="lg:col-span-4 flex flex-col gap-4 text-left">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3.5 shadow-2xs">
+                    <h4 className="font-bold text-slate-900 text-xs border-b border-slate-100 pb-2 flex items-center gap-1.5">
+                      <FileText size={14} className="text-emerald-600" />
+                      Detail KBM / Bimbingan
+                    </h4>
+
+                    {/* Mata Pelajaran / Kegiatan */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Mata Pelajaran / Kegiatan</label>
+                      <input
+                        type="text"
+                        value={journalSubject}
+                        onChange={(e) => setJournalSubject(e.target.value)}
+                        placeholder="Contoh: Bimbingan Wali Kelas, Bahasa Indonesia..."
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white shadow-2xs"
+                      />
+                      <div className="flex flex-wrap gap-1 mt-1">
+                        {['Bimbingan Wali Kelas', 'Jam Kelas/Koordinasi', 'Pendidikan Karakter', 'Literasi Mandiri'].map(tag => (
+                          <button
+                            key={tag}
+                            type="button"
+                            onClick={() => setJournalSubject(tag)}
+                            className="px-1.5 py-0.5 text-[8.5px] font-bold border rounded bg-slate-50 hover:bg-slate-100 text-slate-600 cursor-pointer border-slate-200"
+                          >
+                            {tag}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Tanggal */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Tanggal</label>
+                      <input
+                        type="date"
+                        value={journalDate}
+                        onChange={(e) => setJournalDate(e.target.value)}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white"
+                      />
+                    </div>
+
+                    {/* Grid Meta */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Fase</label>
+                        <select
+                          value={journalFase}
+                          onChange={(e) => setJournalFase(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                        >
+                          <option value="A">A</option>
+                          <option value="B">B</option>
+                          <option value="C">C</option>
+                          <option value="D">D (SMP)</option>
+                          <option value="E">E</option>
+                          <option value="F">F</option>
+                        </select>
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Semester</label>
+                        <select
+                          value={journalSemester}
+                          onChange={(e) => setJournalSemester(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                        >
+                          <option value="Ganjil">Ganjil</option>
+                          <option value="Genap">Genap</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Meta Numbers */}
+                    <div className="grid grid-cols-3 gap-1.5">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
+                        <input
+                          type="text"
+                          placeholder="misal: 1"
+                          value={journalPertemuanKe}
+                          onChange={(e) => setJournalPertemuanKe(e.target.value)}
+                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black text-slate-500 uppercase">Jam Ke</label>
+                        <input
+                          type="text"
+                          placeholder="cth: 1 - 2"
+                          value={journalJamKe}
+                          onChange={(e) => setJournalJamKe(e.target.value)}
+                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
+                        />
+                      </div>
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[9px] font-black text-slate-500 uppercase">Alokasi</label>
+                        <input
+                          type="text"
+                          placeholder="cth: 2 JP"
+                          value={journalAlokasiWaktu}
+                          onChange={(e) => setJournalAlokasiWaktu(e.target.value)}
+                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
+                        />
+                      </div>
+                    </div>
+
+                    {/* Topic */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase flex items-center gap-1">
+                        <span>Topik / Pokok Bahasan</span>
+                        <span className="text-red-500 font-bold">*</span>
+                      </label>
+                      <input
+                        type="text"
+                        value={journalTopic}
+                        onChange={(e) => setJournalTopic(e.target.value)}
+                        placeholder="Materi utama atau pembahasan..."
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white"
+                        required
+                      />
+                    </div>
+
+                    {/* Tujuan Pembelajaran */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Tujuan Pembelajaran</label>
+                      <textarea
+                        value={journalTujuanPembelajaran}
+                        onChange={(e) => setJournalTujuanPembelajaran(e.target.value)}
+                        placeholder="Tuliskan tujuan pencapaian KBM hari ini..."
+                        rows={2}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-805 resize-none font-sans bg-white"
+                      />
+                    </div>
+
+                    {/* Pencapaian KKTP */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Pecapaian KKTP</label>
+                      <select
+                        value={journalPencapaianKktp}
+                        onChange={(e) => setJournalPencapaianKktp(e.target.value)}
+                        className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                      >
+                        <option value="Tercapai">Tercapai</option>
+                        <option value="Sebagian Tercapai">Sebagian Tercapai</option>
+                        <option value="Belum Tercapai">Belum Tercapai</option>
+                      </select>
+                    </div>
+
+                    {/* Catatan / Notes */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Catatan KBM Tambahan</label>
+                      <textarea
+                        value={journalNotes}
+                        onChange={(e) => setJournalNotes(e.target.value)}
+                        placeholder="Hambatan, tugas, atau rekap khusus..."
+                        rows={2}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-805 resize-none font-sans bg-white"
+                      />
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={handleSaveHomeroomJournal}
+                      disabled={savingJournal || classStudents.length === 0}
+                      className="w-full mt-1.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-50 border border-emerald-700 flex items-center justify-center gap-1.5"
+                    >
+                      {savingJournal ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" />
+                          <span>Menyimpan Jurnal...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save size={13} />
+                          <span>Simpan Jurnal & Absensi</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right side: Student Roster with attendance choices */}
+                <div className="lg:col-span-8 flex flex-col gap-4 text-left">
+                  <div className="bg-white border border-slate-200 rounded-2xl shadow-3xs overflow-hidden h-fit flex flex-col">
+                    <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-4 select-none">
+                      <div>
+                        <h4 className="font-extrabold text-slate-900 text-xs flex items-center gap-1.5">
+                          <Users size={14} className="text-emerald-500" />
+                          Roster Absensi Presensi Siswa
+                        </h4>
+                        <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
+                          Tentukan status kehadiran untuk {classStudents.length} siswa kelas bimbingan Anda.
+                        </p>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
+                          classStudents.forEach(st => {
+                            initialMap[st.id] = { status: 'Hadir', notes: '' };
+                          });
+                          setJournalAttendanceMap(initialMap);
+                        }}
+                        className="px-2.5 py-1 bg-emerald-50 border border-emerald-100 hover:bg-emerald-100 text-emerald-800 font-bold text-[9px] uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center gap-1"
+                      >
+                        <Check size={11} strokeWidth={3} />
+                        Hadir Semua
+                      </button>
+                    </div>
+
+                    {/* Simple search bar */}
+                    <div className="p-3 border-b border-slate-100 bg-white">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          placeholder="Cari nama siswa..."
+                          value={journalSearchQuery}
+                          onChange={(e) => setJournalSearchQuery(e.target.value)}
+                          className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-xl focus:outline-none focus:border-slate-800 text-[11px] font-semibold text-slate-805"
+                        />
+                        <div className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-400">
+                          <Search size={11} />
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* List */}
+                    <div className="max-h-[350px] overflow-y-auto divide-y divide-slate-100 bg-white">
+                      {classStudents
+                        .filter(s => s.name?.toLowerCase().includes(journalSearchQuery.toLowerCase()) || s.nis?.toLowerCase().includes(journalSearchQuery.toLowerCase()))
+                        .map((student, idx) => {
+                          const record = journalAttendanceMap[student.id] || { status: 'Hadir', notes: '' };
+                          
+                          const changeStatus = (newStatus: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa') => {
+                            setJournalAttendanceMap(prev => ({
+                              ...prev,
+                              [student.id]: {
+                                ...record,
+                                status: newStatus
+                              }
+                            }));
+                          };
+
+                          const changeNote = (newNote: string) => {
+                            setJournalAttendanceMap(prev => ({
+                              ...prev,
+                              [student.id]: {
+                                ...record,
+                                notes: newNote
+                              }
+                            }));
+                          };
+
+                          return (
+                            <div key={student.id} className="p-4 flex flex-col md:flex-row md:items-center justify-between gap-3 hover:bg-slate-50/40 transition-colors">
+                              <div className="flex items-start gap-2.5 min-w-0 md:w-1/3">
+                                <span className="font-bold text-slate-300 text-[10px] w-4 mt-0.5 shrink-0">{idx + 1}</span>
+                                <div className="min-w-0">
+                                  <p className="font-extrabold text-slate-900 text-xs truncate leading-tight">{student.name}</p>
+                                  <p className="text-[9.5px] text-slate-400 font-mono font-bold mt-0.5">NIS: {student.nis}</p>
+                                </div>
+                              </div>
+
+                              {/* Toggle items */}
+                              <div className="flex items-center gap-1 bg-slate-50 border border-slate-150 p-1 rounded-xl w-fit shrink-0">
+                                {(['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Alpa'] as const).map(st => {
+                                  let bgClass = 'hover:bg-white text-slate-600';
+                                  if (record.status === st) {
+                                    if (st === 'Hadir') bgClass = 'bg-emerald-600 text-white shadow-xs';
+                                    else if (st === 'Terlambat') bgClass = 'bg-amber-500 text-white shadow-xs';
+                                    else if (st === 'Sakit') bgClass = 'bg-sky-500 text-white shadow-xs';
+                                    else if (st === 'Izin') bgClass = 'bg-indigo-600 text-white shadow-xs';
+                                    else if (st === 'Alpa') bgClass = 'bg-rose-500 text-white shadow-xs';
+                                  }
+                                  return (
+                                    <button
+                                      key={st}
+                                      type="button"
+                                      onClick={() => changeStatus(st)}
+                                      className={`px-1.5 py-1 rounded-lg text-[9px] font-black uppercase tracking-wider transition-all cursor-pointer ${bgClass}`}
+                                    >
+                                      {st}
+                                    </button>
+                                  );
+                                })}
+                              </div>
+
+                              {/* Notes Input */}
+                              <div className="md:w-1/3 min-w-0">
+                                <input
+                                  type="text"
+                                  value={record.notes}
+                                  onChange={(e) => changeNote(e.target.value)}
+                                  placeholder={
+                                    record.status === 'Sakit' ? 'Sakit apa (demam dll)...' :
+                                    record.status === 'Izin' ? 'Keterangan izin...' :
+                                    record.status === 'Terlambat' ? 'Alasan terlambat...' :
+                                    'Catatan opsional...'
+                                  }
+                                  className="w-full px-2.5 py-1 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-lg text-[10px] text-slate-800 bg-white"
+                                />
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </motion.div>
           </div>

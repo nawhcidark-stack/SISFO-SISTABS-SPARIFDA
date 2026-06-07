@@ -97,6 +97,19 @@ export default function PrincipalPanel({
 
   // Additional data fetched from endpoints
   const [journals, setJournals] = useState<TeachingJournal[]>([]);
+  const [journalFilter, setJournalFilter] = useState<'all' | 'subject' | 'homeroom'>('all');
+
+  const filteredJournals = useMemo(() => {
+    return journals.filter(j => {
+      if (journalFilter === 'subject') {
+        return j.teacherType === 'subject_teacher' || !j.teacherType;
+      }
+      if (journalFilter === 'homeroom') {
+        return j.teacherType === 'homeroom';
+      }
+      return true;
+    });
+  }, [journals, journalFilter]);
   const [counselingLogs, setCounselingLogs] = useState<StudentCounselingLog[]>([]);
   const [infractionLogs, setInfractionLogs] = useState<StudentInfractionLog[]>([]);
   const [loadingSecondaryData, setLoadingSecondaryData] = useState(false);
@@ -2142,39 +2155,98 @@ export default function PrincipalPanel({
         <div className="flex flex-col gap-6">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-500 to-teal-500" />
-            <h2 className="text-slate-900 font-black text-lg leading-tight">📚 Jurnal Mengajar (Agenda KBM Guru & Absensi Mapel)</h2>
+            <h2 className="text-slate-900 font-black text-lg leading-tight">📚 Jurnal Mengajar & Presensi (Guru Mapel & Wali Kelas)</h2>
             <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">
-              Oversight KBM harian di SMP Maarif NU Pandaan. Pantau materi ajar yang dibawakan ditiap tatap muka pelajaran lengkap dengan rekap absensi per-pelajaran secara transparan.
+              Oversight KBM harian di SMP Maarif NU Pandaan. Pantau materi ajar yang dibawakan ditiap tatap muka pelajaran maupun bimbingan wali kelas lengkap dengan rekap absensi harian secara transparan.
             </p>
           </div>
 
           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs text-left">
-            <div className="flex justify-between items-center pb-2 border-b border-slate-100 mb-4 text-xs font-semibold text-slate-400">
-              <span>Agenda Pembelajaran SMP Maarif NU Pandaan</span>
-              <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md text-slate-700 font-black">{journals.length} Pertemuan Terdaftar</span>
+            {/* Filter segments */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-5">
+              <div className="flex flex-wrap gap-2">
+                <button
+                  type="button"
+                  onClick={() => setJournalFilter('all')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    journalFilter === 'all'
+                      ? 'bg-slate-900 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  Semua ({journals.length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJournalFilter('subject')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    journalFilter === 'subject'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  Guru Mapel ({journals.filter(j => j.teacherType === 'subject_teacher' || !j.teacherType).length})
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setJournalFilter('homeroom')}
+                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                    journalFilter === 'homeroom'
+                      ? 'bg-emerald-600 text-white shadow-xs'
+                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                  }`}
+                >
+                  Wali Kelas ({journals.filter(j => j.teacherType === 'homeroom').length})
+                </button>
+              </div>
+              <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md text-slate-700 font-extrabold font-mono uppercase tracking-wider">
+                {filteredJournals.length} Jurnal Ditampilkan
+              </span>
             </div>
 
-            {journals.length === 0 ? (
+            {filteredJournals.length === 0 ? (
               <div className="py-24 text-center text-slate-400 font-semibold italic text-xs leading-relaxed">
-                Belum ada guru mapel mengisi jurnal pembelajaran saat ini di server.
+                {journals.length === 0
+                  ? "Belum ada guru mapel maupun wali kelas yang mengisi jurnal pengajaran hari ini di server."
+                  : "Tidak ada jurnal mengajar yang sesuai dengan kriteria filter."}
               </div>
             ) : (
               <div className="flex flex-col gap-4">
-                {journals.map((j) => {
+                {filteredJournals.map((j) => {
                   const presentC = j.attendance ? j.attendance.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length : 0;
                   const totalC = j.attendance ? j.attendance.length : 0;
+                  const isHomeroom = j.teacherType === 'homeroom';
+
                   return (
-                    <div key={j.id} className="border border-slate-200 rounded-2xl p-4 hover:border-slate-300 transition-colors flex flex-col gap-3">
+                    <div key={j.id} className="border border-slate-200 rounded-2xl p-4 hover:border-slate-300 transition-colors flex flex-col gap-3 relative overflow-hidden bg-white">
                       
+                      {/* Left color bar indicator */}
+                      <div className={`absolute top-0 bottom-0 left-0 w-1 ${isHomeroom ? 'bg-emerald-500' : 'bg-indigo-500'}`} />
+
                       {/* Journal Header meta */}
-                      <div className="flex items-start justify-between flex-wrap gap-2 text-xs">
-                        <div>
-                          <span className="px-2 py-0.5 bg-indigo-50 text-indigo-805 text-indigo-705 text-indigo-700 rounded-md font-sans text-[9px] font-black tracking-widest uppercase">
-                            {j.subject}
-                          </span>
-                          <h4 className="font-extrabold text-slate-900 text-sm leading-tight mt-1">Materi: {j.topic}</h4>
-                          <div className="flex items-center gap-2 text-slate-450 text-slate-500 text-[10px] mt-0.5 font-semibold">
-                            <span>Dosen: {j.teacherName}</span>
+                      <div className="flex items-start justify-between flex-wrap gap-2 text-xs pl-2.5">
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <span className={`px-2 py-0.5 rounded-md font-sans text-[8px] font-black tracking-wider uppercase ${
+                              isHomeroom 
+                                ? 'bg-emerald-150 text-emerald-800' 
+                                : 'bg-indigo-50 text-indigo-800'
+                            }`}>
+                              {j.subject}
+                            </span>
+                            
+                            <span className={`px-1.5 py-0.5 rounded-md font-sans text-[8px] font-extrabold ${
+                              isHomeroom
+                                ? 'bg-teal-50 text-teal-800 border border-teal-250 border-teal-200'
+                                : 'bg-blue-50 text-blue-800 border border-blue-200'
+                            }`}>
+                              {isHomeroom ? '📂 Jurnal Wali Kelas' : '📖 Jurnal Guru Mapel'}
+                            </span>
+                          </div>
+
+                          <h4 className="font-extrabold text-slate-900 text-sm leading-tight mt-1.5">Materi: {j.topic}</h4>
+                          <div className="flex items-center gap-2 flex-wrap text-slate-500 text-[10px] mt-1 font-semibold">
+                            <span>Nama Guru: {j.teacherName}</span>
                             <span>•</span>
                             <span>Kelas: {j.className}</span>
                             {j.jamKe && (
@@ -2183,29 +2255,35 @@ export default function PrincipalPanel({
                                 <span>Jam Ke: {j.jamKe}</span>
                               </>
                             )}
+                            {j.pertemuanKe && (
+                              <>
+                                <span>•</span>
+                                <span>Pertemuan Ke: {j.pertemuanKe}</span>
+                              </>
+                            )}
                           </div>
                         </div>
 
-                        <div className="text-right text-[10px] font-semibold text-slate-400">
+                        <div className="text-right text-[10px] font-semibold text-slate-400 shrink-0">
                           <span className="font-mono block">Sinkron: {j.date}</span>
                           <span className="text-emerald-600 font-bold block mt-0.5">
-                            Absen: {presentC} / {totalC} Siswa Hadir
+                            Presensi: {presentC} / {totalC} Siswa Hadir
                           </span>
                         </div>
                       </div>
 
                       {/* Topic goals detail description */}
                       {(j.tujuanPembelajaran || j.notes || j.pencapaianKktp) && (
-                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 text-[11px] grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-700 leading-relaxed font-medium">
+                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 text-[11px] grid grid-cols-1 md:grid-cols-2 gap-4 text-slate-700 leading-relaxed font-medium ml-2.5">
                           {j.tujuanPembelajaran && (
                             <div>
-                              <strong className="text-slate-900 block text-[9px] uppercase tracking-wider font-extrabold text-slate-400">Tujuan Pembelajaran (Merdeka)</strong>
-                              <p className="mt-0.5">{j.tujuanPembelajaran}</p>
+                              <strong className="text-slate-900 block text-[9px] uppercase tracking-wider font-extrabold text-slate-405">Tujuan Pembelajaran / Bimbingan</strong>
+                              <p className="mt-0.5 italic">{j.tujuanPembelajaran}</p>
                             </div>
                           )}
                           {j.notes && (
                             <div>
-                              <strong className="text-slate-900 block text-[9px] uppercase tracking-wider font-extrabold text-slate-400">Catatan Kejadian KBM</strong>
+                              <strong className="text-slate-900 block text-[9px] uppercase tracking-wider font-extrabold text-slate-405">Catatan & Kejadian KBM</strong>
                               <p className="mt-0.5">{j.notes}</p>
                             </div>
                           )}

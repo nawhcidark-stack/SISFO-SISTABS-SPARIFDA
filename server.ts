@@ -9,7 +9,7 @@ import multer from "multer";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig } from "./src/types";
 
 // Setup serverport
 const PORT = process.env.PORT || 3000;
@@ -97,6 +97,16 @@ const subjectTeachers: SubjectTeacher[] = [
   { id: "st-6", username: "guru_agama", name: "KH. M. Syukron, S.Pd.I", subject: "Pendidikan Agama Islam", password: "mapel123" },
   { id: "st-7", username: "guru_pjok", name: "Eko Prasetyo, S.Pd", subject: "Pendidikan Jasmani & OR", password: "mapel123" }
 ];
+
+const teacherSalaries: TeacherSalary[] = [];
+let salaryConfig: SalaryConfig = {
+  baseSalaryHomeroom: 1500000,
+  baseSalarySubject: 1200000,
+  homeroomAllowanceRate: 500000,
+  journalRate: 50000,
+  defaultTunjanganMasaKerja: 350000,
+  defaultPotonganDanaSosial: 50000
+};
 
 const teachingJournals: TeachingJournal[] = [
   {
@@ -604,6 +614,7 @@ async function saveStateToFirestore() {
     await saveList("sarprasItems", sarprasItems);
     await saveList("sarprasProposals", sarprasProposals);
     await saveList("sarprasLoans", sarprasLoans);
+    await saveList("teacherSalaries", teacherSalaries);
 
     // Save configurations as individual upserted documents in the configs collection
     const configCol = mongoDb.collection("configs");
@@ -621,6 +632,7 @@ async function saveStateToFirestore() {
     await saveConfig("sarprasConfig", sarprasConfig);
     await saveConfig("bkConfig", bkConfig);
     await saveConfig("adminConfig", adminConfig);
+    await saveConfig("salaryConfig", salaryConfig);
     await saveConfig("systemMetadata", { seeded: true });
 
     console.log("All state collections successfully synced to MongoDB.");
@@ -932,6 +944,10 @@ async function syncWithFirestore() {
       sarprasLoans.length = 0;
       loadedSLoans.forEach((d: any) => { const { _id, ...rest } = d; sarprasLoans.push(rest as any); });
 
+      const loadedSalaries = await mongoDb.collection("teacherSalaries").find({}).toArray();
+      teacherSalaries.length = 0;
+      loadedSalaries.forEach((d: any) => { const { _id, ...rest } = d; teacherSalaries.push(rest as any); });
+
       // Load configurations
       const loadedConfigs = await mongoDb.collection("configs").find({}).toArray();
       loadedConfigs.forEach((d: any) => {
@@ -946,6 +962,7 @@ async function syncWithFirestore() {
         else if (id === "sarprasConfig") Object.assign(sarprasConfig, cleaned);
         else if (id === "bkConfig") Object.assign(bkConfig, cleaned);
         else if (id === "adminConfig") Object.assign(adminConfig, cleaned);
+        else if (id === "salaryConfig") Object.assign(salaryConfig, cleaned);
       });
 
       // Reconstruct missing uploaded files back onto physical disk from MongoDB backup
@@ -1062,6 +1079,8 @@ function saveState() {
       subjectTeachers,
       teachingJournals,
       treasurerTransactions,
+      teacherSalaries,
+      salaryConfig,
       studentDevelopmentLogs,
       studentInfractionLogs,
       studentCounselingLogs,
@@ -1188,6 +1207,13 @@ function loadState() {
       if (Array.isArray(data.sarprasLoans)) {
         sarprasLoans.length = 0;
         sarprasLoans.push(...data.sarprasLoans);
+      }
+      if (Array.isArray(data.teacherSalaries)) {
+        teacherSalaries.length = 0;
+        teacherSalaries.push(...data.teacherSalaries);
+      }
+      if (data.salaryConfig) {
+        Object.assign(salaryConfig, data.salaryConfig);
       }
       if (Array.isArray(data.treasurerTransactions)) {
         treasurerTransactions.length = 0;
@@ -2544,6 +2570,7 @@ async function startServer() {
     const { 
       teacherId, 
       teacherName, 
+      teacherType,
       subject, 
       className, 
       date, 
@@ -2566,6 +2593,7 @@ async function startServer() {
       id: `tj-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       teacherId,
       teacherName,
+      teacherType: teacherType || 'subject_teacher',
       subject,
       className,
       date,
@@ -3684,7 +3712,7 @@ async function startServer() {
 
   // Create manual bookkeeping transaction
   app.post("/api/treasurer/transactions", (req, res) => {
-    const { type, category, amount, description, date, recipientName } = req.body;
+    const { type, category, amount, description, date, recipientName, fundingSource } = req.body;
     if (!type || !category || !amount || !description || !date) {
       return res.status(400).json({ error: "Semua field wajib diisi." });
     }
@@ -3698,7 +3726,8 @@ async function startServer() {
       date: String(date),
       source: 'custom' as const,
       createdBy: 'bendahara',
-      recipientName: recipientName ? String(recipientName) : undefined
+      recipientName: recipientName ? String(recipientName) : undefined,
+      fundingSource: fundingSource ? String(fundingSource) : undefined
     };
 
     treasurerTransactions.push(newTx);
@@ -3708,7 +3737,7 @@ async function startServer() {
 
   // Update manual bookkeeping transaction
   app.put("/api/treasurer/transactions/:id", (req, res) => {
-    const { type, category, amount, description, date, recipientName } = req.body;
+    const { type, category, amount, description, date, recipientName, fundingSource } = req.body;
     const { id } = req.params;
 
     const txIndex = treasurerTransactions.findIndex(t => t.id === id);
@@ -3723,7 +3752,8 @@ async function startServer() {
       amount: amount ? Number(amount) : treasurerTransactions[txIndex].amount,
       description: description ? String(description) : treasurerTransactions[txIndex].description,
       date: date ? String(date) : treasurerTransactions[txIndex].date,
-      recipientName: recipientName !== undefined ? String(recipientName) : treasurerTransactions[txIndex].recipientName
+      recipientName: recipientName !== undefined ? String(recipientName) : treasurerTransactions[txIndex].recipientName,
+      fundingSource: fundingSource !== undefined ? (fundingSource ? String(fundingSource) : undefined) : treasurerTransactions[txIndex].fundingSource
     };
 
     treasurerTransactions[txIndex] = updatedTx;
@@ -3742,6 +3772,270 @@ async function startServer() {
     treasurerTransactions.splice(txIndex, 1);
     saveState();
     res.json({ success: true, message: "Transaksi berhasil dihapus." });
+  });
+
+  // --- SALARY ENDPOINTS FOR TEACHERS (Penggajian Guru: Mapel dan Wali) ---
+  app.get("/api/treasurer/salary-config", (req, res) => {
+    res.json(salaryConfig);
+  });
+
+  app.post("/api/treasurer/salary-config", (req, res) => {
+    const { baseSalaryHomeroom, baseSalarySubject, homeroomAllowanceRate, journalRate, defaultTunjanganMasaKerja, defaultPotonganDanaSosial } = req.body;
+    
+    salaryConfig = {
+      baseSalaryHomeroom: Number(baseSalaryHomeroom) || 0,
+      baseSalarySubject: Number(baseSalarySubject) || 0,
+      homeroomAllowanceRate: Number(homeroomAllowanceRate) || 0,
+      journalRate: Number(journalRate) || 0,
+      defaultTunjanganMasaKerja: Number(defaultTunjanganMasaKerja) || 0,
+      defaultPotonganDanaSosial: Number(defaultPotonganDanaSosial) || 0
+    };
+
+    saveState();
+    res.json({ success: true, salaryConfig });
+  });
+
+  app.get("/api/treasurer/salaries", (req, res) => {
+    res.json(teacherSalaries);
+  });
+
+  app.post("/api/treasurer/salaries/generate", (req, res) => {
+    const { month } = req.body; // e.g., "2026-06"
+    if (!month) {
+      return res.status(400).json({ error: "Bulan harus ditentukan (Format: YYYY-MM)." });
+    }
+
+    let generatedCount = 0;
+    let skippedCount = 0;
+
+    // 1. Homeroom Teachers
+    homeroomTeachers.forEach(ht => {
+      // Check if already has a salary record for this month
+      const existing = teacherSalaries.find(ts => ts.teacherId === ht.id && ts.month === month);
+      if (existing) {
+        if (existing.status === 'paid') {
+          skippedCount++;
+          return; // Skip paid salaries
+        } else {
+          // Update unpaid
+          existing.baseSalary = salaryConfig.baseSalaryHomeroom;
+          existing.homeroomAllowance = salaryConfig.homeroomAllowanceRate;
+          existing.journalCount = 0;
+          existing.journalRate = 0;
+          existing.tunjanganMasaKerja = existing.tunjanganMasaKerja !== undefined ? Number(existing.tunjanganMasaKerja) : (salaryConfig.defaultTunjanganMasaKerja || 0);
+          existing.vakasi = existing.vakasi !== undefined ? Number(existing.vakasi) : 0;
+          existing.potonganDanaSosial = existing.potonganDanaSosial !== undefined ? Number(existing.potonganDanaSosial) : (salaryConfig.defaultPotonganDanaSosial || 0);
+          existing.potonganAbsen = existing.potonganAbsen !== undefined ? Number(existing.potonganAbsen) : 0;
+          existing.potonganLain = existing.potonganLain !== undefined ? Number(existing.potonganLain) : 0;
+          
+          existing.totalAmount = existing.baseSalary + existing.homeroomAllowance + existing.tunjanganMasaKerja + existing.vakasi + existing.otherAllowance - (existing.potonganDanaSosial + existing.potonganAbsen + existing.potonganLain);
+          generatedCount++;
+          return;
+        }
+      }
+
+      // Create new
+      const defaultTMK = salaryConfig.defaultTunjanganMasaKerja || 0;
+      const defaultSoc = salaryConfig.defaultPotonganDanaSosial || 0;
+      const newSalary: TeacherSalary = {
+        id: `sal-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        teacherId: ht.id,
+        teacherName: ht.name,
+        teacherType: 'homeroom',
+        month,
+        baseSalary: salaryConfig.baseSalaryHomeroom,
+        homeroomAllowance: salaryConfig.homeroomAllowanceRate,
+        journalCount: 0,
+        journalRate: 0,
+        tunjanganMasaKerja: defaultTMK,
+        vakasi: 0,
+        potonganDanaSosial: defaultSoc,
+        potonganAbsen: 0,
+        potonganLain: 0,
+        otherAllowance: 0,
+        deductions: 0,
+        totalAmount: salaryConfig.baseSalaryHomeroom + salaryConfig.homeroomAllowanceRate + defaultTMK - defaultSoc,
+        status: 'unpaid',
+        createdAt: new Date().toISOString()
+      };
+      teacherSalaries.push(newSalary);
+      generatedCount++;
+    });
+
+    // 2. Subject Teachers
+    subjectTeachers.forEach(st => {
+      // Calculate teaching journals count in this month
+      const journalsThisMonth = teachingJournals.filter(j => {
+        if (j.teacherId !== st.id) return false;
+        // Check if journal date matches YYYY-MM
+        return j.date && j.date.startsWith(month);
+      });
+      const journalCount = journalsThisMonth.length;
+      const journalPay = journalCount * salaryConfig.journalRate;
+
+      const existing = teacherSalaries.find(ts => ts.teacherId === st.id && ts.month === month);
+      if (existing) {
+        if (existing.status === 'paid') {
+          skippedCount++;
+          return; // Skip paid salaries
+        } else {
+          // Update unpaid
+          existing.baseSalary = salaryConfig.baseSalarySubject;
+          existing.homeroomAllowance = 0;
+          existing.journalCount = journalCount;
+          existing.journalRate = salaryConfig.journalRate;
+          existing.tunjanganMasaKerja = existing.tunjanganMasaKerja !== undefined ? Number(existing.tunjanganMasaKerja) : (salaryConfig.defaultTunjanganMasaKerja || 0);
+          existing.vakasi = journalPay;
+          existing.potonganDanaSosial = existing.potonganDanaSosial !== undefined ? Number(existing.potonganDanaSosial) : (salaryConfig.defaultPotonganDanaSosial || 0);
+          existing.potonganAbsen = existing.potonganAbsen !== undefined ? Number(existing.potonganAbsen) : 0;
+          existing.potonganLain = existing.potonganLain !== undefined ? Number(existing.potonganLain) : 0;
+          
+          existing.totalAmount = existing.baseSalary + existing.homeroomAllowance + existing.tunjanganMasaKerja + existing.vakasi + existing.otherAllowance - (existing.potonganDanaSosial + existing.potonganAbsen + existing.potonganLain);
+          generatedCount++;
+          return;
+        }
+      }
+
+      // Create new
+      const defaultTMK = salaryConfig.defaultTunjanganMasaKerja || 0;
+      const defaultSoc = salaryConfig.defaultPotonganDanaSosial || 0;
+      const newSalary: TeacherSalary = {
+        id: `sal-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+        teacherId: st.id,
+        teacherName: st.name,
+        teacherType: 'subject_teacher',
+        month,
+        baseSalary: salaryConfig.baseSalarySubject,
+        homeroomAllowance: 0,
+        journalCount,
+        journalRate: salaryConfig.journalRate,
+        tunjanganMasaKerja: defaultTMK,
+        vakasi: journalPay,
+        potonganDanaSosial: defaultSoc,
+        potonganAbsen: 0,
+        potonganLain: 0,
+        otherAllowance: 0,
+        deductions: 0,
+        totalAmount: salaryConfig.baseSalarySubject + defaultTMK + journalPay - defaultSoc,
+        status: 'unpaid',
+        createdAt: new Date().toISOString()
+      };
+      teacherSalaries.push(newSalary);
+      generatedCount++;
+    });
+
+    saveState();
+    res.json({ success: true, message: `Berhasil generate ${generatedCount} data gaji. (${skippedCount} sudah dibayar & dilewati).`, salaries: teacherSalaries });
+  });
+
+  app.put("/api/treasurer/salaries/:id", (req, res) => {
+    const { id } = req.params;
+    const { 
+      baseSalary, 
+      homeroomAllowance, 
+      tunjanganMasaKerja, 
+      vakasi, 
+      potonganDanaSosial, 
+      potonganAbsen, 
+      potonganLain, 
+      otherAllowance, 
+      deductions, 
+      notes 
+    } = req.body;
+
+    const salIndex = teacherSalaries.findIndex(s => s.id === id);
+    if (salIndex === -1) {
+      return res.status(404).json({ error: "Data gaji tidak ditemukan." });
+    }
+
+    const sal = teacherSalaries[salIndex];
+    if (sal.status === 'paid') {
+      return res.status(400).json({ error: "Gaji yang sudah dibayar tidak dapat diedit." });
+    }
+
+    sal.baseSalary = baseSalary !== undefined ? Number(baseSalary) : sal.baseSalary;
+    sal.homeroomAllowance = homeroomAllowance !== undefined ? Number(homeroomAllowance) : sal.homeroomAllowance;
+    sal.tunjanganMasaKerja = tunjanganMasaKerja !== undefined ? Number(tunjanganMasaKerja) : (sal.tunjanganMasaKerja || 0);
+    sal.vakasi = vakasi !== undefined ? Number(vakasi) : (sal.vakasi !== undefined ? sal.vakasi : (sal.journalCount * sal.journalRate));
+    sal.potonganDanaSosial = potonganDanaSosial !== undefined ? Number(potonganDanaSosial) : (sal.potonganDanaSosial || 0);
+    sal.potonganAbsen = potonganAbsen !== undefined ? Number(potonganAbsen) : (sal.potonganAbsen || 0);
+    sal.potonganLain = potonganLain !== undefined ? Number(potonganLain) : (sal.potonganLain || 0);
+    sal.otherAllowance = otherAllowance !== undefined ? Number(otherAllowance) : sal.otherAllowance;
+    sal.deductions = deductions !== undefined ? Number(deductions) : sal.deductions;
+    sal.notes = notes !== undefined ? String(notes) : sal.notes;
+
+    // Recalculate
+    sal.totalAmount = sal.baseSalary + sal.homeroomAllowance + sal.tunjanganMasaKerja + sal.vakasi + sal.otherAllowance - (sal.potonganDanaSosial + sal.potonganAbsen + sal.potonganLain);
+
+    saveState();
+    res.json({ success: true, salary: sal });
+  });
+
+  app.post("/api/treasurer/salaries/:id/pay", (req, res) => {
+    const { id } = req.params;
+    const salIndex = teacherSalaries.findIndex(s => s.id === id);
+    if (salIndex === -1) {
+      return res.status(404).json({ error: "Data gaji tidak ditemukan." });
+    }
+
+    const sal = teacherSalaries[salIndex];
+    if (sal.status === 'paid') {
+      return res.status(400).json({ error: "Gaji sudah berstatus dibayar." });
+    }
+
+    // Mark as paid
+    sal.status = 'paid';
+    sal.paymentDate = new Date().toISOString().split('T')[0];
+
+    // INTEGRATE: Record OUTGOING transaction in cash ledger
+    const [year, monthNum] = sal.month.split('-');
+    const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+    const monthStr = monthNames[parseInt(monthNum, 10) - 1] || sal.month;
+    const roleStr = sal.teacherType === 'homeroom' ? 'Wali Kelas' : 'Guru Mapel';
+
+    const newTx: TreasurerTransaction = {
+      id: `tx-sal-${Date.now()}`,
+      type: 'outgoing',
+      category: 'Gaji Guru',
+      amount: sal.totalAmount,
+      description: `Pembayaran Gaji ${sal.teacherName} (${roleStr}) - Periode ${monthStr} ${year}`,
+      date: new Date().toISOString().split('T')[0],
+      source: 'custom',
+      createdBy: 'bendahara',
+      recipientName: sal.teacherName
+    };
+
+    treasurerTransactions.push(newTx);
+    saveState();
+
+    // Broadcast notification
+    const notification: RealtimeNotification = {
+      id: `notif-sal-paid-${sal.id}`,
+      title: "Gaji Dibayarkan",
+      message: `Gaji ${sal.teacherName} untuk periode ${monthStr} ${year} sebesar Rp ${sal.totalAmount.toLocaleString('id-ID')} telah dibayarkan.`,
+      type: "success",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, salary: sal, transaction: newTx });
+  });
+
+  app.delete("/api/treasurer/salaries/:id", (req, res) => {
+    const { id } = req.params;
+    const salIndex = teacherSalaries.findIndex(s => s.id === id);
+    if (salIndex === -1) {
+      return res.status(404).json({ error: "Data gaji tidak ditemukan." });
+    }
+
+    const sal = teacherSalaries[salIndex];
+    if (sal.status === 'paid') {
+      return res.status(400).json({ error: "Gaji yang sudah dibayar tidak dapat dihapus." });
+    }
+
+    teacherSalaries.splice(salIndex, 1);
+    saveState();
+    res.json({ success: true, message: "Data gaji berhasil dihapus." });
   });
 
   // Get active students

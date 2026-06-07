@@ -79,6 +79,42 @@ export default function StudentManagement({
     document.body.removeChild(link);
   };
 
+  // Export all students to CSV format compatible with the import structure
+  const handleExportStudentsCSV = () => {
+    const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,saldo_awal\r\n";
+    
+    const escapeCsv = (val: string | number) => {
+      const str = String(val === undefined || val === null ? '' : val);
+      if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes(';')) {
+        return `"${str.replace(/"/g, '""')}"`;
+      }
+      return str;
+    };
+
+    const rows = students.map(s => {
+      return [
+        escapeCsv(s.nis),
+        escapeCsv(s.name),
+        escapeCsv(s.class),
+        escapeCsv(s.gender || 'Laki-laki'),
+        escapeCsv(s.email),
+        escapeCsv(s.phone),
+        escapeCsv(s.savingsBalance || 0)
+      ].join(',');
+    }).join("\r\n");
+
+    const blob = new Blob(["\ufeff" + headers + rows], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    
+    const dateStr = new Date().toISOString().slice(0, 10);
+    link.setAttribute("download", `data_kolektif_siswa_${dateStr}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // Parse CSV File on upload
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -438,6 +474,16 @@ export default function StudentManagement({
           >
             <Download size={14} className="text-slate-500" />
             <span>Unduh Templat</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={handleExportStudentsCSV}
+            className="px-3 py-2 bg-emerald-50 border border-emerald-200 hover:bg-emerald-100 text-emerald-800 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Ekspor Seluruh Siswa ke Excel (CSV)"
+          >
+            <FileSpreadsheet size={14} className="text-emerald-700" />
+            <span>Ekspor Excel</span>
           </button>
 
           <button
@@ -1053,9 +1099,13 @@ export default function StudentManagement({
                   <code className="block bg-slate-100 p-2 rounded font-mono font-bold text-indigo-900 text-[10px] break-all border border-slate-200 shadow-inner">
                     nis,nama,kelas,email,telepon,saldo_awal
                   </code>
-                  <div className="flex gap-4 mt-2.5 text-[10px] font-bold text-indigo-800 uppercase tracking-wide">
-                    <button type="button" onClick={handleDownloadTemplate} className="hover:underline flex items-center gap-1 cursor-pointer">
+                  <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2.5 text-[10px] font-bold uppercase tracking-wide">
+                    <button type="button" onClick={handleDownloadTemplate} className="hover:underline flex items-center gap-1 text-indigo-800 cursor-pointer">
                       <Download size={11} /> Unduh Contoh File CSV
+                    </button>
+                    <span className="text-slate-300 hidden sm:inline">|</span>
+                    <button type="button" onClick={handleExportStudentsCSV} className="hover:underline flex items-center gap-1 text-emerald-800 hover:text-emerald-950 cursor-pointer">
+                      <FileSpreadsheet size={11} /> Ekspor Data Siswa Aktif (Excel)
                     </button>
                   </div>
                 </div>

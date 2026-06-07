@@ -1726,7 +1726,7 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl } = req.body;
+    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate } = req.body;
     
     if (name !== undefined) schoolIdentity.name = String(name).trim();
     if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
@@ -1744,6 +1744,7 @@ async function startServer() {
     if (iosUrl !== undefined) (schoolIdentity as any).iosUrl = String(iosUrl).trim();
     if (treasurerSkUrl !== undefined) (schoolIdentity as any).treasurerSkUrl = String(treasurerSkUrl).trim();
     if (sarprasSkUrl !== undefined) (schoolIdentity as any).sarprasSkUrl = String(sarprasSkUrl).trim();
+    if (paymentCardTemplate !== undefined) (schoolIdentity as any).paymentCardTemplate = String(paymentCardTemplate); // can be empty or base64 data URI
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {

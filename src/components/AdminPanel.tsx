@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, Apple, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
 import StudentManagement from './StudentManagement';
 import QRScannerModal from './QRScannerModal';
+import StudentPaymentCard from './StudentPaymentCard';
 import QRCode from 'qrcode';
 import JSZip from 'jszip';
 
@@ -185,6 +186,7 @@ export default function AdminPanel({
   const [previewTeacherData, setPreviewTeacherData] = useState<any[]>([]);
   const [isTeacherImporting, setIsTeacherImporting] = useState(false);
   const teacherFileInputRef = useRef<HTMLInputElement>(null);
+  const cardTemplateInputRef = useRef<HTMLInputElement>(null);
 
   const handleDownloadTeacherTemplate = (type: 'homeroom' | 'subject') => {
     let headers = "";
@@ -386,6 +388,43 @@ export default function AdminPanel({
   const [downloadingCollectiveQr, setDownloadingCollectiveQr] = useState(false);
   const [collectiveQrProgress, setCollectiveQrProgress] = useState(0);
   const [collectiveQrTotal, setCollectiveQrTotal] = useState(0);
+
+  const handleCardTemplateUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith("image/")) {
+      alert("Hanya mendukung file gambar (PNG, JPG, JPEG)!");
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      const base64String = event.target?.result as string;
+      if (onUpdateSchoolIdentity) {
+        const res = await onUpdateSchoolIdentity({ paymentCardTemplate: base64String });
+        if (res) {
+          alert("Template latar belakang kartu pembayaran berhasil diperbarui!");
+        } else {
+          alert("Gagal menyimpan latar belakang template kartu.");
+        }
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
+  const handleRemoveCardTemplate = async () => {
+    if (confirm("Apakah Anda yakin ingin menghapus template gambar kartu? Kartu akan menggunakan desain default kembali.")) {
+      if (onUpdateSchoolIdentity) {
+        const res = await onUpdateSchoolIdentity({ paymentCardTemplate: "" });
+        if (res) {
+          alert("Template gambar kartu berhasil dikembalikan ke desain default.");
+        } else {
+          alert("Gagal mengembalikan ke desain default.");
+        }
+      }
+    }
+  };
 
   // Firebase/Cloud Sync States
   const [systemStatus, setSystemStatus] = useState<any>(null);
@@ -6877,6 +6916,71 @@ export default function AdminPanel({
               </div>
             </div>
 
+            {/* Design & Template Settings Card */}
+            <div className="bg-white border border-slate-200 rounded-2xl shadow-sm p-6 flex flex-col gap-4">
+              <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                <div>
+                  <h4 className="text-slate-900 font-extrabold text-sm flex items-center gap-1.5 font-sans">
+                    🎨 Pengaturan Template Latar Belakang Kartu
+                  </h4>
+                  <p className="text-slate-500 text-[11px] mt-0.5 leading-relaxed font-sans font-medium">
+                    Unggah gambar template latar belakang jika ingin menggunakan desain kartu kustom milik sekolah Anda sendiri. Latar belakang default akan otomatis digantikan oleh template kustom Anda, dan data teks detail siswa serta QR Code akan otomatis di-overlay di posisi yang sesuai secara presisi.
+                  </p>
+                </div>
+                
+                <div className="flex items-center gap-2 shrink-0">
+                  <input
+                    type="file"
+                    ref={cardTemplateInputRef}
+                    accept="image/*"
+                    onChange={handleCardTemplateUpload}
+                    className="hidden"
+                  />
+                  
+                  <button
+                    type="button"
+                    onClick={() => cardTemplateInputRef.current?.click()}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                  >
+                    <UploadCloud size={13} />
+                    <span>Upload Template Gambar</span>
+                  </button>
+
+                  {schoolIdentity?.paymentCardTemplate && (
+                    <button
+                      type="button"
+                      onClick={handleRemoveCardTemplate}
+                      className="px-3 py-2 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl text-xs font-bold transition-all flex items-center gap-1 cursor-pointer font-sans"
+                    >
+                      <Trash2 size={13} />
+                      <span>Hapus Template</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+
+              {/* Real-time Preview Indicator */}
+              <div className="bg-slate-50/70 border border-slate-150 rounded-xl p-3 flex flex-col sm:flex-row items-center gap-4 text-xs font-medium text-slate-600">
+                <div className="w-20 h-12 rounded-lg bg-slate-200 border border-slate-300 flex items-center justify-center shrink-0 overflow-hidden relative shadow-inner">
+                  {schoolIdentity?.paymentCardTemplate ? (
+                    <img 
+                      src={schoolIdentity.paymentCardTemplate} 
+                      className="w-full h-full object-cover" 
+                      alt="Thumbnail" 
+                    />
+                  ) : (
+                    <span className="text-[10px] font-bold text-slate-400">Default</span>
+                  )}
+                </div>
+                <div className="font-sans leading-relaxed">
+                  <span className="text-slate-800 font-extrabold block mb-0.5 text-xs">
+                    Status Cetakan Template: {schoolIdentity?.paymentCardTemplate ? "🟢 Template Kustom Aktif" : "🔵 Desain Default Aktif"}
+                  </span>
+                  <span>Ukuran cetak kartu dikunci pada rasio/dimensi standar ID-1 (Kartu Kredit/Smarcard/KTP): <strong className="text-slate-800 font-bold font-mono">8,56 cm × 5,398 cm</strong>.</span>
+                </div>
+              </div>
+            </div>
+
             {/* Grid display of cards */}
             {(() => {
               const matched = students.filter(s => {
@@ -8894,124 +8998,18 @@ export default function AdminPanel({
                 <div id="print-report-section" className="bg-white text-slate-950 p-4 rounded-lg font-sans border border-slate-100 flex flex-col gap-6 relative">
                   
                   {/* Outer Grid optimized specifically for Print break intervals */}
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:grid-cols-2 print:gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 print:grid-cols-2 print:gap-4 justify-items-center">
                     {qrCardsToPrint.map((student) => {
-                      const qrText = `${student.nis}`;
                       return (
-                        <div
-                          key={student.id}
-                          className="border-2 border-dashed border-slate-300 rounded-[24px] p-5 flex flex-col justify-between h-[270px] bg-white text-slate-905 shadow-none break-inside-avoid print:shadow-none print:border-slate-400 print:break-inside-avoid relative overflow-hidden"
-                          style={{ pageBreakInside: 'avoid' }}
-                        >
-                          {/* Inner Header / Kop */}
-                          {schoolIdentity?.letterhead ? (
-                            <div className="-mx-3 -mt-3 h-16 flex items-center justify-center overflow-hidden shrink-0 border-b border-slate-100 mb-2 bg-white">
-                              <img
-                                src={schoolIdentity.letterhead}
-                                alt="Kop Surat"
-                                className="w-full h-full object-fill"
-                                referrerPolicy="no-referrer"
-                              />
-                            </div>
-                          ) : (
-                            <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 text-left shrink-0 w-full">
-                              <div className="flex items-center gap-2 min-w-0">
-                                {schoolIdentity?.logo ? (
-                                  <img
-                                    src={schoolIdentity.logo}
-                                    alt="Logo"
-                                    className="w-10 h-10 object-contain shrink-0"
-                                    referrerPolicy="no-referrer"
-                                  />
-                                ) : (
-                                  <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-800 font-black text-[11px] shrink-0 ring-1 ring-emerald-200">
-                                    NU
-                                  </div>
-                                )}
-                                <div className="min-w-0 leading-none">
-                                  <h4 className="text-[10.5px] font-black text-slate-900 tracking-tight uppercase leading-tight truncate">
-                                    {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
-                                  </h4>
-                                  <p className="text-[7px] font-black text-emerald-700 uppercase tracking-wider leading-none mt-0.5 truncate">
-                                    {schoolIdentity?.subheading || "BERAKHLAK MULIA • BERILMU • BERPRESTASI"}
-                                  </p>
-                                </div>
-                              </div>
-                              {schoolIdentity?.logo2 ? (
-                                <img
-                                  src={schoolIdentity.logo2}
-                                  alt="Logo 2"
-                                  className="w-10 h-10 object-contain shrink-0"
-                                  referrerPolicy="no-referrer"
-                                />
-                              ) : (
-                                <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 font-extrabold text-[11px] shrink-0 ring-1 ring-amber-100">
-                                  ⭐
-                                </div>
-                              )}
-                            </div>
-                          )}
-
-                          {/* Beautiful Card Body */}
-                          <div className="flex-1 bg-gradient-to-br from-blue-600 via-teal-600 to-emerald-500 rounded-xl p-3 flex items-center justify-between gap-3 relative overflow-hidden text-white mb-2.5">
-                            <div className="absolute right-0 top-0 bottom-0 w-1/4 bg-white/[0.04] rounded-l-full blur-xs pointer-events-none" />
-
-                            {/* Left: Avatar frame - vertically aligned and centered with details/QR */}
-                            <div className="flex flex-col items-center justify-center gap-1.5 shrink-0 min-w-[70px]">
-                              <div className="w-14 h-14 rounded-full border border-white bg-white/20 flex items-center justify-center overflow-hidden shadow-inner relative shrink-0">
-                                <svg viewBox="0 0 24 24" className="w-[42px] h-[42px] text-white/90" fill="currentColor">
-                                  <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                                </svg>
-                              </div>
-                              
-                              <div className="bg-emerald-950/70 border border-emerald-450/40 px-1.5 py-0.5 rounded-full text-[6px] font-extrabold uppercase tracking-wide leading-none text-emerald-200 shrink-0 text-center scale-[0.9] whitespace-nowrap">
-                                SPP & TABUNGAN TUNAI
-                              </div>
-                            </div>
-
-                            {/* Center Details */}
-                            <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0 text-left z-10 leading-none">
-                              <div className="min-w-0">
-                                <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NAMA</span>
-                                <span className="text-[12.5px] font-black tracking-wide text-white block uppercase truncate leading-tight mt-0.5">
-                                  {student.name}
-                                </span>
-                              </div>
-
-                              <div>
-                                <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NIS</span>
-                                <span className="font-mono text-[11.5px] font-black text-white tracking-wider block leading-none mt-0.5">
-                                  {student.nis}
-                                </span>
-                              </div>
-
-                              <div>
-                                <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">KELAS</span>
-                                <span className="text-[11px] font-black text-white block leading-none uppercase mt-0.5">
-                                  {student.class}
-                                </span>
-                              </div>
-                            </div>
-
-                            {/* Right: White box for QR */}
-                            <div className="bg-white rounded-lg p-2 flex flex-col items-center justify-center w-[102px] h-full shrink-0 shadow-sm z-10 text-slate-900 gap-1">
-                              <span className="text-[7.5px] font-black text-indigo-900 uppercase tracking-tight leading-none text-center">SCAN NIS</span>
-                              <span className="text-[5.5px] font-black text-slate-400 uppercase tracking-widest leading-none text-center">UNTUK BAYAR</span>
-
-                              <div className="p-0.5 bg-white border border-slate-100 rounded-md flex items-center justify-center shrink-0">
-                                <StudentQrCode text={student.nis} size={64} />
-                              </div>
-
-                              <span className="font-mono text-[8.5px] font-black tracking-widest text-slate-800 leading-none">
-                                {student.nis}
-                              </span>
-                            </div>
-                          </div>
-
-                          {/* Cutting Line Cue Footnote */}
-                          <div className="text-center text-[7.5px] text-slate-400 uppercase tracking-widest font-extrabold shrink-0">
-                            ✂️ Gunting Mengikuti Garis Putus-Putus
-                          </div>
+                        <div key={student.id} className="flex flex-col items-center gap-1.5 break-inside-avoid print:break-inside-avoid" style={{ pageBreakInside: 'avoid' }}>
+                          <StudentPaymentCard 
+                            student={student} 
+                            schoolIdentity={schoolIdentity} 
+                            isPreview={true}
+                          />
+                          <span className="text-center text-[7.5px] text-slate-400 uppercase tracking-widest font-extrabold pb-2 no-print select-none">
+                            ✂️ Potong Mengikuti Batas Luar Kartu
+                          </span>
                         </div>
                       );
                     })}

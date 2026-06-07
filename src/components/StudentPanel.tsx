@@ -3041,117 +3041,17 @@ export default function StudentPanel({
 
             {/* Printable Area Wrapper */}
             <div className="bg-white p-4 rounded-lg border border-slate-100 flex flex-col items-center">
-              <div id="print-report-section" className="bg-white text-slate-905 p-5 rounded-[24px] font-sans border-2 border-dashed border-slate-350 flex flex-col justify-between h-[270px] w-full max-w-[395px] relative overflow-hidden">
-                {/* Inner Header / Kop */}
-                {schoolIdentity?.letterhead ? (
-                  <div className="-mx-3 -mt-3 h-16 flex items-center justify-center overflow-hidden shrink-0 border-b border-slate-100 mb-2 bg-white">
-                    <img
-                      src={schoolIdentity.letterhead}
-                      alt="Kop Surat"
-                      className="w-full h-full object-fill"
-                      referrerPolicy="no-referrer"
-                    />
-                  </div>
-                ) : (
-                  <div className="flex items-center justify-between border-b border-slate-100 pb-2 mb-2 text-left shrink-0 w-full">
-                    <div className="flex items-center gap-2 min-w-0">
-                      {schoolIdentity?.logo ? (
-                        <img
-                          src={schoolIdentity.logo}
-                          alt="Logo"
-                          className="w-10 h-10 object-contain shrink-0"
-                          referrerPolicy="no-referrer"
-                        />
-                      ) : (
-                        <div className="w-10 h-10 bg-emerald-100 rounded-full flex items-center justify-center text-emerald-800 font-black text-[11px] shrink-0 ring-1 ring-emerald-200">
-                          NU
-                        </div>
-                      )}
-                      <div className="min-w-0 leading-none">
-                        <h4 className="text-[10.5px] font-black text-slate-900 tracking-tight uppercase leading-tight truncate">
-                          {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
-                        </h4>
-                        <p className="text-[7px] font-black text-emerald-700 uppercase tracking-wider leading-none mt-0.5 truncate">
-                          {schoolIdentity?.subheading || "BERAKHLAK MULIA • BERILMU • BERPRESTASI"}
-                        </p>
-                      </div>
-                    </div>
-                    {schoolIdentity?.logo2 ? (
-                      <img
-                        src={schoolIdentity.logo2}
-                        alt="Logo 2"
-                        className="w-10 h-10 object-contain shrink-0"
-                        referrerPolicy="no-referrer"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 bg-amber-50 rounded-full flex items-center justify-center text-amber-600 font-extrabold text-[11px] shrink-0 ring-1 ring-amber-100">
-                        ⭐
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Beautiful Card Body */}
-                <div className="flex-1 bg-gradient-to-br from-blue-600 via-teal-600 to-emerald-500 rounded-xl p-3 flex items-center justify-between gap-3 relative overflow-hidden text-white mb-2.5">
-                  <div className="absolute right-0 top-0 bottom-0 w-1/4 bg-white/[0.04] rounded-l-full blur-xs pointer-events-none" />
-
-                  {/* Left: Avatar frame - vertically aligned and centered with details/QR */}
-                  <div className="flex flex-col items-center justify-center gap-1.5 shrink-0 min-w-[70px]">
-                    <div className="w-14 h-14 rounded-full border border-white bg-white/20 flex items-center justify-center overflow-hidden shadow-inner relative shrink-0">
-                      <svg viewBox="0 0 24 24" className="w-[42px] h-[42px] text-white/90" fill="currentColor">
-                        <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
-                      </svg>
-                    </div>
-                    
-                    <div className="bg-emerald-950/70 border border-emerald-450/40 px-1.5 py-0.5 rounded-full text-[6px] font-extrabold uppercase tracking-wide leading-none text-emerald-200 shrink-0 text-center scale-[0.9] whitespace-nowrap">
-                      SPP & TABUNGAN TUNAI
-                    </div>
-                  </div>
-
-                  {/* Center Details */}
-                  <div className="flex-1 flex flex-col justify-center gap-1.5 min-w-0 text-left z-10 leading-none">
-                    <div className="min-w-0">
-                      <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NAMA</span>
-                      <span className="text-[12.5px] font-black tracking-wide text-white block uppercase truncate leading-tight mt-0.5">
-                        {currentStudent.name}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">NIS</span>
-                      <span className="font-mono text-[11.5px] font-black text-white tracking-wider block leading-none mt-0.5">
-                        {currentStudent.nis}
-                      </span>
-                    </div>
-
-                    <div>
-                      <span className="text-[7.5px] font-black text-emerald-200 uppercase tracking-widest block leading-none">KELAS</span>
-                      <span className="text-[11px] font-black text-white block leading-none uppercase mt-0.5">
-                        {currentStudent.class}
-                      </span>
-                    </div>
-                  </div>
-
-                  {/* Right: White box for QR */}
-                  <div className="bg-white rounded-lg p-2 flex flex-col items-center justify-center w-[102px] h-full shrink-0 shadow-sm z-10 text-slate-900 gap-1">
-                    <span className="text-[7.5px] font-black text-indigo-900 uppercase tracking-tight leading-none text-center">SCAN NIS</span>
-                    <span className="text-[5.5px] font-black text-slate-400 uppercase tracking-widest leading-none text-center">UNTUK BAYAR</span>
-
-                    <div className="p-0.5 bg-white border border-slate-100 rounded-md flex items-center justify-center shrink-0">
-                      <StudentQrCode text={currentStudent.nis} size={64} />
-                    </div>
-
-                    <span className="font-mono text-[8.5px] font-black tracking-widest text-slate-800 leading-none">
-                      {currentStudent.nis}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Cutting Line Cue Footnote */}
-                <div className="text-center text-[7.5px] text-slate-400 uppercase tracking-widest font-extrabold shrink-0">
-                  ✂️ Gunting Mengikuti Garis Putus-Putus
-                </div>
+              <div id="print-report-section">
+                <StudentPaymentCard 
+                  student={currentStudent} 
+                  schoolIdentity={schoolIdentity} 
+                  isPreview={true}
+                />
               </div>
+
+              <span className="text-center text-[7.5px] text-slate-400 uppercase tracking-widest font-extrabold pt-4 no-print select-none">
+                ✂️ Potong Mengikuti Batas Luar Kartu
+              </span>
             </div>
 
           </motion.div>

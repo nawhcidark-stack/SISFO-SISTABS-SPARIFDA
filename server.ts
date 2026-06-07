@@ -481,7 +481,9 @@ let schoolIdentity = {
   treasurerSignature: "", // base64 string or image url of treasurer signature
   schoolStamp: "", // base64 string or image url of school official stamp
   apkUrl: "",
-  iosUrl: ""
+  iosUrl: "",
+  favicon: "",
+  paymentCardTemplate: ""
 };
 
 // WhatsApp API notification settings
@@ -5683,6 +5685,35 @@ async function startServer() {
         lastSync: lastSyncTime,
         error: dbSyncError
       }
+    });
+  });
+
+  // Dynamic PWA manifest.json generation synchronized with the current School Identity
+  app.get("/manifest.json", (req, res) => {
+    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "/icon-512.png";
+    const isSvg = pwaIcon.startsWith("data:image/svg") || pwaIcon.toLowerCase().endsWith(".svg");
+    
+    res.json({
+      name: schoolIdentity.name || "SMP MA'ARIF NU PANDAAN",
+      short_name: schoolIdentity.name ? schoolIdentity.name.split(" ").slice(0, 3).join(" ") : "SIPAS Portal",
+      description: `Sistem Informasi Spp & Tabungan Siswa - ${schoolIdentity.name || "SMP MA'ARIF NU PANDAAN"}`,
+      start_url: "/",
+      display: "standalone",
+      background_color: "#0f172a",
+      theme_color: "#4f46e5",
+      orientation: "portrait-primary",
+      icons: [
+        {
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "512x512"
+        },
+        {
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "192x192"
+        }
+      ]
     });
   });
 

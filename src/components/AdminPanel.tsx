@@ -275,7 +275,7 @@ export default function AdminPanel({
         const headers = parseCSVLineRobust(firstLine, delimiter).map(h => clean(h).toLowerCase());
 
         const usernameIdx = headers.findIndex(h => h.includes('user') || h.includes('id') || h.includes('nama_pengguna'));
-        const nameIdx = headers.findIndex(h => h.includes('nama') || h.includes('name') || h.includes('lengkap'));
+        const nameIdx = headers.findIndex(h => (h.includes('nama') || h.includes('name') || h.includes('lengkap')) && !h.includes('user') && !h.includes('id') && !h.includes('pengguna'));
         const passwordIdx = headers.findIndex(h => h.includes('pass') || h.includes('sandi') || h.includes('kunci'));
 
         let classIdx = -1;

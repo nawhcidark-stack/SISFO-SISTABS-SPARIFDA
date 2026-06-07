@@ -1,6 +1,8 @@
 import React, { useState, useEffect } from 'react';
 import { Student, SchoolIdentity } from '../types';
 import QRCode from 'qrcode';
+// @ts-ignore
+import defaultCardBg from '../assets/images/card_bg_1780838271329.png';
 
 interface StudentPaymentCardProps {
   student: Student;
@@ -46,14 +48,12 @@ export default function StudentPaymentCard({ student, schoolIdentity, isPreview 
     pageBreakInside: 'avoid',
   };
 
-  const hasTemplate = !!schoolIdentity?.paymentCardTemplate;
-
-  const bgStyle: React.CSSProperties = hasTemplate ? {
-    backgroundImage: `url(${schoolIdentity.paymentCardTemplate})`,
+  const bgStyle: React.CSSProperties = {
+    backgroundImage: `url(${schoolIdentity?.paymentCardTemplate || defaultCardBg})`,
     backgroundSize: '100% 100%',
     backgroundPosition: 'center',
     backgroundRepeat: 'no-repeat',
-  } : {};
+  };
 
   return (
     <div 
@@ -120,7 +120,7 @@ export default function StudentPaymentCard({ student, schoolIdentity, isPreview 
 
       {/* 2. Main Title Line */}
       <div className="text-center pt-1.5 pb-0.5 shrink-0 z-10">
-        <span className="text-[8px] font-black uppercase text-indigo-900 bg-white/80 px-2 py-0.5 rounded-full tracking-wider inline-block border border-indigo-100 select-none m-auto shadow-2xs">
+        <span className="text-[8px] font-black uppercase text-indigo-900 bg-white/90 px-2 py-0.5 rounded-full tracking-wider inline-block border border-indigo-100 select-none m-auto shadow-2xs">
           KARTU PEMBAYARAN SISWA
         </span>
       </div>
@@ -143,7 +143,7 @@ export default function StudentPaymentCard({ student, schoolIdentity, isPreview 
         </div>
 
         {/* Right Details aligned with a transparent white card backdrop to guarantee clear readability on custom template backgrounds */}
-        <div className="flex-1 flex flex-col justify-center gap-1 min-w-0 text-left select-text bg-white/85 backdrop-blur-xs p-1.5 rounded-lg border border-white/50 shadow-2xs">
+        <div className="flex-1 flex flex-col justify-center gap-1 min-w-0 text-left select-text bg-white/92 backdrop-blur-xs p-1.5 rounded-lg border border-white/60 shadow-2xs">
           <div className="grid grid-cols-[1.1cm_0.1cm_1fr] items-center gap-x-1 leading-tight">
             <span className="text-[7.5px] font-extrabold text-slate-500 uppercase tracking-widest font-sans">Nama</span>
             <span className="text-[7.5px] font-black text-slate-400">:</span>
@@ -168,49 +168,10 @@ export default function StudentPaymentCard({ student, schoolIdentity, isPreview 
             </span>
           </div>
         </div>
-
-        {/* Decorative Grid Matrix Dots (only visible on clean white default style) */}
-        {!hasTemplate && (
-          <div className="absolute right-[0.1cm] top-1 flex flex-col gap-0.5 opacity-60">
-            {[...Array(4)].map((_, i) => (
-              <div key={i} className="flex gap-0.5">
-                {[...Array(3)].map((_, j) => (
-                  <div key={j} className="w-1 h-1 rounded-full bg-emerald-500/40" />
-                ))}
-              </div>
-            ))}
-          </div>
-        )}
       </div>
 
-      {/* 4. Slanted Wave Footer & Badges (stays beautifully in place at the bottom of the card) */}
-      <div className="relative h-[1.1cm] w-full shrink-0 mt-auto select-none overflow-hidden z-10">
-        {/* Slanted decoration background */}
-        <div className="absolute inset-0 bg-gradient-to-r from-emerald-800 via-teal-900 to-emerald-950 border-t border-emerald-700/50" />
-        <div className="absolute top-0 right-0 w-2/3 h-full bg-gradient-to-r from-emerald-600 to-teal-500 transform origin-top-left -skew-x-[24deg] scale-110 shadow-lg border-l border-white/10" />
-
-        <div className="absolute inset-x-2.5 inset-y-0 flex items-center justify-between text-white relative z-10">
-          {/* Logo stamp */}
-          <div className="flex items-center gap-1">
-            <div className="w-4 h-4 rounded-full bg-white flex items-center justify-center shrink-0 ring-1 ring-white/20">
-              <span className="text-[5px] text-blue-900 font-black">🎓</span>
-            </div>
-            <span className="text-[5.5px] font-black text-emerald-100/95 tracking-widest uppercase font-mono">
-              RESMI &bull; SAH
-            </span>
-          </div>
-
-          {/* Green active card indicators info */}
-          <div className="flex flex-col items-end leading-none">
-            <span className="px-1.5 py-0.5 rounded bg-emerald-950/80 border border-emerald-450/40 text-[5px] font-black tracking-widest text-[#59f2af] uppercase whitespace-nowrap">
-              KARTU DIGITAL
-            </span>
-            <span className="text-[4.5px] font-mono text-emerald-100/90 tracking-normal mt-0.5">
-              portal.smpmaarifpdn.sch.id
-            </span>
-          </div>
-        </div>
-      </div>
+      {/* 4. Clean empty footer area with no text or icons */}
+      <div className="h-[1.1cm] w-full shrink-0 mt-auto select-none overflow-hidden z-10" />
     </div>
   );
 }

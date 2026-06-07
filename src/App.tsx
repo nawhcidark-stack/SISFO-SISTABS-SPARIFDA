@@ -132,12 +132,13 @@ export default function App() {
   // Dynamic Browser Title & Favicon Synchronization with the uploaded School Identity
   useEffect(() => {
     if (schoolIdentity) {
-      const faviconUrl = schoolIdentity.favicon || schoolIdentity.logo;
-      if (faviconUrl) {
+      const hasFavicon = schoolIdentity.favicon || schoolIdentity.logo;
+      if (hasFavicon) {
+        const version = hasFavicon.length;
         const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link');
         link.type = 'image/png';
         link.rel = 'icon';
-        link.href = faviconUrl;
+        link.href = `/api/school-favicon.png?v=${version}`;
         document.getElementsByTagName('head')[0].appendChild(link);
       }
       if (schoolIdentity.name) {

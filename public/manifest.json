@@ -1,0 +1,22 @@
+{
+  "name": "SIPAS - Portal Administrasi Sekolah",
+  "short_name": "SIPAS Portal",
+  "description": "Sistem Informasi Spp & Tabungan Siswa Sekolah Inspiratif",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#4f46e5",
+  "orientation": "portrait-primary",
+  "icons": [
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "192x192"
+    },
+    {
+      "src": "/icon-512.png",
+      "type": "image/png",
+      "sizes": "512x512"
+    }
+  ]
+}

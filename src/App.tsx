@@ -134,18 +134,11 @@ export default function App() {
     if (schoolIdentity) {
       const faviconUrl = schoolIdentity.favicon || schoolIdentity.logo;
       if (faviconUrl) {
-        // Update favicon
         const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link');
         link.type = 'image/png';
         link.rel = 'icon';
         link.href = faviconUrl;
         document.getElementsByTagName('head')[0].appendChild(link);
-
-        // Update Apple touch icon (for iOS PWA installs)
-        const appleLink = document.querySelector("link[rel='apple-touch-icon']") as HTMLLinkElement || document.createElement('link');
-        appleLink.rel = 'apple-touch-icon';
-        appleLink.href = faviconUrl;
-        document.getElementsByTagName('head')[0].appendChild(appleLink);
       }
       if (schoolIdentity.name) {
         document.title = `${schoolIdentity.name} - Portal Administrasi`;

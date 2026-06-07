@@ -224,6 +224,7 @@ export default function PrincipalPanel({
   const [idLetterhead, setIdLetterhead] = useState(schoolIdentity.letterhead || '');
   const [idLogo, setIdLogo] = useState(schoolIdentity.logo || '');
   const [idStamp, setIdStamp] = useState(schoolIdentity.schoolStamp || '');
+  const [idFavicon, setIdFavicon] = useState(schoolIdentity.favicon || '');
 
   // Fetch Principal Work Programs
   const fetchWorkPrograms = async () => {
@@ -467,7 +468,8 @@ export default function PrincipalPanel({
       treasurer: idTreasurer,
       logo: idLogo,
       letterhead: idLetterhead,
-      schoolStamp: idStamp
+      schoolStamp: idStamp,
+      favicon: idFavicon
     };
     onUpdateSchoolIdentity(updated);
     setNotifMsg({ type: 'success', text: 'Identitas Sekolah berhasil diperbarui secara komprehensif!' });
@@ -3199,6 +3201,20 @@ export default function PrincipalPanel({
                   />
                   {idLogo && (
                     <img src={idLogo} className="h-10 w-10 object-contain border border-slate-200 rounded-lg p-1 bg-white m-1 shrink-0" referrerPolicy="no-referrer" />
+                  )}
+                </div>
+
+                <div className="flex flex-col gap-2">
+                  <span className="font-extrabold text-[11px] text-slate-850">Favicon Portal URL</span>
+                  <input
+                    type="text"
+                    value={idFavicon}
+                    onChange={(e) => setIdFavicon(e.target.value)}
+                    placeholder="Masukkan URL / base64 ikon (.png / .ico) tab browser..."
+                    className="w-full bg-slate-50 border border-slate-200 focus:border-slate-800 rounded-xl p-2.5 font-mono text-[10px] text-slate-800"
+                  />
+                  {idFavicon && (
+                    <img src={idFavicon} className="h-8 w-8 object-contain border border-slate-200 rounded-lg p-1 bg-white m-1 shrink-0" referrerPolicy="no-referrer" />
                   )}
                 </div>
               </div>

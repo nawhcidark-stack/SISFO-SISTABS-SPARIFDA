@@ -75,6 +75,7 @@ export interface SchoolIdentity {
   treasurerSkUrl?: string;
   sarprasSkUrl?: string;
   paymentCardTemplate?: string;
+  favicon?: string;
   sppRates?: {
     grade7: number;
     grade8: number;

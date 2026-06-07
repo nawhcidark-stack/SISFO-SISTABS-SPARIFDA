@@ -1116,6 +1116,7 @@ export default function AdminPanel({
   const [schoolLetterhead, setSchoolLetterhead] = useState("");
   const [schoolTreasurerSignature, setSchoolTreasurerSignature] = useState("");
   const [schoolStamp, setSchoolStamp] = useState("");
+  const [schoolFavicon, setSchoolFavicon] = useState("");
   const [apkUrl, setApkUrl] = useState("");
   const [iosUrl, setIosUrl] = useState("");
   const [treasurerSkUrl, setTreasurerSkUrl] = useState("");
@@ -1137,6 +1138,7 @@ export default function AdminPanel({
       setSchoolLetterhead(schoolIdentity.letterhead || "");
       setSchoolTreasurerSignature(schoolIdentity.treasurerSignature || "");
       setSchoolStamp(schoolIdentity.schoolStamp || "");
+      setSchoolFavicon(schoolIdentity.favicon || "");
       setApkUrl(schoolIdentity.apkUrl || "");
       setIosUrl(schoolIdentity.iosUrl || "");
       setTreasurerSkUrl(schoolIdentity.treasurerSkUrl || "");
@@ -1847,6 +1849,25 @@ export default function AdminPanel({
     reader.readAsDataURL(file);
   };
 
+  const handleFaviconUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 1 * 1024 * 1024) {
+      setSchoolIdentityMsg({ type: 'error', text: 'Ukuran file favicon terlalu besar. Maksimal 1MB.' });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result;
+      if (typeof result === 'string') {
+        setSchoolFavicon(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSaveSchoolIdentity = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!onUpdateSchoolIdentity) return;
@@ -1866,6 +1887,7 @@ export default function AdminPanel({
       letterhead: schoolLetterhead,
       treasurerSignature: schoolTreasurerSignature,
       schoolStamp: schoolStamp,
+      favicon: schoolFavicon,
       apkUrl: apkUrl,
       iosUrl: iosUrl,
       treasurerSkUrl: treasurerSkUrl,
@@ -4054,6 +4076,50 @@ export default function AdminPanel({
                         </div>
                       </label>
                       <span className="text-[8px] text-slate-400 leading-none">Format stempel transparan</span>
+                    </div>
+
+                    {/* Favicon File Upload & Preview Column */}
+                    <div className="flex flex-col items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 justify-center text-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Favicon Portal (.png / .ico)</span>
+                      
+                      <div className="relative w-full h-16 border border-slate-200 bg-white rounded-xl shadow-inner flex items-center justify-center overflow-hidden group">
+                        {schoolFavicon ? (
+                          <>
+                            <img 
+                              src={schoolFavicon} 
+                              alt="Favicon preview" 
+                              className="w-8 h-8 object-contain"
+                              referrerPolicy="no-referrer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSchoolFavicon("")}
+                              className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-all cursor-pointer border-0"
+                            >
+                              Hapus Favicon
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1 text-slate-400">
+                            <ImageIcon size={20} />
+                            <span className="text-[9px] text-slate-400">Belum Ada Favicon</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <label className="w-full">
+                        <input
+                          type="file"
+                          accept="image/png, image/x-icon, image/jpeg"
+                          onChange={handleFaviconUpload}
+                          className="hidden"
+                        />
+                        <div className="flex items-center justify-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-605 cursor-pointer shadow-xs transition-colors">
+                          <UploadCloud size={12} />
+                          <span>Unggah Favicon</span>
+                        </div>
+                      </label>
+                      <span className="text-[8px] text-slate-400 leading-none">Format gambar ikon kecil tab</span>
                     </div>
                   </div>
 

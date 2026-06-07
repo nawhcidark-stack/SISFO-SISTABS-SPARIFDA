@@ -462,8 +462,8 @@ const months = [
 // Configuration of SPP rates per level (Class 7, 8, and 9)
 let sppRates = {
   grade7: 150000,
-  grade8: 155000,
-  grade9: 160000
+  grade8: 150000,
+  grade9: 150000
 };
 
 // Configuration of School Identity
@@ -4092,12 +4092,12 @@ async function startServer() {
     const currentMonthIdx = now.getMonth();
     const currentScore = currentYear * 12 + currentMonthIdx;
 
-    // 1. If it's a past month or current month, it is always active
-    if (billScore <= currentScore) {
-      return true;
+    // 1. Tagihan selanjutnya aktif saat tanggal 1 awal bulan berjalan (tidak boleh mendahului waktu saat ini)
+    if (billScore > currentScore) {
+      return false;
     }
 
-    // 2. If it is a future month, it is active only if all bills strictly prior to this bill are paid
+    // 2. Cek apakah seluruh tagihan sebelumnya (prior) sudah lunas
     const priorBills = studentBills.filter(b => {
       const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
       const bScore = b.year * 12 + bMonthIdx;

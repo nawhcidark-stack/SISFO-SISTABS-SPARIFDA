@@ -398,68 +398,127 @@ export default function App() {
     }
   };
 
-  // 1. Initial Load of students and global system configurations in a single optimized payload request
+  // 1. Initial Load of students and global system configurations
   const initSystemData = async () => {
     try {
       setIsLoading(true);
       
-      const res = await fetch('/api/bootstrap-data');
-      if (res.ok) {
-        const data = await res.json();
-        
-        if (data.students) setStudentsList(data.students);
-        if (data.notifications) setGlobalNotifications(data.notifications);
-        if (data.schoolIdentity) setSchoolIdentity(data.schoolIdentity);
-        if (data.midtransConfig) setSysStatus(data.midtransConfig);
-        if (data.attendanceLogs) setAttendanceList(data.attendanceLogs);
-        if (data.homeroomTeachers) setHomeroomsList(data.homeroomTeachers);
-        if (data.subjectTeachers) setSubjectTeachersList(data.subjectTeachers);
-
-        // Default select first student or the stored logged-in student ID
-        if (data.students && data.students.length > 0) {
-          const storedStudentId = localStorage.getItem('smp_maarif_student_id');
-          const targetId = storedStudentId || data.students[0].id;
-          fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
+      // Load Students
+      try {
+        const stdRes = await fetch('/api/students');
+        if (stdRes.ok) {
+          const stdData = await stdRes.json();
+          setStudentsList(stdData);
+          // Default select first student or the stored logged-in student ID
+          if (stdData.length > 0) {
+            const storedStudentId = localStorage.getItem('smp_maarif_student_id');
+            const targetId = storedStudentId || stdData[0].id;
+            fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
+          }
         }
-      } else {
-        throw new Error("HTTP error " + res.status);
+      } catch (e) {
+        console.error("Gagal memuat data siswa", e);
       }
+
+      // Load Recent notifications history
+      try {
+        const notifRes = await fetch('/api/notifications');
+        if (notifRes.ok) {
+          const notifData = await notifRes.json();
+          setGlobalNotifications(notifData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat notifikasi", e);
+      }
+
+      // Load School Identity configuration
+      try {
+        const schoolRes = await fetch('/api/school-identity');
+        if (schoolRes.ok) {
+          const sData = await schoolRes.json();
+          if (sData.success && sData.schoolIdentity) {
+            setSchoolIdentity(sData.schoolIdentity);
+          }
+        }
+      } catch (e) {
+        console.error("Gagal memuat identitas sekolah", e);
+      }
+
+      // Load Midtrans integration keys metadata
+      try {
+        const keysRes = await fetch('/api/midtrans-config');
+        if (keysRes.ok) {
+          const keysData = await keysRes.json();
+          setSysStatus(keysData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat konfigurasi midtrans", e);
+      }
+
+      // Load Attendance Logs
+      try {
+        const attRes = await fetch('/api/attendance');
+        if (attRes.ok) {
+          const attData = await attRes.json();
+          setAttendanceList(attData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat absensi", e);
+      }
+
+      // Load Homerooms
+      try {
+        const hrRes = await fetch('/api/homerooms');
+        if (hrRes.ok) {
+          const hrData = await hrRes.json();
+          setHomeroomsList(hrData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat wali kelas", e);
+      }
+
+      // Load Subject Teachers
+      try {
+        const stRes = await fetch('/api/subject-teachers');
+        if (stRes.ok) {
+          const stData = await stRes.json();
+          setSubjectTeachersList(stData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat guru mapel", e);
+      }
+
       setIsLoading(false);
     } catch (err) {
-      console.error('Failed to boot initial data from bootstrap endpoint', err);
+      console.error('Failed to boot initial data', err);
       setIsLoading(false);
     }
   };
 
-  // Auxiliary loader to fetch a specific student profile's bills and history with parallel requests
+  // Auxiliary loader to fetch a specific student profile's bills and history
   const fetchStudentFullData = async (studentId: string, isAdminOverride?: boolean) => {
     try {
       setIsLoading(true);
       const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : (role === 'admin' || role === 'homeroom');
 
       if (checkIsAdmin) {
-        // Run bills, transactions, and student details queries simultaneously
-        const promises: Promise<any>[] = [
-          fetch('/api/admin/all-bills'),
-          fetch('/api/admin/all-transactions')
-        ];
-        if (studentId) {
-          promises.push(fetch(`/api/students/${studentId}`));
-        }
-
-        const responses = await Promise.all(promises);
-        const [bRes, tRes, sRes] = responses;
-
-        if (bRes && bRes.ok && tRes && tRes.ok) {
+        // Fetch all student bills and total transactions for admin bookkeeping roster
+        const bRes = await fetch('/api/admin/all-bills');
+        const tRes = await fetch('/api/admin/all-transactions');
+        if (bRes.ok && tRes.ok) {
           const bData = await bRes.json();
           const tData = await tRes.json();
           setStudentBills(bData);
           setStudentTransactions(tData.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         }
 
-        if (sRes && sRes.ok) {
-          const sData = await sRes.json();
-          setCurrentStudent(sData.student);
+        // Also fetch profile of active student selector if they exist
+        if (studentId) {
+          const sRes = await fetch(`/api/students/${studentId}`);
+          if (sRes.ok) {
+            const sData = await sRes.json();
+            setCurrentStudent(sData.student);
+          }
         }
       } else {
         const res = await fetch(`/api/students/${studentId}`);

@@ -591,32 +591,33 @@ async function saveStateToFirestore() {
       }
     };
 
-    await saveList("students", students);
-    await saveList("sppBills", sppBills);
-    await saveList("savingsTransactions", savingsTransactions);
-    
-    // Notifications (capped at newest 100 for network performance)
     const newestNotifications = notifications.slice(0, 100);
-    await saveList("realtimeNotifications", newestNotifications);
-    
-    await saveList("attendanceLogs", attendanceLogs);
-    await saveList("homeroomTeachers", homeroomTeachers);
-    await saveList("subjectTeachers", subjectTeachers);
-    await saveList("teachingJournals", teachingJournals);
-    await saveList("treasurerTransactions", treasurerTransactions);
-    await saveList("studentDevelopmentLogs", studentDevelopmentLogs);
-    await saveList("studentInfractionLogs", studentInfractionLogs);
-    await saveList("studentCounselingLogs", studentCounselingLogs);
-    await saveList("classAnnouncements", classAnnouncements);
-    await saveList("classMeetingLogs", classMeetingLogs);
-    await saveList("merdekaAssessments", merdekaAssessments);
-    await saveList("principalWorkPrograms", principalWorkPrograms);
-    await saveList("teacherEvaluations", teacherEvaluations);
-    await saveList("infractionRules", infractionRules);
-    await saveList("sarprasItems", sarprasItems);
-    await saveList("sarprasProposals", sarprasProposals);
-    await saveList("sarprasLoans", sarprasLoans);
-    await saveList("teacherSalaries", teacherSalaries);
+
+    // Run list serialization to MongoDB Cluster in parallel
+    await Promise.all([
+      saveList("students", students),
+      saveList("sppBills", sppBills),
+      saveList("savingsTransactions", savingsTransactions),
+      saveList("realtimeNotifications", newestNotifications),
+      saveList("attendanceLogs", attendanceLogs),
+      saveList("homeroomTeachers", homeroomTeachers),
+      saveList("subjectTeachers", subjectTeachers),
+      saveList("teachingJournals", teachingJournals),
+      saveList("treasurerTransactions", treasurerTransactions),
+      saveList("studentDevelopmentLogs", studentDevelopmentLogs),
+      saveList("studentInfractionLogs", studentInfractionLogs),
+      saveList("studentCounselingLogs", studentCounselingLogs),
+      saveList("classAnnouncements", classAnnouncements),
+      saveList("classMeetingLogs", classMeetingLogs),
+      saveList("merdekaAssessments", merdekaAssessments),
+      saveList("principalWorkPrograms", principalWorkPrograms),
+      saveList("teacherEvaluations", teacherEvaluations),
+      saveList("infractionRules", infractionRules),
+      saveList("sarprasItems", sarprasItems),
+      saveList("sarprasProposals", sarprasProposals),
+      saveList("sarprasLoans", sarprasLoans),
+      saveList("teacherSalaries", teacherSalaries)
+    ]);
 
     // Save configurations as individual upserted documents in the configs collection
     const configCol = mongoDb.collection("configs");
@@ -625,17 +626,20 @@ async function saveStateToFirestore() {
       await configCol.replaceOne({ id }, { ...cleanedData, id }, { upsert: true });
     };
 
-    await saveConfig("sppRates", sppRates);
-    await saveConfig("schoolIdentity", schoolIdentity);
-    await saveConfig("midtransConfig", midtransConfig);
-    await saveConfig("whatsappConfig", whatsappConfig);
-    await saveConfig("treasurerConfig", treasurerConfig);
-    await saveConfig("principalConfig", principalConfig);
-    await saveConfig("sarprasConfig", sarprasConfig);
-    await saveConfig("bkConfig", bkConfig);
-    await saveConfig("adminConfig", adminConfig);
-    await saveConfig("salaryConfig", salaryConfig);
-    await saveConfig("systemMetadata", { seeded: true });
+    // Save configurations in parallel
+    await Promise.all([
+      saveConfig("sppRates", sppRates),
+      saveConfig("schoolIdentity", schoolIdentity),
+      saveConfig("midtransConfig", midtransConfig),
+      saveConfig("whatsappConfig", whatsappConfig),
+      saveConfig("treasurerConfig", treasurerConfig),
+      saveConfig("principalConfig", principalConfig),
+      saveConfig("sarprasConfig", sarprasConfig),
+      saveConfig("bkConfig", bkConfig),
+      saveConfig("adminConfig", adminConfig),
+      saveConfig("salaryConfig", salaryConfig),
+      saveConfig("systemMetadata", { seeded: true })
+    ]);
 
     console.log("All state collections successfully synced to MongoDB.");
   } catch (err) {
@@ -821,35 +825,77 @@ async function syncWithFirestore() {
     const isSeeded = configCount > 0 || count > 0;
 
     if (isSeeded) {
-      console.log("MongoDB is previously seeded. Pulling state from MongoDB...");
-      dbSyncStatus = "Syncing (Loading state)...";
+      console.log("MongoDB is previously seeded. Pulling state from MongoDB in parallel...");
+      dbSyncStatus = "Syncing (Loading state in parallel)...";
       
-      // Load Students
-      const loadedStudents = await studentCol.find({}).toArray();
+      const [
+        loadedStudents,
+        loadedBills,
+        loadedSav,
+        loadedNotif,
+        loadedAtt,
+        loadedHt,
+        loadedSt,
+        loadedTj,
+        loadedBnd,
+        loadedDev,
+        loadedInf,
+        loadedCouns,
+        loadedAnn,
+        loadedMtg,
+        loadedAss,
+        loadedProg,
+        loadedEval,
+        loadedRules,
+        loadedSItems,
+        loadedSProp,
+        loadedSLoans,
+        loadedSalaries,
+        loadedConfigs
+      ] = await Promise.all([
+        studentCol.find({}).toArray(),
+        mongoDb.collection("sppBills").find({}).toArray(),
+        mongoDb.collection("savingsTransactions").find({}).toArray(),
+        mongoDb.collection("realtimeNotifications").find({}).toArray(),
+        mongoDb.collection("attendanceLogs").find({}).toArray(),
+        mongoDb.collection("homeroomTeachers").find({}).toArray(),
+        mongoDb.collection("subjectTeachers").find({}).toArray(),
+        mongoDb.collection("teachingJournals").find({}).toArray(),
+        mongoDb.collection("treasurerTransactions").find({}).toArray(),
+        mongoDb.collection("studentDevelopmentLogs").find({}).toArray(),
+        mongoDb.collection("studentInfractionLogs").find({}).toArray(),
+        mongoDb.collection("studentCounselingLogs").find({}).toArray(),
+        mongoDb.collection("classAnnouncements").find({}).toArray(),
+        mongoDb.collection("classMeetingLogs").find({}).toArray(),
+        mongoDb.collection("merdekaAssessments").find({}).toArray(),
+        mongoDb.collection("principalWorkPrograms").find({}).toArray(),
+        mongoDb.collection("teacherEvaluations").find({}).toArray(),
+        mongoDb.collection("infractionRules").find({}).toArray(),
+        mongoDb.collection("sarprasItems").find({}).toArray(),
+        mongoDb.collection("sarprasProposals").find({}).toArray(),
+        mongoDb.collection("sarprasLoans").find({}).toArray(),
+        mongoDb.collection("teacherSalaries").find({}).toArray(),
+        mongoDb.collection("configs").find({}).toArray()
+      ]);
+
       students.length = 0;
       loadedStudents.forEach((d: any) => {
         const { _id, ...rest } = d;
         students.push(rest as Student);
       });
 
-      // Load SPP Bills
-      const loadedBills = await mongoDb.collection("sppBills").find({}).toArray();
       sppBills.length = 0;
       loadedBills.forEach((d: any) => {
         const { _id, ...rest } = d;
         sppBills.push(rest as SppBill);
       });
 
-      // Load Savings Transactions
-      const loadedSav = await mongoDb.collection("savingsTransactions").find({}).toArray();
       savingsTransactions.length = 0;
       loadedSav.forEach((d: any) => {
         const { _id, ...rest } = d;
         savingsTransactions.push(rest as SavingsTransaction);
       });
 
-      // Load Notifications
-      const loadedNotif = await mongoDb.collection("realtimeNotifications").find({}).toArray();
       notifications.length = 0;
       loadedNotif.forEach((d: any) => {
         const { _id, ...rest } = d;
@@ -857,101 +903,76 @@ async function syncWithFirestore() {
       });
       notifications.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
-      // Load Attendance Logs
-      const loadedAtt = await mongoDb.collection("attendanceLogs").find({}).toArray();
       attendanceLogs.length = 0;
       loadedAtt.forEach((d: any) => {
         const { _id, ...rest } = d;
         attendanceLogs.push(rest as AttendanceLog);
       });
 
-      // Load Homeroom Teachers
-      const loadedHt = await mongoDb.collection("homeroomTeachers").find({}).toArray();
       homeroomTeachers.length = 0;
       loadedHt.forEach((d: any) => {
         const { _id, ...rest } = d;
         homeroomTeachers.push(rest as HomeroomTeacher);
       });
 
-      // Load Subject Teachers
-      const loadedSt = await mongoDb.collection("subjectTeachers").find({}).toArray();
       subjectTeachers.length = 0;
       loadedSt.forEach((d: any) => {
         const { _id, ...rest } = d;
         subjectTeachers.push(rest as SubjectTeacher);
       });
 
-      // Load Teaching Journals
-      const loadedTj = await mongoDb.collection("teachingJournals").find({}).toArray();
       teachingJournals.length = 0;
       loadedTj.forEach((d: any) => {
         const { _id, ...rest } = d;
         teachingJournals.push(rest as TeachingJournal);
       });
 
-      // Load Treasurer Transactions
-      const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
       treasurerTransactions.length = 0;
       loadedBnd.forEach((d: any) => {
         const { _id, ...rest } = d;
         treasurerTransactions.push(rest as TreasurerTransaction);
       });
 
-      // Load other logs
-      const loadedDev = await mongoDb.collection("studentDevelopmentLogs").find({}).toArray();
       studentDevelopmentLogs.length = 0;
       loadedDev.forEach((d: any) => { const { _id, ...rest } = d; studentDevelopmentLogs.push(rest as any); });
 
-      const loadedInf = await mongoDb.collection("studentInfractionLogs").find({}).toArray();
       studentInfractionLogs.length = 0;
       loadedInf.forEach((d: any) => { const { _id, ...rest } = d; studentInfractionLogs.push(rest as any); });
 
-      const loadedCouns = await mongoDb.collection("studentCounselingLogs").find({}).toArray();
       studentCounselingLogs.length = 0;
       loadedCouns.forEach((d: any) => { const { _id, ...rest } = d; studentCounselingLogs.push(rest as any); });
 
-      const loadedAnn = await mongoDb.collection("classAnnouncements").find({}).toArray();
       classAnnouncements.length = 0;
       loadedAnn.forEach((d: any) => { const { _id, ...rest } = d; classAnnouncements.push(rest as any); });
 
-      const loadedMtg = await mongoDb.collection("classMeetingLogs").find({}).toArray();
       classMeetingLogs.length = 0;
       loadedMtg.forEach((d: any) => { const { _id, ...rest } = d; classMeetingLogs.push(rest as any); });
 
-      const loadedAss = await mongoDb.collection("merdekaAssessments").find({}).toArray();
       merdekaAssessments.length = 0;
       loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); });
 
-      const loadedProg = await mongoDb.collection("principalWorkPrograms").find({}).toArray();
       principalWorkPrograms.length = 0;
       loadedProg.forEach((d: any) => { const { _id, ...rest } = d; principalWorkPrograms.push(rest as any); });
 
-      const loadedEval = await mongoDb.collection("teacherEvaluations").find({}).toArray();
       teacherEvaluations.length = 0;
       loadedEval.forEach((d: any) => { const { _id, ...rest } = d; teacherEvaluations.push(rest as any); });
 
-      const loadedRules = await mongoDb.collection("infractionRules").find({}).toArray();
       infractionRules.length = 0;
       loadedRules.forEach((d: any) => { const { _id, ...rest } = d; infractionRules.push(rest as any); });
 
-      const loadedSItems = await mongoDb.collection("sarprasItems").find({}).toArray();
       sarprasItems.length = 0;
       loadedSItems.forEach((d: any) => { const { _id, ...rest } = d; sarprasItems.push(rest as any); });
 
-      const loadedSProp = await mongoDb.collection("sarprasProposals").find({}).toArray();
       sarprasProposals.length = 0;
       loadedSProp.forEach((d: any) => { const { _id, ...rest } = d; sarprasProposals.push(rest as any); });
 
-      const loadedSLoans = await mongoDb.collection("sarprasLoans").find({}).toArray();
       sarprasLoans.length = 0;
       loadedSLoans.forEach((d: any) => { const { _id, ...rest } = d; sarprasLoans.push(rest as any); });
 
-      const loadedSalaries = await mongoDb.collection("teacherSalaries").find({}).toArray();
       teacherSalaries.length = 0;
       loadedSalaries.forEach((d: any) => { const { _id, ...rest } = d; teacherSalaries.push(rest as any); });
 
       // Load configurations
-      const loadedConfigs = await mongoDb.collection("configs").find({}).toArray();
       loadedConfigs.forEach((d: any) => {
         const id = d.id;
         const { _id, ...cleaned } = d;
@@ -4045,6 +4066,33 @@ async function startServer() {
   // Get active students
   app.get("/api/students", (req, res) => {
     res.json(students);
+  });
+
+  // Consolidated Bootstrap API for ultra-high performance startup hydration in one single request
+  app.get("/api/bootstrap-data", (req, res) => {
+    try {
+      res.json({
+        students,
+        notifications,
+        schoolIdentity: { ...schoolIdentity, sppRates },
+        midtransConfig: {
+          merchantId: midtransConfig.merchantId,
+          clientKey: midtransConfig.clientKey,
+          hasServerKey: !!midtransConfig.serverKey,
+          isProduction: midtransConfig.isProduction,
+          isDisabled: !!midtransConfig.isDisabled,
+          adminFee: 0,
+          systemMaintenanceFee: 0,
+          chargeFeesToUser: false
+        },
+        attendanceLogs,
+        homeroomTeachers,
+        subjectTeachers
+      });
+    } catch (err: any) {
+      console.error("Failed to compile bootstrap-data payload:", err);
+      res.status(500).json({ error: "Gagal memuat paket data inisiasi." });
+    }
   });
 
   // Get all SPP bills (for Admin purposes)

@@ -5736,35 +5736,6 @@ async function startServer() {
     });
   });
 
-  // Dynamic PWA manifest.json generation synchronized with the current School Identity
-  app.get("/manifest.json", (req, res) => {
-    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "/icon-512.png";
-    const isSvg = pwaIcon.startsWith("data:image/svg") || pwaIcon.toLowerCase().endsWith(".svg");
-    
-    res.json({
-      name: schoolIdentity.name || "SMP MA'ARIF NU PANDAAN",
-      short_name: schoolIdentity.name ? schoolIdentity.name.split(" ").slice(0, 3).join(" ") : "SIPAS Portal",
-      description: `Sistem Informasi Spp & Tabungan Siswa - ${schoolIdentity.name || "SMP MA'ARIF NU PANDAAN"}`,
-      start_url: "/",
-      display: "standalone",
-      background_color: "#0f172a",
-      theme_color: "#4f46e5",
-      orientation: "portrait-primary",
-      icons: [
-        {
-          src: pwaIcon,
-          type: isSvg ? "image/svg+xml" : "image/png",
-          sizes: "512x512"
-        },
-        {
-          src: pwaIcon,
-          type: isSvg ? "image/svg+xml" : "image/png",
-          sizes: "192x192"
-        }
-      ]
-    });
-  });
-
   // Vite development integration or client index serving
   if (process.env.NODE_ENV !== "production") {
     const { createServer: createViteServer } = await import("vite");

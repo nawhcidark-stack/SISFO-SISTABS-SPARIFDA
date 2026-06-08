@@ -3,12 +3,16 @@ import {createRoot} from 'react-dom/client';
 import App from './App.tsx';
 import './index.css';
 
-// Register Service Worker for PWA Browser Installation support
+// Unregister any active Service Workers to clear PWA cache and restore full responsive behavior
 if ('serviceWorker' in navigator) {
-  window.addEventListener('load', () => {
-    navigator.serviceWorker.register('/sw.js')
-      .then((reg) => console.log('Service Worker registered successfully:', reg.scope))
-      .catch((err) => console.error('Service Worker registration failed:', err));
+  navigator.serviceWorker.getRegistrations().then((registrations) => {
+    for (const registration of registrations) {
+      registration.unregister().then(() => {
+        console.log('Registered Service Worker removed successfully to prevent unresponsiveness.');
+      });
+    }
+  }).catch((err) => {
+    console.error('Error unregistering Service Worker:', err);
   });
 }
 

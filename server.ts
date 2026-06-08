@@ -3450,8 +3450,7 @@ async function startServer() {
           qty: Number(prop.qty) || 1,
           estimatedPrice: Number(prop.estimatedPrice) || 0,
           totalPrice: (Number(prop.qty) || 1) * (Number(prop.estimatedPrice) || 0),
-          reason: String(prop.reason || "").trim(),
-          photoUrl: prop.photoUrl ? String(prop.photoUrl).trim() : (sarprasProposals[idx].photoUrl || "")
+          reason: String(prop.reason || "").trim()
         };
       } else {
         return res.status(404).json({ error: "Pengajuan tidak ditemukan." });
@@ -3468,8 +3467,7 @@ async function startServer() {
         reason: String(prop.reason || "").trim(),
         status: "pending",
         notes: "",
-        createdAt: new Date().toISOString(),
-        photoUrl: prop.photoUrl ? String(prop.photoUrl).trim() : ""
+        createdAt: new Date().toISOString()
       };
       sarprasProposals.unshift(newProp);
     }

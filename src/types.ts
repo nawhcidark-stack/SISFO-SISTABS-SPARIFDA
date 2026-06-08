@@ -313,7 +313,6 @@ export interface SarprasProposal {
   status: 'pending' | 'approved' | 'rejected';
   notes?: string;
   createdAt: string;
-  photoUrl?: string;
 }
 
 export interface SarprasLoan {

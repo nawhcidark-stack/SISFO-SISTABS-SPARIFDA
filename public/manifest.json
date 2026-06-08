@@ -9,13 +9,13 @@
   "orientation": "portrait-primary",
   "icons": [
     {
-      "src": "/icon-512.png",
-      "type": "image/png",
+      "src": "https://portal.smpmaarifpdn.sch.id/uploads/1780918618273-logo2.ico",
+      "type": "image/x-icon",
       "sizes": "192x192"
     },
     {
-      "src": "/icon-512.png",
-      "type": "image/png",
+      "src": "https://portal.smpmaarifpdn.sch.id/uploads/1780918618273-logo2.ico",
+      "type": "image/x-icon",
       "sizes": "512x512"
     }
   ]

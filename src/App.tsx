@@ -132,10 +132,11 @@ export default function App() {
   // Dynamic Browser Title & Favicon Synchronization with the uploaded School Identity
   useEffect(() => {
     if (schoolIdentity) {
-      const faviconUrl = schoolIdentity.favicon || schoolIdentity.logo;
+      const faviconUrl = schoolIdentity.favicon || schoolIdentity.logo || "https://portal.smpmaarifpdn.sch.id/uploads/1780918618273-logo2.ico";
       if (faviconUrl) {
         const link = document.querySelector("link[rel*='icon']") as HTMLLinkElement || document.createElement('link');
-        link.type = 'image/png';
+        const isIco = faviconUrl.toLowerCase().endsWith(".ico");
+        link.type = isIco ? 'image/x-icon' : 'image/png';
         link.rel = 'icon';
         link.href = faviconUrl;
         document.getElementsByTagName('head')[0].appendChild(link);

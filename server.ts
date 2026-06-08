@@ -1471,14 +1471,8 @@ async function sendWhatsappNotification(phoneNumber: string, message: string): P
 }
 
 async function startServer() {
-  // Sync state with Firestore database and await completion on startup
-  console.log("Awaiting initial Firestore database sync before starting Express server...");
-  try {
-    await syncWithFirestore();
-  } catch (err) {
-    console.error("Critical: Initial sync with Firestore failed on startup, proceeding anyway:", err);
-    isInitialSyncCompleted = true;
-  }
+  // Let the browser access the server instantly. Database sync will run asynchronously in the background.
+  console.log("Starting Express server immediately. Database initialization will run in background...");
 
   const app = express();
   app.use(express.json({ limit: '10mb' }));
@@ -5758,15 +5752,31 @@ async function startServer() {
     res.status(500).json({ error: "Terjadi kesalahan internal server" });
   });
 
+  const triggerBackgroundSync = () => {
+    console.log("[STARTUP] Triggering non-blocking background database sync...");
+    syncWithFirestore()
+      .then(() => {
+        console.log("[STARTUP] Background database sync completed successfully.");
+      })
+      .catch((err) => {
+        console.error("[STARTUP] Background database sync failed (non-blocking):", err);
+      })
+      .finally(() => {
+        isInitialSyncCompleted = true;
+      });
+  };
+
   const isUnixSocket = typeof PORT === "string" && (PORT.includes("/") || PORT.includes("\\") || isNaN(Number(PORT)));
   if (isUnixSocket) {
     app.listen(PORT, () => {
       console.log(`SMP Maarif NU Pandaan app is running on Unix socket: ${PORT}`);
+      triggerBackgroundSync();
     });
   } else {
     const portNumber = typeof PORT === "number" ? PORT : parseInt(PORT, 10) || 3000;
     app.listen(portNumber, "0.0.0.0", () => {
       console.log(`SMP Maarif NU Pandaan app is running on TCP port ${portNumber}`);
+      triggerBackgroundSync();
     });
   }
 }

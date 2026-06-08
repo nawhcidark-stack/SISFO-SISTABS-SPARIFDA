@@ -482,7 +482,7 @@ let schoolIdentity = {
   schoolStamp: "", // base64 string or image url of school official stamp
   apkUrl: "",
   iosUrl: "",
-  favicon: "https://portal.smpmaarifpdn.sch.id/uploads/1780918618273-logo2.ico",
+  favicon: "",
   paymentCardTemplate: ""
 };
 
@@ -5690,10 +5690,8 @@ async function startServer() {
 
   // Dynamic PWA manifest.json generation synchronized with the current School Identity
   app.get("/manifest.json", (req, res) => {
-    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "https://portal.smpmaarifpdn.sch.id/uploads/1780918618273-logo2.ico";
+    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "/icon-512.png";
     const isSvg = pwaIcon.startsWith("data:image/svg") || pwaIcon.toLowerCase().endsWith(".svg");
-    const isIco = pwaIcon.toLowerCase().endsWith(".ico");
-    const imageType = isSvg ? "image/svg+xml" : (isIco ? "image/x-icon" : "image/png");
     
     res.json({
       name: schoolIdentity.name || "SMP MA'ARIF NU PANDAAN",
@@ -5707,12 +5705,12 @@ async function startServer() {
       icons: [
         {
           src: pwaIcon,
-          type: imageType,
+          type: isSvg ? "image/svg+xml" : "image/png",
           sizes: "512x512"
         },
         {
           src: pwaIcon,
-          type: imageType,
+          type: isSvg ? "image/svg+xml" : "image/png",
           sizes: "192x192"
         }
       ]

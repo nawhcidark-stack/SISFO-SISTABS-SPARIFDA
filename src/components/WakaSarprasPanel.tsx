@@ -146,9 +146,13 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
     itemName: '',
     qty: 1,
     estimatedPrice: 0,
-    reason: ''
+    reason: '',
+    photoUrl: ''
   });
   const [showProposalForm, setShowProposalForm] = useState(false);
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState('');
+  const [dragActive, setDragActive] = useState(false);
 
   // Form States - Loans
   const [loanForm, setLoanForm] = useState({
@@ -475,7 +479,8 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
           itemName: '',
           qty: 1,
           estimatedPrice: 0,
-          reason: ''
+          reason: '',
+          photoUrl: ''
         });
         setShowProposalForm(false);
       } else {
@@ -483,6 +488,69 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
       }
     } catch (err) {
       showMsg('error', 'Kesalahan jaringan server.');
+    }
+  };
+
+  // Helper for uploading item photo
+  const handleUploadPhoto = async (file: File) => {
+    if (!file) return;
+    
+    // Check file size (e.g., 5MB limit)
+    if (file.size > 5 * 1024 * 1024) {
+      setUploadError('Ukuran file maksimal adalah 5MB.');
+      return;
+    }
+
+    // Check file type
+    if (!file.type.startsWith('image/')) {
+      setUploadError('Tolong pilih file format gambar saja.');
+      return;
+    }
+
+    setIsUploadingPhoto(true);
+    setUploadError('');
+
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+
+      const res = await fetch('/api/admin/upload-file', {
+        method: 'POST',
+        body: formData
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setProposalForm(prev => ({ ...prev, photoUrl: data.url }));
+        showMsg('success', 'Foto barang berhasil diunggah.');
+      } else {
+        setUploadError(data.error || 'Gagal mengunggah foto.');
+      }
+    } catch (err) {
+      setUploadError('Kesalahan jaringan saat mengunggah foto.');
+    } finally {
+      setIsUploadingPhoto(false);
+    }
+  };
+
+  // Drag and drop event handlers
+  const handleDrag = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.type === "dragenter" || e.type === "dragover") {
+      setDragActive(true);
+    } else if (e.type === "dragleave") {
+      setDragActive(false);
+    }
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setDragActive(false);
+
+    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleUploadPhoto(e.dataTransfer.files[0]);
     }
   };
 
@@ -1841,6 +1909,64 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     />
                   </div>
 
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Foto Barang Pendukung (Optional)</label>
+                    <div 
+                      onDragEnter={handleDrag}
+                      onDragOver={handleDrag}
+                      onDragLeave={handleDrag}
+                      onDrop={handleDrop}
+                      className={`relative border-2 border-dashed rounded-xl p-4 flex flex-col items-center justify-center gap-2 transition-all ${
+                        dragActive ? "border-indigo-600 bg-indigo-50/40" : "border-slate-200 bg-slate-50/50 hover:bg-slate-50"
+                      }`}
+                    >
+                      {proposalForm.photoUrl ? (
+                        <div className="flex flex-col items-center gap-2 w-full">
+                          <img 
+                            src={proposalForm.photoUrl} 
+                            alt="Foto barang pengajuan" 
+                            className="max-h-40 rounded-lg object-contain shadow-sm border border-slate-200"
+                            referrerPolicy="no-referrer"
+                          />
+                          <div className="flex gap-2">
+                            <button
+                              type="button"
+                              onClick={() => setProposalForm(prev => ({ ...prev, photoUrl: '' }))}
+                              className="px-3 py-1.5 bg-rose-50 text-rose-600 border border-rose-200 hover:bg-rose-100 rounded-lg text-[10px] font-bold cursor-pointer transition-all flex items-center gap-1"
+                            >
+                              <Trash2 size={11} /> Hapus Foto
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col items-center text-center p-2">
+                          <Plus className="text-slate-400 mb-1.5" size={24} />
+                          <p className="text-[11px] font-bold text-slate-700">Tarik dan lepas foto ke sini, atau klik untuk memilih</p>
+                          <p className="text-[9px] text-slate-400 mt-1">Format: JPG, PNG, WEBP (Maksimal 5MB)</p>
+                          <input 
+                            type="file" 
+                            accept="image/*"
+                            onChange={(e) => {
+                              if (e.target.files?.[0]) {
+                                handleUploadPhoto(e.target.files[0]);
+                              }
+                            }}
+                            className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+                            disabled={isUploadingPhoto}
+                          />
+                        </div>
+                      )}
+
+                      {isUploadingPhoto && (
+                        <div className="absolute inset-0 bg-white/80 rounded-xl flex flex-col items-center justify-center gap-2">
+                          <Loader2 className="animate-spin text-indigo-600" size={20} />
+                          <span className="text-[10px] font-bold text-indigo-900 font-sans">Mengunggah foto...</span>
+                        </div>
+                      )}
+                    </div>
+                    {uploadError && <p className="text-[10px] font-bold text-rose-600 mt-1 italic font-sans">{uploadError}</p>}
+                  </div>
+
                   <div className="flex justify-end gap-3 pt-2">
                     <button
                       type="button"
@@ -1919,6 +2045,23 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                           <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1">Alasan Peminjaman / Urgensi</span>
                           <p className="text-slate-600 leading-relaxed italic font-medium">"{prop.reason || "-"}"</p>
                         </div>
+
+                        {prop.photoUrl && (
+                          <div className="mt-3">
+                            <span className="block text-[9px] font-black text-slate-400 uppercase tracking-wider mb-1.5">Foto Barang Pendukung</span>
+                            <div className="rounded-xl overflow-hidden border border-slate-150 bg-slate-100 max-w-xs shadow-3xs cursor-pointer group relative">
+                              <img 
+                                src={prop.photoUrl} 
+                                alt={prop.itemName} 
+                                className="max-h-48 w-full object-cover group-hover:scale-101 transition-transform"
+                                referrerPolicy="no-referrer"
+                                onClick={() => {
+                                  window.open(prop.photoUrl, '_blank');
+                                }}
+                              />
+                            </div>
+                          </div>
+                        )}
 
                         {prop.notes && (
                           <div className="mt-2.5 text-xs bg-amber-50 border border-amber-100 p-3 rounded-lg">

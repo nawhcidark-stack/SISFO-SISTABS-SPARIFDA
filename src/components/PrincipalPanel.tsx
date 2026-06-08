@@ -2831,6 +2831,23 @@ export default function PrincipalPanel({
                       <p className="text-slate-700 font-medium italic">"{p.reason || '-'}"</p>
                     </div>
 
+                    {p.photoUrl && (
+                      <div className="mt-3">
+                        <span className="text-slate-400 text-[9px] block uppercase font-bold tracking-wider mb-1.5">Foto Barang Pendukung</span>
+                        <div className="rounded-xl overflow-hidden border border-slate-150 bg-slate-100 max-w-xs shadow-3xs cursor-pointer group relative">
+                          <img 
+                            src={p.photoUrl} 
+                            alt={p.itemName} 
+                            className="max-h-48 w-full object-cover group-hover:scale-101 transition-transform"
+                            referrerPolicy="no-referrer"
+                            onClick={() => {
+                              window.open(p.photoUrl, '_blank');
+                            }}
+                          />
+                        </div>
+                      </div>
+                    )}
+
                     {/* Interactive Approval / Rejection tools */}
                     <div className="mt-4 pt-4 border-t border-slate-100 flex flex-col md:flex-row items-end md:items-center justify-between gap-4">
                       <div className="w-full md:max-w-md">
@@ -2891,6 +2908,19 @@ export default function PrincipalPanel({
                         <td className="py-3 px-2">
                           <div className="font-extrabold text-slate-800">{p.itemName}</div>
                           <span className="text-[10px] text-slate-400 block mt-0.5">Oleh: {p.proposedBy || 'Waka Sarpras'} ({p.qty} unit)</span>
+                          {p.photoUrl && (
+                            <div className="mt-2 rounded-lg overflow-hidden border border-slate-150 bg-slate-50 w-24 shadow-3xs cursor-pointer">
+                              <img 
+                                src={p.photoUrl} 
+                                alt={p.itemName} 
+                                className="max-h-12 w-full object-cover hover:scale-105 transition-transform"
+                                referrerPolicy="no-referrer"
+                                onClick={() => {
+                                  window.open(p.photoUrl, '_blank');
+                                }}
+                              />
+                            </div>
+                          )}
                         </td>
                         <td className="py-3 px-2 text-right font-mono font-bold text-slate-755 text-[12.5px]">
                           Rp {p.totalPrice.toLocaleString('id-ID')}

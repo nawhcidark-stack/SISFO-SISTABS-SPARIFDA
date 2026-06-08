@@ -2017,19 +2017,6 @@ export default function AdminPanel({
           </button>
 
           <button
-            id="admin-menu-config"
-            onClick={() => setAdminTab('config')}
-            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
-              adminTab === 'config'
-                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
-                : 'text-slate-600 hover:bg-slate-100'
-            }`}
-          >
-            <Settings size={15} />
-            Pengaturan
-          </button>
-
-          <button
             id="admin-menu-mutasi"
             onClick={() => {
               setAdminTab('mutasi');
@@ -2043,6 +2030,19 @@ export default function AdminPanel({
           >
             <RefreshCw size={15} className="text-orange-500" />
             <span>Siswa Mutasi</span>
+          </button>
+
+          <button
+            id="admin-menu-config"
+            onClick={() => setAdminTab('config')}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === 'config'
+                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <Settings size={15} />
+            Pengaturan
           </button>
         </div>
 
@@ -9449,21 +9449,6 @@ export default function AdminPanel({
                 <button
                   type="button"
                   onClick={() => {
-                    onLogout && onLogout();
-                    setShowMoreMenu(false);
-                  }}
-                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
-                >
-                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sistem</h5>
-                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar aman dari portal kontrol admin pusat</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
                     setAdminTab('mutasi');
                     setSelectedStudent(null);
                     setShowMoreMenu(false);
@@ -9489,6 +9474,21 @@ export default function AdminPanel({
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">WhatsApp &amp; Identitas</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Konfigurasi token gateway WhatsApp &amp; data lembaga</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    onLogout && onLogout();
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-rose-800">Keluar Sistem</h5>
+                    <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar aman dari portal kontrol admin pusat</p>
                   </div>
                 </button>
               </div>

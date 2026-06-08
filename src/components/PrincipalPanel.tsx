@@ -2798,12 +2798,24 @@ export default function PrincipalPanel({
               <div className="flex flex-col gap-4">
                 {sarprasProposals.filter(p => p.status === 'pending').map((p) => (
                   <div key={p.id} className="border border-slate-200 rounded-2xl p-5 bg-slate-50/20 hover:border-slate-300 transition-all">
-                    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-3">
-                      <div>
-                        <span className="px-2 py-0.5 rounded bg-slate-150 text-slate-700 font-mono text-[9px] font-bold">
-                          KODE PROP: {p.id} &bull; Tanggal: {p.date}
-                        </span>
-                        <h4 className="font-extrabold text-sm text-slate-900 mt-1">{p.itemName}</h4>
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 border-b border-slate-100 pb-3">
+                      <div className="flex items-start gap-3">
+                        {p.imageUrl && (
+                          <div className="w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shrink-0 bg-white">
+                            <img 
+                              src={p.imageUrl} 
+                              alt={p.itemName} 
+                              className="w-full h-full object-cover"
+                              referrerPolicy="no-referrer"
+                            />
+                          </div>
+                        )}
+                        <div>
+                          <span className="px-2 py-0.5 rounded bg-slate-150 text-slate-700 font-mono text-[9px] font-bold">
+                            KODE PROP: {p.id} &bull; Tanggal: {p.date}
+                          </span>
+                          <h4 className="font-extrabold text-sm text-slate-900 mt-1">{p.itemName}</h4>
+                        </div>
                       </div>
                       <div className="text-right">
                         <span className="text-[10px] text-slate-450 block font-semibold">ESTIMASI TOTAL BIAYA:</span>
@@ -2889,8 +2901,22 @@ export default function PrincipalPanel({
                     {sarprasProposals.filter(p => p.status !== 'pending').map((p) => (
                       <tr key={p.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-all">
                         <td className="py-3 px-2">
-                          <div className="font-extrabold text-slate-800">{p.itemName}</div>
-                          <span className="text-[10px] text-slate-400 block mt-0.5">Oleh: {p.proposedBy || 'Waka Sarpras'} ({p.qty} unit)</span>
+                          <div className="flex items-center gap-2.5">
+                            {p.imageUrl && (
+                              <div className="w-8 h-8 rounded border border-slate-200 overflow-hidden shrink-0 bg-white">
+                                <img 
+                                  src={p.imageUrl} 
+                                  alt={p.itemName} 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+                            <div>
+                              <div className="font-extrabold text-slate-800">{p.itemName}</div>
+                              <span className="text-[10px] text-slate-400 block mt-0.5">Oleh: {p.proposedBy || 'Waka Sarpras'} ({p.qty} unit)</span>
+                            </div>
+                          </div>
                         </td>
                         <td className="py-3 px-2 text-right font-mono font-bold text-slate-755 text-[12.5px]">
                           Rp {p.totalPrice.toLocaleString('id-ID')}

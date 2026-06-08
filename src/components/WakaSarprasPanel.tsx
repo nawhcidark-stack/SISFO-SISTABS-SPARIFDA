@@ -141,13 +141,23 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   const [showItemForm, setShowItemForm] = useState(false);
 
   // Form States - Proposals
-  const [proposalForm, setProposalForm] = useState({
+  const [proposalForm, setProposalForm] = useState<{
+    id: string;
+    itemName: string;
+    qty: number;
+    estimatedPrice: number;
+    reason: string;
+    imageUrl?: string;
+  }>({
     id: '',
     itemName: '',
     qty: 1,
     estimatedPrice: 0,
-    reason: ''
+    reason: '',
+    imageUrl: ''
   });
+  const [isUploadingPhoto, setIsUploadingPhoto] = useState(false);
+  const [uploadError, setUploadError] = useState('');
   const [showProposalForm, setShowProposalForm] = useState(false);
 
   // Form States - Loans
@@ -475,7 +485,8 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
           itemName: '',
           qty: 1,
           estimatedPrice: 0,
-          reason: ''
+          reason: '',
+          imageUrl: ''
         });
         setShowProposalForm(false);
       } else {
@@ -1770,7 +1781,8 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       itemName: '',
                       qty: 1,
                       estimatedPrice: 0,
-                      reason: ''
+                      reason: '',
+                      imageUrl: ''
                     });
                     setShowProposalForm(!showProposalForm);
                   }}
@@ -1841,6 +1853,82 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     />
                   </div>
 
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Foto Barang Kebutuhan (Opsional)</label>
+                    <div className="flex items-center gap-4 mt-1">
+                      {proposalForm.imageUrl ? (
+                        <div className="relative w-24 h-24 rounded-xl overflow-hidden border border-slate-200 bg-slate-50">
+                          <img 
+                            src={proposalForm.imageUrl} 
+                            alt="Foto Barang" 
+                            className="w-full h-full object-cover"
+                            referrerPolicy="no-referrer"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setProposalForm({ ...proposalForm, imageUrl: '' })}
+                            className="absolute top-1 right-1 bg-red-650 hover:bg-red-700 text-white rounded-full p-1 transition shadow-xs cursor-pointer"
+                            title="Hapus Foto"
+                          >
+                            <X size={12} />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-1 w-full">
+                          <input
+                            type="file"
+                            accept="image/*"
+                            id="proposal-photo-upload"
+                            className="hidden"
+                            onChange={async (e) => {
+                              const file = e.target.files?.[0];
+                              if (!file) return;
+                              setIsUploadingPhoto(true);
+                              setUploadError('');
+                              
+                              const formData = new FormData();
+                              formData.append('file', file);
+                              
+                              try {
+                                const res = await fetch('/api/admin/upload-file', {
+                                  method: 'POST',
+                                  body: formData
+                                });
+                                const data = await res.json();
+                                if (data.success && data.url) {
+                                  setProposalForm({ ...proposalForm, imageUrl: data.url });
+                                } else {
+                                  setUploadError(data.error || 'Gagal mengunggah foto.');
+                                }
+                              } catch (err) {
+                                setUploadError('Gagal menghubungkan ke server untuk unggah.');
+                              } finally {
+                                setIsUploadingPhoto(false);
+                              }
+                            }}
+                          />
+                          <label
+                            htmlFor="proposal-photo-upload"
+                            className="w-full md:w-fit px-4 py-2.5 border border-dashed border-slate-300 hover:bg-slate-50 text-slate-650 text-xs font-bold rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition"
+                          >
+                            {isUploadingPhoto ? (
+                              <>
+                                <Loader2 size={14} className="animate-spin text-indigo-600" />
+                                <span>Mengunggah foto...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Smartphone size={14} className="text-slate-500" />
+                                <span>Pilih / Ambil Foto Barang</span>
+                              </>
+                            )}
+                          </label>
+                          {uploadError && <p className="text-[10px] font-bold text-rose-600">{uploadError}</p>}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+
                   <div className="flex justify-end gap-3 pt-2">
                     <button
                       type="button"
@@ -1875,12 +1963,24 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                   <div className="flex flex-col gap-4">
                     {proposals.map((prop) => (
                       <div key={prop.id} className="border border-slate-150 rounded-xl p-5 hover:shadow-xs transition-all bg-slate-50/40">
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-3">
-                          <div>
-                            <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[9px] font-bold">
-                              No: {prop.id} &bull; Tgl: {prop.date}
-                            </span>
-                            <h4 className="font-extrabold text-sm text-slate-900 mt-1">{prop.itemName}</h4>
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4 border-b border-slate-100 pb-3">
+                          <div className="flex items-start gap-3">
+                            {prop.imageUrl && (
+                              <div className="w-12 h-12 rounded-lg border border-slate-200 overflow-hidden shrink-0 bg-white">
+                                <img 
+                                  src={prop.imageUrl} 
+                                  alt={prop.itemName} 
+                                  className="w-full h-full object-cover"
+                                  referrerPolicy="no-referrer"
+                                />
+                              </div>
+                            )}
+                            <div>
+                              <span className="px-2 py-0.5 rounded bg-slate-200 text-slate-700 font-mono text-[9px] font-bold">
+                                No: {prop.id} &bull; Tgl: {prop.date}
+                              </span>
+                              <h4 className="font-extrabold text-sm text-slate-900 mt-1">{prop.itemName}</h4>
+                            </div>
                           </div>
 
                           <div className="flex items-center gap-3">

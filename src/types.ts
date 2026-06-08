@@ -312,6 +312,7 @@ export interface SarprasProposal {
   reason: string;
   status: 'pending' | 'approved' | 'rejected';
   notes?: string;
+  imageUrl?: string;
   createdAt: string;
 }
 

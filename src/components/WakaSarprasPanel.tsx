@@ -66,13 +66,23 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   
   // Custom expandable Categories and Locations saved in localStorage
   const [categories, setCategories] = useState<string[]>(() => {
-    const saved = localStorage.getItem('sarpras_categories');
-    return saved ? JSON.parse(saved) : ['Elektronik / Multimedia', 'Mebel / Furniture', 'Olahraga', 'Kesenian', 'Alat Tulis / Buku', 'Laboratorium', 'Lainnya'];
+    try {
+      const saved = localStorage.getItem('sarpras_categories');
+      return saved ? JSON.parse(saved) : ['Elektronik / Multimedia', 'Mebel / Furniture', 'Olahraga', 'Kesenian', 'Alat Tulis / Buku', 'Laboratorium', 'Lainnya'];
+    } catch (e) {
+      console.error('Error parsing sarpras_categories from localStorage, resetting to defaults:', e);
+      return ['Elektronik / Multimedia', 'Mebel / Furniture', 'Olahraga', 'Kesenian', 'Alat Tulis / Buku', 'Laboratorium', 'Lainnya'];
+    }
   });
 
   const [locations, setLocations] = useState<string[]>(() => {
-    const saved = localStorage.getItem('sarpras_locations');
-    return saved ? JSON.parse(saved) : ['Gudang Utama', 'Laboratorium IPA', 'Laboratorium Komputer', 'Ruang Guru', 'Ruang Kelas 7-A', 'Ruang Kelas 8-A', 'Perpustakaan'];
+    try {
+      const saved = localStorage.getItem('sarpras_locations');
+      return saved ? JSON.parse(saved) : ['Gudang Utama', 'Laboratorium IPA', 'Laboratorium Komputer', 'Ruang Guru', 'Ruang Kelas 7-A', 'Ruang Kelas 8-A', 'Perpustakaan'];
+    } catch (e) {
+      console.error('Error parsing sarpras_locations from localStorage, resetting to defaults:', e);
+      return ['Gudang Utama', 'Laboratorium IPA', 'Laboratorium Komputer', 'Ruang Guru', 'Ruang Kelas 7-A', 'Ruang Kelas 8-A', 'Perpustakaan'];
+    }
   });
 
   // Dynamic input states for categories & locations forms

@@ -27,12 +27,24 @@ export default function App() {
     return localStorage.getItem('smp_maarif_student_id');
   });
   const [loggedHomeroom, setLoggedHomeroom] = useState<HomeroomTeacher | null>(() => {
-    const raw = localStorage.getItem('smp_maarif_logged_homeroom');
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const raw = localStorage.getItem('smp_maarif_logged_homeroom');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      console.error('Gagal memuat data wali kelas dari cache, memulihkan status...', e);
+      localStorage.removeItem('smp_maarif_logged_homeroom');
+      return null;
+    }
   });
   const [loggedSubjectTeacher, setLoggedSubjectTeacher] = useState<SubjectTeacher | null>(() => {
-    const raw = localStorage.getItem('smp_maarif_logged_subject_teacher');
-    return raw ? JSON.parse(raw) : null;
+    try {
+      const raw = localStorage.getItem('smp_maarif_logged_subject_teacher');
+      return raw ? JSON.parse(raw) : null;
+    } catch (e) {
+      console.error('Gagal memuat data guru mapel dari cache, memulihkan status...', e);
+      localStorage.removeItem('smp_maarif_logged_subject_teacher');
+      return null;
+    }
   });
 
   // School data states

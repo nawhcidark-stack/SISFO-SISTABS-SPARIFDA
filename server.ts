@@ -474,6 +474,7 @@ let schoolIdentity = {
   address: "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan, Jawa Timur",
   phone: "(0343) 631234",
   principal: "H. Ahmad Fuad, S.Pd, M.PdI",
+  principalSignature: "", // base64 string or image url of principal signature
   treasurer: "Bendahara Sekolah NU",
   logo: "", // base64 string or image url containing the school logo
   logo2: "", // base64 string or image url containing the second school logo
@@ -1728,7 +1729,7 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate, favicon } = req.body;
+    const { name, subheading, accreditation, address, phone, principal, principalSignature, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate, favicon } = req.body;
     
     if (name !== undefined) schoolIdentity.name = String(name).trim();
     if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
@@ -1736,6 +1737,7 @@ async function startServer() {
     if (address !== undefined) schoolIdentity.address = String(address).trim();
     if (phone !== undefined) schoolIdentity.phone = String(phone).trim();
     if (principal !== undefined) schoolIdentity.principal = String(principal).trim();
+    if (principalSignature !== undefined) (schoolIdentity as any).principalSignature = String(principalSignature);
     if (treasurer !== undefined) schoolIdentity.treasurer = String(treasurer).trim();
     if (logo !== undefined) schoolIdentity.logo = String(logo); // can be empty or base64 data URI
     if (logo2 !== undefined) (schoolIdentity as any).logo2 = String(logo2); // can be empty or base64 data URI

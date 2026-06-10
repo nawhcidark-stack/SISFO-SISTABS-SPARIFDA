@@ -1115,6 +1115,7 @@ export default function AdminPanel({
   const [schoolLogo2, setSchoolLogo2] = useState("");
   const [schoolLetterhead, setSchoolLetterhead] = useState("");
   const [schoolTreasurerSignature, setSchoolTreasurerSignature] = useState("");
+  const [schoolPrincipalSignature, setSchoolPrincipalSignature] = useState("");
   const [schoolStamp, setSchoolStamp] = useState("");
   const [schoolFavicon, setSchoolFavicon] = useState("");
   const [apkUrl, setApkUrl] = useState("");
@@ -1137,6 +1138,7 @@ export default function AdminPanel({
       setSchoolLogo2(schoolIdentity.logo2 || "");
       setSchoolLetterhead(schoolIdentity.letterhead || "");
       setSchoolTreasurerSignature(schoolIdentity.treasurerSignature || "");
+      setSchoolPrincipalSignature(schoolIdentity.principalSignature || "");
       setSchoolStamp(schoolIdentity.schoolStamp || "");
       setSchoolFavicon(schoolIdentity.favicon || "");
       setApkUrl(schoolIdentity.apkUrl || "");
@@ -1830,6 +1832,25 @@ export default function AdminPanel({
     reader.readAsDataURL(file);
   };
 
+  const handlePrincipalSignatureUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      setSchoolIdentityMsg({ type: 'error', text: 'Ukuran file ttd kepala sekolah terlalu besar. Maksimal 2MB.' });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result;
+      if (typeof result === 'string') {
+        setSchoolPrincipalSignature(result);
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleSchoolStampUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -1886,6 +1907,7 @@ export default function AdminPanel({
       logo2: schoolLogo2,
       letterhead: schoolLetterhead,
       treasurerSignature: schoolTreasurerSignature,
+      principalSignature: schoolPrincipalSignature,
       schoolStamp: schoolStamp,
       favicon: schoolFavicon,
       apkUrl: apkUrl,
@@ -3988,6 +4010,50 @@ export default function AdminPanel({
                         </div>
                       </label>
                       <span className="text-[8px] text-slate-400 leading-none">Rasio panjang banner (Kop dokumen cetak)</span>
+                    </div>
+
+                    {/* TTD Kepala Sekolah File Upload & Preview Column */}
+                    <div className="flex flex-col items-center gap-3 bg-slate-50 border border-slate-200 rounded-xl p-4 justify-center text-center">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Tanda Tangan Kepala Sekolah</span>
+                      
+                      <div className="relative w-full h-16 border border-slate-200 bg-white rounded-xl shadow-inner flex items-center justify-center overflow-hidden group">
+                        {schoolPrincipalSignature ? (
+                          <>
+                            <img 
+                              src={schoolPrincipalSignature} 
+                              alt="Tanda tangan kepala sekolah preview" 
+                              className="w-full h-full object-contain p-2"
+                              referrerPolicy="no-referrer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => setSchoolPrincipalSignature("")}
+                              className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-all cursor-pointer border-0"
+                            >
+                              Hapus Tanda Tangan
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1 text-slate-400">
+                            <ImageIcon size={20} />
+                            <span className="text-[9px] text-slate-400">Belum Ada Tanda Tangan</span>
+                          </div>
+                        )}
+                      </div>
+
+                      <label className="w-full">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handlePrincipalSignatureUpload}
+                          className="hidden"
+                        />
+                        <div className="flex items-center justify-center gap-1 px-3 py-1.5 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg text-[10px] font-bold text-slate-600 cursor-pointer shadow-xs transition-colors">
+                          <UploadCloud size={12} />
+                          <span>Unggah Ttd Kepala Sekolah</span>
+                        </div>
+                      </label>
+                      <span className="text-[8px] text-slate-400 leading-none">Format ttd PNG transparan</span>
                     </div>
 
                     {/* TTD Bendahara File Upload & Preview Column */}

@@ -2105,6 +2105,8 @@ export default function App() {
         ) : role === 'treasurer' ? (
           <TreasurerPanel
             schoolIdentity={schoolIdentity}
+            homerooms={homeroomsList}
+            subjectTeachers={subjectTeachersList}
             onLogout={handleLogout}
           />
         ) : role === 'principal' ? (

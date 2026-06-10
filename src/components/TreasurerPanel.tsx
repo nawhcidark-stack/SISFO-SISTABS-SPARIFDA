@@ -11,14 +11,21 @@ import {
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
-import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig } from '../types';
+import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
 
 interface TreasurerPanelProps {
   schoolIdentity: SchoolIdentity;
+  homerooms?: HomeroomTeacher[];
+  subjectTeachers?: SubjectTeacher[];
   onLogout: () => void;
 }
 
-export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPanelProps) {
+export default function TreasurerPanel({ 
+  schoolIdentity, 
+  homerooms = [], 
+  subjectTeachers = [], 
+  onLogout 
+}: TreasurerPanelProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [transactions, setTransactions] = useState<TreasurerTransaction[]>([]);
@@ -50,6 +57,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
   const [formAmount, setFormAmount] = useState('');
   const [formDescription, setFormDescription] = useState('');
   const [formRecipientName, setFormRecipientName] = useState('');
+  const [isCustomRecipient, setIsCustomRecipient] = useState(false);
   const [formFundingSource, setFormFundingSource] = useState('');
   const [formDate, setFormDate] = useState(() => new Date().toISOString().substring(0, 10));
 
@@ -652,6 +660,7 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     setFormAmount('');
     setFormDescription('');
     setFormRecipientName('');
+    setIsCustomRecipient(false);
     setFormFundingSource('');
     setFormDate(new Date().toISOString().substring(0, 10));
     setShowFormModal(true);
@@ -665,6 +674,10 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
     setFormAmount(tx.amount.toString());
     setFormDescription(tx.description);
     setFormRecipientName(tx.recipientName || '');
+    
+    const isTeacher = (homerooms || []).some(h => h.name === tx.recipientName) || (subjectTeachers || []).some(st => st.name === tx.recipientName);
+    setIsCustomRecipient(!isTeacher && !!tx.recipientName);
+
     setFormFundingSource(tx.fundingSource || '');
     setFormDate(tx.date);
     setShowFormModal(true);
@@ -2852,21 +2865,77 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                     initial={{ opacity: 0, height: 0 }}
                     animate={{ opacity: 1, height: 'auto' }}
                     exit={{ opacity: 0, height: 0 }}
-                    className="overflow-hidden"
+                    className="overflow-hidden flex flex-col gap-2"
                   >
-                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NAMA PENERIMA DANA (PENANGGUNG JAWAB)</label>
+                    <div className="flex items-center justify-between">
+                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider">NAMA PENERIMA DANA (PENANGGUNG JAWAB)</label>
+                      <label className="flex items-center gap-1.5 text-[10px] text-indigo-600 font-extrabold bg-indigo-50 px-2 py-1 rounded-md border border-indigo-100 cursor-pointer hover:bg-indigo-100/60 select-none transition-all">
+                        <input
+                          type="checkbox"
+                          checked={isCustomRecipient}
+                          onChange={(e) => {
+                            setIsCustomRecipient(e.target.checked);
+                            if (!e.target.checked) {
+                              setFormRecipientName('');
+                            }
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-550 w-3 h-3"
+                        />
+                        <span>Nama Custom</span>
+                      </label>
+                    </div>
+
                     <div className="relative">
-                      <input
-                        type="text"
-                        required={formType === 'outgoing'}
-                        placeholder="Nama personil penerima / PJ / instansi luar..."
-                        value={formRecipientName}
-                        onChange={(e) => setFormRecipientName(e.target.value)}
-                        className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
-                      />
-                      <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
-                        <UserCheck size={14} />
-                      </div>
+                      {isCustomRecipient ? (
+                        <>
+                          <input
+                            type="text"
+                            required={formType === 'outgoing'}
+                            placeholder="Ketik nama penerima custom..."
+                            value={formRecipientName}
+                            onChange={(e) => setFormRecipientName(e.target.value)}
+                            className="w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600"
+                          />
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">
+                            <UserCheck size={14} />
+                          </div>
+                        </>
+                      ) : (
+                        <>
+                          <select
+                            required={formType === 'outgoing'}
+                            value={formRecipientName}
+                            onChange={(e) => setFormRecipientName(e.target.value)}
+                            className="w-full pl-9 pr-8 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold bg-white cursor-pointer focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 appearance-none"
+                          >
+                            <option value="">-- Pilih Guru / Wali Kelas / Staf --</option>
+                            {homerooms.length > 0 && (
+                              <optgroup label="Wali Kelas">
+                                {homerooms.map((hr) => (
+                                  <option key={hr.id} value={hr.name}>
+                                    {hr.name} (Wali Kelas {hr.className})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                            {subjectTeachers.length > 0 && (
+                              <optgroup label="Guru Mata Pelajaran">
+                                {subjectTeachers.map((st) => (
+                                  <option key={st.id} value={st.name}>
+                                    {st.name} (Guru {st.subject})
+                                  </option>
+                                ))}
+                              </optgroup>
+                            )}
+                          </select>
+                          <div className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none">
+                            <UserCheck size={14} />
+                          </div>
+                          <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[8px]">
+                            ▼
+                          </div>
+                        </>
+                      )}
                     </div>
                   </motion.div>
                 )}
@@ -3096,8 +3165,26 @@ export default function TreasurerPanel({ schoolIdentity, onLogout }: TreasurerPa
                       <div>
                         <p>Mengetahui,</p>
                         <p className="font-extrabold mt-1 text-slate-400 uppercase text-[8px]">Kepala Sekolah</p>
-                        <div className="h-10 flex items-center justify-center">
-                          {/* Stamp removed per request */}
+                        <div className="h-12 flex items-center justify-center relative my-1">
+                          {schoolIdentity.principalSignature && (
+                            <img 
+                              src={schoolIdentity.principalSignature} 
+                              className="h-12 object-contain z-10" 
+                              alt="Ttd Kepala Sekolah" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          )}
+                          {schoolIdentity.schoolStamp && (
+                            <img 
+                              src={schoolIdentity.schoolStamp} 
+                              className="h-12 object-contain absolute opacity-85 mix-blend-multiply scale-110 -translate-x-3 rotate-3 z-0" 
+                              alt="Stempel Sekolah" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          )}
+                          {!schoolIdentity.principalSignature && !schoolIdentity.schoolStamp && (
+                            <div className="h-12"></div>
+                          )}
                         </div>
                         <p className="underline underline-offset-1 font-extrabold font-display leading-none">{schoolIdentity.principal}</p>
                       </div>

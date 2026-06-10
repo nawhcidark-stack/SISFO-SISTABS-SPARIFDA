@@ -64,6 +64,7 @@ export interface SchoolIdentity {
   address: string;
   phone: string;
   principal: string;
+  principalSignature?: string;
   treasurer: string;
   logo: string;
   logo2?: string;

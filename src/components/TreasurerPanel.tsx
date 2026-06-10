@@ -3177,7 +3177,7 @@ export default function TreasurerPanel({
                           {schoolIdentity.schoolStamp && (
                             <img 
                               src={schoolIdentity.schoolStamp} 
-                              className="h-12 object-contain absolute opacity-85 mix-blend-multiply scale-110 -translate-x-3 rotate-3 z-0" 
+                              className="h-12 object-contain absolute opacity-85 mix-blend-multiply scale-110 -translate-x-10 rotate-3 z-0" 
                               alt="Stempel Sekolah" 
                               referrerPolicy="no-referrer" 
                             />

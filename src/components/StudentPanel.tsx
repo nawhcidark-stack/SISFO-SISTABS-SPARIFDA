@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 
@@ -78,6 +78,7 @@ interface StudentPanelProps {
     systemMaintenanceFee?: number;
     chargeFeesToUser?: boolean;
   } | null;
+  onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
 }
 
 export default function StudentPanel({
@@ -97,7 +98,8 @@ export default function StudentPanel({
   attendanceLogs = [],
   notifications = [],
   onLogout,
-  midtransStatus
+  midtransStatus,
+  onUpdateStudent
 }: StudentPanelProps) {
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
@@ -105,6 +107,14 @@ export default function StudentPanel({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
+
+  // Buku Induk Editor states
+  const [isEditingBukuInduk, setIsEditingBukuInduk] = useState<boolean>(false);
+  const [bukuIndukForm, setBukuIndukForm] = useState<Partial<Student>>({});
+  const [activeFormTab, setActiveFormTab] = useState<'siswa' | 'ayah' | 'ibu' | 'wali'>('siswa');
+  const [isSavingBukuInduk, setIsSavingBukuInduk] = useState<boolean>(false);
+  const [errorBukuInduk, setErrorBukuInduk] = useState<string | null>(null);
+  const [successBukuInduk, setSuccessBukuInduk] = useState<string | null>(null);
   
   // Subject Teacher journals and attendance data states
   const [teachingJournals, setTeachingJournals] = useState<TeachingJournal[]>([]);
@@ -176,6 +186,53 @@ export default function StudentPanel({
   const totalInfractionPoints = useMemo(() => {
     return infractionLogs.reduce((acc, log) => acc + (log.points || 0), 0);
   }, [infractionLogs]);
+
+  const handleBukuIndukInputChange = (field: keyof Student, value: any) => {
+    setBukuIndukForm(prev => {
+      const updated = { ...prev, [field]: value };
+      
+      // Auto-copy Father's data to Guardian if "Wali Sama Dengan Ayah" is checked
+      if (field === 'guardianIsSameAsFather' && value === true) {
+        updated.guardianName = prev.fatherName || '';
+        updated.guardianNik = prev.fatherNik || '';
+        updated.guardianBirthPlace = prev.fatherBirthPlace || '';
+        updated.guardianBirthDate = prev.fatherBirthDate || '';
+        updated.guardianEducation = prev.fatherEducation || '';
+        updated.guardianOccupation = prev.fatherOccupation || '';
+        updated.guardianIncome = prev.fatherIncome || '';
+        updated.guardianAddress = prev.fatherAddress || '';
+        updated.guardianPhone = prev.fatherPhone || '';
+        updated.guardianStatus = prev.fatherStatus || '';
+      }
+      return updated;
+    });
+  };
+
+  const handleSaveBukuInduk = async () => {
+    if (!currentStudent || !onUpdateStudent) return;
+    setIsSavingBukuInduk(true);
+    setErrorBukuInduk(null);
+    setSuccessBukuInduk(null);
+    try {
+      const success = await onUpdateStudent(currentStudent.id, bukuIndukForm);
+      if (success) {
+        setSuccessBukuInduk('🎉 Biodata Buku Induk Anda berhasil diperbarui secara mandiri!');
+        setIsEditingBukuInduk(false);
+        onRefresh();
+        // Hide success alert after 4 seconds
+        setTimeout(() => {
+          setSuccessBukuInduk(null);
+        }, 4000);
+      } else {
+        setErrorBukuInduk('Gagal memperbarui Buku Induk Siswa. Hubungi administrator sekolah.');
+      }
+    } catch (err: any) {
+      console.error(err);
+      setErrorBukuInduk('Terjadi kesalahan koneksi saat menyimpan perubahan.');
+    } finally {
+      setIsSavingBukuInduk(false);
+    }
+  };
 
   // Memoized subject attendance entries for current student
   const studentSubjectAttendance = useMemo(() => {
@@ -2316,166 +2373,555 @@ export default function StudentPanel({
                         Rekaman daftar riwayat hidup resmi Anda dan keluarga kandung yang tercatat di database kesiswaan sekolah.
                       </p>
                     </div>
+                    <div>
+                      {!isEditingBukuInduk ? (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setBukuIndukForm({ ...currentStudent });
+                            setActiveFormTab('siswa');
+                            setIsEditingBukuInduk(true);
+                            setErrorBukuInduk(null);
+                            setSuccessBukuInduk(null);
+                          }}
+                          className="px-4 py-2 bg-indigo-600 hover:bg-indigo-705 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer shadow-sm transition-all flex items-center gap-1.5 focus:outline-none"
+                        >
+                          <Edit size={14} /> Edit Data Mandiri
+                        </button>
+                      ) : (
+                        <button
+                          type="button"
+                          onClick={() => setIsEditingBukuInduk(false)}
+                          className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all flex items-center gap-1.5 focus:outline-none"
+                        >
+                          <X size={14} /> Batal Edit
+                        </button>
+                      )}
+                    </div>
                   </div>
 
-                  {/* Completeness score banner */}
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
-                    <div className="text-left">
-                      <span className="text-xs font-black text-slate-800 uppercase block">Simbol Validasi Buku Induk</span>
-                      <span className="text-[11px] text-slate-400 block mt-0.5">Siswa wajib melaporkan perubahan biodata/KK ke staf tata usaha untuk pembaharuan fisik mapel.</span>
+                  {/* Notifications for CRUD */}
+                  {successBukuInduk && (
+                    <div className="p-4 bg-emerald-50 border border-emerald-250 rounded-xl text-emerald-800 text-xs font-bold leading-relaxed shadow-sm animate-fade-in">
+                      {successBukuInduk}
                     </div>
-                    
-                    {/* Progress score */}
-                    <div className="flex items-center gap-3 shrink-0">
-                      <div className="text-right font-mono text-[11px]">
-                        <span className="font-bold text-slate-500">Kredensial Profil:</span>{' '}
-                        <span className="font-black text-indigo-705">
-                          {(() => {
-                            const fields = ['nis', 'nisn', 'name', 'nickname', 'nik', 'gender', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber', 'phone', 'address', 'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'fatherName', 'fatherNik', 'motherName', 'motherNik'];
-                            const filled = fields.filter(f => (currentStudent as any)[f]).length;
-                            return `${Math.round((filled / fields.length) * 100)}% Terisi`;
-                          })()}
-                        </span>
-                      </div>
-                      <div className="inline-flex items-center px-2.5 py-1 bg-emerald-50 border border-emerald-250 text-emerald-705 text-[9.5px] font-black uppercase rounded-lg tracking-wider">
-                        ● TERVERIFIKASI
-                      </div>
+                  )}
+                  {errorBukuInduk && (
+                    <div className="p-4 bg-rose-50 border border-rose-250 rounded-xl text-rose-800 text-xs font-bold leading-relaxed shadow-sm animate-fade-in">
+                      {errorBukuInduk}
                     </div>
-                  </div>
+                  )}
 
-                  {/* Sections grids */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {/* Section I: Data Pribadi */}
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
-                      <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
-                        🏫 I. Biodata Utama Siswa
-                      </h5>
-                      <div className="space-y-2 text-[11px] font-medium text-slate-650">
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
-                          <span className="text-slate-400">Nama Lengkap</span>
-                          <span className="col-span-2 text-slate-800 font-extrabold">{currentStudent.name}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
-                          <span className="text-slate-400">Nama Panggilan</span>
-                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nickname || '-'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
-                          <span className="text-slate-400 font-sans">NIS / NISN</span>
-                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nis} / {currentStudent.nisn || '-'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
-                          <span className="text-slate-400 font-sans">No. NIK KTP</span>
-                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nik || '-'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
-                          <span className="text-slate-400">Jenis Kelamin</span>
-                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.gender || 'Laki-laki'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
-                          <span className="text-slate-400">TTL</span>
-                          <span className="col-span-2 text-slate-800 font-bold">
-                            {currentStudent.birthPlace ? `${currentStudent.birthPlace}, ` : ''}{currentStudent.birthDate ? new Date(currentStudent.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
-                          </span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
-                          <span className="text-slate-400 font-sans">No. KK / Akte</span>
-                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.kkNumber || '-'} / {currentStudent.birthCertNumber || '-'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
-                          <span className="text-slate-400 font-sans">No. HP / WA</span>
-                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.phone || '-'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1">
-                          <span className="text-slate-400">Tinggal Bersama</span>
-                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.livingWith || 'Orang Tua'}</span>
-                        </div>
-                        <div className="grid grid-cols-3 py-1">
-                          <span className="text-slate-400">Anak Ke / Sdr</span>
-                          <span className="col-span-2 text-slate-800 font-mono font-bold">Anak ke-{currentStudent.childOrder || '1'} (Dari {Number(currentStudent.siblingsCount || 0) + 1} bersaudara)</span>
-                        </div>
-                        <div className="pt-2 border-t border-slate-100 flex flex-col gap-1">
-                          <span className="text-slate-400">Alamat Domisili Siswa</span>
-                          <p className="text-slate-700 leading-relaxed font-bold block">{currentStudent.address || 'Alamat tidak diinput'}</p>
+                  {isEditingBukuInduk ? (
+                    <div className="flex flex-col gap-5 animate-fade-in">
+                      {/* Sub-tabs for Editing Form */}
+                      <div className="bg-slate-50 border border-slate-200 rounded-xl p-2 flex gap-1 overflow-x-auto shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setActiveFormTab('siswa')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            activeFormTab === 'siswa'
+                              ? 'bg-slate-900 text-white shadow-sm'
+                              : 'text-slate-650 hover:bg-slate-150'
+                          }`}
+                        >
+                          🏫 I. Data Siswa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveFormTab('ayah')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            activeFormTab === 'ayah'
+                              ? 'bg-slate-900 text-white shadow-sm'
+                              : 'text-slate-650 hover:bg-slate-150'
+                          }`}
+                        >
+                          👨🏼‍💼 II. Data Ayah
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveFormTab('ibu')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            activeFormTab === 'ibu'
+                              ? 'bg-slate-900 text-white shadow-sm'
+                              : 'text-slate-650 hover:bg-slate-150'
+                          }`}
+                        >
+                          👩🏼‍💼 III. Data Ibu
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setActiveFormTab('wali')}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all whitespace-nowrap cursor-pointer ${
+                            activeFormTab === 'wali'
+                              ? 'bg-slate-900 text-white shadow-sm'
+                              : 'text-slate-650 hover:bg-slate-150'
+                          }`}
+                        >
+                          💼 IV. Data Wali (Opsional)
+                        </button>
+                      </div>
+
+                      <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-4">
+                        {activeFormTab === 'siswa' && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Lengkap (Sesuai Akte)</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.name || ''}
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-bold outline-none cursor-not-allowed"
+                                disabled
+                              />
+                              <span className="text-[9px] text-slate-400 mt-1 block">Terkunci secara sistem. Laporkan ke Tata Usaha jika ada kesalahan nama.</span>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Panggilan</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.nickname || ''}
+                                onChange={(e) => handleBukuIndukInputChange('nickname', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Nama panggilan"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIS (Nomor Induk Siswa) 🔒</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.nis || ''}
+                                className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold cursor-not-allowed"
+                                disabled
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NISN (Siswa Nasional)</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.nisn || ''}
+                                onChange={(e) => handleBukuIndukInputChange('nisn', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                placeholder="10 digit NISN"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. NIK KTP</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.nik || ''}
+                                onChange={(e) => handleBukuIndukInputChange('nik', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-505"
+                                placeholder="16 digit NIK"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Jenis Kelamin</label>
+                              <select
+                                value={bukuIndukForm.gender || 'Laki-laki'}
+                                onChange={(e) => handleBukuIndukInputChange('gender', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                              >
+                                <option value="Laki-laki">Laki-laki</option>
+                                <option value="Perempuan">Perempuan</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tempat Lahir</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.birthPlace || ''}
+                                onChange={(e) => handleBukuIndukInputChange('birthPlace', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tanggal Lahir</label>
+                              <input
+                                type="date"
+                                value={bukuIndukForm.birthDate ? String(bukuIndukForm.birthDate).split('T')[0] : ''}
+                                onChange={(e) => handleBukuIndukInputChange('birthDate', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. KK (Kartu Keluarga)</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.kkNumber || ''}
+                                onChange={(e) => handleBukuIndukInputChange('kkNumber', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. Akta Kelahiran</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.birthCertNumber || ''}
+                                onChange={(e) => handleBukuIndukInputChange('birthCertNumber', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. HP / WA Siswa</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.phone || ''}
+                                onChange={(e) => handleBukuIndukInputChange('phone', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tinggal Bersama</label>
+                              <select
+                                value={bukuIndukForm.livingWith || 'Orang Tua'}
+                                onChange={(e) => handleBukuIndukInputChange('livingWith', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                              >
+                                <option value="Orang Tua">Orang Tua</option>
+                                <option value="Wali">Wali</option>
+                                <option value="Asrama">Asrama / Pondok</option>
+                                <option value="Kos">Kos</option>
+                                <option value="Lainnya">Lainnya</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Anak Ke- (Angka)</label>
+                              <input
+                                type="number"
+                                value={bukuIndukForm.childOrder || ''}
+                                onChange={(e) => handleBukuIndukInputChange('childOrder', e.target.value ? Number(e.target.value) : '')}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Jumlah Saudara Kandung</label>
+                              <input
+                                type="number"
+                                value={bukuIndukForm.siblingsCount || ''}
+                                onChange={(e) => handleBukuIndukInputChange('siblingsCount', e.target.value ? Number(e.target.value) : '')}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                              />
+                            </div>
+                            <div className="md:col-span-2">
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Alamat Lengkap Domisili Siswa</label>
+                              <textarea
+                                value={bukuIndukForm.address || ''}
+                                onChange={(e) => handleBukuIndukInputChange('address', e.target.value)}
+                                rows={2}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {activeFormTab === 'ayah' && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[100] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Lengkap Ayah Kandung</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherName || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherName', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIK Ayah Kandung</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherNik || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherNik', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Pekerjaan Ayah</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherOccupation || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherOccupation', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. HP / WA Ayah</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherPhone || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherPhone', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {activeFormTab === 'ibu' && (
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Lengkap Ibu Kandung</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherName || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherName', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIK Ibu Kandung</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherNik || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherNik', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Pekerjaan Ibu</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherOccupation || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherOccupation', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. HP / WA Ibu</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherPhone || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherPhone', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                              />
+                            </div>
+                          </div>
+                        )}
+
+                        {activeFormTab === 'wali' && (
+                          <div className="flex flex-col gap-4">
+                            <label className="flex items-center gap-2 bg-slate-50 border border-slate-200 p-3 rounded-xl cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={!!bukuIndukForm.guardianIsSameAsFather}
+                                onChange={(e) => handleBukuIndukInputChange('guardianIsSameAsFather', e.target.checked)}
+                                className="accent-indigo-600 h-4 w-4"
+                              />
+                              <span className="text-xs font-bold text-slate-705">Wali sama dengan data Ayah kandung</span>
+                            </label>
+
+                            {!bukuIndukForm.guardianIsSameAsFather && (
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Lengkap Wali</label>
+                                  <input
+                                    type="text"
+                                    value={bukuIndukForm.guardianName || ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianName', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. HP / WA Wali</label>
+                                  <input
+                                    type="text"
+                                    value={bukuIndukForm.guardianPhone || ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianPhone', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                                  />
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="border-t border-slate-150 pt-4 flex items-center justify-end gap-3 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => setIsEditingBukuInduk(false)}
+                            className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl transition cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                          <button
+                            type="button"
+                            disabled={isSavingBukuInduk}
+                            onClick={handleSaveBukuInduk}
+                            className="px-5 py-2 bg-indigo-600 hover:bg-indigo-705 text-white text-xs font-black uppercase tracking-wider rounded-xl transition flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                          >
+                            {isSavingBukuInduk ? (
+                              <>
+                                <RefreshCw size={13} className="animate-spin" /> Menyimpan...
+                              </>
+                            ) : (
+                              <>
+                                <Check size={13} /> Simpan Perubahan Mandiri
+                              </>
+                            )}
+                          </button>
                         </div>
                       </div>
                     </div>
+                  ) : (
+                    <>
+                      {/* Completeness score banner */}
+                      <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div className="text-left">
+                          <span className="text-xs font-black text-slate-800 uppercase block">Simbol Validasi Buku Induk</span>
+                          <span className="text-[11px] text-slate-400 block mt-0.5">Siswa wajib melaporkan perubahan biodata/KK ke staf tata usaha untuk pembaharuan fisik mapel.</span>
+                        </div>
+                        
+                        {/* Progress score */}
+                        <div className="flex items-center gap-3 shrink-0">
+                          <div className="text-right font-mono text-[11px]">
+                            <span className="font-bold text-slate-500">Kredensial Profil:</span>{' '}
+                            <span className="font-black text-indigo-705">
+                              {(() => {
+                                const fields = ['nis', 'nisn', 'name', 'nickname', 'nik', 'gender', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber', 'phone', 'address', 'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'fatherName', 'fatherNik', 'motherName', 'motherNik'];
+                                const filled = fields.filter(f => (currentStudent as any)[f]).length;
+                                return `${Math.round((filled / fields.length) * 100)}% Terisi`;
+                              })()}
+                            </span>
+                          </div>
+                          <div className="inline-flex items-center px-2.5 py-1 bg-emerald-50 border border-emerald-250 text-emerald-705 text-[9.5px] font-black uppercase rounded-lg tracking-wider">
+                            ● TERVERIFIKASI
+                          </div>
+                        </div>
+                      </div>
 
-                    {/* Section II: Orang Tua */}
-                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
-                      <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
-                        👨🏼‍👩🏼‍👦🏼 II. Biodata Orang Tua Kandung
-                      </h5>
-                      <div className="space-y-4">
-                        {/* Ayah */}
-                        <div>
-                          <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👨🏼‍💼 Data Ayah</span>
-                          <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
-                            <div className="flex justify-between border-b border-slate-50 py-0.5">
+                      {/* Sections grids */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                        {/* Section I: Data Pribadi */}
+                        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
+                          <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
+                            🏫 I. Biodata Utama Siswa
+                          </h5>
+                          <div className="space-y-2 text-[11px] font-medium text-slate-650">
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50">
                               <span className="text-slate-400">Nama Lengkap</span>
-                              <span className="text-slate-800 font-bold">{currentStudent.fatherName || '-'}</span>
+                              <span className="col-span-2 text-slate-800 font-extrabold">{currentStudent.name}</span>
                             </div>
-                            <div className="flex justify-between border-b border-slate-50 py-0.5">
-                              <span className="text-slate-400">NIK Ayah</span>
-                              <span className="text-slate-800 font-mono">{currentStudent.fatherNik || '-'}</span>
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50">
+                              <span className="text-slate-400">Nama Panggilan</span>
+                              <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nickname || '-'}</span>
                             </div>
-                            <div className="flex justify-between border-b border-slate-50 py-0.5">
-                              <span className="text-slate-400">Pekerjaan / Gaji</span>
-                              <span className="text-slate-800">{currentStudent.fatherOccupation || '-'} {currentStudent.fatherIncome ? `(Rp ${Number(currentStudent.fatherIncome).toLocaleString('id-ID')})` : ''}</span>
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                              <span className="text-slate-400 font-sans">NIS / NISN</span>
+                              <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nis} / {currentStudent.nisn || '-'}</span>
                             </div>
-                            <div className="flex justify-between py-0.5">
-                              <span className="text-slate-400">Hub WA / Status</span>
-                              <span className="text-slate-800">{currentStudent.fatherPhone || '-'} ({currentStudent.fatherStatus || 'Hidup'})</span>
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                              <span className="text-slate-400 font-sans">No. NIK KTP</span>
+                              <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nik || '-'}</span>
+                            </div>
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50">
+                              <span className="text-slate-400">Jenis Kelamin</span>
+                              <span className="col-span-2 text-slate-800 font-bold">{currentStudent.gender || 'Laki-laki'}</span>
+                            </div>
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50">
+                              <span className="text-slate-400">TTL</span>
+                              <span className="col-span-2 text-slate-800 font-bold">
+                                {currentStudent.birthPlace ? `${currentStudent.birthPlace}, ` : ''}{currentStudent.birthDate ? new Date(currentStudent.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                              </span>
+                            </div>
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                              <span className="text-slate-400 font-sans">No. KK / Akte</span>
+                              <span className="col-span-2 text-slate-800 font-bold">{currentStudent.kkNumber || '-'} / {currentStudent.birthCertNumber || '-'}</span>
+                            </div>
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                              <span className="text-slate-400 font-sans">No. HP / WA</span>
+                              <span className="col-span-2 text-slate-800 font-bold">{currentStudent.phone || '-'}</span>
+                            </div>
+                            <div className="grid grid-cols-3 py-1">
+                              <span className="text-slate-400">Tinggal Bersama</span>
+                              <span className="col-span-2 text-slate-800 font-bold">{currentStudent.livingWith || 'Orang Tua'}</span>
+                            </div>
+                            <div className="grid grid-cols-3 py-1">
+                              <span className="text-slate-400">Anak Ke / Sdr</span>
+                              <span className="col-span-2 text-slate-800 font-mono font-bold">Anak ke-{currentStudent.childOrder || '1'} (Dari {Number(currentStudent.siblingsCount || 0) + 1} bersaudara)</span>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100 flex flex-col gap-1">
+                              <span className="text-slate-400">Alamat Domisili Siswa</span>
+                              <p className="text-slate-700 leading-relaxed font-bold block">{currentStudent.address || 'Alamat tidak diinput'}</p>
                             </div>
                           </div>
                         </div>
 
-                        {/* Ibu */}
-                        <div className="pt-2 border-t border-slate-100">
-                          <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👩🏼‍💼 Data Ibu</span>
-                          <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
-                            <div className="flex justify-between border-b border-slate-50 py-0.5">
-                              <span className="text-slate-400">Nama Lengkap</span>
-                              <span className="text-slate-800 font-bold">{currentStudent.motherName || '-'}</span>
+                        {/* Section II: Orang Tua */}
+                        <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
+                          <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
+                            👨🏼‍👩🏼‍👦🏼 II. Biodata Orang Tua Kandung
+                          </h5>
+                          <div className="space-y-4">
+                            {/* Ayah */}
+                            <div>
+                              <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👨🏼‍💼 Data Ayah</span>
+                              <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
+                                <div className="flex justify-between border-b border-slate-50 py-0.5">
+                                  <span className="text-slate-400">Nama Lengkap</span>
+                                  <span className="text-slate-800 font-bold">{currentStudent.fatherName || '-'}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-50 py-0.5">
+                                  <span className="text-slate-400">NIK Ayah</span>
+                                  <span className="text-slate-800 font-mono">{currentStudent.fatherNik || '-'}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-50 py-0.5">
+                                  <span className="text-slate-400">Pekerjaan / Gaji</span>
+                                  <span className="text-slate-808">{currentStudent.fatherOccupation || '-'} {currentStudent.fatherIncome ? `(Rp ${Number(currentStudent.fatherIncome).toLocaleString('id-ID')})` : ''}</span>
+                                </div>
+                                <div className="flex justify-between py-0.5">
+                                  <span className="text-slate-400">Hub WA / Status</span>
+                                  <span className="text-slate-800">{currentStudent.fatherPhone || '-'} ({currentStudent.fatherStatus || 'Hidup'})</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex justify-between border-b border-slate-50 py-0.5">
-                              <span className="text-slate-400">NIK Ibu</span>
-                              <span className="text-slate-800 font-mono">{currentStudent.motherNik || '-'}</span>
+
+                            {/* Ibu */}
+                            <div className="pt-2 border-t border-slate-100">
+                              <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👩🏼‍💼 Data Ibu</span>
+                              <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
+                                <div className="flex justify-between border-b border-slate-50 py-0.5">
+                                  <span className="text-slate-400">Nama Lengkap</span>
+                                  <span className="text-slate-800 font-bold">{currentStudent.motherName || '-'}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-50 py-0.5">
+                                  <span className="text-slate-400">NIK Ibu</span>
+                                  <span className="text-slate-800 font-mono">{currentStudent.motherNik || '-'}</span>
+                                </div>
+                                <div className="flex justify-between border-b border-slate-50 py-0.5">
+                                  <span className="text-slate-400">Pekerjaan</span>
+                                  <span className="text-slate-800">{currentStudent.motherOccupation || '-'}</span>
+                                </div>
+                                <div className="flex justify-between py-0.5">
+                                  <span className="text-slate-400">Hub WA / Status</span>
+                                  <span className="text-slate-800">{currentStudent.motherPhone || '-'} ({currentStudent.motherStatus || 'Hidup'})</span>
+                                </div>
+                              </div>
                             </div>
-                            <div className="flex justify-between border-b border-slate-50 py-0.5">
-                              <span className="text-slate-400">Pekerjaan</span>
-                              <span className="text-slate-800">{currentStudent.motherOccupation || '-'}</span>
+
+                            {/* Wali */}
+                            <div className="pt-2 border-t border-slate-100 bg-slate-50/50 p-2.5 rounded-xl border border-slate-150">
+                              <span className="text-[10px] font-black uppercase text-slate-500 block mb-1">💼 III. Pihak Wali (Jika Ada)</span>
+                              {currentStudent.guardianIsSameAsFather ? (
+                                <span className="text-[10.5px] font-bold text-slate-455 italic flex items-center gap-1">✔ Wali diwakili langsung oleh Ayah kandung.</span>
+                              ) : currentStudent.guardianName ? (
+                                <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
+                                  <div className="flex justify-between py-0.5">
+                                    <span className="text-slate-400">Nama Wali</span>
+                                    <span className="text-slate-800 font-bold">{currentStudent.guardianName}</span>
+                                  </div>
+                                  <div className="flex justify-between py-0.5">
+                                    <span className="text-slate-400">Hub Kontak</span>
+                                    <span className="text-slate-800 font-mono">{currentStudent.guardianPhone || '-'}</span>
+                                  </div>
+                                </div>
+                              ) : (
+                                <span className="text-[10.5px] text-slate-400 block">Belum ada data wali tambahan terinput.</span>
+                              )}
                             </div>
-                            <div className="flex justify-between py-0.5">
-                              <span className="text-slate-400">Hub WA / Status</span>
-                              <span className="text-slate-800">{currentStudent.motherPhone || '-'} ({currentStudent.motherStatus || 'Hidup'})</span>
-                            </div>
+
                           </div>
                         </div>
-
-                        {/* Wali */}
-                        <div className="pt-2 border-t border-slate-100 bg-slate-50/50 p-2.5 rounded-xl border border-slate-150">
-                          <span className="text-[10px] font-black uppercase text-slate-500 block mb-1">💼 III. Pihak Wali (Jika Ada)</span>
-                          {currentStudent.guardianIsSameAsFather ? (
-                            <span className="text-[10.5px] font-bold text-slate-450 italic flex items-center gap-1">✔ Wali diwakili langsung oleh Ayah kandung.</span>
-                          ) : currentStudent.guardianName ? (
-                            <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Nama Wali</span>
-                                <span className="text-slate-800 font-bold">{currentStudent.guardianName}</span>
-                              </div>
-                              <div className="flex justify-between py-0.5">
-                                <span className="text-slate-400">Hub Kontak</span>
-                                <span className="text-slate-800 font-mono">{currentStudent.guardianPhone || '-'}</span>
-                              </div>
-                            </div>
-                          ) : (
-                            <span className="text-[10.5px] text-slate-400 block">Belum ada data wali tambahan terinput.</span>
-                          )}
-                        </div>
-
                       </div>
-                    </div>
-                  </div>
+                    </>
+                  )}
 
                 </div>
               )}

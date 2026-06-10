@@ -2071,6 +2071,7 @@ export default function App() {
             onWithdrawSavings={handleWithdrawSavings}
             onRefresh={handleReload}
             onChangePassword={handleChangePassword}
+            onUpdateStudent={handleUpdateStudent}
             isLoginLocked={true}
             schoolIdentity={schoolIdentity}
             attendanceLogs={attendanceList.filter(l => l.studentId === currentStudent?.id)}

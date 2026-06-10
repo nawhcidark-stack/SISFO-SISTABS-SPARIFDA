@@ -1967,6 +1967,47 @@ export default function TreasurerPanel({
               </div>
             </div>
 
+            {/* Filtered Metrics Summary Cards */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 px-6 pb-6 pt-3 bg-slate-50/50 border-b border-slate-150">
+              <div className="bg-emerald-50/70 border border-emerald-150 rounded-2xl p-4 flex flex-col justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-emerald-700 uppercase tracking-wider mb-1">Total Dana Masuk (Debit)</p>
+                  <h4 className="text-base font-black text-emerald-800 font-mono">
+                    Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}
+                  </h4>
+                </div>
+                <div className="text-[9px] text-emerald-600 mt-1.5 font-semibold">
+                  Dari {filteredTransactions.filter(t => t.type === 'incoming').length} transaksi debit yang cocok
+                </div>
+              </div>
+
+              <div className="bg-rose-50/70 border border-rose-150 rounded-2xl p-4 flex flex-col justify-between">
+                <div>
+                  <p className="text-[10px] font-bold text-rose-700 uppercase tracking-wider mb-1">Total Dana Keluar (Kredit)</p>
+                  <h4 className="text-base font-black text-rose-800 font-mono">
+                    Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}
+                  </h4>
+                </div>
+                <div className="text-[9px] text-rose-600 mt-1.5 font-semibold">
+                  Dari {filteredTransactions.filter(t => t.type === 'outgoing').length} transaksi kredit yang cocok
+                </div>
+              </div>
+
+              <div className={`${filteredMetrics.netBalance >= 0 ? 'bg-indigo-50/70 border border-indigo-150' : 'bg-red-50/75 border border-red-200'} rounded-2xl p-4 flex flex-col justify-between`}>
+                <div>
+                  <p className={`text-[10px] font-bold uppercase tracking-wider mb-1 ${filteredMetrics.netBalance >= 0 ? 'text-indigo-700' : 'text-rose-700'}`}>
+                    Selisih / Saldo Bersih
+                  </p>
+                  <h4 className={`text-base font-black font-mono ${filteredMetrics.netBalance >= 0 ? 'text-indigo-800' : 'text-rose-800'}`}>
+                    Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}
+                  </h4>
+                </div>
+                <div className={`text-[9px] mt-1.5 font-semibold ${filteredMetrics.netBalance >= 0 ? 'text-indigo-600' : 'text-rose-600'}`}>
+                  {filteredMetrics.netBalance >= 0 ? 'Surplus Kas Positif' : 'Defisit Kas Terfilter'}
+                </div>
+              </div>
+            </div>
+
             {/* Table layout */}
             <div className="overflow-x-auto">
               <table className="w-full text-left border-collapse text-xs">

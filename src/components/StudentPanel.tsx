@@ -99,7 +99,7 @@ export default function StudentPanel({
   onLogout,
   midtransStatus
 }: StudentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr' | 'jurnal_catatan'>('spp');
+  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -1129,6 +1129,25 @@ export default function StudentPanel({
                     <ClipboardList className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
                   </div>
                   <span className="hidden md:inline">Jurnal & Catatan</span>
+                </button>
+                <button
+                  id="tab-buku-induk"
+                  onClick={() => setActiveTab('buku_induk')}
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none ${
+                    activeTab === 'buku_induk'
+                      ? 'border-indigo-600 text-indigo-705 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-indigo-600'
+                  }`}
+                  title="Buku Induk Digital"
+                >
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'buku_induk'
+                      ? 'bg-indigo-100 text-indigo-750 shadow-xs ring-1 ring-indigo-200/50'
+                      : 'bg-indigo-50/50 text-indigo-400/80 hover:bg-indigo-100/50 hover:text-indigo-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <BookOpen className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Buku Induk Digital</span>
                 </button>
               </div>
 
@@ -2282,6 +2301,182 @@ export default function StudentPanel({
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeTab === 'buku_induk' && currentStudent && (
+                <div className="flex flex-col gap-6 animate-fade-in text-left">
+                  {/* Header info */}
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                        📗 Buku Induk Siswa Pasuruan (Master Portfolio)
+                      </h4>
+                      <p className="text-slate-500 text-xs mt-0.5 font-medium">
+                        Rekaman daftar riwayat hidup resmi Anda dan keluarga kandung yang tercatat di database kesiswaan sekolah.
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Completeness score banner */}
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                    <div className="text-left">
+                      <span className="text-xs font-black text-slate-800 uppercase block">Simbol Validasi Buku Induk</span>
+                      <span className="text-[11px] text-slate-400 block mt-0.5">Siswa wajib melaporkan perubahan biodata/KK ke staf tata usaha untuk pembaharuan fisik mapel.</span>
+                    </div>
+                    
+                    {/* Progress score */}
+                    <div className="flex items-center gap-3 shrink-0">
+                      <div className="text-right font-mono text-[11px]">
+                        <span className="font-bold text-slate-500">Kredensial Profil:</span>{' '}
+                        <span className="font-black text-indigo-705">
+                          {(() => {
+                            const fields = ['nis', 'nisn', 'name', 'nickname', 'nik', 'gender', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber', 'phone', 'address', 'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'fatherName', 'fatherNik', 'motherName', 'motherNik'];
+                            const filled = fields.filter(f => (currentStudent as any)[f]).length;
+                            return `${Math.round((filled / fields.length) * 100)}% Terisi`;
+                          })()}
+                        </span>
+                      </div>
+                      <div className="inline-flex items-center px-2.5 py-1 bg-emerald-50 border border-emerald-250 text-emerald-705 text-[9.5px] font-black uppercase rounded-lg tracking-wider">
+                        ● TERVERIFIKASI
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Sections grids */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {/* Section I: Data Pribadi */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
+                      <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
+                        🏫 I. Biodata Utama Siswa
+                      </h5>
+                      <div className="space-y-2 text-[11px] font-medium text-slate-650">
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
+                          <span className="text-slate-400">Nama Lengkap</span>
+                          <span className="col-span-2 text-slate-800 font-extrabold">{currentStudent.name}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
+                          <span className="text-slate-400">Nama Panggilan</span>
+                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nickname || '-'}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                          <span className="text-slate-400 font-sans">NIS / NISN</span>
+                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nis} / {currentStudent.nisn || '-'}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                          <span className="text-slate-400 font-sans">No. NIK KTP</span>
+                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.nik || '-'}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
+                          <span className="text-slate-400">Jenis Kelamin</span>
+                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.gender || 'Laki-laki'}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50">
+                          <span className="text-slate-400">TTL</span>
+                          <span className="col-span-2 text-slate-800 font-bold">
+                            {currentStudent.birthPlace ? `${currentStudent.birthPlace}, ` : ''}{currentStudent.birthDate ? new Date(currentStudent.birthDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' }) : '-'}
+                          </span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                          <span className="text-slate-400 font-sans">No. KK / Akte</span>
+                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.kkNumber || '-'} / {currentStudent.birthCertNumber || '-'}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1 border-b border-slate-50 font-mono">
+                          <span className="text-slate-400 font-sans">No. HP / WA</span>
+                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.phone || '-'}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1">
+                          <span className="text-slate-400">Tinggal Bersama</span>
+                          <span className="col-span-2 text-slate-800 font-bold">{currentStudent.livingWith || 'Orang Tua'}</span>
+                        </div>
+                        <div className="grid grid-cols-3 py-1">
+                          <span className="text-slate-400">Anak Ke / Sdr</span>
+                          <span className="col-span-2 text-slate-800 font-mono font-bold">Anak ke-{currentStudent.childOrder || '1'} (Dari {Number(currentStudent.siblingsCount || 0) + 1} bersaudara)</span>
+                        </div>
+                        <div className="pt-2 border-t border-slate-100 flex flex-col gap-1">
+                          <span className="text-slate-400">Alamat Domisili Siswa</span>
+                          <p className="text-slate-700 leading-relaxed font-bold block">{currentStudent.address || 'Alamat tidak diinput'}</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Section II: Orang Tua */}
+                    <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
+                      <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
+                        👨🏼‍👩🏼‍👦🏼 II. Biodata Orang Tua Kandung
+                      </h5>
+                      <div className="space-y-4">
+                        {/* Ayah */}
+                        <div>
+                          <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👨🏼‍💼 Data Ayah</span>
+                          <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
+                            <div className="flex justify-between border-b border-slate-50 py-0.5">
+                              <span className="text-slate-400">Nama Lengkap</span>
+                              <span className="text-slate-800 font-bold">{currentStudent.fatherName || '-'}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-50 py-0.5">
+                              <span className="text-slate-400">NIK Ayah</span>
+                              <span className="text-slate-800 font-mono">{currentStudent.fatherNik || '-'}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-50 py-0.5">
+                              <span className="text-slate-400">Pekerjaan / Gaji</span>
+                              <span className="text-slate-800">{currentStudent.fatherOccupation || '-'} {currentStudent.fatherIncome ? `(Rp ${Number(currentStudent.fatherIncome).toLocaleString('id-ID')})` : ''}</span>
+                            </div>
+                            <div className="flex justify-between py-0.5">
+                              <span className="text-slate-400">Hub WA / Status</span>
+                              <span className="text-slate-800">{currentStudent.fatherPhone || '-'} ({currentStudent.fatherStatus || 'Hidup'})</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Ibu */}
+                        <div className="pt-2 border-t border-slate-100">
+                          <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👩🏼‍💼 Data Ibu</span>
+                          <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
+                            <div className="flex justify-between border-b border-slate-50 py-0.5">
+                              <span className="text-slate-400">Nama Lengkap</span>
+                              <span className="text-slate-800 font-bold">{currentStudent.motherName || '-'}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-50 py-0.5">
+                              <span className="text-slate-400">NIK Ibu</span>
+                              <span className="text-slate-800 font-mono">{currentStudent.motherNik || '-'}</span>
+                            </div>
+                            <div className="flex justify-between border-b border-slate-50 py-0.5">
+                              <span className="text-slate-400">Pekerjaan</span>
+                              <span className="text-slate-800">{currentStudent.motherOccupation || '-'}</span>
+                            </div>
+                            <div className="flex justify-between py-0.5">
+                              <span className="text-slate-400">Hub WA / Status</span>
+                              <span className="text-slate-800">{currentStudent.motherPhone || '-'} ({currentStudent.motherStatus || 'Hidup'})</span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Wali */}
+                        <div className="pt-2 border-t border-slate-100 bg-slate-50/50 p-2.5 rounded-xl border border-slate-150">
+                          <span className="text-[10px] font-black uppercase text-slate-500 block mb-1">💼 III. Pihak Wali (Jika Ada)</span>
+                          {currentStudent.guardianIsSameAsFather ? (
+                            <span className="text-[10.5px] font-bold text-slate-450 italic flex items-center gap-1">✔ Wali diwakili langsung oleh Ayah kandung.</span>
+                          ) : currentStudent.guardianName ? (
+                            <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
+                              <div className="flex justify-between py-0.5">
+                                <span className="text-slate-400">Nama Wali</span>
+                                <span className="text-slate-800 font-bold">{currentStudent.guardianName}</span>
+                              </div>
+                              <div className="flex justify-between py-0.5">
+                                <span className="text-slate-400">Hub Kontak</span>
+                                <span className="text-slate-800 font-mono">{currentStudent.guardianPhone || '-'}</span>
+                              </div>
+                            </div>
+                          ) : (
+                            <span className="text-[10.5px] text-slate-400 block">Belum ada data wali tambahan terinput.</span>
+                          )}
+                        </div>
+
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               )}
             </div>

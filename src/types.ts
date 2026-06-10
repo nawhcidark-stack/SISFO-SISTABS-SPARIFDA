@@ -11,6 +11,57 @@ export interface Student {
   mutationDate?: string;
   mutationReason?: string;
   mutationDestination?: string;
+  
+  // Data Siswa Tambahan (Buku Induk)
+  nisn?: string;
+  nickname?: string;
+  nik?: string;
+  birthPlace?: string;
+  birthDate?: string;
+  kkNumber?: string;
+  birthCertNumber?: string;
+  livingWith?: string;
+  childOrder?: string | number;
+  siblingsCount?: string | number;
+  stepSiblingsCount?: string | number;
+  address?: string;
+
+  // Data Orang Tua - Ayah
+  fatherName?: string;
+  fatherNik?: string;
+  fatherBirthPlace?: string;
+  fatherBirthDate?: string;
+  fatherEducation?: string;
+  fatherOccupation?: string;
+  fatherIncome?: string;
+  fatherAddress?: string;
+  fatherPhone?: string;
+  fatherStatus?: string; // Hidup / Meninggal
+
+  // Data Orang Tua - Ibu
+  motherName?: string;
+  motherNik?: string;
+  motherBirthPlace?: string;
+  motherBirthDate?: string;
+  motherEducation?: string;
+  motherOccupation?: string;
+  motherIncome?: string;
+  motherAddress?: string;
+  motherPhone?: string;
+  motherStatus?: string; // Hidup / Meninggal
+
+  // Data Orang Tua - Wali
+  guardianName?: string;
+  guardianNik?: string;
+  guardianBirthPlace?: string;
+  guardianBirthDate?: string;
+  guardianEducation?: string;
+  guardianOccupation?: string;
+  guardianIncome?: string;
+  guardianAddress?: string;
+  guardianPhone?: string;
+  guardianStatus?: string; // Hidup / Meninggal
+  guardianIsSameAsFather?: boolean;
 }
 
 export interface SppBill {

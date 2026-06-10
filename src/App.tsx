@@ -2089,6 +2089,7 @@ export default function App() {
             onSaveBatchAttendance={handleSaveBatchAttendance}
             onRefresh={handleReload}
             isLoading={isLoading}
+            onUpdateStudent={handleUpdateStudent}
             scannedStudentNis={scannedStudentNis}
             scannedStudentAt={scannedStudentAt}
           />

@@ -2163,6 +2163,32 @@ export default function TreasurerPanel({
                     })
                   )}
                 </tbody>
+                {filteredTransactions.length > 0 && (
+                  <tfoot className="bg-slate-100/80 font-mono text-xs border-t-2 border-slate-300">
+                    <tr className="font-extrabold text-slate-800">
+                      <td className="py-3.5 px-6" colSpan={3}>
+                        TOTAL TERFILTER ({filteredTransactions.length} Transaksi)
+                      </td>
+                      <td className="py-3.5 px-4 text-center">
+                        <div className="flex flex-col gap-0.5 text-[10px] items-center">
+                          <span className="text-[9px] text-emerald-750 bg-emerald-50 px-1.5 py-0.5 rounded font-extrabold">MASUK: Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</span>
+                          <span className="text-[9px] text-rose-750 bg-rose-50 px-1.5 py-0.5 rounded font-extrabold">KELUAR: Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-4 text-right pr-4 text-slate-900 text-sm whitespace-nowrap">
+                        <div className="flex flex-col items-end">
+                          <span className={`text-[10px] font-sans font-bold uppercase ${filteredMetrics.netBalance >= 0 ? 'text-emerald-700' : 'text-rose-750'}`}>
+                            {filteredMetrics.netBalance >= 0 ? 'Surplus:' : 'Defisit:'}
+                          </span>
+                          <span className={`font-black font-mono ${filteredMetrics.netBalance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                            Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}
+                          </span>
+                        </div>
+                      </td>
+                      <td className="py-3.5 px-6"></td>
+                    </tr>
+                  </tfoot>
+                )}
               </table>
             </div>
 
@@ -3218,7 +3244,7 @@ export default function TreasurerPanel({
                           {schoolIdentity.schoolStamp && (
                             <img 
                               src={schoolIdentity.schoolStamp} 
-                              className="h-12 object-contain absolute opacity-85 mix-blend-multiply scale-110 -translate-x-10 rotate-3 z-0" 
+                              className="h-12 object-contain absolute opacity-85 mix-blend-multiply scale-110 -translate-x-20 rotate-3 z-0" 
                               alt="Stempel Sekolah" 
                               referrerPolicy="no-referrer" 
                             />

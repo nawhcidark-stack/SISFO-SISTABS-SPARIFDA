@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import BukuIndukManagement from './BukuIndukManagement';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
@@ -599,6 +600,7 @@ interface HomeroomPanelProps {
   onSaveBatchAttendance: (logs: { studentId: string; date: string; status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }[]) => Promise<boolean>;
   onRefresh: () => void;
   isLoading: boolean;
+  onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   scannedStudentNis?: string | null;
   scannedStudentAt?: number | null;
 }
@@ -613,6 +615,7 @@ export default function HomeroomPanel({
   onSaveBatchAttendance,
   onRefresh,
   isLoading,
+  onUpdateStudent,
   scannedStudentNis,
   scannedStudentAt
 }: HomeroomPanelProps) {
@@ -624,7 +627,7 @@ export default function HomeroomPanel({
   };
 
   const [selectedDate, setSelectedDate] = useState(todayStr);
-  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'rapor_merdeka' | 'pkg'>('record');
+  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'rapor_merdeka' | 'pkg' | 'buku_induk'>('record');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
@@ -2216,6 +2219,20 @@ Wassalamualaikum Wr. Wb.
               >
                 <span className="text-sm">🎖️</span>
                 <span className="hidden md:inline">Kinerja (PKG)</span>
+              </button>
+
+              <button
+                _id="tab-btn-buku-induk"
+                onClick={() => setActiveSubTab('buku_induk')}
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                  activeSubTab === 'buku_induk'
+                    ? 'bg-slate-900 text-white shadow-md'
+                    : 'text-slate-650 bg-slate-100 hover:bg-slate-200'
+                }`}
+                title="Buku Induk Kesiswaan Digital Kelas Binaan"
+              >
+                <span className="text-sm">📗</span>
+                <span className="hidden md:inline">Buku Induk Kelas</span>
               </button>
             </div>
 
@@ -4708,6 +4725,21 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 )}
               </div>
+            </div>
+          )}
+
+          {activeSubTab === 'buku_induk' && (
+            <div className="w-full">
+              <BukuIndukManagement
+                students={classStudents}
+                onUpdateStudent={async (id, data) => {
+                  if (onUpdateStudent) {
+                    return await onUpdateStudent(id, data);
+                  }
+                  return false;
+                }}
+                onRefresh={onRefresh}
+              />
             </div>
           )}
 

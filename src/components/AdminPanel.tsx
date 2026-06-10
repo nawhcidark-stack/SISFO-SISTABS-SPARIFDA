@@ -3,6 +3,7 @@ import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, 
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, Apple, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
 import StudentManagement from './StudentManagement';
+import BukuIndukManagement from './BukuIndukManagement';
 import QRScannerModal from './QRScannerModal';
 import StudentPaymentCard from './StudentPaymentCard';
 import QRCode from 'qrcode';
@@ -152,7 +153,7 @@ export default function AdminPanel({
   scannedStudentAt
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
-  const [adminTab, setAdminTab] = useState<'roster' | 'broadcast' | 'config' | 'student_mgmt' | 'laporan' | 'homeroom_mgmt' | 'subject_teacher_mgmt' | 'student_qr' | 'alumni' | 'mutasi'>('roster');
+  const [adminTab, setAdminTab] = useState<'roster' | 'broadcast' | 'config' | 'student_mgmt' | 'laporan' | 'homeroom_mgmt' | 'subject_teacher_mgmt' | 'student_qr' | 'alumni' | 'mutasi' | 'buku_induk'>('roster');
 
   useEffect(() => {
     if (scannedStudentNis) {
@@ -664,7 +665,7 @@ export default function AdminPanel({
   const [bulkGrade, setBulkGrade] = useState<'7' | '8' | '9'>('7');
   const [bulkAmount, setBulkAmount] = useState('');
   const [bulkNotes, setBulkNotes] = useState('');
-  const [bulkAllowDebt, setBulkAllowDebt] = useState(false);
+  const [bulkAllowDebt, setBulkAllowDebt] = useState(true);
   const [bulkProcessing, setBulkProcessing] = useState(false);
   const [bulkFeedback, setBulkFeedback] = useState<{ success: boolean; message: string; successCount?: number; totalDeducted?: number; skippedCount?: number } | null>(null);
 
@@ -2055,6 +2056,22 @@ export default function AdminPanel({
           </button>
 
           <button
+            id="admin-menu-buku-induk"
+            onClick={() => {
+              setAdminTab('buku_induk');
+              setSelectedStudent(null);
+            }}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === 'buku_induk'
+                ? 'bg-slate-900 text-white shadow-md shadow-slate-900/10'
+                : 'text-slate-600 hover:bg-slate-100'
+            }`}
+          >
+            <BookOpen size={15} className="text-indigo-600" />
+            <span>Buku Induk Kesiswaan</span>
+          </button>
+
+          <button
             id="admin-menu-config"
             onClick={() => setAdminTab('config')}
             className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
@@ -3370,6 +3387,16 @@ export default function AdminPanel({
               )}
             </form>
           </motion.div>
+        )}
+
+        {adminTab === 'buku_induk' && (
+          <div className="w-full">
+            <BukuIndukManagement
+              students={students}
+              onUpdateStudent={onUpdateStudent}
+              onRefresh={onRefresh}
+            />
+          </div>
         )}
 
         {/* Tab 3: Config Status Viewer */}
@@ -9525,6 +9552,22 @@ export default function AdminPanel({
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Siswa Mutasi</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Proses siswa keluar & kelola rekonsiliasi keuangannya</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab('buku_induk');
+                    setSelectedStudent(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">📗</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Buku Induk Kesiswaan</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kelola dan ekspor-impor biodata lengkap serta portofolio kesiswaan</p>
                   </div>
                 </button>
 

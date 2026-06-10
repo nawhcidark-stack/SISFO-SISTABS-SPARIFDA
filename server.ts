@@ -4423,17 +4423,8 @@ async function startServer() {
 
     for (const student of targetStudents) {
       let deductVal = valAmount;
-      if (!allowDebt && student.savingsBalance < valAmount) {
-        // If they have some balance but not enough, we withdraw whatever balance they have remaining
-        deductVal = student.savingsBalance;
-      }
 
-      if (deductVal <= 0) {
-        skippedCount++;
-        continue;
-      }
-
-      // Deduct balance
+      // Deduct balance (allows negative/minus balance)
       student.savingsBalance -= deductVal;
       totalDeducted += deductVal;
       successCount++;
@@ -4618,6 +4609,57 @@ async function startServer() {
     student.mutationDate = mutationDate;
     student.mutationReason = mutationReason;
     student.mutationDestination = mutationDestination;
+
+    // Buku Induk Fields
+    student.nisn = req.body.nisn;
+    student.nickname = req.body.nickname;
+    student.nik = req.body.nik;
+    student.birthPlace = req.body.birthPlace;
+    student.birthDate = req.body.birthDate;
+    student.kkNumber = req.body.kkNumber;
+    student.birthCertNumber = req.body.birthCertNumber;
+    student.livingWith = req.body.livingWith;
+    student.childOrder = req.body.childOrder;
+    student.siblingsCount = req.body.siblingsCount;
+    student.stepSiblingsCount = req.body.stepSiblingsCount;
+    student.address = req.body.address;
+
+    // Ayah
+    student.fatherName = req.body.fatherName;
+    student.fatherNik = req.body.fatherNik;
+    student.fatherBirthPlace = req.body.fatherBirthPlace;
+    student.fatherBirthDate = req.body.fatherBirthDate;
+    student.fatherEducation = req.body.fatherEducation;
+    student.fatherOccupation = req.body.fatherOccupation;
+    student.fatherIncome = req.body.fatherIncome;
+    student.fatherAddress = req.body.fatherAddress;
+    student.fatherPhone = req.body.fatherPhone;
+    student.fatherStatus = req.body.fatherStatus;
+
+    // Ibu
+    student.motherName = req.body.motherName;
+    student.motherNik = req.body.motherNik;
+    student.motherBirthPlace = req.body.motherBirthPlace;
+    student.motherBirthDate = req.body.motherBirthDate;
+    student.motherEducation = req.body.motherEducation;
+    student.motherOccupation = req.body.motherOccupation;
+    student.motherIncome = req.body.motherIncome;
+    student.motherAddress = req.body.motherAddress;
+    student.motherPhone = req.body.motherPhone;
+    student.motherStatus = req.body.motherStatus;
+
+    // Wali
+    student.guardianName = req.body.guardianName;
+    student.guardianNik = req.body.guardianNik;
+    student.guardianBirthPlace = req.body.guardianBirthPlace;
+    student.guardianBirthDate = req.body.guardianBirthDate;
+    student.guardianEducation = req.body.guardianEducation;
+    student.guardianOccupation = req.body.guardianOccupation;
+    student.guardianIncome = req.body.guardianIncome;
+    student.guardianAddress = req.body.guardianAddress;
+    student.guardianPhone = req.body.guardianPhone;
+    student.guardianStatus = req.body.guardianStatus;
+    student.guardianIsSameAsFather = !!req.body.guardianIsSameAsFather;
     
     if (password !== undefined) {
       student.password = String(password).trim();
@@ -5074,6 +5116,27 @@ async function startServer() {
         if (gender) {
           existingStudent.gender = gender;
         }
+
+        // Import of Buku Induk detail keys
+        const bioFields = [
+          'nisn', 'nickname', 'nik', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber',
+          'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'address',
+          'fatherName', 'fatherNik', 'fatherBirthPlace', 'fatherBirthDate', 'fatherEducation',
+          'fatherOccupation', 'fatherIncome', 'fatherAddress', 'fatherPhone', 'fatherStatus',
+          'motherName', 'motherNik', 'motherBirthPlace', 'motherBirthDate', 'motherEducation',
+          'motherOccupation', 'motherIncome', 'motherAddress', 'motherPhone', 'motherStatus',
+          'guardianName', 'guardianNik', 'guardianBirthPlace', 'guardianBirthDate', 'guardianEducation',
+          'guardianOccupation', 'guardianIncome', 'guardianAddress', 'guardianPhone', 'guardianStatus',
+          'guardianIsSameAsFather'
+        ];
+        bioFields.forEach(field => {
+          if (inputStd[field] !== undefined) {
+            (existingStudent as any)[field] = field === 'guardianIsSameAsFather' 
+              ? (inputStd[field] === 'true' || inputStd[field] === true) 
+              : inputStd[field];
+          }
+        });
+
         updatedCount++;
       } else {
         // Add new student
@@ -5090,6 +5153,26 @@ async function startServer() {
           gender: gender || "Laki-laki",
           savingsBalance: parsedSavings
         };
+
+        // Import of Buku Induk detail keys for new student
+        const bioFields = [
+          'nisn', 'nickname', 'nik', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber',
+          'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'address',
+          'fatherName', 'fatherNik', 'fatherBirthPlace', 'fatherBirthDate', 'fatherEducation',
+          'fatherOccupation', 'fatherIncome', 'fatherAddress', 'fatherPhone', 'fatherStatus',
+          'motherName', 'motherNik', 'motherBirthPlace', 'motherBirthDate', 'motherEducation',
+          'motherOccupation', 'motherIncome', 'motherAddress', 'motherPhone', 'motherStatus',
+          'guardianName', 'guardianNik', 'guardianBirthPlace', 'guardianBirthDate', 'guardianEducation',
+          'guardianOccupation', 'guardianIncome', 'guardianAddress', 'guardianPhone', 'guardianStatus',
+          'guardianIsSameAsFather'
+        ];
+        bioFields.forEach(field => {
+          if (inputStd[field] !== undefined) {
+            (newStudent as any)[field] = field === 'guardianIsSameAsFather' 
+              ? (inputStd[field] === 'true' || inputStd[field] === true) 
+              : inputStd[field];
+          }
+        });
 
         students.push(newStudent);
 

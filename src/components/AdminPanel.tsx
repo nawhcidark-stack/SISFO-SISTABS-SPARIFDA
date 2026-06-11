@@ -159,7 +159,7 @@ export default function AdminPanel({
     if (scannedStudentNis) {
       const target = students.find(s => s.nis?.toLowerCase() === scannedStudentNis.toLowerCase() || s.id === scannedStudentNis);
       if (target) {
-        setAdminTab('student_mgmt');
+        setAdminTab('roster');
         setSelectedStudent(target);
       }
     }

@@ -3127,16 +3127,56 @@ export default function TreasurerPanel({
                     </div>
 
                     {/* Signatures */}
-                    <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-2 pt-2">
-                      <div className="flex flex-col justify-between h-[45px]">
+                    <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-2 pt-2 w-full">
+                      <div className="flex flex-col justify-between h-[50px] relative">
                         <span>Kepala Sekolah</span>
-                        <div className="h-4"></div>
-                        <span className="font-bold border-t border-slate-900 pt-0.5 truncate">({schoolIdentity.principal.substring(0, 12)})</span>
+                        <div className="h-6 flex items-center justify-center relative my-0.5">
+                          {schoolIdentity?.principalSignature && (
+                            <img 
+                              src={schoolIdentity.principalSignature} 
+                              className="h-8 object-contain z-10" 
+                              alt="Ttd Kepala Sekolah" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          )}
+                          {schoolIdentity?.schoolStamp && (
+                            <img 
+                              src={schoolIdentity.schoolStamp} 
+                              className="h-9 object-contain absolute opacity-75 mix-blend-multiply scale-110 z-0" 
+                              alt="Stempel" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          )}
+                          {!schoolIdentity?.principalSignature && !schoolIdentity?.schoolStamp && (
+                            <div className="h-4"></div>
+                          )}
+                        </div>
+                        <span className="font-bold border-t border-slate-900 pt-0.5 truncate">({schoolIdentity?.principal?.substring(0, 12) || "Kepala Sekolah"})</span>
                       </div>
-                      <div className="flex flex-col justify-between h-[45px]">
+                      <div className="flex flex-col justify-between h-[50px] relative">
                         <span>{activePrintTransaction.type === 'incoming' ? 'Teller / Penerima' : 'Ybs / Penerima Dana'}</span>
-                        <div className="h-4"></div>
-                        <span className="font-bold border-t border-slate-900 pt-0.5">({schoolIdentity.treasurer.substring(0, 12)})</span>
+                        <div className="h-6 flex items-center justify-center relative my-0.5">
+                          {schoolIdentity?.treasurerSignature && (
+                            <img 
+                              src={schoolIdentity.treasurerSignature} 
+                              className="h-8 object-contain z-10" 
+                              alt="Ttd Bendahara" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          )}
+                          {schoolIdentity?.schoolStamp && (
+                            <img 
+                              src={schoolIdentity.schoolStamp} 
+                              className="h-9 object-contain absolute opacity-70 mix-blend-multiply scale-100 z-0" 
+                              alt="Stempel" 
+                              referrerPolicy="no-referrer" 
+                            />
+                          )}
+                          {!schoolIdentity?.treasurerSignature && !schoolIdentity?.schoolStamp && (
+                            <div className="h-4"></div>
+                          )}
+                        </div>
+                        <span className="font-bold border-t border-slate-900 pt-0.5">({schoolIdentity?.treasurer?.substring(0, 12) || "Bendahara"})</span>
                       </div>
                     </div>
 

@@ -3142,7 +3142,7 @@ export default function TreasurerPanel({
                           {schoolIdentity?.schoolStamp && (
                             <img 
                               src={schoolIdentity.schoolStamp} 
-                              className="h-9 object-contain absolute opacity-75 mix-blend-multiply scale-110 z-0" 
+                              className="h-9 object-contain absolute opacity-75 mix-blend-multiply scale-110 z-0 transform -translate-x-[10mm]" 
                               alt="Stempel" 
                               referrerPolicy="no-referrer" 
                             />
@@ -3167,7 +3167,7 @@ export default function TreasurerPanel({
                           {schoolIdentity?.schoolStamp && (
                             <img 
                               src={schoolIdentity.schoolStamp} 
-                              className="h-9 object-contain absolute opacity-70 mix-blend-multiply scale-100 z-0" 
+                              className="h-9 object-contain absolute opacity-70 mix-blend-multiply scale-100 z-0 transform -translate-x-[10mm]" 
                               alt="Stempel" 
                               referrerPolicy="no-referrer" 
                             />

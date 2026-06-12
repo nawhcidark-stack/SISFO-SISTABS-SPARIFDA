@@ -3142,7 +3142,7 @@ export default function TreasurerPanel({
                           {schoolIdentity?.schoolStamp && (
                             <img 
                               src={schoolIdentity.schoolStamp} 
-                              className="h-9 object-contain absolute opacity-75 mix-blend-multiply scale-110 z-0" 
+                              className="h-9 object-contain absolute opacity-75 mix-blend-multiply scale-110 z-0 transform -translate-x-[5mm]" 
                               alt="Stempel" 
                               referrerPolicy="no-referrer" 
                             />
@@ -3164,15 +3164,7 @@ export default function TreasurerPanel({
                               referrerPolicy="no-referrer" 
                             />
                           )}
-                          {schoolIdentity?.schoolStamp && (
-                            <img 
-                              src={schoolIdentity.schoolStamp} 
-                              className="h-9 object-contain absolute opacity-70 mix-blend-multiply scale-100 z-0 transform -translate-x-[10mm]" 
-                              alt="Stempel" 
-                              referrerPolicy="no-referrer" 
-                            />
-                          )}
-                          {!schoolIdentity?.treasurerSignature && !schoolIdentity?.schoolStamp && (
+                          {!schoolIdentity?.treasurerSignature && (
                             <div className="h-4"></div>
                           )}
                         </div>
@@ -3284,7 +3276,7 @@ export default function TreasurerPanel({
                           {schoolIdentity.schoolStamp && (
                             <img 
                               src={schoolIdentity.schoolStamp} 
-                              className="h-12 object-contain absolute opacity-85 mix-blend-multiply scale-110 -translate-x-20 rotate-3 z-0" 
+                              className="h-12 object-contain absolute opacity-85 mix-blend-multiply scale-110 -translate-x-8 rotate-3 z-0" 
                               alt="Stempel Sekolah" 
                               referrerPolicy="no-referrer" 
                             />

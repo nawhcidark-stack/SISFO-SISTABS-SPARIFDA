@@ -37,14 +37,16 @@ import {
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student } from "../types";
+import BukuIndukManagement from "./BukuIndukManagement";
 
 interface CounselorPanelProps {
   schoolIdentity?: SchoolIdentity;
   onLogout: () => void;
   onRefresh: () => void;
+  onUpdateStudent: (id: string, data: any) => Promise<boolean>;
 }
 
-export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: CounselorPanelProps) {
+export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, onUpdateStudent }: CounselorPanelProps) {
   const [logs, setLogs] = useState<StudentCounselingLog[]>([]);
   const [attendance, setAttendance] = useState<AttendanceLog[]>([]);
   const [infractions, setInfractions] = useState<StudentInfractionLog[]>([]);
@@ -53,7 +55,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
   // Tab State
-  const [activeTab, setActiveTab] = useState<'home' | 'counseling' | 'attendance' | 'infractions'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'counseling' | 'attendance' | 'infractions' | 'buku_induk'>('home');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   // Search & Filter States
@@ -92,6 +94,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
   // Point Reduction State
   const [allStudents, setAllStudents] = useState<Student[]>([]);
   const [reductionStudentId, setReductionStudentId] = useState("");
+  const [reductionStudentSearch, setReductionStudentSearch] = useState("");
+  const [draftStudentSearch, setDraftStudentSearch] = useState("");
   const [reductionPoints, setReductionPoints] = useState(5);
   const [reductionReason, setReductionReason] = useState("");
   const [reductionDate, setReductionDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -1029,7 +1033,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
       </div>
 
       {/* ================= DESKTOP SIDEBAR OR TABS MENU (Non-Mobile) ================= */}
-      <div className="hidden md:flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl max-w-2xl">
+      <div className="hidden md:flex items-center gap-2 bg-slate-100 p-1.5 rounded-2xl max-w-3xl">
         <button
           onClick={() => { setActiveTab('home'); setShowPasswordTab(false); }}
           className={`flex-1 py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
@@ -1065,6 +1069,15 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
         >
           <AlertTriangle size={14} />
           <span>Poin Pelanggaran</span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('buku_induk'); setShowPasswordTab(false); }}
+          className={`flex-1 py-2 px-4 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === 'buku_induk' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <BookOpen size={14} />
+          <span>Buku Induk</span>
         </button>
       </div>
 
@@ -1419,6 +1432,56 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
                     <button onClick={() => setSelectedLogId(null)} className="text-[10px] font-extrabold text-rose-600 hover:underline">Batal</button>
                   </div>
                   <form onSubmit={submitDraftCounseling} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="md:col-span-2 flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-150">
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase text-indigo-950 flex items-center gap-1">
+                          👤 Cari &amp; Pilih Siswa Cepat (Dari Database Sekolah)
+                        </label>
+                        {draftStudentSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setDraftStudentSearch('')}
+                            className="text-[9px] text-rose-500 hover:underline font-bold cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="🔍 Tulis nama siswa atau NIS untuk memfilter list..."
+                        value={draftStudentSearch}
+                        onChange={(e) => setDraftStudentSearch(e.target.value)}
+                        className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold placeholder-slate-400 focus:outline-none mb-1 shadow-2xs"
+                      />
+                      <select
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          if (val) {
+                            const stud = allStudents.find(s => s.id === val);
+                            if (stud) {
+                              setDraftStudentName(stud.name);
+                              setDraftClassName(stud.class);
+                            }
+                          }
+                        }}
+                        className="w-full bg-white border border-slate-205 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none py-1.5 px-2"
+                      >
+                        <option value="">-- Pilih Siswa (atau isi/ubah kolom manual di bawah) --</option>
+                        {allStudents
+                          .filter(s => {
+                            if (!draftStudentSearch) return true;
+                            const term = draftStudentSearch.toLowerCase();
+                            return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
+                          })
+                          .map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} (Kelas {s.class}) - NIS: {s.nis}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+
                     <div className="flex flex-col gap-1">
                       <label className="text-[10px] font-black uppercase text-slate-500">Nama Siswa Terkait</label>
                       <input
@@ -2095,21 +2158,49 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
 
                   <form onSubmit={handleSubmitReduction} className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     <div className="flex flex-col gap-1.5 text-left">
-                      <label className="text-[10px] font-black uppercase text-slate-550 flex items-center gap-1">
-                        👤 Pilih Siswa Terkait
-                      </label>
+                      <div className="flex justify-between items-center">
+                        <label className="text-[10px] font-black uppercase text-slate-550 flex items-center gap-1">
+                          👤 Pilih Siswa Terkait
+                        </label>
+                        {reductionStudentSearch && (
+                          <button
+                            type="button"
+                            onClick={() => setReductionStudentSearch('')}
+                            className="text-[9px] text-rose-500 hover:underline font-bold cursor-pointer"
+                          >
+                            Reset
+                          </button>
+                        )}
+                      </div>
+                      <input
+                        type="text"
+                        placeholder="🔍 Tulis nama murid atau NIS untuk mencari..."
+                        value={reductionStudentSearch}
+                        onChange={(e) => setReductionStudentSearch(e.target.value)}
+                        className="p-2 border border-slate-200 bg-white rounded-xl text-xs font-semibold text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500 mb-1"
+                      />
                       <select
                         value={reductionStudentId}
                         onChange={(e) => setReductionStudentId(e.target.value)}
                         className="p-2.5 border border-slate-250 bg-white rounded-xl text-xs font-semibold text-slate-800 pointer-events-auto cursor-pointer focus:outline-none focus:ring-1 focus:ring-indigo-500"
                         required
                       >
-                        <option value="">-- Pilih Siswa --</option>
-                        {allStudents.map(s => (
-                          <option key={s.id} value={s.id}>
-                            {s.name} (Kelas {s.class}) - NIS: {s.nis}
-                          </option>
-                        ))}
+                        <option value="">
+                          {reductionStudentSearch
+                            ? `-- Hasil Pencarian (${allStudents.filter(s => s.name.toLowerCase().includes(reductionStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(reductionStudentSearch.toLowerCase()))).length} ditemukan) --`
+                            : "-- Pilih Siswa --"}
+                        </option>
+                        {allStudents
+                          .filter(s => {
+                            if (!reductionStudentSearch) return true;
+                            const term = reductionStudentSearch.toLowerCase();
+                            return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
+                          })
+                          .map(s => (
+                            <option key={s.id} value={s.id}>
+                              {s.name} (Kelas {s.class}) - NIS: {s.nis}
+                            </option>
+                          ))}
                       </select>
                     </div>
 
@@ -2251,6 +2342,21 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
             </motion.div>
           )}
 
+          {/* 5. TAB BUKU INDUK SISWA INTEGRATED */}
+          {activeTab === 'buku_induk' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full"
+            >
+              <BukuIndukManagement
+                students={allStudents}
+                onUpdateStudent={onUpdateStudent}
+                onRefresh={fetchAllData}
+              />
+            </motion.div>
+          )}
+
         </div>
       )}
 
@@ -2365,12 +2471,24 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh }: 
               <div className="flex flex-col gap-2">
                 <button
                   onClick={() => {
+                    setActiveTab('buku_induk');
+                    setShowPasswordTab(false);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full text-left py-3 px-4 rounded-xl border border-indigo-100 bg-indigo-50/50 hover:bg-indigo-100/50 flex items-center gap-3 text-indigo-900 font-extrabold text-xs"
+                >
+                  <BookOpen size={16} className="text-indigo-600 shrink-0" />
+                  <span>📗 Buku Induk Siswa (Master Ledger)</span>
+                </button>
+
+                <button
+                  onClick={() => {
                     setShowPasswordTab(true);
                     setShowMoreMenu(false);
                   }}
                   className="w-full text-left py-3 px-4 rounded-xl border border-slate-150 hover:bg-slate-50 flex items-center gap-3 text-slate-705 font-bold text-xs"
                 >
-                  <Key size={16} className="text-amber-500 shrink-0" />
+                  <Key size={16} className="text-amber-500 shrink-0 text-slate-500 hover:text-slate-800" />
                   <span>Atur Password Akun Guru BK</span>
                 </button>
 

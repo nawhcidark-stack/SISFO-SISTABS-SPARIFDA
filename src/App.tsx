@@ -2136,6 +2136,7 @@ export default function App() {
             schoolIdentity={schoolIdentity}
             onLogout={handleLogout}
             onRefresh={handleReload}
+            onUpdateStudent={handleUpdateStudent}
           />
         ) : (
           <AdminPanel

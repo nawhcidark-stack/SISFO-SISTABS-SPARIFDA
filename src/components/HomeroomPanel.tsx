@@ -706,6 +706,7 @@ export default function HomeroomPanel({
   const [counselingList, setCounselingList] = useState<StudentCounselingLog[]>([]);
   const [loadingCounseling, setLoadingCounseling] = useState(false);
   const [selectedCounStudentId, setSelectedCounStudentId] = useState('');
+  const [counStudentSearch, setCounStudentSearch] = useState('');
   const [counDate, setCounDate] = useState(todayStr);
   const [counTopic, setCounTopic] = useState('');
   const [counActionPlan, setCounActionPlan] = useState('');
@@ -4070,17 +4071,45 @@ Wassalamualaikum Wr. Wb.
 
                       {/* Siswa */}
                       <div className="flex flex-col gap-1.5">
-                        <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Pilih Siswa Terkonseling</label>
+                        <div className="flex justify-between items-center">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wider">Pilih Siswa Terkonseling</label>
+                          {counStudentSearch && (
+                            <button
+                              type="button"
+                              onClick={() => setCounStudentSearch('')}
+                              className="text-[9px] text-rose-500 hover:underline font-bold cursor-pointer"
+                            >
+                              Reset Pencarian
+                            </button>
+                          )}
+                        </div>
+                        <input
+                          type="text"
+                          placeholder="🔍 Tulis nama siswa atau NIS untuk mencari..."
+                          value={counStudentSearch}
+                          onChange={(e) => setCounStudentSearch(e.target.value)}
+                          className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-[11px] font-semibold placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                        />
                         <select
                           value={selectedCounStudentId}
                           onChange={(e) => setSelectedCounStudentId(e.target.value)}
                           className="w-full bg-white border border-slate-300 rounded-xl px-3 py-2 text-xs font-bold focus:outline-none cursor-pointer"
                           required
                         >
-                          <option value="">-- Pilih Siswa --</option>
-                          {classStudents.sort((a,b)=>a.name.localeCompare(b.name)).map(s => (
-                            <option key={s.id} value={s.id}>{s.name} ({s.nis})</option>
-                          ))}
+                          <option value="">
+                            {counStudentSearch 
+                              ? `-- Pilih Hasil Pencarian (${classStudents.filter(s => s.name.toLowerCase().includes(counStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(counStudentSearch.toLowerCase()))).length} ditemukan) --` 
+                              : "-- Pilih Siswa --"}
+                          </option>
+                          {classStudents
+                            .filter(s => {
+                              if (!counStudentSearch) return true;
+                              const term = counStudentSearch.toLowerCase();
+                              return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
+                            })
+                            .sort((a,b)=>a.name.localeCompare(b.name)).map(s => (
+                              <option key={s.id} value={s.id}>{s.name} ({s.nis})</option>
+                            ))}
                         </select>
                       </div>
 

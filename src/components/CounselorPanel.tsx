@@ -71,7 +71,15 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
   // Secondary sub-tab states for custom list or aggregates
   const [attendanceSubTab, setAttendanceSubTab] = useState<'diary' | 'aggregate'>('aggregate');
-  const [infractionSubTab, setInfractionSubTab] = useState<'list' | 'points' | 'reduction'>('points');
+  const [infractionSubTab, setInfractionSubTab] = useState<'list' | 'points' | 'reduction' | 'rubric'>('points');
+
+  // Infraction rules rubric configuration inside Counselor Panel
+  const [infractionRules, setInfractionRules] = useState<any[]>([]);
+  const [loadingRules, setLoadingRules] = useState(false);
+  const [editingRuleId, setEditingRuleId] = useState<string | null>(null);
+  const [ruleNameInput, setRuleNameInput] = useState('');
+  const [rulePointsInput, setRulePointsInput] = useState<number>(5);
+  const [ruleCategoryInput, setRuleCategoryInput] = useState('Ringan');
 
   // Suggestion & Solutions form state
   const [selectedLogId, setSelectedLogId] = useState<string | null>(null);
@@ -110,11 +118,12 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     setLoading(true);
     setErrorMsg(null);
     try {
-      const [resCouns, resAtt, resInf, resStud] = await Promise.all([
+      const [resCouns, resAtt, resInf, resStud, resRules] = await Promise.all([
         fetch("/api/student-counseling-logs"),
         fetch("/api/attendance"),
         fetch("/api/student-infraction-logs"),
-        fetch("/api/students")
+        fetch("/api/students"),
+        fetch("/api/infraction-rules")
       ]);
 
       if (resCouns.ok) {
@@ -132,6 +141,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       if (resStud.ok) {
         const data = await resStud.json();
         setAllStudents(data);
+      }
+      if (resRules.ok) {
+        const data = await resRules.json();
+        setInfractionRules(data);
       }
     } catch (err) {
       console.error(err);
@@ -192,6 +205,77 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       alert("Gagal terhubung ke server.");
     } finally {
       setSubmittingReduction(false);
+    }
+  };
+
+  const handleSaveRule = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!ruleNameInput.trim() || rulePointsInput === undefined) {
+      alert('Nama acuan aturan sanksi dan poin harus terisi.');
+      return;
+    }
+    setLoadingRules(true);
+    try {
+      const url = editingRuleId ? `/api/infraction-rules/${editingRuleId}` : '/api/infraction-rules';
+      const method = editingRuleId ? 'PUT' : 'POST';
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: ruleNameInput.trim(),
+          points: Number(rulePointsInput),
+          category: ruleCategoryInput
+        })
+      });
+      if (res.ok) {
+        setSuccessMsg(editingRuleId ? 'Sukses memperbarui acuan sanksi!' : 'Sukses menambah acuan sanksi baru!');
+        setRuleNameInput('');
+        setRulePointsInput(5);
+        setRuleCategoryInput('Ringan');
+        setEditingRuleId(null);
+        
+        const resRules = await fetch("/api/infraction-rules");
+        if (resRules.ok) {
+          const data = await resRules.json();
+          setInfractionRules(data);
+        }
+        onRefresh();
+        setTimeout(() => setSuccessMsg(null), 4000);
+      } else {
+        const d = await res.json();
+        alert(d.error || 'Gagal menyimpan aturan.');
+      }
+    } catch {
+      alert('Koneksi server terputus.');
+    } finally {
+      setLoadingRules(false);
+    }
+  };
+
+  const handleDeleteRule = async (id: string) => {
+    if (!window.confirm('Yakin ingin menghapus acuan rules pelanggaran ini secara permanen?')) return;
+    setLoadingRules(true);
+    try {
+      const res = await fetch(`/api/infraction-rules/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        setSuccessMsg('Acuan sanksi berhasil dihapus.');
+        setEditingRuleId(null);
+        setRuleNameInput('');
+        
+        const resRules = await fetch("/api/infraction-rules");
+        if (resRules.ok) {
+          const data = await resRules.json();
+          setInfractionRules(data);
+        }
+        onRefresh();
+        setTimeout(() => setSuccessMsg(null), 4000);
+      } else {
+        alert('Gagal menghapus acuan.');
+      }
+    } catch {
+      alert('Kehilangan sinyal server.');
+    } finally {
+      setLoadingRules(false);
     }
   };
 
@@ -2000,10 +2084,19 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                 >
                   Input Pengurangan Poin BK ❇️
                 </button>
+                <button
+                  type="button"
+                  onClick={() => setInfractionSubTab('rubric')}
+                  className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${
+                    infractionSubTab === 'rubric' ? 'bg-rose-50 text-rose-700 border border-rose-100' : 'text-slate-400 bg-transparent hover:text-slate-700'
+                  }`}
+                >
+                  Kelola Rubrik Sanksi 📋
+                </button>
               </div>
 
               {/* FILTERS PANEL */}
-              {infractionSubTab !== 'reduction' && (
+              {infractionSubTab !== 'reduction' && infractionSubTab !== 'rubric' && (
                 <div className="flex flex-col gap-3 pb-2">
                   <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
                     <div className="relative flex-1">
@@ -2281,6 +2374,161 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       </button>
                     </div>
                   </form>
+                </div>
+              ) : infractionSubTab === 'rubric' ? (
+                <div className="bg-slate-50/50 border border-slate-200 rounded-2xl p-6 shadow-xxs">
+                  <div className="flex flex-col md:flex-row items-start md:items-center justify-between pb-3 mb-5 border-b border-slate-205 gap-2">
+                    <div className="flex items-center gap-2">
+                      <div className="h-7 w-7 rounded-lg bg-rose-500 text-white flex items-center justify-center font-bold text-sm">
+                        📋
+                      </div>
+                      <div>
+                        <h3 className="font-extrabold text-sm text-slate-800">Master Rubrik &amp; Referensi Poin Sanksi</h3>
+                        <p className="text-[11px] text-slate-500 font-medium leading-tight">Daftar acuan sanksi pelanggaran tata tertib sekolah yang terintegrasi secara langsung dengan jurnal guru wali kelas.</p>
+                      </div>
+                    </div>
+                    <span className="text-[10px] font-mono text-rose-700 bg-rose-100 px-2 py-1 rounded-lg font-black shrink-0">
+                      {infractionRules.length} Acuan Aktif
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                    {/* Left: Input Form */}
+                    <form onSubmit={handleSaveRule} className="lg:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl flex flex-col gap-4 shadow-3xs text-left">
+                      <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest block border-b border-slate-100 pb-2">
+                        {editingRuleId ? "✏️ Edit Acuan Sanksi" : "➕ Tambah Referensi Baru"}
+                      </span>
+
+                      <div className="flex flex-col gap-1.5">
+                        <label className="text-[9.5px] font-black text-slate-500 uppercase">Deskripsi Pelanggaran / Aturan</label>
+                        <textarea
+                          value={ruleNameInput}
+                          onChange={(e) => setRuleNameInput(e.target.value)}
+                          placeholder="Misal: Membawa barang terlarang ke sekolah..."
+                          rows={3}
+                          className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none placeholder-slate-400"
+                          required
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[9.5px] font-black text-slate-500 uppercase">Bobot Sanksi (Poin)</label>
+                          <input
+                            type="number"
+                            value={rulePointsInput}
+                            onChange={(e) => setRulePointsInput(Number(e.target.value) || 0)}
+                            className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                            min={1}
+                            required
+                          />
+                        </div>
+
+                        <div className="flex flex-col gap-1.5">
+                          <label className="text-[9.5px] font-black text-slate-500 uppercase">Tingkatan Kasus</label>
+                          <select
+                            value={ruleCategoryInput}
+                            onChange={(e) => setRuleCategoryInput(e.target.value)}
+                            className="w-full bg-slate-50/50 border border-slate-200 focus:bg-white focus:ring-1 focus:ring-rose-500 rounded-xl px-3 py-2 text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                          >
+                            <option value="Ringan">Ringan</option>
+                            <option value="Sedang">Sedang</option>
+                            <option value="Berat">Berat</option>
+                          </select>
+                        </div>
+                      </div>
+
+                      <div className="flex gap-2 mt-2">
+                        <button
+                          type="submit"
+                          disabled={loadingRules}
+                          className="flex-1 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-xs py-2 rounded-xl transition-all cursor-pointer shadow-xs"
+                        >
+                          {editingRuleId ? "Simpan Perubahan" : "Simpan Aturan"}
+                        </button>
+                        {editingRuleId && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setEditingRuleId(null);
+                              setRuleNameInput('');
+                              setRulePointsInput(5);
+                              setRuleCategoryInput('Ringan');
+                            }}
+                            className="bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs px-3 py-2 rounded-xl transition-all cursor-pointer"
+                          >
+                            Batal
+                          </button>
+                        )}
+                      </div>
+                    </form>
+
+                    {/* Right: Rules List */}
+                    <div className="lg:col-span-8 bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-3xs">
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left border-collapse text-xs">
+                          <thead>
+                            <tr className="bg-slate-50 border-b border-slate-150 text-slate-655 uppercase font-black text-[9px] tracking-wide">
+                              <th className="p-3 pl-4">Deskripsi Pelanggaran / Aturan</th>
+                              <th className="p-3 text-center">Bobot Sanksi</th>
+                              <th className="p-3 text-center">Tingkat</th>
+                              <th className="p-3 text-right pr-4">Aksi Operator BK</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
+                            {loadingRules ? (
+                              <tr>
+                                <td colSpan={4} className="p-10 text-center text-slate-400 italic animate-pulse">Memperbarui data acuan dari server...</td>
+                              </tr>
+                            ) : infractionRules.length === 0 ? (
+                              <tr>
+                                <td colSpan={4} className="p-10 text-center text-slate-400 font-medium italic">Belum ada acuan aturan sanksi terdaftar. Tulis aturan baru di sebelah kiri!</td>
+                              </tr>
+                            ) : (
+                              infractionRules.map(rule => (
+                                <tr key={rule.id} className="hover:bg-slate-50/50 bg-white transition-colors">
+                                  <td className="p-3 pl-4 text-slate-800 font-bold max-w-sm">
+                                    <span className="block truncate-custom" title={rule.name}>{rule.name}</span>
+                                  </td>
+                                  <td className="p-3 text-center font-black text-rose-600 font-mono text-xs">{rule.points} Poin</td>
+                                  <td className="p-3 text-center">
+                                    <span className={`px-2 py-0.5 rounded-md text-[9px] font-black uppercase ${
+                                      rule.category === 'Ringan' ? 'bg-slate-100 text-slate-600' :
+                                      rule.category === 'Sedang' ? 'bg-amber-100 text-amber-700 border border-amber-200' :
+                                      'bg-rose-100 text-rose-700 border border-rose-200'
+                                    }`}>
+                                      {rule.category}
+                                    </span>
+                                  </td>
+                                  <td className="p-3 text-right pr-4 shrink-0 whitespace-nowrap font-black">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setEditingRuleId(rule.id);
+                                        setRuleNameInput(rule.name);
+                                        setRulePointsInput(rule.points);
+                                        setRuleCategoryInput(rule.category);
+                                      }}
+                                      className="text-indigo-600 hover:text-indigo-800 font-extrabold mr-3 cursor-pointer hover:underline text-[11px]"
+                                    >
+                                      Sunting
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteRule(rule.id)}
+                                      className="text-rose-600 hover:text-rose-800 font-extrabold cursor-pointer hover:underline text-[11px]"
+                                    >
+                                      Hapus
+                                    </button>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col gap-3">

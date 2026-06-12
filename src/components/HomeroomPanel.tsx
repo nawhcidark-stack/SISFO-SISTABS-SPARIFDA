@@ -1998,11 +1998,10 @@ Wassalamualaikum Wr. Wb.
     classStudents.forEach(student => {
       totalSavings += student.savingsBalance || 0;
       
-      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid');
+      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
       const unpaidSum = sBills.reduce((acc, curr) => acc + curr.amount, 0);
       totalUnpaidSpp += unpaidSum;
-      const sOverdue = sBills.filter(b => isSppBillOverdue(b));
-      if (sOverdue.length > 0) {
+      if (sBills.length > 0) {
         totalInArrearsCount++;
       }
     });
@@ -3020,9 +3019,8 @@ Wassalamualaikum Wr. Wb.
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {filteredClassStudents.map((student) => {
-                          const studentBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid');
-                          const overdueBills = studentBills.filter(b => isSppBillOverdue(b));
-                          const totalUnpaid = studentBills.reduce((sum, b) => sum + b.amount, 0);
+                          const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+                          const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
 
                           return (
                             <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
@@ -3034,19 +3032,10 @@ Wassalamualaikum Wr. Wb.
                                 {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(student.savingsBalance || 0)}
                               </td>
                               <td className="py-3 px-3">
-                                {studentBills.length === 0 ? (
+                                {overdueBills.length === 0 ? (
                                   <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
                                     <CheckCircle size={10} /> Lunas
                                   </span>
-                                ) : overdueBills.length === 0 ? (
-                                  <div className="flex flex-col gap-1">
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full w-max">
-                                      Belum Bayar (Lancar)
-                                    </span>
-                                    <span className="text-[9px] text-slate-400 font-semibold">
-                                      Tempo: {studentBills.map(b => `${b.month} ${b.year}`).join(', ')}
-                                    </span>
-                                  </div>
                                 ) : (
                                   <div className="flex flex-col gap-1">
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full w-max animate-pulse">
@@ -3062,10 +3051,10 @@ Wassalamualaikum Wr. Wb.
                                 )}
                               </td>
                               <td className="py-3 px-3 text-right">
-                                {studentBills.length > 0 ? (
+                                {overdueBills.length > 0 ? (
                                   <button
                                     type="button"
-                                    onClick={() => copyWaReminder(student, studentBills)}
+                                    onClick={() => copyWaReminder(student, overdueBills)}
                                     className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer ${
                                       copiedStudentId === student.id
                                         ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'

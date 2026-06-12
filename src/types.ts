@@ -414,6 +414,47 @@ export interface SalaryConfig {
   defaultPotonganDanaSosial: number;
 }
 
+export function isSppBillOverdue(bill: { status: string; month: string; year: number }, today: Date = new Date()): boolean {
+  if (bill.status !== 'unpaid') {
+    return false;
+  }
+
+  const MONTHS_MAP: { [key: string]: number } = {
+    "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+    "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+  };
+
+  const billMonthIndex = MONTHS_MAP[bill.month];
+  if (billMonthIndex === undefined) {
+    return true; // fallback for non-standard month names if they are unpaid
+  }
+
+  const currentYear = today.getFullYear();
+  const currentMonthIndex = today.getMonth(); // 0-11
+  const currentDate = today.getDate(); // 1-31
+
+  if (bill.year > currentYear) {
+    return false;
+  }
+
+  if (bill.year < currentYear) {
+    return true;
+  }
+
+  // Same year:
+  if (billMonthIndex < currentMonthIndex) {
+    return true;
+  }
+
+  if (billMonthIndex === currentMonthIndex) {
+    // "melebihi tanggal 10" -> date > 10
+    return currentDate > 10;
+  }
+
+  return false;
+}
+
+
 
 
 

@@ -11,7 +11,8 @@ import {
   TeacherEvaluation,
   TeachingJournal,
   StudentCounselingLog,
-  StudentInfractionLog
+  StudentInfractionLog,
+  isSppBillOverdue
 } from '../types';
 import { 
   BarChart, 
@@ -1256,9 +1257,17 @@ export default function PrincipalPanel({
                                           ? 'bg-emerald-100 text-emerald-800' 
                                           : b.status === 'pending' 
                                             ? 'bg-amber-150 bg-amber-100 text-amber-800'
-                                            : 'bg-rose-100 text-rose-800 font-black'
+                                            : isSppBillOverdue(b)
+                                              ? 'bg-rose-100 text-rose-800 font-black'
+                                              : 'bg-amber-50 text-amber-700 border border-amber-100'
                                       }`}>
-                                        {b.status === 'paid' ? 'Lunas' : b.status === 'pending' ? 'Pending' : 'Tunggakan'}
+                                        {b.status === 'paid' 
+                                          ? 'Lunas' 
+                                          : b.status === 'pending' 
+                                            ? 'Pending' 
+                                            : isSppBillOverdue(b) 
+                                              ? 'Tunggakan ⚠️' 
+                                              : 'Belum Bayar'}
                                       </span>
                                     </td>
                                   </tr>

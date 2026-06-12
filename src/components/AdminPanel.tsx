@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher, AttendanceLog, StudentInfractionLog } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, HomeroomTeacher, SubjectTeacher, AttendanceLog, StudentInfractionLog, isSppBillOverdue } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { ShieldAlert, BookOpen, Users, Banknote, BellRing, Settings, CheckCircle, Smartphone, Apple, User, RefreshCw, PlusCircle, ArrowUpRight, ArrowDownLeft, ShieldCheck, Zap, GraduationCap, Check, AlertCircle, Printer, TrendingUp, BarChart3, FileText, Calendar, FileCheck, ImageIcon, UploadCloud, Search, Trash2, Edit, ClipboardCheck, Download, ShoppingCart, X, Camera, Lock, Key, Home, LayoutGrid } from 'lucide-react';
 import StudentManagement from './StudentManagement';
@@ -2423,7 +2423,7 @@ export default function AdminPanel({
                             <div>
                               <span className="text-[9px] uppercase tracking-wider font-bold text-emerald-300">STATUS BUKU IURAN SPP SISWA</span>
                               <span className="text-lg md:text-xl font-bold font-mono block mt-1">
-                                {bills.filter(b => b.studentId === selectedStudent.id && b.status === 'unpaid').length} Bulan Tunggakan
+                                {bills.filter(b => b.studentId === selectedStudent.id && isSppBillOverdue(b)).length} Bulan Tunggakan
                               </span>
                             </div>
                             <div className="mt-4 pt-2 border-t border-emerald-800/40 flex justify-between items-center text-[10px] text-emerald-300">
@@ -5635,9 +5635,13 @@ export default function AdminPanel({
                                         <span className="inline-flex px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded text-[9px] font-black uppercase tracking-wide">
                                           Terbayar Lunas
                                         </span>
-                                      ) : (
+                                      ) : isSppBillOverdue(bill) ? (
                                         <span className="inline-flex px-2 py-0.5 bg-rose-50 text-rose-800 border border-rose-200 rounded text-[9px] font-black uppercase tracking-wide">
-                                          Belum Lunas
+                                          Menunggak ⚠️
+                                        </span>
+                                      ) : (
+                                        <span className="inline-flex px-2 py-0.5 bg-amber-50 text-amber-800 border border-amber-200 rounded text-[9px] font-black uppercase tracking-wide">
+                                          Belum Bayar
                                         </span>
                                       )}
                                     </td>

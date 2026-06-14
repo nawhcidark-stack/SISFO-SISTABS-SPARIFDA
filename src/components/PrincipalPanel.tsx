@@ -526,9 +526,10 @@ export default function PrincipalPanel({
     let perempuan = 0;
     let unspecified = 0;
     students.forEach(s => {
-      if (s.gender === 'Laki-laki') {
+      const g = (s.gender || '').trim().toLowerCase();
+      if (g === 'laki-laki' || g === 'l' || g.startsWith('laki') || g === 'laki laki') {
         laki++;
-      } else if (s.gender === 'Perempuan') {
+      } else if (g === 'perempuan' || g === 'p' || g.startsWith('perem')) {
         perempuan++;
       } else {
         unspecified++;
@@ -546,9 +547,10 @@ export default function PrincipalPanel({
         counts[cls] = { total: 0, laki: 0, perempuan: 0 };
       }
       counts[cls].total++;
-      if (s.gender === 'Laki-laki') {
+      const g = (s.gender || '').trim().toLowerCase();
+      if (g === 'laki-laki' || g === 'l' || g.startsWith('laki') || g === 'laki laki') {
         counts[cls].laki++;
-      } else if (s.gender === 'Perempuan') {
+      } else if (g === 'perempuan' || g === 'p' || g.startsWith('perem')) {
         counts[cls].perempuan++;
       }
     });

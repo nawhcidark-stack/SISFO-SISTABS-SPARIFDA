@@ -2621,21 +2621,52 @@ export default function StudentPanel({
                         {activeFormTab === 'ayah' && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                              <label className="text-[100] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Lengkap Ayah Kandung</label>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Kandung Ayah</label>
                               <input
                                 type="text"
                                 value={bukuIndukForm.fatherName || ''}
                                 onChange={(e) => handleBukuIndukInputChange('fatherName', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Nama lengkap ayah"
                               />
                             </div>
                             <div>
-                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIK Ayah Kandung</label>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIK Ayah</label>
                               <input
                                 type="text"
                                 value={bukuIndukForm.fatherNik || ''}
                                 onChange={(e) => handleBukuIndukInputChange('fatherNik', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                placeholder="16 digit NIK"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tempat Lahir Ayah</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherBirthPlace || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherBirthPlace', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Kota / Kabupaten"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tanggal Lahir Ayah</label>
+                              <input
+                                type="date"
+                                value={bukuIndukForm.fatherBirthDate ? String(bukuIndukForm.fatherBirthDate).split('T')[0] : ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherBirthDate', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold font-mono outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Pendidikan Terakhir Ayah</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherEducation || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherEducation', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="SD, SMP, SMA, S1, S2, D3"
                               />
                             </div>
                             <div>
@@ -2644,16 +2675,49 @@ export default function StudentPanel({
                                 type="text"
                                 value={bukuIndukForm.fatherOccupation || ''}
                                 onChange={(e) => handleBukuIndukInputChange('fatherOccupation', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Wiraswasta, PNS, Buruh, Petani"
                               />
                             </div>
                             <div>
-                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. HP / WA Ayah</label>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Rata-rata Penghasilan Bulanan</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherIncome || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherIncome', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                placeholder="Contoh: 3500000"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nomor Kontak HP / WA</label>
                               <input
                                 type="text"
                                 value={bukuIndukForm.fatherPhone || ''}
                                 onChange={(e) => handleBukuIndukInputChange('fatherPhone', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                placeholder="08xxxxxxxxxx"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Status Keberadaan Ayah</label>
+                              <select
+                                value={bukuIndukForm.fatherStatus || 'Hidup'}
+                                onChange={(e) => handleBukuIndukInputChange('fatherStatus', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-505"
+                              >
+                                <option value="Hidup">Masih Hidup</option>
+                                <option value="Meninggal">Sudah Meninggal</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Alamat Tinggal Ayah</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.fatherAddress || ''}
+                                onChange={(e) => handleBukuIndukInputChange('fatherAddress', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Kosongkan jika sama dengan siswa"
                               />
                             </div>
                           </div>
@@ -2662,21 +2726,52 @@ export default function StudentPanel({
                         {activeFormTab === 'ibu' && (
                           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                             <div>
-                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Lengkap Ibu Kandung</label>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Kandung Ibu</label>
                               <input
                                 type="text"
                                 value={bukuIndukForm.motherName || ''}
                                 onChange={(e) => handleBukuIndukInputChange('motherName', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Nama lengkap ibu"
                               />
                             </div>
                             <div>
-                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIK Ibu Kandung</label>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIK Ibu</label>
                               <input
                                 type="text"
                                 value={bukuIndukForm.motherNik || ''}
                                 onChange={(e) => handleBukuIndukInputChange('motherNik', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                placeholder="16 digit NIK"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tempat Lahir Ibu</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherBirthPlace || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherBirthPlace', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Kota / Kabupaten"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tanggal Lahir Ibu</label>
+                              <input
+                                type="date"
+                                value={bukuIndukForm.motherBirthDate ? String(bukuIndukForm.motherBirthDate).split('T')[0] : ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherBirthDate', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold font-mono outline-none focus:border-indigo-500"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Pendidikan Terakhir Ibu</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherEducation || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherEducation', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="SD, SMP, SMA, S1, S2, D3"
                               />
                             </div>
                             <div>
@@ -2685,16 +2780,49 @@ export default function StudentPanel({
                                 type="text"
                                 value={bukuIndukForm.motherOccupation || ''}
                                 onChange={(e) => handleBukuIndukInputChange('motherOccupation', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Wiraswasta, PNS, BUMN, IRT"
                               />
                             </div>
                             <div>
-                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. HP / WA Ibu</label>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Rata-rata Penghasilan Ibu</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherIncome || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherIncome', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                placeholder="0 jika IRT"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nomor Kontak Ibu</label>
                               <input
                                 type="text"
                                 value={bukuIndukForm.motherPhone || ''}
                                 onChange={(e) => handleBukuIndukInputChange('motherPhone', e.target.value)}
-                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                placeholder="08xxxxxxxxxx"
+                              />
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Status Keberadaan Ibu</label>
+                              <select
+                                value={bukuIndukForm.motherStatus || 'Hidup'}
+                                onChange={(e) => handleBukuIndukInputChange('motherStatus', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-505"
+                              >
+                                <option value="Hidup">Masih Hidup</option>
+                                <option value="Meninggal">Sudah Meninggal</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Alamat Tinggal Ibu</label>
+                              <input
+                                type="text"
+                                value={bukuIndukForm.motherAddress || ''}
+                                onChange={(e) => handleBukuIndukInputChange('motherAddress', e.target.value)}
+                                className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                placeholder="Kosongkan jika sama dengan siswa"
                               />
                             </div>
                           </div>
@@ -2709,27 +2837,91 @@ export default function StudentPanel({
                                 onChange={(e) => handleBukuIndukInputChange('guardianIsSameAsFather', e.target.checked)}
                                 className="accent-indigo-600 h-4 w-4"
                               />
-                              <span className="text-xs font-bold text-slate-705">Wali sama dengan data Ayah kandung</span>
+                              <div className="text-left">
+                                <span className="text-xs font-bold text-slate-705 block">Sama dengan Ayah Kandung?</span>
+                                <span className="text-[9px] text-slate-400 block font-semibold">Centang kotak ini untuk menyalin seluruh data ayah sebagai wali secara otomatis.</span>
+                              </div>
                             </label>
 
                             {!bukuIndukForm.guardianIsSameAsFather && (
-                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in">
+                              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 animate-fade-in text-left">
                                 <div>
                                   <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nama Lengkap Wali</label>
                                   <input
                                     type="text"
                                     value={bukuIndukForm.guardianName || ''}
                                     onChange={(e) => handleBukuIndukInputChange('guardianName', e.target.value)}
-                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold"
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                    placeholder="Nama lengkap wali"
                                   />
                                 </div>
                                 <div>
-                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">No. HP / WA Wali</label>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIK Wali</label>
+                                  <input
+                                    type="text"
+                                    value={bukuIndukForm.guardianNik || ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianNik', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                    placeholder="16 digit NIK"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tempat Lahir Wali</label>
+                                  <input
+                                    type="text"
+                                    value={bukuIndukForm.guardianBirthPlace || ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianBirthPlace', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                    placeholder="Kota / Kabupaten"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Tanggal Lahir Wali</label>
+                                  <input
+                                    type="date"
+                                    value={bukuIndukForm.guardianBirthDate ? String(bukuIndukForm.guardianBirthDate).split('T')[0] : ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianBirthDate', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold font-mono outline-none focus:border-indigo-500"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Pendidikan Terakhir Wali</label>
+                                  <input
+                                    type="text"
+                                    value={bukuIndukForm.guardianEducation || ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianEducation', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                    placeholder="SD, SMP, SMA, S1, S2, D3"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Pekerjaan Wali</label>
+                                  <input
+                                    type="text"
+                                    value={bukuIndukForm.guardianOccupation || ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianOccupation', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
+                                    placeholder="Pekerjaan wali"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Rata-rata Penghasilan Wali</label>
+                                  <input
+                                    type="text"
+                                    value={bukuIndukForm.guardianIncome || ''}
+                                    onChange={(e) => handleBukuIndukInputChange('guardianIncome', e.target.value)}
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                    placeholder="Contoh: 3000000"
+                                  />
+                                </div>
+                                <div>
+                                  <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">Nomor Kontak Wali</label>
                                   <input
                                     type="text"
                                     value={bukuIndukForm.guardianPhone || ''}
                                     onChange={(e) => handleBukuIndukInputChange('guardianPhone', e.target.value)}
-                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold"
+                                    className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500"
+                                    placeholder="08xxxxxxxxxx"
                                   />
                                 </div>
                               </div>

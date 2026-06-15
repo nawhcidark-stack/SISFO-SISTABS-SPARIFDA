@@ -2093,9 +2093,25 @@ export default function AdminPanel({
           <div className="pt-2 border-t border-slate-100 flex flex-col gap-2">
             <div className="flex justify-between items-center text-[10px]">
               <span className="text-slate-400 uppercase font-bold tracking-wider">Gateway Status:</span>
-              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
-                SANDBOX
-              </span>
+              {midtransStatus?.isDisabled ? (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-rose-50 text-rose-700 border border-rose-200">
+                  DISABLED
+                </span>
+              ) : midtransStatus?.hasServerKey && midtransStatus?.clientKey ? (
+                midtransStatus.isProduction ? (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    PRODUCTION
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                    SANDBOX
+                  </span>
+                )
+              ) : (
+                <span className="inline-flex items-center px-1.5 py-0.5 rounded text-[9px] font-bold bg-slate-50 text-slate-500 border border-slate-200">
+                  TELLER / OFF
+                </span>
+              )}
             </div>
             <div className="flex justify-between items-center text-[10px]">
               <span className="text-slate-400 uppercase font-bold tracking-wider">SSE Listener:</span>

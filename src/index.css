@@ -175,12 +175,14 @@ h1, h2, h3, h4, h5, h6 {
     padding: 1mm 2mm !important;
     font-family: monospace, ui-monospace, Courier, monospace !important;
     font-size: 10pt !important; /* Increased base physical font size for superb thermal legibility */
+    font-weight: bold !important; /* Force bold for ultra-sharp hot thermal printer head output */
     line-height: 1.35 !important;
     color: black !important;
     background: white !important;
   }
   #print-receipt-section.print-thermal * {
     font-family: monospace, ui-monospace, Courier, monospace !important;
+    font-weight: bold !important; /* Force bold for ultra-sharp hot thermal printer head output */
   }
 
   /* Robust and proportional scaling for all nested elements on physical thermal printing */
@@ -225,6 +227,7 @@ h1, h2, h3, h4, h5, h6 {
   .print-thermal,
   .print-thermal * {
     font-size: 12px !important;
+    font-weight: bold !important; /* Reflect bold weight in screen preview */
     line-height: 1.4 !important;
   }
   .print-thermal .text-\[6px\],

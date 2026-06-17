@@ -792,10 +792,7 @@ async function syncWithFirestore() {
       console.log(`Connecting database with MongoDB Candidate URI #${i + 1}/${candidates.length}...`);
       dbSyncStatus = `Connecting (Try #${i + 1})...`;
       
-      mongoClient = new MongoClient(uriCandidate, {
-        connectTimeoutMS: 2005,
-        serverSelectionTimeoutMS: 2005
-      });
+      mongoClient = new MongoClient(uriCandidate);
       await mongoClient.connect();
       mongoDb = mongoClient.db("spp_maarif");
       console.log(`MongoDB connection verified on candidate #${i + 1}.`);

@@ -89,7 +89,24 @@ export default function MidtransPayModal({
       ? 'https://app.midtrans.com/snap/snap.js'
       : 'https://app.sandbox.midtrans.com/snap/snap.js';
 
-    // Find if the script already exists
+    const alternateSrc = isProduction
+      ? 'https://app.sandbox.midtrans.com/snap/snap.js'
+      : 'https://app.midtrans.com/snap/snap.js';
+
+    // Remove any alternate snap script to avoid environment pollution (e.g., loading sandbox token with production script or vice versa)
+    const altScript = document.querySelector(`script[src="${alternateSrc}"]`);
+    if (altScript) {
+      altScript.remove();
+      if ((window as any).snap) {
+        try {
+          delete (window as any).snap;
+        } catch (e) {
+          (window as any).snap = undefined;
+        }
+      }
+    }
+
+    // Find if the correct script already exists
     const existingScript = document.querySelector(`script[src="${scriptSrc}"]`) as HTMLScriptElement;
 
     if ((window as any).snap) {

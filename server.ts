@@ -5281,22 +5281,12 @@ async function startServer() {
     const maintenanceFeeVal = 0;
     const grossAmountVal = bill.amount;
 
-    // If Midtrans credentials aren't set, we automatically enter sandbox flow simulation mode
+    // If Midtrans credentials aren't set, we return an error message
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
 
     if (!hasMidtrans) {
-      // Simulation mode
-      const mockSnapToken = `snap-token-spp-mock-${Date.now()}`;
-      return res.json({
-        token: mockSnapToken,
-        isSimulated: true,
-        orderId,
-        redirectUrl: "#",
-        adminFee: 0, // Calculated dynamically by Midtrans
-        systemMaintenanceFee: maintenanceFeeVal,
-        baseAmount: bill.amount,
-        totalAmount: grossAmountVal,
-        message: "Menggunakan Simulasi Midtrans Sandbox karena Kunci Server tidak diatur."
+      return res.status(400).json({ 
+        error: "Metode pembayaran online dinonaktifkan karena Kunci Midtrans belum diatur oleh Administrator sekolah di Panel Pengaturan." 
       });
     }
 
@@ -5373,20 +5363,16 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Midtrans Snap API Call Error", err);
-      // Fallback to beautiful simulation if API call fails
-      const mockSnapToken = `snap-token-spp-mock-${Date.now()}`;
-      res.json({
-        token: mockSnapToken,
-        isSimulated: true,
-        orderId,
-        redirectUrl: "#",
-        adminFee: adminFeeVal,
-        systemMaintenanceFee: maintenanceFeeVal,
-        baseAmount: bill.amount,
-        totalAmount: grossAmountVal,
-        error: err.message,
-        message: "API error. Menggunakan Simulasi Midtrans Sandbox Aman."
-      });
+      let errorMsg = "Gagal memproses pembayaran dengan Midtrans.";
+      try {
+        const parsed = JSON.parse(err.message);
+        if (parsed.error_messages && parsed.error_messages.length > 0) {
+          errorMsg = `Kesalahan Validasi Midtrans: ${parsed.error_messages.join(', ')}`;
+        }
+      } catch (e) {
+        if (err.message) errorMsg = err.message;
+      }
+      res.status(500).json({ error: errorMsg });
     }
   });
 
@@ -5430,16 +5416,8 @@ async function startServer() {
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
     if (!hasMidtrans) {
-      const mockSnapToken = `snap-token-sav-mock-${Date.now()}`;
-      return res.json({
-        token: mockSnapToken,
-        isSimulated: true,
-        orderId,
-        redirectUrl: "#",
-        adminFee: 0, // Calculated dynamically by Midtrans
-        systemMaintenanceFee: maintenanceFeeVal,
-        baseAmount: valAmount,
-        totalAmount: grossAmountVal
+      return res.status(400).json({ 
+        error: "Metode setoran tabungan online dinonaktifkan karena Kunci Midtrans belum diatur oleh Administrator sekolah di Panel Pengaturan." 
       });
     }
 
@@ -5514,19 +5492,16 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Midtrans Snap API Call Error", err);
-      // Fallback
-      const mockSnapToken = `snap-token-sav-mock-${Date.now()}`;
-      res.json({
-        token: mockSnapToken,
-        isSimulated: true,
-        orderId,
-        redirectUrl: "#",
-        adminFee: adminFeeVal,
-        systemMaintenanceFee: maintenanceFeeVal,
-        baseAmount: valAmount,
-        totalAmount: grossAmountVal,
-        message: "Gagal memanggil API Midtrans. Beroperasi di bawah Simulasi Sandbox aman."
-      });
+      let errorMsg = "Gagal memproses setoran tabungan dengan Midtrans.";
+      try {
+        const parsed = JSON.parse(err.message);
+        if (parsed.error_messages && parsed.error_messages.length > 0) {
+          errorMsg = `Kesalahan Validasi Midtrans: ${parsed.error_messages.join(', ')}`;
+        }
+      } catch (e) {
+        if (err.message) errorMsg = err.message;
+      }
+      res.status(500).json({ error: errorMsg });
     }
   });
 

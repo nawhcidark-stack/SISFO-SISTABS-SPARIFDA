@@ -750,7 +750,8 @@ export default function App() {
       });
 
       if (!res.ok) {
-        throw new Error('Gagal memanggil API Pembayaran SPP.');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal memanggil API Pembayaran SPP.');
       }
 
       const payData = await res.json();
@@ -771,9 +772,9 @@ export default function App() {
       if (role === 'admin') {
         setAdminSppBillToPrintCandidate(bill.id);
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
+      alert(err.message || 'Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
       setIsLoading(false);
     }
   };
@@ -797,7 +798,8 @@ export default function App() {
       });
 
       if (!res.ok) {
-        throw new Error('Gagal memanggil API Buku Tabungan.');
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal memanggil API Buku Tabungan.');
       }
 
       const payData = await res.json();
@@ -817,9 +819,9 @@ export default function App() {
       if (role === 'admin') {
         setAdminSavingsToPrintCandidate({ studentId: sId, orderId: payData.orderId, amount });
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      alert('Gagal memicu setoran online Midtrans.');
+      alert(err.message || 'Gagal memicu setoran online Midtrans.');
       setIsLoading(false);
     }
   };
@@ -1632,7 +1634,8 @@ export default function App() {
         orderId={payOrderId}
         amount={payAmount}
         itemName={payItemName}
-        isSimulated={payIsSimulated}
+        isProduction={sysStatus?.isProduction || false}
+        clientKey={sysStatus?.clientKey || ""}
         onSuccess={handlePaymentSuccess}
         onClose={() => {
           setIsPayModalOpen(false);

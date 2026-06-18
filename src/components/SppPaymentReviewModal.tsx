@@ -6,6 +6,7 @@ import { ShieldCheck, Info, X, CreditCard, ChevronRight, Calculator } from 'luci
 interface SppPaymentReviewModalProps {
   isOpen: boolean;
   bill: SppBill | null;
+  depositAmount?: number | null;
   studentName: string;
   studentNis: string;
   studentClass: string;
@@ -26,6 +27,7 @@ interface SppPaymentReviewModalProps {
 export default function SppPaymentReviewModal({
   isOpen,
   bill,
+  depositAmount = null,
   studentName,
   studentNis,
   studentClass,
@@ -33,13 +35,14 @@ export default function SppPaymentReviewModal({
   onCancel,
   onConfirm,
 }: SppPaymentReviewModalProps) {
-  if (!isOpen || !bill) return null;
+  if (!isOpen || (!bill && !depositAmount)) return null;
 
   // Extract rates and configurations
-  const baseSpp = bill.amount;
+  const isDeposit = !bill && depositAmount ? true : false;
+  const baseAmount = isDeposit ? (depositAmount || 0) : (bill?.amount || 0);
   const adminPG = midtransStatus?.adminFee !== undefined ? midtransStatus.adminFee : 4000;
   
-  const grandTotal = baseSpp + adminPG;
+  const grandTotal = baseAmount + adminPG;
 
   const formatIDR = (val: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
@@ -95,9 +98,11 @@ export default function SppPaymentReviewModal({
                   <span className="font-extrabold text-slate-800 leading-tight block mt-0.5">{studentClass}</span>
                 </div>
                 <div>
-                  <span className="text-[10px] text-slate-400 font-semibold block uppercase">Periode SPP</span>
-                  <span className="font-bold text-emerald-700 leading-tight block mt-0.5 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 max-w-max uppercase tracking-wide">
-                    {bill.month} {bill.year}
+                  <span className="text-[10px] text-slate-400 font-semibold block uppercase">
+                    {isDeposit ? 'Jenis Transaksi' : 'Periode SPP'}
+                  </span>
+                  <span className="font-bold text-emerald-700 leading-tight block mt-0.5 bg-emerald-50 px-2 py-0.5 rounded border border-emerald-100 max-w-max uppercase tracking-wider font-mono">
+                    {isDeposit ? 'SETORAN TABUNGAN' : bill ? `${bill.month} ${bill.year}` : '-'}
                   </span>
                 </div>
               </div>
@@ -108,22 +113,52 @@ export default function SppPaymentReviewModal({
               <h4 className="text-[10px] font-black text-slate-450 uppercase font-mono tracking-wider">Rincian Komponen Biaya</h4>
 
               <div className="border border-slate-150 rounded-2xl overflow-hidden divide-y divide-slate-100 shadow-xs bg-white">
-                {/* 1. SPP */}
+                {/* 1. SPP / Tabungan */}
                 <div className="p-3.5 flex justify-between items-center transition-all bg-white hover:bg-slate-50/40">
                   <div className="flex flex-col">
-                    <span className="font-extrabold text-xs text-slate-850">SPP Bulanan</span>
-                    <span className="text-[10px] text-slate-450 font-medium">Iuran pendidikan wajib sekolah</span>
+                    <span className="font-extrabold text-xs text-slate-805">
+                      {isDeposit ? 'Setoran Dana Tabungan' : 'SPP Bulanan'}
+                    </span>
+                    <span className="text-[10px] text-slate-450 font-medium">
+                      {isDeposit ? 'Pengisian saldo buku tabungan siswa' : 'Iuran pendidikan wajib sekolah'}
+                    </span>
                   </div>
-                  <span className="font-black text-xs text-slate-800 font-mono">{formatIDR(baseSpp)}</span>
+                  <span className="font-black text-xs text-slate-120 font-mono">{formatIDR(baseAmount)}</span>
                 </div>
 
-                {/* 2. Admin Payment Gateway */}
-                <div className="p-3.5 flex justify-between items-center transition-all bg-white hover:bg-slate-50/40">
-                  <div className="flex flex-col">
-                    <span className="font-extrabold text-xs text-slate-850">Admin Payment Gateway</span>
-                    <span className="text-[10px] text-slate-450 font-medium">Biaya jasa gerbang finansial Midtrans</span>
+                {/* 2. Admin Payment Gateway (Calculations & proportion percentage breakdown) */}
+                <div className="p-3.5 flex flex-col gap-2.5 transition-all bg-white hover:bg-slate-50/40">
+                  <div className="flex justify-between items-center">
+                    <div className="flex flex-col">
+                      <span className="font-extrabold text-xs text-slate-805">Admin Payment Gateway</span>
+                      <span className="text-[10px] text-slate-450 font-medium">Biaya jasa gerbang finansial Midtrans</span>
+                    </div>
+                    <span className="font-black text-xs text-slate-800 font-mono">{formatIDR(adminPG)}</span>
                   </div>
-                  <span className="font-black text-xs text-slate-800 font-mono">{formatIDR(adminPG)}</span>
+
+                  {/* Detailed proportion breakdown banner */}
+                  {baseAmount > 0 && (
+                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-150 flex flex-col gap-1.5 text-[10px] text-slate-500 font-sans">
+                      <div className="flex justify-between items-center font-medium">
+                        <span>Nominal Pokok {isDeposit ? '(Tabungan)' : '(SPP)'}:</span>
+                        <span className="font-bold text-slate-700 font-mono">{formatIDR(baseAmount)}</span>
+                      </div>
+                      <div className="flex justify-between items-center font-medium">
+                        <span>Biaya Admin Gerbang (Maks):</span>
+                        <span className="font-bold text-slate-700 font-mono">{formatIDR(adminPG)}</span>
+                      </div>
+                      <div className="h-px bg-slate-200/60 my-0.5" />
+                      <div className="flex justify-between items-center font-bold text-slate-700">
+                        <span>Proporsi Rasio Beban Admin:</span>
+                        <span className="text-indigo-650 font-mono bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
+                          +{((adminPG / baseAmount) * 100).toFixed(2)}% dari pokok
+                        </span>
+                      </div>
+                      <p className="text-[9px] text-slate-400 mt-0.5 leading-normal italic font-medium">
+                        * Biaya gerbang sebesar {formatIDR(adminPG)} ditarik secara flat oleh sistem Midtrans untuk memproses rekonsiliasi transfer otomatis dan penandatanganan kuitansi elektronik.
+                      </p>
+                    </div>
+                  )}
                 </div>
 
                 {/* Grand Total */}

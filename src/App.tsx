@@ -113,6 +113,8 @@ export default function App() {
 
   // Payment review modal states
   const [sppReviewBill, setSppReviewBill] = useState<SppBill | null>(null);
+  const [savingsReviewAmount, setSavingsReviewAmount] = useState<number | null>(null);
+  const [savingsReviewStudentId, setSavingsReviewStudentId] = useState<string | null>(null);
   const [isSppReviewOpen, setIsSppReviewOpen] = useState(false);
 
   // Admin Auto Receipt print after successful Midtrans Transaction
@@ -779,10 +781,17 @@ export default function App() {
     }
   };
 
-  // 4. Tabungan Deposit Initializer (Midtrans Token Charge)
+  // 4. Tabungan Deposit Initializer (Opens Review Modal First)
   const handleDepositSavings = async (amount: number, studentId?: string) => {
     const sId = studentId || currentStudent?.id;
     if (!sId) return;
+    setSavingsReviewAmount(amount);
+    setSavingsReviewStudentId(sId);
+    setIsSppReviewOpen(true);
+  };
+
+  // Actual savings checkout execution after review approval
+  const executeDepositSavingsSnap = async (amount: number, sId: string) => {
     const targetStudent = sId === currentStudent?.id ? currentStudent : studentsList.find(s => s.id === sId) || null;
     if (!targetStudent) return;
     try {
@@ -1649,20 +1658,45 @@ export default function App() {
       <SppPaymentReviewModal
         isOpen={isSppReviewOpen}
         bill={sppReviewBill}
-        studentName={sppReviewBill ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.name || "Siswa" : "Siswa"}
-        studentNis={sppReviewBill ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.nis || "-" : "-"}
-        studentClass={sppReviewBill ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.class || "-" : "-"}
+        depositAmount={savingsReviewAmount}
+        studentName={
+          sppReviewBill
+            ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.name || "Siswa"
+            : savingsReviewStudentId
+            ? (studentsList.find(s => s.id === savingsReviewStudentId) || currentStudent)?.name || "Siswa"
+            : "Siswa"
+        }
+        studentNis={
+          sppReviewBill
+            ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.nis || "-"
+            : savingsReviewStudentId
+            ? (studentsList.find(s => s.id === savingsReviewStudentId) || currentStudent)?.nis || "-"
+            : "-"
+        }
+        studentClass={
+          sppReviewBill
+            ? (studentsList.find(s => s.id === sppReviewBill.studentId) || currentStudent)?.class || "-"
+            : savingsReviewStudentId
+            ? (studentsList.find(s => s.id === savingsReviewStudentId) || currentStudent)?.class || "-"
+            : "-"
+        }
         midtransStatus={sysStatus}
         onCancel={() => {
           setIsSppReviewOpen(false);
           setSppReviewBill(null);
+          setSavingsReviewAmount(null);
+          setSavingsReviewStudentId(null);
         }}
         onConfirm={() => {
           setIsSppReviewOpen(false);
           if (sppReviewBill) {
             executePaySppSnap(sppReviewBill);
+          } else if (savingsReviewAmount && savingsReviewStudentId) {
+            executeDepositSavingsSnap(savingsReviewAmount, savingsReviewStudentId);
           }
           setSppReviewBill(null);
+          setSavingsReviewAmount(null);
+          setSavingsReviewStudentId(null);
         }}
       />
 

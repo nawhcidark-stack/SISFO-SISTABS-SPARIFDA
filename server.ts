@@ -5269,7 +5269,9 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
-    const orderId = `SPP-${bill.id}-${Date.now()}`;
+    // Compress the order ID to stay strictly under Midtrans' 50-character limit
+    const shortBillId = bill.id.replace("bill-std-", "B-");
+    const orderId = `SPP-${shortBillId}-${Date.now().toString().slice(-6)}`;
     bill.orderId = orderId;
     bill.status = "pending";
     saveState();
@@ -5644,7 +5646,14 @@ async function startServer() {
       const middle = order_id.slice(4);
       const lastHyphenIndex = middle.lastIndexOf("-");
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-      const bill = sppBills.find(b => b.orderId === order_id || b.id === billId);
+      
+      // Expand shortened 'B-' prefix to match full 'bill-std-' ID format if needed
+      let cleanBillId = billId;
+      if (cleanBillId.startsWith("B-")) {
+        cleanBillId = "bill-std-" + cleanBillId.slice(2);
+      }
+      
+      const bill = sppBills.find(b => b.orderId === order_id || b.id === cleanBillId || b.id === billId);
       if (bill) {
         if (isSettlement) {
           bill.status = "paid";

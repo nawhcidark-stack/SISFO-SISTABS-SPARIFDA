@@ -533,7 +533,8 @@ let midtransConfig: MidtransConfig = {
   isDisabled: false,
   adminFee: 4000,
   systemMaintenanceFee: 0,
-  chargeFeesToUser: false
+  chargeFeesToUser: false,
+  pin: "1234"
 };
 
 // Helper to determine tuition SPP amount based on student class/level
@@ -1487,8 +1488,16 @@ async function startServer() {
       isDisabled: !!midtransConfig.isDisabled,
       adminFee: 0, // Automated/Handled directly by Midtrans
       systemMaintenanceFee: 0,
-      chargeFeesToUser: false
+      chargeFeesToUser: false,
+      hasPin: !!midtransConfig.pin
     });
+  });
+
+  // Verify Midtrans PIN endpoint
+  app.post("/api/verify-midtrans-pin", (req, res) => {
+    const { pin } = req.body;
+    const isCorrect = String(pin).trim() === String(midtransConfig.pin || "1234").trim();
+    res.json({ success: isCorrect });
   });
 
   // Setup directory for uploads
@@ -1650,7 +1659,7 @@ async function startServer() {
 
   // Update dynamic midtrans credentials
   app.post("/api/set-midtrans-config", (req, res) => {
-    const { merchantId, clientKey, serverKey, isProduction, isDisabled } = req.body;
+    const { merchantId, clientKey, serverKey, isProduction, isDisabled, pin } = req.body;
     midtransConfig = {
       merchantId: merchantId || "",
       clientKey: clientKey || "",
@@ -1659,7 +1668,8 @@ async function startServer() {
       isDisabled: !!isDisabled,
       adminFee: 0, // Automated/Handled directly by Midtrans
       systemMaintenanceFee: 0,
-      chargeFeesToUser: false
+      chargeFeesToUser: false,
+      pin: pin ? String(pin).trim() : (midtransConfig.pin || "1234")
     };
     
     const notif: RealtimeNotification = {

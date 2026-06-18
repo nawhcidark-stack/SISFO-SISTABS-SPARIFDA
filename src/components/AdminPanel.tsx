@@ -60,7 +60,7 @@ interface AdminPanelProps {
   bills: SppBill[];
   transactions: SavingsTransaction[];
   isLoading: boolean;
-  midtransStatus: { merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean } | null;
+  midtransStatus: { merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean; hasPin?: boolean } | null;
   onPaySppManual: (billId: string) => Promise<any>;
   onCancelSppManual?: (billId: string) => Promise<any>;
   onPaySppViaMidtrans?: (bill: SppBill) => Promise<void>;
@@ -1091,6 +1091,11 @@ export default function AdminPanel({
   const [midtransServerKeyInput, setMidtransServerKeyInput] = useState<string>('');
   const [midtransIsProduction, setMidtransIsProduction] = useState<boolean>(false);
   const [midtransIsDisabled, setMidtransIsDisabled] = useState<boolean>(false);
+  const [midtransPinInput, setMidtransPinInput] = useState<string>('');
+  const [isMidtransUnlocked, setIsMidtransUnlocked] = useState<boolean>(false);
+  const [midtransVerificationPin, setMidtransVerificationPin] = useState<string>('');
+  const [midtransPinError, setMidtransPinError] = useState<string>('');
+  const [isVerifyingPin, setIsVerifyingPin] = useState<boolean>(false);
 
   React.useEffect(() => {
     if (midtransStatus) {
@@ -1738,13 +1743,15 @@ export default function AdminPanel({
           isProduction: midtransIsProduction,
           isDisabled: midtransIsDisabled,
           systemMaintenanceFee: 0,
-          chargeFeesToUser: false
+          chargeFeesToUser: false,
+          pin: midtransPinInput || undefined
         })
       });
       const data = await res.json();
       if (res.ok && data.success) {
         setSavingFeesMsg({ type: 'success', text: '🎉 Semua pengaturan API Midtrans & biaya sistem berhasil disimpan!' });
         setMidtransServerKeyInput(''); // Reset server key password input after successful update
+        setMidtransPinInput(''); // Clear set PIN input
         onRefresh(); // trigger system config refresh
       } else {
         setSavingFeesMsg({ type: 'error', text: data.error || 'Gagal menyimpan pengaturan.' });
@@ -1754,6 +1761,31 @@ export default function AdminPanel({
       setSavingFeesMsg({ type: 'error', text: 'Koneksi gagal. Silakan coba lagi.' });
     } finally {
       setIsSavingFees(false);
+    }
+  };
+
+  const handleVerifyMidtransPin = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsVerifyingPin(true);
+    setMidtransPinError('');
+    try {
+      const res = await fetch('/api/verify-midtrans-pin', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ pin: midtransVerificationPin })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsMidtransUnlocked(true);
+        setMidtransVerificationPin('');
+      } else {
+        setMidtransPinError('❌ PIN Keamanan salah! Silakan masukkan PIN yang benar.');
+      }
+    } catch (err) {
+      console.error(err);
+      setMidtransPinError('🔐 Gagal menghubungkan ke server untuk verifikasi PIN.');
+    } finally {
+      setIsVerifyingPin(false);
     }
   };
 
@@ -4548,110 +4580,199 @@ export default function AdminPanel({
               className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-6 text-xs"
             >
               <div>
-                <h3 className="font-bold text-slate-800 text-sm flex items-center gap-1.5">
-                  <Settings size={16} className="text-indigo-600" /> Pengaturan & Integrasi Gateway Midtrans
+                <h3 className="font-bold text-slate-800 text-sm flex items-center justify-between gap-1.5">
+                  <span className="flex items-center gap-1.5">
+                    <Settings size={16} className="text-indigo-600" /> Pengaturan & Integrasi Gateway Midtrans
+                  </span>
+                  {isMidtransUnlocked && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsMidtransUnlocked(false);
+                        setMidtransVerificationPin('');
+                        setMidtransPinError('');
+                      }}
+                      className="px-2.5 py-1 text-[10px] bg-slate-100 font-bold hover:bg-slate-200 text-slate-600 rounded-md flex items-center gap-1 cursor-pointer transition-all border border-slate-200"
+                    >
+                      <Lock size={12} /> Kunci Kembali
+                    </button>
+                  )}
                 </h3>
                 <p className="text-[11px] text-slate-500 mt-0.5 leading-relaxed">
                   Konfigurasikan kunci akses API Midtrans Anda secara langsung di bawah ini. Pengaturan ini akan disinkronkan secara aman ke peladen backend database sekolah.
                 </p>
               </div>
 
-              <form onSubmit={handleSaveMidtransFees} className="flex flex-col gap-5">
-                {savingFeesMsg && (
-                  <div className={`p-3 rounded-lg font-bold text-xs flex items-center gap-2 ${
-                    savingFeesMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-250 text-emerald-800' : 'bg-red-50 border border-red-250 text-red-700'
-                  }`}>
-                    {savingFeesMsg.type === 'success' ? <Check size={14} className="text-emerald-700" /> : <AlertCircle size={14} className="text-red-700" />}
-                    {savingFeesMsg.text}
+              {!isMidtransUnlocked ? (
+                <form onSubmit={handleVerifyMidtransPin} className="p-6 border border-slate-200 rounded-xl bg-slate-50/40 flex flex-col items-center justify-center text-center gap-4">
+                  <div className="w-12 h-12 bg-indigo-50 text-indigo-600 rounded-full flex items-center justify-center shadow-inner">
+                    <Lock size={20} className="className-test animate-bounce" />
                   </div>
-                )}
-
-                {/* Midtrans Credentials Inputs */}
-                <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/40 flex flex-col gap-4">
-                  <span className="font-bold text-slate-800 text-xs block uppercase tracking-wide">
-                    🔑 Kredensial API Midtrans
-                  </span>
-
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Midtrans Merchant ID
-                      </label>
-                      <input
-                        type="text"
-                        value={midtransMerchantIdInput}
-                        onChange={(e) => setMidtransMerchantIdInput(e.target.value)}
-                        placeholder="Contoh: G123456789"
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
-                      />
-                    </div>
-
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Midtrans Client Key
-                      </label>
-                      <input
-                        type="text"
-                        value={midtransClientKeyInput}
-                        onChange={(e) => setMidtransClientKeyInput(e.target.value)}
-                        placeholder="Contoh: SB-Mid-client-XXXXX"
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
-                      />
-                    </div>
+                  <div className="flex flex-col gap-1 max-w-sm">
+                    <span className="font-bold text-slate-800 text-xs uppercase tracking-wide">Pengaturan Terkunci 🔐</span>
+                    <p className="text-[11px] text-slate-500 leading-normal font-medium">
+                      Area ini memuat informasi kunci API dan setelan sensitif finansial sekolah. Silakan masukkan PIN Keamanan Midtrans pengaturan untuk membuka akses.
+                    </p>
                   </div>
 
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Midtrans Server Key
-                      </label>
+                  <div className="flex flex-col gap-1.5 w-full max-w-[240px]">
+                    <div className="relative">
                       <input
                         type="password"
-                        value={midtransServerKeyInput}
-                        onChange={(e) => setMidtransServerKeyInput(e.target.value)}
-                        placeholder={midtransStatus?.hasServerKey ? "•••••••••••••••• (Kunci Terenkripsi Aman)" : "Masukkan Server Key keamanan"}
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
+                        pattern="[0-9]*"
+                        inputMode="numeric"
+                        maxLength={8}
+                        value={midtransVerificationPin}
+                        onChange={(e) => setMidtransVerificationPin(e.target.value.replace(/\D/g, ''))}
+                        placeholder="PIN (Default: 1234)"
+                        className="w-full pl-3 pr-10 py-2.5 text-center font-mono font-bold text-sm bg-white border border-slate-250 rounded-lg text-slate-800 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 shadow-3xs tracking-wider"
                       />
-                      {midtransStatus?.hasServerKey && (
-                        <span className="text-[9px] text-emerald-600 mt-0.5 leading-relaxed font-semibold">
-                          ✔️ Kunci sudah terintegrasi aman di server. Kosongkan jika tidak ingin mendesain ulang kunci baru.
-                        </span>
-                      )}
+                      <div className="absolute inset-y-0 right-0 pr-3 flex items-center pointer-events-none text-slate-400">
+                        <Key size={14} />
+                      </div>
                     </div>
-
-                    <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                        Lingkungan API (Development / Production)
-                      </label>
-                      <select
-                        value={midtransIsProduction ? 'prod' : 'sandbox'}
-                        onChange={(e) => setMidtransIsProduction(e.target.value === 'prod')}
-                        className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs cursor-pointer"
-                      >
-                        <option value="sandbox">Sandbox (Mode Simulasi Demo)</option>
-                        <option value="prod">Production (Gerbang Pembayaran Riil / Live)</option>
-                      </select>
-                    </div>
-                  </div>
-
-                  {/* Temporary Disable Midtrans Checkbox/Switch Option */}
-                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-4">
-                    <div className="flex flex-col gap-0.5">
-                      <span className="text-xs font-black text-slate-800">Nonaktifkan Sementara Pembayaran Online Midtrans</span>
-                      <span className="text-[10px] text-slate-400 font-medium">
-                        Jika diaktifkan, wali murid tidak dapat melakukan pembayaran lewat Midtrans untuk sementara waktu.
+                    {midtransPinError && (
+                      <span className="text-[10px] text-rose-600 font-bold leading-normal text-center">
+                        {midtransPinError}
                       </span>
+                    )}
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isVerifyingPin}
+                    className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:bg-slate-300 text-white font-bold rounded-lg uppercase tracking-wider text-[10px] transition-all cursor-pointer shadow-sm select-none flex items-center gap-1.5"
+                  >
+                    {isVerifyingPin ? (
+                      <>
+                        <RefreshCw size={11} className="animate-spin" /> Membuka...
+                      </>
+                    ) : (
+                      <>
+                        <ShieldCheck size={12} /> Buka Pengaturan 🔑
+                      </>
+                    )}
+                  </button>
+                </form>
+              ) : (
+                <form onSubmit={handleSaveMidtransFees} className="flex flex-col gap-5">
+                  {savingFeesMsg && (
+                    <div className={`p-3 rounded-lg font-bold text-xs flex items-center gap-2 ${
+                      savingFeesMsg.type === 'success' ? 'bg-emerald-50 border border-emerald-250 text-emerald-800' : 'bg-red-50 border border-red-250 text-red-700'
+                    }`}>
+                      {savingFeesMsg.type === 'success' ? <Check size={14} className="text-emerald-700" /> : <AlertCircle size={14} className="text-red-700" />}
+                      {savingFeesMsg.text}
                     </div>
-                    <div>
-                      <input
-                        type="checkbox"
-                        checked={midtransIsDisabled}
-                        onChange={(e) => setMidtransIsDisabled(e.target.checked)}
-                        className="w-4.5 h-4.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
-                      />
+                  )}
+
+                  {/* Midtrans Credentials Inputs */}
+                  <div className="border border-slate-200 rounded-xl p-5 bg-slate-50/40 flex flex-col gap-4">
+                    <span className="font-bold text-slate-800 text-xs block uppercase tracking-wide">
+                      🔑 Kredensial API Midtrans
+                    </span>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Midtrans Merchant ID
+                        </label>
+                        <input
+                          type="text"
+                          value={midtransMerchantIdInput}
+                          onChange={(e) => setMidtransMerchantIdInput(e.target.value)}
+                          placeholder="Contoh: G123456789"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
+                        />
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Midtrans Client Key
+                        </label>
+                        <input
+                          type="text"
+                          value={midtransClientKeyInput}
+                          onChange={(e) => setMidtransClientKeyInput(e.target.value)}
+                          placeholder="Contoh: SB-Mid-client-XXXXX"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
+                        />
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Midtrans Server Key
+                        </label>
+                        <input
+                          type="password"
+                          value={midtransServerKeyInput}
+                          onChange={(e) => setMidtransServerKeyInput(e.target.value)}
+                          placeholder={midtransStatus?.hasServerKey ? "•••••••••••••••• (Kunci Terenkripsi Aman)" : "Masukkan Server Key keamanan"}
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs"
+                        />
+                        {midtransStatus?.hasServerKey && (
+                          <span className="text-[9px] text-emerald-600 mt-0.5 leading-relaxed font-semibold">
+                            ✔️ Kunci sudah terintegrasi aman di server. Kosongkan jika tidak ingin mendesain ulang kunci baru.
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Lingkungan API (Development / Production)
+                        </label>
+                        <select
+                          value={midtransIsProduction ? 'prod' : 'sandbox'}
+                          onChange={(e) => setMidtransIsProduction(e.target.value === 'prod')}
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs cursor-pointer"
+                        >
+                          <option value="sandbox">Sandbox (Mode Simulasi Demo)</option>
+                          <option value="prod">Production (Gerbang Pembayaran Riil / Live)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* PIN Security Setting Input */}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-200/60 pt-4 mt-2">
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Atur PIN Pengaturan Gateway Baru (Ubah PIN)
+                        </label>
+                        <input
+                          type="password"
+                          pattern="[0-9]*"
+                          inputMode="numeric"
+                          maxLength={8}
+                          value={midtransPinInput}
+                          onChange={(e) => setMidtransPinInput(e.target.value.replace(/\D/g, ''))}
+                          placeholder="Masukkan PIN Angka Baru (Sandi Baru)"
+                          className="w-full px-3 py-2 text-xs bg-white border border-slate-250 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-3xs font-mono text-center tracking-widest"
+                        />
+                        <span className="text-[9px] text-slate-400 mt-0.5 leading-relaxed font-semibold">
+                          🔒 Kosongkan jika tidak ingin mengubah PIN Keamanan pengaturan (saat ini). Hanya karakter angka yang valid. (PIN bawaan: 1234)
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Temporary Disable Midtrans Checkbox/Switch Option */}
+                    <div className="p-4 bg-slate-50 border border-slate-200 rounded-xl flex items-center justify-between gap-4">
+                      <div className="flex flex-col gap-0.5">
+                        <span className="text-xs font-black text-slate-800">Nonaktifkan Sementara Pembayaran Online Midtrans</span>
+                        <span className="text-[10px] text-slate-400 font-medium">
+                          Jika diaktifkan, wali murid tidak dapat melakukan pembayaran lewat Midtrans untuk sementara waktu.
+                        </span>
+                      </div>
+                      <div>
+                        <input
+                          type="checkbox"
+                          checked={midtransIsDisabled}
+                          onChange={(e) => setMidtransIsDisabled(e.target.checked)}
+                          className="w-4.5 h-4.5 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                        />
+                      </div>
                     </div>
                   </div>
-                </div>
 
                 {/* Midtrans Info Surcharge */}
                 <div className="border border-slate-200 rounded-xl p-5 bg-amber-50/50 text-amber-900 text-[11px] leading-relaxed flex flex-col gap-1.5">
@@ -4688,6 +4809,7 @@ export default function AdminPanel({
                   </button>
                 </div>
               </form>
+              )}
             </motion.div>
 
             <motion.div

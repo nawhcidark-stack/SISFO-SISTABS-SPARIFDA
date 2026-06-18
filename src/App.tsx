@@ -122,7 +122,7 @@ export default function App() {
   const [adminSavingsToPrint, setAdminSavingsToPrint] = useState<{ studentId: string; orderId: string; amount: number } | null>(null);
 
   // System indicators
-  const [sysStatus, setSysStatus] = useState<{ merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean } | null>(null);
+  const [sysStatus, setSysStatus] = useState<{ merchantId: string; clientKey: string; hasServerKey: boolean; isProduction: boolean; isDisabled?: boolean; adminFee?: number; systemMaintenanceFee?: number; chargeFeesToUser?: boolean; hasPin?: boolean } | null>(null);
   const [isLoading, setIsLoading] = useState<boolean>(false);
   const [timeStr, setTimeStr] = useState<string>('');
 

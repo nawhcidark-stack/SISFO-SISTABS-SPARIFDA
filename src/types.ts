@@ -106,6 +106,7 @@ export interface MidtransConfig {
   adminFee?: number;
   systemMaintenanceFee?: number;
   chargeFeesToUser?: boolean;
+  pin?: string;
 }
 
 export interface SchoolIdentity {

@@ -1,7 +1,7 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { SppBill } from '../types';
-import { ShieldCheck, Info, X, CreditCard, ChevronRight, Calculator } from 'lucide-react';
+import { ShieldCheck, Info, X, CreditCard, ChevronRight, Calculator, Check, Building, Smartphone, Store } from 'lucide-react';
 
 interface SppPaymentReviewModalProps {
   isOpen: boolean;
@@ -41,12 +41,70 @@ export default function SppPaymentReviewModal({
   const isDeposit = !bill && depositAmount ? true : false;
   const baseAmount = isDeposit ? (depositAmount || 0) : (bill?.amount || 0);
   const adminPG = midtransStatus?.adminFee !== undefined ? midtransStatus.adminFee : 4000;
-  
-  const grandTotal = baseAmount + adminPG;
+
+  // Internal state to dynamically preview different payment methods inside Midtrans gateway
+  const [selectedMethodId, setSelectedMethodId] = useState<'va' | 'qris' | 'retail' | 'cc'>('va');
 
   const formatIDR = (val: number) => {
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
   };
+
+  // Define details for each payment channel
+  const vaFee = adminPG;
+  const qrisFee = Math.round(baseAmount * 0.007);
+  const retailFee = 5000;
+  const ccFee = Math.round(baseAmount * 0.029 + 2000);
+
+  const paymentMethods = [
+    {
+      id: 'va' as const,
+      name: 'Virtual Account',
+      provider: 'Transfer Bank (BRI, BNI, Mandiri, Permata)',
+      icon: Building,
+      badge: 'Biasa Digunakan',
+      feeLabel: `${formatIDR(vaFee)}`,
+      feeValue: vaFee,
+      formula: `Rp 0 (0% tarif persentase) + ${formatIDR(vaFee)} flat`,
+      explanation: `${formatIDR(baseAmount)} + (0% + ${formatIDR(vaFee)})`,
+    },
+    {
+      id: 'qris' as const,
+      name: 'QRIS / E-Wallet',
+      provider: 'GoPay, ShopeePay, OVO, Dana, LinkAja',
+      icon: Smartphone,
+      badge: 'Hemat / Instan',
+      feeLabel: `0.7% (${formatIDR(qrisFee)})`,
+      feeValue: qrisFee,
+      formula: `0.7% x ${formatIDR(baseAmount)} (biaya persentase)`,
+      explanation: `${formatIDR(baseAmount)} + (0.7% x ${formatIDR(baseAmount)})`,
+    },
+    {
+      id: 'retail' as const,
+      name: 'Gerai Ritel',
+      provider: 'Pembayaran Kasir Alfamart / Indomaret',
+      icon: Store,
+      badge: 'Loket Ritel',
+      feeLabel: `${formatIDR(retailFee)}`,
+      feeValue: retailFee,
+      formula: `Rp 0 (0% tarif persentase) + ${formatIDR(retailFee)} flat`,
+      explanation: `${formatIDR(baseAmount)} + (0% + ${formatIDR(retailFee)})`,
+    },
+    {
+      id: 'cc' as const,
+      name: 'Kartu Kredit / Debit',
+      provider: 'Kartu Visa / Mastercard / JCB Online',
+      icon: CreditCard,
+      badge: 'Global Card',
+      feeLabel: `2.9% + ${formatIDR(2000)} (${formatIDR(ccFee)})`,
+      feeValue: ccFee,
+      formula: `(2.9% x ${formatIDR(baseAmount)}) + ${formatIDR(2000)} flat`,
+      explanation: `${formatIDR(baseAmount)} + (2.9% x ${formatIDR(baseAmount)} + ${formatIDR(2000)})`,
+    }
+  ];
+
+  const currentActiveMethod = paymentMethods.find(m => m.id === selectedMethodId) || paymentMethods[0];
+  const activeGrandTotal = baseAmount + currentActiveMethod.feeValue;
+
 
   return (
     <AnimatePresence>
@@ -110,64 +168,120 @@ export default function SppPaymentReviewModal({
 
             {/* Price Breakdown Details */}
             <div className="flex flex-col gap-3">
-              <h4 className="text-[10px] font-black text-slate-450 uppercase font-mono tracking-wider">Rincian Komponen Biaya</h4>
+              <h4 className="text-[10px] font-black text-slate-450 uppercase font-mono tracking-wider">Komponen & Metode Pembayaran</h4>
 
-              <div className="border border-slate-150 rounded-2xl overflow-hidden divide-y divide-slate-100 shadow-xs bg-white">
+              <div className="border border-slate-150 rounded-2xl overflow-hidden shadow-xs bg-white flex flex-col divide-y divide-slate-150">
                 {/* 1. SPP / Tabungan */}
                 <div className="p-3.5 flex justify-between items-center transition-all bg-white hover:bg-slate-50/40">
                   <div className="flex flex-col">
                     <span className="font-extrabold text-xs text-slate-805">
-                      {isDeposit ? 'Setoran Dana Tabungan' : 'SPP Bulanan'}
+                      {isDeposit ? 'Nominal Dana Tabungan' : 'Nominal SPP Pokok'}
                     </span>
                     <span className="text-[10px] text-slate-450 font-medium">
-                      {isDeposit ? 'Pengisian saldo buku tabungan siswa' : 'Iuran pendidikan wajib sekolah'}
+                      {isDeposit ? 'Iuran pengisian buku tabungan siswa' : 'Iuran pendidikan pokok wajib sekolah'}
                     </span>
                   </div>
-                  <span className="font-black text-xs text-slate-120 font-mono">{formatIDR(baseAmount)}</span>
+                  <span className="font-black text-xs text-slate-800 font-mono">{formatIDR(baseAmount)}</span>
                 </div>
 
-                {/* 2. Admin Payment Gateway (Calculations & proportion percentage breakdown) */}
-                <div className="p-3.5 flex flex-col gap-2.5 transition-all bg-white hover:bg-slate-50/40">
-                  <div className="flex justify-between items-center">
-                    <div className="flex flex-col">
-                      <span className="font-extrabold text-xs text-slate-805">Admin Payment Gateway</span>
-                      <span className="text-[10px] text-slate-450 font-medium">Biaya jasa gerbang finansial Midtrans</span>
-                    </div>
-                    <span className="font-black text-xs text-slate-800 font-mono">{formatIDR(adminPG)}</span>
+                {/* 2. Interactive Payment Channel Selection (Percentage vs Flat explanations) */}
+                <div className="p-3.5 bg-slate-50/40 flex flex-col gap-3">
+                  <div className="flex flex-col gap-1">
+                    <span className="font-extrabold text-xs text-indigo-950">Biaya Administrasi Gerbang Pembayaran</span>
+                    <span className="text-[10px] text-slate-500 font-medium font-sans">
+                      PILIH SIMULASI METODE PEMBAYARAN DI BAWAH INI UNTUK MELIHAT PERHITUNGAN PERSENTASE:
+                    </span>
                   </div>
 
-                  {/* Detailed proportion breakdown banner */}
-                  {baseAmount > 0 && (
-                    <div className="p-3 rounded-xl bg-slate-50 border border-slate-150 flex flex-col gap-1.5 text-[10px] text-slate-500 font-sans">
-                      <div className="flex justify-between items-center font-medium">
-                        <span>Nominal Pokok {isDeposit ? '(Tabungan)' : '(SPP)'}:</span>
-                        <span className="font-bold text-slate-700 font-mono">{formatIDR(baseAmount)}</span>
+                  {/* Horizontal/Grid Channel Selector */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {paymentMethods.map((method) => {
+                      const IconComponent = method.icon;
+                      const isSelected = selectedMethodId === method.id;
+                      return (
+                        <button
+                          key={method.id}
+                          type="button"
+                          onClick={() => setSelectedMethodId(method.id)}
+                          className={`p-2.5 rounded-xl border flex flex-col items-start gap-1 text-left transition-all cursor-pointer relative select-none ${
+                            isSelected
+                              ? 'bg-indigo-50 border-indigo-300 text-indigo-950 shadow-2xs ring-1 ring-indigo-300'
+                              : 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50'
+                          }`}
+                        >
+                          <div className="flex items-center gap-1.5 w-full justify-between">
+                            <div className="p-1 rounded-lg bg-indigo-100 text-indigo-700">
+                              <IconComponent size={14} />
+                            </div>
+                            {isSelected && (
+                              <div className="w-4 h-4 bg-indigo-600 text-white rounded-full flex items-center justify-center">
+                                <Check size={10} strokeWidth={3} />
+                              </div>
+                            )}
+                          </div>
+                          <span className="text-[11px] font-black leading-tight mt-1">{method.name}</span>
+                          <span className="text-[9.5px] text-slate-450 leading-none truncate w-full mt-0.5">{method.provider}</span>
+                          <div className="mt-1 flex items-center justify-between w-full border-t border-slate-150/40 pt-1.5">
+                            <span className="text-[8px] font-bold text-indigo-600 uppercase tracking-wider">{method.badge}</span>
+                            <span className="text-[10px] font-black text-slate-800 font-mono">{method.feeLabel}</span>
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Math Formula / Breakdown Explanations Banner */}
+                  <div className="p-3.5 rounded-2xl bg-indigo-950 text-indigo-100 border border-indigo-900 flex flex-col gap-2.5 shadow-sm">
+                    <div className="flex items-center gap-2 border-b border-indigo-900 pb-2">
+                      <span className="text-[8.5px] bg-indigo-800 text-indigo-200 font-black px-1.5 py-0.5 rounded font-mono uppercase tracking-wider">Rumus Tarif {currentActiveMethod.name}</span>
+                      <span className="text-[10px] font-bold text-indigo-300">{currentActiveMethod.formula}</span>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      {/* Step 1: Percentage Calculation */}
+                      <div className="flex justify-between items-start text-[10.5px]">
+                        <span className="text-indigo-300 font-medium">1. Perhitungan Biaya Admin:</span>
+                        <div className="text-right">
+                          <span className="font-black font-mono text-white block">{formatIDR(currentActiveMethod.feeValue)}</span>
+                          <span className="text-[8.5px] text-indigo-300 block italic font-mono">{currentActiveMethod.formula}</span>
+                        </div>
                       </div>
-                      <div className="flex justify-between items-center font-medium">
-                        <span>Biaya Admin Gerbang (Maks):</span>
-                        <span className="font-bold text-slate-700 font-mono">{formatIDR(adminPG)}</span>
+
+                      <div className="h-px bg-indigo-900" />
+
+                      {/* Step 2: Multiplication Matrix Equation */}
+                      <div className="flex flex-col gap-1 text-[10px] bg-indigo-900/55 p-2 rounded-lg border border-indigo-850">
+                        <span className="text-indigo-300 font-extrabold uppercase tracking-wide text-[8px] block">Persamaan Matematika Riil:</span>
+                        <div className="font-mono text-white font-bold leading-relaxed whitespace-pre-wrap">
+                          {isDeposit ? 'Nominal Tabungan' : 'Nominal SPP Pokok'} + Biaya Admin = Total Akhir
+                          <div className="text-emerald-300 mt-1 flex flex-wrap gap-1 items-center">
+                            <span>{formatIDR(baseAmount)}</span>
+                            <span>+</span>
+                            <span>{formatIDR(currentActiveMethod.feeValue)}</span>
+                            <span>=</span>
+                            <span className="bg-emerald-900 text-emerald-200 px-1 py-0.2 rounded font-black text-[11px]">{formatIDR(activeGrandTotal)}</span>
+                          </div>
+                        </div>
                       </div>
-                      <div className="h-px bg-slate-200/60 my-0.5" />
-                      <div className="flex justify-between items-center font-bold text-slate-700">
-                        <span>Proporsi Rasio Beban Admin:</span>
-                        <span className="text-indigo-650 font-mono bg-indigo-50 border border-indigo-100 px-1.5 py-0.5 rounded">
-                          +{((adminPG / baseAmount) * 100).toFixed(2)}% dari pokok
+
+                      {/* Load Relative Ratio */}
+                      <div className="flex justify-between items-center text-[9.5px] text-indigo-200 font-medium">
+                        <span>Proporsi Rasio Beban Admin terhadap Pokok:</span>
+                        <span className="font-bold text-white bg-indigo-900 px-1.5 py-0.5 rounded font-mono text-[10px]">
+                          +{((currentActiveMethod.feeValue / baseAmount) * 100).toFixed(2)}%
                         </span>
                       </div>
-                      <p className="text-[9px] text-slate-400 mt-0.5 leading-normal italic font-medium">
-                        * Biaya gerbang sebesar {formatIDR(adminPG)} ditarik secara flat oleh sistem Midtrans untuk memproses rekonsiliasi transfer otomatis dan penandatanganan kuitansi elektronik.
-                      </p>
                     </div>
-                  )}
+                  </div>
                 </div>
 
                 {/* Grand Total */}
-                <div className="p-4 flex justify-between items-center bg-slate-50 border-t border-slate-200">
+                <div className="p-4 flex justify-between items-center bg-slate-50">
                   <div className="flex flex-col">
                     <span className="font-black text-xs text-slate-900 uppercase tracking-wide">Total Pembayaran</span>
-                    <span className="text-[9.5px] text-slate-450 font-bold">Harga final untuk ditransaksikan</span>
+                    <span className="text-[9.5px] text-slate-450 font-bold">Harga final siap ditransaksikan</span>
                   </div>
-                  <span className="font-black text-sm text-indigo-700 font-mono">{formatIDR(grandTotal)}</span>
+                  <span className="font-black text-base text-indigo-700 font-mono">{formatIDR(activeGrandTotal)}</span>
                 </div>
               </div>
             </div>

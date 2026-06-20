@@ -3015,6 +3015,7 @@ Wassalamualaikum Wr. Wb.
                           <th className="py-2.5 px-3">Nama Lengkap & NIS</th>
                           <th className="py-2.5 px-3">Saldo Tabungan</th>
                           <th className="py-2.5 px-3">Status Tagihan SPP (Unpaid)</th>
+                          <th className="py-2.5 px-3">Bulan SPP Lunas</th>
                           <th className="py-2.5 px-3 text-right">Tindakan Pengingat</th>
                         </tr>
                       </thead>
@@ -3022,6 +3023,7 @@ Wassalamualaikum Wr. Wb.
                         {filteredClassStudents.map((student) => {
                           const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
                           const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
+                          const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
 
                           return (
                             <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
@@ -3048,6 +3050,19 @@ Wassalamualaikum Wr. Wb.
                                     <span className="text-[9px] text-rose-500 font-medium">
                                       Tunggakan: {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
                                     </span>
+                                  </div>
+                                )}
+                              </td>
+                              <td className="py-3 px-3">
+                                {paidBills.length === 0 ? (
+                                  <span className="text-[10px] text-slate-400 italic">Belum ada</span>
+                                ) : (
+                                  <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                    {paidBills.map(b => (
+                                      <span key={b.id} className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-150 px-1.5 py-0.5 rounded-md">
+                                        ✓ {b.month} {b.year}
+                                      </span>
+                                    ))}
                                   </div>
                                 )}
                               </td>

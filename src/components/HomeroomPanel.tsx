@@ -3008,96 +3008,204 @@ Wassalamualaikum Wr. Wb.
                 }
 
                 return (
-                  <div className="overflow-x-auto rounded-xl border border-slate-200">
-                    <table className="w-full text-xs text-left border-collapse">
-                      <thead>
-                        <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
-                          <th className="py-2.5 px-3">Nama Lengkap & NIS</th>
-                          <th className="py-2.5 px-3">Saldo Tabungan</th>
-                          <th className="py-2.5 px-3">Status Tagihan SPP (Unpaid)</th>
-                          <th className="py-2.5 px-3">Bulan SPP Lunas</th>
-                          <th className="py-2.5 px-3 text-right">Tindakan Pengingat</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-slate-100">
-                        {filteredClassStudents.map((student) => {
-                          const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
-                          const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
-                          const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
+                  <div className="space-y-4">
+                    {/* Desktop View (Table) */}
+                    <div className="hidden md:block overflow-x-auto rounded-xl border border-slate-200">
+                      <table className="w-full text-xs text-left border-collapse">
+                        <thead>
+                          <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
+                            <th className="py-2.5 px-3">Nama Lengkap & NIS</th>
+                            <th className="py-2.5 px-3">Saldo Tabungan</th>
+                            <th className="py-2.5 px-3">Status Tagihan SPP (Unpaid)</th>
+                            <th className="py-2.5 px-3">Bulan SPP Lunas</th>
+                            <th className="py-2.5 px-3 text-right">Tindakan Pengingat</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {filteredClassStudents.map((student) => {
+                            const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+                            const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
+                            const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
 
-                          return (
-                            <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
-                              <td className="py-3 px-3">
-                                <div className="font-semibold text-slate-800">{student.name}</div>
-                                <div className="text-[10px] text-slate-400 font-bold font-mono">NIS: {student.nis}</div>
-                              </td>
-                              <td className="py-3 px-3 font-mono font-bold text-slate-700">
-                                {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(student.savingsBalance || 0)}
-                              </td>
-                              <td className="py-3 px-3">
+                            return (
+                              <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
+                                <td className="py-3 px-3">
+                                  <div className="font-semibold text-slate-800">{student.name}</div>
+                                  <div className="text-[10px] text-slate-400 font-bold font-mono">NIS: {student.nis}</div>
+                                </td>
+                                <td className="py-3 px-3 font-mono font-bold text-slate-700">
+                                  {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(student.savingsBalance || 0)}
+                                </td>
+                                <td className="py-3 px-3">
+                                  {overdueBills.length === 0 ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                      <CheckCircle size={10} /> Lunas
+                                    </span>
+                                  ) : (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full w-max animate-pulse">
+                                        ⚠️ Menunggak
+                                      </span>
+                                      <span className="font-mono text-rose-700 font-semibold text-[10.5px]">
+                                        Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
+                                      </span>
+                                      <span className="text-[9px] text-rose-500 font-medium">
+                                        Tunggakan: {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3">
+                                  {paidBills.length === 0 ? (
+                                    <span className="text-[10px] text-slate-400 italic">Belum ada</span>
+                                  ) : (
+                                    <div className="flex flex-wrap gap-1 max-w-[200px]">
+                                      {paidBills.map(b => (
+                                        <span key={b.id} className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-150 px-1.5 py-0.5 rounded-md">
+                                          ✓ {b.month} {b.year}
+                                        </span>
+                                      ))}
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3 text-right">
+                                  {overdueBills.length > 0 ? (
+                                    <button
+                                      type="button"
+                                      onClick={() => copyWaReminder(student, overdueBills)}
+                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer ${
+                                        copiedStudentId === student.id
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
+                                          : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
+                                      }`}
+                                    >
+                                      {copiedStudentId === student.id ? (
+                                        <>
+                                          <Check size={12} className="text-emerald-600 font-black" />
+                                          Reminder Tersalin!
+                                        </>
+                                      ) : (
+                                        <>
+                                          <Copy size={12} />
+                                          Salin WA Reminder
+                                        </>
+                                      )}
+                                    </button>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-400 font-medium italic">Tidak ada tunggakan</span>
+                                  )}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+
+                    {/* Mobile View (Bento Cards to avoid scroll completely) */}
+                    <div className="block md:hidden space-y-4">
+                      {filteredClassStudents.map((student) => {
+                        const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+                        const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
+                        const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
+
+                        return (
+                          <div key={student.id} className="bg-slate-50/50 border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
+                            {/* Header: Name and NIS */}
+                            <div className="flex justify-between items-start gap-2 pb-2.5 border-b border-rose-100">
+                              <div>
+                                <div className="font-extrabold text-slate-800 text-xs sm:text-sm">{student.name}</div>
+                                <div className="text-[10px] text-slate-400 font-bold font-mono mt-0.5">NIS: {student.nis}</div>
+                              </div>
+                              <div>
                                 {overdueBills.length === 0 ? (
-                                  <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                    <CheckCircle size={10} /> Lunas
+                                  <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    <CheckCircle size={10} className="text-emerald-600" /> Lunas SPP
                                   </span>
                                 ) : (
-                                  <div className="flex flex-col gap-1">
-                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full w-max animate-pulse">
-                                      ⚠️ Menunggak
-                                    </span>
-                                    <span className="font-mono text-rose-700 font-semibold text-[10.5px]">
-                                      Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
-                                    </span>
-                                    <span className="text-[9px] text-rose-500 font-medium">
-                                      Tunggakan: {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
-                                    </span>
-                                  </div>
+                                  <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full animate-pulse">
+                                    ⚠️ Menunggak
+                                  </span>
                                 )}
-                              </td>
-                              <td className="py-3 px-3">
-                                {paidBills.length === 0 ? (
-                                  <span className="text-[10px] text-slate-400 italic">Belum ada</span>
+                              </div>
+                            </div>
+
+                            {/* Stats Grid */}
+                            <div className="grid grid-cols-2 gap-3.5 text-left">
+                              <div>
+                                <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Saldo Tabungan</span>
+                                <span className="block font-mono font-bold text-xs text-slate-700 mt-1">
+                                  {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(student.savingsBalance || 0)}
+                                </span>
+                              </div>
+                              <div>
+                                <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Total Belum Bayar</span>
+                                {overdueBills.length === 0 ? (
+                                  <span className="block font-mono font-bold text-xs text-emerald-600 mt-1">Rp 0</span>
                                 ) : (
-                                  <div className="flex flex-wrap gap-1 max-w-[200px]">
-                                    {paidBills.map(b => (
-                                      <span key={b.id} className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-150 px-1.5 py-0.5 rounded-md">
-                                        ✓ {b.month} {b.year}
-                                      </span>
-                                    ))}
-                                  </div>
+                                  <span className="block font-mono font-bold text-xs text-rose-700 mt-1">
+                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
+                                  </span>
                                 )}
-                              </td>
-                              <td className="py-3 px-3 text-right">
-                                {overdueBills.length > 0 ? (
-                                  <button
-                                    type="button"
-                                    onClick={() => copyWaReminder(student, overdueBills)}
-                                    className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer ${
-                                      copiedStudentId === student.id
-                                        ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
-                                        : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
-                                    }`}
-                                  >
-                                    {copiedStudentId === student.id ? (
-                                      <>
-                                        <Check size={12} className="text-emerald-600 font-black" />
-                                        Reminder Tersalin!
-                                      </>
-                                    ) : (
-                                      <>
-                                        <Copy size={12} />
-                                        Salin WA Reminder
-                                      </>
-                                    )}
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400 font-medium italic">Tidak ada tunggakan</span>
-                                )}
-                              </td>
-                            </tr>
-                          );
-                        })}
-                      </tbody>
-                    </table>
+                              </div>
+                            </div>
+
+                            {/* Month details if overdue */}
+                            {overdueBills.length > 0 && (
+                              <div className="bg-rose-50/40 border border-rose-100/60 rounded-lg p-2 text-left">
+                                <span className="block text-[8px] font-black text-rose-500 uppercase tracking-wider mb-0.5">Detail Bulan Menunggak:</span>
+                                <p className="text-[9.5px] text-rose-650 font-semibold leading-relaxed">
+                                  {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Paid Months Section */}
+                            <div>
+                              <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Bulan SPP Lunas:</span>
+                              {paidBills.length === 0 ? (
+                                <span className="text-[10px] text-slate-400 italic">Belum ada bulan lunas</span>
+                              ) : (
+                                <div className="flex flex-wrap gap-1 mt-0.5">
+                                  {paidBills.map(b => (
+                                    <span key={b.id} className="inline-flex items-center gap-0.5 text-[8.5px] font-black text-emerald-700 bg-emerald-50/80 border border-emerald-150 px-1.5 py-0.5 rounded-md">
+                                      ✓ {b.month} {b.year}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Action WA Reminder */}
+                            {overdueBills.length > 0 && (
+                              <div className="mt-1 pt-2.5 border-t border-slate-150">
+                                <button
+                                  type="button"
+                                  onClick={() => copyWaReminder(student, overdueBills)}
+                                  className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black shadow-xs transition-colors cursor-pointer ${
+                                    copiedStudentId === student.id
+                                      ? 'bg-emerald-50 text-emerald-700 border border-emerald-250'
+                                      : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
+                                  }`}
+                                >
+                                  {copiedStudentId === student.id ? (
+                                    <>
+                                      <Check size={12} className="text-emerald-600 font-bold" />
+                                      WA Reminder Tersalin!
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Copy size={12} />
+                                      Salin Pesan WA Reminder
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
                   </div>
                 );
               })()}

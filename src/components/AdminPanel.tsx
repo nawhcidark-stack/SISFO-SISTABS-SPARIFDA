@@ -191,6 +191,7 @@ interface AdminPanelProps {
       phone: string;
       initialSavings: number;
       gender?: string;
+      password?: string;
     }>,
   ) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
   onImportTeachers?: (

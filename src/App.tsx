@@ -1088,7 +1088,18 @@ export default function App() {
   };
 
   // Batch Import Students Kolektif
-  const handleImportStudents = async (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }>): Promise<{ success: boolean; addedCount: number; updatedCount: number }> => {
+  const handleImportStudents = async (
+    list: Array<{
+      nis: string;
+      name: string;
+      class: string;
+      email: string;
+      phone: string;
+      initialSavings: number;
+      gender?: string;
+      password?: string;
+    }>,
+  ): Promise<{ success: boolean; addedCount: number; updatedCount: number }> => {
     try {
       const res = await fetch('/api/admin/students/import', {
         method: 'POST',

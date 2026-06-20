@@ -8,7 +8,18 @@ interface StudentManagementProps {
   onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }) => Promise<boolean>;
   onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string; gender?: string; mutationDate?: string; mutationReason?: string; mutationDestination?: string }) => Promise<boolean>;
   onDeleteStudent: (id: string) => Promise<boolean>;
-  onImportStudents: (list: Array<{ nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }>) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
+  onImportStudents: (
+    list: Array<{
+      nis: string;
+      name: string;
+      class: string;
+      email: string;
+      phone: string;
+      initialSavings: number;
+      gender?: string;
+      password?: string;
+    }>,
+  ) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
   onRefresh: () => void;
 }
 
@@ -55,6 +66,7 @@ export default function StudentManagement({
     phone: string;
     initialSavings: number;
     gender?: string;
+    password?: string;
     isExisting: boolean;
   }>>([]);
   const [isImporting, setIsImporting] = useState(false);
@@ -63,11 +75,11 @@ export default function StudentManagement({
 
   // Download CSV template
   const handleDownloadTemplate = () => {
-    const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,saldo_awal\n";
+    const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,password,saldo_awal\n";
     const rows = [
-      "20261010,Budi Santoso,7-A,Laki-laki,budi@example.com,081234567812,100000",
-      "20261011,Aisyah Putri,7-B,Perempuan,aisyah@example.com,081234567813,0",
-      "20241001,Ahmad Fauzi,7-A,Laki-laki,ahmad.new_email@example.org,081234567890,0"
+      "20261010,Budi Santoso,7-A,Laki-laki,budi@example.com,081234567812,budi123,100000",
+      "20261011,Aisyah Putri,7-B,Perempuan,aisyah@example.com,081234567813,aisyah77,0",
+      "20241001,Ahmad Fauzi,7-A,Laki-laki,ahmad.new_email@example.org,081234567890,fauzi321,0"
     ].join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -81,7 +93,7 @@ export default function StudentManagement({
 
   // Export all students to CSV format compatible with the import structure
   const handleExportStudentsCSV = () => {
-    const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,saldo_awal\r\n";
+    const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,password,saldo_awal\r\n";
     
     const escapeCsv = (val: string | number) => {
       const str = String(val === undefined || val === null ? '' : val);
@@ -99,6 +111,7 @@ export default function StudentManagement({
         escapeCsv(s.gender || 'Laki-laki'),
         escapeCsv(s.email),
         escapeCsv(s.phone),
+        escapeCsv(s.password || s.nis), // Fallback to NIS as password if not yet custom set
         escapeCsv(s.savingsBalance || 0)
       ].join(',');
     }).join("\r\n");
@@ -180,6 +193,7 @@ export default function StudentManagement({
         const genderIdx = headers.findIndex(h => h.includes('gender') || h.includes('jenis_kelamin') || h.includes('jk') || h.includes('kelamin') || h.includes('sex'));
         const emailIdx = headers.findIndex(h => h.includes('email'));
         const phoneIdx = headers.findIndex(h => h.includes('phone') || h.includes('telepon') || h.includes('hp'));
+        const passwordIdx = headers.findIndex(h => h.includes('password') || h.includes('pass') || h.includes('sandi'));
         const savingsIdx = headers.findIndex(h => h.includes('saldo') || h.includes('savings') || h.includes('tabungan') || h.includes('awal'));
 
         if (nisIdx === -1 || nameIdx === -1 || classIdx === -1) {
@@ -195,6 +209,7 @@ export default function StudentManagement({
           phone: string;
           initialSavings: number;
           gender?: string;
+          password?: string;
           isExisting: boolean;
         }> = [];
 
@@ -211,6 +226,7 @@ export default function StudentManagement({
           const genderVal = genderIdx !== -1 ? cols[genderIdx] : '';
           const emailVal = emailIdx !== -1 ? cols[emailIdx] : '';
           const phoneVal = phoneIdx !== -1 ? cols[phoneIdx] : '';
+          const passwordVal = passwordIdx !== -1 ? cols[passwordIdx] : '';
           const initSalVal = savingsIdx !== -1 ? (Number(cols[savingsIdx]) || 0) : 0;
 
           if (!nisVal || !nameVal || !classVal) continue;
@@ -239,6 +255,7 @@ export default function StudentManagement({
             phone: phoneVal.trim(),
             initialSavings: initSalVal,
             gender: resolvedGender,
+            password: passwordVal.trim(),
             isExisting: isExist
           });
         }
@@ -1124,7 +1141,7 @@ export default function StudentManagement({
                     Gunakan file Excel atau CSV standar dengan tanda pemisah koma (,) atau titik-koma (;). Header kolom baris pertama harus berisi kolom berikut:
                   </p>
                   <code className="block bg-slate-100 p-2 rounded font-mono font-bold text-indigo-900 text-[10px] break-all border border-slate-200 shadow-inner">
-                    nis,nama,kelas,email,telepon,saldo_awal
+                    nis,nama,kelas,jenis_kelamin,email,telepon,password,saldo_awal
                   </code>
                   <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2.5 text-[10px] font-bold uppercase tracking-wide">
                     <button type="button" onClick={handleDownloadTemplate} className="hover:underline flex items-center gap-1 text-indigo-800 cursor-pointer">
@@ -1206,6 +1223,7 @@ export default function StudentManagement({
                             <th className="px-3 py-2">Kelas</th>
                             <th className="px-3 py-2">JK</th>
                             <th className="px-3 py-2">Email</th>
+                            <th className="px-3 py-2">Sandi/Pass</th>
                             <th className="px-3 py-2 text-right">Saldo Awal</th>
                             <th className="px-3 py-2 text-center">Status</th>
                           </tr>
@@ -1224,6 +1242,7 @@ export default function StudentManagement({
                                 </span>
                               </td>
                               <td className="px-3 py-2 text-slate-500">{row.email || '-'}</td>
+                              <td className="px-3 py-2 font-mono text-slate-600 font-medium">{row.password || '-'}</td>
                               <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800">
                                 {row.initialSavings > 0 ? `Rp ${row.initialSavings.toLocaleString('id-ID')}` : '-'}
                               </td>

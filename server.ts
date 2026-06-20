@@ -24,7 +24,8 @@ const students: Student[] = [
     email: "ahmad.fauzi@example.org",
     phone: "081234567890",
     savingsBalance: 120000,
-    gender: "Laki-laki"
+    gender: "Laki-laki",
+    password: "20241001"
   },
   {
     id: "std-2",
@@ -34,7 +35,8 @@ const students: Student[] = [
     email: "siti.aminah@example.org",
     phone: "081298765432",
     savingsBalance: 250000,
-    gender: "Perempuan"
+    gender: "Perempuan",
+    password: "20241002"
   },
   {
     id: "std-3",
@@ -44,7 +46,8 @@ const students: Student[] = [
     email: "rian.smp@example.org",
     phone: "085612345678",
     savingsBalance: 450000,
-    gender: "Laki-laki"
+    gender: "Laki-laki",
+    password: "20230905"
   },
   {
     id: "std-4",
@@ -54,9 +57,17 @@ const students: Student[] = [
     email: "laila.fit@example.org",
     phone: "089912341234",
     savingsBalance: 80000,
-    gender: "Perempuan"
+    gender: "Perempuan",
+    password: "20220812"
   }
 ];
+
+// Ensure all student passwords default to NIS during in-memory initialization
+students.forEach(s => {
+  if (!s.password) {
+    s.password = s.nis.toString().trim();
+  }
+});
 
 const sppBills: SppBill[] = [];
 const treasurerTransactions: TreasurerTransaction[] = [];
@@ -831,7 +842,11 @@ async function syncWithFirestore() {
       students.length = 0;
       loadedStudents.forEach((d: any) => {
         const { _id, ...rest } = d;
-        students.push(rest as Student);
+        const s = rest as Student;
+        if (!s.password) {
+          s.password = s.nis.toString().trim();
+        }
+        students.push(s);
       });
 
       // Load SPP Bills
@@ -1116,6 +1131,11 @@ function loadState() {
       if (Array.isArray(data.students)) {
         students.length = 0;
         students.push(...data.students);
+        students.forEach(s => {
+          if (!s.password) {
+            s.password = s.nis.toString().trim();
+          }
+        });
       }
       if (Array.isArray(data.sppBills)) {
         sppBills.length = 0;
@@ -4504,7 +4524,7 @@ async function startServer() {
 
   // 1. Create Student (with initial savings & automatic SPP bills)
   app.post("/api/admin/students", (req, res) => {
-    const { nis, name, class: className, email, phone, initialSavings, gender } = req.body;
+    const { nis, name, class: className, email, phone, initialSavings, gender, password } = req.body;
     
     if (!nis || !name || !className) {
       return res.status(400).json({ error: "Siswa baru harus memiliki NIS, Nama, dan Kelas." });
@@ -4527,7 +4547,8 @@ async function startServer() {
       email: email || "",
       phone: phone || "",
       savingsBalance: parsedSavings,
-      gender: gender || ""
+      gender: gender || "",
+      password: password ? String(password).trim() : nis.toString().trim()
     };
 
     students.push(newStudent);
@@ -5111,7 +5132,7 @@ async function startServer() {
     let addedCount = 0;
 
     studentsList.forEach((inputStd: any) => {
-      const { nis, name, class: className, email, phone, initialSavings, gender } = inputStd;
+      const { nis, name, class: className, email, phone, initialSavings, gender, password } = inputStd;
       if (!nis || !name || !className) {
         // Skip invalid rows
         return;
@@ -5127,6 +5148,9 @@ async function startServer() {
         existingStudent.phone = phone || "";
         if (gender) {
           existingStudent.gender = gender;
+        }
+        if (password !== undefined && password !== null) {
+          existingStudent.password = String(password).trim();
         }
 
         // Import of Buku Induk detail keys
@@ -5163,7 +5187,8 @@ async function startServer() {
           email: email || "",
           phone: phone || "",
           gender: gender || "Laki-laki",
-          savingsBalance: parsedSavings
+          savingsBalance: parsedSavings,
+          password: password ? String(password).trim() : nis.toString().trim()
         };
 
         // Import of Buku Induk detail keys for new student

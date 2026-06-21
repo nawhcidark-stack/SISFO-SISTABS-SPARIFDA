@@ -2442,79 +2442,108 @@ export default function PrincipalPanel({
           </div>
 
           {/* Quick Metrics Section */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-            {/* Total Inflow */}
-            <div className="bg-white p-6 border border-slate-200 rounded-3xl shadow-xs relative overflow-hidden flex flex-col justify-between h-36">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[10px] font-black uppercase text-emerald-600 tracking-wider">Total Penerimaan Kas 🟢</span>
-                  <p className="text-slate-400 text-[10px] uppercase font-bold tracking-wider mt-0.5">Spp, tabungan & operasional</p>
-                </div>
-                <span className="px-2 py-1 bg-emerald-50 text-emerald-700 text-[9px] font-black rounded-lg">Masuk</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-2xl font-black text-slate-900 tracking-tight">
-                  {formatIDR(
-                    financialTransactions
-                      .filter(t => t.type === 'incoming')
-                      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-                  )}
-                </span>
-                <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
-                  Dari total {financialTransactions.filter(t => t.type === 'incoming').length} transaksi
-                </span>
-              </div>
-            </div>
+          {(() => {
+            let totalSpp = 0;
+            let totalSavingsDeposit = 0;
+            let totalSavingsWithdrawal = 0;
+            let totalCustomIncoming = 0;
+            let totalCustomOutgoing = 0;
 
-            {/* Total Outflow */}
-            <div className="bg-white p-6 border border-slate-200 rounded-3xl shadow-xs relative overflow-hidden flex flex-col justify-between h-36">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[10px] font-black uppercase text-rose-600 tracking-wider">Total Pengeluaran Kas 🔴</span>
-                  <p className="text-slate-400 text-[10px] uppercase font-bold tracking-wider mt-0.5">Gaji, infrastruktur & penarikan</p>
-                </div>
-                <span className="px-2 py-1 bg-rose-50 text-rose-700 text-[9px] font-black rounded-lg">Keluar</span>
-              </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-2xl font-black text-slate-900 tracking-tight">
-                  {formatIDR(
-                    financialTransactions
-                      .filter(t => t.type === 'outgoing')
-                      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-                  )}
-                </span>
-                <span className="text-[10px] text-slate-500 font-semibold flex items-center gap-1">
-                  Dari total {financialTransactions.filter(t => t.type === 'outgoing').length} pengeluaran
-                </span>
-              </div>
-            </div>
+            financialTransactions.forEach(t => {
+              if (t.source === 'spp') {
+                totalSpp += Number(t.amount) || 0;
+              } else if (t.source === 'savings') {
+                if (t.type === 'incoming') totalSavingsDeposit += Number(t.amount) || 0;
+                else totalSavingsWithdrawal += Number(t.amount) || 0;
+              } else {
+                if (t.type === 'incoming') totalCustomIncoming += Number(t.amount) || 0;
+                else totalCustomOutgoing += Number(t.amount) || 0;
+              }
+            });
 
-            {/* Cash Balance */}
-            <div className="bg-white p-6 border border-slate-200 rounded-3xl shadow-xs relative overflow-hidden flex flex-col justify-between h-36">
-              <div className="flex justify-between items-start">
-                <div>
-                  <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Saldo Kas Bersih (Rill) 💼</span>
-                  <p className="text-slate-400 text-[10px] uppercase font-bold tracking-wider mt-0.5">Kas bersih aman dalam ledger</p>
+            const totalInflow = totalSpp + totalSavingsDeposit + totalCustomIncoming;
+            const totalOutflow = totalSavingsWithdrawal + totalCustomOutgoing;
+            const netBalance = totalInflow - totalOutflow;
+            const netSavings = totalSavingsDeposit - totalSavingsWithdrawal;
+
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                {/* Card 1: Main cash balance */}
+                <div className="bg-slate-950 text-white p-5 rounded-3xl border border-slate-800 relative overflow-hidden flex flex-col justify-between h-36 shadow-lg text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Saldo Buku Kas Sekolah</span>
+                    <span className="p-1 px-1.5 bg-emerald-950 border border-emerald-800 text-emerald-400 rounded-lg text-[9px] font-bold tracking-wider uppercase">Lembaga Terpadu</span>
+                  </div>
+                  <div className="my-2 flex flex-col">
+                    <span className="text-[10px] text-slate-500 font-bold">Net Cash Balance</span>
+                    <span className="text-xl font-black text-yellow-300 font-mono">{formatIDR(netBalance)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-400 border-t border-slate-850 pt-2.5 mt-1 font-semibold leading-none">
+                    <span className="text-emerald-400 text-xs">●</span>
+                    <span>Total Modal & Kas Terkumpul</span>
+                  </div>
                 </div>
-                <span className="px-2 py-1 bg-indigo-50 text-indigo-700 text-[9px] font-black rounded-lg">Arus Kas</span>
+
+                {/* Card 2: Total automatically integrated SPP Payment */}
+                <div className="bg-white p-5 rounded-3xl border border-slate-200 flex flex-col justify-between h-36 shadow-xs text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Pemasukan SPP Otomatis</span>
+                    <span className="p-1 px-1.5 bg-blue-50 text-blue-700 rounded-lg text-[9px] font-bold tracking-wider uppercase">Teller & Online</span>
+                  </div>
+                  <div className="my-2 flex flex-col">
+                    <span className="text-[10px] text-slate-500 font-bold">Tagihan SPP Lunas</span>
+                    <span className="text-xl font-extrabold text-blue-700 font-mono">{formatIDR(totalSpp)}</span>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-550 border-t border-slate-100 pt-2.5 mt-1 font-semibold leading-none">
+                    <span className="text-blue-500 text-xs">●</span>
+                    <span>Sistem Realtime Terintegrasi</span>
+                  </div>
+                </div>
+
+                {/* Card 3: Tabungan mutasi integration */}
+                <div className="bg-white p-5 rounded-3xl border border-slate-200 flex flex-col justify-between h-36 shadow-xs text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Mutasi Tabungan Siswa</span>
+                    <span className="p-1 px-1.5 bg-amber-50 text-amber-700 rounded-lg text-[9px] font-bold tracking-wider uppercase">Saldo Titipan</span>
+                  </div>
+                  <div className="my-2 flex flex-col">
+                    <span className="text-[10px] text-slate-550 font-bold">Tabungan Neto (Ledger)</span>
+                    <span className="text-xl font-extrabold text-amber-700 font-mono">{formatIDR(netSavings)}</span>
+                    <div className="flex justify-between items-center text-[9px] text-slate-450 font-bold mt-1.5 leading-none">
+                      <span>S: <b className="text-emerald-600 font-black">+{formatIDR(totalSavingsDeposit)}</b></span>
+                      <span>T: <b className="text-rose-600 font-black">-{formatIDR(totalSavingsWithdrawal)}</b></span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-550 border-t border-slate-100 pt-2.5 mt-1 font-semibold leading-none">
+                    <span className="text-amber-500 text-xs">●</span>
+                    <span>Deposit & Tarik Otomatis</span>
+                  </div>
+                </div>
+
+                {/* Card 4: Other tactical cashbook items */}
+                <div className="bg-white p-5 rounded-3xl border border-slate-200 flex flex-col justify-between h-36 shadow-xs text-left">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Kas Operasional Utama</span>
+                    <span className="p-1 px-1.5 bg-purple-50 text-purple-700 rounded-lg text-[9px] font-bold tracking-wider uppercase">Manual</span>
+                  </div>
+                  <div className="my-2 flex flex-col gap-1 justify-center">
+                    <div className="flex justify-between items-baseline leading-none">
+                      <span className="text-[10px] text-slate-400 font-semibold">Masuk:</span>
+                      <span className="text-xs font-bold font-mono text-emerald-600">+{formatIDR(totalCustomIncoming)}</span>
+                    </div>
+                    <div className="flex justify-between items-baseline leading-none">
+                      <span className="text-[10px] text-slate-400 font-semibold">Keluar:</span>
+                      <span className="text-xs font-bold font-mono text-rose-600">-{formatIDR(totalCustomOutgoing)}</span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 text-[10px] text-slate-550 border-t border-slate-100 pt-2.5 mt-1 font-semibold leading-none">
+                    <span className="text-purple-500 text-xs">●</span>
+                    <span>Dana BOS, Gaji, Renovasi, dll</span>
+                  </div>
+                </div>
               </div>
-              <div className="flex flex-col gap-1">
-                <span className="text-2xl font-black text-slate-900 tracking-tight">
-                  {formatIDR(
-                    financialTransactions
-                      .filter(t => t.type === 'incoming')
-                      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0) - 
-                    financialTransactions
-                      .filter(t => t.type === 'outgoing')
-                      .reduce((sum, t) => sum + (Number(t.amount) || 0), 0)
-                  )}
-                </span>
-                <span className="text-[10px] text-slate-550 font-bold text-indigo-700 flex items-center gap-1">
-                  Status: Likuid & Seimbang ✅
-                </span>
-              </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Graphical Trends Section */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">

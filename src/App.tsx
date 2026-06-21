@@ -937,6 +937,7 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        initSystemData();
         return data.bill || true;
       }
       return null;
@@ -983,6 +984,7 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        initSystemData();
         return data.transaction || true;
       }
       return null;

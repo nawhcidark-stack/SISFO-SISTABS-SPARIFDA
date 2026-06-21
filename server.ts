@@ -3672,7 +3672,7 @@ async function startServer() {
       });
 
     // 2. Get all successful savings transactions
-    const savingsIntegrated = savingsTransactions
+    const actualSavingsIntegrated = savingsTransactions
       .filter(t => t.status === 'success')
       .map(t => {
         const student = students.find(s => s.id === t.studentId);
@@ -3690,6 +3690,54 @@ async function startServer() {
           createdBy: t.paymentMethod || 'Teller'
         };
       });
+
+    // 2b. Calculate differences for virtual savings entries to align ledger with student total balances
+    const virtualSavingsIntegrated: any[] = [];
+    students.forEach(student => {
+      const sBalance = Number(student.savingsBalance) || 0;
+      if (sBalance > 0) {
+        // Sum of actual deposits for this student
+        const actualDeposits = savingsTransactions
+          .filter(t => t.studentId === student.id && t.status === 'success' && t.type === 'deposit')
+          .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+        
+        // Sum of actual withdrawals for this student
+        const actualWithdrawals = savingsTransactions
+          .filter(t => t.studentId === student.id && t.status === 'success' && t.type === 'withdrawal')
+          .reduce((sum, t) => sum + (Number(t.amount) || 0), 0);
+
+        const diff = sBalance - (actualDeposits - actualWithdrawals);
+        if (diff > 0) {
+          virtualSavingsIntegrated.push({
+            id: `sav-v-int-${student.id}`,
+            type: 'incoming' as const,
+            category: 'Tabungan',
+            amount: diff,
+            description: `Saldo Awal Tabungan Rill - ${student.name} (${student.nis || ''})`,
+            date: '2026-06-15',
+            source: 'savings' as const,
+            studentName: student.name,
+            nis: student.nis || '',
+            createdBy: 'Penyamaan Saldo Awal'
+          });
+        } else if (diff < 0) {
+          virtualSavingsIntegrated.push({
+            id: `sav-v-int-${student.id}`,
+            type: 'outgoing' as const,
+            category: 'Tabungan',
+            amount: Math.abs(diff),
+            description: `Penyesuaian Saldo Tabungan Rill - ${student.name} (${student.nis || ''})`,
+            date: '2026-06-15',
+            source: 'savings' as const,
+            studentName: student.name,
+            nis: student.nis || '',
+            createdBy: 'Penyamaan Saldo Awal'
+          });
+        }
+      }
+    });
+
+    const savingsIntegrated = [...actualSavingsIntegrated, ...virtualSavingsIntegrated];
 
     // 3. Merged transactions
     const merged: TreasurerTransaction[] = [

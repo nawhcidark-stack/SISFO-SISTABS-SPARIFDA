@@ -51,6 +51,7 @@ import {
   Key,
   Home,
   LayoutGrid,
+  Award,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -357,6 +358,13 @@ export default function AdminPanel({
   const [mutateDestination, setMutateDestination] = useState("");
   const [isMutatingSubmit, setIsMutatingSubmit] = useState(false);
   const [mutateError, setMutateError] = useState("");
+
+  // States for SPP Prestasi Waiver
+  const [waiveBillIds, setWaiveBillIds] = useState<string[]>([]);
+  const [waiveType, setWaiveType] = useState<'akademik' | 'non-akademik'>('akademik');
+  const [waiveDetail, setWaiveDetail] = useState('');
+  const [isSubmittingWaiver, setIsSubmittingWaiver] = useState(false);
+  const [waiverError, setWaiverError] = useState('');
 
   // Batch Import Teacher states
   const [isImportTeacherOpen, setIsImportTeacherOpen] = useState(false);
@@ -1192,6 +1200,71 @@ export default function AdminPanel({
       alert("Terjadi kesalahan teknis saat memproses pembayaran kolektif.");
     } finally {
       setProcessingCart(false);
+    }
+  };
+
+  // SPP Prestasi Waiver Handlers
+  const handleWaiveSppBulk = async () => {
+    if (!selectedStudent) return;
+    if (waiveBillIds.length === 0) {
+      setWaiverError("Silakan pilih minimal satu bulan tagihan yang ingin dibebaskan.");
+      return;
+    }
+    if (!waiveDetail.trim()) {
+      setWaiverError("Silakan isi detail piagam atau jenis prestasi siswa.");
+      return;
+    }
+
+    setIsSubmittingWaiver(true);
+    setWaiverError('');
+    try {
+      const res = await fetch("/api/admin/waive-spp-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          studentId: selectedStudent.id,
+          billIds: waiveBillIds,
+          achievementType: waiveType,
+          achievementDetail: waiveDetail
+        })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || "Gagal memproses pembebasan SPP.");
+      }
+
+      alert("Pembebasan SPP prestasi siswa berhasil disimpan!");
+      setWaiveBillIds([]);
+      setWaiveDetail('');
+      onRefresh();
+    } catch (err: any) {
+      setWaiverError(err.message || "Gagal memproses pembebasan SPP.");
+    } finally {
+      setIsSubmittingWaiver(false);
+    }
+  };
+
+  const handleCancelSppWaived = async (billId: string) => {
+    if (!confirm("Apakah Anda yakin ingin membatalkan status bebas SPP untuk bulan ini?")) {
+      return;
+    }
+    try {
+      const res = await fetch("/api/admin/cancel-spp-waived", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ billId })
+      });
+      if (res.ok) {
+        alert("Status bebas SPP berhasil dibatalkan.");
+        onRefresh();
+      } else {
+        const errData = await res.json();
+        alert(errData.error || "Gagal membatalkan bebas SPP.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal menghubungi server.");
     }
   };
 
@@ -3301,7 +3374,8 @@ export default function AdminPanel({
                         </div>
 
                         {/* LIST SPP DI KANAN */}
-                        <div className="lg:col-span-7 flex flex-col gap-3 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                        <div className="lg:col-span-7 flex flex-col gap-4">
+                          <div className="flex flex-col gap-3 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
                           <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
                             <span className="font-bold text-slate-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
                               <BookOpen
@@ -3389,6 +3463,10 @@ export default function AdminPanel({
                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-100">
                                                   LUNAS
                                                 </span>
+                                              ) : b.status === "waived" ? (
+                                                <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-705 border border-indigo-100 uppercase flex items-center gap-0.5 justify-center">
+                                                  🏆 BEBAS PRESTASI
+                                                </span>
                                               ) : b.status === "pending" ? (
                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">
                                                   PENDING
@@ -3448,6 +3526,20 @@ export default function AdminPanel({
                                                         Batal ↩
                                                       </button>
                                                     )}
+                                                </div>
+                                              ) : b.status === "waived" ? (
+                                                <div className="flex gap-1.5 justify-end items-center">
+                                                  <span className="text-[10px] text-indigo-650 font-extrabold bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md truncate max-w-[150px]" title={b.achievementDetail}>
+                                                    {b.achievementDetail || "Apresiasi Prestasi"}
+                                                  </span>
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleCancelSppWaived(b.id)}
+                                                    className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all"
+                                                    title="Batalkan pembebasan SPP ini untuk kembali berstatus unpaid"
+                                                  >
+                                                    Batal 🔄
+                                                  </button>
                                                 </div>
                                               ) : !checkIsBillActive(
                                                   b,
@@ -3560,6 +3652,115 @@ export default function AdminPanel({
                               )}
                             </div>
                           </div>
+                        </div>
+
+                        {/* FORM APRESIASI BEBAS SPP BEASISWA PRESTASI */}
+                          {(() => {
+                            const unpaidBillsForWaiver = bills.filter(
+                              (b) => b.studentId === selectedStudent.id && b.status === "unpaid"
+                            );
+
+                            return (
+                              <div className="p-4 bg-indigo-50/50 border border-indigo-100 rounded-2xl flex flex-col gap-3 text-xs animate-fade-in">
+                                <div className="flex items-start gap-2.5">
+                                  <div className="p-2 bg-indigo-100 text-indigo-705 rounded-xl">
+                                    <Award size={18} strokeWidth={2.5} />
+                                  </div>
+                                  <div>
+                                    <h5 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">🏆 Apresiasi Beasiswa Prestasi</h5>
+                                    <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
+                                      Bebaskan tagihan SPP bulanan bagi siswa berprestasi (akademik maupun non-akademik). Notifikasi apresiasi akan terkirim secara otomatis kepada wali murid.
+                                    </p>
+                                  </div>
+                                </div>
+
+                                {unpaidBillsForWaiver.length === 0 ? (
+                                  <div className="text-[10px] text-slate-500 italic bg-white border border-slate-200 p-3 rounded-lg text-center font-semibold mt-1">
+                                    Semua SPP bulanan siswa ini sudah lunas atau dibebaskan.
+                                  </div>
+                                ) : (
+                                  <div className="flex flex-col gap-3 mt-1 border-t border-indigo-100/40 pt-3">
+                                    <div>
+                                      <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-2">1. Pilih Bulan yang Dibebaskan:</label>
+                                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                                        {unpaidBillsForWaiver.map((b) => {
+                                          const isChecked = waiveBillIds.includes(b.id);
+                                          return (
+                                            <label
+                                              key={b.id}
+                                              className={`flex items-center gap-2 px-2.5 py-2 rounded-xl border transition-all cursor-pointer select-none ${
+                                                isChecked
+                                                  ? "bg-indigo-600 border-indigo-600 text-white font-bold shadow-sm shadow-indigo-100"
+                                                  : "bg-white border-slate-200 text-slate-600 hover:border-slate-300"
+                                              }`}
+                                            >
+                                              <input
+                                                type="checkbox"
+                                                checked={isChecked}
+                                                onChange={() => {
+                                                  if (isChecked) {
+                                                    setWaiveBillIds((prev) => prev.filter((id) => id !== b.id));
+                                                  } else {
+                                                    setWaiveBillIds((prev) => [...prev, b.id]);
+                                                  }
+                                                }}
+                                                className="accent-indigo-600 cursor-pointer w-3.5 h-3.5 rounded border-slate-350"
+                                              />
+                                              <span className="text-[10px] truncate">{b.month} {b.year}</span>
+                                            </label>
+                                          );
+                                        })}
+                                      </div>
+                                    </div>
+
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                      <div>
+                                        <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1.5">2. Kategori Prestasi:</label>
+                                        <select
+                                          value={waiveType}
+                                          onChange={(e) => setWaiveType(e.target.value as any)}
+                                          className="w-full p-2 bg-white border border-slate-205 rounded-xl text-[11px] font-bold text-slate-700 outline-none focus:border-indigo-500 cursor-pointer shadow-3xs"
+                                        >
+                                          <option value="akademik">🏆 Prestasi Akademik</option>
+                                          <option value="non-akademik">🎨 Prestasi Non-Akademik</option>
+                                        </select>
+                                      </div>
+
+                                      <div>
+                                        <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1.5">3. Piagam / Detail Pencapaian:</label>
+                                        <input
+                                          type="text"
+                                          value={waiveDetail}
+                                          onChange={(e) => setWaiveDetail(e.target.value)}
+                                          placeholder="Contoh: Juara 1 Olimpiade Robotik Provinsi"
+                                          className="w-full p-2 bg-white border border-slate-205 rounded-xl text-[11px] text-slate-705 outline-none focus:border-indigo-500 shadow-3xs"
+                                        />
+                                      </div>
+                                    </div>
+
+                                    {waiverError && (
+                                      <p className="text-[10px] font-semibold text-rose-600 bg-rose-50 border border-rose-100 p-2.5 rounded-xl">
+                                        {waiverError}
+                                      </p>
+                                    )}
+
+                                    <button
+                                      type="button"
+                                      onClick={handleWaiveSppBulk}
+                                      disabled={isSubmittingWaiver || waiveBillIds.length === 0 || !waiveDetail.trim()}
+                                      className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-200 text-white font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow-sm shadow-indigo-100/50 flex items-center justify-center gap-1.5 mt-1"
+                                    >
+                                      {isSubmittingWaiver ? (
+                                        "Sedang menyimpan data beasiswa..."
+                                      ) : (
+                                        <span>Simpan Pembebasan {waiveBillIds.length} Bulan SPP 🏆</span>
+                                      )}
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+                            );
+                          })()}
                         </div>
                       </>
                     ) : (
@@ -8574,11 +8775,19 @@ export default function AdminPanel({
                                       </td>
                                       <td className="px-4 py-2.5 text-center">
                                         <span
-                                          className={`inline-flex px-2 py-0.5 rounded text-[8px] font-bold ${b.status === "paid" ? "bg-emerald-50 text-emerald-705 border border-emerald-100" : "bg-rose-50 text-rose-705 border border-rose-100"}`}
+                                          className={`inline-flex px-2 py-0.5 rounded text-[8px] font-bold ${
+                                            b.status === "paid"
+                                              ? "bg-emerald-50 text-emerald-705 border border-emerald-100"
+                                              : b.status === "waived"
+                                                ? "bg-indigo-50 text-indigo-750 border border-indigo-100"
+                                                : "bg-rose-50 text-rose-705 border border-rose-100"
+                                          }`}
                                         >
                                           {b.status === "paid"
                                             ? "Lunas"
-                                            : "Belum Lunas"}
+                                            : b.status === "waived"
+                                              ? "Beasiswa 🏆"
+                                              : "Belum Lunas"}
                                         </span>
                                       </td>
                                       <td className="px-4 py-2.5 text-right">
@@ -8599,6 +8808,19 @@ export default function AdminPanel({
                                           >
                                             <Printer size={9} /> Cetak
                                           </button>
+                                        ) : b.status === "waived" ? (
+                                          <div className="flex flex-col items-end gap-1">
+                                            <span className="text-[9px] text-slate-500 font-medium italic max-w-[150px] truncate" title={b.achievementDetail}>
+                                              {b.achievementDetail || "Apresiasi Prestasi"}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCancelSppWaived(b.id)}
+                                              className="px-1.5 py-0.5 bg-rose-50 text-rose-600 border border-rose-100 hover:bg-rose-100 rounded text-[8px] font-bold uppercase transition-all cursor-pointer"
+                                            >
+                                              Batal Beasiswa 🔄
+                                            </button>
+                                          </div>
                                         ) : (
                                           <button
                                             type="button"

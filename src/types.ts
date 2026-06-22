@@ -70,10 +70,12 @@ export interface SppBill {
   month: string; // e.g., "Januari", "Februari"
   year: number;
   amount: number;
-  status: 'paid' | 'unpaid' | 'pending';
+  status: 'paid' | 'unpaid' | 'pending' | 'waived';
   paidAt?: string;
   paymentMethod?: string;
   orderId?: string;
+  achievementType?: 'akademik' | 'non-akademik';
+  achievementDetail?: string;
 }
 
 export interface SavingsTransaction {

@@ -4181,14 +4181,14 @@ async function startServer() {
       return true;
     }
 
-    // 2. If it is a future month, it is active only if all bills strictly prior to this bill are paid
+    // 2. If it is a future month, it is active only if all bills strictly prior to this bill are paid or waived
     const priorBills = studentBills.filter(b => {
       const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
       const bScore = b.year * 12 + bMonthIdx;
       return bScore < billScore;
     });
 
-    return priorBills.every(b => b.status === 'paid');
+    return priorBills.every(b => b.status === 'paid' || b.status === 'waived');
   }
 
   // Admin Manual SPP Update (Teller/Manual mode)
@@ -4198,8 +4198,8 @@ async function startServer() {
     if (!bill) {
       return res.status(404).json({ error: "Tagihan SPP tidak ditemukan." });
     }
-    if (bill.status === "paid") {
-      return res.status(400).json({ error: "Tagihan sudah lunas." });
+    if (bill.status === "paid" || bill.status === "waived") {
+      return res.status(400).json({ error: "Tagihan sudah lunas atau dibebaskan." });
     }
 
     const studentBills = sppBills.filter(b => b.studentId === bill.studentId);
@@ -4285,6 +4285,98 @@ async function startServer() {
         `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending void SPP WA:", err));
     }
+
+    saveState();
+    res.json({ success: true, bill });
+  });
+
+  // Admin Bulk Waive/Free SPP due to Achievement (Academic / Non-Academic)
+  app.post("/api/admin/waive-spp-bulk", (req, res) => {
+    const { studentId, billIds, achievementType, achievementDetail } = req.body;
+    if (!studentId || !Array.isArray(billIds) || billIds.length === 0) {
+      return res.status(400).json({ error: "Siswa dan daftar tagihan wajib dipilih." });
+    }
+    const student = students.find(s => s.id === studentId);
+    if (!student) {
+      return res.status(404).json({ error: "Siswa tidak ditemukan." });
+    }
+
+    const waivedBills: SppBill[] = [];
+    billIds.forEach(billId => {
+      const bill = sppBills.find(b => b.id === billId && b.studentId === studentId);
+      if (bill && bill.status === "unpaid") {
+        bill.status = "waived";
+        bill.paidAt = new Date().toISOString();
+        bill.paymentMethod = `Bebas SPP Prestasi (${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'})`;
+        bill.orderId = `ORD-WAIVED-${achievementType === 'akademik' ? 'ACAD' : 'NON'}-${Date.now()}-${billId.slice(-4)}`;
+        (bill as any).achievementType = achievementType;
+        (bill as any).achievementDetail = achievementDetail || "";
+        waivedBills.push(bill);
+      }
+    });
+
+    if (waivedBills.length === 0) {
+      return res.status(400).json({ error: "Tidak ada tagihan belum lunas yang terpilih atau dapat dibebaskan." });
+    }
+
+    // Broadcast SSE notification
+    const monthsText = waivedBills.map(b => `${b.month} ${b.year}`).join(", ");
+    const notification: RealtimeNotification = {
+      id: `notif-spp-waived-bulk-${Date.now()}`,
+      studentId,
+      title: `Bebas SPP Prestasi 🏆`,
+      message: `Selamat kepada ${student.name}! Tagihan SPP bulan (${monthsText}) dibebaskan karena prestasi ${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}: ${achievementDetail || ""}.`,
+      type: "success",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    // Send automated WhatsApp confirmation if enabled
+    if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
+      const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+        `🏆 *APRESIASI BEBAS SPP BEASISWA PRESTASI*\n` +
+        `Selamat! Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)* dari kewajiban iuran bulanan.\n\n` +
+        `Jenis Prestasi: *${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}*\n` +
+        `Detail Piagam/Apresiasi: *${achievementDetail || "Apresiasi Prestasi Siswa Utama"}*\n\n` +
+        `Sekolah sangat bangga atas pencapaian luar biasa yang diukir oleh putra/putri Anda. Terus asah potensi dan raih masa depan gemilang.\n` +
+        `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+      sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending bulk waive SPP WA:", err));
+    }
+
+    saveState();
+    res.json({ success: true, count: waivedBills.length });
+  });
+
+  // Admin Cancel/Revert Waived SPP
+  app.post("/api/admin/cancel-spp-waived", (req, res) => {
+    const { billId } = req.body;
+    const bill = sppBills.find(b => b.id === billId);
+    if (!bill) {
+      return res.status(404).json({ error: "Tagihan SPP tidak ditemukan." });
+    }
+    if (bill.status !== "waived") {
+      return res.status(400).json({ error: "Hanya tagihan berstatus bebas SPP yang dapat dibatalkan." });
+    }
+
+    const student = students.find(s => s.id === bill.studentId);
+
+    bill.status = "unpaid";
+    bill.paidAt = undefined;
+    bill.paymentMethod = undefined;
+    bill.orderId = undefined;
+    delete (bill as any).achievementType;
+    delete (bill as any).achievementDetail;
+
+    // Broadcast SSE notification
+    const notification: RealtimeNotification = {
+      id: `notif-spp-waived-cancel-${Date.now()}`,
+      studentId: bill.studentId,
+      title: "Penghapusan Bebas SPP",
+      message: `Pembebasan SPP ${student?.name || ""} bulan ${bill.month} ${bill.year} telah dinonaktifkan/dikoreksi oleh Admin Sekolah.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
 
     saveState();
     res.json({ success: true, bill });
@@ -5338,8 +5430,8 @@ async function startServer() {
     if (!bill) {
       return res.status(404).json({ error: "Tagihan tidak ditemukan." });
     }
-    if (bill.status === "paid") {
-      return res.status(400).json({ error: "Tagihan sudah lunas." });
+    if (bill.status === "paid" || bill.status === "waived") {
+      return res.status(400).json({ error: "Tagihan sudah lunas atau dibebaskan." });
     }
 
     const studentBills = sppBills.filter(b => b.studentId === bill.studentId);

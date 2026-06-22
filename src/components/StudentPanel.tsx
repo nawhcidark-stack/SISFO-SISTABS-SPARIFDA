@@ -736,14 +736,14 @@ export default function StudentPanel({
       return true;
     }
 
-    // 2. If it is a future month, check if all bills strictly prior are paid
+    // 2. If it is a future month, check if all bills strictly prior are paid or waived
     const priorBills = allBills.filter(b => {
       const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
       const bScore = b.year * 12 + bMonthIdx;
       return bScore < billScore;
     });
 
-    return priorBills.every(b => b.status === 'paid');
+    return priorBills.every(b => b.status === 'paid' || b.status === 'waived');
   };
 
   // Get list of unique academic years present in the bills list
@@ -1281,14 +1281,15 @@ export default function StudentPanel({
                       <tbody className="divide-y divide-slate-100">
                         {filteredBills.map((bill) => {
                           const isPaid = bill.status === 'paid';
+                          const isWaived = bill.status === 'waived';
                           const isPending = bill.status === 'pending';
                           const isCurrentlyActive = checkIsBillActive(bill, bills);
 
                           return (
-                            <tr key={bill.id} className={`hover:bg-slate-50 transition-colors ${!isCurrentlyActive && !isPaid ? 'opacity-60 bg-slate-50/50' : ''}`}>
+                            <tr key={bill.id} className={`hover:bg-slate-50 transition-colors ${!isCurrentlyActive && !isPaid && !isWaived ? 'opacity-60 bg-slate-50/50' : ''}`}>
                               <td className="px-5 py-3.5 font-semibold text-slate-850 whitespace-nowrap">
                                 <div className="flex flex-col gap-0.5">
-                                  <span className={!isCurrentlyActive && !isPaid ? 'text-slate-400 font-normal' : ''}>{bill.month} {bill.year}</span>
+                                  <span className={!isCurrentlyActive && !isPaid && !isWaived ? 'text-slate-400 font-normal' : ''}>{bill.month} {bill.year}</span>
                                   {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
                                     <span className="inline-block text-[8px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded border border-rose-100 max-w-max uppercase tracking-wider mt-1.5 animate-pulse">
                                       Tunggakan TA {getAcademicYearOfBill(bill)}
@@ -1296,13 +1297,17 @@ export default function StudentPanel({
                                   )}
                                 </div>
                               </td>
-                              <td className={`px-5 py-3.5 text-right font-bold whitespace-nowrap ${!isCurrentlyActive && !isPaid ? 'text-slate-400' : 'text-slate-800'}`}>
+                              <td className={`px-5 py-3.5 text-right font-bold whitespace-nowrap ${!isCurrentlyActive && !isPaid && !isWaived ? 'text-slate-400' : 'text-slate-800'}`}>
                                 Rp {bill.amount.toLocaleString('id-ID')}
                               </td>
                               <td className="px-5 py-3.5 text-center whitespace-nowrap">
                                 {isPaid ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase">
                                     <Check size={10} strokeWidth={3} /> Lunas
+                                  </span>
+                                ) : isWaived ? (
+                                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-indigo-50 text-indigo-705 border border-indigo-100 uppercase">
+                                    🏆 BEBAS SPP (PRESTASI)
                                   </span>
                                 ) : isPending ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
@@ -1340,6 +1345,13 @@ export default function StudentPanel({
                                       <Printer size={13} />
                                     </button>
                                   </div>
+                                ) : isWaived ? (
+                                  <div className="flex flex-col text-right leading-tight">
+                                    <span className="text-[10px] font-bold text-indigo-650 uppercase">Prestasi Dibebaskan</span>
+                                    <span className="text-[9px] text-slate-400 italic max-w-[150px] truncate block" title={bill.achievementDetail || "Apresiasi Prestasi"}>
+                                      {bill.achievementDetail || "Apresiasi Prestasi"}
+                                    </span>
+                                  </div>
                                 ) : !isCurrentlyActive ? (
                                   <button
                                     disabled
@@ -1373,14 +1385,15 @@ export default function StudentPanel({
                   <div className="block md:hidden flex flex-col gap-3">
                     {filteredBills.map((bill) => {
                       const isPaid = bill.status === 'paid';
+                      const isWaived = bill.status === 'waived';
                       const isPending = bill.status === 'pending';
                       const isCurrentlyActive = checkIsBillActive(bill, bills);
 
                       return (
-                        <div key={`mob-${bill.id}`} className={`bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3.5 hover:border-slate-350 transition-colors ${!isCurrentlyActive && !isPaid ? 'opacity-60 bg-slate-50/50' : ''}`}>
+                        <div key={`mob-${bill.id}`} className={`bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3.5 hover:border-slate-350 transition-colors ${!isCurrentlyActive && !isPaid && !isWaived ? 'opacity-60 bg-slate-50/50' : ''}`}>
                           <div className="flex justify-between items-start">
                             <div className="flex flex-col gap-1">
-                              <span className={`font-bold text-sm leading-tight ${!isCurrentlyActive && !isPaid ? 'text-slate-400 font-normal' : 'text-slate-800'}`}>{bill.month} {bill.year}</span>
+                              <span className={`font-bold text-sm leading-tight ${!isCurrentlyActive && !isPaid && !isWaived ? 'text-slate-400 font-normal' : 'text-slate-800'}`}>{bill.month} {bill.year}</span>
                               {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
                                 <span className="inline-block text-[8px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded border border-rose-100 max-w-max uppercase tracking-wider animate-pulse">
                                   Tunggakan TA {getAcademicYearOfBill(bill)}
@@ -1388,7 +1401,7 @@ export default function StudentPanel({
                               )}
                             </div>
                             <div className="text-right">
-                              <span className={`block font-extrabold text-sm ${!isCurrentlyActive && !isPaid ? 'text-slate-400' : 'text-slate-900'}`}>
+                              <span className={`block font-extrabold text-sm ${!isCurrentlyActive && !isPaid && !isWaived ? 'text-slate-400' : 'text-slate-900'}`}>
                                 Rp {bill.amount.toLocaleString('id-ID')}
                               </span>
                             </div>
@@ -1399,6 +1412,10 @@ export default function StudentPanel({
                               {isPaid ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-emerald-50 text-emerald-700 border border-emerald-100 uppercase">
                                   <Check size={9} strokeWidth={3} /> Lunas
+                                </span>
+                              ) : isWaived ? (
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-indigo-50 text-indigo-705 border border-indigo-100 uppercase">
+                                  🏆 Bebas SPP (Prestasi)
                                 </span>
                               ) : isPending ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
@@ -1433,6 +1450,10 @@ export default function StudentPanel({
                                     <Printer size={13} />
                                   </button>
                                 </div>
+                              ) : isWaived ? (
+                                <span className="text-[9px] italic text-slate-500 max-w-[120px] truncate" title={bill.achievementDetail}>
+                                  {bill.achievementDetail || "Apresiasi"}
+                                </span>
                               ) : !isCurrentlyActive ? (
                                 <button
                                   disabled

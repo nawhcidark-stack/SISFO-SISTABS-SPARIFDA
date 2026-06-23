@@ -887,13 +887,14 @@ export default function AdminPanel({
           s.class.toLowerCase() !== "mutasi" &&
           s.class.toLowerCase() !== "mutasi keluar"),
     );
-    if (!studentSearch.trim()) return activeStudents;
-    const query = studentSearch.toLowerCase().trim();
-    return activeStudents.filter(
-      (s) =>
-        s.name.toLowerCase().includes(query) ||
-        s.nis.toLowerCase().includes(query),
-    );
+    const result = !studentSearch.trim()
+      ? activeStudents
+      : activeStudents.filter(
+          (s) =>
+            s.name.toLowerCase().includes(studentSearch.toLowerCase().trim()) ||
+            s.nis.toLowerCase().includes(studentSearch.toLowerCase().trim()),
+        );
+    return [...result].sort((a, b) => a.name.localeCompare(b.name));
   }, [students, studentSearch]);
 
   const uniqueClasses = useMemo(() => {
@@ -921,13 +922,14 @@ export default function AdminPanel({
         (s.class.toLowerCase() === "lulus" ||
           s.class.toLowerCase() === "lulusan"),
     );
-    if (!alumniSearch.trim()) return alumniList;
-    const query = alumniSearch.toLowerCase().trim();
-    return alumniList.filter(
-      (s) =>
-        s.name.toLowerCase().includes(query) ||
-        s.nis.toLowerCase().includes(query),
-    );
+    const result = !alumniSearch.trim()
+      ? alumniList
+      : alumniList.filter(
+          (s) =>
+            s.name.toLowerCase().includes(alumniSearch.toLowerCase().trim()) ||
+            s.nis.toLowerCase().includes(alumniSearch.toLowerCase().trim()),
+        );
+    return [...result].sort((a, b) => a.name.localeCompare(b.name));
   }, [students, alumniSearch]);
 
   const filteredMutatedStudents = useMemo(() => {
@@ -937,13 +939,14 @@ export default function AdminPanel({
         (s.class.toLowerCase() === "mutasi" ||
           s.class.toLowerCase() === "mutasi keluar"),
     );
-    if (!mutatedSearch.trim()) return mutatedList;
-    const query = mutatedSearch.toLowerCase().trim();
-    return mutatedList.filter(
-      (s) =>
-        s.name.toLowerCase().includes(query) ||
-        s.nis.toLowerCase().includes(query),
-    );
+    const result = !mutatedSearch.trim()
+      ? mutatedList
+      : mutatedList.filter(
+          (s) =>
+            s.name.toLowerCase().includes(mutatedSearch.toLowerCase().trim()) ||
+            s.nis.toLowerCase().includes(mutatedSearch.toLowerCase().trim()),
+        );
+    return [...result].sort((a, b) => a.name.localeCompare(b.name));
   }, [students, mutatedSearch]);
 
   const [confirmingTxId, setConfirmingTxId] = useState<string | null>(null);
@@ -9693,7 +9696,7 @@ export default function AdminPanel({
                           s.class.toLowerCase() ===
                             studentQrClassFilter.toLowerCase();
                         return matchSearch && matchClass;
-                      });
+                      }).sort((a, b) => a.name.localeCompare(b.name));
                       if (listToPrint.length === 0) {
                         alert(
                           "Tidak ada kartu siswa untuk dicetak dalam kriteria filter yang aktif!",
@@ -9746,7 +9749,7 @@ export default function AdminPanel({
                           s.class.toLowerCase() ===
                             studentQrClassFilter.toLowerCase();
                         return matchSearch && matchClass;
-                      });
+                      }).sort((a, b) => a.name.localeCompare(b.name));
                       if (listToDownload.length === 0) {
                         alert(
                           "Tidak ada QR siswa untuk diunduh dalam kriteria filter yang aktif!",
@@ -10008,7 +10011,7 @@ export default function AdminPanel({
                   studentQrClassFilter === "all" ||
                   s.class.toLowerCase() === studentQrClassFilter.toLowerCase();
                 return matchSearch && matchClass;
-              });
+              }).sort((a, b) => a.name.localeCompare(b.name));
 
               if (matched.length === 0) {
                 return (
@@ -10704,12 +10707,13 @@ export default function AdminPanel({
             {activeReportSubTab === "rekap-spp" &&
               (() => {
                 // Filters & Computations
-                const activeStudents =
-                  rekapSppGradeFilter === "all"
+                const activeStudents = [
+                  ...(rekapSppGradeFilter === "all"
                     ? students
                     : students.filter((s) =>
                         s.class.startsWith(rekapSppGradeFilter),
-                      );
+                      ))
+                ].sort((a, b) => a.name.localeCompare(b.name));
 
                 // Compute SPP matrix for activeStudents
                 const summaryMatrix = activeStudents.map((student) => {
@@ -11164,10 +11168,12 @@ export default function AdminPanel({
 
                 // Generate the recap list of total counts for each student in the specified class filter & date range
                 const getStudentRecapList = () => {
-                  const filteredStudents = students.filter((student) => {
-                    if (absenClassFilter === "all") return true;
-                    return student.class === absenClassFilter;
-                  });
+                  const filteredStudents = students
+                    .filter((student) => {
+                      if (absenClassFilter === "all") return true;
+                      return student.class === absenClassFilter;
+                    })
+                    .sort((a, b) => a.name.localeCompare(b.name));
 
                   const list = filteredStudents.map((student) => {
                     const studentLogs = attendanceLogs.filter((log) => {
@@ -12627,12 +12633,13 @@ export default function AdminPanel({
 
                 {reportToPrint === "rekap-spp" &&
                   (() => {
-                    const activeStudents =
-                      rekapSppGradeFilter === "all"
+                    const activeStudents = [
+                      ...(rekapSppGradeFilter === "all"
                         ? students
                         : students.filter((s) =>
                             s.class.startsWith(rekapSppGradeFilter),
-                          );
+                          ))
+                    ].sort((a, b) => a.name.localeCompare(b.name));
 
                     const summaryMatrix = activeStudents.map((student) => {
                       const sBills = bills.filter(

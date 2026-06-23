@@ -466,7 +466,7 @@ export default function StudentManagement({
     const matchesClass = classFilter === 'ALL' || student.class === classFilter;
     
     return matchesSearch && matchesClass;
-  });
+  }).sort((a, b) => a.name.localeCompare(b.name));
 
   // Statistics Calculations
   const activeStudentsList = students.filter(student => {

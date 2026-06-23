@@ -635,9 +635,11 @@ export default function HomeroomPanel({
 
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
-    return students.filter(
-      (s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase()
-    );
+    return students
+      .filter(
+        (s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase()
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
   }, [students, currentTeacher.className]);
 
   useEffect(() => {

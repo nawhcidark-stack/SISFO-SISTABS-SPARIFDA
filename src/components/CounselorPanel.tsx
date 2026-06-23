@@ -711,7 +711,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       const searchMatch = st.name.toLowerCase().includes(searchQuery.toLowerCase());
       const classMatch = classFilter === "all" ? true : st.className === classFilter;
       return searchMatch && classMatch;
-    });
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [aggregatedAttendance, searchQuery, classFilter]);
 
   // Infractions filter mapping
@@ -740,7 +740,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       const searchMatch = st.name.toLowerCase().includes(searchQuery.toLowerCase());
       const classMatch = classFilter === "all" ? true : st.className === classFilter;
       return searchMatch && classMatch;
-    });
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [aggregatedInfractions, searchQuery, classFilter]);
 
   // Trigger quick counseling creation (to draft and save a new counseling log)

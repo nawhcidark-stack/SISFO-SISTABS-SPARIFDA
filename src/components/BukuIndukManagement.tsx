@@ -91,7 +91,7 @@ export default function BukuIndukManagement({
       
       const matchClass = selectedClass === 'ALL' || s.class === selectedClass;
       return matchSearch && matchClass;
-    });
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, searchTerm, selectedClass]);
 
   // Handle changes in edit fields

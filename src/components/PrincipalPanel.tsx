@@ -631,7 +631,7 @@ export default function PrincipalPanel({
       s.name.toLowerCase().includes(searchStudentQuery.toLowerCase()) ||
       s.nis.includes(searchStudentQuery) ||
       s.class.toLowerCase().includes(searchStudentQuery.toLowerCase())
-    );
+    ).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, searchStudentQuery]);
 
   // Inspected student data

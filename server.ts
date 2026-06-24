@@ -5492,7 +5492,10 @@ async function startServer() {
             id: bill.id,
             price: bill.amount,
             quantity: 1,
-            name: `SPP ${bill.month} ${bill.year} - ${student.name}`
+            name: (() => {
+              const baseName = `SPP ${bill.month} ${bill.year} - ${student.name}`;
+              return baseName.length > 50 ? baseName.substring(0, 47) + "..." : baseName;
+            })()
           },
           ...(maintenanceFeeVal > 0 ? [
             {
@@ -5622,7 +5625,10 @@ async function startServer() {
             id: `deposit-${Date.now()}`,
             price: valAmount,
             quantity: 1,
-            name: `Top Up Tabungan - ${student.name}`
+            name: (() => {
+              const baseName = `Top Up Tabungan - ${student.name}`;
+              return baseName.length > 50 ? baseName.substring(0, 47) + "..." : baseName;
+            })()
           },
           ...(maintenanceFeeVal > 0 ? [
             {

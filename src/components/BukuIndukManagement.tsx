@@ -137,6 +137,10 @@ export default function BukuIndukManagement({
   // Helper to escape CSV cell contents
   const escapeCsvVal = (val: any) => {
     const str = String(val === undefined || val === null ? '' : val).trim();
+    // Prevent Excel from displaying long digit strings in scientific notation (e.g. NISN, NIK, KK, No HP)
+    if (str.length >= 10 && /^\d+$/.test(str)) {
+      return `"=""${str}"""`;
+    }
     if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
       return `"${str.replace(/"/g, '""')}"`;
     }
@@ -301,7 +305,19 @@ export default function BukuIndukManagement({
           return;
         }
 
-        const clean = (val: string) => (val || "").replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
+        const clean = (val: string) => {
+          let s = (val || "").trim();
+          if (s.startsWith('"') && s.endsWith('"')) {
+            s = s.substring(1, s.length - 1);
+          }
+          if (s.startsWith('=') && (s.substring(1).startsWith('"') || s.substring(1).startsWith("'"))) {
+            s = s.substring(2, s.length - 1);
+          }
+          if (s.startsWith("'")) {
+            s = s.substring(1);
+          }
+          return s.trim();
+        };
 
         // Detect delimiter: comma (,) or semicolon (;)
         const firstLine = lines[0];

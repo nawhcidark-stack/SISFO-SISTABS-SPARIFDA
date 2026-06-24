@@ -96,7 +96,11 @@ export default function StudentManagement({
     const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,password,saldo_awal\r\n";
     
     const escapeCsv = (val: string | number) => {
-      const str = String(val === undefined || val === null ? '' : val);
+      const str = String(val === undefined || val === null ? '' : val).trim();
+      // Prevent Excel from displaying long digit strings in scientific notation (e.g. NIS, No HP)
+      if (str.length >= 10 && /^\d+$/.test(str)) {
+        return `"=""${str}"""`;
+      }
       if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes(';')) {
         return `"${str.replace(/"/g, '""')}"`;
       }
@@ -152,7 +156,19 @@ export default function StudentManagement({
         }
 
         // Clean quotes helper
-        const clean = (val: string) => (val || "").replace(/^"(.*)"$/, '$1').replace(/^'(.*)'$/, '$1').trim();
+        const clean = (val: string) => {
+          let s = (val || "").trim();
+          if (s.startsWith('"') && s.endsWith('"')) {
+            s = s.substring(1, s.length - 1);
+          }
+          if (s.startsWith('=') && (s.substring(1).startsWith('"') || s.substring(1).startsWith("'"))) {
+            s = s.substring(2, s.length - 1);
+          }
+          if (s.startsWith("'")) {
+            s = s.substring(1);
+          }
+          return s.trim();
+        };
 
         // Helper function to split a string by delimiter while ignoring delimiters inside double quotes
         const parseCSVLineRobust = (rawLine: string, delim: string): string[] => {

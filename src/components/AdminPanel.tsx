@@ -11359,7 +11359,7 @@ export default function AdminPanel({
                   recapList.forEach((row, index) => {
                     const csvLine = [
                       index + 1,
-                      `"${row.nis}"`,
+                      `"=""${row.nis}"""`,
                       `"${row.name.replace(/"/g, '""')}"`,
                       `"${row.class}"`,
                       `"${row.homeroomName.replace(/"/g, '""')}"`,

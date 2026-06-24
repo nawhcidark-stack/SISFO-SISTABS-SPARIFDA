@@ -11714,7 +11714,7 @@ export default function AdminPanel({
                     {schoolIdentity?.logo && (
                       <img
                         src={schoolIdentity.logo}
-                        className="w-8 h-8 object-contain shrink-0"
+                        className="w-8 h-8 object-contain shrink-0 grayscale"
                         alt="Logo Left"
                         referrerPolicy="no-referrer"
                       />
@@ -11734,7 +11734,7 @@ export default function AdminPanel({
                     {schoolIdentity?.logo2 && (
                       <img
                         src={schoolIdentity.logo2}
-                        className="w-8 h-8 object-contain shrink-0"
+                        className="w-8 h-8 object-contain shrink-0 grayscale"
                         alt="Logo Right"
                         referrerPolicy="no-referrer"
                       />

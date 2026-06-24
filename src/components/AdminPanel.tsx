@@ -11710,17 +11710,35 @@ export default function AdminPanel({
                 /* THERMAL RECEIPT LAYOUT */
                 <div className="flex flex-col gap-2.5 text-slate-900 font-mono text-left select-all">
                   {/* Small Header */}
-                  <div className="text-center font-black uppercase text-xs tracking-wider border-b border-dashed border-slate-900 pb-2.5">
-                    <span className="block text-sm font-extrabold">
-                      {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
-                    </span>
-                    <span className="block text-[8px] font-normal normal-case leading-none mt-1">
-                      {schoolIdentity?.subheading ||
-                        "Lembaga Pendidikan Maarif Nahdlatul Ulama"}
-                    </span>
-                    <span className="block text-[7.5px] font-normal mt-0.5">
-                      {schoolIdentity?.address || "Pasuruan, Jawa Timur"}
-                    </span>
+                  <div className="flex items-center gap-1.5 border-b border-dashed border-slate-900 pb-2.5">
+                    {schoolIdentity?.logo && (
+                      <img
+                        src={schoolIdentity.logo}
+                        className="w-8 h-8 object-contain shrink-0"
+                        alt="Logo Left"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
+                    <div className="flex-1 text-center font-black uppercase text-xs tracking-wider">
+                      <span className="block text-sm font-extrabold leading-tight">
+                        {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                      </span>
+                      <span className="block text-[8px] font-normal normal-case leading-none mt-1">
+                        {schoolIdentity?.subheading ||
+                          "Lembaga Pendidikan Maarif Nahdlatul Ulama"}
+                      </span>
+                      <span className="block text-[7.5px] font-normal mt-0.5 leading-tight">
+                        {schoolIdentity?.address || "Pasuruan, Jawa Timur"}
+                      </span>
+                    </div>
+                    {schoolIdentity?.logo2 && (
+                      <img
+                        src={schoolIdentity.logo2}
+                        className="w-8 h-8 object-contain shrink-0"
+                        alt="Logo Right"
+                        referrerPolicy="no-referrer"
+                      />
+                    )}
                   </div>
 
                   <div className="text-center font-mono font-bold uppercase text-[9px] py-1 border-b border-dashed border-slate-900">

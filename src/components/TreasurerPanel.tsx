@@ -3151,7 +3151,17 @@ export default function TreasurerPanel({
                       <span className="font-mono text-xs">Rp {activePrintTransaction.amount.toLocaleString('id-ID')}</span>
                     </div>
 
-
+                    {/* Compact Signatures (No signature gaps) */}
+                    <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-1 pt-2">
+                      <div>
+                        <span className="block text-[6.5px] text-slate-500">Kepala Sekolah</span>
+                        <span className="font-bold block truncate">({schoolIdentity?.principal?.substring(0, 14) || "Kepala Sekolah"})</span>
+                      </div>
+                      <div>
+                        <span className="block text-[6.5px] text-slate-500">{activePrintTransaction.type === 'incoming' ? 'Teller/Penerima' : 'Ybs/Penerima'}</span>
+                        <span className="font-bold block truncate">({schoolIdentity?.treasurer?.substring(0, 14) || "Bendahara"})</span>
+                      </div>
+                    </div>
 
                     <div className="text-center text-[7px] leading-none tracking-tight mt-4 text-slate-550 border-t border-dotted border-slate-900 pt-2 uppercase">
                       *** TERIMA KASIH ***

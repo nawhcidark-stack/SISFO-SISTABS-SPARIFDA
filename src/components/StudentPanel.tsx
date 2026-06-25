@@ -4038,7 +4038,17 @@ export default function StudentPanel({
                     Terbilang: {indonesianWordsForRupiah(receiptToPrint.detail.amount)}
                   </div>
 
-
+                  {/* Penyetor & Bendahara Info (No signature space) */}
+                  <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-1 pt-2">
+                    <div>
+                      <span className="block text-[6.5px] text-slate-500">Penyetor/Murid</span>
+                      <span className="font-bold block truncate">({receiptToPrint.student.name.substring(0, 14)})</span>
+                    </div>
+                    <div>
+                      <span className="block text-[6.5px] text-slate-500">Bendahara/Admin</span>
+                      <span className="font-bold block truncate">({schoolIdentity?.treasurer || "Bendahara"})</span>
+                    </div>
+                  </div>
 
                   <div className="text-center text-[7px] leading-none tracking-tight mt-4 text-slate-550 border-t border-dotted border-slate-900 pt-2 uppercase">
                     *** TERIMA KASIH ***

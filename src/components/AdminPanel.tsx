@@ -11858,44 +11858,7 @@ export default function AdminPanel({
                     {indonesianWordsForRupiah(receiptToPrint.detail.amount)}
                   </div>
 
-                  {/* Signatures */}
-                  <div className="grid grid-cols-2 text-[8px] text-center uppercase gap-2 pt-2">
-                    <div className="flex flex-col justify-between h-[50px]">
-                      <span>Penyetor/Murid</span>
-                      <div className="h-4"></div>
-                      <span className="font-bold border-t border-slate-900 pt-0.5 truncate">
-                        ({receiptToPrint.student.name.substring(0, 12)})
-                      </span>
-                    </div>
-                    <div className="flex flex-col justify-between h-[50px] relative">
-                      <span>Bendahara/Admin</span>
-                      <div className="h-6 flex items-center justify-center relative my-0.5">
-                        {schoolIdentity?.treasurerSignature && (
-                          <img
-                            src={schoolIdentity.treasurerSignature}
-                            className="h-8 object-contain z-10"
-                            alt="Ttd Bendahara"
-                            referrerPolicy="no-referrer"
-                          />
-                        )}
-                        {schoolIdentity?.schoolStamp && (
-                          <img
-                            src={schoolIdentity.schoolStamp}
-                            className="h-9 object-contain absolute opacity-75 mix-blend-multiply scale-110 z-0 transform -translate-x-[4mm]"
-                            alt="Stempel"
-                            referrerPolicy="no-referrer"
-                          />
-                        )}
-                        {!schoolIdentity?.treasurerSignature &&
-                          !schoolIdentity?.schoolStamp && (
-                            <div className="h-4"></div>
-                          )}
-                      </div>
-                      <span className="font-bold border-t border-slate-900 pt-0.5">
-                        ({schoolIdentity?.treasurer || "Bendahara"})
-                      </span>
-                    </div>
-                  </div>
+
 
                   <div className="text-center text-[7px] leading-none tracking-tight mt-4 text-slate-550 border-t border-dotted border-slate-900 pt-2 uppercase">
                     *** TERIMA KASIH ***

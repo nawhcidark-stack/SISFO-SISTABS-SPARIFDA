@@ -5445,8 +5445,28 @@ async function startServer() {
     }
 
     // Compress the order ID to stay strictly under Midtrans' 50-character limit
-    const shortBillId = bill.id.replace("bill-std-", "B-");
-    const orderId = `SPP-${shortBillId}-${Date.now().toString().slice(-6)}`;
+    let shortBillId = bill.id.replace("bill-std-", "B-");
+    const monthMapShorten: { [key: string]: string } = {
+      "Januari": "Jan",
+      "Februari": "Feb",
+      "Maret": "Mar",
+      "April": "Apr",
+      "Mei": "Mei",
+      "Juni": "Jun",
+      "Juli": "Jul",
+      "Agustus": "Agu",
+      "September": "Sep",
+      "Oktober": "Okt",
+      "November": "Nov",
+      "Desember": "Des"
+    };
+    for (const [full, short] of Object.entries(monthMapShorten)) {
+      if (shortBillId.includes(`-${full}-`)) {
+        shortBillId = shortBillId.replace(`-${full}-`, `-${short}-`);
+        break;
+      }
+    }
+    const orderId = `SPP-${shortBillId}-${Date.now().toString().slice(-4)}`;
     bill.orderId = orderId;
     bill.status = "pending";
     saveState();
@@ -5809,7 +5829,33 @@ async function startServer() {
         cleanBillId = "bill-std-" + cleanBillId.slice(2);
       }
       
-      const bill = sppBills.find(b => b.orderId === order_id || b.id === cleanBillId || b.id === billId);
+      let bill = sppBills.find(b => b.orderId === order_id || b.id === cleanBillId || b.id === billId);
+      if (!bill) {
+        const monthMap: { [key: string]: string } = {
+          "jan": "Januari",
+          "feb": "Februari",
+          "mar": "Maret",
+          "apr": "April",
+          "mei": "Mei",
+          "jun": "Juni",
+          "jul": "Juli",
+          "agu": "Agustus",
+          "sep": "September",
+          "okt": "Oktober",
+          "nov": "November",
+          "des": "Desember"
+        };
+        for (const [short, full] of Object.entries(monthMap)) {
+          const searchPattern = `-${short}-`;
+          if (cleanBillId.toLowerCase().includes(searchPattern)) {
+            const index = cleanBillId.toLowerCase().indexOf(searchPattern);
+            const originalPart = cleanBillId.substring(index + 1, index + 1 + short.length);
+            const expandedBillId = cleanBillId.replace(`-${originalPart}-`, `-${full}-`);
+            bill = sppBills.find(b => b.id === expandedBillId);
+            if (bill) break;
+          }
+        }
+      }
       if (bill) {
         if (isSettlement) {
           bill.status = "paid";

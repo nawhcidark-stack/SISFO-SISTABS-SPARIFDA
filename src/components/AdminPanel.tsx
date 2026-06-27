@@ -56,6 +56,7 @@ import {
   Plus,
   Clock,
   CheckCircle2,
+  XCircle,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -361,6 +362,13 @@ export default function AdminPanel({
   const [miscStatusFilter, setMiscStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
   const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
 
+  // States for Revisi Detail Tagihan Pembayaran Lain-lain
+  const [isEditMiscOpen, setIsEditMiscOpen] = useState(false);
+  const [editingMiscBill, setEditingMiscBill] = useState<any | null>(null);
+  const [editMiscTitle, setEditMiscTitle] = useState("");
+  const [editMiscAmount, setEditMiscAmount] = useState("");
+  const [isUpdatingMisc, setIsUpdatingMisc] = useState(false);
+
   const handleCreateMiscBill = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!miscTitle.trim()) {
@@ -455,6 +463,82 @@ export default function AdminPanel({
     } catch (err: any) {
       console.error(err);
       alert(err.message || "Gagal menghapus tagihan.");
+    }
+  };
+
+  const handleCancelMiscPaymentLocal = async (billId: string) => {
+    const confirmCancel = window.confirm(
+      "Apakah Anda yakin ingin membatalkan pembayaran untuk tagihan ini?\n\n" +
+      "- Status pembayaran akan diubah kembali menjadi BELUM LUNAS.\n" +
+      "- Pembayaran via Potong Tabungan akan otomatis dikembalikan ke saldo tabungan siswa.\n" +
+      "- Catatan buku kas bendahara terkait transaksi ini akan dihapus/dibatalkan."
+    );
+    if (!confirmCancel) return;
+
+    try {
+      const res = await fetch("/api/admin/cancel-misc-payment", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ billId })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal membatalkan pembayaran.");
+      }
+      alert("Pembayaran berhasil dibatalkan dan status tagihan dikembalikan menjadi Belum Lunas!");
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Gagal membatalkan pembayaran.");
+    }
+  };
+
+  const handleOpenEditMisc = (bill: any) => {
+    setEditingMiscBill(bill);
+    setEditMiscTitle(bill.title);
+    setEditMiscAmount(String(bill.amount));
+    setIsEditMiscOpen(true);
+  };
+
+  const handleUpdateMiscBill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingMiscBill) return;
+
+    if (!editMiscTitle.trim()) {
+      alert("Judul tagihan tidak boleh kosong.");
+      return;
+    }
+
+    const amountNum = Number(editMiscAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert("Nominal tagihan harus berupa angka positif.");
+      return;
+    }
+
+    try {
+      setIsUpdatingMisc(true);
+      const res = await fetch("/api/admin/update-misc-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          billId: editingMiscBill.id,
+          title: editMiscTitle.trim(),
+          amount: amountNum
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal mengubah detail tagihan.");
+      }
+      alert("Detail tagihan iuran berhasil direvisi!");
+      setIsEditMiscOpen(false);
+      setEditingMiscBill(null);
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Gagal mengubah detail tagihan.");
+    } finally {
+      setIsUpdatingMisc(false);
     }
   };
 
@@ -5093,6 +5177,14 @@ export default function AdminPanel({
                                     </button>
                                     <button
                                       type="button"
+                                      onClick={() => handleOpenEditMisc(bill)}
+                                      className="p-1 text-slate-400 hover:text-indigo-600 rounded-lg border border-slate-200 hover:border-indigo-200 bg-white hover:bg-indigo-50 transition-all cursor-pointer"
+                                      title="Edit Detail Tagihan"
+                                    >
+                                      <Edit size={13} />
+                                    </button>
+                                    <button
+                                      type="button"
                                       onClick={() => handleDeleteMiscBillLocal(bill.id)}
                                       className="p-1 text-slate-400 hover:text-red-600 rounded-lg border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 transition-all cursor-pointer"
                                       title="Hapus Tagihan"
@@ -5101,14 +5193,34 @@ export default function AdminPanel({
                                     </button>
                                   </>
                                 ) : (
-                                  <button
-                                    type="button"
-                                    onClick={() => s && setReceiptToPrint({ type: "misc", detail: bill, student: s })}
-                                    className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 hover:border-slate-300 font-bold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1"
-                                  >
-                                    <Printer size={11} />
-                                    <span>Cetak Bukti</span>
-                                  </button>
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleOpenEditMisc(bill)}
+                                      className="px-2.5 py-1 bg-white hover:bg-indigo-50 text-indigo-600 border border-indigo-250 hover:border-indigo-350 font-bold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1"
+                                      title="Revisi Judul / Detail"
+                                    >
+                                      <Edit size={11} />
+                                      <span>Edit</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => s && setReceiptToPrint({ type: "misc", detail: bill, student: s })}
+                                      className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 hover:border-slate-300 font-bold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1"
+                                    >
+                                      <Printer size={11} />
+                                      <span>Cetak Bukti</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCancelMiscPaymentLocal(bill.id)}
+                                      className="px-2.5 py-1 bg-red-50 hover:bg-red-100 text-red-600 border border-red-200 hover:border-red-300 font-bold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1"
+                                      title="Batalkan Pembayaran"
+                                    >
+                                      <XCircle size={11} />
+                                      <span>Batalkan</span>
+                                    </button>
+                                  </>
                                 )}
                               </div>
                             </td>
@@ -5240,6 +5352,95 @@ export default function AdminPanel({
                         className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
                       >
                         {isSubmittingMisc ? "Menyimpan..." : "Buat Tagihan"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
+
+            {/* Edit/Revision Bill Modal Overlay */}
+            {isEditMiscOpen && editingMiscBill && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4 font-sans text-left">
+                <div className="bg-white rounded-2xl w-full max-w-md border border-slate-150 shadow-2xl overflow-hidden animate-slide-up">
+                  <div className="px-5 py-4 bg-slate-50 border-b border-slate-150 flex justify-between items-center">
+                    <div>
+                      <h4 className="font-extrabold text-slate-800 text-sm">Revisi Detail Tagihan</h4>
+                      <p className="text-[10px] text-slate-400 mt-0.5 font-mono">Ref: {editingMiscBill.id.toUpperCase()}</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setIsEditMiscOpen(false);
+                        setEditingMiscBill(null);
+                      }}
+                      className="text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <form onSubmit={handleUpdateMiscBill} className="p-5 flex flex-col gap-4 text-xs">
+                    <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 flex flex-col gap-1 text-[11px] text-slate-600">
+                      <div>
+                        <strong>Siswa:</strong> {students.find(s => s.id === editingMiscBill.studentId)?.name || "Siswa"}
+                      </div>
+                      <div>
+                        <strong>Status Pembayaran:</strong>{" "}
+                        {editingMiscBill.status === "paid" ? (
+                          <span className="text-emerald-600 font-bold uppercase text-[9px] px-1.5 py-0.5 bg-emerald-50 rounded border border-emerald-150">Lunas</span>
+                        ) : (
+                          <span className="text-orange-600 font-bold uppercase text-[9px] px-1.5 py-0.5 bg-orange-50 rounded border border-orange-150">Belum Lunas</span>
+                        )}
+                      </div>
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-bold text-slate-700">Nama / Judul Iuran:</label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Dana Kemanusiaan, Iuran Wisuda 2026, Seragam Olahraga"
+                        value={editMiscTitle}
+                        onChange={(e) => setEditMiscTitle(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-bold text-slate-700">Nominal Tagihan (Rupiah):</label>
+                      <input
+                        type="number"
+                        placeholder="Contoh: 150000"
+                        value={editMiscAmount}
+                        onChange={(e) => setEditMiscAmount(e.target.value)}
+                        disabled={editingMiscBill.status === "paid"}
+                        className={`w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl font-mono font-bold ${editingMiscBill.status === "paid" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""}`}
+                        required
+                      />
+                      {editingMiscBill.status === "paid" && (
+                        <p className="text-[10px] text-orange-600 leading-tight">
+                          * Nominal tidak dapat diedit karena tagihan sudah lunas. Jika ingin mengubah nominal, silakan batalkan pembayaran terlebih dahulu.
+                        </p>
+                      )}
+                    </div>
+
+                    <div className="flex gap-2.5 mt-4 border-t border-slate-150 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setIsEditMiscOpen(false);
+                          setEditingMiscBill(null);
+                        }}
+                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer text-center"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isUpdatingMisc}
+                        className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1 text-center"
+                      >
+                        {isUpdatingMisc ? "Menyimpan..." : "Simpan Revisi"}
                       </button>
                     </div>
                   </form>

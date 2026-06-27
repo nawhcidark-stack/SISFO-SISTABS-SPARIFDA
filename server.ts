@@ -4240,6 +4240,35 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Update/Edit a miscellaneous bill details (Revisi Detail Tagihan)
+  app.post("/api/admin/update-misc-bill", (req, res) => {
+    const { billId, title, amount } = req.body;
+    const bill = miscBills.find(b => b.id === billId);
+    if (!bill) {
+      return res.status(404).json({ error: "Tagihan tidak ditemukan." });
+    }
+
+    if (!title || !title.trim()) {
+      return res.status(400).json({ error: "Judul tagihan tidak boleh kosong." });
+    }
+
+    const amountNum = Number(amount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      return res.status(400).json({ error: "Nominal tagihan harus berupa angka positif." });
+    }
+
+    if (bill.status === "paid" && bill.amount !== amountNum) {
+      return res.status(400).json({ error: "Nominal tagihan yang sudah dibayar tidak dapat diubah. Silakan batalkan pembayaran terlebih dahulu jika ingin merubah nominal." });
+    }
+
+    // Update fields
+    bill.title = title.trim();
+    bill.amount = amountNum;
+
+    saveState();
+    res.json({ success: true, bill });
+  });
+
   // Pay a miscellaneous bill manually (Teller)
   app.post("/api/admin/pay-misc-manual", (req, res) => {
     const { billId } = req.body;
@@ -4294,6 +4323,74 @@ async function startServer() {
         `Terima kasih atas partisipasi aktif Anda.\n` +
         `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending auto payment WA:", err));
+    }
+
+    saveState();
+    res.json({ success: true, bill });
+  });
+
+  // Cancel/Void a paid miscellaneous bill payment (revert to unpaid)
+  app.post("/api/admin/cancel-misc-payment", (req, res) => {
+    const { billId } = req.body;
+    const bill = miscBills.find(b => b.id === billId);
+    if (!bill) {
+      return res.status(404).json({ error: "Tagihan tidak ditemukan." });
+    }
+    if (bill.status !== "paid") {
+      return res.status(400).json({ error: "Tagihan belum lunas, tidak dapat membatalkan pembayaran." });
+    }
+
+    const student = students.find(s => s.id === bill.studentId);
+    const oldMethod = bill.paymentMethod;
+    const oldOrderId = bill.orderId;
+
+    // Revert status
+    bill.status = "unpaid";
+    delete bill.paidAt;
+    delete bill.paymentMethod;
+    delete bill.orderId;
+
+    // Refund student savings if payment method was Potong Tabungan
+    if (oldMethod === "Potong Tabungan" && student) {
+      student.savingsBalance += bill.amount;
+
+      // Log compensatory savings transaction
+      const refundSavTx: SavingsTransaction = {
+        id: `sav-tx-misc-refund-${Date.now()}`,
+        studentId: student.id,
+        type: "deposit",
+        amount: bill.amount,
+        status: "success",
+        createdAt: new Date().toISOString(),
+        paymentMethod: "Potong Tabungan",
+        orderId: `REFUND-${oldOrderId || Date.now()}`,
+        notes: `[BATAL] Pengembalian dana iuran: ${bill.title}`
+      };
+      savingsTransactions.push(refundSavTx);
+    }
+
+    // Try to find and remove the corresponding TreasurerTransaction
+    const descPart = `Pembayaran ${bill.title}`;
+    const txIndex = treasurerTransactions.findIndex(t => {
+      const descMatch = t.description.toLowerCase().includes(descPart.toLowerCase());
+      const studentMatch = student ? t.description.toLowerCase().includes(student.name.toLowerCase()) : true;
+      return descMatch && studentMatch;
+    });
+    if (txIndex !== -1) {
+      treasurerTransactions.splice(txIndex, 1);
+    }
+
+    // Broadcast notification
+    if (student) {
+      const notification: RealtimeNotification = {
+        id: `notif-misc-cancelled-${Date.now()}`,
+        studentId: bill.studentId,
+        title: `Pembatalan Pembayaran ${bill.title}`,
+        message: `Pembayaran iuran ${bill.title} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIBATALKAN oleh Admin. Status kembali BELUM LUNAS.`,
+        type: "warning",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
     }
 
     saveState();

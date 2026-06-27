@@ -4282,6 +4282,64 @@ async function startServer() {
     res.json({ success: true });
   });
 
+  // Delete miscellaneous bills in bulk (Hapus Massal Tagihan)
+  app.post("/api/admin/delete-misc-bill-bulk", (req, res) => {
+    const { title, billIds } = req.body;
+    
+    if (!title && (!billIds || !Array.isArray(billIds) || billIds.length === 0)) {
+      return res.status(400).json({ error: "Judul tagihan atau daftar ID tagihan harus diisi." });
+    }
+
+    let deletedCount = 0;
+    let skippedPaidCount = 0;
+
+    if (title) {
+      // Delete all UNPAID/PENDING bills with the specified exact title
+      const billsToDelete = miscBills.filter(b => b.title === title);
+      const paidBillsToDelete = billsToDelete.filter(b => b.status === "paid");
+      skippedPaidCount = paidBillsToDelete.length;
+
+      const remainingBills = miscBills.filter(b => !(b.title === title && b.status !== "paid"));
+      const removedCount = miscBills.length - remainingBills.length;
+      
+      miscBills.length = 0;
+      miscBills.push(...remainingBills);
+      deletedCount = removedCount;
+    } else if (billIds && Array.isArray(billIds)) {
+      // Delete specified bill IDs if they are not paid
+      const idsToDelete = new Set(billIds);
+      const remainingBills = miscBills.filter(b => {
+        if (idsToDelete.has(b.id)) {
+          if (b.status === "paid") {
+            skippedPaidCount++;
+            return true; // Keep paid bills
+          } else {
+            deletedCount++;
+            return false; // Remove
+          }
+        }
+        return true; // Keep other bills
+      });
+
+      miscBills.length = 0;
+      miscBills.push(...remainingBills);
+    }
+
+    saveState();
+
+    let message = `Berhasil menghapus massal ${deletedCount} tagihan.`;
+    if (skippedPaidCount > 0) {
+      message += ` Sebanyak ${skippedPaidCount} tagihan berstatus LUNAS dilewati (tidak dihapus).`;
+    }
+
+    res.json({
+      success: true,
+      message,
+      deletedCount,
+      skippedPaidCount
+    });
+  });
+
   // Update/Edit a miscellaneous bill details (Revisi Detail Tagihan)
   app.post("/api/admin/update-misc-bill", (req, res) => {
     const { billId, title, amount, updateAllWithSameTitle } = req.body;

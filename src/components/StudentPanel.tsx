@@ -1865,10 +1865,10 @@ export default function StudentPanel({
                     <div className="flex flex-col gap-4">
                       <h5 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-2">
                         <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
-                        Tagihan Aktif ({studentMiscBills.filter(b => b.status === 'unpaid').length})
+                        Tagihan Aktif ({studentMiscBills.filter(b => b.status === 'unpaid' || b.status === 'pending').length})
                       </h5>
 
-                      {studentMiscBills.filter(b => b.status === 'unpaid').length === 0 ? (
+                      {studentMiscBills.filter(b => b.status === 'unpaid' || b.status === 'pending').length === 0 ? (
                         <div className="p-8 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center flex flex-col items-center justify-center gap-2">
                           <CheckCircle2 size={32} className="text-emerald-500" />
                           <h6 className="font-bold text-slate-700 text-xs mt-1">Lunas / Bebas Tagihan</h6>
@@ -1878,13 +1878,21 @@ export default function StudentPanel({
                         </div>
                       ) : (
                         <div className="flex flex-col gap-3">
-                          {studentMiscBills.filter(b => b.status === 'unpaid').map(bill => {
+                          {studentMiscBills.filter(b => b.status === 'unpaid' || b.status === 'pending').map(bill => {
                             const canPayWithSavings = currentStudent.savingsBalance >= bill.amount;
+                            const isPending = bill.status === 'pending';
                             return (
                               <div key={bill.id} className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-slate-300 transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                                 <div className="flex-1">
                                   <span className="text-[9px] font-mono text-slate-400 block tracking-wider uppercase">Ref: {bill.id.substring(0, 10).toUpperCase()}</span>
-                                  <h6 className="font-bold text-slate-800 text-xs mt-0.5 leading-tight">{bill.title}</h6>
+                                  <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                    <h6 className="font-bold text-slate-800 text-xs leading-tight">{bill.title}</h6>
+                                    {isPending && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
+                                        <Clock size={8} /> Pending
+                                      </span>
+                                    )}
+                                  </div>
                                   <p className="text-[10px] text-slate-500 mt-1">
                                     Dibuat: {new Date(bill.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}
                                   </p>
@@ -1914,10 +1922,14 @@ export default function StudentPanel({
                                       <button
                                         type="button"
                                         onClick={() => onPayMiscSnap && onPayMiscSnap(bill)}
-                                        className="flex-1 sm:flex-none px-2.5 py-1.5 bg-blue-600 hover:bg-blue-750 text-white border border-blue-600 font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                        className={`flex-1 sm:flex-none px-2.5 py-1.5 font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs ${
+                                          isPending
+                                            ? 'bg-amber-500 hover:bg-amber-600 border border-amber-500 text-white shadow-sm'
+                                            : 'bg-blue-600 hover:bg-blue-750 border border-blue-600 text-white shadow-sm'
+                                        }`}
                                       >
                                         <CreditCard size={11} />
-                                        <span>Bayar Online</span>
+                                        <span>{isPending ? 'Lanjutkan' : 'Bayar Online'}</span>
                                       </button>
                                     )}
                                   </div>

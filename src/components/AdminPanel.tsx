@@ -5167,7 +5167,7 @@ export default function AdminPanel({
                         );
                         if (!matchText) return false;
 
-                        if (miscStatusFilter === "unpaid") return bill.status === "unpaid";
+                        if (miscStatusFilter === "unpaid") return bill.status === "unpaid" || bill.status === "pending";
                         if (miscStatusFilter === "paid") return bill.status === "paid";
                         return true;
                       });
@@ -5216,14 +5216,14 @@ export default function AdminPanel({
                                   </>
                                 ) : (
                                   <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-150 rounded-md font-bold text-[9px] uppercase tracking-wider flex items-center gap-1">
-                                    <Clock size={10} /> Belum Lunas
+                                    <Clock size={10} /> {bill.status === "pending" ? "Belum Lunas (Pending)" : "Belum Lunas"}
                                   </span>
                                 )}
                               </div>
                             </td>
                             <td className="px-5 py-4 text-right">
                               <div className="flex justify-end gap-1.5">
-                                {bill.status === "unpaid" ? (
+                                {bill.status === "unpaid" || bill.status === "pending" ? (
                                   <>
                                     <button
                                       type="button"

@@ -549,6 +549,48 @@ let midtransConfig: MidtransConfig = {
   pin: "1234"
 };
 
+// Compress a miscellaneous bill ID to fit within Midtrans' 50-character limit
+function compressMiscBillIdForMidtrans(id: string): string {
+  let result = id;
+  // Replace standard prefixes to shorten
+  if (result.startsWith("misc-std-std-")) {
+    result = "M-S-" + result.slice(13);
+  } else if (result.startsWith("misc-std-")) {
+    result = "M-" + result.slice(9);
+  }
+  
+  // Replace any 13-digit millisecond timestamps starting with 17 or 18 (valid range for years 2023-2030) with base-36 values
+  result = result.replace(/(1[78]\d{11})/g, (match) => {
+    return Number(match).toString(36);
+  });
+  
+  return result;
+}
+
+// Reconstruct the original miscellaneous bill ID from the compressed/shortened version
+function decompressMiscBillIdForMidtrans(id: string): string {
+  let result = id;
+  
+  // Convert 8-character base-36 strings back to 13-digit base-10 timestamps
+  result = result.replace(/([a-z0-9]{8})/g, (match) => {
+    const parsed = parseInt(match, 36);
+    // Ensure it falls within years 2020 to 2035 range
+    if (parsed >= 1577836800000 && parsed <= 2051155200000) {
+      return String(parsed);
+    }
+    return match;
+  });
+  
+  // Restore original prefixes
+  if (result.startsWith("M-S-")) {
+    result = "misc-std-std-" + result.slice(4);
+  } else if (result.startsWith("M-")) {
+    result = "misc-std-" + result.slice(2);
+  }
+  
+  return result;
+}
+
 // Helper to determine tuition SPP amount based on student class/level
 function getSppAmountForClass(className: string): number {
   const cleanClass = (className || "").trim().toUpperCase();
@@ -4519,7 +4561,7 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
-    const shortBillId = bill.id.replace("misc-std-", "M-");
+    const shortBillId = compressMiscBillIdForMidtrans(bill.id);
     const orderId = `MISC-${shortBillId}-${Date.now().toString().slice(-4)}`;
     bill.orderId = orderId;
     bill.status = "pending";
@@ -4555,12 +4597,12 @@ async function startServer() {
         },
         item_details: [
           {
-            id: bill.id,
+            id: compressMiscBillIdForMidtrans(bill.id),
             price: bill.amount,
             quantity: 1,
             name: (() => {
               const baseName = `${bill.title} - ${student.name}`;
-              return baseName.length > 50 ? baseName.substring(0, 47) + "..." : baseName;
+              return baseName.length > 50 ? baseName.substring(0, 45) + "..." : baseName;
             })()
           }
         ]
@@ -4582,7 +4624,16 @@ async function startServer() {
       }
 
       const snapResponse = await response.json();
-      res.json(snapResponse);
+      res.json({
+        token: snapResponse.token,
+        redirectUrl: snapResponse.redirect_url,
+        isSimulated: false,
+        orderId,
+        adminFee: 0,
+        systemMaintenanceFee: 0,
+        baseAmount: bill.amount,
+        totalAmount: bill.amount
+      });
     } catch (error: any) {
       console.error("Error generating Midtrans token for Misc Payment:", error);
       res.status(500).json({ error: error?.message || "Gagal menginisialisasi pembayaran online via Midtrans." });
@@ -6361,7 +6412,7 @@ async function startServer() {
       
       let cleanBillId = billId;
       if (cleanBillId.startsWith("M-")) {
-        cleanBillId = "misc-std-" + cleanBillId.slice(2);
+        cleanBillId = decompressMiscBillIdForMidtrans(cleanBillId);
       }
       
       let bill = miscBills.find(b => b.orderId === order_id || b.id === cleanBillId || b.id === billId);

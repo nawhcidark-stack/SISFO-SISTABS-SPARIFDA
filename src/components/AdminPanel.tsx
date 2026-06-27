@@ -14142,6 +14142,28 @@ export default function AdminPanel({
                 <button
                   type="button"
                   onClick={() => {
+                    setAdminTab("pembayaran_lain");
+                    setSelectedStudent(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-blue-50 rounded-xl text-blue-600 text-lg">
+                    💵
+                  </span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">
+                      Pembayaran Lain-lain
+                    </h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">
+                      Daftar, buat, hapus &amp; kelola tagihan iuran insidental siswa
+                    </p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
                     setAdminTab("config");
                     setShowMoreMenu(false);
                   }}

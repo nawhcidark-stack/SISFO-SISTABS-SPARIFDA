@@ -90,6 +90,18 @@ export interface SavingsTransaction {
   notes?: string;
 }
 
+export interface MiscBill {
+  id: string;
+  studentId: string;
+  title: string;
+  amount: number;
+  status: 'paid' | 'unpaid' | 'pending';
+  createdAt: string;
+  paidAt?: string;
+  paymentMethod?: string;
+  orderId?: string;
+}
+
 export interface RealtimeNotification {
   id: string;
   studentId?: string; // all if undefined

@@ -9,6 +9,7 @@ import {
   AttendanceLog,
   StudentInfractionLog,
   isSppBillOverdue,
+  MiscBill,
 } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 import {
@@ -52,6 +53,9 @@ import {
   Home,
   LayoutGrid,
   Award,
+  Plus,
+  Clock,
+  CheckCircle2,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -262,6 +266,7 @@ interface AdminPanelProps {
   attendanceLogs?: AttendanceLog[];
   scannedStudentNis?: string | null;
   scannedStudentAt?: number | null;
+  miscBills?: MiscBill[];
 }
 
 export default function AdminPanel({
@@ -303,6 +308,7 @@ export default function AdminPanel({
   attendanceLogs = [],
   scannedStudentNis,
   scannedStudentAt,
+  miscBills = []
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [adminTab, setAdminTab] = useState<
@@ -317,6 +323,7 @@ export default function AdminPanel({
     | "alumni"
     | "mutasi"
     | "buku_induk"
+    | "pembayaran_lain"
   >("roster");
 
   useEffect(() => {
@@ -342,6 +349,115 @@ export default function AdminPanel({
       }
     }
   }, [students, selectedStudent?.id]);
+
+  // States for Pembayaran Lain-lain
+  const [isCreateMiscOpen, setIsCreateMiscOpen] = useState(false);
+  const [miscTargetType, setMiscTargetType] = useState<"all" | "class" | "single">("all");
+  const [miscTargetClass, setMiscTargetClass] = useState("");
+  const [miscTargetStudentId, setMiscTargetStudentId] = useState("");
+  const [miscTitle, setMiscTitle] = useState("");
+  const [miscAmount, setMiscAmount] = useState("");
+  const [miscSearch, setMiscSearch] = useState("");
+  const [miscStatusFilter, setMiscStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
+
+  const handleCreateMiscBill = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!miscTitle.trim()) {
+      alert("Judul tagihan tidak boleh kosong.");
+      return;
+    }
+    const amountNum = Number(miscAmount);
+    if (isNaN(amountNum) || amountNum <= 0) {
+      alert("Nominal tagihan harus berupa angka positif.");
+      return;
+    }
+    if (miscTargetType === "class" && !miscTargetClass.trim()) {
+      alert("Target kelas tidak boleh kosong.");
+      return;
+    }
+    if (miscTargetType === "single" && !miscTargetStudentId) {
+      alert("Harap pilih siswa terlebih dahulu.");
+      return;
+    }
+
+    try {
+      setIsSubmittingMisc(true);
+      const payload = {
+        targetType: miscTargetType,
+        targetValue: miscTargetType === "class" ? miscTargetClass.trim() : miscTargetType === "single" ? miscTargetStudentId : "all",
+        title: miscTitle.trim(),
+        amount: amountNum
+      };
+
+      const res = await fetch("/api/admin/create-misc-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal membuat tagihan lain-lain.");
+      }
+      alert(`Berhasil! ${data.count || 0} tagihan baru telah berhasil dibuat.`);
+      setIsCreateMiscOpen(false);
+      setMiscTitle("");
+      setMiscAmount("");
+      setMiscTargetClass("");
+      setMiscTargetStudentId("");
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Terjadi kesalahan saat membuat tagihan.");
+    } finally {
+      setIsSubmittingMisc(false);
+    }
+  };
+
+  const handlePayMiscManualLocal = async (billId: string) => {
+    const confirmPay = window.confirm("Apakah Anda yakin ingin memproses pembayaran TUNAI manual (Teller) untuk tagihan ini?");
+    if (!confirmPay) return;
+
+    try {
+      const res = await fetch("/api/admin/pay-misc-manual", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ billId })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal memproses pembayaran manual.");
+      }
+      alert("Pembayaran manual berhasil dicatat!");
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Gagal memproses pembayaran manual.");
+    }
+  };
+
+  const handleDeleteMiscBillLocal = async (billId: string) => {
+    const confirmDelete = window.confirm("PERINGATAN: Menghapus tagihan ini akan menghapus data tagihan permanen. Apakah Anda yakin?");
+    if (!confirmDelete) return;
+
+    try {
+      const res = await fetch("/api/admin/delete-misc-bill", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ billId })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal menghapus tagihan.");
+      }
+      alert("Tagihan berhasil dihapus.");
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Gagal menghapus tagihan.");
+    }
+  };
+
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
   const [alumniSearch, setAlumniSearch] = useState("");
@@ -980,7 +1096,7 @@ export default function AdminPanel({
   // Printing & Receipt States
   const [printId, setPrintId] = useState<string | null>(null);
   const [receiptToPrint, setReceiptToPrint] = useState<{
-    type: "spp" | "savings" | "consolidated";
+    type: "spp" | "savings" | "consolidated" | "misc";
     detail: any;
     student: Student;
   } | null>(null);
@@ -2799,6 +2915,22 @@ export default function AdminPanel({
           >
             <BellRing size={15} />
             Kirim Notifikasi Real-time
+          </button>
+
+          <button
+            id="admin-menu-pembayaran-lain"
+            onClick={() => {
+              setAdminTab("pembayaran_lain");
+              setSelectedStudent(null);
+            }}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === "pembayaran_lain"
+                ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
+                : "text-slate-600 hover:bg-slate-100"
+            }`}
+          >
+            <Banknote size={15} className="text-blue-500" />
+            Pembayaran Lain-lain
           </button>
 
           <button
@@ -4791,6 +4923,329 @@ export default function AdminPanel({
               onUpdateStudent={onUpdateStudent}
               onRefresh={onRefresh}
             />
+          </div>
+        )}
+
+        {adminTab === "pembayaran_lain" && (
+          <div className="flex flex-col gap-6 w-full animate-fade-in text-left">
+            {/* Header section with Create Button and filters */}
+            <div className="bg-white p-6 rounded-2xl border border-slate-150 flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-lg">Manajemen Pembayaran &amp; Iuran Lain-lain</h3>
+                <p className="text-slate-500 text-xs mt-0.5">
+                  Daftar, buat, hapus, dan kelola tagihan insidental (Wisuda, Pramuka, Seragam, Kegiatan, dll.) serta pembayaran tunai teller.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateMiscOpen(true)}
+                className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all shadow-sm shadow-slate-900/10"
+              >
+                <Plus size={15} />
+                <span>Buat Tagihan Baru</span>
+              </button>
+            </div>
+
+            {/* Filter and Search controls */}
+            <div className="bg-white p-5 rounded-2xl border border-slate-150 flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
+              <div className="relative flex-1 max-w-md">
+                <Search size={15} className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama siswa, NIS, kelas, atau judul tagihan..."
+                  value={miscSearch}
+                  onChange={(e) => setMiscSearch(e.target.value)}
+                  className="w-full pl-10 pr-4 py-2 text-xs border border-slate-200 focus:border-slate-400 bg-slate-50 focus:bg-white rounded-xl focus:outline-none transition-all"
+                />
+              </div>
+
+              <div className="flex items-center gap-2">
+                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status:</span>
+                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => setMiscStatusFilter("all")}
+                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                      miscStatusFilter === "all"
+                        ? "bg-white text-slate-900 shadow-xs"
+                        : "text-slate-500 hover:text-slate-950"
+                    }`}
+                  >
+                    Semua
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMiscStatusFilter("unpaid")}
+                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                      miscStatusFilter === "unpaid"
+                        ? "bg-white text-orange-600 shadow-xs"
+                        : "text-slate-500 hover:text-slate-950"
+                    }`}
+                  >
+                    Belum Lunas
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMiscStatusFilter("paid")}
+                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                      miscStatusFilter === "paid"
+                        ? "bg-white text-emerald-600 shadow-xs"
+                        : "text-slate-500 hover:text-slate-950"
+                    }`}
+                  >
+                    Lunas
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            {/* List and Table */}
+            <div className="bg-white rounded-2xl border border-slate-150 overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full border-collapse text-left">
+                  <thead>
+                    <tr className="bg-slate-50 border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider font-sans">
+                      <th className="px-5 py-3">ID / Siswa</th>
+                      <th className="px-5 py-3">Tagihan &amp; Deskripsi</th>
+                      <th className="px-5 py-3">Nominal</th>
+                      <th className="px-5 py-3">Status / Pembayaran</th>
+                      <th className="px-5 py-3 text-right">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 text-xs">
+                    {(() => {
+                      const filtered = miscBills.filter(bill => {
+                        const s = students.find(st => st.id === bill.studentId);
+                        const matchText = (
+                          bill.title.toLowerCase().includes(miscSearch.toLowerCase()) ||
+                          bill.id.toLowerCase().includes(miscSearch.toLowerCase()) ||
+                          (s?.name || "").toLowerCase().includes(miscSearch.toLowerCase()) ||
+                          (s?.nis || "").toLowerCase().includes(miscSearch.toLowerCase()) ||
+                          (s?.class || "").toLowerCase().includes(miscSearch.toLowerCase())
+                        );
+                        if (!matchText) return false;
+
+                        if (miscStatusFilter === "unpaid") return bill.status === "unpaid";
+                        if (miscStatusFilter === "paid") return bill.status === "paid";
+                        return true;
+                      });
+
+                      if (filtered.length === 0) {
+                        return (
+                          <tr>
+                            <td colSpan={5} className="text-center py-10 text-slate-400">
+                              Tidak ada data tagihan pembayaran lain-lain yang cocok dengan kriteria pencarian Anda.
+                            </td>
+                          </tr>
+                        );
+                      }
+
+                      return filtered.map(bill => {
+                        const s = students.find(st => st.id === bill.studentId);
+                        return (
+                          <tr key={bill.id} className="hover:bg-slate-50/50 transition-colors">
+                            <td className="px-5 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-extrabold text-slate-800">{s?.name || "Siswa Tidak Ditemukan"}</span>
+                                <span className="text-[10px] text-slate-500 font-mono mt-0.5">NIS: {s?.nis || "-"} &bull; Kelas: {s?.class || "-"}</span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="flex flex-col">
+                                <span className="font-bold text-slate-800">{bill.title}</span>
+                                <span className="text-[10px] text-slate-400 font-mono mt-0.5">Ref ID: {bill.id.toUpperCase()}</span>
+                              </div>
+                            </td>
+                            <td className="px-5 py-4">
+                              <span className="font-mono font-bold text-slate-800">Rp {bill.amount.toLocaleString("id-ID")}</span>
+                            </td>
+                            <td className="px-5 py-4">
+                              <div className="flex flex-col items-start gap-1">
+                                {bill.status === "paid" ? (
+                                  <>
+                                    <span className="px-2 py-0.5 bg-emerald-50 text-emerald-700 border border-emerald-150 rounded-md font-bold text-[9px] uppercase tracking-wider flex items-center gap-1">
+                                      <CheckCircle size={10} /> Lunas
+                                    </span>
+                                    {bill.paidAt && (
+                                      <span className="text-[9px] text-slate-400 font-mono">
+                                        Metode: <strong className="uppercase">{bill.paymentMethod || "MANUAL"}</strong> &bull; {new Date(bill.paidAt).toLocaleDateString("id-ID", {day: "numeric", month: "short", year: "numeric"})}
+                                      </span>
+                                    )}
+                                  </>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-orange-50 text-orange-700 border border-orange-150 rounded-md font-bold text-[9px] uppercase tracking-wider flex items-center gap-1">
+                                    <Clock size={10} /> Belum Lunas
+                                  </span>
+                                )}
+                              </div>
+                            </td>
+                            <td className="px-5 py-4 text-right">
+                              <div className="flex justify-end gap-1.5">
+                                {bill.status === "unpaid" ? (
+                                  <>
+                                    <button
+                                      type="button"
+                                      onClick={() => handlePayMiscManualLocal(bill.id)}
+                                      className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-750 text-white font-bold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                                    >
+                                      <CheckCircle size={11} />
+                                      <span>Bayar Tunai</span>
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteMiscBillLocal(bill.id)}
+                                      className="p-1 text-slate-400 hover:text-red-600 rounded-lg border border-slate-200 hover:border-red-200 bg-white hover:bg-red-50 transition-all cursor-pointer"
+                                      title="Hapus Tagihan"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => s && setReceiptToPrint({ type: "misc", detail: bill, student: s })}
+                                    className="px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 hover:border-slate-300 font-bold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1"
+                                  >
+                                    <Printer size={11} />
+                                    <span>Cetak Bukti</span>
+                                  </button>
+                                )}
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      });
+                    })()}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            {/* Create Bill Modal Overlay */}
+            {isCreateMiscOpen && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4 font-sans">
+                <div className="bg-white rounded-2xl w-full max-w-md border border-slate-150 shadow-2xl overflow-hidden animate-slide-up">
+                  <div className="px-5 py-4 bg-slate-50 border-b border-slate-150 flex justify-between items-center">
+                    <h4 className="font-extrabold text-slate-800 text-sm">Buat Tagihan Iuran Baru</h4>
+                    <button
+                      type="button"
+                      onClick={() => setIsCreateMiscOpen(false)}
+                      className="text-slate-400 hover:text-slate-600 font-bold text-sm cursor-pointer"
+                    >
+                      &times;
+                    </button>
+                  </div>
+                  <form onSubmit={handleCreateMiscBill} className="p-5 flex flex-col gap-4 text-xs">
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-bold text-slate-700">Target Distribusi Tagihan:</label>
+                      <div className="flex gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                        <button
+                          type="button"
+                          onClick={() => setMiscTargetType("all")}
+                          className={`flex-1 py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscTargetType === "all" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
+                          }`}
+                        >
+                          Seluruh Siswa
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMiscTargetType("class")}
+                          className={`flex-1 py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscTargetType === "class" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
+                          }`}
+                        >
+                          Per Kelas
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMiscTargetType("single")}
+                          className={`flex-1 py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscTargetType === "single" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
+                          }`}
+                        >
+                          Siswa Tunggal
+                        </button>
+                      </div>
+                    </div>
+
+                    {miscTargetType === "class" && (
+                      <div className="flex flex-col gap-1.5 animate-fade-in">
+                        <label className="font-bold text-slate-700">Nama Kelas Target:</label>
+                        <input
+                          type="text"
+                          placeholder="Contoh: VII-A, VIII-B, IX-C"
+                          value={miscTargetClass}
+                          onChange={(e) => setMiscTargetClass(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl"
+                          required
+                        />
+                      </div>
+                    )}
+
+                    {miscTargetType === "single" && (
+                      <div className="flex flex-col gap-1.5 animate-fade-in">
+                        <label className="font-bold text-slate-700">Pilih Siswa Target:</label>
+                        <select
+                          value={miscTargetStudentId}
+                          onChange={(e) => setMiscTargetStudentId(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-slate-400 focus:outline-none rounded-xl"
+                          required
+                        >
+                          <option value="">-- Pilih Siswa --</option>
+                          {students.map(st => (
+                            <option key={st.id} value={st.id}>
+                              {st.name} (NIS: {st.nis} - Kelas {st.class})
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-bold text-slate-700">Nama / Judul Iuran:</label>
+                      <input
+                        type="text"
+                        placeholder="Contoh: Dana Kemanusiaan, Iuran Wisuda 2026, Seragam Olahraga"
+                        value={miscTitle}
+                        onChange={(e) => setMiscTitle(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-bold text-slate-700">Nominal Tagihan (Rupiah):</label>
+                      <input
+                        type="number"
+                        placeholder="Contoh: 150000"
+                        value={miscAmount}
+                        onChange={(e) => setMiscAmount(e.target.value)}
+                        className="w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl font-mono font-bold"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex gap-2.5 mt-4 border-t border-slate-150 pt-4">
+                      <button
+                        type="button"
+                        onClick={() => setIsCreateMiscOpen(false)}
+                        className="flex-1 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold rounded-xl transition-all cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="submit"
+                        disabled={isSubmittingMisc}
+                        className="flex-1 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-xl transition-all cursor-pointer flex items-center justify-center gap-1"
+                      >
+                        {isSubmittingMisc ? "Menyimpan..." : "Buat Tagihan"}
+                      </button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -11818,6 +12273,13 @@ export default function AdminPanel({
                                 {receiptToPrint.detail.year}
                               </p>
                             </>
+                          ) : receiptToPrint.type === "misc" ? (
+                            <>
+                              <span>{receiptToPrint.detail.title}</span>
+                              <p className="text-[7.5px] text-slate-650 normal-case">
+                                Status: LUNAS (PAID)
+                              </p>
+                            </>
                           ) : (
                             <>
                               <span>
@@ -11884,13 +12346,15 @@ export default function AdminPanel({
                   {((receiptToPrint.type === "spp" &&
                     receiptToPrint.detail.status === "paid") ||
                     receiptToPrint.type === "consolidated" ||
+                    (receiptToPrint.type === "misc" &&
+                      receiptToPrint.detail.status === "paid") ||
                     (receiptToPrint.type === "savings" &&
                       (receiptToPrint.detail.status === "success" ||
                         !receiptToPrint.detail.status ||
                         receiptToPrint.detail.status === "completed"))) && (
                     <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 rotate-12 border-4 border-dashed border-emerald-500/15 rounded-2xl px-6 py-2 pointer-events-none select-none z-0">
                       <span className="font-sans font-black tracking-widest text-[36px] uppercase text-emerald-500/15">
-                        {receiptToPrint.type === "consolidated"
+                        {receiptToPrint.type === "consolidated" || receiptToPrint.type === "misc"
                           ? "LUNAS"
                           : receiptToPrint.type === "spp"
                             ? "LUNAS"
@@ -12046,6 +12510,17 @@ export default function AdminPanel({
                                     "CASH / MANUALLY ENTERED"}
                                 </span>
                               </>
+                            ) : receiptToPrint.type === "misc" ? (
+                              <>
+                                <span className="font-bold text-slate-800 text-xs">
+                                  {receiptToPrint.detail.title}
+                                </span>
+                                <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">
+                                  Pembayaran Iuran Lain-lain &bull; Metode:{" "}
+                                  {receiptToPrint.detail.paymentMethod?.toUpperCase() ||
+                                    "CASH / MANUALLY ENTERED"}
+                                </span>
+                              </>
                             ) : (
                               <>
                                 <span className="font-bold text-slate-800 text-xs">
@@ -12150,6 +12625,8 @@ export default function AdminPanel({
                       {((receiptToPrint.type === "spp" &&
                         receiptToPrint.detail.status === "paid") ||
                         receiptToPrint.type === "consolidated" ||
+                        (receiptToPrint.type === "misc" &&
+                          receiptToPrint.detail.status === "paid") ||
                         (receiptToPrint.type === "savings" &&
                           (receiptToPrint.detail.status === "success" ||
                             !receiptToPrint.detail.status ||

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal } from './types';
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill } from './types';
 import StudentPanel from './components/StudentPanel';
 import AdminPanel from './components/AdminPanel';
 import HomeroomPanel from './components/HomeroomPanel';
@@ -49,6 +49,7 @@ export default function App() {
 
   // School data states
   const [studentsList, setStudentsList] = useState<Student[]>([]);
+  const [miscBillsList, setMiscBillsList] = useState<MiscBill[]>([]);
   const [currentStudent, setCurrentStudent] = useState<Student | null>(null);
 
   const currentStudentRef = useRef<Student | null>(null);
@@ -502,10 +503,23 @@ export default function App() {
         console.error("Gagal memuat guru mapel", e);
       }
 
+      await fetchMiscBills();
       setIsLoading(false);
     } catch (err) {
       console.error('Failed to boot initial data', err);
       setIsLoading(false);
+    }
+  };
+
+  const fetchMiscBills = async () => {
+    try {
+      const res = await fetch('/api/misc-bills');
+      if (res.ok) {
+        const data = await res.json();
+        setMiscBillsList(data);
+      }
+    } catch (err) {
+      console.error("Gagal memuat tagihan lain-lain:", err);
     }
   };
 
@@ -519,6 +533,7 @@ export default function App() {
         // Fetch all student bills and total transactions for admin bookkeeping roster
         const bRes = await fetch('/api/admin/all-bills');
         const tRes = await fetch('/api/admin/all-transactions');
+        await fetchMiscBills();
         if (bRes.ok && tRes.ok) {
           const bData = await bRes.json();
           const tData = await tRes.json();
@@ -536,6 +551,7 @@ export default function App() {
         }
       } else {
         const res = await fetch(`/api/students/${studentId}`);
+        await fetchMiscBills();
         if (res.ok) {
           const data = await res.json();
           setCurrentStudent(data.student);
@@ -774,6 +790,41 @@ export default function App() {
       if (role === 'admin') {
         setAdminSppBillToPrintCandidate(bill.id);
       }
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
+      setIsLoading(false);
+    }
+  };
+
+  const handlePayMiscSnap = async (bill: MiscBill) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch('/api/pay-misc-snap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billId: bill.id, origin: window.location.origin })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal memanggil API Pembayaran Lain-lain.');
+      }
+
+      const payData = await res.json();
+      setPayToken(payData.token);
+      setPayOrderId(payData.orderId);
+      setPayAmount(payData.totalAmount || bill.amount);
+      setPayItemName(bill.title);
+      setPayIsSimulated(payData.isSimulated);
+
+      const targetStudent = studentsList.find(s => s.id === bill.studentId) || currentStudent;
+      setPayStudentName(targetStudent?.name || "Siswa");
+      setPayStudentNis(targetStudent?.nis || "-");
+      setPayStudentClass(targetStudent?.class || "-");
+      
+      setIsLoading(false);
+      setIsPayModalOpen(true);
     } catch (err: any) {
       console.error(err);
       alert(err.message || 'Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
@@ -2128,6 +2179,8 @@ export default function App() {
             notifications={globalNotifications}
             onLogout={handleLogout}
             midtransStatus={sysStatus}
+            miscBills={miscBillsList}
+            onPayMiscSnap={handlePayMiscSnap}
           />
         ) : role === 'homeroom' ? (
           <HomeroomPanel
@@ -2228,6 +2281,7 @@ export default function App() {
             onAutoGenerateSubjectTeachers={handleAutoGenerateSubjectTeachers}
             onLogout={handleLogout}
             attendanceLogs={attendanceList}
+            miscBills={miscBillsList}
           />
         )}
       </main>

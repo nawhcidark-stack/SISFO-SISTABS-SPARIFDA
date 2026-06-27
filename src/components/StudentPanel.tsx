@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 
@@ -79,6 +79,8 @@ interface StudentPanelProps {
     chargeFeesToUser?: boolean;
   } | null;
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
+  miscBills?: MiscBill[];
+  onPayMiscSnap?: (bill: MiscBill) => void;
 }
 
 export default function StudentPanel({
@@ -99,9 +101,11 @@ export default function StudentPanel({
   notifications = [],
   onLogout,
   midtransStatus,
-  onUpdateStudent
+  onUpdateStudent,
+  miscBills = [],
+  onPayMiscSnap
 }: StudentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'absensi' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
+  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -797,6 +801,44 @@ export default function StudentPanel({
   const unpaidBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'unpaid').length, [filteredBills]);
   const paidBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'paid').length, [filteredBills]);
 
+  const studentMiscBills = useMemo(() => {
+    return miscBills.filter(b => b.studentId === currentStudent?.id);
+  }, [miscBills, currentStudent]);
+
+  const [miscSavingsPayingId, setMiscSavingsPayingId] = useState<string | null>(null);
+  const [miscSavingsError, setMiscSavingsError] = useState<string>('');
+
+  const handlePayMiscWithSavingsLocal = async (bill: MiscBill) => {
+    if (!currentStudent) return;
+    if (currentStudent.savingsBalance < bill.amount) {
+      alert('Maaf, saldo tabungan Anda tidak mencukupi untuk membayar tagihan ini.');
+      return;
+    }
+    const confirmPay = window.confirm(`Apakah Anda yakin ingin membayar "${bill.title}" sebesar Rp ${bill.amount.toLocaleString('id-ID')} dengan memotong saldo Tabungan Anda?`);
+    if (!confirmPay) return;
+
+    try {
+      setMiscSavingsPayingId(bill.id);
+      setMiscSavingsError('');
+      const res = await fetch('/api/student/pay-misc-savings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billId: bill.id, studentId: currentStudent.id })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal memproses pembayaran via tabungan.');
+      }
+      alert('Pembayaran berhasil! Saldo tabungan Anda telah terpotong.');
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Gagal memproses pembayaran.');
+    } finally {
+      setMiscSavingsPayingId(null);
+    }
+  };
+
   const handleWithdrawSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const amount = Number(withdrawAmount);
@@ -1129,6 +1171,25 @@ export default function StudentPanel({
                     <Wallet className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
                   </div>
                   <span className="hidden md:inline">Metode Tabungan & Setoran</span>
+                </button>
+                <button
+                  id="tab-pembayaran-lain"
+                  onClick={() => setActiveTab('pembayaran_lain')}
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none ${
+                    activeTab === 'pembayaran_lain'
+                      ? 'border-blue-600 text-blue-705 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-blue-600'
+                  }`}
+                  title="Pembayaran Lain-lain"
+                >
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'pembayaran_lain'
+                      ? 'bg-blue-100 text-blue-705 shadow-xs ring-1 ring-blue-200/50'
+                      : 'bg-blue-50/50 text-blue-400/80 hover:bg-blue-100/50 hover:text-blue-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <Banknote className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Pembayaran Lain-lain</span>
                 </button>
                 <button
                   id="tab-absensi"
@@ -1782,6 +1843,141 @@ export default function StudentPanel({
                 )}
               </div>
                 </>
+              )}
+              
+              {activeTab === 'pembayaran_lain' && currentStudent && (
+                <div className="flex flex-col gap-6 animate-fade-in text-left">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 pb-4">
+                    <div>
+                      <h4 className="font-extrabold text-slate-900 text-sm">Pembayaran &amp; Iuran Lain-lain</h4>
+                      <p className="text-slate-500 text-xs mt-0.5">
+                        Kelola, pantau, dan lunasi iuran sekolah lainnya (Wisuda, Pramuka, Study Tour, Seragam, dll.) secara instan.
+                      </p>
+                    </div>
+                    <div className="text-[11px] font-bold text-slate-650 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-lg flex items-center gap-2">
+                      <Wallet size={13} className="text-emerald-600" />
+                      <span>Saldo Tabungan Anda: <strong className="text-emerald-700">Rp {currentStudent.savingsBalance.toLocaleString('id-ID')}</strong></span>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    {/* SECTION 1: UNPAID BILLS */}
+                    <div className="flex flex-col gap-4">
+                      <h5 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-orange-500 animate-pulse"></span>
+                        Tagihan Aktif ({studentMiscBills.filter(b => b.status === 'unpaid').length})
+                      </h5>
+
+                      {studentMiscBills.filter(b => b.status === 'unpaid').length === 0 ? (
+                        <div className="p-8 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center flex flex-col items-center justify-center gap-2">
+                          <CheckCircle2 size={32} className="text-emerald-500" />
+                          <h6 className="font-bold text-slate-700 text-xs mt-1">Lunas / Bebas Tagihan</h6>
+                          <p className="text-[10px] text-slate-500 max-w-xs leading-normal">
+                            Alhamdulillah! Seluruh tagihan iuran lain-lain Anda telah lunas diselesaikan. Terima kasih atas partisipasi Anda.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {studentMiscBills.filter(b => b.status === 'unpaid').map(bill => {
+                            const canPayWithSavings = currentStudent.savingsBalance >= bill.amount;
+                            return (
+                              <div key={bill.id} className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-slate-300 transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                <div className="flex-1">
+                                  <span className="text-[9px] font-mono text-slate-400 block tracking-wider uppercase">Ref: {bill.id.substring(0, 10).toUpperCase()}</span>
+                                  <h6 className="font-bold text-slate-800 text-xs mt-0.5 leading-tight">{bill.title}</h6>
+                                  <p className="text-[10px] text-slate-500 mt-1">
+                                    Dibuat: {new Date(bill.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})}
+                                  </p>
+                                </div>
+                                <div className="flex flex-col items-end gap-2 self-stretch sm:self-auto shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-100">
+                                  <span className="font-mono font-bold text-slate-800 text-xs">Rp {bill.amount.toLocaleString('id-ID')}</span>
+                                  
+                                  <div className="flex gap-1.5 w-full sm:w-auto">
+                                    {/* Pay with Savings option */}
+                                    <button
+                                      type="button"
+                                      disabled={!canPayWithSavings || miscSavingsPayingId === bill.id}
+                                      onClick={() => handlePayMiscWithSavingsLocal(bill)}
+                                      className={`flex-1 sm:flex-none px-2.5 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 border ${
+                                        canPayWithSavings
+                                          ? 'bg-emerald-50 hover:bg-emerald-600 border-emerald-200 text-emerald-700 hover:text-white shadow-2xs'
+                                          : 'bg-slate-50 border-slate-200 text-slate-400 cursor-not-allowed'
+                                      }`}
+                                      title={canPayWithSavings ? 'Bayar langsung menggunakan saldo tabungan siswa' : 'Saldo tabungan tidak mencukupi'}
+                                    >
+                                      <Wallet size={11} />
+                                      <span>Potong Tabungan</span>
+                                    </button>
+
+                                    {/* Pay with Midtrans Option */}
+                                    {!midtransStatus?.isDisabled && (
+                                      <button
+                                        type="button"
+                                        onClick={() => onPayMiscSnap && onPayMiscSnap(bill)}
+                                        className="flex-1 sm:flex-none px-2.5 py-1.5 bg-blue-600 hover:bg-blue-750 text-white border border-blue-600 font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs"
+                                      >
+                                        <CreditCard size={11} />
+                                        <span>Bayar Online</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* SECTION 2: PAID BILLS HISTORY */}
+                    <div className="flex flex-col gap-4">
+                      <h5 className="font-bold text-slate-800 text-xs uppercase tracking-wider flex items-center gap-2">
+                        <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+                        Riwayat Pembayaran Lunas ({studentMiscBills.filter(b => b.status === 'paid').length})
+                      </h5>
+
+                      {studentMiscBills.filter(b => b.status === 'paid').length === 0 ? (
+                        <div className="p-8 rounded-xl border border-dashed border-slate-200 bg-slate-50/50 text-center flex flex-col items-center justify-center gap-2">
+                          <History size={32} className="text-slate-300" />
+                          <h6 className="font-bold text-slate-500 text-xs mt-1">Belum Ada Riwayat</h6>
+                          <p className="text-[10px] text-slate-500 max-w-xs leading-normal">
+                            Belum ada riwayat pembayaran lunas untuk iuran atau dana pembangunan lainnya.
+                          </p>
+                        </div>
+                      ) : (
+                        <div className="flex flex-col gap-3">
+                          {studentMiscBills.filter(b => b.status === 'paid').map(bill => (
+                            <div key={bill.id} className="p-4 rounded-xl border border-slate-250 bg-slate-50/50 hover:border-slate-350 transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                              <div className="flex-1">
+                                <span className="text-[9px] font-mono text-slate-400 block tracking-wider uppercase">Ref: {bill.id.substring(0, 10).toUpperCase()}</span>
+                                <h6 className="font-bold text-slate-800 text-xs mt-0.5 leading-tight">{bill.title}</h6>
+                                <p className="text-[9px] text-slate-500 mt-1 flex flex-wrap gap-x-2 gap-y-1">
+                                  <span>Lunas: {bill.paidAt ? new Date(bill.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}</span>
+                                  <span>&bull;</span>
+                                  <span>Metode: <strong className="text-slate-650 uppercase">{bill.paymentMethod || 'MANUAL'}</strong></span>
+                                </p>
+                              </div>
+                              <div className="flex flex-col items-end gap-2 self-stretch sm:self-auto shrink-0 border-t sm:border-t-0 pt-2 sm:pt-0 border-slate-150">
+                                <span className="font-mono font-extrabold text-emerald-700 text-xs flex items-center gap-1.5 bg-emerald-50 border border-emerald-150 px-2 py-0.5 rounded-md">
+                                  <CheckCircle2 size={11} /> Rp {bill.amount.toLocaleString('id-ID')}
+                                </span>
+                                
+                                <button
+                                  type="button"
+                                  onClick={() => setReceiptToPrint({ type: 'misc', detail: bill, student: currentStudent })}
+                                  className="w-full sm:w-auto px-2.5 py-1 bg-white hover:bg-slate-100 text-slate-700 border border-slate-200 hover:border-slate-300 font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1"
+                                >
+                                  <Printer size={11} />
+                                  <span>Cetak Bukti</span>
+                                </button>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
               )}
               
               {activeTab === 'absensi' && (

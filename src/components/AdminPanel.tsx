@@ -368,6 +368,7 @@ export default function AdminPanel({
   const [editMiscTitle, setEditMiscTitle] = useState("");
   const [editMiscAmount, setEditMiscAmount] = useState("");
   const [isUpdatingMisc, setIsUpdatingMisc] = useState(false);
+  const [updateAllWithSameTitle, setUpdateAllWithSameTitle] = useState(false);
 
   const handleCreateMiscBill = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -497,6 +498,7 @@ export default function AdminPanel({
     setEditingMiscBill(bill);
     setEditMiscTitle(bill.title);
     setEditMiscAmount(String(bill.amount));
+    setUpdateAllWithSameTitle(false);
     setIsEditMiscOpen(true);
   };
 
@@ -523,14 +525,15 @@ export default function AdminPanel({
         body: JSON.stringify({
           billId: editingMiscBill.id,
           title: editMiscTitle.trim(),
-          amount: amountNum
+          amount: amountNum,
+          updateAllWithSameTitle
         })
       });
       const data = await res.json();
       if (!res.ok) {
         throw new Error(data.error || "Gagal mengubah detail tagihan.");
       }
-      alert("Detail tagihan iuran berhasil direvisi!");
+      alert(data.message || "Detail tagihan iuran berhasil direvisi!");
       setIsEditMiscOpen(false);
       setEditingMiscBill(null);
       onRefresh();
@@ -5413,14 +5416,36 @@ export default function AdminPanel({
                         placeholder="Contoh: 150000"
                         value={editMiscAmount}
                         onChange={(e) => setEditMiscAmount(e.target.value)}
-                        disabled={editingMiscBill.status === "paid"}
-                        className={`w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl font-mono font-bold ${editingMiscBill.status === "paid" ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""}`}
+                        disabled={editingMiscBill.status === "paid" && !updateAllWithSameTitle}
+                        className={`w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl font-mono font-bold ${(editingMiscBill.status === "paid" && !updateAllWithSameTitle) ? "bg-slate-100 text-slate-400 cursor-not-allowed" : ""}`}
                         required
                       />
-                      {editingMiscBill.status === "paid" && (
+                      {editingMiscBill.status === "paid" && !updateAllWithSameTitle && (
                         <p className="text-[10px] text-orange-600 leading-tight">
-                          * Nominal tidak dapat diedit karena tagihan sudah lunas. Jika ingin mengubah nominal, silakan batalkan pembayaran terlebih dahulu.
+                          * Nominal tidak dapat diedit karena tagihan ini sudah lunas. Jika ingin mengubah nominal, silakan batalkan pembayaran terlebih dahulu atau aktifkan opsi Revisi Massal di bawah.
                         </p>
+                      )}
+                    </div>
+
+                    <div className="bg-indigo-50/60 p-3.5 rounded-xl border border-indigo-100 flex flex-col gap-2 mt-1">
+                      <label className="flex items-start gap-2.5 cursor-pointer select-none">
+                        <input
+                          type="checkbox"
+                          checked={updateAllWithSameTitle}
+                          onChange={(e) => setUpdateAllWithSameTitle(e.target.checked)}
+                          className="mt-0.5 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer h-3.5 w-3.5"
+                        />
+                        <div className="flex flex-col gap-0.5 text-left">
+                          <span className="font-bold text-slate-800 text-[11px]">Revisi Massal (Seluruh Siswa)</span>
+                          <span className="text-[10px] text-slate-500 leading-tight">
+                            Terapkan perubahan ini ke semua siswa yang memiliki tagihan dengan judul <strong className="text-indigo-700">"{editingMiscBill.title}"</strong>.
+                          </span>
+                        </div>
+                      </label>
+                      {updateAllWithSameTitle && (
+                        <div className="text-[9.5px] text-indigo-600 border-t border-indigo-150 pt-1.5 leading-tight font-medium">
+                          <strong>Catatan Keamanan Kas:</strong> Nominal tagihan siswa yang sudah lunas tidak akan terpengaruh demi ketepatan pencatatan bendahara. Namun, judul tagihan mereka akan tetap disesuaikan agar seragam.
+                        </div>
                       )}
                     </div>
 

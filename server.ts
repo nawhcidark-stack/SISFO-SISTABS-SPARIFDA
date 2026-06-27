@@ -4242,7 +4242,7 @@ async function startServer() {
 
   // Update/Edit a miscellaneous bill details (Revisi Detail Tagihan)
   app.post("/api/admin/update-misc-bill", (req, res) => {
-    const { billId, title, amount } = req.body;
+    const { billId, title, amount, updateAllWithSameTitle } = req.body;
     const bill = miscBills.find(b => b.id === billId);
     if (!bill) {
       return res.status(404).json({ error: "Tagihan tidak ditemukan." });
@@ -4257,16 +4257,45 @@ async function startServer() {
       return res.status(400).json({ error: "Nominal tagihan harus berupa angka positif." });
     }
 
-    if (bill.status === "paid" && bill.amount !== amountNum) {
+    if (!updateAllWithSameTitle && bill.status === "paid" && bill.amount !== amountNum) {
       return res.status(400).json({ error: "Nominal tagihan yang sudah dibayar tidak dapat diubah. Silakan batalkan pembayaran terlebih dahulu jika ingin merubah nominal." });
     }
 
-    // Update fields
-    bill.title = title.trim();
-    bill.amount = amountNum;
+    const originalTitle = bill.title;
+    const newTitleClean = title.trim();
 
-    saveState();
-    res.json({ success: true, bill });
+    if (updateAllWithSameTitle) {
+      // Bulk update all bills sharing the same original title
+      let unpaidCount = 0;
+      let paidCount = 0;
+
+      miscBills.forEach(b => {
+        if (b.title === originalTitle) {
+          if (b.status === "unpaid") {
+            b.title = newTitleClean;
+            b.amount = amountNum;
+            unpaidCount++;
+          } else if (b.status === "paid") {
+            // For paid bills, we ONLY update the title for consistency, never change the amount already paid
+            b.title = newTitleClean;
+            paidCount++;
+          }
+        }
+      });
+
+      saveState();
+      return res.json({
+        success: true,
+        message: `Berhasil memperbarui ${unpaidCount + paidCount} tagihan dengan judul "${originalTitle}" (Unpaid: ${unpaidCount}, Paid: ${paidCount}).`,
+        bill
+      });
+    } else {
+      // Single update
+      bill.title = newTitleClean;
+      bill.amount = amountNum;
+      saveState();
+      return res.json({ success: true, bill });
+    }
   });
 
   // Pay a miscellaneous bill manually (Teller)

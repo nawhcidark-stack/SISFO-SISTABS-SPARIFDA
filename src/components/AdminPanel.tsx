@@ -665,6 +665,53 @@ export default function AdminPanel({
     document.body.removeChild(link);
   };
 
+  const handleExportTeachers = (type: "homeroom" | "subject") => {
+    let headers = "";
+    let rows: string[] = [];
+    let filename = "";
+
+    if (type === "homeroom") {
+      headers = "username,nama,kelas,password\n";
+      rows = homerooms.map((h) => {
+        const cleanName =
+          h.name.includes(",") || h.name.includes('"')
+            ? `"${h.name.replace(/"/g, '""')}"`
+            : h.name;
+        const cleanClassName =
+          h.className.includes(",") || h.className.includes('"')
+            ? `"${h.className.replace(/"/g, '""')}"`
+            : h.className;
+        return `${h.username},${cleanName},${cleanClassName},${h.password || ""}`;
+      });
+      filename = `data_wali_kelas_update_massal_${new Date().toISOString().split("T")[0]}.csv`;
+    } else {
+      headers = "username,nama,mapel,password\n";
+      rows = subjectTeachers.map((s) => {
+        const cleanName =
+          s.name.includes(",") || s.name.includes('"')
+            ? `"${s.name.replace(/"/g, '""')}"`
+            : s.name;
+        const cleanSubject =
+          s.subject.includes(",") || s.subject.includes('"')
+            ? `"${s.subject.replace(/"/g, '""')}"`
+            : s.subject;
+        return `${s.username},${cleanName},${cleanSubject},${s.password || ""}`;
+      });
+      filename = `data_guru_mapel_update_massal_${new Date().toISOString().split("T")[0]}.csv`;
+    }
+
+    const blob = new Blob([headers + rows.join("\n")], {
+      type: "text/csv;charset=utf-8;",
+    });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleTeacherCSVUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -9714,7 +9761,15 @@ export default function AdminPanel({
                   memberikan otorisasi presensi harian siswa.
                 </p>
               </div>
-              <div>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportTeachers("homeroom")}
+                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-lg text-xs font-bold hover:shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Download size={13} />
+                  <span>Ekspor Wali Kelas (CSV)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -10085,6 +10140,14 @@ export default function AdminPanel({
                 </p>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleExportTeachers("subject")}
+                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-lg text-xs font-bold hover:shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                >
+                  <Download size={13} />
+                  <span>Ekspor Guru Mapel (CSV)</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -14023,34 +14086,59 @@ export default function AdminPanel({
 
               <div className="p-6 overflow-y-auto flex-1 flex flex-col gap-6 text-xs">
                 {/* 1. Template & Guide section */}
-                <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
-                  <div className="flex-1">
-                    <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider mb-1">
-                      Unduh Template{" "}
-                      {importTeacherType === "homeroom"
-                        ? "Wali Kelas"
-                        : "Guru Mapel"}
-                    </h4>
-                    <p className="text-slate-500 leading-relaxed">
-                      Template sudah disertai dengan baris data contoh (sample
-                      input) agar Anda dapat memahami format yang valid. Kolom
-                      bertanda{" "}
-                      <span className="font-bold text-amber-600">username</span>{" "}
-                      bersifat unik (tidak boleh duplikat). Kolom{" "}
-                      <span className="font-bold text-amber-600">password</span>{" "}
-                      opsional (bila kosong, sandi default akan dibuat).
-                    </p>
+                <div className="flex flex-col gap-4">
+                  <div className="bg-slate-50 border border-slate-200 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="flex-1 text-left">
+                      <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider mb-1">
+                        Unduh Template{" "}
+                        {importTeacherType === "homeroom"
+                          ? "Wali Kelas"
+                          : "Guru Mapel"}
+                      </h4>
+                      <p className="text-slate-500 leading-relaxed">
+                        Template sudah disertai dengan baris data contoh (sample
+                        input) agar Anda dapat memahami format yang valid. Kolom
+                        bertanda{" "}
+                        <span className="font-bold text-amber-600">username</span>{" "}
+                        bersifat unik (tidak boleh duplikat). Kolom{" "}
+                        <span className="font-bold text-amber-600">password</span>{" "}
+                        opsional (bila kosong, sandi default akan dibuat).
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() =>
+                        handleDownloadTeacherTemplate(importTeacherType)
+                      }
+                      className="shrink-0 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg font-bold hover:shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download size={14} />
+                      <span>Unduh Template CSV</span>
+                    </button>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleDownloadTeacherTemplate(importTeacherType)
-                    }
-                    className="shrink-0 px-4 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-700 text-white rounded-lg font-bold hover:shadow-md transition flex items-center gap-1.5 cursor-pointer"
-                  >
-                    <Download size={14} />
-                    <span>Unduh Template CSV</span>
-                  </button>
+
+                  <div className="bg-emerald-50/55 border border-emerald-150 rounded-xl p-4 flex flex-col sm:flex-row justify-between items-center gap-4">
+                    <div className="flex-1 text-left">
+                      <h4 className="font-extrabold text-emerald-800 text-xs uppercase tracking-wider mb-1">
+                        Ekspor Data Aktif Saat Ini
+                      </h4>
+                      <p className="text-emerald-700 leading-relaxed">
+                        Ekspor data bapak/ibu{" "}
+                        {importTeacherType === "homeroom"
+                          ? "Wali Kelas"
+                          : "Guru Mapel"}{" "}
+                        yang aktif saat ini ke format CSV. Anda dapat mengedit nama, kelas, mata pelajaran, atau kata sandi langsung pada file tersebut, lalu mengunggahnya kembali di bawah untuk melakukan <strong>Update Massal</strong>.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleExportTeachers(importTeacherType)}
+                      className="shrink-0 px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-lg font-bold hover:shadow-md transition flex items-center gap-1.5 cursor-pointer"
+                    >
+                      <Download size={14} />
+                      <span>Ekspor Data Aktif (CSV)</span>
+                    </button>
+                  </div>
                 </div>
 
                 {/* 2. File Input & Area */}

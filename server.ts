@@ -6386,9 +6386,334 @@ async function startServer() {
           return res.json({ success: true, message: "Transaksi sudah diproses sebelumnya." });
         }
       }
+    } else if (orderId.startsWith("MISC-")) {
+      const middle = orderId.slice(5);
+      const lastHyphenIndex = middle.lastIndexOf("-");
+      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+      
+      let cleanBillId = billId;
+      if (cleanBillId.startsWith("M-")) {
+        cleanBillId = decompressMiscBillIdForMidtrans(cleanBillId);
+      }
+      
+      const bill = miscBills.find(b => b.orderId === orderId || b.id === cleanBillId || b.id === billId);
+      if (bill) {
+        if (bill.status !== "paid") {
+          bill.status = "paid";
+          bill.paidAt = new Date().toISOString();
+          bill.paymentMethod = paymentType || "Midtrans Simulator (E-Wallet/Transfer)";
+          
+          affectedStudent = students.find(s => s.id === bill.studentId) || null;
+          
+          // Log as Treasurer transaction!
+          const newTx: TreasurerTransaction = {
+            id: `tx-misc-${Date.now()}`,
+            type: "incoming",
+            category: "Operasional",
+            amount: bill.amount,
+            description: `Pembayaran ${bill.title} (Midtrans) - ${affectedStudent?.name || ""} (${affectedStudent?.nis || ""})`,
+            date: new Date().toISOString().split("T")[0],
+            source: "custom",
+            studentName: affectedStudent?.name,
+            nis: affectedStudent?.nis,
+            createdBy: "Midtrans Simulator"
+          };
+          treasurerTransactions.push(newTx);
+
+          title = `Pembayaran ${bill.title} Lunas`;
+          message = `Pembayaran ${bill.title} ${affectedStudent?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} via Midtrans BERHASIL divalidasi secara instan!`;
+
+          const notification: RealtimeNotification = {
+            id: `notif-misc-sim-${Date.now()}`,
+            studentId: bill.studentId,
+            title,
+            message,
+            type: "payment",
+            createdAt: new Date().toISOString()
+          };
+          broadcastNotification(notification);
+
+          // Send automated WA
+          if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && affectedStudent && affectedStudent.phone) {
+            const waMsg = `Yth. Orang Tua / Wali Siswa dari *${affectedStudent.name}* (NIS: ${affectedStudent.nis}).\n\n` +
+              `📢 *KUITANSI PEMBAYARAN ONLINE*\n` +
+              `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL diselesaikan secara online via Midtrans.\n\n` +
+              `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
+              `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+              `• Status: *LUNAS (PAID)*\n\n` +
+              `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+            sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online misc payment WA:", err));
+          }
+
+          saveState();
+          return res.json({ success: true, type: "misc", bill, student: affectedStudent });
+        } else {
+          return res.json({ success: true, message: "Tagihan sudah lunas." });
+        }
+      }
     }
 
     res.status(404).json({ error: "Order ID tidak ditemukan atau telah diproses." });
+  });
+
+  // Manual Check Midtrans Status Endpoint (checks status directly from Midtrans API)
+  app.post("/api/check-midtrans-status", async (req, res) => {
+    const { orderId } = req.body;
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID harus dicantumkan." });
+    }
+
+    const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
+    if (!hasMidtrans) {
+      return res.status(400).json({ error: "Kunci Midtrans belum diatur oleh Administrator sekolah." });
+    }
+
+    try {
+      const authHeader = Buffer.from(`${midtransConfig.serverKey}:`).toString("base64");
+      const baseUrl = midtransConfig.isProduction 
+        ? "https://api.midtrans.com/v2" 
+        : "https://api.sandbox.midtrans.com/v2";
+      
+      const url = `${baseUrl}/${orderId}/status`;
+
+      const response = await fetch(url, {
+        method: "GET",
+        headers: {
+          "Accept": "application/json",
+          "Content-Type": "application/json",
+          "Authorization": `Basic ${authHeader}`
+        }
+      });
+
+      if (!response.ok) {
+        if (response.status === 404) {
+          return res.status(404).json({ error: "Transaksi belum tercatat di Midtrans. Harap lakukan pembayaran terlebih dahulu." });
+        }
+        const errorText = await response.text();
+        throw new Error(`Midtrans API returned status ${response.status}: ${errorText}`);
+      }
+
+      const statusData = await response.json();
+      const { transaction_status, payment_type, gross_amount, fraud_status } = statusData;
+
+      const isSettlement = transaction_status === "settlement" || transaction_status === "capture";
+
+      let isHandled = false;
+      let updatedEntity: any = null;
+      let studentEntity: Student | null = null;
+      let updateType = "";
+
+      if (orderId.startsWith("SPP-")) {
+        const middle = orderId.slice(4);
+        const lastHyphenIndex = middle.lastIndexOf("-");
+        const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+        
+        let cleanBillId = billId;
+        if (cleanBillId.startsWith("B-")) {
+          cleanBillId = "bill-std-" + cleanBillId.slice(2);
+        }
+        
+        let bill = sppBills.find(b => b.orderId === orderId || b.id === cleanBillId || b.id === billId);
+        if (!bill) {
+          const monthMap: { [key: string]: string } = {
+            "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
+            "mei": "Mei", "jun": "Juni", "jul": "Juli", "agu": "Agustus",
+            "sep": "September", "okt": "Oktober", "nov": "November", "des": "Desember"
+          };
+          for (const [short, full] of Object.entries(monthMap)) {
+            const searchPattern = `-${short}-`;
+            if (cleanBillId.toLowerCase().includes(searchPattern)) {
+              const index = cleanBillId.toLowerCase().indexOf(searchPattern);
+              const originalPart = cleanBillId.substring(index + 1, index + 1 + short.length);
+              const expandedBillId = cleanBillId.replace(`-${originalPart}-`, `-${full}-`);
+              bill = sppBills.find(b => b.id === expandedBillId);
+              if (bill) break;
+            }
+          }
+        }
+
+        if (bill) {
+          studentEntity = students.find(s => s.id === bill.studentId) || null;
+          if (isSettlement && bill.status !== "paid") {
+            bill.status = "paid";
+            bill.paidAt = new Date().toISOString();
+            bill.paymentMethod = `Midtrans (${payment_type || 'Online'})`;
+            if (bill.orderId !== orderId) {
+              bill.orderId = orderId;
+            }
+            isHandled = true;
+
+            const notification: RealtimeNotification = {
+              id: `notif-spp-check-${Date.now()}`,
+              studentId: bill.studentId,
+              title: "Pembayaran SPP Lunas (Verifikasi)",
+              message: `Pembayaran SPP ${studentEntity?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} via ${payment_type} divalidasi secara manual.`,
+              type: "payment",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+
+            if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && studentEntity && studentEntity.phone) {
+              const waMsg = `Yth. Orang Tua / Wali Siswa dari *${studentEntity.name}* (NIS: ${studentEntity.nis}).\n\n` +
+                `📢 *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
+                `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${payment_type} telah BERHASIL divalidasi.\n\n` +
+                `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
+                `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+                `• Status: *LUNAS (PAID)*\n\n` +
+                `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+              sendWhatsappNotification(studentEntity.phone, waMsg).catch(err => console.error("Error sending check status SPP WA:", err));
+            }
+          } else if (transaction_status === "pending" && bill.status === "unpaid") {
+            bill.status = "pending";
+            bill.orderId = orderId;
+            isHandled = true;
+          }
+          updatedEntity = bill;
+          updateType = "spp";
+        }
+      } else if (orderId.startsWith("MISC-")) {
+        const middle = orderId.slice(5);
+        const lastHyphenIndex = middle.lastIndexOf("-");
+        const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+        
+        let cleanBillId = billId;
+        if (cleanBillId.startsWith("M-")) {
+          cleanBillId = decompressMiscBillIdForMidtrans(cleanBillId);
+        }
+        
+        let bill = miscBills.find(b => b.orderId === orderId || b.id === cleanBillId || b.id === billId);
+        if (bill) {
+          studentEntity = students.find(s => s.id === bill.studentId) || null;
+          if (isSettlement && bill.status !== "paid") {
+            bill.status = "paid";
+            bill.paidAt = new Date().toISOString();
+            bill.paymentMethod = `Midtrans (${payment_type || 'Online'})`;
+            if (bill.orderId !== orderId) {
+              bill.orderId = orderId;
+            }
+
+            // Log as Treasurer transaction!
+            const newTx: TreasurerTransaction = {
+              id: `tx-misc-${Date.now()}`,
+              type: "incoming",
+              category: "Operasional",
+              amount: bill.amount,
+              description: `Pembayaran ${bill.title} (Midtrans) - ${studentEntity?.name || ""} (${studentEntity?.nis || ""})`,
+              date: new Date().toISOString().split("T")[0],
+              source: "custom",
+              studentName: studentEntity?.name,
+              nis: studentEntity?.nis,
+              createdBy: "Midtrans Check Status"
+            };
+            treasurerTransactions.push(newTx);
+            isHandled = true;
+
+            const notification: RealtimeNotification = {
+              id: `notif-misc-check-${Date.now()}`,
+              studentId: bill.studentId,
+              title: `Pembayaran ${bill.title} Lunas (Verifikasi)`,
+              message: `Pembayaran ${bill.title} ${studentEntity?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} via ${payment_type} divalidasi secara manual.`,
+              type: "payment",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+
+            if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && studentEntity && studentEntity.phone) {
+              const waMsg = `Yth. Orang Tua / Wali Siswa dari *${studentEntity.name}* (NIS: ${studentEntity.nis}).\n\n` +
+                `📢 *KUITANSI PEMBAYARAN ONLINE*\n` +
+                `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${payment_type} telah BERHASIL divalidasi.\n\n` +
+                `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
+                `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+                `• Status: *LUNAS (PAID)*\n\n` +
+                `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+              sendWhatsappNotification(studentEntity.phone, waMsg).catch(err => console.error("Error sending check status misc WA:", err));
+            }
+          } else if (transaction_status === "pending" && bill.status === "unpaid") {
+            bill.status = "pending";
+            bill.orderId = orderId;
+            isHandled = true;
+          }
+          updatedEntity = bill;
+          updateType = "misc";
+        }
+      } else if (orderId.startsWith("SAV-")) {
+        let transaction = savingsTransactions.find(t => t.orderId === orderId);
+        if (!transaction && isSettlement) {
+          const middle = orderId.slice(4);
+          const lastHyphenIndex = middle.lastIndexOf("-");
+          const studentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+          const student = students.find(s => s.id === studentId);
+          if (student) {
+            const recoveredAmount = Number(gross_amount) || 0;
+            if (recoveredAmount > 0) {
+              transaction = {
+                id: `sav-pay-recovered-${Date.now()}`,
+                studentId,
+                type: "deposit",
+                amount: recoveredAmount,
+                status: "pending",
+                createdAt: new Date().toISOString(),
+                orderId: orderId,
+                paymentMethod: `Midtrans (${payment_type || 'Online'})`,
+                notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
+              };
+              savingsTransactions.push(transaction);
+            }
+          }
+        }
+
+        if (transaction) {
+          studentEntity = students.find(s => s.id === transaction.studentId) || null;
+          if (isSettlement && transaction.status === "pending") {
+            transaction.status = "success";
+            transaction.paymentMethod = `Midtrans (${payment_type || 'Online'})`;
+            if (studentEntity) {
+              studentEntity.savingsBalance += transaction.amount;
+            }
+            isHandled = true;
+
+            const notification: RealtimeNotification = {
+              id: `notif-sav-check-${Date.now()}`,
+              studentId: transaction.studentId,
+              title: "Setoran Tabungan Otomatis (Verifikasi)",
+              message: `Midtrans berhasil meneruskan transaksi e-money sebesar Rp ${transaction.amount.toLocaleString("id-ID")} ke rekening Tabungan ${studentEntity?.name || ""}. Saldo baru: Rp ${studentEntity?.savingsBalance.toLocaleString("id-ID")}.`,
+              type: "success",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+
+            if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && studentEntity && studentEntity.phone) {
+              const waMsg = `Yth. Orang Tua / Wali Siswa dari *${studentEntity.name}* (NIS: ${studentEntity.nis}).\n\n` +
+                `📝 *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
+                `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Midtrans (${transaction.paymentMethod}) telah BERHASIL divalidasi.\n\n` +
+                `• Saldo Baru Tabungan: *Rp ${studentEntity.savingsBalance.toLocaleString("id-ID")}*\n` +
+                `• Kode Order: *${transaction.orderId}*\n\n` +
+                `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+              sendWhatsappNotification(studentEntity.phone, waMsg).catch(err => console.error("Error sending check status savings WA:", err));
+            }
+          }
+          updatedEntity = transaction;
+          updateType = "savings";
+        }
+      }
+
+      if (isHandled) {
+        saveState();
+      }
+
+      res.json({
+        success: true,
+        midtransStatus: transaction_status,
+        paymentType: payment_type,
+        isSettlement,
+        isHandled,
+        updateType,
+        updatedEntity
+      });
+    } catch (error: any) {
+      console.error("Error checking Midtrans transaction status manually:", error);
+      res.status(500).json({ error: error?.message || "Gagal menghubungi API Midtrans untuk memverifikasi status." });
+    }
   });
 
   // Real Midtrans Webhook Notification Handler (Midtrans HTTP POST calls this directly)

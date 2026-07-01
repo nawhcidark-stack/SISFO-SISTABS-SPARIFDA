@@ -24,6 +24,7 @@ import {
   Apple,
   User,
   RefreshCw,
+  Send,
   PlusCircle,
   ArrowUpRight,
   ArrowDownLeft,
@@ -1941,6 +1942,50 @@ export default function AdminPanel({
     useState<string>("");
   const [midtransPinError, setMidtransPinError] = useState<string>("");
   const [isVerifyingPin, setIsVerifyingPin] = useState<boolean>(false);
+
+  // Admin Manual Transaction Verification states
+  const [adminManualOrderId, setAdminManualOrderId] = React.useState<string>("");
+  const [isAdminManualVerifying, setIsAdminManualVerifying] = React.useState<boolean>(false);
+  const [adminManualVerifyStatus, setAdminManualVerifyStatus] = React.useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleAdminManualVerify = async () => {
+    if (!adminManualOrderId.trim()) return;
+    setIsAdminManualVerifying(true);
+    setAdminManualVerifyStatus(null);
+    try {
+      const response = await fetch('/api/simulate-payment-success', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderId: adminManualOrderId.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        setAdminManualVerifyStatus({
+          type: 'error',
+          message: data.error || 'Gagal menyinkronkan transaksi. Pastikan ID Transaksi/Order ID benar dan sudah diselesaikan di Midtrans.',
+        });
+      } else {
+        setAdminManualVerifyStatus({
+          type: 'success',
+          message: data.message || 'Pembayaran berhasil disinkronkan secara real-time! Tagihan/tabungan terkait sekarang berstatus LUNAS.',
+        });
+        setAdminManualOrderId('');
+        if (onRefresh) {
+          onRefresh();
+        }
+      }
+    } catch (err: any) {
+      console.error('Error admin manual verifying payment:', err);
+      setAdminManualVerifyStatus({
+        type: 'error',
+        message: 'Terjadi kesalahan koneksi jaringan saat menghubungi server.',
+      });
+    } finally {
+      setIsAdminManualVerifying(false);
+    }
+  };
 
   React.useEffect(() => {
     if (midtransStatus) {
@@ -7585,6 +7630,81 @@ export default function AdminPanel({
                     </button>
                   </div>
                 </form>
+              )}
+            </motion.div>
+
+            {/* Admin Manual Sync Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="p-6 bg-white rounded-2xl border border-slate-200 shadow-sm text-left flex flex-col gap-4"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shrink-0">
+                  <RefreshCw className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider">
+                    Alat Sinkronisasi & Rekonsiliasi Transaksi Midtrans
+                  </h4>
+                  <p className="text-slate-500 text-[11px] mt-1 leading-relaxed">
+                    Gunakan alat bantu ini untuk memeriksa langsung status pembayaran di Midtrans dan menyinkronkannya dengan database internal sekolah secara paksa. Sangat berguna apabila ada laporan wali murid yang sudah sukses membayar via Gopay/Bank Transfer namun status tagihan di sistem masih belum Lunas.
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex flex-col sm:flex-row gap-3">
+                <input
+                  type="text"
+                  placeholder="Masukkan No. Order ID (e.g. SPP-B-...) or ID Transaksi Midtrans (UUID)"
+                  className="flex-1 text-xs bg-slate-50 text-slate-800 placeholder-slate-400 border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                  value={adminManualOrderId}
+                  onChange={(e) => setAdminManualOrderId(e.target.value)}
+                />
+                <button
+                  type="button"
+                  onClick={handleAdminManualVerify}
+                  disabled={isAdminManualVerifying || !adminManualOrderId.trim()}
+                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                    isAdminManualVerifying || !adminManualOrderId.trim()
+                      ? 'bg-slate-400 cursor-not-allowed'
+                      : 'bg-indigo-600 hover:bg-indigo-750 shadow-md shadow-indigo-100'
+                  }`}
+                >
+                  {isAdminManualVerifying ? (
+                    <>
+                      <RefreshCw className="w-4 h-4 animate-spin" />
+                      <span>Memproses...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Send className="w-4 h-4" />
+                      <span>Sinkronkan Transaksi</span>
+                    </>
+                  )}
+                </button>
+              </div>
+
+              {adminManualVerifyStatus && (
+                <div className={`p-4 rounded-xl border text-xs flex items-start gap-2.5 shadow-3xs animate-fade-in ${
+                  adminManualVerifyStatus.type === 'success'
+                    ? 'bg-emerald-50 border-emerald-150 text-emerald-900'
+                    : 'bg-rose-50 border-rose-150 text-rose-900'
+                }`}>
+                  {adminManualVerifyStatus.type === 'success' ? (
+                    <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                  ) : (
+                    <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                  )}
+                  <div>
+                    <span className="font-extrabold block">
+                      {adminManualVerifyStatus.type === 'success' ? 'Sinkronisasi Sukses!' : 'Sinkronisasi Gagal'}
+                    </span>
+                    <p className="m-0 text-slate-600 mt-0.5 leading-relaxed font-medium">
+                      {adminManualVerifyStatus.message}
+                    </p>
+                  </div>
+                </div>
               )}
             </motion.div>
 

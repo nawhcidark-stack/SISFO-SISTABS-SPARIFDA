@@ -6352,15 +6352,28 @@ async function startServer() {
     let isSettled = false;
     let actualPaymentType = paymentType || "Midtrans Snap";
     let actualGrossAmount = 0;
+    let resolvedOrderId = orderId;
 
     if (midtransStatus) {
       const ts = midtransStatus.transaction_status;
       isSettled = ts === "settlement" || ts === "capture";
+      
+      const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
+      if (hasMidtrans && !isSettled) {
+        return res.status(400).json({ 
+          error: `Transaksi di Midtrans belum lunas (Status saat ini: ${ts || 'unknown'}). Silakan selesaikan pembayaran terlebih dahulu.` 
+        });
+      }
+
       if (midtransStatus.payment_type) {
         actualPaymentType = `Midtrans (${midtransStatus.payment_type})`;
       }
       if (midtransStatus.gross_amount) {
         actualGrossAmount = Number(midtransStatus.gross_amount);
+      }
+      if (midtransStatus.order_id) {
+        resolvedOrderId = midtransStatus.order_id;
+        console.log(`Resolved Order ID from Midtrans status: ${resolvedOrderId} (Originally: ${orderId})`);
       }
     }
 
@@ -6368,8 +6381,8 @@ async function startServer() {
     let affectedStudent: Student | null = null;
     let title = "";
 
-    if (orderId.startsWith("SPP-")) {
-      const middle = orderId.slice(4);
+    if (resolvedOrderId.startsWith("SPP-")) {
+      const middle = resolvedOrderId.slice(4);
       const lastHyphenIndex = middle.lastIndexOf("-");
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
       
@@ -6378,7 +6391,7 @@ async function startServer() {
         cleanBillId = "bill-std-" + cleanBillId.slice(2);
       }
       
-      let bill = sppBills.find(b => b.orderId === orderId || b.id === cleanBillId || b.id === billId);
+      let bill = sppBills.find(b => b.orderId === resolvedOrderId || b.id === cleanBillId || b.id === billId);
       if (!bill) {
         const monthMap: { [key: string]: string } = {
           "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
@@ -6401,8 +6414,8 @@ async function startServer() {
         bill.status = "paid";
         bill.paidAt = new Date().toISOString();
         bill.paymentMethod = actualPaymentType;
-        if (bill.orderId !== orderId) {
-          bill.orderId = orderId; // repair
+        if (bill.orderId !== resolvedOrderId) {
+          bill.orderId = resolvedOrderId; // repair
         }
         
         affectedStudent = students.find(s => s.id === bill.studentId) || null;
@@ -6436,8 +6449,8 @@ async function startServer() {
         saveState();
         return res.json({ success: true, type: "spp", bill, student: affectedStudent });
       }
-    } else if (orderId.startsWith("MISC-")) {
-      const middle = orderId.slice(5);
+    } else if (resolvedOrderId.startsWith("MISC-")) {
+      const middle = resolvedOrderId.slice(5);
       const lastHyphenIndex = middle.lastIndexOf("-");
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
       
@@ -6446,13 +6459,13 @@ async function startServer() {
         cleanBillId = decompressMiscBillIdForMidtrans(cleanBillId);
       }
       
-      let bill = miscBills.find(b => b.orderId === orderId || b.id === cleanBillId || b.id === billId);
+      let bill = miscBills.find(b => b.orderId === resolvedOrderId || b.id === cleanBillId || b.id === billId);
       if (bill) {
         bill.status = "paid";
         bill.paidAt = new Date().toISOString();
         bill.paymentMethod = actualPaymentType;
-        if (bill.orderId !== orderId) {
-          bill.orderId = orderId; // repair
+        if (bill.orderId !== resolvedOrderId) {
+          bill.orderId = resolvedOrderId; // repair
         }
         
         affectedStudent = students.find(s => s.id === bill.studentId) || null;
@@ -6460,7 +6473,7 @@ async function startServer() {
         message = `Pembayaran tagihan ${bill.title} untuk ${affectedStudent?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} BERHASIL divalidasi secara instan!`;
 
         // Register incoming transaction for treasurer bookkeeping if not existing yet
-        const txExists = treasurerTransactions.some(t => t.description.includes(orderId) || (t.createdBy === "Midtrans Webhook" && t.description.includes(bill.title) && t.nis === affectedStudent?.nis));
+        const txExists = treasurerTransactions.some(t => t.description.includes(resolvedOrderId) || (t.createdBy === "Midtrans Webhook" && t.description.includes(bill.title) && t.nis === affectedStudent?.nis));
         if (!txExists) {
           const newTx: TreasurerTransaction = {
             id: `tx-misc-${Date.now()}`,
@@ -6502,11 +6515,11 @@ async function startServer() {
         saveState();
         return res.json({ success: true, type: "misc", bill, student: affectedStudent });
       }
-    } else if (orderId.startsWith("SAV-")) {
-      let transaction = savingsTransactions.find(t => t.orderId === orderId);
+    } else if (resolvedOrderId.startsWith("SAV-")) {
+      let transaction = savingsTransactions.find(t => t.orderId === resolvedOrderId);
       if (!transaction) {
         // Recovery mechanism from webhook
-        const middle = orderId.slice(4);
+        const middle = resolvedOrderId.slice(4);
         const lastHyphenIndex = middle.lastIndexOf("-");
         const studentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
         const student = students.find(s => s.id === studentId);
@@ -6519,7 +6532,7 @@ async function startServer() {
             amount: recoveredAmount,
             status: "pending",
             createdAt: new Date().toISOString(),
-            orderId: orderId,
+            orderId: resolvedOrderId,
             paymentMethod: actualPaymentType,
             notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
           };

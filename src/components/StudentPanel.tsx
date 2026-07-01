@@ -112,6 +112,50 @@ export default function StudentPanel({
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
 
+  // Manual Midtrans Verification states
+  const [manualOrderId, setManualOrderId] = useState('');
+  const [isManualVerifying, setIsManualVerifying] = useState(false);
+  const [manualVerifyStatus, setManualVerifyStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+
+  const handleManualVerify = async () => {
+    if (!manualOrderId.trim()) return;
+    setIsManualVerifying(true);
+    setManualVerifyStatus(null);
+    try {
+      const response = await fetch('/api/simulate-payment-success', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ orderId: manualOrderId.trim() }),
+      });
+      const data = await response.json();
+      if (!response.ok || data.error) {
+        setManualVerifyStatus({
+          type: 'error',
+          message: data.error || 'Gagal memverifikasi transaksi. Pastikan ID Transaksi/Order ID benar dan sudah berstatus lunas di Midtrans.',
+        });
+      } else {
+        setManualVerifyStatus({
+          type: 'success',
+          message: data.message || 'Pembayaran berhasil disinkronkan! Tagihan ini sekarang tercatat LUNAS di sistem.',
+        });
+        setManualOrderId('');
+        if (onRefresh) {
+          onRefresh();
+        }
+      }
+    } catch (err: any) {
+      console.error('Error manual verifying payment:', err);
+      setManualVerifyStatus({
+        type: 'error',
+        message: 'Terjadi kesalahan koneksi jaringan saat menghubungi server.',
+      });
+    } finally {
+      setIsManualVerifying(false);
+    }
+  };
+
   // Buku Induk Editor states
   const [isEditingBukuInduk, setIsEditingBukuInduk] = useState<boolean>(false);
   const [bukuIndukForm, setBukuIndukForm] = useState<Partial<Student>>({});
@@ -1541,6 +1585,80 @@ export default function StudentPanel({
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* Manual Midtrans Verification Component */}
+                  <div className="mt-8 p-5 bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-205 shadow-3xs text-left animate-fade-in">
+                    <div className="flex items-start gap-3">
+                      <div className="p-2 bg-indigo-50 text-indigo-600 rounded-xl border border-indigo-100 shrink-0">
+                        <RefreshCw className="w-4 h-4 animate-pulse" />
+                      </div>
+                      <div className="flex-1">
+                        <h5 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">
+                          Sinkronisasi Mandiri Transaksi Midtrans
+                        </h5>
+                        <p className="text-[11px] text-slate-500 mt-1 leading-relaxed">
+                          Punya bukti bayar sukses dari Midtrans tetapi status tagihan belum berubah? Masukkan <strong>Order ID</strong> atau <strong>ID Transaksi Midtrans (UUID)</strong> di bawah ini untuk memicu sinkronisasi status real-time secara instan.
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="mt-4 flex flex-col sm:flex-row gap-2 max-w-xl">
+                      <div className="relative flex-1">
+                        <input
+                          type="text"
+                          id="input-manual-order-id"
+                          placeholder="Contoh: SPP-B-178... atau UUID: a44d6803-902d..."
+                          className="w-full text-xs bg-white text-slate-800 placeholder-slate-400 border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                          value={manualOrderId}
+                          onChange={(e) => setManualOrderId(e.target.value)}
+                        />
+                      </div>
+                      <button
+                        type="button"
+                        onClick={handleManualVerify}
+                        disabled={isManualVerifying || !manualOrderId.trim()}
+                        className={`px-4 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                          isManualVerifying || !manualOrderId.trim()
+                            ? 'bg-slate-400 cursor-not-allowed'
+                            : 'bg-indigo-600 hover:bg-indigo-750 shadow-md shadow-indigo-100'
+                        }`}
+                      >
+                        {isManualVerifying ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Sinkronisasi...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Send className="w-3.5 h-3.5" />
+                            <span>Sinkronkan</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+
+                    {manualVerifyStatus && (
+                      <div className={`mt-3 p-3.5 rounded-xl border text-xs flex items-start gap-2.5 shadow-3xs animate-fade-in ${
+                        manualVerifyStatus.type === 'success'
+                          ? 'bg-emerald-50 border-emerald-150 text-emerald-900'
+                          : 'bg-rose-50 border-rose-150 text-rose-900'
+                      }`}>
+                        {manualVerifyStatus.type === 'success' ? (
+                          <CheckCircle2 size={16} className="text-emerald-600 shrink-0 mt-0.5" />
+                        ) : (
+                          <AlertCircle size={16} className="text-rose-600 shrink-0 mt-0.5" />
+                        )}
+                        <div>
+                          <span className="font-extrabold block">
+                            {manualVerifyStatus.type === 'success' ? 'Verifikasi Berhasil!' : 'Sinkronisasi Gagal'}
+                          </span>
+                          <p className="m-0 text-slate-600 mt-0.5 leading-relaxed font-medium">
+                            {manualVerifyStatus.message}
+                          </p>
+                        </div>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

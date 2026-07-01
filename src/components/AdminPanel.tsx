@@ -505,34 +505,6 @@ export default function AdminPanel({
     }
   };
 
-  const handleCheckMidtransStatus = async (orderId: string) => {
-    if (!orderId) {
-      alert("Order ID tidak ditemukan untuk transaksi ini.");
-      return;
-    }
-    try {
-      const res = await fetch("/api/check-midtrans-status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Gagal memeriksa status dari Midtrans.");
-      }
-      
-      if (data.isSettlement) {
-        alert(`Sukses! Transaksi telah LUNAS terverifikasi di Midtrans (${data.paymentType || 'Online'}).`);
-      } else {
-        alert(`Status di Midtrans: ${data.midtransStatus?.toUpperCase() || 'BELUM DIBAYAR'}.`);
-      }
-      onRefresh();
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || "Gagal memverifikasi status pembayaran.");
-    }
-  };
-
   const handleDeleteMiscBillLocal = async (billId: string) => {
     const confirmDelete = window.confirm("PERINGATAN: Menghapus tagihan ini akan menghapus data tagihan permanen. Apakah Anda yakin?");
     if (!confirmDelete) return;
@@ -5354,17 +5326,6 @@ export default function AdminPanel({
                               <div className="flex justify-end gap-1.5">
                                 {bill.status === "unpaid" || bill.status === "pending" ? (
                                   <>
-                                    {bill.orderId && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCheckMidtransStatus(bill.orderId)}
-                                        className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-bold rounded-lg text-[10px] transition-all cursor-pointer flex items-center gap-1 mr-1 shadow-2xs"
-                                        title="Cek Status Pembayaran Online"
-                                      >
-                                        <RefreshCw size={11} />
-                                        <span>Cek Status</span>
-                                      </button>
-                                    )}
                                     <button
                                       type="button"
                                       onClick={() => handlePayMiscManualLocal(bill.id)}
@@ -9825,43 +9786,30 @@ export default function AdminPanel({
                                             </button>
                                           </div>
                                         ) : (
-                                          <div className="flex justify-end gap-1 items-center">
-                                            {b.orderId && (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleCheckMidtransStatus(b.orderId!)}
-                                                className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-700 font-bold rounded text-[9px] uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-0.5 shadow-3xs"
-                                                title="Cek Status Pembayaran Online"
-                                              >
-                                                <RefreshCw size={9} />
-                                                <span>Cek Status</span>
-                                              </button>
-                                            )}
-                                            <button
-                                              type="button"
-                                              disabled={processingBillId !== null}
-                                              onClick={async () => {
-                                                setProcessingBillId(b.id);
-                                                const success =
-                                                  await onPaySppManual(b.id);
-                                                setProcessingBillId(null);
-                                                if (success) {
-                                                  onRefresh();
-                                                  setReceiptToPrint({
-                                                    type: "spp",
-                                                    detail: b,
-                                                    student: selectedStudent,
-                                                  });
-                                                  setPrintId(
-                                                    "print-receipt-section",
-                                                  );
-                                                }
-                                              }}
-                                              className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[9px] uppercase tracking-wider rounded transition-all cursor-pointer"
-                                            >
-                                              Bayar 💸
-                                            </button>
-                                          </div>
+                                          <button
+                                            type="button"
+                                            disabled={processingBillId !== null}
+                                            onClick={async () => {
+                                              setProcessingBillId(b.id);
+                                              const success =
+                                                await onPaySppManual(b.id);
+                                              setProcessingBillId(null);
+                                              if (success) {
+                                                onRefresh();
+                                                setReceiptToPrint({
+                                                  type: "spp",
+                                                  detail: b,
+                                                  student: selectedStudent,
+                                                });
+                                                setPrintId(
+                                                  "print-receipt-section",
+                                                );
+                                              }
+                                            }}
+                                            className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-[9px] uppercase tracking-wider rounded transition-all cursor-pointer"
+                                          >
+                                            Bayar 💸
+                                          </button>
                                         )}
                                       </td>
                                     </tr>

@@ -187,36 +187,6 @@ export default function StudentPanel({
     }
   }, [currentStudent, isLoading]);
 
-  const handleCheckMidtransStatus = async (orderId: string) => {
-    if (!orderId) {
-      alert("Order ID tidak ditemukan untuk transaksi ini.");
-      return;
-    }
-    try {
-      const res = await fetch("/api/check-midtrans-status", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ orderId })
-      });
-      const data = await res.json();
-      if (!res.ok) {
-        throw new Error(data.error || "Gagal memeriksa status dari Midtrans.");
-      }
-      
-      if (data.isSettlement) {
-        alert(`Sukses! Pembayaran Anda telah LUNAS terverifikasi di Midtrans (${data.paymentType || 'Online'}). Halaman akan dimuat ulang.`);
-      } else {
-        alert(`Status pembayaran online: ${data.midtransStatus?.toUpperCase() || 'BELUM DIBAYAR'}.`);
-      }
-      if (onRefresh) {
-        onRefresh();
-      }
-    } catch (err: any) {
-      console.error(err);
-      alert(err.message || "Gagal memverifikasi status pembayaran.");
-    }
-  };
-
   const totalInfractionPoints = useMemo(() => {
     return infractionLogs.reduce((acc, log) => acc + (log.points || 0), 0);
   }, [infractionLogs]);
@@ -1452,30 +1422,17 @@ export default function StudentPanel({
                                     Nonaktif
                                   </button>
                                 ) : (
-                                  <div className="flex items-center justify-end gap-1.5">
-                                    {bill.orderId && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCheckMidtransStatus(bill.orderId!)}
-                                        className="px-2 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-0.5"
-                                        title="Cek Status Pembayaran Online"
-                                      >
-                                        <RefreshCw size={11} />
-                                        <span>Cek Status</span>
-                                      </button>
-                                    )}
-                                    <button
-                                      id={`pay-spp-${bill.id}`}
-                                      onClick={() => onPaySpp(bill)}
-                                      className={`px-3 py-1.5 font-bold rounded-lg text-[10px] uppercase tracking-wider shadow-sm transition-all focus:outline-none cursor-pointer ${
-                                        isPending 
-                                          ? 'bg-amber-500 hover:bg-amber-600 text-white' 
-                                          : 'bg-indigo-600 hover:bg-indigo-750 text-white shadow-md shadow-indigo-100'
-                                      }`}
-                                    >
-                                      {isPending ? 'Lanjutkan' : 'Bayar Online'}
-                                    </button>
-                                  </div>
+                                  <button
+                                    id={`pay-spp-${bill.id}`}
+                                    onClick={() => onPaySpp(bill)}
+                                    className={`px-3 py-1.5 font-bold rounded-lg text-[10px] uppercase tracking-wider shadow-sm transition-all focus:outline-none cursor-pointer ${
+                                      isPending 
+                                        ? 'bg-amber-500 hover:bg-amber-600 text-white' 
+                                        : 'bg-indigo-600 hover:bg-indigo-750 text-white shadow-md shadow-indigo-100'
+                                    }`}
+                                  >
+                                    {isPending ? 'Lanjutkan' : 'Bayar Online'}
+                                  </button>
                                 )}
                               </td>
                             </tr>
@@ -1567,30 +1524,17 @@ export default function StudentPanel({
                                   Nonaktif
                                 </button>
                               ) : (
-                                <div className="flex items-center gap-1.5">
-                                  {bill.orderId && (
-                                    <button
-                                      type="button"
-                                      onClick={() => handleCheckMidtransStatus(bill.orderId!)}
-                                      className="px-2.5 py-2 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all cursor-pointer inline-flex items-center gap-0.5"
-                                      title="Cek Status Pembayaran Online"
-                                    >
-                                      <RefreshCw size={11} />
-                                      <span>Cek Status</span>
-                                    </button>
-                                  )}
-                                  <button
-                                    id={`pay-spp-mob-${bill.id}`}
-                                    onClick={() => onPaySpp(bill)}
-                                    className={`px-4 py-2 font-black rounded-lg text-[10px] uppercase tracking-wider shadow-sm transition-all focus:outline-none cursor-pointer flex items-center justify-center gap-1.5 ${
-                                      isPending 
-                                        ? 'bg-amber-500 hover:bg-amber-600 text-white' 
-                                        : 'bg-indigo-600 hover:bg-indigo-750 text-white shadow-md shadow-indigo-100'
-                                    }`}
-                                  >
-                                    {isPending ? 'Lanjutkan' : 'Bayar Sekarang'}
-                                  </button>
-                                </div>
+                                <button
+                                  id={`pay-spp-mob-${bill.id}`}
+                                  onClick={() => onPaySpp(bill)}
+                                  className={`px-4 py-2 font-black rounded-lg text-[10px] uppercase tracking-wider shadow-sm transition-all focus:outline-none cursor-pointer flex items-center justify-center gap-1.5 ${
+                                    isPending 
+                                      ? 'bg-amber-500 hover:bg-amber-600 text-white' 
+                                      : 'bg-indigo-600 hover:bg-indigo-750 text-white shadow-md shadow-indigo-100'
+                                  }`}
+                                >
+                                  {isPending ? 'Lanjutkan' : 'Bayar Sekarang'}
+                                </button>
                               )}
                             </div>
                           </div>
@@ -1974,17 +1918,6 @@ export default function StudentPanel({
                                     </button>
 
                                     {/* Pay with Midtrans Option */}
-                                    {bill.orderId && (
-                                      <button
-                                        type="button"
-                                        onClick={() => handleCheckMidtransStatus(bill.orderId!)}
-                                        className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 font-bold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer flex items-center justify-center gap-1 shadow-2xs mr-1"
-                                        title="Cek Status Pembayaran Online"
-                                      >
-                                        <RefreshCw size={11} />
-                                        <span>Cek Status</span>
-                                      </button>
-                                    )}
                                     {!midtransStatus?.isDisabled && (
                                       <button
                                         type="button"

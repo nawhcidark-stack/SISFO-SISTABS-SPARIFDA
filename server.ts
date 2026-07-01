@@ -4688,7 +4688,12 @@ async function startServer() {
               return baseName.length > 50 ? baseName.substring(0, 45) + "..." : baseName;
             })()
           }
-        ]
+        ],
+        callbacks: {
+          finish: appReturnUrl,
+          error: appReturnUrl,
+          pending: appReturnUrl
+        }
       };
 
       const response = await fetch(url, {

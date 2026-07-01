@@ -487,8 +487,18 @@ export default function AdminPanel({
       if (!res.ok) {
         throw new Error(data.error || "Gagal memproses pembayaran manual.");
       }
-      alert("Pembayaran manual berhasil dicatat!");
       onRefresh();
+      
+      const paidBill = data.bill;
+      const s = students.find((st) => st.id === paidBill.studentId);
+      if (s) {
+        setReceiptToPrint({
+          type: "misc",
+          detail: paidBill,
+          student: s
+        });
+        setPrintId("print-receipt-section");
+      }
     } catch (err: any) {
       console.error(err);
       alert(err.message || "Gagal memproses pembayaran manual.");

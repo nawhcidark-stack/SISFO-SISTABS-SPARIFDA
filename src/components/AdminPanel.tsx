@@ -354,7 +354,8 @@ export default function AdminPanel({
 
   // States for Pembayaran Lain-lain
   const [isCreateMiscOpen, setIsCreateMiscOpen] = useState(false);
-  const [miscTargetType, setMiscTargetType] = useState<"all" | "class" | "single">("all");
+  const [miscTargetType, setMiscTargetType] = useState<"all" | "grade" | "class" | "single">("all");
+  const [miscTargetGrade, setMiscTargetGrade] = useState("");
   const [miscTargetClass, setMiscTargetClass] = useState("");
   const [miscTargetStudentId, setMiscTargetStudentId] = useState("");
   const [miscTitle, setMiscTitle] = useState("");
@@ -362,6 +363,37 @@ export default function AdminPanel({
   const [miscSearch, setMiscSearch] = useState("");
   const [miscStatusFilter, setMiscStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
   const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
+
+  // Helper to extract grade level
+  const getGradeLevel = (className: string): string => {
+    if (!className) return "";
+    const clean = className.trim().toUpperCase();
+    const romans = ["VIII", "VII", "XII", "XI", "IX", "X"];
+    for (const r of romans) {
+      if (clean === r || clean.startsWith(r + "-") || clean.startsWith(r + " ") || clean.startsWith(r)) {
+        return r;
+      }
+    }
+    const digitMatch = clean.match(/^(\d+)/);
+    if (digitMatch) {
+      return digitMatch[1];
+    }
+    return clean.split(/[- ]/)[0] || clean;
+  };
+
+  // Get unique grades available
+  const availableGrades = useMemo(() => {
+    const gradesSet = new Set<string>();
+    students.forEach((s) => {
+      if (s.class) {
+        const g = getGradeLevel(s.class);
+        if (g) gradesSet.add(g);
+      }
+    });
+    return Array.from(gradesSet).sort((a, b) => {
+      return a.localeCompare(b, undefined, { numeric: true, sensitivity: "base" });
+    });
+  }, [students]);
 
   // States for Revisi Detail Tagihan Pembayaran Lain-lain
   const [isEditMiscOpen, setIsEditMiscOpen] = useState(false);
@@ -387,6 +419,10 @@ export default function AdminPanel({
       alert("Nominal tagihan harus berupa angka positif.");
       return;
     }
+    if (miscTargetType === "grade" && !miscTargetGrade) {
+      alert("Harap pilih tingkat kelas terlebih dahulu.");
+      return;
+    }
     if (miscTargetType === "class" && !miscTargetClass.trim()) {
       alert("Target kelas tidak boleh kosong.");
       return;
@@ -400,7 +436,14 @@ export default function AdminPanel({
       setIsSubmittingMisc(true);
       const payload = {
         targetType: miscTargetType,
-        targetValue: miscTargetType === "class" ? miscTargetClass.trim() : miscTargetType === "single" ? miscTargetStudentId : "all",
+        targetValue:
+          miscTargetType === "grade"
+            ? miscTargetGrade
+            : miscTargetType === "class"
+            ? miscTargetClass.trim()
+            : miscTargetType === "single"
+            ? miscTargetStudentId
+            : "all",
         title: miscTitle.trim(),
         amount: amountNum
       };
@@ -418,6 +461,7 @@ export default function AdminPanel({
       setIsCreateMiscOpen(false);
       setMiscTitle("");
       setMiscAmount("");
+      setMiscTargetGrade("");
       setMiscTargetClass("");
       setMiscTargetStudentId("");
       onRefresh();
@@ -5353,23 +5397,32 @@ export default function AdminPanel({
                     </button>
                   </div>
                   <form onSubmit={handleCreateMiscBill} className="p-5 flex flex-col gap-4 text-xs">
-                    <div className="flex flex-col gap-1.5">
+                    <div className="flex flex-col gap-1.5 text-left">
                       <label className="font-bold text-slate-700">Target Distribusi Tagihan:</label>
-                      <div className="flex gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
+                      <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200">
                         <button
                           type="button"
                           onClick={() => setMiscTargetType("all")}
-                          className={`flex-1 py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
-                            miscTargetType === "all" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
+                          className={`py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscTargetType === "all" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-700"
                           }`}
                         >
                           Seluruh Siswa
                         </button>
                         <button
                           type="button"
+                          onClick={() => setMiscTargetType("grade")}
+                          className={`py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscTargetType === "grade" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Per Tingkat
+                        </button>
+                        <button
+                          type="button"
                           onClick={() => setMiscTargetType("class")}
-                          className={`flex-1 py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
-                            miscTargetType === "class" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
+                          className={`py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscTargetType === "class" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-700"
                           }`}
                         >
                           Per Kelas
@@ -5377,14 +5430,33 @@ export default function AdminPanel({
                         <button
                           type="button"
                           onClick={() => setMiscTargetType("single")}
-                          className={`flex-1 py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
-                            miscTargetType === "single" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500"
+                          className={`py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscTargetType === "single" ? "bg-white text-slate-900 shadow-2xs" : "text-slate-500 hover:text-slate-700"
                           }`}
                         >
                           Siswa Tunggal
                         </button>
                       </div>
                     </div>
+
+                    {miscTargetType === "grade" && (
+                      <div className="flex flex-col gap-1.5 animate-fade-in text-left">
+                        <label className="font-bold text-slate-700">Pilih Tingkat Kelas Target:</label>
+                        <select
+                          value={miscTargetGrade}
+                          onChange={(e) => setMiscTargetGrade(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-slate-400 focus:outline-none rounded-xl"
+                          required
+                        >
+                          <option value="">-- Pilih Tingkat Kelas --</option>
+                          {availableGrades.map((g) => (
+                            <option key={g} value={g}>
+                              Tingkat {g}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     {miscTargetType === "class" && (
                       <div className="flex flex-col gap-1.5 animate-fade-in">

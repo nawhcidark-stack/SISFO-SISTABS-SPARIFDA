@@ -4215,19 +4215,44 @@ async function startServer() {
     res.json(miscBills);
   });
 
-  // Create miscellaneous bills (single, class, or all)
+  // Create miscellaneous bills (single, class, grade, or all)
   app.post("/api/admin/create-misc-bill", (req, res) => {
-    const { studentId, targetType, targetClass, title, amount } = req.body;
+    const { studentId, targetType, targetClass, targetValue, title, amount } = req.body;
     if (!title || !amount || Number(amount) <= 0) {
       return res.status(400).json({ error: "Judul tagihan dan jumlah pembayaran harus diisi dengan benar." });
     }
 
     let targets: Student[] = [];
     if (targetType === "single") {
-      const s = students.find(x => x.id === studentId);
+      const idToFind = studentId || targetValue;
+      const s = students.find(x => x.id === idToFind);
       if (s) targets.push(s);
     } else if (targetType === "class") {
-      targets = students.filter(x => x.class === targetClass);
+      const classToFind = targetClass || targetValue;
+      targets = students.filter(x => x.class === classToFind);
+    } else if (targetType === "grade") {
+      const gradeToFind = (targetValue || "").trim().toUpperCase();
+
+      const getGradeLevel = (className: string): string => {
+        if (!className) return "";
+        const clean = className.trim().toUpperCase();
+        const romans = ["VIII", "VII", "XII", "XI", "IX", "X"];
+        for (const r of romans) {
+          if (clean === r || clean.startsWith(r + "-") || clean.startsWith(r + " ") || clean.startsWith(r)) {
+            return r;
+          }
+        }
+        const digitMatch = clean.match(/^(\d+)/);
+        if (digitMatch) {
+          return digitMatch[1];
+        }
+        return clean.split(/[- ]/)[0] || clean;
+      };
+
+      targets = students.filter(x => {
+        if (!x.class) return false;
+        return getGradeLevel(x.class) === gradeToFind;
+      });
     } else if (targetType === "all") {
       targets = [...students];
     }

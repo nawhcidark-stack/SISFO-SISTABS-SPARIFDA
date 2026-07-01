@@ -56,6 +56,7 @@ export default function App() {
   useEffect(() => {
     currentStudentRef.current = currentStudent;
   }, [currentStudent]);
+
   const [studentBills, setStudentBills] = useState<SppBill[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<SavingsTransaction[]>([]);
   const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>([]);
@@ -106,6 +107,13 @@ export default function App() {
   const [payAmount, setPayAmount] = useState<number>(0);
   const [payItemName, setPayItemName] = useState<string>('');
   const [payIsSimulated, setPayIsSimulated] = useState<boolean>(true);
+
+  const isPayModalOpenRef = useRef(false);
+  useEffect(() => {
+    isPayModalOpenRef.current = isPayModalOpen;
+  }, [isPayModalOpen]);
+
+  const handlePaymentSuccessRef = useRef<() => void>(() => {});
   
   // States to persist student details on the successful transaction page
   const [payStudentName, setPayStudentName] = useState<string>('');
@@ -670,6 +678,19 @@ export default function App() {
         
         // Play notification ding chime!
         triggerBeep();
+
+        // If Midtrans payment modal is open and we receive a success notification, auto-close it after a short delay
+        if (isPayModalOpenRef.current && rawNotification.type === 'payment') {
+          const activeStud = currentStudentRef.current;
+          if (!activeStud || rawNotification.studentId === activeStud.id) {
+            console.log('Detected real-time payment success notification via SSE! Auto-closing Midtrans modal...');
+            setTimeout(() => {
+              if (handlePaymentSuccessRef.current) {
+                handlePaymentSuccessRef.current();
+              }
+            }, 1500);
+          }
+        }
 
         // Bidirectional reactive sync: If the transaction belongs to our currently selected student profile,
         // we automatically trigger an API query to sync the screen with the new funds or paid bills!
@@ -1408,6 +1429,10 @@ export default function App() {
       setAdminSavingsToPrintCandidate(null);
     }
   };
+
+  useEffect(() => {
+    handlePaymentSuccessRef.current = handlePaymentSuccess;
+  }, [handlePaymentSuccess]);
 
   const handleUpdateSchoolIdentity = async (updatedData: Partial<SchoolIdentity>): Promise<boolean> => {
     try {

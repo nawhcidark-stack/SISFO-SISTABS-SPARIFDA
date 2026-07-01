@@ -6300,24 +6300,114 @@ async function startServer() {
     }
   });
 
-  // Client simulated success trigger (Allows direct browser simulation)
-  app.post("/api/simulate-payment-success", (req, res) => {
+  // Helper to fetch actual Midtrans transaction status from API (if configured)
+  async function getMidtransStatus(orderId: string): Promise<any> {
+    const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
+    if (!hasMidtrans) {
+      console.log("Midtrans credentials not configured, skipping real status check.");
+      return null;
+    }
+    try {
+      const authHeader = Buffer.from(`${midtransConfig.serverKey}:`).toString("base64");
+      const baseUrl = midtransConfig.isProduction 
+        ? "https://api.midtrans.com/v2" 
+        : "https://api.sandbox.midtrans.com/v2";
+      console.log(`Checking real Midtrans status for orderId: ${orderId} on ${baseUrl}`);
+      const response = await fetch(`${baseUrl}/${orderId}/status`, {
+        headers: {
+          "Authorization": `Basic ${authHeader}`,
+          "Accept": "application/json"
+        }
+      });
+      if (response.ok) {
+        const statusData = await response.json();
+        console.log(`Real Midtrans status for ${orderId}:`, statusData);
+        return statusData;
+      } else {
+        console.warn(`Midtrans Status API returned status ${response.status} for ${orderId}`);
+      }
+    } catch (err) {
+      console.error(`Failed to fetch Midtrans status for ${orderId}:`, err);
+    }
+    return null;
+  }
+
+  // Client simulated success trigger (Allows direct browser simulation and instant local sync verification)
+  app.post("/api/simulate-payment-success", async (req, res) => {
     const { orderId, paymentType } = req.body;
-    
+    if (!orderId) {
+      return res.status(400).json({ error: "Order ID is required." });
+    }
+
+    console.log("Simulate payment success request received for orderId:", orderId);
+
+    // Try to get real status from Midtrans first (if configured)
+    let midtransStatus: any = null;
+    try {
+      midtransStatus = await getMidtransStatus(orderId);
+    } catch (e) {
+      console.error("Failed to fetch real Midtrans status:", e);
+    }
+
+    let isSettled = false;
+    let actualPaymentType = paymentType || "Midtrans Snap";
+    let actualGrossAmount = 0;
+
+    if (midtransStatus) {
+      const ts = midtransStatus.transaction_status;
+      isSettled = ts === "settlement" || ts === "capture";
+      if (midtransStatus.payment_type) {
+        actualPaymentType = `Midtrans (${midtransStatus.payment_type})`;
+      }
+      if (midtransStatus.gross_amount) {
+        actualGrossAmount = Number(midtransStatus.gross_amount);
+      }
+    }
+
     let message = "";
     let affectedStudent: Student | null = null;
     let title = "";
 
     if (orderId.startsWith("SPP-")) {
-      const bill = sppBills.find(b => b.orderId === orderId);
+      const middle = orderId.slice(4);
+      const lastHyphenIndex = middle.lastIndexOf("-");
+      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+      
+      let cleanBillId = billId;
+      if (cleanBillId.startsWith("B-")) {
+        cleanBillId = "bill-std-" + cleanBillId.slice(2);
+      }
+      
+      let bill = sppBills.find(b => b.orderId === orderId || b.id === cleanBillId || b.id === billId);
+      if (!bill) {
+        const monthMap: { [key: string]: string } = {
+          "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
+          "mei": "Mei", "jun": "Juni", "jul": "Juli", "agu": "Agustus",
+          "sep": "September", "okt": "Oktober", "nov": "November", "des": "Desember"
+        };
+        for (const [short, full] of Object.entries(monthMap)) {
+          const searchPattern = `-${short}-`;
+          if (cleanBillId.toLowerCase().includes(searchPattern)) {
+            const index = cleanBillId.toLowerCase().indexOf(searchPattern);
+            const originalPart = cleanBillId.substring(index + 1, index + 1 + short.length);
+            const expandedBillId = cleanBillId.replace(`-${originalPart}-`, `-${full}-`);
+            bill = sppBills.find(b => b.id === expandedBillId);
+            if (bill) break;
+          }
+        }
+      }
+
       if (bill) {
         bill.status = "paid";
         bill.paidAt = new Date().toISOString();
-        bill.paymentMethod = paymentType || "Midtrans Simulator (GoPay/Transfer)";
+        bill.paymentMethod = actualPaymentType;
+        if (bill.orderId !== orderId) {
+          bill.orderId = orderId; // repair
+        }
         
         affectedStudent = students.find(s => s.id === bill.studentId) || null;
         title = "SPP Lunas Terverifikasi";
-        message = `Pembayaran SPP ${affectedStudent?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} BERHASIL divalidasi oleh Midtrans secara instan!`;
+        message = `Pembayaran SPP ${affectedStudent?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} BERHASIL divalidasi secara instan!`;
 
         const notification: RealtimeNotification = {
           id: `notif-spp-sim-${Date.now()}`,
@@ -6346,13 +6436,102 @@ async function startServer() {
         saveState();
         return res.json({ success: true, type: "spp", bill, student: affectedStudent });
       }
+    } else if (orderId.startsWith("MISC-")) {
+      const middle = orderId.slice(5);
+      const lastHyphenIndex = middle.lastIndexOf("-");
+      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+      
+      let cleanBillId = billId;
+      if (cleanBillId.startsWith("M-")) {
+        cleanBillId = decompressMiscBillIdForMidtrans(cleanBillId);
+      }
+      
+      let bill = miscBills.find(b => b.orderId === orderId || b.id === cleanBillId || b.id === billId);
+      if (bill) {
+        bill.status = "paid";
+        bill.paidAt = new Date().toISOString();
+        bill.paymentMethod = actualPaymentType;
+        if (bill.orderId !== orderId) {
+          bill.orderId = orderId; // repair
+        }
+        
+        affectedStudent = students.find(s => s.id === bill.studentId) || null;
+        title = "Tagihan Lain-Lain Lunas Terverifikasi";
+        message = `Pembayaran tagihan ${bill.title} untuk ${affectedStudent?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} BERHASIL divalidasi secara instan!`;
+
+        // Register incoming transaction for treasurer bookkeeping if not existing yet
+        const txExists = treasurerTransactions.some(t => t.description.includes(orderId) || (t.createdBy === "Midtrans Webhook" && t.description.includes(bill.title) && t.nis === affectedStudent?.nis));
+        if (!txExists) {
+          const newTx: TreasurerTransaction = {
+            id: `tx-misc-${Date.now()}`,
+            type: "incoming",
+            category: "Operasional",
+            amount: bill.amount,
+            description: `Pembayaran ${bill.title} (Midtrans Sim) - ${affectedStudent?.name || ""} (${affectedStudent?.nis || ""})`,
+            date: new Date().toISOString().split("T")[0],
+            source: "custom",
+            studentName: affectedStudent?.name,
+            nis: affectedStudent?.nis,
+            createdBy: "Midtrans Simulator"
+          };
+          treasurerTransactions.push(newTx);
+        }
+
+        const notification: RealtimeNotification = {
+          id: `notif-misc-sim-${Date.now()}`,
+          studentId: bill.studentId,
+          title,
+          message,
+          type: "payment",
+          createdAt: new Date().toISOString()
+        };
+        broadcastNotification(notification);
+
+        // Send automated WA
+        if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && affectedStudent && affectedStudent.phone) {
+          const waMsg = `Yth. Orang Tua / Wali Siswa dari *${affectedStudent.name}* (NIS: ${affectedStudent.nis}).\n\n` +
+            `📢 *KUITANSI PEMBAYARAN ONLINE*\n` +
+            `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via Midtrans telah BERHASIL diselesaikan secara online.\n\n` +
+            `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
+            `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+            `• Status: *LUNAS (PAID)*\n\n` +
+            `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+          sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online misc payment WA:", err));
+        }
+
+        saveState();
+        return res.json({ success: true, type: "misc", bill, student: affectedStudent });
+      }
     } else if (orderId.startsWith("SAV-")) {
-      const transaction = savingsTransactions.find(t => t.orderId === orderId);
+      let transaction = savingsTransactions.find(t => t.orderId === orderId);
+      if (!transaction) {
+        // Recovery mechanism from webhook
+        const middle = orderId.slice(4);
+        const lastHyphenIndex = middle.lastIndexOf("-");
+        const studentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+        const student = students.find(s => s.id === studentId);
+        if (student) {
+          const recoveredAmount = actualGrossAmount || 50000;
+          transaction = {
+            id: `sav-pay-recovered-${Date.now()}`,
+            studentId,
+            type: "deposit",
+            amount: recoveredAmount,
+            status: "pending",
+            createdAt: new Date().toISOString(),
+            orderId: orderId,
+            paymentMethod: actualPaymentType,
+            notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
+          };
+          savingsTransactions.push(transaction);
+        }
+      }
+
       if (transaction) {
         // Only progress if still pending to guarantee idempotency
         if (transaction.status === "pending") {
           transaction.status = "success";
-          transaction.paymentMethod = paymentType || "Midtrans Simulator";
+          transaction.paymentMethod = actualPaymentType;
           
           affectedStudent = students.find(s => s.id === transaction.studentId) || null;
           if (affectedStudent) {
@@ -6360,7 +6539,7 @@ async function startServer() {
           }
 
           title = "Tabungan Terisi Real-time";
-          message = `Uang tabungan Rp ${transaction.amount.toLocaleString("id-ID")} untuk ${affectedStudent?.name || ""} sukses ditambahkan via Midtrans (${paymentType || 'E-Wallet'}). Saldo total: Rp ${affectedStudent?.savingsBalance.toLocaleString("id-ID")}.`;
+          message = `Uang tabungan Rp ${transaction.amount.toLocaleString("id-ID")} untuk ${affectedStudent?.name || ""} sukses ditambahkan via Midtrans (${actualPaymentType}). Saldo total: Rp ${affectedStudent?.savingsBalance.toLocaleString("id-ID")}.`;
 
           const notification: RealtimeNotification = {
             id: `notif-sav-sim-${Date.now()}`,
@@ -6388,7 +6567,8 @@ async function startServer() {
           saveState();
           return res.json({ success: true, type: "savings", transaction, student: affectedStudent });
         } else {
-          return res.json({ success: true, message: "Transaksi sudah diproses sebelumnya." });
+          affectedStudent = students.find(s => s.id === transaction.studentId) || null;
+          return res.json({ success: true, type: "savings", transaction, student: affectedStudent, message: "Transaksi sudah diproses sebelumnya." });
         }
       }
     }

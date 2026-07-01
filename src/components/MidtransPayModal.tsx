@@ -55,16 +55,19 @@ export default function MidtransPayModal({
               body: JSON.stringify({ orderId, paymentType: result?.payment_type || 'Midtrans Snap' })
             })
               .then(() => {
-                onSuccess();
+                setTimeout(() => {
+                  onSuccess();
+                }, 1500);
               })
               .catch((err) => {
                 console.error('Local verification sync failed:', err);
-                onSuccess(); // still succeed since Midtrans already authorized successfully
+                setTimeout(() => {
+                  onSuccess();
+                }, 1500);
               });
           },
           onPending: function (result: any) {
             console.log('Midtrans Snap Payment Pending:', result);
-            alert('Pembayaran tertunda (Pending). Harap selesaikan pembayaran sesuai petunjuk.');
             onClose();
           },
           onError: function (result: any) {
@@ -136,6 +139,16 @@ export default function MidtransPayModal({
       };
       document.body.appendChild(script);
     }
+
+    return () => {
+      try {
+        if ((window as any).snap && typeof (window as any).snap.hide === 'function') {
+          (window as any).snap.hide();
+        }
+      } catch (e) {
+        console.warn('Error closing Midtrans snap iframe overlay:', e);
+      }
+    };
   }, [isOpen, token, isProduction, clientKey, orderId]);
 
   if (!isOpen) return null;

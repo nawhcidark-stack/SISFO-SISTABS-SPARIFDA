@@ -59,6 +59,7 @@ import {
   CheckCircle2,
   XCircle,
   AlertTriangle,
+  CreditCard,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -1342,7 +1343,7 @@ export default function AdminPanel({
   >(null);
 
   // Student financial subtabs inside roster
-  const [studentDetailTab, setStudentDetailTab] = useState<"spp" | "savings">(
+  const [studentDetailTab, setStudentDetailTab] = useState<"spp" | "savings" | "misc">(
     "spp",
   );
 
@@ -1380,7 +1381,7 @@ export default function AdminPanel({
   const [paymentCart, setPaymentCart] = useState<
     Array<{
       id: string;
-      type: "spp" | "savings_deposit";
+      type: "spp" | "savings_deposit" | "misc";
       student: Student;
       amount: number;
       billId?: string;
@@ -1461,6 +1462,26 @@ export default function AdminPanel({
     setPaymentCart((prev) => [...prev, newItem]);
   };
 
+  const addToCartMisc = (bill: MiscBill, student: Student) => {
+    if (
+      paymentCart.some((item) => item.type === "misc" && item.billId === bill.id)
+    ) {
+      alert(
+        `Tagihan "${bill.title}" untuk ${student.name} sudah ada di dalam ringkasan keranjang belanja!`,
+      );
+      return;
+    }
+    const newItem = {
+      id: `cart-misc-${bill.id}`,
+      type: "misc" as const,
+      student,
+      amount: bill.amount,
+      billId: bill.id,
+      notes: bill.title,
+    };
+    setPaymentCart((prev) => [...prev, newItem]);
+  };
+
   const addToCartSavings = (
     amount: number,
     notes: string,
@@ -1519,6 +1540,20 @@ export default function AdminPanel({
               name: `Setoran Tabungan Manual`,
               amount: item.amount,
               desc: `Siswa: ${item.student.name} • Memo: "${item.notes || "Setoran"}"`,
+            });
+          }
+        } else if (item.type === "misc" && item.billId) {
+          const res = await fetch("/api/admin/pay-misc-manual", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ billId: item.billId })
+          });
+          const data = await res.json();
+          if (res.ok && data.bill) {
+            executedItems.push({
+              name: `Lain-lain: ${data.bill.title}`,
+              amount: item.amount,
+              desc: `Siswa: ${item.student.name} (Kelas ${item.student.class})`,
             });
           }
         }
@@ -3586,6 +3621,8 @@ export default function AdminPanel({
                               <span className="font-extrabold text-slate-800">
                                 {item.type === "spp"
                                   ? `SPP Bulanan (${item.month} ${item.year})`
+                                  : item.type === "misc"
+                                  ? `Lain-lain (${item.notes})`
                                   : "Setoran Tabungan Tunai"}
                               </span>
                               <span className="text-[10px] text-slate-550 font-medium">
@@ -3655,12 +3692,12 @@ export default function AdminPanel({
                     </motion.div>
                   )}
 
-                  {/* Switcher Tab utama: Memisahkan tampilan SPP Bulanan dan Histori Tabungan secara mandiri */}
-                  <div className="flex border border-slate-200 p-1 bg-slate-50 rounded-xl gap-2 font-sans">
+                  {/* Switcher Tab utama: Memisahkan tampilan SPP Bulanan, Histori Tabungan, dan Lain-lain secara mandiri */}
+                  <div className="flex flex-wrap border border-slate-200 p-1 bg-slate-50 rounded-xl gap-2 font-sans">
                     <button
                       type="button"
                       onClick={() => setStudentDetailTab("spp")}
-                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                      className={`flex-1 min-w-[120px] py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
                         studentDetailTab === "spp"
                           ? "bg-indigo-650 bg-indigo-600 text-white border-transparent shadow-md font-extrabold"
                           : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900 font-bold"
@@ -3677,7 +3714,7 @@ export default function AdminPanel({
                     <button
                       type="button"
                       onClick={() => setStudentDetailTab("savings")}
-                      className={`flex-1 py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                      className={`flex-1 min-w-[120px] py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
                         studentDetailTab === "savings"
                           ? "bg-indigo-650 bg-indigo-600 text-white border-transparent shadow-md font-extrabold"
                           : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900 font-bold"
@@ -3693,6 +3730,23 @@ export default function AdminPanel({
                         ).length
                       }{" "}
                       Transaksi)
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setStudentDetailTab("misc")}
+                      className={`flex-1 min-w-[120px] py-2.5 text-center font-bold text-xs uppercase tracking-wider rounded-lg transition-all cursor-pointer flex items-center justify-center gap-2 border ${
+                        studentDetailTab === "misc"
+                          ? "bg-indigo-650 bg-indigo-600 text-white border-transparent shadow-md font-extrabold"
+                          : "bg-white text-slate-600 border-slate-200 hover:bg-slate-100 hover:text-slate-900 font-bold"
+                      }`}
+                    >
+                      <CreditCard size={14} />
+                      Iuran Lain-lain (
+                      {
+                        miscBills.filter((b) => b.studentId === selectedStudent.id)
+                          .length
+                      }{" "}
+                      Tagihan)
                     </button>
                   </div>
 
@@ -4176,7 +4230,7 @@ export default function AdminPanel({
                           })()}
                         </div>
                       </>
-                    ) : (
+                    ) : studentDetailTab === "savings" ? (
                       <>
                         {/* TAMPILAN TABUNGAN: 100% Hanya informasi dan aksi terkait Saldo & Mutasi Tabungan */}
                         <div className="lg:col-span-5 flex flex-col gap-4">
@@ -4477,6 +4531,169 @@ export default function AdminPanel({
                             </div>
                           </div>
                         </div>
+                      </>
+                    ) : (
+                      <>
+                        {/* TAMPILAN IURAN LAIN-LAIN */}
+                        {(() => {
+                          const studentMiscBills = miscBills.filter(b => b.studentId === selectedStudent.id);
+                          const unpaidMisc = studentMiscBills.filter(b => b.status !== "paid");
+                          const totalOutstandingMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
+
+                          return (
+                            <>
+                              {/* Left Side: Summary of Misc Bills */}
+                              <div className="lg:col-span-5 flex flex-col gap-4 text-left">
+                                <div className="p-4 rounded-xl bg-gradient-to-br from-indigo-950 to-slate-900 text-white shadow-md flex flex-col justify-between min-h-[110px] relative overflow-hidden">
+                                  <div className="absolute right-[-20px] bottom-[-20px] opacity-10">
+                                    <CreditCard size={120} />
+                                  </div>
+                                  <div>
+                                    <span className="text-[9px] uppercase tracking-wider font-bold text-indigo-200">
+                                      TOTAL TAGIHAN LAIN-LAIN BELUM BAYAR
+                                    </span>
+                                    <span className="text-lg md:text-xl font-bold font-mono block mt-1">
+                                      Rp {totalOutstandingMisc.toLocaleString("id-ID")}
+                                    </span>
+                                  </div>
+                                  <div className="mt-4 pt-2 border-t border-indigo-850 flex justify-between items-center text-[10px] text-indigo-300">
+                                    <span>SMP Maarif Pandaan</span>
+                                    <span>{unpaidMisc.length} Tagihan Tertunda</span>
+                                  </div>
+                                </div>
+
+                                <div className="p-4 bg-white border border-slate-200 rounded-xl flex flex-col gap-3">
+                                  <h4 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5 border-b border-slate-100 pb-2">
+                                    <span>Panduan & Aksi Cepat</span>
+                                  </h4>
+                                  <p className="text-[11px] text-slate-500 leading-relaxed">
+                                    Iuran/Tagihan Lain-lain mencakup pembayaran seragam, buku, kegiatan, komite, UTS/UAS, dan iuran non-SPP lainnya.
+                                    Anda dapat menambahkan tagihan ini ke <strong>Keranjang Pembayaran</strong> untuk digabungkan menjadi 1 kuitansi dengan SPP atau Tabungan.
+                                  </p>
+                                </div>
+                              </div>
+
+                              {/* Right Side: List of All Misc Bills for this student */}
+                              <div className="lg:col-span-7 flex flex-col gap-3 border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs text-left">
+                                <div className="px-4 py-3 bg-slate-50 border-b border-slate-200 flex justify-between items-center">
+                                  <span className="font-bold text-slate-800 uppercase tracking-wider text-[10px] flex items-center gap-1.5">
+                                    <CreditCard size={13} className="text-indigo-600" />
+                                    Daftar Tagihan Iuran Lain-lain Siswa
+                                  </span>
+                                  <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
+                                    {studentMiscBills.length} Tagihan
+                                  </span>
+                                </div>
+
+                                <div className="p-3 max-h-[350px] overflow-y-auto">
+                                  {studentMiscBills.length === 0 ? (
+                                    <div className="text-center py-10 text-[11px] text-slate-400">
+                                      Belum ada data tagihan iuran lain-lain untuk siswa ini.
+                                    </div>
+                                  ) : (
+                                    <div className="overflow-x-auto">
+                                      <table className="w-full text-left font-sans text-[11px]">
+                                        <thead>
+                                          <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
+                                            <th className="pb-2">Nama Tagihan</th>
+                                            <th className="pb-2">Nominal</th>
+                                            <th className="pb-2">Status</th>
+                                            <th className="pb-2 text-right">Aksi</th>
+                                          </tr>
+                                        </thead>
+                                        <tbody className="divide-y divide-slate-100">
+                                          {studentMiscBills.map((bill) => {
+                                            const isInCart = paymentCart.some((c) => c.type === "misc" && c.billId === bill.id);
+                                            return (
+                                              <tr key={bill.id} className="hover:bg-slate-50/50">
+                                                <td className="py-3">
+                                                  <div className="font-extrabold text-slate-800 leading-snug">
+                                                    {bill.title}
+                                                  </div>
+                                                  <div className="text-[9px] text-slate-400 font-mono mt-0.5">
+                                                    Ref ID: {bill.id.substring(0, 8).toUpperCase()}...
+                                                  </div>
+                                                </td>
+                                                <td className="py-3 font-mono font-bold text-slate-700">
+                                                  Rp {bill.amount.toLocaleString("id-ID")}
+                                                </td>
+                                                <td className="py-3">
+                                                  {bill.status === "paid" ? (
+                                                    <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold bg-emerald-50 px-1.5 py-0.5 rounded text-[9px] border border-emerald-100">
+                                                      <CheckCircle size={9} /> Lunas
+                                                    </span>
+                                                  ) : (
+                                                    <span className="inline-flex items-center gap-0.5 text-orange-700 font-bold bg-orange-50 px-1.5 py-0.5 rounded text-[9px] border border-orange-100">
+                                                      <Clock size={9} /> Belum Lunas
+                                                    </span>
+                                                  )}
+                                                </td>
+                                                <td className="py-3 text-right">
+                                                  <div className="flex items-center justify-end gap-1.5">
+                                                    {bill.status !== "paid" ? (
+                                                      <>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => addToCartMisc(bill, selectedStudent)}
+                                                          disabled={isInCart}
+                                                          className={`px-2 py-1 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer ${
+                                                            isInCart
+                                                              ? "bg-slate-100 border border-slate-200 text-slate-400 cursor-not-allowed"
+                                                              : "bg-amber-500 hover:bg-amber-600 border border-amber-600 text-white shadow-xs"
+                                                          }`}
+                                                        >
+                                                          <ShoppingCart size={9} />
+                                                          {isInCart ? "Di Keranjang" : "+ Keranjang"}
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => handlePayMiscManualLocal(bill.id)}
+                                                          className="px-2 py-1 bg-emerald-600 hover:bg-emerald-750 text-white font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer shadow-xs"
+                                                        >
+                                                          <CheckCircle size={9} />
+                                                          Bayar Tunai
+                                                        </button>
+                                                      </>
+                                                    ) : (
+                                                      <>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => {
+                                                            setReceiptToPrint({
+                                                              type: "misc",
+                                                              detail: bill,
+                                                              student: selectedStudent,
+                                                            });
+                                                            setPrintId("print-receipt-section");
+                                                          }}
+                                                          className="px-2 py-1 bg-white hover:bg-slate-100 border border-slate-200 text-slate-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer"
+                                                        >
+                                                          <Printer size={9} className="text-indigo-600" />
+                                                          Cetak Bukti
+                                                        </button>
+                                                        <button
+                                                          type="button"
+                                                          onClick={() => handleCancelMiscPaymentLocal(bill.id)}
+                                                          className="px-2 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold border border-rose-200 rounded text-[9px] uppercase tracking-wider flex items-center gap-1 transition-all cursor-pointer"
+                                                        >
+                                                          Batal ↩
+                                                        </button>
+                                                      </>
+                                                    )}
+                                                  </div>
+                                                </td>
+                                              </tr>
+                                            );
+                                          })}
+                                        </tbody>
+                                      </table>
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            </>
+                          );
+                        })()}
                       </>
                     )}
                   </div>

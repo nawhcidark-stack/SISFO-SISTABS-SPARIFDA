@@ -364,6 +364,7 @@ export default function AdminPanel({
   const [miscAmount, setMiscAmount] = useState("");
   const [miscSearch, setMiscSearch] = useState("");
   const [miscStatusFilter, setMiscStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [miscStudentSearchQuery, setMiscStudentSearchQuery] = useState("");
   const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
 
   // Helper to extract grade level
@@ -466,6 +467,7 @@ export default function AdminPanel({
       setMiscTargetGrade("");
       setMiscTargetClass("");
       setMiscTargetStudentId("");
+      setMiscStudentSearchQuery("");
       onRefresh();
     } catch (err: any) {
       console.error(err);
@@ -5745,8 +5747,33 @@ export default function AdminPanel({
                     )}
 
                     {miscTargetType === "single" && (
-                      <div className="flex flex-col gap-1.5 animate-fade-in">
+                      <div className="flex flex-col gap-1.5 animate-fade-in text-left">
                         <label className="font-bold text-slate-700">Pilih Siswa Target:</label>
+                        <div className="flex flex-col gap-1.5 p-3 bg-slate-50 border border-slate-200 rounded-xl">
+                          <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider block">
+                            Pencarian Siswa:
+                          </span>
+                          <input
+                            type="text"
+                            placeholder="Ketik nama / NIS / kelas untuk menyaring..."
+                            value={miscStudentSearchQuery}
+                            onChange={(e) => setMiscStudentSearchQuery(e.target.value)}
+                            className="w-full px-3 py-1.5 text-xs border border-slate-200 bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 focus:outline-none rounded-lg"
+                          />
+                          <span className="text-[9px] text-slate-400 font-semibold block mt-0.5">
+                            Menampilkan {
+                              students.filter(st => {
+                                const q = miscStudentSearchQuery.toLowerCase().trim();
+                                if (!q) return true;
+                                return (
+                                  st.name.toLowerCase().includes(q) ||
+                                  st.nis.toLowerCase().includes(q) ||
+                                  st.class.toLowerCase().includes(q)
+                                );
+                              }).length
+                            } dari {students.length} siswa
+                          </span>
+                        </div>
                         <select
                           value={miscTargetStudentId}
                           onChange={(e) => setMiscTargetStudentId(e.target.value)}
@@ -5754,11 +5781,21 @@ export default function AdminPanel({
                           required
                         >
                           <option value="">-- Pilih Siswa --</option>
-                          {students.map(st => (
-                            <option key={st.id} value={st.id}>
-                              {st.name} (NIS: {st.nis} - Kelas {st.class})
-                            </option>
-                          ))}
+                          {students
+                            .filter(st => {
+                              const q = miscStudentSearchQuery.toLowerCase().trim();
+                              if (!q) return true;
+                              return (
+                                st.name.toLowerCase().includes(q) ||
+                                st.nis.toLowerCase().includes(q) ||
+                                st.class.toLowerCase().includes(q)
+                              );
+                            })
+                            .map(st => (
+                              <option key={st.id} value={st.id}>
+                                {st.name} (NIS: {st.nis} - Kelas {st.class})
+                              </option>
+                            ))}
                         </select>
                       </div>
                     )}

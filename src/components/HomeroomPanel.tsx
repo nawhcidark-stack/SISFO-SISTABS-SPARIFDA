@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue } from '../types';
+import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import BukuIndukManagement from './BukuIndukManagement';
 import { 
@@ -603,6 +603,7 @@ interface HomeroomPanelProps {
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   scannedStudentNis?: string | null;
   scannedStudentAt?: number | null;
+  miscBills?: MiscBill[];
 }
 
 export default function HomeroomPanel({
@@ -617,7 +618,8 @@ export default function HomeroomPanel({
   isLoading,
   onUpdateStudent,
   scannedStudentNis,
-  scannedStudentAt
+  scannedStudentAt,
+  miscBills = []
 }: HomeroomPanelProps) {
   const todayStr = new Date().toISOString().substring(0, 10);
 
@@ -1714,7 +1716,7 @@ export default function HomeroomPanel({
   }, [meetingsList, meetSearch]);
 
   // Copy WhatsApp Reminder for parents regarding outstanding bills
-  const copyWaReminder = (student: Student, unpaidBills: SppBill[]) => {
+  const copyWaReminder = (student: Student, unpaidBills: SppBill[], unpaidMisc: MiscBill[] = []) => {
     const formattedSavings = new Intl.NumberFormat('id-ID', {
       style: 'currency',
       currency: 'IDR',
@@ -1730,17 +1732,44 @@ export default function HomeroomPanel({
       maximumFractionDigits: 0
     }).format(totalUnpaid);
 
+    const totalUnpaidMisc = unpaidMisc.reduce((acc, curr) => acc + curr.amount, 0);
+    const formattedUnpaidMisc = new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(totalUnpaidMisc);
+
+    const totalAllUnpaid = totalUnpaid + totalUnpaidMisc;
+    const formattedAllUnpaid = new Intl.NumberFormat('id-ID', {
+      style: 'currency',
+      currency: 'IDR',
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 0
+    }).format(totalAllUnpaid);
+
     const monthsStr = unpaidBills.map(b => `${b.month} ${b.year}`).join(', ');
+    const miscsStr = unpaidMisc.map(b => `${b.title} (${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(b.amount)})`).join(', ');
     const schoolName = schoolIdentity?.name || "SMP Maarif";
+
+    let billDetails = '';
+    if (unpaidBills.length > 0) {
+      billDetails += `\n*Tunggakan SPP Belum Lunas:* ${formattedUnpaid} (${monthsStr})`;
+    }
+    if (unpaidMisc.length > 0) {
+      billDetails += `\n*Tunggakan Iuran Lain-lain:* ${formattedUnpaidMisc} (${miscsStr})`;
+    }
+    if (unpaidBills.length > 0 && unpaidMisc.length > 0) {
+      billDetails += `\n*Total Seluruh Tunggakan:* ${formattedAllUnpaid}`;
+    }
 
     const text = `Assalamualaikum Wr. Wb. Bapak/Ibu Wali Murid dari *${student.name}* (NIS: *${student.nis}*).
 
-Kami dari pihak Wali Kelas *${currentTeacher.className}* ${schoolName} ingin menginfokan bahwa saat ini terdapat tagihan SPP bulanan siswa yang belum dilunasi dengan rincian sebagai berikut:
-
-*Tunggakan SPP Belum Lunas:* ${formattedUnpaid} (${monthsStr})
+Kami dari pihak Wali Kelas *${currentTeacher.className}* ${schoolName} ingin menginfokan bahwa saat ini terdapat tagihan siswa yang belum dilunasi dengan rincian sebagai berikut:
+${billDetails}
 *Saldo Tabungan Saat Ini:* ${formattedSavings}
 
-Bapak/Ibu dapat melakukan pelunasan SPP ini secara online via Portal Pembayaran Siswa, atau dengan menyetorkan secara tunai melalui staf sekolah / teller keuangan.
+Bapak/Ibu dapat melakukan pelunasan tagihan ini secara online via Portal Pembayaran Siswa, atau dengan menyetorkan secara tunai melalui staf sekolah / teller keuangan.
 
 Terima kasih banyak atas perhatian, kerja sama, dan support Bapak/Ibu sekalian.
 Wassalamualaikum Wr. Wb.
@@ -1997,6 +2026,8 @@ Wassalamualaikum Wr. Wb.
     let totalSavings = 0;
     let totalUnpaidSpp = 0;
     let totalInArrearsCount = 0;
+    let totalUnpaidMisc = 0;
+    let totalInArrearsMiscCount = 0;
 
     classStudents.forEach(student => {
       totalSavings += student.savingsBalance || 0;
@@ -2007,14 +2038,23 @@ Wassalamualaikum Wr. Wb.
       if (sBills.length > 0) {
         totalInArrearsCount++;
       }
+
+      const sMiscBills = (miscBills || []).filter(b => b.studentId === student.id && b.status !== 'paid');
+      const unpaidMiscSum = sMiscBills.reduce((acc, curr) => acc + curr.amount, 0);
+      totalUnpaidMisc += unpaidMiscSum;
+      if (sMiscBills.length > 0) {
+        totalInArrearsMiscCount++;
+      }
     });
 
     return {
       totalSavings,
       totalUnpaidSpp,
-      totalInArrearsCount
+      totalInArrearsCount,
+      totalUnpaidMisc,
+      totalInArrearsMiscCount
     };
-  }, [classStudents, bills]);
+  }, [classStudents, bills, miscBills]);
 
   return (
     <div id="homeroom-dashboard-root" className="flex flex-col gap-6 pb-24 md:pb-0 animate-fade-in">
@@ -2948,7 +2988,7 @@ Wassalamualaikum Wr. Wb.
               <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-slate-900 font-extrabold text-sm">Monitoring Administrasi & Keuangan Kelas</h3>
-                  <p className="text-slate-450 text-xs mt-0.5">Informasi rincian saldo tabungan dan tunggakan tagihan SPP untuk bantuan pengingat (Reminder).</p>
+                  <p className="text-slate-450 text-xs mt-0.5">Informasi rincian saldo tabungan, tunggakan tagihan SPP, dan iuran lain-lain murid untuk sinkronisasi pengingat (Reminder).</p>
                 </div>
                 {/* Search input inside Tab */}
                 <div className="relative">
@@ -2964,7 +3004,7 @@ Wassalamualaikum Wr. Wb.
               </div>
 
               {/* Class Aggregate widgets */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+              <div className="grid grid-cols-1 sm:grid-cols-4 gap-4 mb-6">
                 <div className="bg-emerald-50/55 border border-emerald-100 rounded-xl p-4 flex flex-col justify-between">
                   <span className="block text-[9px] font-extrabold text-emerald-700 uppercase tracking-widest">Total Tabungan Kelas</span>
                   <div className="flex items-center gap-2 mt-1.5">
@@ -2976,7 +3016,7 @@ Wassalamualaikum Wr. Wb.
                 </div>
 
                 <div className="bg-rose-50/55 border border-rose-100 rounded-xl p-4 flex flex-col justify-between">
-                  <span className="block text-[9px] font-extrabold text-rose-700 uppercase tracking-widest">Total Tunggakan SPP Kelas</span>
+                  <span className="block text-[9px] font-extrabold text-rose-700 uppercase tracking-widest">Tunggakan SPP Kelas</span>
                   <div className="flex items-center gap-2 mt-1.5">
                     <CreditCard size={16} className="text-rose-600" />
                     <span className="block text-base font-black text-rose-800">
@@ -2985,11 +3025,23 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 </div>
 
+                <div className="bg-indigo-50/55 border border-indigo-100 rounded-xl p-4 flex flex-col justify-between">
+                  <span className="block text-[9px] font-extrabold text-indigo-700 uppercase tracking-widest">Tunggakan Lain-lain Kelas</span>
+                  <div className="flex items-center gap-2 mt-1.5">
+                    <CreditCard size={16} className="text-indigo-600" />
+                    <span className="block text-base font-black text-indigo-800">
+                      {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(classFinanceStats.totalUnpaidMisc)}
+                    </span>
+                  </div>
+                </div>
+
                 <div className="bg-amber-50/55 border border-amber-100 rounded-xl p-4 flex flex-col justify-between">
-                  <span className="block text-[9px] font-extrabold text-amber-700 uppercase tracking-widest">Siswa Menunggak SPP</span>
+                  <span className="block text-[9px] font-extrabold text-amber-700 uppercase tracking-widest">Siswa Menunggak SPP / Iuran</span>
                   <div className="flex items-center gap-2 mt-1.5">
                     <Users size={16} className="text-amber-600" />
-                    <span className="block text-base font-black text-slate-800">{classFinanceStats.totalInArrearsCount} <span className="text-xs font-normal text-slate-500">Siswa</span></span>
+                    <span className="block text-base font-black text-slate-800">
+                      {classFinanceStats.totalInArrearsCount} / {classFinanceStats.totalInArrearsMiscCount} <span className="text-xs font-normal text-slate-500">Siswa</span>
+                    </span>
                   </div>
                 </div>
               </div>
@@ -3019,6 +3071,7 @@ Wassalamualaikum Wr. Wb.
                             <th className="py-2.5 px-3">Nama Lengkap & NIS</th>
                             <th className="py-2.5 px-3">Saldo Tabungan</th>
                             <th className="py-2.5 px-3">Status Tagihan SPP (Unpaid)</th>
+                            <th className="py-2.5 px-3">Tagihan Lain-lain (Misc)</th>
                             <th className="py-2.5 px-3">Bulan SPP Lunas</th>
                             <th className="py-2.5 px-3 text-right">Tindakan Pengingat</th>
                           </tr>
@@ -3028,6 +3081,10 @@ Wassalamualaikum Wr. Wb.
                             const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
                             const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
                             const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
+
+                            const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
+                            const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');
+                            const totalUnpaidMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
 
                             return (
                               <tr key={student.id} className="hover:bg-slate-50/30 transition-colors">
@@ -3041,18 +3098,37 @@ Wassalamualaikum Wr. Wb.
                                 <td className="py-3 px-3">
                                   {overdueBills.length === 0 ? (
                                     <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
-                                      <CheckCircle size={10} /> Lunas
+                                      <CheckCircle size={10} /> Lunas SPP
                                     </span>
                                   ) : (
                                     <div className="flex flex-col gap-1">
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full w-max animate-pulse">
-                                        ⚠️ Menunggak
+                                        ⚠️ Menunggak SPP
                                       </span>
                                       <span className="font-mono text-rose-700 font-semibold text-[10.5px]">
                                         Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
                                       </span>
                                       <span className="text-[9px] text-rose-500 font-medium">
                                         Tunggakan: {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
+                                      </span>
+                                    </div>
+                                  )}
+                                </td>
+                                <td className="py-3 px-3">
+                                  {unpaidMisc.length === 0 ? (
+                                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">
+                                      <CheckCircle size={10} /> Lunas Iuran
+                                    </span>
+                                  ) : (
+                                    <div className="flex flex-col gap-1">
+                                      <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full w-max">
+                                        ⚠️ {unpaidMisc.length} Tertunda
+                                      </span>
+                                      <span className="font-mono text-indigo-700 font-semibold text-[10.5px]">
+                                        Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaidMisc)}
+                                      </span>
+                                      <span className="text-[9px] text-slate-500 font-medium truncate max-w-[150px]" title={unpaidMisc.map(b => b.title).join(', ')}>
+                                        Iuran: {unpaidMisc.map(b => b.title).join(', ')}
                                       </span>
                                     </div>
                                   )}
@@ -3071,10 +3147,10 @@ Wassalamualaikum Wr. Wb.
                                   )}
                                 </td>
                                 <td className="py-3 px-3 text-right">
-                                  {overdueBills.length > 0 ? (
+                                  {(overdueBills.length > 0 || unpaidMisc.length > 0) ? (
                                     <button
                                       type="button"
-                                      onClick={() => copyWaReminder(student, overdueBills)}
+                                      onClick={() => copyWaReminder(student, overdueBills, unpaidMisc)}
                                       className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer ${
                                         copiedStudentId === student.id
                                           ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
@@ -3111,6 +3187,10 @@ Wassalamualaikum Wr. Wb.
                         const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
                         const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
 
+                        const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
+                        const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');
+                        const totalUnpaidMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
+
                         return (
                           <div key={student.id} className="bg-slate-50/50 border border-slate-200 rounded-xl p-4 flex flex-col gap-3">
                             {/* Header: Name and NIS */}
@@ -3119,14 +3199,23 @@ Wassalamualaikum Wr. Wb.
                                 <div className="font-extrabold text-slate-800 text-xs sm:text-sm">{student.name}</div>
                                 <div className="text-[10px] text-slate-400 font-bold font-mono mt-0.5">NIS: {student.nis}</div>
                               </div>
-                              <div>
+                              <div className="flex flex-col gap-1 items-end">
                                 {overdueBills.length === 0 ? (
-                                  <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                    <CheckCircle size={10} className="text-emerald-600" /> Lunas SPP
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    ✓ Lunas SPP
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 text-[9.5px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full animate-pulse">
-                                    ⚠️ Menunggak
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full animate-pulse">
+                                    ⚠️ Tunggakan SPP
+                                  </span>
+                                )}
+                                {unpaidMisc.length === 0 ? (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
+                                    ✓ Lunas Iuran
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
+                                    ⚠️ {unpaidMisc.length} Iuran Tertunda
                                   </span>
                                 )}
                               </div>
@@ -3142,11 +3231,11 @@ Wassalamualaikum Wr. Wb.
                               </div>
                               <div>
                                 <span className="block text-[8px] font-extrabold text-slate-400 uppercase tracking-wider">Total Belum Bayar</span>
-                                {overdueBills.length === 0 ? (
+                                {overdueBills.length === 0 && unpaidMisc.length === 0 ? (
                                   <span className="block font-mono font-bold text-xs text-emerald-600 mt-1">Rp 0</span>
                                 ) : (
                                   <span className="block font-mono font-bold text-xs text-rose-700 mt-1">
-                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
+                                    {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid + totalUnpaidMisc)}
                                   </span>
                                 )}
                               </div>
@@ -3158,6 +3247,16 @@ Wassalamualaikum Wr. Wb.
                                 <span className="block text-[8px] font-black text-rose-500 uppercase tracking-wider mb-0.5">Detail Bulan Menunggak:</span>
                                 <p className="text-[9.5px] text-rose-650 font-semibold leading-relaxed">
                                   {overdueBills.map(b => `${b.month} ${b.year}`).join(', ')}
+                                </p>
+                              </div>
+                            )}
+
+                            {/* Unpaid Misc details if overdue */}
+                            {unpaidMisc.length > 0 && (
+                              <div className="bg-indigo-50/40 border border-indigo-100/60 rounded-lg p-2 text-left">
+                                <span className="block text-[8px] font-black text-indigo-500 uppercase tracking-wider mb-0.5">Iuran Lain-lain Belum Lunas:</span>
+                                <p className="text-[9.5px] text-indigo-650 font-semibold leading-relaxed">
+                                  {unpaidMisc.map(b => `${b.title} (${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(b.amount)})`).join(', ')}
                                 </p>
                               </div>
                             )}
@@ -3179,11 +3278,11 @@ Wassalamualaikum Wr. Wb.
                             </div>
 
                             {/* Action WA Reminder */}
-                            {overdueBills.length > 0 && (
+                            {(overdueBills.length > 0 || unpaidMisc.length > 0) && (
                               <div className="mt-1 pt-2.5 border-t border-slate-150">
                                 <button
                                   type="button"
-                                  onClick={() => copyWaReminder(student, overdueBills)}
+                                  onClick={() => copyWaReminder(student, overdueBills, unpaidMisc)}
                                   className={`w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-xs font-black shadow-xs transition-colors cursor-pointer ${
                                     copiedStudentId === student.id
                                       ? 'bg-emerald-50 text-emerald-700 border border-emerald-250'

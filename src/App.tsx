@@ -2221,6 +2221,7 @@ export default function App() {
             onUpdateStudent={handleUpdateStudent}
             scannedStudentNis={scannedStudentNis}
             scannedStudentAt={scannedStudentAt}
+            miscBills={miscBillsList}
           />
         ) : role === 'subject_teacher' ? (
           <SubjectTeacherPanel

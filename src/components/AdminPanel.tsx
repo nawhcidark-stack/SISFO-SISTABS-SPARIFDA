@@ -5290,7 +5290,7 @@ export default function AdminPanel({
                                   }}
                                   className="px-2.5 py-1.5 bg-slate-900 hover:bg-slate-800 text-white rounded font-bold text-[10px] uppercase tracking-wider transition-colors shadow-sm cursor-pointer"
                                 >
-                                  Mutasi Tabungan
+                                  MUTASI
                                 </button>
                               </div>
                             </td>

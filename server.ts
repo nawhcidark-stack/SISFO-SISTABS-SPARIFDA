@@ -549,6 +549,17 @@ let midtransConfig: MidtransConfig = {
   pin: "1234"
 };
 
+// Shorten any bill ID to fit within Midtrans' 50-character limit
+function shortenBillIdForMidtrans(id: string): string {
+  // Replaces any occurrence of a 36-character UUID with its first 8 characters
+  const uuidRegex = /([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
+  let result = id.replace(uuidRegex, "$1");
+  if (result.length > 50) {
+    result = result.slice(0, 50);
+  }
+  return result;
+}
+
 // Compress a miscellaneous bill ID to fit within Midtrans' 50-character limit
 function compressMiscBillIdForMidtrans(id: string): string {
   let result = id;
@@ -4697,7 +4708,7 @@ async function startServer() {
       const itemDetails: any[] = [];
       selectedSpp.forEach(b => {
         itemDetails.push({
-          id: b.id,
+          id: shortenBillIdForMidtrans(b.id),
           price: b.amount,
           quantity: 1,
           name: `SPP ${b.month} ${b.year}`.substring(0, 50)
@@ -4705,7 +4716,7 @@ async function startServer() {
       });
       selectedMisc.forEach(b => {
         itemDetails.push({
-          id: b.id,
+          id: shortenBillIdForMidtrans(b.id),
           price: b.amount,
           quantity: 1,
           name: b.title.substring(0, 50)

@@ -853,6 +853,41 @@ export default function App() {
     }
   };
 
+  const handlePayCartSnap = async (billIds: string[]) => {
+    try {
+      setIsLoading(true);
+      const res = await fetch('/api/pay-cart-snap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ billIds, origin: window.location.origin })
+      });
+
+      if (!res.ok) {
+        const errData = await res.json().catch(() => ({}));
+        throw new Error(errData.error || 'Gagal memanggil API Pembayaran Keranjang.');
+      }
+
+      const payData = await res.json();
+      setPayToken(payData.token);
+      setPayOrderId(payData.orderId);
+      setPayAmount(payData.totalAmount);
+      setPayItemName(`Pembayaran Keranjang (${payData.itemCount} Tagihan)`);
+      setPayIsSimulated(payData.isSimulated);
+
+      const targetStudent = currentStudent;
+      setPayStudentName(targetStudent?.name || "Siswa");
+      setPayStudentNis(targetStudent?.nis || "-");
+      setPayStudentClass(targetStudent?.class || "-");
+      
+      setIsLoading(false);
+      setIsPayModalOpen(true);
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Maaf, sistem tidak bisa menyiapkan invoice Midtrans saat ini. Coba lagi.');
+      setIsLoading(false);
+    }
+  };
+
   // 4. Tabungan Deposit Initializer (Opens Review Modal First)
   const handleDepositSavings = async (amount: number, studentId?: string) => {
     const sId = studentId || currentStudent?.id;
@@ -2206,6 +2241,7 @@ export default function App() {
             midtransStatus={sysStatus}
             miscBills={miscBillsList}
             onPayMiscSnap={handlePayMiscSnap}
+            onPayCartSnap={handlePayCartSnap}
           />
         ) : role === 'homeroom' ? (
           <HomeroomPanel

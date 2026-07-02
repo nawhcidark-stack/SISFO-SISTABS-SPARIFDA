@@ -4625,6 +4625,153 @@ async function startServer() {
     res.json({ success: true, student, bill });
   });
 
+  // Midtrans SNAP Token Generator for Cart/Multiple Payments at Once
+  app.post("/api/pay-cart-snap", async (req, res) => {
+    if (midtransConfig.isDisabled) {
+      return res.status(400).json({ error: "Pembayaran online mandiri via Midtrans sedang dinonaktifkan sementara oleh Administrator sekolah." });
+    }
+    const { billIds, origin } = req.body;
+    if (!Array.isArray(billIds) || billIds.length === 0) {
+      return res.status(400).json({ error: "Keranjang belanja kosong atau format data tidak valid." });
+    }
+
+    const selectedSpp = sppBills.filter(b => billIds.includes(b.id));
+    const selectedMisc = miscBills.filter(b => billIds.includes(b.id));
+
+    const totalBills = selectedSpp.length + selectedMisc.length;
+    if (totalBills === 0) {
+      return res.status(404).json({ error: "Tagihan-tagihan tidak ditemukan." });
+    }
+
+    const anyPaidSpp = selectedSpp.some(b => b.status === "paid" || b.status === "waived");
+    const anyPaidMisc = selectedMisc.some(b => b.status === "paid");
+    if (anyPaidSpp || anyPaidMisc) {
+      return res.status(400).json({ error: "Beberapa tagihan dalam keranjang sudah dilunasi." });
+    }
+
+    const studentIds = new Set<string>();
+    selectedSpp.forEach(b => studentIds.add(b.studentId));
+    selectedMisc.forEach(b => studentIds.add(b.studentId));
+
+    if (studentIds.size > 1) {
+      return res.status(400).json({ error: "Tagihan dalam keranjang harus berasal dari siswa yang sama." });
+    }
+
+    const studentId = Array.from(studentIds)[0];
+    const student = students.find(s => s.id === studentId);
+    if (!student) {
+      return res.status(404).json({ error: "Siswa tidak ditemukan." });
+    }
+
+    const shortStudentId = studentId.replace("student-", "S").substring(0, 10);
+    const orderId = `CART-${shortStudentId}-${Date.now().toString().slice(-4)}`;
+
+    selectedSpp.forEach(b => {
+      b.orderId = orderId;
+      b.status = "pending";
+    });
+    selectedMisc.forEach(b => {
+      b.orderId = orderId;
+      b.status = "pending";
+    });
+
+    saveState();
+
+    const grossAmountVal = selectedSpp.reduce((sum, b) => sum + b.amount, 0) + selectedMisc.reduce((sum, b) => sum + b.amount, 0);
+
+    const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
+    if (!hasMidtrans) {
+      return res.status(400).json({ 
+        error: "Metode pembayaran online dinonaktifkan karena Kunci Midtrans belum diatur oleh Administrator sekolah di Panel Pengaturan." 
+      });
+    }
+
+    try {
+      const authHeader = Buffer.from(`${midtransConfig.serverKey}:`).toString("base64");
+      const url = midtransConfig.isProduction 
+        ? "https://app.midtrans.com/snap/v1/transactions" 
+        : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+      const appReturnUrl = origin || "https://ais-pre-vqyvsdvdikjp7ctz7wouro-539390488845.asia-east1.run.app";
+
+      const itemDetails: any[] = [];
+      selectedSpp.forEach(b => {
+        itemDetails.push({
+          id: b.id,
+          price: b.amount,
+          quantity: 1,
+          name: `SPP ${b.month} ${b.year}`.substring(0, 50)
+        });
+      });
+      selectedMisc.forEach(b => {
+        itemDetails.push({
+          id: b.id,
+          price: b.amount,
+          quantity: 1,
+          name: b.title.substring(0, 50)
+        });
+      });
+
+      const payload = {
+        transaction_details: {
+          order_id: orderId,
+          gross_amount: grossAmountVal
+        },
+        credit_card: {
+          secure: true
+        },
+        customer_details: {
+          first_name: student.name,
+          email: student.email || `${student.nis}@maarif.sch.id`,
+          phone: student.phone
+        },
+        item_details: itemDetails,
+        callbacks: {
+          finish: appReturnUrl,
+          error: appReturnUrl,
+          pending: appReturnUrl
+        }
+      };
+
+      const response = await fetch(url, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Accept": "application/json",
+          "Authorization": `Basic ${authHeader}`
+        },
+        body: JSON.stringify(payload)
+      });
+
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(JSON.stringify(errorData));
+      }
+
+      const snapResponse: any = await response.json();
+      res.json({
+        token: snapResponse.token,
+        redirectUrl: snapResponse.redirect_url,
+        isSimulated: false,
+        orderId,
+        totalAmount: grossAmountVal,
+        itemCount: totalBills
+      });
+    } catch (err: any) {
+      console.error("Midtrans Snap API Call Error for Cart", err);
+      let errorMsg = "Gagal memproses pembayaran keranjang dengan Midtrans.";
+      try {
+        const parsed = JSON.parse(err.message);
+        if (parsed.error_messages && parsed.error_messages.length > 0) {
+          errorMsg = `Kesalahan Validasi Midtrans: ${parsed.error_messages.join(', ')}`;
+        }
+      } catch (e) {
+        if (err.message) errorMsg = err.message;
+      }
+      res.status(500).json({ error: errorMsg });
+    }
+  });
+
   // Midtrans SNAP Token Generator for Miscellaneous Payments
   app.post("/api/pay-misc-snap", async (req, res) => {
     if (midtransConfig.isDisabled) {
@@ -6449,6 +6596,80 @@ async function startServer() {
         saveState();
         return res.json({ success: true, type: "spp", bill, student: affectedStudent });
       }
+    } else if (resolvedOrderId.startsWith("CART-")) {
+      const selectedSpp = sppBills.filter(b => b.orderId === resolvedOrderId);
+      const selectedMisc = miscBills.filter(b => b.orderId === resolvedOrderId);
+
+      if (selectedSpp.length === 0 && selectedMisc.length === 0) {
+        return res.status(404).json({ error: "Tagihan dalam keranjang tidak ditemukan." });
+      }
+
+      const targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
+      affectedStudent = students.find(s => s.id === targetStudentId) || null;
+
+      selectedSpp.forEach(bill => {
+        bill.status = "paid";
+        bill.paidAt = new Date().toISOString();
+        bill.paymentMethod = actualPaymentType;
+      });
+
+      selectedMisc.forEach(bill => {
+        bill.status = "paid";
+        bill.paidAt = new Date().toISOString();
+        bill.paymentMethod = actualPaymentType;
+
+        const txExists = treasurerTransactions.some(t => t.description.includes(resolvedOrderId) || (t.createdBy === "Midtrans Webhook" && t.description.includes(bill.title) && t.nis === affectedStudent?.nis));
+        if (!txExists) {
+          const newTx: TreasurerTransaction = {
+            id: `tx-misc-${Date.now()}-${bill.id}`,
+            type: "incoming",
+            category: "Operasional",
+            amount: bill.amount,
+            description: `Pembayaran ${bill.title} (Midtrans Sim Cart) - ${affectedStudent?.name || ""} (${affectedStudent?.nis || ""})`,
+            date: new Date().toISOString().split("T")[0],
+            source: "custom",
+            studentName: affectedStudent?.name,
+            nis: affectedStudent?.nis,
+            createdBy: "Midtrans Simulator"
+          };
+          treasurerTransactions.push(newTx);
+        }
+      });
+
+      title = "Pembayaran Keranjang Lunas Terverifikasi";
+      const totalAmount = selectedSpp.reduce((sum, b) => sum + b.amount, 0) + selectedMisc.reduce((sum, b) => sum + b.amount, 0);
+      message = `Pembayaran Keranjang ${affectedStudent?.name || ""} sebesar Rp ${totalAmount.toLocaleString("id-ID")} (${selectedSpp.length} SPP, ${selectedMisc.length} Lain-lain) BERHASIL divalidasi secara instan!`;
+
+      const notification: RealtimeNotification = {
+        id: `notif-cart-sim-${Date.now()}`,
+        studentId: targetStudentId,
+        title,
+        message,
+        type: "payment",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+
+      if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && affectedStudent && affectedStudent.phone) {
+        const itemNames = [
+          ...selectedSpp.map(b => `SPP ${b.month} ${b.year}`),
+          ...selectedMisc.map(b => b.title)
+        ].join(", ");
+
+        const waMsg = `Yth. Orang Tua / Wali Siswa dari *${affectedStudent.name}* (NIS: ${affectedStudent.nis}).\n\n` +
+          `📢 *KUITANSI PEMBAYARAN ONLINE (KERANJANG)*\n` +
+          `Pembayaran Keranjang belanja sekolah sebesar *Rp ${totalAmount.toLocaleString("id-ID")}* telah BERHASIL diselesaikan secara online via Midtrans.\n\n` +
+          `• Item Pembayaran: *${itemNames}*\n` +
+          `• Metode Pembayaran: *${actualPaymentType}*\n` +
+          `• No. Transaksi (OrderId): *${resolvedOrderId}*\n` +
+          `• Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+          `• Status: *LUNAS (PAID)*\n\n` +
+          `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+        sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending cart payment WA:", err));
+      }
+
+      saveState();
+      return res.json({ success: true, type: "cart", student: affectedStudent });
     } else if (resolvedOrderId.startsWith("MISC-")) {
       const middle = resolvedOrderId.slice(5);
       const lastHyphenIndex = middle.lastIndexOf("-");
@@ -6685,6 +6906,78 @@ async function startServer() {
           bill.status = "unpaid";
           isHandled = true;
         }
+      }
+    } else if (order_id.startsWith("CART-")) {
+      const selectedSpp = sppBills.filter(b => b.orderId === order_id);
+      const selectedMisc = miscBills.filter(b => b.orderId === order_id);
+
+      const targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
+      const student = students.find(s => s.id === targetStudentId);
+
+      if (isSettlement) {
+        selectedSpp.forEach(bill => {
+          bill.status = "paid";
+          bill.paidAt = new Date().toISOString();
+          bill.paymentMethod = `Midtrans (${payment_type})`;
+        });
+
+        selectedMisc.forEach(bill => {
+          bill.status = "paid";
+          bill.paidAt = new Date().toISOString();
+          bill.paymentMethod = `Midtrans (${payment_type})`;
+
+          const newTx: TreasurerTransaction = {
+            id: `tx-misc-${Date.now()}-${bill.id}`,
+            type: "incoming",
+            category: "Operasional",
+            amount: bill.amount,
+            description: `Pembayaran ${bill.title} (Midtrans Cart) - ${student?.name || ""} (${student?.nis || ""})`,
+            date: new Date().toISOString().split("T")[0],
+            source: "custom",
+            studentName: student?.name,
+            nis: student?.nis,
+            createdBy: "Midtrans Webhook"
+          };
+          treasurerTransactions.push(newTx);
+        });
+
+        const totalAmount = selectedSpp.reduce((sum, b) => sum + b.amount, 0) + selectedMisc.reduce((sum, b) => sum + b.amount, 0);
+        
+        const notification: RealtimeNotification = {
+          id: `notif-cart-midtrans-${Date.now()}`,
+          studentId: targetStudentId,
+          title: "Pembayaran Keranjang Lunas (Midtrans)",
+          message: `Pembayaran Keranjang ${student?.name || ""} sebesar Rp ${totalAmount.toLocaleString("id-ID")} via ${payment_type} BERHASIL divalidasi oleh Midtrans secara otomatis.`,
+          type: "payment",
+          createdAt: new Date().toISOString()
+        };
+        broadcastNotification(notification);
+
+        if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
+          const itemNames = [
+            ...selectedSpp.map(b => `SPP ${b.month} ${b.year}`),
+            ...selectedMisc.map(b => b.title)
+          ].join(", ");
+
+          const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+            `📢 *KUITANSI PEMBAYARAN ONLINE (KERANJANG)*\n` +
+            `Pembayaran Keranjang belanja sekolah sebesar *Rp ${totalAmount.toLocaleString("id-ID")}* via ${payment_type} telah BERHASIL divalidasi oleh Midtrans.\n\n` +
+            `• Item Pembayaran: *${itemNames}*\n` +
+            `• No. Transaksi (OrderId): *${order_id}*\n` +
+            `• Status: *LUNAS (PAID)*\n\n` +
+            `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+          sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online cart payment web WA:", err));
+        }
+
+        isHandled = true;
+      } else if (transaction_status === "pending") {
+        selectedSpp.forEach(b => { b.status = "pending"; });
+        selectedMisc.forEach(b => { b.status = "pending"; });
+        isHandled = true;
+      } else if (transaction_status === "expire" || transaction_status === "deny" || transaction_status === "cancel") {
+        selectedSpp.forEach(b => { b.status = "unpaid"; });
+        selectedMisc.forEach(b => { b.status = "unpaid"; });
+        isHandled = true;
       }
     } else if (order_id.startsWith("MISC-")) {
       const middle = order_id.slice(5);

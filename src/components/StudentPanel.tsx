@@ -81,6 +81,7 @@ interface StudentPanelProps {
   onUpdateStudent?: (id: string, data: any) => Promise<boolean>;
   miscBills?: MiscBill[];
   onPayMiscSnap?: (bill: MiscBill) => void;
+  onPayCartSnap?: (billIds: string[]) => void;
 }
 
 export default function StudentPanel({
@@ -103,7 +104,8 @@ export default function StudentPanel({
   midtransStatus,
   onUpdateStudent,
   miscBills = [],
-  onPayMiscSnap
+  onPayMiscSnap,
+  onPayCartSnap
 }: StudentPanelProps) {
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
@@ -111,6 +113,19 @@ export default function StudentPanel({
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
+
+  // Shopping Cart State
+  const [cartBillIds, setCartBillIds] = useState<string[]>([]);
+
+  const handleToggleCart = (billId: string) => {
+    setCartBillIds(prev =>
+      prev.includes(billId) ? prev.filter(id => id !== billId) : [...prev, billId]
+    );
+  };
+
+  const handleClearCart = () => {
+    setCartBillIds([]);
+  };
 
   // Manual Midtrans Verification states
   const [manualOrderId, setManualOrderId] = useState('');
@@ -1377,6 +1392,7 @@ export default function StudentPanel({
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
                         <tr className="bg-slate-50 text-slate-400 uppercase font-bold tracking-widest text-[9px] border-b border-slate-200">
+                          {!midtransStatus?.isDisabled && <th className="px-4 py-3 w-10 text-center whitespace-nowrap">Pilih</th>}
                           <th className="px-5 py-3 whitespace-nowrap">Bulan / Periode</th>
                           <th className="px-5 py-3 text-right whitespace-nowrap">Nominal</th>
                           <th className="px-5 py-3 text-center whitespace-nowrap">Status</th>
@@ -1392,6 +1408,22 @@ export default function StudentPanel({
 
                           return (
                             <tr key={bill.id} className={`hover:bg-slate-50 transition-colors ${!isCurrentlyActive && !isPaid && !isWaived ? 'opacity-60 bg-slate-50/50' : ''}`}>
+                              {!midtransStatus?.isDisabled && (
+                                <td className="px-4 py-3.5 text-center whitespace-nowrap">
+                                  {(!isPaid && !isWaived && isCurrentlyActive) ? (
+                                    <input
+                                      type="checkbox"
+                                      id={`cart-checkbox-${bill.id}`}
+                                      checked={cartBillIds.includes(bill.id)}
+                                      onChange={() => handleToggleCart(bill.id)}
+                                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                      title="Pilih untuk bayar sekaligus beberapa tagihan via online"
+                                    />
+                                  ) : (
+                                    <span className="text-slate-300 font-bold">-</span>
+                                  )}
+                                </td>
+                              )}
                               <td className="px-5 py-3.5 font-semibold text-slate-850 whitespace-nowrap">
                                 <div className="flex flex-col gap-0.5">
                                   <span className={!isCurrentlyActive && !isPaid && !isWaived ? 'text-slate-400 font-normal' : ''}>{bill.month} {bill.year}</span>
@@ -1497,13 +1529,24 @@ export default function StudentPanel({
                       return (
                         <div key={`mob-${bill.id}`} className={`bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-3.5 hover:border-slate-350 transition-colors ${!isCurrentlyActive && !isPaid && !isWaived ? 'opacity-60 bg-slate-50/50' : ''}`}>
                           <div className="flex justify-between items-start">
-                            <div className="flex flex-col gap-1">
+                            <div className="flex gap-2 items-center">
+                              {!midtransStatus?.isDisabled && !isPaid && !isWaived && isCurrentlyActive && (
+                                <input
+                                  type="checkbox"
+                                  id={`cart-checkbox-mob-${bill.id}`}
+                                  checked={cartBillIds.includes(bill.id)}
+                                  onChange={() => handleToggleCart(bill.id)}
+                                  className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer mr-1 shrink-0"
+                                />
+                              )}
+                              <div className="flex flex-col gap-1">
                               <span className={`font-bold text-sm leading-tight ${!isCurrentlyActive && !isPaid && !isWaived ? 'text-slate-400 font-normal' : 'text-slate-800'}`}>{bill.month} {bill.year}</span>
                               {selectedAcademicYear && getAcademicYearOfBill(bill) !== selectedAcademicYear && (
                                 <span className="inline-block text-[8px] bg-rose-50 text-rose-600 font-bold px-1.5 py-0.5 rounded border border-rose-100 max-w-max uppercase tracking-wider animate-pulse">
                                   Tunggakan TA {getAcademicYearOfBill(bill)}
                                 </span>
                               )}
+                            </div>
                             </div>
                             <div className="text-right">
                               <span className={`block font-extrabold text-sm ${!isCurrentlyActive && !isPaid && !isWaived ? 'text-slate-400' : 'text-slate-900'}`}>
@@ -2001,6 +2044,18 @@ export default function StudentPanel({
                             const isPending = bill.status === 'pending';
                             return (
                               <div key={bill.id} className="p-4 rounded-xl border border-slate-200 bg-white shadow-xs hover:border-slate-300 transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                                {!midtransStatus?.isDisabled && (
+                                  <div className="flex items-center shrink-0 pr-1">
+                                    <input
+                                      type="checkbox"
+                                      id={`cart-checkbox-misc-${bill.id}`}
+                                      checked={cartBillIds.includes(bill.id)}
+                                      onChange={() => handleToggleCart(bill.id)}
+                                      className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                                      title="Pilih untuk bayar sekaligus beberapa tagihan via online"
+                                    />
+                                  </div>
+                                )}
                                 <div className="flex-1">
                                   <span className="text-[9px] font-mono text-slate-400 block tracking-wider uppercase">Ref: {bill.id.substring(0, 10).toUpperCase()}</span>
                                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
@@ -4190,6 +4245,62 @@ export default function StudentPanel({
           </>
         )}
       </AnimatePresence>
+
+      {/* Sticky Floating Payment Cart Bar */}
+      <AnimatePresence>
+        {cartBillIds.length > 0 && currentStudent && (
+          <motion.div
+            initial={{ opacity: 0, y: 100 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 100 }}
+            className="fixed bottom-6 left-6 right-6 md:left-[35%] md:right-10 z-40"
+          >
+            <div className="bg-slate-900 text-white rounded-2xl border border-slate-800 shadow-2xl p-4 md:p-5 flex flex-col sm:flex-row items-center justify-between gap-4 ring-2 ring-indigo-500/50">
+              <div className="flex items-center gap-3.5 text-left w-full sm:w-auto">
+                <div className="bg-indigo-600 text-white p-2.5 rounded-xl flex items-center justify-center shrink-0 shadow-lg shadow-indigo-500/30">
+                  <LayoutGrid className="w-5 h-5 animate-pulse" />
+                </div>
+                <div>
+                  <h5 className="font-extrabold text-sm text-white tracking-tight flex items-center gap-2">
+                    Keranjang Pembayaran ({cartBillIds.length} Item)
+                  </h5>
+                  <p className="text-slate-400 text-[10px] font-medium leading-none mt-1">
+                    Total: <strong className="text-indigo-400 font-mono text-xs">Rp {(
+                      bills.filter(b => cartBillIds.includes(b.id)).reduce((sum, b) => sum + b.amount, 0) +
+                      (miscBills || []).filter(b => cartBillIds.includes(b.id)).reduce((sum, b) => sum + b.amount, 0)
+                    ).toLocaleString('id-ID')}</strong>
+                  </p>
+                </div>
+              </div>
+
+              <div className="flex items-center gap-3 w-full sm:w-auto justify-end border-t sm:border-t-0 pt-3 sm:pt-0 border-slate-800">
+                <button
+                  type="button"
+                  onClick={handleClearCart}
+                  className="px-3.5 py-2 hover:bg-slate-800 text-slate-350 hover:text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl transition-all cursor-pointer"
+                >
+                  Batal
+                </button>
+                <button
+                  type="button"
+                  id="checkout-cart-button"
+                  onClick={() => {
+                    if (onPayCartSnap) {
+                      onPayCartSnap(cartBillIds);
+                      handleClearCart();
+                    }
+                  }}
+                  className="px-5 py-2.5 bg-gradient-to-r from-indigo-500 to-blue-600 hover:from-indigo-600 hover:to-blue-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-lg shadow-indigo-500/25 flex items-center gap-2 focus:outline-none"
+                >
+                  <CreditCard size={13} />
+                  <span>Bayar Sekaligus Online</span>
+                </button>
+              </div>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
       {printQrCard && currentStudent && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/40 backdrop-blur-xs no-print p-4 overflow-y-auto">
           <motion.div

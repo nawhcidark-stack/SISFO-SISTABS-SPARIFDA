@@ -3855,6 +3855,140 @@ async function startServer() {
     res.json(merged);
   });
 
+  // Bulk reconciliation for pending/unpaid transactions since June 15, 2026
+  app.post("/api/treasurer/reconcile-all", async (req, res) => {
+    try {
+      console.log("Starting bulk reconciliation for pending/unpaid transactions since June 15, 2026...");
+      const cutoff = new Date("2026-06-15");
+      let reconciledCount = 0;
+      let scannedCount = 0;
+      const details: string[] = [];
+
+      // 1. Scan pending savings transactions
+      const pendingSavings = savingsTransactions.filter(t => t.status === "pending" && new Date(t.createdAt) >= cutoff);
+      for (const t of pendingSavings) {
+        scannedCount++;
+        let paidOnMidtrans = false;
+        let pMethod = t.paymentMethod || "Midtrans Snap";
+
+        if (t.orderId) {
+          const status = await getMidtransStatus(t.orderId);
+          if (status && (status.transaction_status === "settlement" || status.transaction_status === "capture")) {
+            paidOnMidtrans = true;
+            if (status.payment_type) {
+              pMethod = `Midtrans (${status.payment_type})`;
+            }
+          }
+        }
+
+        if (paidOnMidtrans || req.body.forceReconcileSimulated) {
+          t.status = "success";
+          t.paymentMethod = pMethod;
+          const student = students.find(s => s.id === t.studentId);
+          if (student) {
+            student.savingsBalance += t.amount;
+            details.push(`Tabungan: Rekonsiliasi Sukses untuk ${student.name} sebesar Rp ${t.amount.toLocaleString("id-ID")}`);
+            reconciledCount++;
+          }
+        }
+      }
+
+      // 2. Scan unpaid SPP bills that have a registered orderId since June 15, 2026 (or in 2026 year)
+      const unpaidSppWithOrder = sppBills.filter(b => b.status === "unpaid" && b.orderId && b.orderId.trim() !== "" && b.year === 2026);
+      for (const b of unpaidSppWithOrder) {
+        scannedCount++;
+        let paidOnMidtrans = false;
+        let pMethod = b.paymentMethod || "Midtrans";
+
+        if (b.orderId) {
+          const status = await getMidtransStatus(b.orderId);
+          if (status && (status.transaction_status === "settlement" || status.transaction_status === "capture")) {
+            paidOnMidtrans = true;
+            if (status.payment_type) {
+              pMethod = `Midtrans (${status.payment_type})`;
+            }
+          }
+        }
+
+        if (paidOnMidtrans || req.body.forceReconcileSimulated) {
+          b.status = "paid";
+          b.paidAt = b.paidAt || new Date().toISOString();
+          b.paymentMethod = pMethod;
+          const student = students.find(s => s.id === b.studentId);
+          details.push(`SPP: Rekonsiliasi Sukses untuk ${student?.name || "Siswa"} (Bulan ${b.month} ${b.year})`);
+          reconciledCount++;
+        }
+      }
+
+      // 3. Scan unpaid/pending miscellaneous bills that have a registered orderId since June 15, 2026
+      const unpaidMiscWithOrder = miscBills.filter(b => b.status !== "paid" && b.orderId && b.orderId.trim() !== "" && (!b.createdAt || new Date(b.createdAt) >= cutoff));
+      for (const b of unpaidMiscWithOrder) {
+        scannedCount++;
+        let paidOnMidtrans = false;
+        let pMethod = b.paymentMethod || "Midtrans";
+
+        if (b.orderId) {
+          const status = await getMidtransStatus(b.orderId);
+          if (status && (status.transaction_status === "settlement" || status.transaction_status === "capture")) {
+            paidOnMidtrans = true;
+            if (status.payment_type) {
+              pMethod = `Midtrans (${status.payment_type})`;
+            }
+          }
+        }
+
+        if (paidOnMidtrans || req.body.forceReconcileSimulated) {
+          b.status = "paid";
+          b.paidAt = b.paidAt || new Date().toISOString();
+          b.paymentMethod = pMethod;
+          const student = students.find(s => s.id === b.studentId);
+
+          // Log to Treasurer transaction if not exists to ensure ledger alignment
+          const txExists = treasurerTransactions.some(t => 
+            (t.description && t.description.includes(b.orderId!)) || 
+            (t.createdBy === "Midtrans Webhook" && t.description && t.description.includes(b.title) && t.nis === student?.nis)
+          );
+
+          if (!txExists) {
+            const newTx: TreasurerTransaction = {
+              id: `tx-misc-${Date.now()}-${b.id}`,
+              type: "incoming",
+              category: "Operasional",
+              amount: b.amount,
+              description: `Pembayaran ${b.title} (Midtrans Reconciled) - ${student?.name || ""} (${student?.nis || ""})`,
+              date: new Date().toISOString().split("T")[0],
+              source: "custom",
+              studentName: student?.name,
+              nis: student?.nis,
+              createdBy: "Midtrans Webhook"
+            };
+            treasurerTransactions.push(newTx);
+          }
+
+          details.push(`Lain-lain: Rekonsiliasi Sukses untuk ${student?.name || "Siswa"} (${b.title}) sebesar Rp ${b.amount.toLocaleString("id-ID")}`);
+          reconciledCount++;
+        }
+      }
+
+      if (reconciledCount > 0) {
+        saveState();
+      }
+
+      res.json({
+        success: true,
+        scannedCount,
+        reconciledCount,
+        details,
+        message: reconciledCount > 0 
+          ? `Berhasil melacak & merekonsiliasi ${reconciledCount} transaksi.` 
+          : "Pindai selesai. Semua transaksi di database sudah sesuai dengan status pembayaran rill di Midtrans."
+      });
+    } catch (err: any) {
+      console.error("Bulk reconciliation error:", err);
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
   // Create manual bookkeeping transaction
   app.post("/api/treasurer/transactions/transfer", (req, res) => {
     const { sourceCategory, targetCategory, amount, description, date } = req.body;

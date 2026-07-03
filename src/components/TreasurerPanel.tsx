@@ -136,6 +136,8 @@ export default function TreasurerPanel({
 
   const [filterStartDate, setFilterStartDate] = useState('');
   const [filterEndDate, setFilterEndDate] = useState('');
+  const [isReconciling, setIsReconciling] = useState(false);
+  const [reconcileStatus, setReconcileStatus] = useState<{ type: 'success' | 'error', text: string } | null>(null);
   
   // Invoice state to print
   const [activePrintTransaction, setActivePrintTransaction] = useState<TreasurerTransaction | null>(null);
@@ -591,6 +593,40 @@ export default function TreasurerPanel({
     } catch (e) {
       console.error(e);
       alert('Terganggu koneksi.');
+    }
+  };
+
+  const handleBulkReconcile = async (forceSimulated = false) => {
+    setIsReconciling(true);
+    setReconcileStatus(null);
+    try {
+      const res = await fetch('/api/treasurer/reconcile-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ forceReconcileSimulated: forceSimulated })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setReconcileStatus({
+          type: 'success',
+          text: `🔍 ${data.message}`
+        });
+        await fetchTransactions(); // Refresh the list
+      } else {
+        const errData = await res.json();
+        setReconcileStatus({
+          type: 'error',
+          text: errData.error || 'Gagal menjalankan rekonsiliasi massal.'
+        });
+      }
+    } catch (e) {
+      console.error(e);
+      setReconcileStatus({
+        type: 'error',
+        text: 'Terjadi kesalahan koneksi saat mencoba merekonsiliasi data.'
+      });
+    } finally {
+      setIsReconciling(false);
     }
   };
 
@@ -1856,6 +1892,78 @@ export default function TreasurerPanel({
           {/* ================= TAB 2: INLINE BUKU KAS LEDGER ================= */}
           {activeTab === 'kas_ledger' && (
             <>
+              {/* Bulk Reconciliation / Recovery Section */}
+              <div className="bg-gradient-to-r from-indigo-50 to-amber-50/40 p-5 rounded-2xl border border-indigo-150/80 shadow-3xs flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+                  <div className="flex items-start gap-3.5">
+                    <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 shrink-0">
+                      <RefreshCw className={`w-5 h-5 ${isReconciling ? 'animate-spin' : ''}`} />
+                    </div>
+                    <div>
+                      <h4 className="font-extrabold text-xs text-indigo-950 uppercase tracking-wide">
+                        Lacak &amp; Rekonsiliasi Transaksi Massal (Sejak 15 Juni 2026)
+                      </h4>
+                      <p className="text-slate-600 text-[11px] mt-1 leading-relaxed font-semibold">
+                        Gunakan tombol ini untuk memindai status rill pembayaran iuran SPP dan setoran Tabungan di Midtrans secara otomatis. Berguna untuk mendeteksi dan memulihkan transaksi yang terlewat atau belum lunas di sistem internal sekolah.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
+                    <button
+                      type="button"
+                      onClick={() => handleBulkReconcile(false)}
+                      disabled={isReconciling}
+                      className={`px-4 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
+                        isReconciling ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-750 shadow-sm shadow-indigo-100'
+                      }`}
+                    >
+                      {isReconciling ? (
+                        <>
+                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                          <span>Mencari...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Search size={12} />
+                          <span>Pindai Otomatis</span>
+                        </>
+                      )}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleBulkReconcile(true)}
+                      disabled={isReconciling}
+                      className="px-3.5 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700"
+                      title="Paksa verifikasi & pulihkan transaksi simulasi sandbox"
+                    >
+                      Paksa Pulihkan Simulasi
+                    </button>
+                  </div>
+                </div>
+
+                {reconcileStatus && (
+                  <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 shadow-3xs animate-fade-in ${
+                    reconcileStatus.type === 'success'
+                      ? 'bg-emerald-50 border-emerald-150 text-emerald-950 font-medium'
+                      : 'bg-rose-50 border-rose-150 text-rose-950'
+                  }`}>
+                    {reconcileStatus.type === 'success' ? (
+                      <CheckCircle2 size={15} className="text-emerald-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertTriangle size={15} className="text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div>
+                      <span className="font-extrabold block">
+                        {reconcileStatus.type === 'success' ? 'Hasil Pelacakan Sukses!' : 'Pelacakan Gagal'}
+                      </span>
+                      <p className="m-0 text-slate-750 mt-0.5 leading-relaxed font-semibold">
+                        {reconcileStatus.text}
+                      </p>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               {/* Ledger Management Spreadsheet / Table list */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs mt-6 flex flex-col">
             
@@ -1955,6 +2063,16 @@ export default function TreasurerPanel({
                     title="Tanggal Selesai"
                   />
                 </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setFilterStartDate('2026-06-15');
+                    setFilterEndDate('2026-07-03');
+                  }}
+                  className="text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-3 py-2 rounded-lg uppercase tracking-wider transition-all cursor-pointer shadow-3xs"
+                >
+                  📅 Lacak Sejak 15 Juni 2026
+                </button>
                 {(filterStartDate || filterEndDate) && (
                   <button
                     type="button"

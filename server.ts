@@ -3841,9 +3841,14 @@ async function startServer() {
         };
       });
 
-    // 3. Merged transactions
+    // 3. Merged transactions - Filter out any manually logged misc payments under "Operasional" to avoid double counting
+    const filteredTreasurerTransactions = treasurerTransactions.filter(t => 
+      !t.id.startsWith("tx-misc-") && 
+      !(t.category === "Operasional" && t.description.startsWith("Pembayaran "))
+    );
+
     const merged: TreasurerTransaction[] = [
-      ...treasurerTransactions,
+      ...filteredTreasurerTransactions,
       ...sppIntegrated,
       ...savingsIntegrated,
       ...miscIntegrated
@@ -3962,7 +3967,8 @@ async function startServer() {
               nis: student?.nis,
               createdBy: "Midtrans Webhook"
             };
-            treasurerTransactions.push(newTx);
+            // Do not push to treasurerTransactions to avoid double counting under Operasional
+            // treasurerTransactions.push(newTx);
           }
 
           details.push(`Lain-lain: Rekonsiliasi Sukses untuk ${student?.name || "Siswa"} (${b.title}) sebesar Rp ${b.amount.toLocaleString("id-ID")}`);
@@ -4614,7 +4620,8 @@ async function startServer() {
       nis: student?.nis,
       createdBy: "Admin/Bendahara"
     };
-    treasurerTransactions.push(newTx);
+    // Do not push to treasurerTransactions to avoid double counting under Operasional
+    // treasurerTransactions.push(newTx);
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
@@ -4769,7 +4776,8 @@ async function startServer() {
       nis: student.nis,
       createdBy: "Potong Tabungan"
     };
-    treasurerTransactions.push(newTx);
+    // Do not push to treasurerTransactions to avoid double counting under Operasional
+    // treasurerTransactions.push(newTx);
 
     // Send WA
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student.phone) {
@@ -6793,7 +6801,8 @@ async function startServer() {
             nis: affectedStudent?.nis,
             createdBy: "Midtrans Simulator"
           };
-          treasurerTransactions.push(newTx);
+          // Do not push to treasurerTransactions to avoid double counting under Operasional
+          // treasurerTransactions.push(newTx);
         }
       });
 
@@ -6869,7 +6878,8 @@ async function startServer() {
             nis: affectedStudent?.nis,
             createdBy: "Midtrans Simulator"
           };
-          treasurerTransactions.push(newTx);
+          // Do not push to treasurerTransactions to avoid double counting under Operasional
+          // treasurerTransactions.push(newTx);
         }
 
         const notification: RealtimeNotification = {
@@ -7099,7 +7109,8 @@ async function startServer() {
             nis: student?.nis,
             createdBy: "Midtrans Webhook"
           };
-          treasurerTransactions.push(newTx);
+          // Do not push to treasurerTransactions to avoid double counting under Operasional
+          // treasurerTransactions.push(newTx);
         });
 
         const totalAmount = selectedSpp.reduce((sum, b) => sum + b.amount, 0) + selectedMisc.reduce((sum, b) => sum + b.amount, 0);
@@ -7176,7 +7187,8 @@ async function startServer() {
             nis: student?.nis,
             createdBy: "Midtrans Webhook"
           };
-          treasurerTransactions.push(newTx);
+          // Do not push to treasurerTransactions to avoid double counting under Operasional
+          // treasurerTransactions.push(newTx);
 
           const notification: RealtimeNotification = {
             id: `notif-misc-midtrans-${Date.now()}`,

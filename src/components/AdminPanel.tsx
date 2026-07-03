@@ -650,6 +650,12 @@ export default function AdminPanel({
 
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [studentSearch, setStudentSearch] = useState("");
+  const [rosterClassFilter, setRosterClassFilter] = useState<string>("all");
+  const [rekapSppClassFilter, setRekapSppClassFilter] = useState<string>("all");
+  const [rekapTabunganClassFilter, setRekapTabunganClassFilter] = useState<string>("all");
+  const [rekapTabunganGradeFilter, setRekapTabunganGradeFilter] = useState<string>("all");
+  const [rekapMiscClassFilter, setRekapMiscClassFilter] = useState<string>("all");
+  const [rekapMiscGradeFilter, setRekapMiscGradeFilter] = useState<string>("all");
   const [alumniSearch, setAlumniSearch] = useState("");
   const [mutatedSearch, setMutatedSearch] = useState("");
   const [isQrScannerOpen, setIsQrScannerOpen] = useState(false);
@@ -1240,15 +1246,18 @@ export default function AdminPanel({
           s.class.toLowerCase() !== "mutasi" &&
           s.class.toLowerCase() !== "mutasi keluar"),
     );
-    const result = !studentSearch.trim()
+    const classFiltered = rosterClassFilter === "all"
       ? activeStudents
-      : activeStudents.filter(
+      : activeStudents.filter((s) => s.class === rosterClassFilter);
+    const result = !studentSearch.trim()
+      ? classFiltered
+      : classFiltered.filter(
           (s) =>
             s.name.toLowerCase().includes(studentSearch.toLowerCase().trim()) ||
             s.nis.toLowerCase().includes(studentSearch.toLowerCase().trim()),
         );
     return [...result].sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, studentSearch]);
+  }, [students, studentSearch, rosterClassFilter]);
 
   const uniqueClasses = useMemo(() => {
     const cls = new Set<string>();
@@ -1341,7 +1350,7 @@ export default function AdminPanel({
     "standard" | "thermal"
   >("standard");
   const [reportToPrint, setReportToPrint] = useState<
-    "harian" | "rekap-spp" | "rekap-tabungan" | null
+    "harian" | "rekap-spp" | "rekap-tabungan" | "rekap-misc" | null
   >(null);
 
   // Student financial subtabs inside roster
@@ -1660,7 +1669,7 @@ export default function AdminPanel({
 
   // Laporan & Rekap states
   const [activeReportSubTab, setActiveReportSubTab] = useState<
-    "harian" | "rekap-spp" | "rekap-tabungan" | "rekap-absen"
+    "harian" | "rekap-spp" | "rekap-tabungan" | "rekap-absen" | "rekap-misc"
   >("harian");
   const [infractionList, setInfractionList] = useState<StudentInfractionLog[]>(
     [],
@@ -1728,6 +1737,30 @@ export default function AdminPanel({
       setRekapSppYearFilter(academicYears[0]);
     }
   }, [academicYears]);
+
+  useEffect(() => {
+    if (rekapSppGradeFilter !== "all" && rekapSppClassFilter !== "all") {
+      if (!rekapSppClassFilter.startsWith(rekapSppGradeFilter)) {
+        setRekapSppClassFilter("all");
+      }
+    }
+  }, [rekapSppGradeFilter]);
+
+  useEffect(() => {
+    if (rekapTabunganGradeFilter !== "all" && rekapTabunganClassFilter !== "all") {
+      if (!rekapTabunganClassFilter.startsWith(rekapTabunganGradeFilter)) {
+        setRekapTabunganClassFilter("all");
+      }
+    }
+  }, [rekapTabunganGradeFilter]);
+
+  useEffect(() => {
+    if (rekapMiscGradeFilter !== "all" && rekapMiscClassFilter !== "all") {
+      if (!rekapMiscClassFilter.startsWith(rekapMiscGradeFilter)) {
+        setRekapMiscClassFilter("all");
+      }
+    }
+  }, [rekapMiscGradeFilter]);
 
   // Listen to print completion to reset print state
   React.useEffect(() => {
@@ -5084,7 +5117,7 @@ export default function AdminPanel({
               )}
 
               {/* Search Box Input for NIS/Name inside Student Accounts / Cash Book Dashboard */}
-              <div className="p-3 border-b border-slate-150 bg-slate-50/20 flex items-center gap-2">
+              <div className="p-3 border-b border-slate-150 bg-slate-50/20 flex flex-col sm:flex-row items-stretch sm:items-center gap-2">
                 <div className="relative flex-1">
                   <span className="absolute inset-y-0 left-0 flex items-center pl-3 pointer-events-none text-slate-400">
                     <Search size={14} />
@@ -5106,15 +5139,29 @@ export default function AdminPanel({
                     </button>
                   )}
                 </div>
-                <button
-                  type="button"
-                  onClick={() => setIsQrScannerOpen(true)}
-                  className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold rounded-lg text-xs cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
-                  title="Scan Kartu QR Siswa Menggunakan Kamera"
-                >
-                  <Camera size={14} />
-                  <span className="hidden sm:inline">Scan QR</span>
-                </button>
+                <div className="flex items-center gap-2 shrink-0">
+                  <select
+                    value={rosterClassFilter}
+                    onChange={(e) => setRosterClassFilter(e.target.value)}
+                    className="px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none focus:ring-1 focus:ring-indigo-500 focus:border-indigo-500 transition-all shadow-xs cursor-pointer"
+                  >
+                    <option value="all">Semua Kelas</option>
+                    {uniqueClasses.map((cls) => (
+                      <option key={cls} value={cls}>
+                        Kelas {cls}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    onClick={() => setIsQrScannerOpen(true)}
+                    className="px-3.5 py-2 bg-gradient-to-r from-indigo-600 to-violet-600 text-white font-bold rounded-lg text-xs cursor-pointer hover:shadow-md hover:scale-[1.02] active:scale-95 transition-all flex items-center gap-1.5 shrink-0"
+                    title="Scan Kartu QR Siswa Menggunakan Kamera"
+                  >
+                    <Camera size={14} />
+                    <span className="hidden sm:inline">Scan QR</span>
+                  </button>
+                </div>
               </div>
 
               <div className="overflow-x-auto text-xs">
@@ -11621,6 +11668,19 @@ export default function AdminPanel({
                 </button>
                 <button
                   type="button"
+                  onClick={() => setActiveReportSubTab("rekap-misc")}
+                  className={`flex-1 sm:flex-initial px-4 py-2 text-center font-bold text-[11px] uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
+                    activeReportSubTab === "rekap-misc"
+                      ? "bg-slate-900 text-white shadow-sm"
+                      : "text-slate-600 hover:bg-slate-100"
+                  }`}
+                >
+                  <span className="flex items-center gap-1.5 justify-center">
+                    <FileCheck size={12} /> Rekap Lain-lain
+                  </span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setActiveReportSubTab("rekap-absen")}
                   className={`flex-1 sm:flex-initial px-4 py-2 text-center font-bold text-[11px] uppercase tracking-wider rounded-lg transition-all cursor-pointer ${
                     activeReportSubTab === "rekap-absen"
@@ -12058,13 +12118,11 @@ export default function AdminPanel({
             {activeReportSubTab === "rekap-spp" &&
               (() => {
                 // Filters & Computations
-                const activeStudents = [
-                  ...(rekapSppGradeFilter === "all"
-                    ? students
-                    : students.filter((s) =>
-                        s.class.startsWith(rekapSppGradeFilter),
-                      ))
-                ].sort((a, b) => a.name.localeCompare(b.name));
+                const activeStudents = students.filter((s) => {
+                  const matchesGrade = rekapSppGradeFilter === "all" || (s.class && s.class.startsWith(rekapSppGradeFilter));
+                  const matchesClass = rekapSppClassFilter === "all" || s.class === rekapSppClassFilter;
+                  return matchesGrade && matchesClass;
+                }).sort((a, b) => a.name.localeCompare(b.name));
 
                 // Compute SPP matrix for activeStudents
                 const summaryMatrix = activeStudents.map((student) => {
@@ -12154,6 +12212,32 @@ export default function AdminPanel({
                                 TA {year}
                               </option>
                             ))}
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-600 uppercase tracking-wide">
+                            Pilih Kelas:
+                          </span>
+                          <select
+                            value={rekapSppClassFilter}
+                            onChange={(e) =>
+                              setRekapSppClassFilter(e.target.value)
+                            }
+                            className="px-3 py-1.5 bg-white border border-slate-205 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 transition-all cursor-pointer shadow-xs font-mono"
+                          >
+                            <option value="all">SEMUA KELAS</option>
+                            {uniqueClasses
+                              .filter(
+                                (cls) =>
+                                  rekapSppGradeFilter === "all" ||
+                                  cls.startsWith(rekapSppGradeFilter),
+                              )
+                              .map((cls) => (
+                                <option key={cls} value={cls}>
+                                  KELAS {cls}
+                                </option>
+                              ))}
                           </select>
                         </div>
                       </div>
@@ -12282,29 +12366,95 @@ export default function AdminPanel({
             {/* ======================= REPORT SUBTAB 3: REKAP TABUNGAN ======================= */}
             {activeReportSubTab === "rekap-tabungan" &&
               (() => {
-                const orderedStudentsBySavings = [...students].sort(
+                const filteredTabunganStudents = students.filter((s) => {
+                  const matchesGrade = rekapTabunganGradeFilter === "all" || (s.class && s.class.startsWith(rekapTabunganGradeFilter));
+                  const matchesClass = rekapTabunganClassFilter === "all" || s.class === rekapTabunganClassFilter;
+                  return matchesGrade && matchesClass;
+                });
+
+                const orderedStudentsBySavings = [...filteredTabunganStudents].sort(
                   (a, b) => b.savingsBalance - a.savingsBalance,
                 );
-                const totalGlobalSavings = students.reduce(
+                const totalGlobalSavings = filteredTabunganStudents.reduce(
                   (acc, s) => acc + s.savingsBalance,
                   0,
                 );
-                const countActiveAccounts = students.filter(
+                const countActiveAccounts = filteredTabunganStudents.filter(
                   (s) => s.savingsBalance > 0,
                 ).length;
 
                 return (
                   <div className="flex flex-col gap-6">
+                    {/* Filter controls */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs">
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-650 uppercase tracking-wide">
+                            Pilih Tingkat:
+                          </span>
+                          <select
+                            value={rekapTabunganGradeFilter}
+                            onChange={(e) =>
+                              setRekapTabunganGradeFilter(e.target.value)
+                            }
+                            className="px-3 py-1.5 bg-white border border-slate-205 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 transition-all cursor-pointer shadow-xs font-mono"
+                          >
+                            <option value="all">SEMUA TINGKAT</option>
+                            <option value="7">TINGKAT KELAS 7</option>
+                            <option value="8">TINGKAT KELAS 8</option>
+                            <option value="9">TINGKAT KELAS 9</option>
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-650 uppercase tracking-wide">
+                            Pilih Kelas:
+                          </span>
+                          <select
+                            value={rekapTabunganClassFilter}
+                            onChange={(e) =>
+                              setRekapTabunganClassFilter(e.target.value)
+                            }
+                            className="px-3 py-1.5 bg-white border border-slate-205 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 transition-all cursor-pointer shadow-xs font-mono"
+                          >
+                            <option value="all">SEMUA KELAS</option>
+                            {uniqueClasses
+                              .filter(
+                                (cls) =>
+                                  rekapTabunganGradeFilter === "all" ||
+                                  cls.startsWith(rekapTabunganGradeFilter),
+                              )
+                              .map((cls) => (
+                                <option key={cls} value={cls}>
+                                  KELAS {cls}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportToPrint("rekap-tabungan");
+                          setPrintId("print-report-section");
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
+                      >
+                        <Printer size={12} /> Cetak Rekap 🖨
+                      </button>
+                    </div>
+
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col gap-1.5">
                         <span className="text-[10px] font-bold text-slate-450 uppercase tracking-wider block">
-                          TOTAL TABUNGAN GLOBAL SMP
+                          TOTAL TABUNGAN GLOBAL FILTERED
                         </span>
                         <span className="text-lg font-bold font-mono text-indigo-900">
                           Rp {totalGlobalSavings.toLocaleString("id-ID")}
                         </span>
                         <span className="text-[9px] text-slate-500 block leading-tight">
-                          Seluruh simpanan aktif siswa yang dititipkan saat ini
+                          Seluruh simpanan aktif siswa berdasarkan filter saat ini
                         </span>
                       </div>
 
@@ -12316,10 +12466,12 @@ export default function AdminPanel({
                           {countActiveAccounts} Siswa
                         </span>
                         <span className="text-[9px] text-slate-500 block leading-tight">
-                          {Math.round(
-                            (countActiveAccounts / students.length) * 100,
-                          )}
-                          % Dari total siswa sekolah
+                          {filteredTabunganStudents.length > 0
+                            ? Math.round(
+                                (countActiveAccounts / filteredTabunganStudents.length) * 100,
+                              )
+                            : 0}
+                          % Dari siswa dalam filter
                         </span>
                       </div>
 
@@ -12329,14 +12481,14 @@ export default function AdminPanel({
                         </span>
                         <span className="text-lg font-bold font-mono text-slate-800">
                           Rp{" "}
-                          {students.length > 0
+                          {filteredTabunganStudents.length > 0
                             ? Math.round(
-                                totalGlobalSavings / students.length,
+                                totalGlobalSavings / filteredTabunganStudents.length,
                               ).toLocaleString("id-ID")
                             : 0}
                         </span>
                         <span className="text-[9px] text-slate-500 block leading-tight">
-                          Pembagian rata saldo simpanan per siswa
+                          Pembagian rata saldo simpanan per siswa terfilter
                         </span>
                       </div>
                     </div>
@@ -12349,19 +12501,9 @@ export default function AdminPanel({
                           </h4>
                           <p className="text-[10px] text-slate-400 mt-0.5">
                             Disusun berdasarkan kepemilikan saldo tabungan
-                            tertinggi di SMP Maarif NU Pandaan
+                            tertinggi di SMP Maarif NU Pandaan (Terfilter)
                           </p>
                         </div>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            setReportToPrint("rekap-tabungan");
-                            setPrintId("print-report-section");
-                          }}
-                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
-                        >
-                          <Printer size={12} /> Cetak Rekap 🖨️
-                        </button>
                       </div>
 
                       <div className="overflow-x-auto">
@@ -13018,6 +13160,292 @@ export default function AdminPanel({
                           </div>
                         </>
                       )}
+                    </div>
+                  </div>
+                );
+              })()}
+
+            {activeReportSubTab === "rekap-misc" &&
+              (() => {
+                const filteredMiscStudents = students.filter((s) => {
+                  const matchesGrade = rekapMiscGradeFilter === "all" || (s.class && s.class.startsWith(rekapMiscGradeFilter));
+                  const matchesClass = rekapMiscClassFilter === "all" || s.class === rekapMiscClassFilter;
+                  return matchesGrade && matchesClass;
+                });
+
+                const studentIdsSet = new Set(filteredMiscStudents.map(s => s.id));
+                const activeMiscBills = miscBills.filter(b => studentIdsSet.has(b.studentId));
+
+                const totalMiscTarget = activeMiscBills.reduce((sum, b) => sum + b.amount, 0);
+                const totalMiscPaid = activeMiscBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+                const totalMiscUnpaid = activeMiscBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+
+                // Group by Title
+                const groupedMiscMap: { [title: string]: { targetCount: number, paidCount: number, targetNominal: number, paidNominal: number } } = {};
+                activeMiscBills.forEach((bill) => {
+                  const title = bill.title;
+                  if (!groupedMiscMap[title]) {
+                    groupedMiscMap[title] = {
+                      targetCount: 0,
+                      paidCount: 0,
+                      targetNominal: 0,
+                      paidNominal: 0
+                    };
+                  }
+                  groupedMiscMap[title].targetCount += 1;
+                  groupedMiscMap[title].targetNominal += bill.amount;
+                  if (bill.status === "paid") {
+                    groupedMiscMap[title].paidCount += 1;
+                    groupedMiscMap[title].paidNominal += bill.amount;
+                  }
+                });
+
+                const groupedMiscList = Object.entries(groupedMiscMap).map(([title, stats]) => ({
+                  title,
+                  ...stats,
+                  pct: stats.targetNominal > 0 ? Math.round((stats.paidNominal / stats.targetNominal) * 100) : 0
+                })).sort((a, b) => a.title.localeCompare(b.title));
+
+                // Student Details
+                const studentMiscDetails = filteredMiscStudents.map(student => {
+                  const sBills = activeMiscBills.filter(b => b.studentId === student.id);
+                  const totalBilled = sBills.reduce((sum, b) => sum + b.amount, 0);
+                  const totalPaid = sBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+                  const totalUnpaid = sBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+                  return {
+                    student,
+                    bills: sBills,
+                    totalBilled,
+                    totalPaid,
+                    totalUnpaid
+                  };
+                }).filter(item => item.bills.length > 0).sort((a, b) => a.student.name.localeCompare(b.student.name));
+
+                return (
+                  <div className="flex flex-col gap-6">
+                    {/* Filters & Actions bar */}
+                    <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 text-xs">
+                      <div className="flex flex-wrap items-center gap-4">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-650 uppercase tracking-wide">
+                            Pilih Tingkat:
+                          </span>
+                          <select
+                            value={rekapMiscGradeFilter}
+                            onChange={(e) =>
+                              setRekapMiscGradeFilter(e.target.value)
+                            }
+                            className="px-3 py-1.5 bg-white border border-slate-205 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 transition-all cursor-pointer shadow-xs font-mono"
+                          >
+                            <option value="all">SEMUA TINGKAT</option>
+                            <option value="7">TINGKAT KELAS 7</option>
+                            <option value="8">TINGKAT KELAS 8</option>
+                            <option value="9">TINGKAT KELAS 9</option>
+                          </select>
+                        </div>
+
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-650 uppercase tracking-wide">
+                            Pilih Kelas:
+                          </span>
+                          <select
+                            value={rekapMiscClassFilter}
+                            onChange={(e) =>
+                              setRekapMiscClassFilter(e.target.value)
+                            }
+                            className="px-3 py-1.5 bg-white border border-slate-205 rounded-lg text-xs font-bold text-slate-800 focus:outline-none focus:border-slate-800 transition-all cursor-pointer shadow-xs font-mono"
+                          >
+                            <option value="all">SEMUA KELAS</option>
+                            {uniqueClasses
+                              .filter(
+                                (cls) =>
+                                  rekapMiscGradeFilter === "all" ||
+                                  cls.startsWith(rekapMiscGradeFilter),
+                              )
+                              .map((cls) => (
+                                <option key={cls} value={cls}>
+                                  KELAS {cls}
+                                </option>
+                              ))}
+                          </select>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReportToPrint("rekap-misc");
+                          setPrintId("print-report-section");
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
+                      >
+                        <Printer size={12} /> Cetak Rekap 🖨
+                      </button>
+                    </div>
+
+                    {/* Stats */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                      <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">
+                          TOTAL TAGIHAN LAIN-LAIN
+                        </span>
+                        <span className="text-lg font-bold font-mono text-indigo-900">
+                          Rp {totalMiscTarget.toLocaleString("id-ID")}
+                        </span>
+                        <span className="text-[9px] text-slate-500 block leading-tight">
+                          Total akumulasi dana tagihan non-SPP yang diset terfilter
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">
+                          REALISASI PEMBAYARAN
+                        </span>
+                        <span className="text-lg font-bold font-mono text-emerald-700">
+                          Rp {totalMiscPaid.toLocaleString("id-ID")}
+                        </span>
+                        <span className="text-[9px] text-slate-500 block leading-tight">
+                          Realisasi dana yang sudah disetor ({totalMiscTarget > 0 ? Math.round((totalMiscPaid / totalMiscTarget) * 100) : 0}% Terkumpul)
+                        </span>
+                      </div>
+
+                      <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-slate-455 uppercase tracking-wider block">
+                          TUNGGAKAN / SISA TAGIHAN
+                        </span>
+                        <span className="text-lg font-bold font-mono text-rose-600">
+                          Rp {totalMiscUnpaid.toLocaleString("id-ID")}
+                        </span>
+                        <span className="text-[9px] text-slate-500 block leading-tight">
+                          Sisa tunggakan pembayaran yang belum dilunasi murid
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Grouped summary tables */}
+                    <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-4">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                          Ringkasan Pembayaran Lain-lain Berdasarkan Jenis
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Menampilkan akumulasi total tagihan dan pembayaran dari setiap jenis kegiatan / kebutuhan sekolah
+                        </p>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
+                          <thead>
+                            <tr className="text-slate-400 font-bold uppercase text-[9px] tracking-wider pb-2">
+                              <th className="pb-2">No</th>
+                              <th className="pb-2">Nama Tagihan / Kegiatan</th>
+                              <th className="pb-2 text-center">Tingkat Penagihan</th>
+                              <th className="pb-2 text-right">Total Tagihan</th>
+                              <th className="pb-2 text-right">Realisasi Setoran</th>
+                              <th className="pb-2 text-center">Progress %</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-105">
+                            {groupedMiscList.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="py-4 text-center text-slate-400 font-bold italic">
+                                  Belum ada data tagihan lain-lain untuk filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              groupedMiscList.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/50">
+                                  <td className="py-2.5 font-bold text-slate-405">{idx + 1}</td>
+                                  <td className="py-2.5 font-bold text-slate-850 uppercase">{item.title}</td>
+                                  <td className="py-2.5 text-center font-mono text-slate-600">
+                                    {item.paidCount} / {item.targetCount} Siswa
+                                  </td>
+                                  <td className="py-2.5 text-right font-mono font-bold text-slate-800">
+                                    Rp {item.targetNominal.toLocaleString("id-ID")}
+                                  </td>
+                                  <td className="py-2.5 text-right font-mono font-bold text-emerald-600">
+                                    Rp {item.paidNominal.toLocaleString("id-ID")}
+                                  </td>
+                                  <td className="py-2.5 text-center font-mono">
+                                    <span className="px-2 py-0.5 rounded-full bg-slate-100 text-[10px] font-extrabold text-slate-700">
+                                      {item.pct}%
+                                    </span>
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+
+                    {/* Detailed student lists */}
+                    <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-4">
+                      <div>
+                        <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                          Daftar Detail Tagihan per Siswa (Pembayaran Lain-lain)
+                        </h4>
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          Menampilkan daftar siswa terfilter beserta rincian status pembayaran non-SPP masing-masing
+                        </p>
+                      </div>
+
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
+                          <thead>
+                            <tr className="text-slate-400 font-bold uppercase text-[9px] tracking-wider pb-2">
+                              <th className="pb-2">Siswa</th>
+                              <th className="pb-2 text-center">Kelas</th>
+                              <th className="pb-2">Keterangan Rincian Tagihan</th>
+                              <th className="pb-2 text-right">Total Tagihan</th>
+                              <th className="pb-2 text-right">Sudah Dibayar</th>
+                              <th className="pb-2 text-right">Sisa Tunggakan</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-105">
+                            {studentMiscDetails.length === 0 ? (
+                              <tr>
+                                <td colSpan={6} className="py-4 text-center text-slate-400 font-bold italic">
+                                  Tidak ada tagihan aktif untuk siswa dalam filter ini
+                                </td>
+                              </tr>
+                            ) : (
+                              studentMiscDetails.map((item, idx) => (
+                                <tr key={idx} className="hover:bg-slate-50/50 align-top">
+                                  <td className="py-2.5">
+                                    <div className="font-bold text-slate-800">{item.student.name}</div>
+                                    <div className="text-[9px] text-slate-400 font-mono">{item.student.nis}</div>
+                                  </td>
+                                  <td className="py-2.5 text-center font-mono font-bold text-slate-600">
+                                    Kelas {item.student.class}
+                                  </td>
+                                  <td className="py-2.5 max-w-xs">
+                                    <div className="flex flex-col gap-1">
+                                      {item.bills.map((b, bidx) => (
+                                        <div key={bidx} className="flex justify-between text-[10px] border-b border-dashed border-slate-100 pb-0.5">
+                                          <span className="text-slate-600">• {b.title}</span>
+                                          <span className={`px-1.5 py-0.2 rounded-md font-mono text-[9px] font-black ${b.status === "paid" ? "bg-emerald-50 text-emerald-700 border border-emerald-100" : "bg-rose-50 text-rose-600 border border-rose-100"}`}>
+                                            {b.status === "paid" ? "LUNAS" : "BELUM LUNAS"}
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </div>
+                                  </td>
+                                  <td className="py-2.5 text-right font-mono text-slate-700">
+                                    Rp {item.totalBilled.toLocaleString("id-ID")}
+                                  </td>
+                                  <td className="py-2.5 text-right font-mono font-bold text-emerald-600">
+                                    Rp {item.totalPaid.toLocaleString("id-ID")}
+                                  </td>
+                                  <td className={`py-2.5 text-right font-mono font-extrabold ${item.totalUnpaid > 0 ? "text-rose-600" : "text-slate-400"}`}>
+                                    Rp {item.totalUnpaid.toLocaleString("id-ID")}
+                                  </td>
+                                </tr>
+                              ))
+                            )}
+                          </tbody>
+                        </table>
+                      </div>
                     </div>
                   </div>
                 );
@@ -13714,14 +14142,18 @@ export default function AdminPanel({
                       `Laporan Rekapitulasi Pembayaran SPP`}
                     {reportToPrint === "rekap-tabungan" &&
                       `Laporan Peringkat & Rekap Buku Tabungan`}
+                    {reportToPrint === "rekap-misc" &&
+                      `Laporan Rekapitulasi Pembayaran Lain-lain`}
                   </h2>
                   <p className="text-[9px] text-slate-500 font-mono mt-1 font-semibold">
                     {reportToPrint === "harian" &&
                       `Periode Tanggal Buku Teller: ${new Date(currentDateFilter).toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" })}`}
                     {reportToPrint === "rekap-spp" &&
-                      `Jenjang Filter Tingkat: ${rekapSppGradeFilter === "all" ? "SEMUA TINGKAT KELAS 7, 8, & 9" : `KELAS TINGKAT ${rekapSppGradeFilter}`} | Tahun Ajaran Filter: ${rekapSppYearFilter === "all" ? "SEMUA TAHUN AJARAN" : `TA ${rekapSppYearFilter}`}`}
+                      `Jenjang Filter Tingkat: ${rekapSppGradeFilter === "all" ? "SEMUA TINGKAT KELAS 7, 8, & 9" : `KELAS TINGKAT ${rekapSppGradeFilter}`} | Filter Kelas: ${rekapSppClassFilter === "all" ? "SEMUA KELAS" : `KELAS ${rekapSppClassFilter}`} | Tahun Ajaran Filter: ${rekapSppYearFilter === "all" ? "SEMUA TAHUN AJARAN" : `TA ${rekapSppYearFilter}`}`}
                     {reportToPrint === "rekap-tabungan" &&
-                      `Disusun Berdasarkan Kepemilikan Saldo Tabungan Terbesar Kelas 7/8/9`}
+                      `Jenjang Filter Tingkat: ${rekapTabunganGradeFilter === "all" ? "SEMUA TINGKAT KELAS 7, 8, & 9" : `KELAS TINGKAT ${rekapTabunganGradeFilter}`} | Filter Kelas: ${rekapTabunganClassFilter === "all" ? "SEMUA KELAS" : `KELAS ${rekapTabunganClassFilter}`}`}
+                    {reportToPrint === "rekap-misc" &&
+                      `Jenjang Filter Tingkat: ${rekapMiscGradeFilter === "all" ? "SEMUA TINGKAT KELAS 7, 8, & 9" : `KELAS TINGKAT ${rekapMiscGradeFilter}`} | Filter Kelas: ${rekapMiscClassFilter === "all" ? "SEMUA KELAS" : `KELAS ${rekapMiscClassFilter}`}`}
                   </p>
                 </div>
 
@@ -13997,13 +14429,11 @@ export default function AdminPanel({
 
                 {reportToPrint === "rekap-spp" &&
                   (() => {
-                    const activeStudents = [
-                      ...(rekapSppGradeFilter === "all"
-                        ? students
-                        : students.filter((s) =>
-                            s.class.startsWith(rekapSppGradeFilter),
-                          ))
-                    ].sort((a, b) => a.name.localeCompare(b.name));
+                    const activeStudents = students.filter((s) => {
+                      const matchesGrade = rekapSppGradeFilter === "all" || (s.class && s.class.startsWith(rekapSppGradeFilter));
+                      const matchesClass = rekapSppClassFilter === "all" || s.class === rekapSppClassFilter;
+                      return matchesGrade && matchesClass;
+                    }).sort((a, b) => a.name.localeCompare(b.name));
 
                     const summaryMatrix = activeStudents.map((student) => {
                       const sBills = bills.filter(
@@ -14142,14 +14572,20 @@ export default function AdminPanel({
 
                 {reportToPrint === "rekap-tabungan" &&
                   (() => {
-                    const orderedStudentsBySavings = [...students].sort(
+                    const filteredTabunganStudents = students.filter((s) => {
+                      const matchesGrade = rekapTabunganGradeFilter === "all" || (s.class && s.class.startsWith(rekapTabunganGradeFilter));
+                      const matchesClass = rekapTabunganClassFilter === "all" || s.class === rekapTabunganClassFilter;
+                      return matchesGrade && matchesClass;
+                    });
+
+                    const orderedStudentsBySavings = [...filteredTabunganStudents].sort(
                       (a, b) => b.savingsBalance - a.savingsBalance,
                     );
-                    const totalGlobalSavings = students.reduce(
+                    const totalGlobalSavings = filteredTabunganStudents.reduce(
                       (acc, s) => acc + s.savingsBalance,
                       0,
                     );
-                    const countActiveAccounts = students.filter(
+                    const countActiveAccounts = filteredTabunganStudents.filter(
                       (s) => s.savingsBalance > 0,
                     ).length;
 
@@ -14158,7 +14594,7 @@ export default function AdminPanel({
                         {/* Widgets */}
                         <div className="grid grid-cols-3 gap-2 border border-slate-300 p-2.5 rounded-lg text-[9px] uppercase font-bold text-slate-950">
                           <div>
-                            <span>Total Simpanan Global:</span>
+                            <span>Total Simpanan Terfilter:</span>
                             <span className="block font-mono text-xs font-black text-slate-900 mt-0.5">
                               Rp {totalGlobalSavings.toLocaleString("id-ID")}
                             </span>
@@ -14166,16 +14602,16 @@ export default function AdminPanel({
                           <div className="border-l border-slate-300 pl-3">
                             <span>Rekening Aktif Terisi:</span>
                             <span className="block font-mono text-xs font-black text-slate-900 mt-0.5">
-                              {countActiveAccounts} Kelas 7/8/9
+                              {countActiveAccounts} Siswa
                             </span>
                           </div>
                           <div className="border-l border-slate-300 pl-3">
                             <span>Rata-rata Saldo Siswa:</span>
                             <span className="block font-mono text-xs font-black text-slate-900 mt-0.5">
                               Rp{" "}
-                              {students.length > 0
+                              {filteredTabunganStudents.length > 0
                                 ? Math.round(
-                                    totalGlobalSavings / students.length,
+                                    totalGlobalSavings / filteredTabunganStudents.length,
                                   ).toLocaleString("id-ID")
                                 : 0}
                             </span>
@@ -14235,6 +14671,184 @@ export default function AdminPanel({
                             ))}
                           </tbody>
                         </table>
+                      </div>
+                    );
+                  })()}
+
+                {reportToPrint === "rekap-misc" &&
+                  (() => {
+                    const filteredMiscStudents = students.filter((s) => {
+                      const matchesGrade = rekapMiscGradeFilter === "all" || (s.class && s.class.startsWith(rekapMiscGradeFilter));
+                      const matchesClass = rekapMiscClassFilter === "all" || s.class === rekapMiscClassFilter;
+                      return matchesGrade && matchesClass;
+                    });
+
+                    const studentIdsSet = new Set(filteredMiscStudents.map(s => s.id));
+                    const activeMiscBills = miscBills.filter(b => studentIdsSet.has(b.studentId));
+
+                    const totalMiscTarget = activeMiscBills.reduce((sum, b) => sum + b.amount, 0);
+                    const totalMiscPaid = activeMiscBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+                    const totalMiscUnpaid = activeMiscBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+
+                    // Group by Title
+                    const groupedMiscMap: { [title: string]: { targetCount: number, paidCount: number, targetNominal: number, paidNominal: number } } = {};
+                    activeMiscBills.forEach((bill) => {
+                      const title = bill.title;
+                      if (!groupedMiscMap[title]) {
+                        groupedMiscMap[title] = {
+                          targetCount: 0,
+                          paidCount: 0,
+                          targetNominal: 0,
+                          paidNominal: 0
+                        };
+                      }
+                      groupedMiscMap[title].targetCount += 1;
+                      groupedMiscMap[title].targetNominal += bill.amount;
+                      if (bill.status === "paid") {
+                        groupedMiscMap[title].paidCount += 1;
+                        groupedMiscMap[title].paidNominal += bill.amount;
+                      }
+                    });
+
+                    const groupedMiscList = Object.entries(groupedMiscMap).map(([title, stats]) => ({
+                      title,
+                      ...stats,
+                      pct: stats.targetNominal > 0 ? Math.round((stats.paidNominal / stats.targetNominal) * 100) : 0
+                    })).sort((a, b) => a.title.localeCompare(b.title));
+
+                    // Student Details
+                    const studentMiscDetails = filteredMiscStudents.map(student => {
+                      const sBills = activeMiscBills.filter(b => b.studentId === student.id);
+                      const totalBilled = sBills.reduce((sum, b) => sum + b.amount, 0);
+                      const totalPaid = sBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+                      const totalUnpaid = sBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+                      return {
+                        student,
+                        bills: sBills,
+                        totalBilled,
+                        totalPaid,
+                        totalUnpaid
+                      };
+                    }).filter(item => item.bills.length > 0).sort((a, b) => a.student.name.localeCompare(b.student.name));
+
+                    return (
+                      <div className="flex flex-col gap-5 text-slate-900">
+                        {/* Widgets summary */}
+                        <div className="grid grid-cols-3 gap-2 border border-slate-300 p-2.5 rounded-lg text-[9px] uppercase font-bold text-slate-950">
+                          <div>
+                            <span>Total Tagihan Lain-lain:</span>
+                            <span className="block font-mono text-xs font-black text-slate-900 mt-0.5">
+                              Rp {totalMiscTarget.toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                          <div className="border-l border-slate-300 pl-3">
+                            <span>Total Terbayar (Realisasi):</span>
+                            <span className="block font-mono text-xs font-black text-emerald-800 mt-0.5">
+                              Rp {totalMiscPaid.toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                          <div className="border-l border-slate-300 pl-3">
+                            <span>Total Tunggakan (Sisa):</span>
+                            <span className="block font-mono text-xs font-black text-rose-800 mt-0.5">
+                              Rp {totalMiscUnpaid.toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Summary by Payment Type */}
+                        <div>
+                          <h4 className="font-extrabold text-[10px] uppercase text-slate-950 mb-1 border-b border-slate-400 pb-0.5">
+                            I. Ringkasan Berdasarkan Jenis Pembayaran
+                          </h4>
+                          <table className="w-full text-left font-sans border-collapse text-[9px]">
+                            <thead>
+                              <tr className="bg-slate-200 border border-slate-400 text-slate-800 font-bold uppercase text-[8px]">
+                                <th className="p-1 px-2 border border-slate-350" style={{ width: "35%" }}>Jenis Pembayaran</th>
+                                <th className="p-1 px-2 border border-slate-350 text-center" style={{ width: "15%" }}>Target Siswa</th>
+                                <th className="p-1 px-2 border border-slate-350 text-right" style={{ width: "15%" }}>Total Tagihan</th>
+                                <th className="p-1 px-2 border border-slate-350 text-right" style={{ width: "15%" }}>Total Terbayar</th>
+                                <th className="p-1 px-2 border border-slate-350 text-center" style={{ width: "10%" }}>Progress</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {groupedMiscList.length === 0 ? (
+                                <tr>
+                                  <td colSpan={5} className="p-2 text-center text-slate-400 italic">Tidak ada tagihan lain-lain ditemukan</td>
+                                </tr>
+                              ) : (
+                                groupedMiscList.map((item, idx) => (
+                                  <tr key={idx} className="border border-slate-300 hover:bg-slate-50">
+                                    <td className="p-1 px-2 border border-slate-300 font-bold">{item.title}</td>
+                                    <td className="p-1 px-2 border border-slate-300 text-center font-mono">
+                                      {item.paidCount} / {item.targetCount} Siswa
+                                    </td>
+                                    <td className="p-1 px-2 border border-slate-300 text-right font-mono font-semibold">
+                                      Rp {item.targetNominal.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="p-1 px-2 border border-slate-300 text-right font-mono text-emerald-850 font-bold">
+                                      Rp {item.paidNominal.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="p-1 px-2 border border-slate-300 text-center font-mono font-black text-slate-800">
+                                      {item.pct}%
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Details by Student */}
+                        <div>
+                          <h4 className="font-extrabold text-[10px] uppercase text-slate-950 mb-1 border-b border-slate-400 pb-0.5">
+                            II. Rincian Tagihan Lain-lain per Siswa
+                          </h4>
+                          <table className="w-full text-left font-sans border-collapse text-[9px]">
+                            <thead>
+                              <tr className="bg-slate-200 border border-slate-400 text-slate-800 font-bold uppercase text-[8px]">
+                                <th className="p-1 px-2 border border-slate-350" style={{ width: "25%" }}>Nama Siswa</th>
+                                <th className="p-1 px-2 border border-slate-350 text-center" style={{ width: "8%" }}>Kelas</th>
+                                <th className="p-1 px-2 border border-slate-350" style={{ width: "27%" }}>Rincian Tagihan (Status)</th>
+                                <th className="p-1 px-2 border border-slate-350 text-right" style={{ width: "13%" }}>Total Tagihan</th>
+                                <th className="p-1 px-2 border border-slate-350 text-right" style={{ width: "13%" }}>Total Bayar</th>
+                                <th className="p-1 px-2 border border-slate-350 text-right" style={{ width: "14%" }}>Tunggakan</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {studentMiscDetails.length === 0 ? (
+                                <tr>
+                                  <td colSpan={6} className="p-2 text-center text-slate-400 italic">Tidak ada rincian tagihan siswa ditemukan</td>
+                                </tr>
+                              ) : (
+                                studentMiscDetails.map((item, idx) => (
+                                  <tr key={idx} className="border border-slate-300 hover:bg-slate-50">
+                                    <td className="p-1 px-2 border border-slate-300 font-bold">{item.student.name}</td>
+                                    <td className="p-1 px-2 border border-slate-300 text-center font-semibold">{item.student.class}</td>
+                                    <td className="p-1 px-2 border border-slate-300 text-[8px] font-semibold text-slate-600">
+                                      {item.bills.map((b, bidx) => (
+                                        <div key={bidx} className="flex justify-between">
+                                          <span>• {b.title}</span>
+                                          <span className={b.status === "paid" ? "text-emerald-750 font-bold" : "text-rose-650 font-black"}>
+                                            ({b.status === "paid" ? "LUNAS" : "BELUM BAYAR"})
+                                          </span>
+                                        </div>
+                                      ))}
+                                    </td>
+                                    <td className="p-1 px-2 border border-slate-300 text-right font-mono">
+                                      Rp {item.totalBilled.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="p-1 px-2 border border-slate-300 text-right font-mono text-emerald-800 font-bold">
+                                      Rp {item.totalPaid.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className={`p-1 px-2 border border-slate-300 text-right font-mono font-bold ${item.totalUnpaid > 0 ? "text-rose-700" : "text-slate-400"}`}>
+                                      Rp {item.totalUnpaid.toLocaleString("id-ID")}
+                                    </td>
+                                  </tr>
+                                ))
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
                       </div>
                     );
                   })()}

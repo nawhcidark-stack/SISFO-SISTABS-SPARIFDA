@@ -841,9 +841,9 @@ export default function StudentPanel({
       result = bills.filter(b => {
         const billYearStr = getAcademicYearOfBill(b);
         if (billYearStr === selectedAcademicYear) return true;
-        // Include unpaid/pending bills from previous academic years
+        // Include unpaid bills from previous academic years
         const billStartYear = parseInt(billYearStr.split('/')[0], 10);
-        if (billStartYear < selectedStartYear && (b.status === 'unpaid' || b.status === 'pending')) {
+        if (billStartYear < selectedStartYear && b.status === 'unpaid') {
           return true;
         }
         return false;
@@ -859,7 +859,6 @@ export default function StudentPanel({
 
   const unpaidBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'unpaid').length, [filteredBills]);
   const paidBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'paid').length, [filteredBills]);
-  const pendingBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'pending').length, [filteredBills]);
 
   const studentMiscBills = useMemo(() => {
     return miscBills.filter(b => b.studentId === currentStudent?.id);
@@ -1384,11 +1383,6 @@ export default function StudentPanel({
                         <span className="px-2.5 py-1 bg-indigo-50 text-indigo-700 rounded border border-indigo-100 font-bold">
                           Belum: {unpaidBillsCount}
                         </span>
-                        {pendingBillsCount > 0 && (
-                          <span className="px-2.5 py-1 bg-amber-50 text-amber-700 rounded border border-amber-100 font-bold animate-pulse">
-                            Pending: {pendingBillsCount}
-                          </span>
-                        )}
                       </div>
                     </div>
                   </div>

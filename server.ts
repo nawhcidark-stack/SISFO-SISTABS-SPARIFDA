@@ -791,7 +791,7 @@ function sanitizeMongoUri(uriString: string): string {
   }
 }
 
-async function syncWithFirestore() {
+async function syncWithFirestore(forcePush: boolean = false) {
   const rawUri = process.env.MONGODB_URI || "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
   
   // Build a distinct pool of Connection Candidate URIs to attempt
@@ -878,6 +878,17 @@ async function syncWithFirestore() {
   }
 
   const uri = resolvedUri;
+
+  if (forcePush) {
+    console.log("Force push requested. Overwriting remote MongoDB database with current local in-memory state...");
+    dbSyncStatus = "Syncing (Uploading Local State)...";
+    isInitialSyncCompleted = true; // Ensure saveStateToFirestore doesn't bypass
+    await saveStateToFirestore();
+    dbSyncStatus = "Synced (Manual Push Completed)";
+    lastSyncTime = new Date().toISOString();
+    dbSyncError = null;
+    return;
+  }
 
   try {
     const studentCol = mongoDb.collection("students");
@@ -1078,33 +1089,6 @@ async function syncWithFirestore() {
         console.error("[BOOT] Failed to query and reconstruct backed-up files from MongoDB:", errFile.message || errFile);
       }
 
-      if (sppBills.length === 0 && students.length > 0) {
-        console.warn("[RECOVERY] sppBills is empty but students exist in MongoDB! Automatically reconstructing missing SPP bills for existing students...");
-        students.forEach((student, sIdx) => {
-          months.forEach((month, mIdx) => {
-            const isPaid = mIdx < 8; // Juli - Februari paid
-            const mappedAmount = getSppAmountForClass(student.class);
-            const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
-            const isJuly = month === "Juli";
-            const isRegPaid = isGrade7 && isJuly;
-
-            sppBills.push({
-              id: `bill-${student.id}-${mIdx}`,
-              studentId: student.id,
-              month: month,
-              year: mIdx < 6 ? 2025 : 2026,
-              amount: mappedAmount,
-              status: isPaid ? "paid" : "unpaid",
-              paidAt: isPaid ? new Date(2025, 6 + mIdx, 10, 14, 30).toISOString() : undefined,
-              paymentMethod: isPaid ? (isRegPaid ? "Lunas Pendaftaran" : "Manual Teller") : undefined,
-              orderId: isPaid ? (isRegPaid ? `ORD-REGISTRATION-${student.id}` : `ORD-MANUAL-${student.id}-${mIdx}`) : undefined
-            });
-          });
-        });
-        isInitialSyncCompleted = true;
-        saveState();
-      }
-
       dbSyncStatus = "Synced (Loaded from MongoDB)";
       lastSyncTime = new Date().toISOString();
       dbSyncError = null;
@@ -1178,6 +1162,7 @@ function saveState() {
     const data = {
       students,
       sppBills,
+      miscBills,
       savingsTransactions,
       notifications,
       sppRates,
@@ -1253,31 +1238,10 @@ function loadState() {
         });
         sppBills.length = 0;
         sppBills.push(...Array.from(seen.values()));
-
-        if (sppBills.length === 0 && students.length > 0) {
-          console.warn("[RECOVERY - LOCAL] sppBills is empty but students exist! Reconstructing missing SPP bills...");
-          students.forEach((student, sIdx) => {
-            months.forEach((month, mIdx) => {
-              const isPaid = mIdx < 8; // Juli - Februari paid
-              const mappedAmount = getSppAmountForClass(student.class);
-              const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
-              const isJuly = month === "Juli";
-              const isRegPaid = isGrade7 && isJuly;
-
-              sppBills.push({
-                id: `bill-${student.id}-${mIdx}`,
-                studentId: student.id,
-                month: month,
-                year: mIdx < 6 ? 2025 : 2026,
-                amount: mappedAmount,
-                status: isPaid ? "paid" : "unpaid",
-                paidAt: isPaid ? new Date(2025, 6 + mIdx, 10, 14, 30).toISOString() : undefined,
-                paymentMethod: isPaid ? (isRegPaid ? "Lunas Pendaftaran" : "Manual Teller") : undefined,
-                orderId: isPaid ? (isRegPaid ? `ORD-REGISTRATION-${student.id}` : `ORD-MANUAL-${student.id}-${mIdx}`) : undefined
-              });
-            });
-          });
-        }
+      }
+      if (Array.isArray(data.miscBills)) {
+        miscBills.length = 0;
+        miscBills.push(...data.miscBills);
       }
       if (Array.isArray(data.savingsTransactions)) {
         savingsTransactions.length = 0;
@@ -1433,8 +1397,8 @@ if (isLoaded) {
 } else {
   students.forEach((student, sIdx) => {
     months.forEach((month, mIdx) => {
-      // Make bills before Maret 2026 paid
-      const isPaid = mIdx < 8; // Juli - Februari paid
+      // All fallback initialization bills should start as unpaid
+      const isPaid = false;
       const mappedAmount = getSppAmountForClass(student.class);
       const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
       const isJuly = month === "Juli";
@@ -1782,8 +1746,8 @@ async function startServer() {
   // Force database synchronization with MongoDB
   app.post("/api/admin/force-firestore-sync", async (req, res) => {
     try {
-      console.log("Admin triggered manual MongoDB synchronization...");
-      await syncWithFirestore();
+      console.log("Admin triggered manual MongoDB synchronization (Force Push)...");
+      await syncWithFirestore(true);
       res.json({
         success: true,
         status: dbSyncStatus,

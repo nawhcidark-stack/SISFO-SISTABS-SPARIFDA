@@ -1078,6 +1078,33 @@ async function syncWithFirestore() {
         console.error("[BOOT] Failed to query and reconstruct backed-up files from MongoDB:", errFile.message || errFile);
       }
 
+      if (sppBills.length === 0 && students.length > 0) {
+        console.warn("[RECOVERY] sppBills is empty but students exist in MongoDB! Automatically reconstructing missing SPP bills for existing students...");
+        students.forEach((student, sIdx) => {
+          months.forEach((month, mIdx) => {
+            const isPaid = mIdx < 8; // Juli - Februari paid
+            const mappedAmount = getSppAmountForClass(student.class);
+            const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
+            const isJuly = month === "Juli";
+            const isRegPaid = isGrade7 && isJuly;
+
+            sppBills.push({
+              id: `bill-${student.id}-${mIdx}`,
+              studentId: student.id,
+              month: month,
+              year: mIdx < 6 ? 2025 : 2026,
+              amount: mappedAmount,
+              status: isPaid ? "paid" : "unpaid",
+              paidAt: isPaid ? new Date(2025, 6 + mIdx, 10, 14, 30).toISOString() : undefined,
+              paymentMethod: isPaid ? (isRegPaid ? "Lunas Pendaftaran" : "Manual Teller") : undefined,
+              orderId: isPaid ? (isRegPaid ? `ORD-REGISTRATION-${student.id}` : `ORD-MANUAL-${student.id}-${mIdx}`) : undefined
+            });
+          });
+        });
+        isInitialSyncCompleted = true;
+        saveState();
+      }
+
       dbSyncStatus = "Synced (Loaded from MongoDB)";
       lastSyncTime = new Date().toISOString();
       dbSyncError = null;
@@ -1226,6 +1253,31 @@ function loadState() {
         });
         sppBills.length = 0;
         sppBills.push(...Array.from(seen.values()));
+
+        if (sppBills.length === 0 && students.length > 0) {
+          console.warn("[RECOVERY - LOCAL] sppBills is empty but students exist! Reconstructing missing SPP bills...");
+          students.forEach((student, sIdx) => {
+            months.forEach((month, mIdx) => {
+              const isPaid = mIdx < 8; // Juli - Februari paid
+              const mappedAmount = getSppAmountForClass(student.class);
+              const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
+              const isJuly = month === "Juli";
+              const isRegPaid = isGrade7 && isJuly;
+
+              sppBills.push({
+                id: `bill-${student.id}-${mIdx}`,
+                studentId: student.id,
+                month: month,
+                year: mIdx < 6 ? 2025 : 2026,
+                amount: mappedAmount,
+                status: isPaid ? "paid" : "unpaid",
+                paidAt: isPaid ? new Date(2025, 6 + mIdx, 10, 14, 30).toISOString() : undefined,
+                paymentMethod: isPaid ? (isRegPaid ? "Lunas Pendaftaran" : "Manual Teller") : undefined,
+                orderId: isPaid ? (isRegPaid ? `ORD-REGISTRATION-${student.id}` : `ORD-MANUAL-${student.id}-${mIdx}`) : undefined
+              });
+            });
+          });
+        }
       }
       if (Array.isArray(data.savingsTransactions)) {
         savingsTransactions.length = 0;

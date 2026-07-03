@@ -60,6 +60,8 @@ import {
   XCircle,
   AlertTriangle,
   CreditCard,
+  Database,
+  HardDrive,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -1048,6 +1050,25 @@ export default function AdminPanel({
   const [isSyncingLive, setIsSyncingLive] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
 
+  // Backup system states
+  const [backups, setBackups] = useState<any[]>([]);
+  const [bConfig, setBConfig] = useState<any>({
+    enabled: true,
+    intervalHours: 12,
+    maxBackups: 10,
+    lastBackupTime: "",
+    nextBackupTime: "",
+    autoDownloadLocal: false
+  });
+  const [isLoadingBackups, setIsLoadingBackups] = useState(false);
+  const [isCreatingBackup, setIsCreatingBackup] = useState(false);
+  const [isRestoringBackupId, setIsRestoringBackupId] = useState<string | null>(null);
+  const [isRestoringLocalBackup, setIsRestoringLocalBackup] = useState(false);
+  const [isDeletingBackupId, setIsDeletingBackupId] = useState<string | null>(null);
+  const [backupDescription, setBackupDescription] = useState("");
+  const [backupSuccessMessage, setBackupSuccessMessage] = useState<string | null>(null);
+  const [backupErrorMessage, setBackupErrorMessage] = useState<string | null>(null);
+
   // File Upload states and hooks
   const [uploadedFiles, setUploadedFiles] = useState<any[]>([]);
   const [isClassFilesLoading, setIsClassFilesLoading] =
@@ -1197,14 +1218,233 @@ export default function AdminPanel({
     }
   };
 
+  const fetchBackups = async () => {
+    setIsLoadingBackups(true);
+    setBackupErrorMessage(null);
+    try {
+      const res = await fetch("/api/admin/backups");
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          setBackups(data.backups || []);
+          if (data.config) {
+            setBConfig(data.config);
+          }
+        }
+      } else {
+        setBackupErrorMessage("Gagal memuat daftar backup dari server.");
+      }
+    } catch (err) {
+      console.error("Error fetching backups:", err);
+      setBackupErrorMessage("Gagal menghubungkan ke server untuk mengambil backup.");
+    } finally {
+      setIsLoadingBackups(false);
+    }
+  };
+
+  const handleCreateBackup = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    setIsCreatingBackup(true);
+    setBackupSuccessMessage(null);
+    setBackupErrorMessage(null);
+    try {
+      const res = await fetch("/api/admin/backups/create", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "manual",
+          description: backupDescription.trim() || "Backup Manual Admin"
+        })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBackupSuccessMessage(`🎉 Backup sukses dibuat: ${data.backup.id}`);
+        setBackupDescription("");
+        fetchBackups();
+      } else {
+        setBackupErrorMessage(data.error || "Gagal membuat backup.");
+      }
+    } catch (err) {
+      console.error("Error creating backup:", err);
+      setBackupErrorMessage("Koneksi gagal saat membuat backup.");
+    } finally {
+      setIsCreatingBackup(false);
+    }
+  };
+
+  const handleSaveBackupConfig = async (enabled: boolean, intervalHours: number, maxBackups: number, autoDownloadLocal: boolean) => {
+    setBackupSuccessMessage(null);
+    setBackupErrorMessage(null);
+    try {
+      const res = await fetch("/api/admin/backups/config", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ enabled, intervalHours, maxBackups, autoDownloadLocal })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBackupSuccessMessage("✔️ Pengaturan backup otomatis berhasil disimpan!");
+        fetchBackups();
+      } else {
+        setBackupErrorMessage(data.error || "Gagal menyimpan konfigurasi.");
+      }
+    } catch (err) {
+      console.error("Error saving backup config:", err);
+      setBackupErrorMessage("Gagal menyimpan konfigurasi karena kendala jaringan.");
+    }
+  };
+
+  const handleRestoreBackup = async (id: string) => {
+    if (!window.confirm("⚠️ PERINGATAN: Restorasi data akan menimpa seluruh data sistem saat ini dengan data dari file backup. Tindakan ini tidak dapat dibatalkan.\n\nApakah Anda yakin ingin melanjutkan?")) {
+      return;
+    }
+    setIsRestoringBackupId(id);
+    setBackupSuccessMessage(null);
+    setBackupErrorMessage(null);
+    try {
+      const res = await fetch("/api/admin/backups/restore", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBackupSuccessMessage("🎉 Sukses! Restorasi data berhasil diselesaikan. Halaman akan dimuat ulang...");
+        setTimeout(() => {
+          window.location.reload();
+        }, 2000);
+      } else {
+        setBackupErrorMessage(data.error || "Gagal melakukan restorasi.");
+      }
+    } catch (err) {
+      console.error("Error restoring backup:", err);
+      setBackupErrorMessage("Koneksi gagal saat merestorasi backup.");
+    } finally {
+      setIsRestoringBackupId(null);
+    }
+  };
+
+  const handleRestoreFromLocalFile = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!window.confirm("⚠️ PERINGATAN: Restorasi dari file lokal akan menghapus dan menimpa seluruh data sistem saat ini dengan data yang ada di dalam file backup ini. Tindakan ini tidak dapat dibatalkan.\n\nApakah Anda yakin ingin melanjutkan untuk memulihkan data?")) {
+      e.target.value = "";
+      return;
+    }
+
+    setIsRestoringLocalBackup(true);
+    setBackupSuccessMessage(null);
+    setBackupErrorMessage(null);
+
+    const reader = new FileReader();
+    reader.onload = async (event) => {
+      try {
+        const text = event.target?.result as string;
+        const snapshot = JSON.parse(text);
+
+        // Simple validation to check for a valid snapshot shape
+        if (!snapshot || typeof snapshot !== "object" || (!snapshot.students && !snapshot.sppBills && !snapshot.schoolIdentity)) {
+          throw new Error("Format file JSON tidak valid. Pastikan file tersebut adalah file backup resmi sistem (SIS).");
+        }
+
+        const res = await fetch("/api/admin/backups/restore-upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ snapshot })
+        });
+        const data = await res.json();
+        if (res.ok && data.success) {
+          setBackupSuccessMessage("🎉 Sukses! Restorasi data dari komputer lokal berhasil diselesaikan. Halaman akan dimuat ulang...");
+          setTimeout(() => {
+            window.location.reload();
+          }, 2000);
+        } else {
+          setBackupErrorMessage(data.error || "Gagal melakukan restorasi dari file.");
+        }
+      } catch (err: any) {
+        console.error("Error restoring from local file:", err);
+        setBackupErrorMessage(err.message || "Gagal membaca atau memproses file backup lokal.");
+      } finally {
+        setIsRestoringLocalBackup(false);
+        e.target.value = "";
+      }
+    };
+
+    reader.onerror = () => {
+      setBackupErrorMessage("Gagal membaca file dari komputer lokal.");
+      setIsRestoringLocalBackup(false);
+      e.target.value = "";
+    };
+
+    reader.readAsText(file);
+  };
+
+  const handleDeleteBackup = async (id: string) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus file backup ini secara permanen?")) {
+      return;
+    }
+    setIsDeletingBackupId(id);
+    setBackupSuccessMessage(null);
+    setBackupErrorMessage(null);
+    try {
+      const res = await fetch(`/api/admin/backups/${id}`, {
+        method: "DELETE"
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setBackupSuccessMessage("🗑️ Backup berhasil dihapus.");
+        fetchBackups();
+      } else {
+        setBackupErrorMessage(data.error || "Gagal menghapus backup.");
+      }
+    } catch (err) {
+      console.error("Error deleting backup:", err);
+      setBackupErrorMessage("Gagal menghapus backup karena kendala jaringan.");
+    } finally {
+      setIsDeletingBackupId(null);
+    }
+  };
+
   useEffect(() => {
     if (adminTab === "config") {
       fetchSystemStatus();
       fetchUploadedFiles();
+      fetchBackups();
       const interval = setInterval(fetchSystemStatus, 6000);
       return () => clearInterval(interval);
     }
   }, [adminTab]);
+
+  // Effect for Auto-Downloading New Backups to Local Computer
+  useEffect(() => {
+    if (bConfig.enabled && bConfig.autoDownloadLocal && backups.length > 0) {
+      // Find the absolute newest backup snapshot
+      const sorted = [...backups].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
+      const newestBackup = sorted[0];
+      
+      if (newestBackup) {
+        const lastDownloadedId = localStorage.getItem("last_downloaded_backup_id");
+        if (lastDownloadedId !== newestBackup.id) {
+          console.log(`[AUTO-DOWNLOAD] New backup detected (${newestBackup.id}). Triggering automatic local file download...`);
+          
+          // Trigger the download
+          const link = document.createElement("a");
+          link.href = `/api/admin/backups/${newestBackup.id}/download`;
+          link.download = `SIS_Backup_${newestBackup.id}.json`;
+          document.body.appendChild(link);
+          link.click();
+          document.body.removeChild(link);
+          
+          // Save the downloaded state
+          localStorage.setItem("last_downloaded_backup_id", newestBackup.id);
+          
+          // Toast or message feedback
+          setBackupSuccessMessage(`📥 Backup otomatis baru (${newestBackup.id}) telah berhasil diunduh dan disimpan ke komputer lokal Anda.`);
+        }
+      }
+    }
+  }, [backups, bConfig.autoDownloadLocal, bConfig.enabled]);
 
   const handleForceSync = async () => {
     setIsSyncingLive(true);
@@ -8671,6 +8911,311 @@ export default function AdminPanel({
                   </button>
                 </div>
               </form>
+            </motion.div>
+
+            {/* Sistem Backup & Pemulihan Data Otomatis Card */}
+            <motion.div
+              initial={{ opacity: 0, y: 15 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="bg-white p-6 rounded-xl border border-slate-200 shadow-sm flex flex-col gap-6 text-xs text-left text-slate-800"
+            >
+              <div className="flex items-start gap-3">
+                <div className="p-2.5 rounded-xl bg-indigo-50 border border-indigo-100 text-indigo-600 shrink-0">
+                  <Database size={20} />
+                </div>
+                <div>
+                  <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+                    Sistem Backup &amp; Pemulihan Data Otomatis
+                  </h3>
+                  <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed font-semibold">
+                    Kelola pencadangan data periodik untuk mengamankan seluruh informasi sekolah secara otomatis ke database cloud, atau unduh dan pulihkan snapshot data secara instan.
+                  </p>
+                </div>
+              </div>
+
+              {/* Status & Feedback Messages */}
+              {backupSuccessMessage && (
+                <div className="p-3.5 bg-emerald-50 border border-emerald-200 text-emerald-800 rounded-xl font-bold text-xs flex items-start gap-2.5">
+                  <Check size={16} className="text-emerald-700 shrink-0 mt-0.5" />
+                  <div className="flex-1">{backupSuccessMessage}</div>
+                  <button onClick={() => setBackupSuccessMessage(null)} className="text-emerald-600 hover:text-emerald-800 text-[11px] font-extrabold cursor-pointer select-none">&times;</button>
+                </div>
+              )}
+
+              {backupErrorMessage && (
+                <div className="p-3.5 bg-red-50 border border-red-200 text-red-800 rounded-xl font-bold text-xs flex items-start gap-2.5">
+                  <AlertCircle size={16} className="text-red-750 shrink-0 mt-0.5" />
+                  <div className="flex-1">{backupErrorMessage}</div>
+                  <button onClick={() => setBackupErrorMessage(null)} className="text-red-650 hover:text-red-850 text-[11px] font-extrabold cursor-pointer select-none">&times;</button>
+                </div>
+              )}
+
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                {/* Left side: Config / Auto-backup settings */}
+                <div className="lg:col-span-5 flex flex-col gap-4 p-4.5 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                    ⚙️ Konfigurasi Backup Otomatis
+                  </span>
+
+                  <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-bold text-slate-800">Status Backup Otomatis</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Cadangkan database secara berkala</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveBackupConfig(!bConfig.enabled, bConfig.intervalHours, bConfig.maxBackups, !!bConfig.autoDownloadLocal)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${bConfig.enabled ? "bg-indigo-600" : "bg-slate-200"}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${bConfig.enabled ? "translate-x-5" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-extrabold text-slate-400">
+                      Interval Pencadangan (Jam)
+                    </label>
+                    <select
+                      value={bConfig.intervalHours}
+                      onChange={(e) => handleSaveBackupConfig(bConfig.enabled, Number(e.target.value), bConfig.maxBackups, !!bConfig.autoDownloadLocal)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-indigo-600 cursor-pointer text-xs"
+                    >
+                      <option value="1">Setiap 1 Jam</option>
+                      <option value="6">Setiap 6 Jam</option>
+                      <option value="12">Setiap 12 Jam (Rekomendasi)</option>
+                      <option value="24">Setiap 24 Jam (Harian)</option>
+                      <option value="48">Setiap 48 Jam (2 Hari Sekali)</option>
+                      <option value="168">Setiap 168 Jam (Mingguan)</option>
+                    </select>
+                  </div>
+
+                  <div className="flex flex-col gap-1.5">
+                    <label className="text-[10px] uppercase font-extrabold text-slate-400">
+                      Maksimal Snapshot Disimpan
+                    </label>
+                    <input
+                      type="number"
+                      min="2"
+                      max="100"
+                      value={bConfig.maxBackups}
+                      onChange={(e) => handleSaveBackupConfig(bConfig.enabled, bConfig.intervalHours, Number(e.target.value) || 10, !!bConfig.autoDownloadLocal)}
+                      className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-bold focus:outline-none focus:border-indigo-600 text-xs"
+                    />
+                    <span className="text-[9.5px] text-slate-500 font-semibold italic">
+                      *Snapshot tertua otomatis dihapus jika melebihi batas ini untuk menghemat memori.
+                    </span>
+                  </div>
+
+                  {/* Auto Download Setting Switch */}
+                  <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
+                    <div className="flex flex-col gap-0.5">
+                      <span className="font-bold text-slate-800">Unduh Otomatis Ke Komputer</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Simpan file backup otomatis baru ke PC lokal</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => handleSaveBackupConfig(bConfig.enabled, bConfig.intervalHours, bConfig.maxBackups, !bConfig.autoDownloadLocal)}
+                      className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${bConfig.autoDownloadLocal ? "bg-indigo-600" : "bg-slate-200"}`}
+                    >
+                      <span className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-sm ring-0 transition duration-200 ease-in-out ${bConfig.autoDownloadLocal ? "translate-x-5" : "translate-x-0"}`} />
+                    </button>
+                  </div>
+
+                  {/* Backup metadata status */}
+                  <div className="mt-2 pt-3.5 border-t border-slate-200/80 flex flex-col gap-2.5">
+                    <div className="flex justify-between items-center text-[11px] font-semibold">
+                      <span className="text-slate-500">Pencadangan Terakhir:</span>
+                      <span className="text-slate-800 font-bold font-mono">
+                        {bConfig.lastBackupTime ? new Date(bConfig.lastBackupTime).toLocaleString("id-ID") : "Belum Pernah"}
+                      </span>
+                    </div>
+                    <div className="flex justify-between items-center text-[11px] font-semibold">
+                      <span className="text-slate-500">Pencadangan Selanjutnya:</span>
+                      <span className="text-slate-800 font-bold font-mono text-indigo-600">
+                        {bConfig.enabled && bConfig.nextBackupTime ? new Date(bConfig.nextBackupTime).toLocaleString("id-ID") : "-"}
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* Restore from Local File Section */}
+                  <div className="mt-3 pt-4 border-t border-slate-200/80 flex flex-col gap-2">
+                    <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
+                      📥 Pemulihan Data (Restore) Lokal
+                    </span>
+                    <p className="text-[10px] text-slate-550 font-semibold leading-relaxed">
+                      Punya file backup di komputer Anda? Pilih file backup JSON untuk memulihkan seluruh basis data sistem sekolah secara instan.
+                    </p>
+                    <label className="relative mt-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-indigo-450 bg-white hover:bg-indigo-50/10 py-4 px-3 rounded-xl cursor-pointer transition-all">
+                      <div className="flex flex-col items-center gap-1.5 text-center">
+                        <UploadCloud size={18} className={isRestoringLocalBackup ? "animate-bounce text-indigo-500" : "text-slate-400"} />
+                        <span className="text-[10px] font-bold text-slate-750">
+                          {isRestoringLocalBackup ? "Sedang memulihkan data..." : "Pilih File Backup (.json)"}
+                        </span>
+                        <span className="text-[8.5px] text-slate-400 font-bold font-mono">
+                          Format: SIS_Backup_*.json
+                        </span>
+                      </div>
+                      <input
+                        type="file"
+                        accept=".json"
+                        disabled={isRestoringLocalBackup}
+                        onChange={handleRestoreFromLocalFile}
+                        className="hidden"
+                      />
+                    </label>
+                  </div>
+                </div>
+
+                {/* Right side: Manual Backup trigger & Backup snapshots table */}
+                <div className="lg:col-span-7 flex flex-col gap-5">
+                  <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                    <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-3.5">
+                      📸 Pencadangan Manual Instan
+                    </span>
+                    <form onSubmit={handleCreateBackup} className="flex gap-2.5 items-end">
+                      <div className="flex-1 flex flex-col gap-1.5 text-left">
+                        <label className="text-[10px] uppercase font-bold text-slate-400">Deskripsi / Catatan Backup</label>
+                        <input
+                          type="text"
+                          required
+                          placeholder="Contoh: Sebelum kenaikan kelas, Pembaruan SPP, dll."
+                          value={backupDescription}
+                          onChange={(e) => setBackupDescription(e.target.value)}
+                          className="w-full p-2.5 bg-white border border-slate-200 rounded-xl text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 text-xs"
+                        />
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isCreatingBackup}
+                        className="py-2.5 px-4 bg-indigo-600 hover:bg-indigo-750 disabled:opacity-50 text-white font-bold rounded-xl transition-all cursor-pointer inline-flex items-center justify-center gap-1.5 h-[38px] select-none text-[11px] uppercase tracking-wider shrink-0"
+                      >
+                        {isCreatingBackup ? (
+                          <>
+                            <RefreshCw size={13} className="animate-spin" />
+                            <span>Memproses...</span>
+                          </>
+                        ) : (
+                          <>
+                            <PlusCircle size={14} className="text-white" />
+                            <span>Backup Sekarang</span>
+                          </>
+                        )}
+                      </button>
+                    </form>
+                  </div>
+
+                  {/* List of snapshots */}
+                  <div className="flex flex-col gap-2.5">
+                    <div className="flex justify-between items-center px-1">
+                      <span className="font-bold text-slate-800 text-xs">Riwayat &amp; Daftar Snapshot Backup ({backups.length})</span>
+                      <button
+                        type="button"
+                        onClick={fetchBackups}
+                        disabled={isLoadingBackups}
+                        className="p-1.5 text-indigo-600 hover:bg-indigo-50 rounded-lg font-bold select-none cursor-pointer transition-all inline-flex items-center gap-1 text-[10px]"
+                      >
+                        <RefreshCw size={11} className={isLoadingBackups ? "animate-spin" : ""} />
+                        <span>Segarkan</span>
+                      </button>
+                    </div>
+
+                    {isLoadingBackups ? (
+                      <div className="py-12 flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 rounded-xl bg-slate-50">
+                        <RefreshCw size={24} className="animate-spin text-indigo-600 animate-normal" />
+                        <span className="text-slate-500 font-semibold font-mono text-[11px]">Mengambil snapshot backup dari database...</span>
+                      </div>
+                    ) : backups.length === 0 ? (
+                      <div className="py-12 flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 rounded-xl bg-slate-50 text-slate-400">
+                        <HardDrive size={32} className="stroke-[1.5]" />
+                        <span className="font-semibold text-[11px]">Belum ada snapshot backup yang tersimpan di cloud database.</span>
+                      </div>
+                    ) : (
+                      <div className="max-h-[340px] overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
+                        {backups.map((bkp) => (
+                          <div key={bkp.id} className="p-3.5 hover:bg-slate-50/50 transition-colors flex flex-col gap-2">
+                            <div className="flex items-start justify-between gap-3">
+                              <div className="flex flex-col gap-1 text-left min-w-0">
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <span className="font-mono font-bold text-slate-800 text-[11.5px] truncate max-w-[150px] sm:max-w-[200px]" title={bkp.id}>
+                                    {bkp.id}
+                                  </span>
+                                  <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-extrabold uppercase ${bkp.type === "auto" ? "bg-indigo-50 border border-indigo-100 text-indigo-600" : "bg-emerald-50 border border-emerald-100 text-emerald-600"}`}>
+                                    {bkp.type === "auto" ? "Otomatis" : "Manual"}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-medium">
+                                    {(bkp.sizeBytes / 1024).toFixed(1)} KB
+                                  </span>
+                                </div>
+                                <span className="font-semibold text-slate-700 text-[11px] leading-relaxed break-words">
+                                  {bkp.description}
+                                </span>
+                                <span className="text-[10px] text-slate-400 font-mono">
+                                  Waktu: {new Date(bkp.createdAt).toLocaleString("id-ID")}
+                                </span>
+                              </div>
+
+                              {/* Actions */}
+                              <div className="flex items-center gap-1.5 shrink-0 select-none">
+                                {/* Download */}
+                                <button
+                                  type="button"
+                                  onClick={() => window.location.href = `/api/admin/backups/${bkp.id}/download`}
+                                  title="Unduh File Backup (JSON)"
+                                  className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer border border-slate-200 hover:border-indigo-100"
+                                >
+                                  <Download size={14} />
+                                </button>
+                                {/* Restore */}
+                                <button
+                                  type="button"
+                                  disabled={isRestoringBackupId !== null}
+                                  onClick={() => handleRestoreBackup(bkp.id)}
+                                  title="Pulihkan Sistem ke Snapshot Ini"
+                                  className="p-2 text-amber-600 hover:text-white hover:bg-amber-600 rounded-xl transition-all cursor-pointer border border-slate-200 hover:border-amber-500 disabled:opacity-50"
+                                >
+                                  {isRestoringBackupId === bkp.id ? (
+                                    <RefreshCw size={14} className="animate-spin" />
+                                  ) : (
+                                    <RefreshCw size={14} />
+                                  )}
+                                </button>
+                                {/* Delete */}
+                                <button
+                                  type="button"
+                                  disabled={isDeletingBackupId !== null}
+                                  onClick={() => handleDeleteBackup(bkp.id)}
+                                  title="Hapus Permanen"
+                                  className="p-2 text-red-600 hover:text-white hover:bg-red-600 rounded-xl transition-all cursor-pointer border border-slate-200 hover:border-red-500 disabled:opacity-50"
+                                >
+                                  {isDeletingBackupId === bkp.id ? (
+                                    <RefreshCw size={14} className="animate-spin" />
+                                  ) : (
+                                    <Trash2 size={14} />
+                                  )}
+                                </button>
+                              </div>
+                            </div>
+
+                            {/* Collections contents count preview badge style */}
+                            {bkp.collections && Object.keys(bkp.collections).length > 0 && (
+                              <div className="flex flex-wrap gap-1.5 mt-0.5 border-t border-slate-100 pt-2 font-mono text-[9.5px] text-slate-500">
+                                <span className="font-sans font-bold text-slate-400">Isi Snapshot:</span>
+                                <span>Siswa: <strong className="text-slate-700">{bkp.collections.students || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Tagihan SPP: <strong className="text-slate-700">{bkp.collections.sppBills || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Tabungan: <strong className="text-slate-700">{bkp.collections.savingsTransactions || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Kas Bendahara: <strong className="text-slate-700">{bkp.collections.treasurerTransactions || 0}</strong></span>
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
             </motion.div>
 
             {/* Pembersihan Data & Reset Sistem Card */}

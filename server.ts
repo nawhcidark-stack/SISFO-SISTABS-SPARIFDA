@@ -536,6 +536,18 @@ let adminConfig = {
   password: "admin123"
 };
 
+// Automatic Backup Configuration & Memory Store
+let backupConfig = {
+  enabled: true,
+  intervalHours: 12,
+  maxBackups: 10,
+  lastBackupTime: "",
+  nextBackupTime: "",
+  autoDownloadLocal: false
+};
+
+const databaseBackups: any[] = [];
+
 // Server configuration values (Midtrans Keys)
 let midtransConfig: MidtransConfig = {
   merchantId: process.env.MIDTRANS_MERCHANT_ID || "",
@@ -703,6 +715,7 @@ async function saveStateToFirestore() {
     await saveConfig("bkConfig", bkConfig);
     await saveConfig("adminConfig", adminConfig);
     await saveConfig("salaryConfig", salaryConfig);
+    await saveConfig("backupConfig", backupConfig);
     await saveConfig("systemMetadata", { seeded: true });
 
     console.log("All state collections successfully synced to MongoDB.");
@@ -1060,7 +1073,21 @@ async function syncWithFirestore(forcePush: boolean = false) {
         else if (id === "bkConfig") Object.assign(bkConfig, cleaned);
         else if (id === "adminConfig") Object.assign(adminConfig, cleaned);
         else if (id === "salaryConfig") Object.assign(salaryConfig, cleaned);
+        else if (id === "backupConfig") Object.assign(backupConfig, cleaned);
       });
+
+      // Load database backups
+      try {
+        const loadedBackups = await mongoDb.collection("databaseBackups").find({}).toArray();
+        databaseBackups.length = 0;
+        loadedBackups.forEach((d: any) => {
+          const { _id, ...rest } = d;
+          databaseBackups.push(rest);
+        });
+        console.log(`[BOOT] Loaded ${databaseBackups.length} database backups from MongoDB.`);
+      } catch (errBk) {
+        console.warn("Failed loading databaseBackups collection:", errBk);
+      }
 
       // Reconstruct missing uploaded files back onto physical disk from MongoDB backup
       try {
@@ -1192,7 +1219,9 @@ function saveState() {
       sarprasProposals,
       sarprasLoans,
       bkConfig,
-      adminConfig
+      adminConfig,
+      backupConfig,
+      databaseBackups
     };
     fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
     // Asynchronously update to MongoDB Cluster via serialized queue
@@ -1380,6 +1409,11 @@ function loadState() {
       if (data.sarprasConfig) Object.assign(sarprasConfig, data.sarprasConfig);
       if (data.bkConfig) Object.assign(bkConfig, data.bkConfig);
       if (data.adminConfig) Object.assign(adminConfig, data.adminConfig);
+      if (data.backupConfig) Object.assign(backupConfig, data.backupConfig);
+      if (Array.isArray(data.databaseBackups)) {
+        databaseBackups.length = 0;
+        databaseBackups.push(...data.databaseBackups);
+      }
       console.log("State loaded successfully from database");
       return true;
     }
@@ -1757,6 +1791,295 @@ async function startServer() {
     } catch (err: any) {
       console.error("Manual MongoDB sync failed:", err);
       res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // Database Backups - Get Backups List and Config
+  app.get("/api/admin/backups", (req, res) => {
+    try {
+      const list = databaseBackups.map(b => ({
+        id: b.id,
+        createdAt: b.createdAt,
+        type: b.type,
+        description: b.description,
+        sizeBytes: b.sizeBytes || 0,
+        collections: b.collections || {}
+      }));
+      res.json({ success: true, backups: list, config: backupConfig });
+    } catch (err: any) {
+      console.error("Error retrieving backups:", err);
+      res.status(500).json({ error: "Gagal mengambil daftar backup: " + err.message });
+    }
+  });
+
+  // Database Backups - Update Configurations
+  app.post("/api/admin/backups/config", async (req, res) => {
+    try {
+      const { enabled, intervalHours, maxBackups, autoDownloadLocal } = req.body;
+      if (enabled !== undefined) backupConfig.enabled = !!enabled;
+      if (intervalHours !== undefined) backupConfig.intervalHours = Number(intervalHours);
+      if (maxBackups !== undefined) backupConfig.maxBackups = Number(maxBackups);
+      if (autoDownloadLocal !== undefined) backupConfig.autoDownloadLocal = !!autoDownloadLocal;
+
+      backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
+
+      if (mongoDb) {
+        await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
+      }
+      saveState();
+
+      res.json({ success: true, config: backupConfig });
+    } catch (err: any) {
+      console.error("Error updating backup config:", err);
+      res.status(500).json({ error: "Gagal menyimpan konfigurasi backup: " + err.message });
+    }
+  });
+
+  // Database Backups - Create a Backup Snapshot
+  app.post("/api/admin/backups/create", async (req, res) => {
+    try {
+      const { type, description } = req.body;
+      const backupId = `bkp-${Date.now()}`;
+      const createdAt = new Date().toISOString();
+
+      const snapshot = {
+        students,
+        sppBills,
+        miscBills,
+        savingsTransactions,
+        notifications,
+        attendanceLogs,
+        homeroomTeachers,
+        subjectTeachers,
+        teachingJournals,
+        treasurerTransactions,
+        studentDevelopmentLogs,
+        studentInfractionLogs,
+        studentCounselingLogs,
+        classAnnouncements,
+        classMeetingLogs,
+        merdekaAssessments,
+        principalWorkPrograms,
+        teacherEvaluations,
+        infractionRules,
+        sarprasItems,
+        sarprasProposals,
+        sarprasLoans,
+        teacherSalaries,
+        sppRates,
+        schoolIdentity,
+        midtransConfig,
+        whatsappConfig,
+        treasurerConfig,
+        principalConfig,
+        sarprasConfig,
+        bkConfig,
+        adminConfig,
+        salaryConfig
+      };
+
+      const snapshotStr = JSON.stringify(snapshot);
+      const sizeBytes = Buffer.byteLength(snapshotStr, 'utf8');
+
+      const counts = {
+        students: students.length,
+        sppBills: sppBills.length,
+        miscBills: miscBills.length,
+        savingsTransactions: savingsTransactions.length,
+        treasurerTransactions: treasurerTransactions.length,
+        attendanceLogs: attendanceLogs.length,
+        teachingJournals: teachingJournals.length
+      };
+
+      const newBackup = {
+        id: backupId,
+        createdAt,
+        type: type || "manual",
+        description: description || (type === "auto" ? "Backup Otomatis Sistem" : "Backup Manual Admin"),
+        sizeBytes,
+        collections: counts,
+        data: snapshotStr
+      };
+
+      if (mongoDb) {
+        const col = mongoDb.collection("databaseBackups");
+        await col.insertOne({ ...newBackup, _id: backupId });
+      }
+
+      databaseBackups.push(newBackup);
+
+      // Enforce max count
+      if (databaseBackups.length > backupConfig.maxBackups) {
+        const sorted = [...databaseBackups].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+        const toRemove = sorted.slice(0, databaseBackups.length - backupConfig.maxBackups);
+        for (const item of toRemove) {
+          const idx = databaseBackups.findIndex(b => b.id === item.id);
+          if (idx > -1) databaseBackups.splice(idx, 1);
+          if (mongoDb) {
+            await mongoDb.collection("databaseBackups").deleteOne({ _id: item.id });
+          }
+        }
+      }
+
+      backupConfig.lastBackupTime = createdAt;
+      backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
+
+      if (mongoDb) {
+        await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
+      }
+      saveState();
+
+      res.json({ success: true, backup: { id: backupId, createdAt, sizeBytes, description: newBackup.description } });
+    } catch (err: any) {
+      console.error("Error creating backup:", err);
+      res.status(500).json({ error: "Gagal membuat backup data: " + err.message });
+    }
+  });
+
+  // Database Backups - Download Backup File
+  app.get("/api/admin/backups/:id/download", (req, res) => {
+    try {
+      const { id } = req.params;
+      const backup = databaseBackups.find(b => b.id === id);
+      if (!backup) {
+        return res.status(404).send("Backup tidak ditemukan.");
+      }
+      res.setHeader("Content-Disposition", `attachment; filename=SIS_Backup_${backup.id}.json`);
+      res.setHeader("Content-Type", "application/json");
+      res.send(backup.data);
+    } catch (err: any) {
+      console.error("Error downloading backup:", err);
+      res.status(500).send("Gagal mengunduh file backup: " + err.message);
+    }
+  });
+
+  // Database Backups - Restore Backup
+  app.post("/api/admin/backups/restore", async (req, res) => {
+    try {
+      const { id } = req.body;
+      const backup = databaseBackups.find(b => b.id === id);
+      if (!backup) {
+        return res.status(404).json({ error: "Backup tidak ditemukan." });
+      }
+
+      const snapshot = JSON.parse(backup.data);
+
+      if (Array.isArray(snapshot.students)) { students.length = 0; students.push(...snapshot.students); }
+      if (Array.isArray(snapshot.sppBills)) { sppBills.length = 0; sppBills.push(...snapshot.sppBills); }
+      if (Array.isArray(snapshot.miscBills)) { miscBills.length = 0; miscBills.push(...snapshot.miscBills); }
+      if (Array.isArray(snapshot.savingsTransactions)) { savingsTransactions.length = 0; savingsTransactions.push(...snapshot.savingsTransactions); }
+      if (Array.isArray(snapshot.notifications)) { notifications.length = 0; notifications.push(...snapshot.notifications); }
+      if (Array.isArray(snapshot.attendanceLogs)) { attendanceLogs.length = 0; attendanceLogs.push(...snapshot.attendanceLogs); }
+      if (Array.isArray(snapshot.homeroomTeachers)) { homeroomTeachers.length = 0; homeroomTeachers.push(...snapshot.homeroomTeachers); }
+      if (Array.isArray(snapshot.subjectTeachers)) { subjectTeachers.length = 0; subjectTeachers.push(...snapshot.subjectTeachers); }
+      if (Array.isArray(snapshot.teachingJournals)) { teachingJournals.length = 0; teachingJournals.push(...snapshot.teachingJournals); }
+      if (Array.isArray(snapshot.treasurerTransactions)) { treasurerTransactions.length = 0; treasurerTransactions.push(...snapshot.treasurerTransactions); }
+      if (Array.isArray(snapshot.studentDevelopmentLogs)) { studentDevelopmentLogs.length = 0; studentDevelopmentLogs.push(...snapshot.studentDevelopmentLogs); }
+      if (Array.isArray(snapshot.studentInfractionLogs)) { studentInfractionLogs.length = 0; studentInfractionLogs.push(...snapshot.studentInfractionLogs); }
+      if (Array.isArray(snapshot.studentCounselingLogs)) { studentCounselingLogs.length = 0; studentCounselingLogs.push(...snapshot.studentCounselingLogs); }
+      if (Array.isArray(snapshot.classAnnouncements)) { classAnnouncements.length = 0; classAnnouncements.push(...snapshot.classAnnouncements); }
+      if (Array.isArray(snapshot.classMeetingLogs)) { classMeetingLogs.length = 0; classMeetingLogs.push(...snapshot.classMeetingLogs); }
+      if (Array.isArray(snapshot.merdekaAssessments)) { merdekaAssessments.length = 0; merdekaAssessments.push(...snapshot.merdekaAssessments); }
+      if (Array.isArray(snapshot.principalWorkPrograms)) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...snapshot.principalWorkPrograms); }
+      if (Array.isArray(snapshot.teacherEvaluations)) { teacherEvaluations.length = 0; teacherEvaluations.push(...snapshot.teacherEvaluations); }
+      if (Array.isArray(snapshot.infractionRules)) { infractionRules.length = 0; infractionRules.push(...snapshot.infractionRules); }
+      if (Array.isArray(snapshot.sarprasItems)) { sarprasItems.length = 0; sarprasItems.push(...snapshot.sarprasItems); }
+      if (Array.isArray(snapshot.sarprasProposals)) { sarprasProposals.length = 0; sarprasProposals.push(...snapshot.sarprasProposals); }
+      if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
+      if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
+
+      if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
+      if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
+      if (snapshot.midtransConfig) Object.assign(midtransConfig, snapshot.midtransConfig);
+      if (snapshot.whatsappConfig) Object.assign(whatsappConfig, snapshot.whatsappConfig);
+      if (snapshot.treasurerConfig) Object.assign(treasurerConfig, snapshot.treasurerConfig);
+      if (snapshot.principalConfig) Object.assign(principalConfig, snapshot.principalConfig);
+      if (snapshot.sarprasConfig) Object.assign(sarprasConfig, snapshot.sarprasConfig);
+      if (snapshot.bkConfig) Object.assign(bkConfig, snapshot.bkConfig);
+      if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
+      if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
+
+      saveState();
+
+      res.json({ success: true, message: "Restorasi data dari backup berhasil diselesaikan." });
+    } catch (err: any) {
+      console.error("Error restoring backup:", err);
+      res.status(500).json({ error: "Gagal merestorasi backup data: " + err.message });
+    }
+  });
+
+  // Database Backups - Restore Backup from Uploaded JSON file
+  app.post("/api/admin/backups/restore-upload", async (req, res) => {
+    try {
+      const { snapshot } = req.body;
+      if (!snapshot) {
+        return res.status(400).json({ error: "Konten backup (snapshot) tidak ditemukan atau kosong." });
+      }
+
+      if (Array.isArray(snapshot.students)) { students.length = 0; students.push(...snapshot.students); }
+      if (Array.isArray(snapshot.sppBills)) { sppBills.length = 0; sppBills.push(...snapshot.sppBills); }
+      if (Array.isArray(snapshot.miscBills)) { miscBills.length = 0; miscBills.push(...snapshot.miscBills); }
+      if (Array.isArray(snapshot.savingsTransactions)) { savingsTransactions.length = 0; savingsTransactions.push(...snapshot.savingsTransactions); }
+      if (Array.isArray(snapshot.notifications)) { notifications.length = 0; notifications.push(...snapshot.notifications); }
+      if (Array.isArray(snapshot.attendanceLogs)) { attendanceLogs.length = 0; attendanceLogs.push(...snapshot.attendanceLogs); }
+      if (Array.isArray(snapshot.homeroomTeachers)) { homeroomTeachers.length = 0; homeroomTeachers.push(...snapshot.homeroomTeachers); }
+      if (Array.isArray(snapshot.subjectTeachers)) { subjectTeachers.length = 0; subjectTeachers.push(...snapshot.subjectTeachers); }
+      if (Array.isArray(snapshot.teachingJournals)) { teachingJournals.length = 0; teachingJournals.push(...snapshot.teachingJournals); }
+      if (Array.isArray(snapshot.treasurerTransactions)) { treasurerTransactions.length = 0; treasurerTransactions.push(...snapshot.treasurerTransactions); }
+      if (Array.isArray(snapshot.studentDevelopmentLogs)) { studentDevelopmentLogs.length = 0; studentDevelopmentLogs.push(...snapshot.studentDevelopmentLogs); }
+      if (Array.isArray(snapshot.studentInfractionLogs)) { studentInfractionLogs.length = 0; studentInfractionLogs.push(...snapshot.studentInfractionLogs); }
+      if (Array.isArray(snapshot.studentCounselingLogs)) { studentCounselingLogs.length = 0; studentCounselingLogs.push(...snapshot.studentCounselingLogs); }
+      if (Array.isArray(snapshot.classAnnouncements)) { classAnnouncements.length = 0; classAnnouncements.push(...snapshot.classAnnouncements); }
+      if (Array.isArray(snapshot.classMeetingLogs)) { classMeetingLogs.length = 0; classMeetingLogs.push(...snapshot.classMeetingLogs); }
+      if (Array.isArray(snapshot.merdekaAssessments)) { merdekaAssessments.length = 0; merdekaAssessments.push(...snapshot.merdekaAssessments); }
+      if (Array.isArray(snapshot.principalWorkPrograms)) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...snapshot.principalWorkPrograms); }
+      if (Array.isArray(snapshot.teacherEvaluations)) { teacherEvaluations.length = 0; teacherEvaluations.push(...snapshot.teacherEvaluations); }
+      if (Array.isArray(snapshot.infractionRules)) { infractionRules.length = 0; infractionRules.push(...snapshot.infractionRules); }
+      if (Array.isArray(snapshot.sarprasItems)) { sarprasItems.length = 0; sarprasItems.push(...snapshot.sarprasItems); }
+      if (Array.isArray(snapshot.sarprasProposals)) { sarprasProposals.length = 0; sarprasProposals.push(...snapshot.sarprasProposals); }
+      if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
+      if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
+
+      if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
+      if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
+      if (snapshot.midtransConfig) Object.assign(midtransConfig, snapshot.midtransConfig);
+      if (snapshot.whatsappConfig) Object.assign(whatsappConfig, snapshot.whatsappConfig);
+      if (snapshot.treasurerConfig) Object.assign(treasurerConfig, snapshot.treasurerConfig);
+      if (snapshot.principalConfig) Object.assign(principalConfig, snapshot.principalConfig);
+      if (snapshot.sarprasConfig) Object.assign(sarprasConfig, snapshot.sarprasConfig);
+      if (snapshot.bkConfig) Object.assign(bkConfig, snapshot.bkConfig);
+      if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
+      if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
+
+      saveState();
+
+      res.json({ success: true, message: "Restorasi data dari file backup lokal berhasil diselesaikan." });
+    } catch (err: any) {
+      console.error("Error restoring uploaded backup:", err);
+      res.status(500).json({ error: "Gagal merestorasi backup lokal: " + err.message });
+    }
+  });
+
+  // Database Backups - Delete Backup Record
+  app.delete("/api/admin/backups/:id", async (req, res) => {
+    try {
+      const { id } = req.params;
+      const idx = databaseBackups.findIndex(b => b.id === id);
+      if (idx === -1) {
+        return res.status(404).json({ error: "Backup tidak ditemukan." });
+      }
+
+      databaseBackups.splice(idx, 1);
+
+      if (mongoDb) {
+        await mongoDb.collection("databaseBackups").deleteOne({ _id: id });
+      }
+      saveState();
+
+      res.json({ success: true, message: "Backup data berhasil dihapus." });
+    } catch (err: any) {
+      console.error("Error deleting backup:", err);
+      res.status(500).json({ error: "Gagal menghapus backup: " + err.message });
     }
   });
 
@@ -7368,6 +7691,116 @@ async function startServer() {
       console.log(`SMP Maarif NU Pandaan app is running on TCP port ${portNumber}`);
     });
   }
+
+  // Start background auto-backup engine checks
+  setInterval(async () => {
+    if (!backupConfig.enabled) return;
+    
+    const now = Date.now();
+    const lastTime = backupConfig.lastBackupTime ? new Date(backupConfig.lastBackupTime).getTime() : 0;
+    const nextTime = backupConfig.nextBackupTime ? new Date(backupConfig.nextBackupTime).getTime() : 0;
+    
+    // Check if backup is due
+    const isDue = now >= nextTime || (lastTime === 0 && isInitialSyncCompleted && databaseBackups.length === 0);
+    
+    if (isDue) {
+      console.log("[AUTO-BACKUP ENGINE] Automated database backup is due. Starting backup snapshot creation...");
+      try {
+        const backupId = `bkp-${Date.now()}`;
+        const createdAt = new Date().toISOString();
+
+        const snapshot = {
+          students,
+          sppBills,
+          miscBills,
+          savingsTransactions,
+          notifications,
+          attendanceLogs,
+          homeroomTeachers,
+          subjectTeachers,
+          teachingJournals,
+          treasurerTransactions,
+          studentDevelopmentLogs,
+          studentInfractionLogs,
+          studentCounselingLogs,
+          classAnnouncements,
+          classMeetingLogs,
+          merdekaAssessments,
+          principalWorkPrograms,
+          teacherEvaluations,
+          infractionRules,
+          sarprasItems,
+          sarprasProposals,
+          sarprasLoans,
+          teacherSalaries,
+          sppRates,
+          schoolIdentity,
+          midtransConfig,
+          whatsappConfig,
+          treasurerConfig,
+          principalConfig,
+          sarprasConfig,
+          bkConfig,
+          adminConfig,
+          salaryConfig
+        };
+
+        const snapshotStr = JSON.stringify(snapshot);
+        const sizeBytes = Buffer.byteLength(snapshotStr, 'utf8');
+
+        const counts = {
+          students: students.length,
+          sppBills: sppBills.length,
+          miscBills: miscBills.length,
+          savingsTransactions: savingsTransactions.length,
+          treasurerTransactions: treasurerTransactions.length,
+          attendanceLogs: attendanceLogs.length,
+          teachingJournals: teachingJournals.length
+        };
+
+        const newBackup = {
+          id: backupId,
+          createdAt,
+          type: "auto",
+          description: "Backup Otomatis Sistem (Siklus Periodik)",
+          sizeBytes,
+          collections: counts,
+          data: snapshotStr
+        };
+
+        if (mongoDb) {
+          const col = mongoDb.collection("databaseBackups");
+          await col.insertOne({ ...newBackup, _id: backupId });
+        }
+
+        databaseBackups.push(newBackup);
+
+        // Enforce max count
+        if (databaseBackups.length > backupConfig.maxBackups) {
+          const sorted = [...databaseBackups].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          const toRemove = sorted.slice(0, databaseBackups.length - backupConfig.maxBackups);
+          for (const item of toRemove) {
+            const idx = databaseBackups.findIndex(b => b.id === item.id);
+            if (idx > -1) databaseBackups.splice(idx, 1);
+            if (mongoDb) {
+              await mongoDb.collection("databaseBackups").deleteOne({ _id: item.id });
+            }
+          }
+        }
+
+        backupConfig.lastBackupTime = createdAt;
+        backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
+
+        if (mongoDb) {
+          await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
+        }
+        saveState();
+        console.log(`[AUTO-BACKUP ENGINE] Automated database backup successful: ${backupId}`);
+      } catch (err: any) {
+        console.error("[AUTO-BACKUP ENGINE] Automated database backup failed:", err.message || err);
+      }
+    }
+  }, 10 * 60 * 1000); // Check every 10 minutes
 }
 
 startServer();

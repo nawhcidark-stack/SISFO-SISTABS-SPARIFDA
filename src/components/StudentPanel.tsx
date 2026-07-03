@@ -857,6 +857,20 @@ export default function StudentPanel({
     });
   }, [bills, selectedAcademicYear, monthOrder]);
 
+  const handleSelectMultipleMonths = (count: number) => {
+    const unpaidSorted = [...bills]
+      .filter(b => b.status === 'unpaid')
+      .sort((a, b) => {
+        if (a.year !== b.year) {
+          return a.year - b.year;
+        }
+        return monthOrder.indexOf(a.month) - monthOrder.indexOf(b.month);
+      });
+
+    const selected = unpaidSorted.slice(0, count === -1 ? unpaidSorted.length : count);
+    setCartBillIds(selected.map(b => b.id));
+  };
+
   const unpaidBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'unpaid').length, [filteredBills]);
   const paidBillsCount = useMemo(() => filteredBills.filter(b => b.status === 'paid').length, [filteredBills]);
 
@@ -1386,6 +1400,50 @@ export default function StudentPanel({
                       </div>
                     </div>
                   </div>
+
+                  {/* Quick Select Multiple Months Option */}
+                  {!midtransStatus?.isDisabled && unpaidBillsCount > 0 && (
+                    <div className="mb-5 p-4.5 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
+                      <div className="text-left">
+                        <span className="text-[10px] font-extrabold text-indigo-650 uppercase tracking-wider block mb-1">
+                          ⚡ Bayar SPP Sekaligus (Multi-Bulan)
+                        </span>
+                        <p className="text-[11.5px] text-slate-550 font-semibold leading-normal">
+                          Butuh membayar beberapa bulan sekaligus? Pilih opsi di bawah untuk otomatis mencentang tagihan terlama Anda ke keranjang pembayaran online.
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap items-center gap-2 select-none shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => handleSelectMultipleMonths(3)}
+                          className="px-3 py-1.5 text-[10px] font-extrabold bg-white border border-slate-200 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 rounded-lg transition-all cursor-pointer shadow-3xs"
+                        >
+                          3 Bulan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectMultipleMonths(6)}
+                          className="px-3 py-1.5 text-[10px] font-extrabold bg-white border border-slate-200 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 rounded-lg transition-all cursor-pointer shadow-3xs"
+                        >
+                          6 Bulan
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectMultipleMonths(12)}
+                          className="px-3 py-1.5 text-[10px] font-extrabold bg-white border border-slate-200 text-indigo-600 hover:bg-indigo-50 hover:border-indigo-200 rounded-lg transition-all cursor-pointer shadow-3xs"
+                        >
+                          1 Tahun (12 Bln)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleSelectMultipleMonths(-1)}
+                          className="px-3 py-1.5 text-[10px] font-extrabold bg-indigo-600 border border-transparent text-white hover:bg-indigo-750 rounded-lg transition-all cursor-pointer shadow-xs"
+                        >
+                          Semua Sisa ({unpaidBillsCount})
+                        </button>
+                      </div>
+                    </div>
+                  )}
 
                   {/* Desktop Table View */}
                   <div className="hidden md:block border border-slate-200 rounded-xl overflow-hidden shadow-sm">

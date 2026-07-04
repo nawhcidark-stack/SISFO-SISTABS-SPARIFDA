@@ -1496,7 +1496,11 @@ export default function AdminPanel({
             s.name.toLowerCase().includes(studentSearch.toLowerCase().trim()) ||
             s.nis.toLowerCase().includes(studentSearch.toLowerCase().trim()),
         );
-    return [...result].sort((a, b) => a.name.localeCompare(b.name));
+    return [...result].sort((a, b) => {
+      const classCompare = (a.class || "").localeCompare(b.class || "", undefined, { numeric: true, sensitivity: 'base' });
+      if (classCompare !== 0) return classCompare;
+      return a.name.localeCompare(b.name);
+    });
   }, [students, studentSearch, rosterClassFilter]);
 
   const uniqueClasses = useMemo(() => {
@@ -12667,7 +12671,11 @@ export default function AdminPanel({
                   const matchesGrade = rekapSppGradeFilter === "all" || (s.class && s.class.startsWith(rekapSppGradeFilter));
                   const matchesClass = rekapSppClassFilter === "all" || s.class === rekapSppClassFilter;
                   return matchesGrade && matchesClass;
-                }).sort((a, b) => a.name.localeCompare(b.name));
+                }).sort((a, b) => {
+                  const classCompare = (a.class || "").localeCompare(b.class || "", undefined, { numeric: true, sensitivity: 'base' });
+                  if (classCompare !== 0) return classCompare;
+                  return a.name.localeCompare(b.name);
+                });
 
                 // Compute SPP matrix for activeStudents
                 const summaryMatrix = activeStudents.map((student) => {
@@ -14978,7 +14986,11 @@ export default function AdminPanel({
                       const matchesGrade = rekapSppGradeFilter === "all" || (s.class && s.class.startsWith(rekapSppGradeFilter));
                       const matchesClass = rekapSppClassFilter === "all" || s.class === rekapSppClassFilter;
                       return matchesGrade && matchesClass;
-                    }).sort((a, b) => a.name.localeCompare(b.name));
+                    }).sort((a, b) => {
+                      const classCompare = (a.class || "").localeCompare(b.class || "", undefined, { numeric: true, sensitivity: 'base' });
+                      if (classCompare !== 0) return classCompare;
+                      return a.name.localeCompare(b.name);
+                    });
 
                     const summaryMatrix = activeStudents.map((student) => {
                       const sBills = bills.filter(

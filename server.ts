@@ -4217,7 +4217,7 @@ async function startServer() {
       const details: string[] = [];
 
       // 1. Scan pending savings transactions
-      const pendingSavings = savingsTransactions.filter(t => t.status === "pending" && new Date(t.createdAt) >= cutoff);
+      const pendingSavings = savingsTransactions.filter(t => t.status === "pending" && t.orderId && t.orderId.trim() !== "");
       for (const t of pendingSavings) {
         scannedCount++;
         let paidOnMidtrans = false;
@@ -4245,8 +4245,8 @@ async function startServer() {
         }
       }
 
-      // 2. Scan unpaid SPP bills that have a registered orderId since June 15, 2026 (or in 2026 year)
-      const unpaidSppWithOrder = sppBills.filter(b => b.status === "unpaid" && b.orderId && b.orderId.trim() !== "" && b.year === 2026);
+      // 2. Scan unpaid SPP bills that have a registered orderId
+      const unpaidSppWithOrder = sppBills.filter(b => b.status === "unpaid" && b.orderId && b.orderId.trim() !== "");
       for (const b of unpaidSppWithOrder) {
         scannedCount++;
         let paidOnMidtrans = false;
@@ -4272,8 +4272,8 @@ async function startServer() {
         }
       }
 
-      // 3. Scan unpaid/pending miscellaneous bills that have a registered orderId since June 15, 2026
-      const unpaidMiscWithOrder = miscBills.filter(b => b.status !== "paid" && b.orderId && b.orderId.trim() !== "" && (!b.createdAt || new Date(b.createdAt) >= cutoff));
+      // 3. Scan unpaid/pending miscellaneous bills that have a registered orderId
+      const unpaidMiscWithOrder = miscBills.filter(b => b.status !== "paid" && b.orderId && b.orderId.trim() !== "");
       for (const b of unpaidMiscWithOrder) {
         scannedCount++;
         let paidOnMidtrans = false;
@@ -7116,12 +7116,50 @@ async function startServer() {
       const selectedSpp = sppBills.filter(b => b.orderId === resolvedOrderId);
       const selectedMisc = miscBills.filter(b => b.orderId === resolvedOrderId);
 
-      if (selectedSpp.length === 0 && selectedMisc.length === 0) {
-        return res.status(404).json({ error: "Tagihan dalam keranjang tidak ditemukan." });
+      let targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
+      affectedStudent = students.find(s => s.id === targetStudentId) || null;
+
+      // CART Recovery Mechanism: If no bills match the order_id, find the student by parsing order_id
+      if (!affectedStudent) {
+        const parts = resolvedOrderId.split("-");
+        const shortStudentId = parts.slice(1, -1).join("-");
+        affectedStudent = students.find(s => s.id.replace("student-", "S").substring(0, 10) === shortStudentId) || null;
+        
+        if (affectedStudent) {
+          targetStudentId = affectedStudent.id;
+          // Find pending or unpaid bills of this student
+          let candidateBills = [
+            ...sppBills.filter(b => b.studentId === affectedStudent!.id && b.status === "pending"),
+            ...miscBills.filter(b => b.studentId === affectedStudent!.id && b.status === "pending")
+          ];
+          
+          if (candidateBills.length === 0) {
+            candidateBills = [
+              ...sppBills.filter(b => b.studentId === affectedStudent!.id && b.status === "unpaid"),
+              ...miscBills.filter(b => b.studentId === affectedStudent!.id && b.status === "unpaid")
+            ];
+          }
+
+          const targetAmount = Number(actualGrossAmount) || 0;
+          let currentSum = 0;
+          for (const b of candidateBills) {
+            if (targetAmount === 0 || currentSum + b.amount <= targetAmount) {
+              currentSum += b.amount;
+              if ('month' in b) {
+                selectedSpp.push(b);
+              } else {
+                selectedMisc.push(b);
+              }
+            }
+            if (targetAmount > 0 && currentSum === targetAmount) break;
+          }
+          console.log(`[SIM CART RECOVERY] Recovered student: ${affectedStudent.name}, matched ${selectedSpp.length} SPP and ${selectedMisc.length} Misc bills`);
+        }
       }
 
-      const targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
-      affectedStudent = students.find(s => s.id === targetStudentId) || null;
+      if (selectedSpp.length === 0 && selectedMisc.length === 0) {
+        return res.status(404).json({ error: "Tagihan dalam keranjang tidak ditemukan atau tidak dapat dipulihkan." });
+      }
 
       selectedSpp.forEach(bill => {
         bill.status = "paid";
@@ -7429,8 +7467,46 @@ async function startServer() {
       const selectedSpp = sppBills.filter(b => b.orderId === order_id);
       const selectedMisc = miscBills.filter(b => b.orderId === order_id);
 
-      const targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
-      const student = students.find(s => s.id === targetStudentId);
+      let targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
+      let student = students.find(s => s.id === targetStudentId);
+
+      // CART Recovery Mechanism: If no bills match the order_id, find the student by parsing order_id
+      if (!student) {
+        const parts = order_id.split("-");
+        const shortStudentId = parts.slice(1, -1).join("-");
+        student = students.find(s => s.id.replace("student-", "S").substring(0, 10) === shortStudentId);
+        
+        if (student) {
+          targetStudentId = student.id;
+          // Find pending or unpaid bills of this student
+          let candidateBills = [
+            ...sppBills.filter(b => b.studentId === student!.id && b.status === "pending"),
+            ...miscBills.filter(b => b.studentId === student!.id && b.status === "pending")
+          ];
+          
+          if (candidateBills.length === 0) {
+            candidateBills = [
+              ...sppBills.filter(b => b.studentId === student!.id && b.status === "unpaid"),
+              ...miscBills.filter(b => b.studentId === student!.id && b.status === "unpaid")
+            ];
+          }
+
+          const targetAmount = Number(gross_amount);
+          let currentSum = 0;
+          for (const b of candidateBills) {
+            if (currentSum + b.amount <= targetAmount) {
+              currentSum += b.amount;
+              if ('month' in b) {
+                selectedSpp.push(b);
+              } else {
+                selectedMisc.push(b);
+              }
+            }
+            if (currentSum === targetAmount) break;
+          }
+          console.log(`[WEBHOOK CART RECOVERY] Recovered student: ${student.name}, matched ${selectedSpp.length} SPP and ${selectedMisc.length} Misc bills for total Rp ${currentSum} / Rp ${targetAmount}`);
+        }
+      }
 
       if (isSettlement) {
         selectedSpp.forEach(bill => {

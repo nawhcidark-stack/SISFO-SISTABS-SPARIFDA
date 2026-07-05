@@ -15160,6 +15160,12 @@ export default function AdminPanel({
                               <th className="p-1 px-2 border border-slate-350 text-center">
                                 Progres %
                               </th>
+                              <th className="p-1 px-2 border border-slate-350 text-right">
+                                Lunas (Nominal)
+                              </th>
+                              <th className="p-1 px-2 border border-slate-350 text-right">
+                                Tunggakan (Nominal)
+                              </th>
                             </tr>
                           </thead>
                           <tbody>
@@ -15191,6 +15197,12 @@ export default function AdminPanel({
                                   </td>
                                   <td className="p-1 px-2 border border-slate-300 text-center font-bold font-mono">
                                     {pct}%
+                                  </td>
+                                  <td className="p-1 px-2 border border-slate-300 text-right font-mono text-emerald-800 font-semibold">
+                                    Rp {totalPaidNominal.toLocaleString("id-ID")}
+                                  </td>
+                                  <td className="p-1 px-2 border border-slate-300 text-right font-mono text-rose-800 font-semibold">
+                                    Rp {totalUnpaidNominal.toLocaleString("id-ID")}
                                   </td>
                                 </tr>
                               ),

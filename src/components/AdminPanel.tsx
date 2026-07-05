@@ -15141,22 +15141,6 @@ export default function AdminPanel({
 
                     return (
                       <div className="flex flex-col gap-4 text-slate-900">
-                        {/* Financial summary blocks */}
-                        <div className="grid grid-cols-2 gap-4 border border-slate-300 p-3 rounded-lg text-xs font-bold uppercase text-slate-900">
-                          <div className="flex justify-between items-center text-emerald-800">
-                            <span>Total Akumulasi Terbayar (Paid SPP):</span>
-                            <span className="font-mono">
-                              Rp {globalTotalPaid.toLocaleString("id-ID")},00
-                            </span>
-                          </div>
-                          <div className="flex justify-between items-center text-rose-800 border-l border-slate-300 pl-4">
-                            <span>Total Tunggakan Aktif (Unpaid SPP):</span>
-                            <span className="font-mono">
-                              Rp {globalTotalUnpaid.toLocaleString("id-ID")},00
-                            </span>
-                          </div>
-                        </div>
-
                         {/* Table core */}
                         <table className="w-full text-left font-sans border-collapse text-[9px] mt-2">
                           <thead>

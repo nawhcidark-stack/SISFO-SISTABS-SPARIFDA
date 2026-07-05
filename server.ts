@@ -1121,6 +1121,23 @@ async function syncWithFirestore(forcePush: boolean = false) {
       dbSyncError = null;
       isInitialSyncCompleted = true;
       console.log("Connected successfully. State has been loaded from MongoDB.");
+
+      // Sync all existing SPP bills with current class configurations to fix historical discrepancies
+      let syncedCount = 0;
+      sppBills.forEach(bill => {
+        const student = students.find(s => s.id === bill.studentId);
+        if (student) {
+          const expected = getSppAmountForClass(student.class);
+          if (bill.amount !== expected) {
+            bill.amount = expected;
+            syncedCount++;
+          }
+        }
+      });
+      if (syncedCount > 0) {
+        console.log(`[BOOT] Automatically synchronized ${syncedCount} SPP bills to correct configured rate.`);
+        saveState();
+      }
     } else {
       console.log("No remote database documents. Performing initial MongoDB seeding...");
       dbSyncStatus = "Syncing (Uploading Seed)";
@@ -2139,14 +2156,12 @@ async function startServer() {
     if (updateExistingUnpaid) {
       // Loop through all bills
       sppBills.forEach(bill => {
-        if (bill.status === "unpaid") {
-          const student = students.find(s => s.id === bill.studentId);
-          if (student) {
-            const currentExpectedAmount = getSppAmountForClass(student.class);
-            if (bill.amount !== currentExpectedAmount) {
-              bill.amount = currentExpectedAmount;
-              updatedBillsCount++;
-            }
+        const student = students.find(s => s.id === bill.studentId);
+        if (student) {
+          const currentExpectedAmount = getSppAmountForClass(student.class);
+          if (bill.amount !== currentExpectedAmount) {
+            bill.amount = currentExpectedAmount;
+            updatedBillsCount++;
           }
         }
       });
@@ -2156,7 +2171,7 @@ async function startServer() {
     const notification: RealtimeNotification = {
       id: `notif-spp-config-${Date.now()}`,
       title: "Konfigurasi SPP Diperbarui",
-      message: `Nominal SPP tingkat berhasil diperbarui (Kl. 7: Rp ${sppRates.grade7.toLocaleString('id-ID')}, Kl. 8: Rp ${sppRates.grade8.toLocaleString('id-ID')}, Kl. 9: Rp ${sppRates.grade9.toLocaleString('id-ID')}). ${updatedBillsCount > 0 ? `Berhasil menyesuaikan nominal pada ${updatedBillsCount} tagihan unpaid.` : ''}`,
+      message: `Nominal SPP tingkat berhasil diperbarui (Kl. 7: Rp ${sppRates.grade7.toLocaleString('id-ID')}, Kl. 8: Rp ${sppRates.grade8.toLocaleString('id-ID')}, Kl. 9: Rp ${sppRates.grade9.toLocaleString('id-ID')}). ${updatedBillsCount > 0 ? `Berhasil menyesuaikan nominal pada ${updatedBillsCount} tagihan.` : ''}`,
       type: "info",
       createdAt: new Date().toISOString()
     };

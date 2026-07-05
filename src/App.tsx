@@ -15,6 +15,32 @@ import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
 import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode } from 'lucide-react';
 
+// Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
+export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
+  const urlString = typeof input === 'string' ? input : (input instanceof URL ? input.toString() : input.url);
+  
+  // Only apply query param cache bust to GET/HEAD requests
+  const method = init?.method || 'GET';
+  let finalUrl = urlString;
+  if (method === 'GET' || method === 'HEAD') {
+    const separator = urlString.includes('?') ? '&' : '?';
+    finalUrl = `${urlString}${separator}_t=${Date.now()}`;
+  }
+  
+  const finalInit: RequestInit = {
+    ...(init || {}),
+    headers: {
+      ...(init?.headers || {}),
+      'Cache-Control': 'no-cache, no-store, must-revalidate',
+      'Pragma': 'no-cache',
+      'Expires': '0',
+    },
+    cache: 'no-store',
+  };
+  
+  return fetch(finalUrl, finalInit);
+}
+
 export default function App() {
   // Authed state persistence
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
@@ -428,7 +454,7 @@ export default function App() {
       
       // Load Students
       try {
-        const stdRes = await fetch('/api/students');
+        const stdRes = await fetchNoCache('/api/students');
         if (stdRes.ok) {
           const stdData = await stdRes.json();
           setStudentsList(stdData);
@@ -445,7 +471,7 @@ export default function App() {
 
       // Load Recent notifications history
       try {
-        const notifRes = await fetch('/api/notifications');
+        const notifRes = await fetchNoCache('/api/notifications');
         if (notifRes.ok) {
           const notifData = await notifRes.json();
           setGlobalNotifications(notifData);
@@ -456,7 +482,7 @@ export default function App() {
 
       // Load School Identity configuration
       try {
-        const schoolRes = await fetch('/api/school-identity');
+        const schoolRes = await fetchNoCache('/api/school-identity');
         if (schoolRes.ok) {
           const sData = await schoolRes.json();
           if (sData.success && sData.schoolIdentity) {
@@ -469,7 +495,7 @@ export default function App() {
 
       // Load Midtrans integration keys metadata
       try {
-        const keysRes = await fetch('/api/midtrans-config');
+        const keysRes = await fetchNoCache('/api/midtrans-config');
         if (keysRes.ok) {
           const keysData = await keysRes.json();
           setSysStatus(keysData);
@@ -480,7 +506,7 @@ export default function App() {
 
       // Load Attendance Logs
       try {
-        const attRes = await fetch('/api/attendance');
+        const attRes = await fetchNoCache('/api/attendance');
         if (attRes.ok) {
           const attData = await attRes.json();
           setAttendanceList(attData);
@@ -491,7 +517,7 @@ export default function App() {
 
       // Load Homerooms
       try {
-        const hrRes = await fetch('/api/homerooms');
+        const hrRes = await fetchNoCache('/api/homerooms');
         if (hrRes.ok) {
           const hrData = await hrRes.json();
           setHomeroomsList(hrData);
@@ -502,7 +528,7 @@ export default function App() {
 
       // Load Subject Teachers
       try {
-        const stRes = await fetch('/api/subject-teachers');
+        const stRes = await fetchNoCache('/api/subject-teachers');
         if (stRes.ok) {
           const stData = await stRes.json();
           setSubjectTeachersList(stData);
@@ -521,7 +547,7 @@ export default function App() {
 
   const fetchMiscBills = async () => {
     try {
-      const res = await fetch('/api/misc-bills');
+      const res = await fetchNoCache('/api/misc-bills');
       if (res.ok) {
         const data = await res.json();
         setMiscBillsList(data);
@@ -539,8 +565,8 @@ export default function App() {
 
       if (checkIsAdmin) {
         // Fetch all student bills and total transactions for admin bookkeeping roster
-        const bRes = await fetch('/api/admin/all-bills');
-        const tRes = await fetch('/api/admin/all-transactions');
+        const bRes = await fetchNoCache('/api/admin/all-bills');
+        const tRes = await fetchNoCache('/api/admin/all-transactions');
         await fetchMiscBills();
         if (bRes.ok && tRes.ok) {
           const bData = await bRes.json();
@@ -551,14 +577,14 @@ export default function App() {
 
         // Also fetch profile of active student selector if they exist
         if (studentId) {
-          const sRes = await fetch(`/api/students/${studentId}`);
+          const sRes = await fetchNoCache(`/api/students/${studentId}`);
           if (sRes.ok) {
             const sData = await sRes.json();
             setCurrentStudent(sData.student);
           }
         }
       } else {
-        const res = await fetch(`/api/students/${studentId}`);
+        const res = await fetchNoCache(`/api/students/${studentId}`);
         await fetchMiscBills();
         if (res.ok) {
           const data = await res.json();

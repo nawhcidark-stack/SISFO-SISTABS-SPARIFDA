@@ -1601,6 +1601,15 @@ async function startServer() {
   const app = express();
   app.use(express.json({ limit: '10mb' }));
 
+  // Prevent browser caching on all API routes (especially for student mobile devices)
+  app.use("/api", (req, res, next) => {
+    res.setHeader("Cache-Control", "no-store, no-cache, must-revalidate, proxy-revalidate");
+    res.setHeader("Pragma", "no-cache");
+    res.setHeader("Expires", "0");
+    res.setHeader("Surrogate-Control", "no-store");
+    next();
+  });
+
   // Interceptor middleware to auto-save state on successful mutation requests
   app.use((req, res, next) => {
     if (req.method !== 'GET' && !req.path.startsWith('/api/notifications/stream')) {

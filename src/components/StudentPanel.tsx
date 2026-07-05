@@ -204,7 +204,7 @@ export default function StudentPanel({
   useEffect(() => {
     if (currentStudent) {
       setLoadingJournals(true);
-      fetch('/api/teaching-journals')
+      fetch('/api/teaching-journals?_t=' + Date.now())
         .then((res) => {
           if (res.ok) {
             return res.json();
@@ -226,9 +226,9 @@ export default function StudentPanel({
     if (currentStudent) {
       setLoadingStudentLogs(true);
       Promise.all([
-        fetch('/api/student-development-logs').then(res => res.ok ? res.json() : []),
-        fetch('/api/student-infraction-logs').then(res => res.ok ? res.json() : []),
-        fetch('/api/student-counseling-logs').then(res => res.ok ? res.json() : [])
+        fetch('/api/student-development-logs?_t=' + Date.now()).then(res => res.ok ? res.json() : []),
+        fetch('/api/student-infraction-logs?_t=' + Date.now()).then(res => res.ok ? res.json() : []),
+        fetch('/api/student-counseling-logs?_t=' + Date.now()).then(res => res.ok ? res.json() : [])
       ])
         .then(([devData, infData, counData]) => {
           if (Array.isArray(devData)) {
@@ -1342,14 +1342,38 @@ export default function StudentPanel({
                 </button>
               </div>
 
-              <button
-                onClick={onRefresh}
-                disabled={isLoading}
-                className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50 sm:self-center shrink-0"
-                title="Refresh Portal Siswa"
-              >
-                <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
-              </button>
+              <div className="flex items-center gap-1.5 sm:self-center shrink-0">
+                <button
+                  onClick={onRefresh}
+                  disabled={isLoading}
+                  className="p-1.5 rounded-lg border border-slate-200 text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer disabled:opacity-50"
+                  title="Refresh Sinkronisasi Data"
+                >
+                  <RefreshCw size={13} className={isLoading ? 'animate-spin' : ''} />
+                </button>
+                <button
+                  onClick={async () => {
+                    const confirmReset = window.confirm("Bersihkan cache lokal & muat ulang paksa aplikasi untuk menarik data terbaru?");
+                    if (!confirmReset) return;
+                    try {
+                      if ('caches' in window) {
+                        const cacheNames = await caches.keys();
+                        await Promise.all(cacheNames.map(name => caches.delete(name)));
+                      }
+                      sessionStorage.clear();
+                      window.location.href = window.location.pathname + '?_bust=' + Date.now() + window.location.hash;
+                    } catch (e) {
+                      console.error("Gagal membersihkan cache:", e);
+                      window.location.reload();
+                    }
+                  }}
+                  className="px-2.5 py-1.5 text-[10px] font-bold uppercase tracking-wider bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg border border-amber-200/60 transition-colors flex items-center gap-1 cursor-pointer"
+                  title="Gunakan ini jika data Anda terlambat terupdate di HP/Browser"
+                >
+                  <Smartphone size={11} className="animate-pulse text-amber-600" />
+                  <span>Hapus Cache</span>
+                </button>
+              </div>
             </div>
 
             {/* Panel Tab Core Content */}

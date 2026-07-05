@@ -4222,6 +4222,7 @@ async function startServer() {
         scannedCount++;
         let paidOnMidtrans = false;
         let pMethod = t.paymentMethod || "Midtrans Snap";
+        let midtransTime = "";
 
         if (t.orderId) {
           const status = await getMidtransStatus(t.orderId);
@@ -4230,12 +4231,16 @@ async function startServer() {
             if (status.payment_type) {
               pMethod = `Midtrans (${status.payment_type})`;
             }
+            midtransTime = status.settlement_time || status.transaction_time || "";
           }
         }
 
         if (paidOnMidtrans || req.body.forceReconcileSimulated) {
           t.status = "success";
           t.paymentMethod = pMethod;
+          if (midtransTime) {
+            t.createdAt = parseMidtransTime(midtransTime);
+          }
           const student = students.find(s => s.id === t.studentId);
           if (student) {
             student.savingsBalance += t.amount;
@@ -4251,6 +4256,7 @@ async function startServer() {
         scannedCount++;
         let paidOnMidtrans = false;
         let pMethod = b.paymentMethod || "Midtrans";
+        let midtransTime = "";
 
         if (b.orderId) {
           const status = await getMidtransStatus(b.orderId);
@@ -4259,12 +4265,13 @@ async function startServer() {
             if (status.payment_type) {
               pMethod = `Midtrans (${status.payment_type})`;
             }
+            midtransTime = status.settlement_time || status.transaction_time || "";
           }
         }
 
         if (paidOnMidtrans || req.body.forceReconcileSimulated) {
           b.status = "paid";
-          b.paidAt = b.paidAt || new Date().toISOString();
+          b.paidAt = midtransTime ? parseMidtransTime(midtransTime) : (b.paidAt || new Date().toISOString());
           b.paymentMethod = pMethod;
           const student = students.find(s => s.id === b.studentId);
           details.push(`SPP: Rekonsiliasi Sukses untuk ${student?.name || "Siswa"} (Bulan ${b.month} ${b.year})`);
@@ -4278,6 +4285,7 @@ async function startServer() {
         scannedCount++;
         let paidOnMidtrans = false;
         let pMethod = b.paymentMethod || "Midtrans";
+        let midtransTime = "";
 
         if (b.orderId) {
           const status = await getMidtransStatus(b.orderId);
@@ -4286,12 +4294,13 @@ async function startServer() {
             if (status.payment_type) {
               pMethod = `Midtrans (${status.payment_type})`;
             }
+            midtransTime = status.settlement_time || status.transaction_time || "";
           }
         }
 
         if (paidOnMidtrans || req.body.forceReconcileSimulated) {
           b.status = "paid";
-          b.paidAt = b.paidAt || new Date().toISOString();
+          b.paidAt = midtransTime ? parseMidtransTime(midtransTime) : (b.paidAt || new Date().toISOString());
           b.paymentMethod = pMethod;
           const student = students.find(s => s.id === b.studentId);
 
@@ -4308,7 +4317,7 @@ async function startServer() {
               category: "Operasional",
               amount: b.amount,
               description: `Pembayaran ${b.title} (Midtrans Reconciled) - ${student?.name || ""} (${student?.nis || ""})`,
-              date: new Date().toISOString().split("T")[0],
+              date: midtransTime ? parseMidtransTime(midtransTime).split("T")[0] : new Date().toISOString().split("T")[0],
               source: "custom",
               studentName: student?.name,
               nis: student?.nis,
@@ -6995,6 +7004,25 @@ async function startServer() {
     return null;
   }
 
+  // Helper to parse Midtrans transaction/settlement time string (typically in WIB, GMT+7) to ISO-8601
+  function parseMidtransTime(timeStr: string): string {
+    if (!timeStr) return new Date().toISOString();
+    try {
+      const formatted = timeStr.trim().replace(" ", "T");
+      // Midtrans typically uses WIB (Asia/Jakarta), which is UTC+7
+      let d = new Date(formatted + "+07:00");
+      if (isNaN(d.getTime())) {
+        d = new Date(timeStr);
+      }
+      if (!isNaN(d.getTime())) {
+        return d.toISOString();
+      }
+    } catch (e) {
+      console.error("Error parsing Midtrans time:", timeStr, e);
+    }
+    return new Date().toISOString();
+  }
+
   // Client simulated success trigger (Allows direct browser simulation and instant local sync verification)
   app.post("/api/simulate-payment-success", async (req, res) => {
     const { orderId, paymentType } = req.body;
@@ -7040,6 +7068,9 @@ async function startServer() {
       }
     }
 
+    const midtransTime = midtransStatus?.settlement_time || midtransStatus?.transaction_time || "";
+    const resolvedPaidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
+
     let message = "";
     let affectedStudent: Student | null = null;
     let title = "";
@@ -7075,7 +7106,7 @@ async function startServer() {
 
       if (bill) {
         bill.status = "paid";
-        bill.paidAt = new Date().toISOString();
+        bill.paidAt = resolvedPaidAt;
         bill.paymentMethod = actualPaymentType;
         if (bill.orderId !== resolvedOrderId) {
           bill.orderId = resolvedOrderId; // repair
@@ -7102,7 +7133,7 @@ async function startServer() {
             `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL diselesaikan secara online via Midtrans.\n\n` +
             `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
             `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
-            `• Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+            `• Waktu: ${new Date(resolvedPaidAt).toLocaleDateString('id-ID')} pukul ${new Date(resolvedPaidAt).toLocaleTimeString('id-ID')}\n` +
             `• Status: *LUNAS (PAID)*\n\n` +
             `Terima kasih atas tertib administrasi pembayaran iuran sekolah.\n` +
             `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
@@ -7163,13 +7194,13 @@ async function startServer() {
 
       selectedSpp.forEach(bill => {
         bill.status = "paid";
-        bill.paidAt = new Date().toISOString();
+        bill.paidAt = resolvedPaidAt;
         bill.paymentMethod = actualPaymentType;
       });
 
       selectedMisc.forEach(bill => {
         bill.status = "paid";
-        bill.paidAt = new Date().toISOString();
+        bill.paidAt = resolvedPaidAt;
         bill.paymentMethod = actualPaymentType;
 
         const txExists = treasurerTransactions.some(t => t.description.includes(resolvedOrderId) || (t.createdBy === "Midtrans Webhook" && t.description.includes(bill.title) && t.nis === affectedStudent?.nis));
@@ -7180,7 +7211,7 @@ async function startServer() {
             category: "Operasional",
             amount: bill.amount,
             description: `Pembayaran ${bill.title} (Midtrans Sim Cart) - ${affectedStudent?.name || ""} (${affectedStudent?.nis || ""})`,
-            date: new Date().toISOString().split("T")[0],
+            date: resolvedPaidAt.split("T")[0],
             source: "custom",
             studentName: affectedStudent?.name,
             nis: affectedStudent?.nis,
@@ -7217,7 +7248,7 @@ async function startServer() {
           `• Item Pembayaran: *${itemNames}*\n` +
           `• Metode Pembayaran: *${actualPaymentType}*\n` +
           `• No. Transaksi (OrderId): *${resolvedOrderId}*\n` +
-          `• Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+          `• Waktu: ${new Date(resolvedPaidAt).toLocaleDateString('id-ID')} pukul ${new Date(resolvedPaidAt).toLocaleTimeString('id-ID')}\n` +
           `• Status: *LUNAS (PAID)*\n\n` +
           `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
         sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending cart payment WA:", err));
@@ -7238,7 +7269,7 @@ async function startServer() {
       let bill = miscBills.find(b => b.orderId === resolvedOrderId || b.id === cleanBillId || b.id === billId);
       if (bill) {
         bill.status = "paid";
-        bill.paidAt = new Date().toISOString();
+        bill.paidAt = resolvedPaidAt;
         bill.paymentMethod = actualPaymentType;
         if (bill.orderId !== resolvedOrderId) {
           bill.orderId = resolvedOrderId; // repair
@@ -7257,7 +7288,7 @@ async function startServer() {
             category: "Operasional",
             amount: bill.amount,
             description: `Pembayaran ${bill.title} (Midtrans Sim) - ${affectedStudent?.name || ""} (${affectedStudent?.nis || ""})`,
-            date: new Date().toISOString().split("T")[0],
+            date: resolvedPaidAt.split("T")[0],
             source: "custom",
             studentName: affectedStudent?.name,
             nis: affectedStudent?.nis,
@@ -7308,7 +7339,7 @@ async function startServer() {
             type: "deposit",
             amount: recoveredAmount,
             status: "pending",
-            createdAt: new Date().toISOString(),
+            createdAt: resolvedPaidAt,
             orderId: resolvedOrderId,
             paymentMethod: actualPaymentType,
             notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
@@ -7322,6 +7353,9 @@ async function startServer() {
         if (transaction.status === "pending") {
           transaction.status = "success";
           transaction.paymentMethod = actualPaymentType;
+          if (midtransTime) {
+            transaction.createdAt = resolvedPaidAt;
+          }
           
           affectedStudent = students.find(s => s.id === transaction.studentId) || null;
           if (affectedStudent) {
@@ -7369,12 +7403,14 @@ async function startServer() {
   // Real Midtrans Webhook Notification Handler (Midtrans HTTP POST calls this directly)
   app.post("/api/midtrans-webhook", async (req, res) => {
     const webhookData = req.body;
-    const { order_id, transaction_status, payment_type, gross_amount } = webhookData;
+    const { order_id, transaction_status, payment_type, gross_amount, settlement_time, transaction_time } = webhookData;
 
-    console.log("Midtrans Webhook Received:", { order_id, transaction_status, payment_type, gross_amount });
+    console.log("Midtrans Webhook Received:", { order_id, transaction_status, payment_type, gross_amount, settlement_time, transaction_time });
 
     // Handle verification
     const isSettlement = transaction_status === "settlement" || transaction_status === "capture";
+    const midtransTime = settlement_time || transaction_time || "";
+    const resolvedPaidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
     
     if (!order_id) {
       return res.status(400).json({ status: "error", message: "Order ID missing" });
@@ -7423,7 +7459,7 @@ async function startServer() {
       if (bill) {
         if (isSettlement) {
           bill.status = "paid";
-          bill.paidAt = new Date().toISOString();
+          bill.paidAt = resolvedPaidAt;
           bill.paymentMethod = `Midtrans (${payment_type})`;
           if (bill.orderId !== order_id) {
             bill.orderId = order_id; // repair orderId reference
@@ -7511,13 +7547,13 @@ async function startServer() {
       if (isSettlement) {
         selectedSpp.forEach(bill => {
           bill.status = "paid";
-          bill.paidAt = new Date().toISOString();
+          bill.paidAt = resolvedPaidAt;
           bill.paymentMethod = `Midtrans (${payment_type})`;
         });
 
         selectedMisc.forEach(bill => {
           bill.status = "paid";
-          bill.paidAt = new Date().toISOString();
+          bill.paidAt = resolvedPaidAt;
           bill.paymentMethod = `Midtrans (${payment_type})`;
 
           const newTx: TreasurerTransaction = {
@@ -7526,7 +7562,7 @@ async function startServer() {
             category: "Operasional",
             amount: bill.amount,
             description: `Pembayaran ${bill.title} (Midtrans Cart) - ${student?.name || ""} (${student?.nis || ""})`,
-            date: new Date().toISOString().split("T")[0],
+            date: resolvedPaidAt.split("T")[0],
             source: "custom",
             studentName: student?.name,
             nis: student?.nis,
@@ -7588,7 +7624,7 @@ async function startServer() {
       if (bill) {
         if (isSettlement) {
           bill.status = "paid";
-          bill.paidAt = new Date().toISOString();
+          bill.paidAt = resolvedPaidAt;
           bill.paymentMethod = `Midtrans (${payment_type})`;
           if (bill.orderId !== order_id) {
             bill.orderId = order_id;
@@ -7604,7 +7640,7 @@ async function startServer() {
             category: "Operasional",
             amount: bill.amount,
             description: `Pembayaran ${bill.title} (Midtrans) - ${student?.name || ""} (${student?.nis || ""})`,
-            date: new Date().toISOString().split("T")[0],
+            date: resolvedPaidAt.split("T")[0],
             source: "custom",
             studentName: student?.name,
             nis: student?.nis,
@@ -7659,7 +7695,7 @@ async function startServer() {
               type: "deposit",
               amount: recoveredAmount,
               status: "pending",
-              createdAt: new Date().toISOString(),
+              createdAt: resolvedPaidAt,
               orderId: order_id,
               paymentMethod: `Midtrans (${payment_type || 'Online'})`,
               notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
@@ -7672,6 +7708,9 @@ async function startServer() {
         if (isSettlement && transaction.status === "pending") {
           transaction.status = "success";
           transaction.paymentMethod = `Midtrans (${payment_type})`;
+          if (midtransTime) {
+            transaction.createdAt = resolvedPaidAt;
+          }
           
           const student = students.find(s => s.id === transaction.studentId);
           if (student) {

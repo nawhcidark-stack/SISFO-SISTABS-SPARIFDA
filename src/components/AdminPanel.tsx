@@ -12422,10 +12422,91 @@ export default function AdminPanel({
                 const totalKasMasukLokal = totalSppTunai + totalTabunganMasuk;
                 const netKasLokal = totalKasMasukLokal - totalTabunganKeluar;
 
+                // Midtrans Special Calculations
+                const midtransSpp = sppPaidToday
+                  .filter((b) => b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans"))
+                  .map((b) => ({
+                    id: b.id,
+                    time: b.paidAt,
+                    studentId: b.studentId,
+                    category: "SPP",
+                    details: `${b.month} ${b.year}`,
+                    paymentMethod: b.paymentMethod,
+                    orderId: b.orderId,
+                    amount: b.amount,
+                    rawItem: b,
+                    type: "spp" as const,
+                  }));
+
+                const midtransSavings = savingsToday
+                  .filter((t) => t.paymentMethod && t.paymentMethod.toLowerCase().includes("midtrans"))
+                  .map((t) => ({
+                    id: t.id,
+                    time: t.createdAt,
+                    studentId: t.studentId,
+                    category: "Tabungan",
+                    details: t.notes || "Setoran Tabungan",
+                    paymentMethod: t.paymentMethod,
+                    orderId: t.orderId,
+                    amount: t.amount,
+                    rawItem: t,
+                    type: "savings" as const,
+                  }));
+
+                const midtransMisc = miscBills
+                  .filter(
+                    (b) =>
+                      b.status === "paid" &&
+                      b.paidAt &&
+                      b.paidAt.split("T")[0] === currentDateFilter &&
+                      b.paymentMethod &&
+                      b.paymentMethod.toLowerCase().includes("midtrans"),
+                  )
+                  .map((b) => ({
+                    id: b.id,
+                    time: b.paidAt!,
+                    studentId: b.studentId,
+                    category: "Lain-lain",
+                    details: b.title,
+                    paymentMethod: b.paymentMethod,
+                    orderId: b.orderId,
+                    amount: b.amount,
+                    rawItem: b,
+                    type: "misc" as const,
+                  }));
+
+                const midtransTransactionsToday = [...midtransSpp, ...midtransSavings, ...midtransMisc].sort(
+                  (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
+                );
+
+                const totalMidtransToday = midtransTransactionsToday.reduce((sum, item) => sum + item.amount, 0);
+
+                const getMidtransDetail = (method?: string) => {
+                  if (!method) return "Lain-lain";
+                  const match = method.match(/Midtrans \(([^)]+)\)/i);
+                  if (match) {
+                    return match[1].toUpperCase();
+                  }
+                  if (method.toLowerCase().includes("snap")) {
+                    return "SNAP GATEWAY";
+                  }
+                  return "ONLINE PG";
+                };
+
+                const midtransMethodBreakdown = midtransTransactionsToday.reduce((acc, item) => {
+                  const detail = getMidtransDetail(item.paymentMethod);
+                  if (!acc[detail]) {
+                    acc[detail] = { amount: 0, count: 0 };
+                  }
+                  acc[detail].amount += item.amount;
+                  acc[detail].count += 1;
+                  return acc;
+                }, {} as Record<string, { amount: number; count: number }>);
+
                 return (
                   <div className="flex flex-col gap-6">
                     {/* Daily Report Widgets */}
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                       <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-xs flex flex-col gap-1.5">
                         <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
                           SPP PAID (CASH/MANUAL)
@@ -12503,6 +12584,18 @@ export default function AdminPanel({
                           Tarikan Tunai
                         </span>
                       </div>
+
+                      <div className="bg-indigo-50/50 p-4 rounded-xl border border-indigo-200/50 shadow-xs flex flex-col gap-1.5">
+                        <span className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider">
+                          TOTAL ONLINE (MIDTRANS)
+                        </span>
+                        <span className="text-sm font-bold text-indigo-700 font-mono">
+                          Rp {totalMidtransToday.toLocaleString("id-ID")}
+                        </span>
+                        <span className="text-[9px] text-indigo-500 font-medium">
+                          {midtransTransactionsToday.length} Transaksi Online
+                        </span>
+                      </div>
                     </div>
 
                     {/* Summary Vault Header */}
@@ -12532,6 +12625,196 @@ export default function AdminPanel({
                         >
                           Rp {netKasLokal.toLocaleString("id-ID")}
                         </span>
+                      </div>
+                    </div>
+
+                    {/* Dedicated Midtrans Payment Recap Section */}
+                    <div className="bg-white rounded-xl border border-indigo-150 p-5 shadow-xs flex flex-col gap-5 border-l-4 border-l-indigo-500">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
+                        <div>
+                          <h3 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                            <span className="px-1.5 py-0.5 bg-indigo-100 text-indigo-700 rounded text-[9px] font-bold font-mono">MIDTRANS</span>
+                            Rekapitulasi Khusus Transaksi Gateway Midtrans
+                          </h3>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Menampilkan seluruh pembayaran yang diproses real-time via sistem Midtrans pada hari ini
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 bg-indigo-50 px-3 py-1 rounded-full border border-indigo-100 text-[10px] font-bold text-indigo-700 font-mono">
+                          Total Revenue: Rp {totalMidtransToday.toLocaleString("id-ID")}
+                        </div>
+                      </div>
+
+                      {/* 2-Column Grid for Metrics Breakdown & Payment Channel Breakdown */}
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        {/* Column 1: Category Breakdown */}
+                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/60 flex flex-col gap-2.5">
+                          <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block mb-1">
+                            Alokasi Pendapatan Online
+                          </span>
+                          <div className="grid grid-cols-3 gap-2">
+                            <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 text-center">
+                              <span className="text-[9px] text-slate-400 font-bold block uppercase">SPP</span>
+                              <span className="text-xs font-bold text-indigo-900 font-mono block mt-1">
+                                Rp {midtransTransactionsToday.filter(i => i.type === 'spp').reduce((sum, i) => sum + i.amount, 0).toLocaleString("id-ID")}
+                              </span>
+                              <span className="text-[8px] text-slate-400 font-mono block mt-0.5">
+                                ({midtransTransactionsToday.filter(i => i.type === 'spp').length} trx)
+                              </span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 text-center">
+                              <span className="text-[9px] text-slate-400 font-bold block uppercase">Tabungan</span>
+                              <span className="text-xs font-bold text-emerald-800 font-mono block mt-1">
+                                Rp {midtransTransactionsToday.filter(i => i.type === 'savings').reduce((sum, i) => sum + i.amount, 0).toLocaleString("id-ID")}
+                              </span>
+                              <span className="text-[8px] text-slate-400 font-mono block mt-0.5">
+                                ({midtransTransactionsToday.filter(i => i.type === 'savings').length} trx)
+                              </span>
+                            </div>
+                            <div className="bg-white p-2.5 rounded-lg border border-slate-200/80 text-center">
+                              <span className="text-[9px] text-slate-400 font-bold block uppercase">Lain-lain</span>
+                              <span className="text-xs font-bold text-purple-900 font-mono block mt-1">
+                                Rp {midtransTransactionsToday.filter(i => i.type === 'misc').reduce((sum, i) => sum + i.amount, 0).toLocaleString("id-ID")}
+                              </span>
+                              <span className="text-[8px] text-slate-400 font-mono block mt-0.5">
+                                ({midtransTransactionsToday.filter(i => i.type === 'misc').length} trx)
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Column 2: Channel/Payment Type Breakdown */}
+                        <div className="bg-slate-50/50 p-3.5 rounded-xl border border-slate-200/60 flex flex-col gap-2">
+                          <span className="text-[9px] font-extrabold text-slate-500 uppercase tracking-widest block mb-1">
+                            Metode Pembayaran Terpakai (Payment Channels)
+                          </span>
+                          <div className="flex flex-wrap gap-1.5">
+                            {Object.keys(midtransMethodBreakdown).length === 0 ? (
+                              <span className="text-[10px] text-slate-400 italic py-2">
+                                Belum ada metode pembayaran yang tercatat hari ini.
+                              </span>
+                            ) : (
+                              Object.entries(midtransMethodBreakdown).map(([channel, stats]) => (
+                                <div key={channel} className="bg-white px-2.5 py-1.5 rounded-lg border border-slate-200/80 flex items-center gap-2 text-[10px]">
+                                  <span className="font-extrabold text-slate-700 font-mono">{channel}</span>
+                                  <span className="h-2 w-px bg-slate-200"></span>
+                                  <span className="font-bold text-slate-900 font-mono">
+                                    Rp {stats.amount.toLocaleString("id-ID")}
+                                  </span>
+                                  <span className="text-slate-400 text-[9px] font-mono">({stats.count}x)</span>
+                                </div>
+                              ))
+                            )}
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Detail Midtrans Payments List */}
+                      <div className="overflow-x-auto border border-slate-200/80 rounded-xl">
+                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
+                          <thead>
+                            <tr className="bg-slate-50 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
+                              <th className="p-3">Waktu</th>
+                              <th className="p-3">Siswa / NIS</th>
+                              <th className="p-3">Kategori</th>
+                              <th className="p-3">Keterangan</th>
+                              <th className="p-3 font-mono">No. Order ID</th>
+                              <th className="p-3">Metode Detail</th>
+                              <th className="p-3 text-right">Nominal</th>
+                              <th className="p-3 text-right no-print">Kuitansi</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100 bg-white">
+                            {midtransTransactionsToday.length === 0 ? (
+                              <tr>
+                                <td
+                                  colSpan={8}
+                                  className="text-center py-8 text-slate-400 text-[11px] italic"
+                                >
+                                  Tidak ada transaksi pembayaran Midtrans hari ini.
+                                </td>
+                              </tr>
+                            ) : (
+                              midtransTransactionsToday.map((item) => {
+                                const s = students.find(student => student.id === item.studentId);
+                                return (
+                                  <tr key={item.id} className="hover:bg-indigo-50/20">
+                                    <td className="p-3 text-slate-500 font-mono text-[10px]">
+                                      {item.time
+                                        ? new Date(item.time).toLocaleTimeString("id-ID", {
+                                            hour: "2-digit",
+                                            minute: "2-digit",
+                                          })
+                                        : "-"}
+                                    </td>
+                                    <td className="p-3 font-bold text-slate-700">
+                                      <div>{s?.name || "Siswa dihapus"}</div>
+                                      <div className="text-[9px] text-slate-400 font-semibold font-mono">
+                                        NIS: {s?.nis || "-"}
+                                      </div>
+                                    </td>
+                                    <td className="p-3 font-bold">
+                                      {item.category === 'SPP' && (
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                          SPP
+                                        </span>
+                                      )}
+                                      {item.category === 'Tabungan' && (
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] bg-emerald-50 text-emerald-700 border border-emerald-100">
+                                          Tabungan
+                                        </span>
+                                      )}
+                                      {item.category === 'Lain-lain' && (
+                                        <span className="px-2 py-0.5 rounded-full text-[9px] bg-purple-50 text-purple-700 border border-purple-100">
+                                          Lain-lain
+                                        </span>
+                                      )}
+                                    </td>
+                                    <td className="p-3 text-slate-600 font-medium">
+                                      {item.details}
+                                    </td>
+                                    <td className="p-3 text-slate-500 font-mono text-[10px]">
+                                      {item.orderId || "-"}
+                                    </td>
+                                    <td className="p-3">
+                                      <span className="px-1.5 py-0.5 rounded text-[9px] font-bold uppercase bg-slate-100 text-slate-700 font-mono border border-slate-200">
+                                        {getMidtransDetail(item.paymentMethod)}
+                                      </span>
+                                    </td>
+                                    <td className="p-3 text-right font-mono font-black text-slate-800">
+                                      Rp {item.amount.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="p-3 text-right no-print">
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReceiptToPrint({
+                                            type: item.type,
+                                            detail: item.rawItem,
+                                            student: s || {
+                                              id: item.studentId,
+                                              nis: "-",
+                                              name: "Siswa",
+                                              class: "-",
+                                              email: "",
+                                              phone: "",
+                                              savingsBalance: 0,
+                                            },
+                                          });
+                                          setPrintId("print-receipt-section");
+                                        }}
+                                        className="p-1 text-indigo-600 hover:text-indigo-800 border border-slate-200 hover:border-indigo-300 rounded hover:bg-slate-100 transition-all inline-flex items-center gap-1 cursor-pointer"
+                                        title="Cetak Kuitansi Resmi"
+                                      >
+                                        <Printer size={12} />
+                                      </button>
+                                    </td>
+                                  </tr>
+                                );
+                              })
+                            )}
+                          </tbody>
+                        </table>
                       </div>
                     </div>
 
@@ -14815,6 +15098,7 @@ export default function AdminPanel({
                 </div>
 
                 {/* Report Table Material */}
+                {/* Report Table Material */}
                 {reportToPrint === "harian" &&
                   (() => {
                     const sppPaidToday = bills.filter(
@@ -14863,10 +15147,91 @@ export default function AdminPanel({
                     const netKasLokal =
                       totalKasMasukLokal - totalTabunganKeluar;
 
+                    // Midtrans Special Calculations
+                    const midtransSpp = sppPaidToday
+                      .filter((b) => b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans"))
+                      .map((b) => ({
+                        id: b.id,
+                        time: b.paidAt,
+                        studentId: b.studentId,
+                        category: "SPP",
+                        details: `${b.month} ${b.year}`,
+                        paymentMethod: b.paymentMethod,
+                        orderId: b.orderId,
+                        amount: b.amount,
+                        rawItem: b,
+                        type: "spp" as const,
+                      }));
+
+                    const midtransSavings = savingsToday
+                      .filter((t) => t.paymentMethod && t.paymentMethod.toLowerCase().includes("midtrans"))
+                      .map((t) => ({
+                        id: t.id,
+                        time: t.createdAt,
+                        studentId: t.studentId,
+                        category: "Tabungan",
+                        details: t.notes || "Setoran Tabungan",
+                        paymentMethod: t.paymentMethod,
+                        orderId: t.orderId,
+                        amount: t.amount,
+                        rawItem: t,
+                        type: "savings" as const,
+                      }));
+
+                    const midtransMisc = miscBills
+                      .filter(
+                        (b) =>
+                          b.status === "paid" &&
+                          b.paidAt &&
+                          b.paidAt.split("T")[0] === currentDateFilter &&
+                          b.paymentMethod &&
+                          b.paymentMethod.toLowerCase().includes("midtrans"),
+                      )
+                      .map((b) => ({
+                        id: b.id,
+                        time: b.paidAt!,
+                        studentId: b.studentId,
+                        category: "Lain-lain",
+                        details: b.title,
+                        paymentMethod: b.paymentMethod,
+                        orderId: b.orderId,
+                        amount: b.amount,
+                        rawItem: b,
+                        type: "misc" as const,
+                      }));
+
+                    const midtransTransactionsToday = [...midtransSpp, ...midtransSavings, ...midtransMisc].sort(
+                      (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
+                    );
+
+                    const totalMidtransToday = midtransTransactionsToday.reduce((sum, item) => sum + item.amount, 0);
+
+                    const getMidtransDetail = (method?: string) => {
+                      if (!method) return "Lain-lain";
+                      const match = method.match(/Midtrans \(([^)]+)\)/i);
+                      if (match) {
+                        return match[1].toUpperCase();
+                      }
+                      if (method.toLowerCase().includes("snap")) {
+                        return "SNAP GATEWAY";
+                      }
+                      return "ONLINE PG";
+                    };
+
+                    const midtransMethodBreakdown = midtransTransactionsToday.reduce((acc, item) => {
+                      const detail = getMidtransDetail(item.paymentMethod);
+                      if (!acc[detail]) {
+                        acc[detail] = { amount: 0, count: 0 };
+                      }
+                      acc[detail].amount += item.amount;
+                      acc[detail].count += 1;
+                      return acc;
+                    }, {} as Record<string, { amount: number; count: number }>);
+
                     return (
                       <div className="flex flex-col gap-4 text-slate-900">
                         {/* Sub-Summary Cards */}
-                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-2 text-[9px] border border-slate-350 p-2.5 rounded-lg text-slate-905">
+                        <div className="grid grid-cols-3 lg:grid-cols-5 gap-2 text-[9px] border border-slate-355 p-2.5 rounded-lg text-slate-905">
                           <div className="flex flex-col">
                             <span className="font-bold text-slate-500">
                               Iuran SPP Tunai/Manual:
@@ -14897,6 +15262,14 @@ export default function AdminPanel({
                             </span>
                             <span className="font-bold font-mono text-rose-800">
                               Rp {totalTabunganKeluar.toLocaleString("id-ID")}
+                            </span>
+                          </div>
+                          <div className="flex flex-col border-l border-slate-300 pl-2">
+                            <span className="font-bold text-indigo-600">
+                              Total Midtrans Online:
+                            </span>
+                            <span className="font-bold font-mono text-indigo-900">
+                              Rp {totalMidtransToday.toLocaleString("id-ID")}
                             </span>
                           </div>
                         </div>
@@ -15072,6 +15445,100 @@ export default function AdminPanel({
                                         className={`p-1 px-2 border border-slate-300 text-right font-mono font-semibold ${t.type === "deposit" ? "text-emerald-800" : "text-rose-800"}`}
                                       >
                                         Rp {t.amount.toLocaleString("id-ID")}
+                                      </td>
+                                    </tr>
+                                  );
+                                })
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+
+                        {/* Midtrans Special Print Section */}
+                        <div className="mt-2 text-slate-900">
+                          <h4 className="font-bold text-slate-950 uppercase text-[9px] mb-1.5 font-semibold">
+                            3. Rekap Khusus Penerimaan Gateway Midtrans (
+                            {midtransTransactionsToday.length} Transaksi)
+                          </h4>
+                          
+                          {/* Short channel breakdown row */}
+                          <div className="mb-2 p-1.5 border border-slate-300 rounded text-[8px] flex flex-wrap gap-2 text-slate-700 bg-slate-50">
+                            <span className="font-bold">METODE DETAIL:</span>
+                            {Object.keys(midtransMethodBreakdown).length === 0 ? (
+                              <span className="italic">Tidak ada transaksi</span>
+                            ) : (
+                              Object.entries(midtransMethodBreakdown).map(([channel, stats]) => (
+                                <span key={channel} className="font-mono">
+                                  {channel}: <strong>Rp {stats.amount.toLocaleString("id-ID")}</strong> ({stats.count}x)
+                                </span>
+                              ))
+                            )}
+                          </div>
+
+                          <table className="w-full text-left font-sans border-collapse text-[9px]">
+                            <thead>
+                              <tr className="bg-slate-200 border border-slate-400 text-slate-800 font-bold uppercase text-[8px]">
+                                <th className="p-1 px-2 border border-slate-300">Jam</th>
+                                <th className="p-1 px-2 border border-slate-300">Siswa / NIS</th>
+                                <th className="p-1 px-2 border border-slate-300">Kelas</th>
+                                <th className="p-1 px-2 border border-slate-300">Kategori</th>
+                                <th className="p-1 px-2 border border-slate-300">Keterangan</th>
+                                <th className="p-1 px-2 border border-slate-300">Order ID</th>
+                                <th className="p-1 px-2 border border-slate-300">Metode</th>
+                                <th className="p-1 px-2 border border-slate-300 text-right">Nominal</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {midtransTransactionsToday.length === 0 ? (
+                                <tr>
+                                  <td
+                                    colSpan={8}
+                                    className="text-center py-3 border border-slate-300 italic text-slate-500"
+                                  >
+                                    Tidak ada transaksi Midtrans pada tanggal ini.
+                                  </td>
+                                </tr>
+                              ) : (
+                                midtransTransactionsToday.map((item) => {
+                                  const s = students.find(
+                                    (student) => student.id === item.studentId,
+                                  );
+                                  return (
+                                    <tr
+                                      key={item.id}
+                                      className="border border-slate-300 text-slate-900"
+                                    >
+                                      <td className="p-1 px-2 border border-slate-300 font-mono text-[8px]">
+                                        {item.time
+                                          ? new Date(
+                                              item.time,
+                                            ).toLocaleTimeString("id-ID", {
+                                              hour: "2-digit",
+                                              minute: "2-digit",
+                                            })
+                                          : "-"}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 font-semibold">
+                                        {s?.name || "Siswa dihapus"} (
+                                        {s?.nis || "-"})
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300">
+                                        Kelas {s?.class || "-"}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 font-medium">
+                                        {item.category}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300">
+                                        {item.details}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 font-mono text-[8px]">
+                                        {item.orderId || "-"}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 uppercase font-mono text-[8px]">
+                                        {getMidtransDetail(item.paymentMethod)}
+                                      </td>
+                                      <td className="p-1 px-2 border border-slate-300 text-right font-mono font-semibold">
+                                        Rp {item.amount.toLocaleString("id-ID")}
                                       </td>
                                     </tr>
                                   );

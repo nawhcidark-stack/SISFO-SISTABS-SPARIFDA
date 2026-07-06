@@ -605,6 +605,33 @@ export default function AdminPanel({
     }
   };
 
+  const handleCancelSavingsTransactionLocal = async (transactionId: string, type: "deposit" | "withdrawal", amount: number) => {
+    const confirmCancel = window.confirm(
+      `Apakah Anda yakin ingin membatalkan transaksi ${type === "deposit" ? "SETORAN" : "PENARIKAN"} tabungan sebesar Rp ${amount.toLocaleString("id-ID")} ini?\n\n` +
+      `- Saldo tabungan siswa akan disesuaikan kembali.\n` +
+      `- Status transaksi akan diubah menjadi BATAL.\n` +
+      `- Notifikasi pembatalan otomatis akan dikirim ke WhatsApp wali murid.`
+    );
+    if (!confirmCancel) return;
+
+    try {
+      const res = await fetch("/api/admin/cancel-savings-transaction", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transactionId })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal membatalkan transaksi tabungan.");
+      }
+      alert("Transaksi tabungan berhasil dibatalkan dan saldo siswa telah diperbarui!");
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Gagal membatalkan transaksi tabungan.");
+    }
+  };
+
   const handleOpenEditMisc = (bill: any) => {
     setEditingMiscBill(bill);
     setEditMiscTitle(bill.title);
@@ -4916,26 +4943,38 @@ export default function AdminPanel({
                                               {t.amount.toLocaleString("id-ID")}
                                             </td>
                                             <td className="py-2.5 text-right">
-                                              <button
-                                                type="button"
-                                                onClick={() => {
-                                                  setReceiptToPrint({
-                                                    type: "savings",
-                                                    detail: t,
-                                                    student: selectedStudent,
-                                                  });
-                                                  setPrintId(
-                                                    "print-receipt-section",
-                                                  );
-                                                }}
-                                                className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-705 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 ml-auto cursor-pointer"
-                                              >
-                                                <Printer
-                                                  size={10}
-                                                  className="text-indigo-650"
-                                                />{" "}
-                                                Cetak 🖨
-                                              </button>
+                                              <div className="flex items-center justify-end gap-1.5">
+                                                <button
+                                                  type="button"
+                                                  onClick={() => {
+                                                    setReceiptToPrint({
+                                                      type: "savings",
+                                                      detail: t,
+                                                      student: selectedStudent,
+                                                    });
+                                                    setPrintId(
+                                                      "print-receipt-section",
+                                                    );
+                                                  }}
+                                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-705 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 ml-auto cursor-pointer"
+                                                >
+                                                  <Printer
+                                                    size={10}
+                                                    className="text-indigo-650"
+                                                  />{" "}
+                                                  Cetak 🖨
+                                                </button>
+                                                {(!t.paymentMethod || !t.paymentMethod.toLowerCase().includes("midtrans")) && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleCancelSavingsTransactionLocal(t.id, t.type, t.amount)}
+                                                    className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer"
+                                                    title="Batalkan transaksi tabungan ini"
+                                                  >
+                                                    <Trash2 size={10} className="text-rose-600" /> Batal ✕
+                                                  </button>
+                                                )}
+                                              </div>
                                             </td>
                                           </tr>
                                         ))}
@@ -10259,26 +10298,38 @@ export default function AdminPanel({
                                           Rp {tx.amount.toLocaleString("id-ID")}
                                         </td>
                                         <td className="px-4 py-3 text-right">
-                                          <button
-                                            type="button"
-                                            onClick={() => {
-                                              setReceiptToPrint({
-                                                type: "savings",
-                                                detail: tx,
-                                                student: selectedStudent,
-                                              });
-                                              setPrintId(
-                                                "print-receipt-section",
-                                              );
-                                            }}
-                                            className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded font-bold text-[9px] uppercase tracking-wider shadow-3xs cursor-pointer inline-flex items-center gap-1 leading-none"
-                                          >
-                                            <Printer
-                                              size={10}
-                                              className="text-slate-600"
-                                            />{" "}
-                                            Cetak
-                                          </button>
+                                          <div className="flex items-center justify-end gap-1.5">
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setReceiptToPrint({
+                                                  type: "savings",
+                                                  detail: tx,
+                                                  student: selectedStudent,
+                                                });
+                                                setPrintId(
+                                                  "print-receipt-section",
+                                                );
+                                              }}
+                                              className="px-2 py-1 bg-white hover:bg-slate-50 border border-slate-200 rounded font-bold text-[9px] uppercase tracking-wider shadow-3xs cursor-pointer inline-flex items-center gap-1 leading-none"
+                                            >
+                                              <Printer
+                                                size={10}
+                                                className="text-slate-600"
+                                              />{" "}
+                                              Cetak
+                                            </button>
+                                            {(!tx.paymentMethod || !tx.paymentMethod.toLowerCase().includes("midtrans")) && (
+                                              <button
+                                                type="button"
+                                                onClick={() => handleCancelSavingsTransactionLocal(tx.id, tx.type, tx.amount)}
+                                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer leading-none"
+                                                title="Batalkan transaksi tabungan ini"
+                                              >
+                                                <Trash2 size={10} className="text-rose-600" /> Batal ✕
+                                              </button>
+                                            )}
+                                          </div>
                                         </td>
                                       </tr>
                                     ))

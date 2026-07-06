@@ -5827,6 +5827,70 @@ async function startServer() {
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings WA:", err));
     }
 
+    saveState();
+    res.json({ success: true, student, transaction });
+  });
+
+  // Admin Cancel/Void Savings Transaction (Deposit or Withdrawal)
+  app.post("/api/admin/cancel-savings-transaction", (req, res) => {
+    const { transactionId } = req.body;
+    const transaction = savingsTransactions.find(t => t.id === transactionId);
+    if (!transaction) {
+      return res.status(404).json({ error: "Transaksi tabungan tidak ditemukan." });
+    }
+    if (transaction.status !== "success") {
+      return res.status(400).json({ error: "Hanya transaksi berstatus sukses yang dapat dibatalkan." });
+    }
+
+    const student = students.find(s => s.id === transaction.studentId);
+    if (!student) {
+      return res.status(404).json({ error: "Siswa tidak ditemukan untuk transaksi ini." });
+    }
+
+    // Rollback student's balance
+    if (transaction.type === "deposit") {
+      if (student.savingsBalance < transaction.amount) {
+        return res.status(400).json({
+          error: `Pembatalan setoran gagal karena sisa saldo tabungan siswa saat ini (Rp ${student.savingsBalance.toLocaleString("id-ID")}) kurang dari nominal setoran (Rp ${transaction.amount.toLocaleString("id-ID")}).`
+        });
+      }
+      student.savingsBalance -= transaction.amount;
+    } else if (transaction.type === "withdrawal") {
+      student.savingsBalance += transaction.amount;
+    }
+
+    // Mark transaction as failed/cancelled
+    transaction.status = "failed";
+    transaction.notes = `[DIBATALKAN ADMIN] ${transaction.notes || ""}`;
+
+    // Create a notification for real-time update
+    const notification: RealtimeNotification = {
+      id: `notif-sav-cancel-${Date.now()}`,
+      studentId: student.id,
+      title: `Pembatalan ${transaction.type === "deposit" ? "Setoran" : "Penarikan"} Tabungan`,
+      message: `Transaksi ${transaction.type === "deposit" ? "Setor" : "Tarik"} sebesar Rp ${transaction.amount.toLocaleString("id-ID")} telah DIBATALKAN oleh Admin. Saldo saat ini: Rp ${student.savingsBalance.toLocaleString("id-ID")}.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    notifications.unshift(notification);
+    try {
+      broadcastNotification(notification);
+    } catch (err) {
+      console.warn("Failed to broadcast SSE:", err);
+    }
+
+    // Send automated WhatsApp confirmation for savings cancellation if enabled
+    if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
+      const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+        `⚠️ *PEMBATALAN TRANSAKSI TABUNGAN SISWA*\n` +
+        `Transaksi *${transaction.type === "deposit" ? "SETOR TUNAI (DEPOSIT)" : "TARIK TUNAI (WITHDRAWAL)"}* sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* telah *DIBATALKAN / DIKOREKSI* oleh Admin Sekolah.\n\n` +
+        `• *SALDO AKHIR TABUNGAN SISWA*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
+        `Terima kasih atas perhatian Anda.\n` +
+        `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+      sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings cancel WA:", err));
+    }
+
+    saveState();
     res.json({ success: true, student, transaction });
   });
 

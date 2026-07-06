@@ -13,6 +13,12 @@ import {
 } from "../types";
 import { motion, AnimatePresence } from "motion/react";
 import {
+  exportDailyReportToExcel,
+  exportSppRecapToExcel,
+  exportSavingsRecapToExcel,
+  exportMiscRecapToExcel,
+} from "../utils/excelExport";
+import {
   ShieldAlert,
   BookOpen,
   Users,
@@ -12370,6 +12376,130 @@ export default function AdminPanel({
                   >
                     <Printer size={12} /> Cetak Laporan 🖨️
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const sppPaidToday = bills.filter(
+                        (b) =>
+                          b.status === "paid" &&
+                          b.paidAt &&
+                          b.paidAt.split("T")[0] === currentDateFilter,
+                      );
+                      const savingsToday = transactions.filter(
+                        (t) =>
+                          t.status === "success" &&
+                          t.createdAt &&
+                          t.createdAt.split("T")[0] === currentDateFilter,
+                      );
+
+                      const totalSppTunai = sppPaidToday
+                        .filter(
+                          (b) =>
+                            b.paymentMethod === "cash" ||
+                            !b.paymentMethod ||
+                            b.paymentMethod.toLowerCase().includes("tunai") ||
+                            b.paymentMethod.toLowerCase().includes("manual"),
+                        )
+                        .reduce((acc, c) => acc + c.amount, 0);
+
+                      const totalSppOnline = sppPaidToday
+                        .filter(
+                          (b) =>
+                            b.paymentMethod &&
+                            !b.paymentMethod.toLowerCase().includes("tunai") &&
+                            !b.paymentMethod.toLowerCase().includes("cash") &&
+                            !b.paymentMethod.toLowerCase().includes("manual"),
+                        )
+                        .reduce((acc, c) => acc + c.amount, 0);
+
+                      const totalTabunganMasuk = savingsToday
+                        .filter((t) => t.type === "deposit")
+                        .reduce((acc, c) => acc + c.amount, 0);
+
+                      const totalTabunganKeluar = savingsToday
+                        .filter((t) => t.type === "withdrawal")
+                        .reduce((acc, c) => acc + c.amount, 0);
+
+                      const totalKasMasukLokal = totalSppTunai + totalTabunganMasuk;
+                      const netKasLokal = totalKasMasukLokal - totalTabunganKeluar;
+
+                      const midtransSpp = sppPaidToday
+                        .filter((b) => b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans"))
+                        .map((b) => ({
+                          id: b.id,
+                          time: b.paidAt,
+                          studentId: b.studentId,
+                          category: "SPP",
+                          details: `${b.month} ${b.year}`,
+                          paymentMethod: b.paymentMethod,
+                          orderId: b.orderId,
+                          amount: b.amount,
+                          rawItem: b,
+                          type: "spp" as const,
+                        }));
+
+                      const midtransSavings = savingsToday
+                        .filter((t) => t.paymentMethod && t.paymentMethod.toLowerCase().includes("midtrans"))
+                        .map((t) => ({
+                          id: t.id,
+                          time: t.createdAt,
+                          studentId: t.studentId,
+                          category: "Tabungan",
+                          details: t.notes || "Setoran Tabungan",
+                          paymentMethod: t.paymentMethod,
+                          orderId: t.orderId,
+                          amount: t.amount,
+                          rawItem: t,
+                          type: "savings" as const,
+                        }));
+
+                      const midtransMisc = miscBills
+                        .filter(
+                          (b) =>
+                            b.status === "paid" &&
+                            b.paidAt &&
+                            b.paidAt.split("T")[0] === currentDateFilter &&
+                            b.paymentMethod &&
+                            b.paymentMethod.toLowerCase().includes("midtrans"),
+                        )
+                        .map((b) => ({
+                          id: b.id,
+                          time: b.paidAt!,
+                          studentId: b.studentId,
+                          category: "Lain-lain",
+                          details: b.title,
+                          paymentMethod: b.paymentMethod,
+                          orderId: b.orderId,
+                          amount: b.amount,
+                          rawItem: b,
+                          type: "misc" as const,
+                        }));
+
+                      const midtransTransactionsToday = [...midtransSpp, ...midtransSavings, ...midtransMisc].sort(
+                        (a, b) => new Date(a.time).getTime() - new Date(b.time).getTime(),
+                      );
+
+                      const totalMidtransToday = midtransTransactionsToday.reduce((sum, item) => sum + item.amount, 0);
+
+                      exportDailyReportToExcel({
+                        date: currentDateFilter,
+                        totalSppTunai,
+                        totalSppOnline,
+                        totalTabunganMasuk,
+                        totalTabunganKeluar,
+                        totalKasMasukLokal,
+                        netKasLokal,
+                        totalMidtransToday,
+                        sppPaidToday,
+                        savingsToday,
+                        midtransTransactionsToday,
+                        students,
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all w-full sm:w-auto justify-center shadow-xs uppercase tracking-wider font-sans"
+                  >
+                    <Download size={12} /> Export Excel 📊
+                  </button>
                 </div>
               )}
             </div>
@@ -13212,6 +13342,22 @@ export default function AdminPanel({
                         >
                           <Printer size={12} /> Cetak Rekap 🖨️
                         </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            exportSppRecapToExcel({
+                              rekapSppGradeFilter,
+                              rekapSppClassFilter,
+                              rekapSppYearFilter,
+                              summaryMatrix,
+                              globalTotalPaid,
+                              globalTotalUnpaid,
+                            });
+                          }}
+                          className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all w-full sm:w-auto justify-center shadow-xs uppercase tracking-wider font-sans ml-0 md:ml-3"
+                        >
+                          <Download size={12} /> Export Excel 📊
+                        </button>
                       </div>
                     </div>
 
@@ -13382,6 +13528,22 @@ export default function AdminPanel({
                         className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
                       >
                         <Printer size={12} /> Cetak Rekap 🖨
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          exportSavingsRecapToExcel({
+                            rekapTabunganGradeFilter,
+                            rekapTabunganClassFilter,
+                            orderedStudentsBySavings,
+                            totalGlobalSavings,
+                            countActiveAccounts,
+                            filteredTabunganStudentsLength: filteredTabunganStudents.length,
+                          });
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
+                      >
+                        <Download size={12} /> Export Excel 📊
                       </button>
                     </div>
 
@@ -14220,6 +14382,23 @@ export default function AdminPanel({
                         className="flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
                       >
                         <Printer size={12} /> Cetak Rekap 🖨
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          exportMiscRecapToExcel({
+                            rekapMiscGradeFilter,
+                            rekapMiscClassFilter,
+                            totalMiscTarget,
+                            totalMiscPaid,
+                            totalMiscUnpaid,
+                            groupedMiscList,
+                            studentMiscDetails,
+                          });
+                        }}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
+                      >
+                        <Download size={12} /> Export Excel 📊
                       </button>
                     </div>
 

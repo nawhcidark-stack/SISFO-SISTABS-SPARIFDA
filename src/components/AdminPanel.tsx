@@ -4418,8 +4418,8 @@ export default function AdminPanel({
                                                     />{" "}
                                                     Cetak 🖨
                                                   </button>
-                                                  {b.paymentMethod ===
-                                                    "Manual Teller (Sekolah)" &&
+                                                  {(!b.paymentMethod ||
+                                                    !b.paymentMethod.toLowerCase().includes("midtrans")) &&
                                                     onCancelSppManual && (
                                                       <button
                                                         type="button"

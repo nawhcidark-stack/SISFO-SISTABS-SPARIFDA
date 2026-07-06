@@ -5518,7 +5518,8 @@ async function startServer() {
     if (bill.status !== "paid") {
       return res.status(400).json({ error: "Hanya tagihan berstatus lunas yang dapat dibatalkan." });
     }
-    if (bill.paymentMethod !== "Manual Teller (Sekolah)") {
+    const isOnline = bill.paymentMethod && bill.paymentMethod.toLowerCase().includes("midtrans");
+    if (isOnline) {
       return res.status(400).json({ error: "Hanya pembayaran melalui Manual Teller yang dapat dibatalkan." });
     }
 

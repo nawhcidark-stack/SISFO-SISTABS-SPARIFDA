@@ -15,7 +15,7 @@ interface StudentManagementProps {
       class: string;
       email: string;
       phone: string;
-      initialSavings: number;
+      initialSavings?: number;
       gender?: string;
       password?: string;
     }>,
@@ -64,7 +64,7 @@ export default function StudentManagement({
     class: string;
     email: string;
     phone: string;
-    initialSavings: number;
+    initialSavings?: number;
     gender?: string;
     password?: string;
     isExisting: boolean;
@@ -223,7 +223,7 @@ export default function StudentManagement({
           class: string;
           email: string;
           phone: string;
-          initialSavings: number;
+          initialSavings?: number;
           gender?: string;
           password?: string;
           isExisting: boolean;
@@ -243,7 +243,7 @@ export default function StudentManagement({
           const emailVal = emailIdx !== -1 ? cols[emailIdx] : '';
           const phoneVal = phoneIdx !== -1 ? cols[phoneIdx] : '';
           const passwordVal = passwordIdx !== -1 ? cols[passwordIdx] : '';
-          const initSalVal = savingsIdx !== -1 ? (Number(cols[savingsIdx]) || 0) : 0;
+          const initSalVal = savingsIdx !== -1 ? (Number(cols[savingsIdx]) || 0) : undefined;
 
           if (!nisVal || !nameVal || !classVal) continue;
 
@@ -1259,8 +1259,8 @@ export default function StudentManagement({
                               </td>
                               <td className="px-3 py-2 text-slate-500">{row.email || '-'}</td>
                               <td className="px-3 py-2 font-mono text-slate-600 font-medium">{row.password || '-'}</td>
-                              <td className={`px-3 py-2 text-right font-mono font-bold ${row.initialSavings < 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
-                                {row.initialSavings !== 0 ? (row.initialSavings < 0 ? `-Rp ${Math.abs(row.initialSavings).toLocaleString('id-ID')}` : `Rp ${row.initialSavings.toLocaleString('id-ID')}`) : '-'}
+                              <td className={`px-3 py-2 text-right font-mono font-bold ${row.initialSavings !== undefined && row.initialSavings < 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                                {row.initialSavings !== undefined && row.initialSavings !== null && row.initialSavings !== 0 ? (row.initialSavings < 0 ? `-Rp ${Math.abs(row.initialSavings).toLocaleString('id-ID')}` : `Rp ${row.initialSavings.toLocaleString('id-ID')}`) : '-'}
                               </td>
                               <td className="px-3 py-2 text-center">
                                 {row.isExisting ? (

@@ -6713,6 +6713,26 @@ async function startServer() {
           }
         });
 
+        if (initialSavings !== undefined && initialSavings !== null) {
+          const parsedSavings = Number(initialSavings) || 0;
+          if (existingStudent.savingsBalance !== parsedSavings) {
+            const diff = parsedSavings - (existingStudent.savingsBalance || 0);
+            if (diff !== 0) {
+              savingsTransactions.push({
+                id: `sav-adjust-${existingStudent.id}-${Date.now()}`,
+                studentId: existingStudent.id,
+                type: diff > 0 ? "deposit" : "withdrawal",
+                amount: Math.abs(diff),
+                status: "success",
+                createdAt: new Date().toISOString(),
+                paymentMethod: "Manual Teller",
+                notes: `Penyesuaian Saldo via Import Kolektif (ke Rp ${parsedSavings.toLocaleString('id-ID')})`
+              });
+            }
+            existingStudent.savingsBalance = parsedSavings;
+          }
+        }
+
         updatedCount++;
       } else {
         // Add new student

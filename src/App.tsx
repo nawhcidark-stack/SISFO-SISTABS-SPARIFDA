@@ -1230,7 +1230,7 @@ export default function App() {
       class: string;
       email: string;
       phone: string;
-      initialSavings: number;
+      initialSavings?: number;
       gender?: string;
       password?: string;
     }>,

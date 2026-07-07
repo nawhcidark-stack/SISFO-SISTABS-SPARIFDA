@@ -6715,8 +6715,36 @@ async function startServer() {
 
         if (initialSavings !== undefined && initialSavings !== null) {
           const parsedSavings = Number(initialSavings) || 0;
-          if (existingStudent.savingsBalance !== parsedSavings) {
-            const diff = parsedSavings - (existingStudent.savingsBalance || 0);
+          
+          // Calculate existing manual/online transactions in the app for this student
+          const studentTxs = savingsTransactions.filter(t => 
+            t.studentId === existingStudent.id && 
+            t.status === "success" &&
+            !t.id.includes("-init") && 
+            !t.id.includes("sav-adjust-") &&
+            !(t.notes && (
+              t.notes.includes("Setoran Awal") || 
+              t.notes.includes("Saldo Awal") || 
+              t.notes.includes("Penyesuaian Saldo") ||
+              t.notes.includes("Tarik Saldo Awal") ||
+              t.notes.includes("Penarikan Awal")
+            ))
+          );
+          
+          let existingAppSetoran = 0;
+          studentTxs.forEach(t => {
+            if (t.type === "deposit") {
+              existingAppSetoran += t.amount;
+            } else if (t.type === "withdrawal") {
+              existingAppSetoran -= t.amount;
+            }
+          });
+
+          // The target balance is the imported initial savings + any manual transactions already in the app
+          const targetBalance = parsedSavings + existingAppSetoran;
+
+          if (existingStudent.savingsBalance !== targetBalance) {
+            const diff = targetBalance - (existingStudent.savingsBalance || 0);
             if (diff !== 0) {
               savingsTransactions.push({
                 id: `sav-adjust-${existingStudent.id}-${Date.now()}`,
@@ -6726,10 +6754,10 @@ async function startServer() {
                 status: "success",
                 createdAt: new Date().toISOString(),
                 paymentMethod: "Manual Teller",
-                notes: `Penyesuaian Saldo via Import Kolektif (ke Rp ${parsedSavings.toLocaleString('id-ID')})`
+                notes: `Penyesuaian Saldo via Import Kolektif (ke Rp ${targetBalance.toLocaleString('id-ID')} dengan saldo awal Rp ${parsedSavings.toLocaleString('id-ID')})`
               });
             }
-            existingStudent.savingsBalance = parsedSavings;
+            existingStudent.savingsBalance = targetBalance;
           }
         }
 

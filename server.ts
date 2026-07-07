@@ -563,12 +563,81 @@ let midtransConfig: MidtransConfig = {
 
 // Shorten any bill ID to fit within Midtrans' 50-character limit
 function shortenBillIdForMidtrans(id: string): string {
-  // Replaces any occurrence of a 36-character UUID with its first 8 characters
+  let result = id;
+  // Replaces standard prefix "bill-std-std-" to "B-S-"
+  if (result.startsWith("bill-std-std-")) {
+    result = "B-S-" + result.slice(13);
+  } else if (result.startsWith("bill-std-")) {
+    result = "B-" + result.slice(9);
+  }
+  // Replaces "-unpaid" with "-u"
+  if (result.endsWith("-unpaid")) {
+    result = result.slice(0, -7) + "-u";
+  }
+  // Replaces long month names with short ones
+  const monthMapShorten: { [key: string]: string } = {
+    "Januari": "Jan",
+    "Februari": "Feb",
+    "Maret": "Mar",
+    "April": "Apr",
+    "Mei": "Mei",
+    "Juni": "Jun",
+    "Juli": "Jul",
+    "Agustus": "Agu",
+    "September": "Sep",
+    "Oktober": "Okt",
+    "November": "Nov",
+    "Desember": "Des"
+  };
+  for (const [full, short] of Object.entries(monthMapShorten)) {
+    if (result.includes(`-${full}-`)) {
+      result = result.replace(`-${full}-`, `-${short}-`);
+    }
+  }
+  // Convert 13-digit millisecond timestamps starting with 17 or 18 or 19 to base-36
+  result = result.replace(/(1[789]\d{11})/g, (match) => {
+    return Number(match).toString(36);
+  });
+  // Replace standard UUIDs if any
   const uuidRegex = /([0-9a-f]{8})-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}/gi;
-  let result = id.replace(uuidRegex, "$1");
+  result = result.replace(uuidRegex, "$1");
+
   if (result.length > 50) {
     result = result.slice(0, 50);
   }
+  return result;
+}
+
+// Reconstruct the original bill ID from the compressed/shortened version
+function decompressBillIdForMidtrans(id: string): string {
+  let result = id;
+  if (result.startsWith("B-S-")) {
+    result = "bill-std-std-" + result.slice(4);
+  } else if (result.startsWith("B-")) {
+    result = "bill-std-" + result.slice(2);
+  }
+  if (result.endsWith("-u")) {
+    result = result.slice(0, -2) + "-unpaid";
+  }
+  const monthMapExpand: { [key: string]: string } = {
+    "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
+    "mei": "Mei", "jun": "Juni", "jul": "Juli", "agu": "Agustus",
+    "sep": "September", "okt": "Oktober", "nov": "November", "des": "Desember"
+  };
+  for (const [short, full] of Object.entries(monthMapExpand)) {
+    if (result.toLowerCase().includes(`-${short}-`)) {
+      const regex = new RegExp(`-${short}-`, "gi");
+      result = result.replace(regex, `-${full}-`);
+    }
+  }
+  // Convert base-36 string back to 13-digit base-10 timestamp
+  result = result.replace(/([a-z0-9]{8})/g, (match) => {
+    const parsed = parseInt(match, 36);
+    if (parsed >= 1577836800000 && parsed <= 2051155200000) {
+      return String(parsed);
+    }
+    return match;
+  });
   return result;
 }
 
@@ -6840,7 +6909,7 @@ async function startServer() {
         },
         item_details: [
           {
-            id: bill.id,
+            id: shortenBillIdForMidtrans(bill.id),
             price: bill.amount,
             quantity: 1,
             name: (() => {
@@ -7145,10 +7214,7 @@ async function startServer() {
       const lastHyphenIndex = middle.lastIndexOf("-");
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
       
-      let cleanBillId = billId;
-      if (cleanBillId.startsWith("B-")) {
-        cleanBillId = "bill-std-" + cleanBillId.slice(2);
-      }
+      let cleanBillId = decompressBillIdForMidtrans(billId);
       
       let bill = sppBills.find(b => b.orderId === resolvedOrderId || b.id === cleanBillId || b.id === billId);
       if (!bill) {
@@ -7489,10 +7555,7 @@ async function startServer() {
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
       
       // Expand shortened 'B-' prefix to match full 'bill-std-' ID format if needed
-      let cleanBillId = billId;
-      if (cleanBillId.startsWith("B-")) {
-        cleanBillId = "bill-std-" + cleanBillId.slice(2);
-      }
+      let cleanBillId = decompressBillIdForMidtrans(billId);
       
       let bill = sppBills.find(b => b.orderId === order_id || b.id === cleanBillId || b.id === billId);
       if (!bill) {

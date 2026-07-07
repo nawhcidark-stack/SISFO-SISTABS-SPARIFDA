@@ -6057,16 +6057,16 @@ async function startServer() {
     });
 
     // If initial savings balance is provided, record a savings transaction
-    if (parsedSavings > 0) {
+    if (parsedSavings !== 0) {
       savingsTransactions.push({
         id: `sav-${newStudentId}-init`,
         studentId: newStudentId,
-        type: "deposit",
-        amount: parsedSavings,
+        type: parsedSavings > 0 ? "deposit" : "withdrawal",
+        amount: Math.abs(parsedSavings),
         status: "success",
         createdAt: new Date().toISOString(),
         paymentMethod: "Manual Teller",
-        notes: "Setoran Awal saat Pendaftaran"
+        notes: parsedSavings > 0 ? "Setoran Awal saat Pendaftaran" : "Tarik Saldo Awal (Saldo Minus) saat Pendaftaran"
       });
     }
 
@@ -6717,17 +6717,17 @@ async function startServer() {
           });
         });
 
-        // Record savings transactions if parsedSavings > 0
-        if (parsedSavings > 0) {
+        // Record savings transactions if parsedSavings !== 0
+        if (parsedSavings !== 0) {
           savingsTransactions.push({
             id: `sav-${newStudentId}-init-import`,
             studentId: newStudentId,
-            type: "deposit",
-            amount: parsedSavings,
+            type: parsedSavings > 0 ? "deposit" : "withdrawal",
+            amount: Math.abs(parsedSavings),
             status: "success",
             createdAt: new Date().toISOString(),
             paymentMethod: "Manual Teller",
-            notes: "Setoran Awal via Import Kolektif"
+            notes: parsedSavings > 0 ? "Setoran Awal via Import Kolektif" : "Penarikan Awal (Saldo Minus) via Import Kolektif"
           });
         }
 

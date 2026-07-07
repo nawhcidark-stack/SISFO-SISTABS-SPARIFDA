@@ -721,8 +721,8 @@ export default function StudentManagement({
                     </td>
                     <td className="px-5 py-3.5 text-slate-600 font-medium">{std.email || '-'}</td>
                     <td className="px-5 py-3.5 font-mono text-slate-500">{std.phone || '-'}</td>
-                    <td className="px-5 py-3.5 text-right font-mono font-bold text-emerald-800">
-                      Rp {std.savingsBalance.toLocaleString('id-ID')}
+                    <td className={`px-5 py-3.5 text-right font-mono font-bold ${std.savingsBalance < 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                      {std.savingsBalance < 0 ? `-Rp ${Math.abs(std.savingsBalance).toLocaleString('id-ID')}` : `Rp ${std.savingsBalance.toLocaleString('id-ID')}`}
                     </td>
                     <td className="px-5 py-3.5 text-center whitespace-nowrap">
                       <div className="flex justify-center items-center gap-2">
@@ -1259,8 +1259,8 @@ export default function StudentManagement({
                               </td>
                               <td className="px-3 py-2 text-slate-500">{row.email || '-'}</td>
                               <td className="px-3 py-2 font-mono text-slate-600 font-medium">{row.password || '-'}</td>
-                              <td className="px-3 py-2 text-right font-mono font-bold text-emerald-800">
-                                {row.initialSavings > 0 ? `Rp ${row.initialSavings.toLocaleString('id-ID')}` : '-'}
+                              <td className={`px-3 py-2 text-right font-mono font-bold ${row.initialSavings < 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
+                                {row.initialSavings !== 0 ? (row.initialSavings < 0 ? `-Rp ${Math.abs(row.initialSavings).toLocaleString('id-ID')}` : `Rp ${row.initialSavings.toLocaleString('id-ID')}`) : '-'}
                               </td>
                               <td className="px-3 py-2 text-center">
                                 {row.isExisting ? (

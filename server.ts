@@ -1983,7 +1983,8 @@ async function startServer() {
         savingsTransactions: savingsTransactions.length,
         treasurerTransactions: treasurerTransactions.length,
         attendanceLogs: attendanceLogs.length,
-        teachingJournals: teachingJournals.length
+        teachingJournals: teachingJournals.length,
+        midtransConfig: (midtransConfig && midtransConfig.clientKey) ? 1 : 0
       };
 
       const newBackup = {
@@ -8070,7 +8071,8 @@ async function startServer() {
           savingsTransactions: savingsTransactions.length,
           treasurerTransactions: treasurerTransactions.length,
           attendanceLogs: attendanceLogs.length,
-          teachingJournals: teachingJournals.length
+          teachingJournals: teachingJournals.length,
+          midtransConfig: (midtransConfig && midtransConfig.clientKey) ? 1 : 0
         };
 
         const newBackup = {

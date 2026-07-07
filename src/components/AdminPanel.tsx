@@ -9357,9 +9357,13 @@ export default function AdminPanel({
                                 <span className="text-slate-300">•</span>
                                 <span>Tagihan SPP: <strong className="text-slate-700">{bkp.collections.sppBills || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
+                                <span>Tagihan Lain-lain: <strong className="text-slate-700">{bkp.collections.miscBills || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
                                 <span>Tabungan: <strong className="text-slate-700">{bkp.collections.savingsTransactions || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
-                                <span>Kas Bendahara: <strong className="text-slate-700">{bkp.collections.treasurerTransactions || 0}</strong></span>
+                                <span>Kas &amp; Transaksi Admin: <strong className="text-slate-700">{bkp.collections.treasurerTransactions || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Kredensial Midtrans: <strong className="text-emerald-600">{bkp.collections.midtransConfig ? "Tersimpan" : "Kosong"}</strong></span>
                               </div>
                             )}
                           </div>

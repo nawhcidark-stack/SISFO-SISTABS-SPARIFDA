@@ -14960,6 +14960,25 @@ export default function AdminPanel({
                         {receiptToPrint.student.class}
                       </span>
                     </div>
+                    <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
+                      <span className="font-bold text-slate-500">
+                        Metode Pembayaran
+                      </span>
+                      <span className="text-slate-400 font-bold">:</span>
+                      <span className="font-bold text-emerald-700 uppercase">
+                        {receiptToPrint.type === "consolidated"
+                          ? (receiptToPrint.detail.paymentMethod || "Manual Teller (Kolektif)")
+                          : receiptToPrint.type === "spp"
+                          ? (receiptToPrint.detail.paymentMethod || "Manual Teller (Sekolah)")
+                          : receiptToPrint.type === "misc"
+                          ? (receiptToPrint.detail.paymentMethod || "Manual Teller (Sekolah)")
+                          : (receiptToPrint.detail.type === "deposit"
+                              ? (receiptToPrint.detail.notes?.includes("Midtrans") || receiptToPrint.detail.notes?.includes("Online")
+                                  ? "Transfer Online (Midtrans)"
+                                  : "Tunai via Teller")
+                              : "Tarik Tunai (Teller)")}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Transactions details */}

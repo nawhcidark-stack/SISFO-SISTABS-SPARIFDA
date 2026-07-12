@@ -5618,9 +5618,17 @@ export default function AdminPanel({
                       </tr>
                     ) : (
                       filteredStudents.map((student) => {
-                        const sBills = bills.filter(
-                          (b) => b.studentId === student.id,
-                        );
+                        const sBills = bills
+                          .filter((b) => b.studentId === student.id)
+                          .sort((a, b) => {
+                            const MONTH_MAP: Record<string, number> = {
+                              Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
+                              Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11,
+                            };
+                            const aScore = a.year * 12 + (MONTH_MAP[a.month] || 0);
+                            const bScore = b.year * 12 + (MONTH_MAP[b.month] || 0);
+                            return aScore - bScore;
+                          });
                         const rawUnpaidCount = sBills.filter(
                           (b) => b.status === "unpaid",
                         ).length;

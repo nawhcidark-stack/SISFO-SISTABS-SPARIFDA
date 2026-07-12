@@ -710,16 +710,6 @@ export default function StudentPanel({
           <span class="meta-label">Pendidikan / Kelas</span>
           <span class="meta-val">Kelas ${student.class}</span>
         </td>
-        <td class="meta-td">
-          <span class="meta-label">Metode Pembayaran</span>
-          <span class="meta-val" style="color: #0d9488; text-transform: uppercase; font-size: 11px;">
-            ${type === 'spp' 
-              ? (detail.paymentMethod || 'Manual Teller') 
-              : (detail.type === 'deposit' 
-                  ? (detail.notes?.includes('Midtrans') || detail.notes?.includes('Online') ? 'Online Transfer' : 'Tunai Teller') 
-                  : 'Tarik Tunai')}
-          </span>
-        </td>
       </tr>
     </table>
 
@@ -4530,16 +4520,6 @@ export default function StudentPanel({
                       <span>Kelas:</span>
                       <span>Kelas {receiptToPrint.student.class}</span>
                     </div>
-                    <div className="flex justify-between">
-                      <span>Metode:</span>
-                      <span className="font-bold text-emerald-800">
-                        {receiptToPrint.type === 'spp' 
-                          ? (receiptToPrint.detail.paymentMethod || 'Manual Teller') 
-                          : (receiptToPrint.detail.type === 'deposit' 
-                              ? (receiptToPrint.detail.notes?.includes('Midtrans') || receiptToPrint.detail.notes?.includes('Online') ? 'Online Transfer' : 'Tunai Teller') 
-                              : 'Tarik Tunai')}
-                      </span>
-                    </div>
                   </div>
 
                   {/* Items list */}
@@ -4671,17 +4651,6 @@ export default function StudentPanel({
                       <span className="font-bold text-slate-500">Kelas</span>
                       <span className="text-slate-400 font-bold">:</span>
                       <span className="font-bold text-slate-800 text-normal">{receiptToPrint.student.class}</span>
-                    </div>
-                    <div className="grid grid-cols-[120px_12px_1fr] leading-relaxed">
-                      <span className="font-bold text-slate-500">Metode Pembayaran</span>
-                      <span className="text-slate-400 font-bold">:</span>
-                      <span className="font-bold text-emerald-700 uppercase">
-                        {receiptToPrint.type === 'spp' 
-                          ? (receiptToPrint.detail.paymentMethod || 'Manual Teller (Sekolah)') 
-                          : (receiptToPrint.detail.type === 'deposit' 
-                              ? (receiptToPrint.detail.notes?.includes('Midtrans') || receiptToPrint.detail.notes?.includes('Online') ? 'Transfer Online (Midtrans)' : 'Tunai via Teller') 
-                              : 'Tarik Tunai (Teller)')}
-                      </span>
                     </div>
                   </div>
 

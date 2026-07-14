@@ -1216,7 +1216,7 @@ export default function TreasurerPanel({
         <b>${schoolIdentity.principal || '-'}</b>
       </td>
       <td colspan="4" style="text-align: center; border: none;">
-        <br/>Pandaan, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br/>Bendahara BOS<br/><br/><br/><br/>
+        <br/>Pandaan, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br/>Bendahara<br/><br/><br/><br/>
         <b>${schoolIdentity.treasurer || '-'}</b>
       </td>
     </tr>
@@ -1241,6 +1241,58 @@ export default function TreasurerPanel({
           {/* Printable Area 1: Ledger/Buku Kas - Only active when not printing an individual receipt */}
       {!activePrintTransaction && (
         <div id="print-report-section" className="hidden print:block bg-white p-8 text-black text-xs leading-relaxed">
+          {/* Official Kop Surat (School Letterhead) */}
+          <div className="mb-6">
+            {schoolIdentity?.letterhead ? (
+              <div className="w-full flex flex-col items-center mb-4">
+                <img
+                  src={schoolIdentity.letterhead}
+                  className="w-full max-h-28 object-contain"
+                  alt="Kop Surat"
+                  referrerPolicy="no-referrer"
+                />
+                <div className="w-full border-b-2 border-black mt-2"></div>
+              </div>
+            ) : (
+              <div className="border-b-4 border-double border-black pb-4 mb-6 flex justify-between items-center gap-4 text-left">
+                <div className="flex items-center gap-4">
+                  {schoolIdentity?.logo && (
+                    <img
+                      src={schoolIdentity.logo}
+                      className="w-16 h-16 object-contain"
+                      alt="Logo Kiri"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                  <div className="flex flex-col gap-0.5">
+                    <span className="text-sm font-black uppercase tracking-wider text-black">
+                      {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                    </span>
+                    <span className="text-[10px] text-slate-800 uppercase tracking-widest font-bold leading-none block">
+                      {schoolIdentity?.subheading || "Lembaga Pendidikan Maarif Nahdlatul Ulama"}
+                    </span>
+                    <span className="text-[9px] text-slate-600 block font-semibold mt-1">
+                      {schoolIdentity?.accreditation || "Terakreditasi A"} &bull; {schoolIdentity?.address || "Pasuruan, Jawa Timur, Indonesia"}
+                    </span>
+                    <span className="text-[8px] text-slate-600 block italic leading-none mt-0.5">
+                      Telp: {schoolIdentity?.phone || "(0343) 631234"}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-4 shrink-0">
+                  {schoolIdentity?.logo2 && (
+                    <img
+                      src={schoolIdentity.logo2}
+                      className="w-16 h-16 object-contain"
+                      alt="Logo Kanan"
+                      referrerPolicy="no-referrer"
+                    />
+                  )}
+                </div>
+              </div>
+            )}
+          </div>
+
           {/* Header metadata to match the image precisely */}
           <div className="mb-6">
             <table className="w-full text-xs font-bold mb-4">
@@ -1369,7 +1421,7 @@ export default function TreasurerPanel({
             </div>
             <div className="text-center w-64">
               <p className="mb-1">Pandaan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-              <p className="font-bold">Bendahara BOS</p>
+              <p className="font-bold">Bendahara</p>
               <div className="h-16 flex items-center justify-center">
                 {schoolIdentity.treasurerSignature && (
                   <img src={schoolIdentity.treasurerSignature} className="h-14 object-contain" alt="Signature" referrerPolicy="no-referrer" />

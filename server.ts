@@ -4467,7 +4467,7 @@ async function startServer() {
 
   // Create manual bookkeeping transaction
   app.post("/api/treasurer/transactions", (req, res) => {
-    const { type, category, amount, description, date, recipientName, fundingSource } = req.body;
+    const { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
     if (!type || !category || !amount || !description || !date) {
       return res.status(400).json({ error: "Semua field wajib diisi." });
     }
@@ -4482,7 +4482,10 @@ async function startServer() {
       source: 'custom' as const,
       createdBy: 'bendahara',
       recipientName: recipientName ? String(recipientName) : undefined,
-      fundingSource: fundingSource ? String(fundingSource) : undefined
+      fundingSource: fundingSource ? String(fundingSource) : undefined,
+      paymentMethod: paymentMethod ? String(paymentMethod) : undefined,
+      kodeRekening: kodeRekening ? String(kodeRekening) : undefined,
+      noBukti: noBukti ? String(noBukti) : undefined
     };
 
     treasurerTransactions.push(newTx);
@@ -4492,7 +4495,7 @@ async function startServer() {
 
   // Update manual bookkeeping transaction
   app.put("/api/treasurer/transactions/:id", (req, res) => {
-    const { type, category, amount, description, date, recipientName, fundingSource } = req.body;
+    const { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
     const { id } = req.params;
 
     const txIndex = treasurerTransactions.findIndex(t => t.id === id);
@@ -4508,7 +4511,10 @@ async function startServer() {
       description: description ? String(description) : treasurerTransactions[txIndex].description,
       date: date ? String(date) : treasurerTransactions[txIndex].date,
       recipientName: recipientName !== undefined ? String(recipientName) : treasurerTransactions[txIndex].recipientName,
-      fundingSource: fundingSource !== undefined ? (fundingSource ? String(fundingSource) : undefined) : treasurerTransactions[txIndex].fundingSource
+      fundingSource: fundingSource !== undefined ? (fundingSource ? String(fundingSource) : undefined) : treasurerTransactions[txIndex].fundingSource,
+      paymentMethod: paymentMethod !== undefined ? String(paymentMethod) : treasurerTransactions[txIndex].paymentMethod,
+      kodeRekening: kodeRekening !== undefined ? String(kodeRekening) : treasurerTransactions[txIndex].kodeRekening,
+      noBukti: noBukti !== undefined ? String(noBukti) : treasurerTransactions[txIndex].noBukti
     };
 
     treasurerTransactions[txIndex] = updatedTx;

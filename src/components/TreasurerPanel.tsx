@@ -60,6 +60,10 @@ export default function TreasurerPanel({
   const [isCustomRecipient, setIsCustomRecipient] = useState(false);
   const [formFundingSource, setFormFundingSource] = useState('');
   const [formDate, setFormDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [formPaymentMethod, setFormPaymentMethod] = useState<'kas' | 'bank'>('kas');
+  const [formKodeRekening, setFormKodeRekening] = useState('');
+  const [formNoBukti, setFormNoBukti] = useState('');
+  const [selectedBook, setSelectedBook] = useState<'bku' | 'bp_kas' | 'bp_bank'>('bku');
 
   // Filter configurations
   const [term, setTerm] = useState('');
@@ -699,6 +703,9 @@ export default function TreasurerPanel({
     setIsCustomRecipient(false);
     setFormFundingSource('');
     setFormDate(new Date().toISOString().substring(0, 10));
+    setFormPaymentMethod('kas');
+    setFormKodeRekening('');
+    setFormNoBukti('');
     setShowFormModal(true);
   };
 
@@ -716,6 +723,9 @@ export default function TreasurerPanel({
 
     setFormFundingSource(tx.fundingSource || '');
     setFormDate(tx.date);
+    setFormPaymentMethod(tx.paymentMethod === 'bank' ? 'bank' : 'kas');
+    setFormKodeRekening(tx.kodeRekening || '');
+    setFormNoBukti(tx.noBukti || '');
     setShowFormModal(true);
   };
 
@@ -739,7 +749,10 @@ export default function TreasurerPanel({
       description: formDescription,
       date: formDate,
       recipientName: formType === 'outgoing' ? formRecipientName : '',
-      fundingSource: formType === 'incoming' ? formFundingSource : ''
+      fundingSource: formType === 'incoming' ? formFundingSource : '',
+      paymentMethod: formPaymentMethod,
+      kodeRekening: formKodeRekening,
+      noBukti: formNoBukti
     };
 
     try {
@@ -862,6 +875,89 @@ export default function TreasurerPanel({
     }));
   }, [categories, transactions]);
 
+  // Helper to determine if a transaction belongs to Kas (Cash) or Bank
+  const isCashTransaction = (t: TreasurerTransaction): boolean => {
+    if (t.source === 'spp') {
+      const pm = (t.createdBy || '').toLowerCase();
+      if (pm.includes('manual') || pm.includes('teller') || pm.includes('cash') || pm.includes('tunai') || pm === '') {
+        return true;
+      }
+      return false;
+    }
+    if (t.source === 'savings') {
+      const pm = (t.createdBy || '').toLowerCase();
+      if (pm.includes('teller') || pm.includes('penyamaan saldo') || pm.includes('manual') || pm.includes('tunai') || pm === '') {
+        return true;
+      }
+      return false;
+    }
+    if (t.source === 'custom') {
+      if (t.paymentMethod === 'bank') return false;
+      if (t.paymentMethod === 'kas') return true;
+      
+      const desc = t.description.toLowerCase();
+      const fund = (t.fundingSource || '').toLowerCase();
+      if (desc.includes('transfer') || desc.includes('bank') || desc.includes('midtrans') || desc.includes('online') ||
+          fund.includes('bank') || fund.includes('transfer') || fund.includes('midtrans')) {
+        return false;
+      }
+      return true;
+    }
+    
+    const creator = (t.createdBy || '').toLowerCase();
+    if (creator.includes('manual') || creator.includes('teller') || creator.includes('cash') || creator.includes('tunai') || creator === '') {
+      return true;
+    }
+    return false;
+  };
+
+  // Helper to dynamically get Kode Rekening
+  const getKodeRekening = (tx: TreasurerTransaction): string => {
+    if (tx.kodeRekening) return tx.kodeRekening;
+    if (tx.source === 'spp') return '4.1.01.01'; // Kode Penerimaan SPP
+    if (tx.source === 'savings') return '2.1.01.01'; // Kode Tabungan Siswa
+    
+    const cat = tx.category.toLowerCase();
+    if (tx.type === 'incoming') {
+      if (cat.includes('bos')) return '4.2.01.01';
+      if (cat.includes('hibah') || cat.includes('sumbangan') || cat.includes('donatur')) return '4.3.01.01';
+      return '4.1.01.99';
+    } else {
+      if (cat.includes('gaji') || cat.includes('honor') || cat.includes('tunjangan')) return '5.1.01.01';
+      if (cat.includes('operasional') || cat.includes('belanja')) return '5.2.01.01';
+      if (cat.includes('pembangunan') || cat.includes('gedung')) return '5.3.01.01';
+      return '5.1.01.99';
+    }
+  };
+
+  // Helper to dynamically get No Bukti
+  const getNoBukti = (tx: TreasurerTransaction): string => {
+    if (tx.noBukti) return tx.noBukti;
+    const suffix = tx.id.substring(tx.id.length - 6).toUpperCase();
+    if (tx.source === 'spp') return `BM-SPP-${suffix}`;
+    if (tx.source === 'savings') return `${tx.type === 'incoming' ? 'BM' : 'BK'}-TAB-${suffix}`;
+    return `${tx.type === 'incoming' ? 'BM' : 'BK'}-MAN-${suffix}`;
+  };
+
+  // Helper to get Indonesian Month Name and Year based on current active filters or today
+  const getIndonesianMonthYear = (): string => {
+    const refDateStr = filterEndDate || filterStartDate || new Date().toISOString().substring(0, 10);
+    try {
+      const parts = refDateStr.split('-');
+      if (parts.length >= 2) {
+        const months = [
+          'JANUARI', 'FEBRUARI', 'MARET', 'APRIL', 'MEI', 'JUNI',
+          'JULI', 'AGUSTUS', 'SEPTEMBER', 'OKTOBER', 'NOVEMBER', 'DESEMBER'
+        ];
+        const monthIndex = parseInt(parts[1], 10) - 1;
+        if (monthIndex >= 0 && monthIndex < 12) {
+          return `${months[monthIndex]} ${parts[0]}`;
+        }
+      }
+    } catch (e) {}
+    return 'JULI 2026';
+  };
+
   // Filtered transactions list
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -877,9 +973,39 @@ export default function TreasurerPanel({
       const matchStartDate = !filterStartDate || t.date >= filterStartDate;
       const matchEndDate = !filterEndDate || t.date <= filterEndDate;
 
-      return matchTerm && matchType && matchSource && matchCategory && matchStartDate && matchEndDate;
+      // Filter by Buku Kas Umum, Buku Pembantu Kas, or Buku Pembantu Bank
+      const isCash = isCashTransaction(t);
+      const matchBook = 
+        selectedBook === 'bku' ||
+        (selectedBook === 'bp_kas' && isCash) ||
+        (selectedBook === 'bp_bank' && !isCash);
+
+      return matchTerm && matchType && matchSource && matchCategory && matchStartDate && matchEndDate && matchBook;
     });
-  }, [transactions, term, filterType, filterSource, filterCategory, filterStartDate, filterEndDate]);
+  }, [transactions, term, filterType, filterSource, filterCategory, filterStartDate, filterEndDate, selectedBook]);
+
+  // Compute chronologically sorted transactions with running balances for ledger
+  const transactionsWithRunningBalance = useMemo(() => {
+    // Sort ascending by date, then ID to stabilize
+    const sorted = [...filteredTransactions].sort((a, b) => {
+      const dateCompare = a.date.localeCompare(b.date);
+      if (dateCompare !== 0) return dateCompare;
+      return a.id.localeCompare(b.id);
+    });
+
+    let balance = 0;
+    return sorted.map((tx) => {
+      if (tx.type === 'incoming') {
+        balance += tx.amount;
+      } else {
+        balance -= tx.amount;
+      }
+      return {
+        ...tx,
+        runningBalance: balance
+      };
+    });
+  }, [filteredTransactions]);
 
   // Chart data formatting: Category distribution
   const chartCategoryData = useMemo(() => {
@@ -955,10 +1081,24 @@ export default function TreasurerPanel({
     const typeStr = filterType === 'all' ? 'SEMUA ARUS KAS' : filterType === 'incoming' ? 'DEBIT (UANG MASUK)' : 'KREDIT (UANG KELUAR)';
     const dateRangeStr = filterStartDate || filterEndDate ? `Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : 'Semua Periode';
     
+    let bookSheetName = 'Buku Kas Umum';
+    let bookTitleExcel = 'BUKU KAS UMUM (BKU) SEKOLAH';
+    let filenamePrefix = 'BUKU_KAS_UMUM';
+
+    if (selectedBook === 'bp_kas') {
+      bookSheetName = 'Buku Pembantu Kas';
+      bookTitleExcel = 'BUKU PEMBANTU KAS (TUNAI / BRANKAS)';
+      filenamePrefix = 'BUKU_PEMBANTU_KAS';
+    } else if (selectedBook === 'bp_bank') {
+      bookSheetName = 'Buku Pembantu Bank';
+      bookTitleExcel = 'BUKU PEMBANTU BANK (GIRO / REKENING)';
+      filenamePrefix = 'BUKU_PEMBANTU_BANK';
+    }
+
     let excelHtml = `
 <html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">
 <head>
-<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>Buku Kas Global</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
+<!--[if gte mso 9]><xml><x:ExcelWorkbook><x:ExcelWorksheets><x:ExcelWorksheet><x:Name>${bookSheetName}</x:Name><x:WorksheetOptions><x:DisplayGridlines/></x:WorksheetOptions></x:ExcelWorksheet></x:ExcelWorksheets></x:ExcelWorkbook></xml><![endif]-->
 <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
 <style>
   table { border-collapse: collapse; }
@@ -973,7 +1113,7 @@ export default function TreasurerPanel({
 </head>
 <body>
   <table>
-    <tr><td colspan="7" class="title">BUKU KAS BESAR GLOBAL TERPADU</td></tr>
+    <tr><td colspan="7" class="title">${bookTitleExcel}</td></tr>
     <tr><td colspan="7" class="subtitle">${schoolNameUpper} - PORTAL BK & KEUANGAN</td></tr>
     <tr><td colspan="7" style="text-align: center; font-style: italic; color: #64748b;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')}</td></tr>
     <tr><td colspan="7" style="text-align: center; font-weight: bold;">Kategori Pos: ${catStr} | Sumber: ${sourceStr} | Arus Kas: ${typeStr}</td></tr>
@@ -1056,7 +1196,7 @@ export default function TreasurerPanel({
     link.href = url;
     const catNameFilename = filterCategory === 'all' ? 'GLOBAL' : filterCategory.toUpperCase().replace(/\s+/g, '_');
     const dateSuffix = filterStartDate || filterEndDate ? `_PERIOD_${filterStartDate || 'AWAL'}_TO_${filterEndDate || 'AKHIR'}` : `_${new Date().toISOString().split('T')[0]}`;
-    link.download = `BUKU_KAS_${catNameFilename}${dateSuffix}.xls`;
+    link.download = `${filenamePrefix}_${catNameFilename}${dateSuffix}.xls`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -1066,113 +1206,142 @@ export default function TreasurerPanel({
           {/* Printable Area 1: Ledger/Buku Kas - Only active when not printing an individual receipt */}
       {!activePrintTransaction && (
         <div id="print-report-section" className="hidden print:block bg-white p-8 text-black text-xs leading-relaxed">
-          {/* Letterhead */}
-          <div className="flex items-center justify-between border-b-2 border-double border-slate-900 pb-4 mb-6">
-            <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
-              {schoolIdentity.logo ? (
-                <img src={schoolIdentity.logo} className="w-full h-full object-contain" alt="Logo" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="font-extrabold text-[10px] text-slate-400">LOGO LP</span>
-              )}
-            </div>
-            <div className="flex-1 text-center px-4">
-              <h2 className="text-sm font-extrabold tracking-tight uppercase">{schoolIdentity.subheading}</h2>
-              <h1 className="text-lg font-black tracking-tight text-slate-900 leading-tight">{schoolIdentity.name}</h1>
-              <p className="text-[10px] text-slate-500 font-semibold">{schoolIdentity.address} | Telp: {schoolIdentity.phone}</p>
-              <span className="text-[9px] px-2 py-0.5 rounded border bg-slate-50 font-bold tracking-wider uppercase mt-1 inline-block">{schoolIdentity.accreditation}</span>
-            </div>
-            <div className="w-16 h-16 flex items-center justify-center bg-slate-100 rounded border">
-              {schoolIdentity.logo2 ? (
-                <img src={schoolIdentity.logo2} className="w-full h-full object-contain" alt="Logo 2" referrerPolicy="no-referrer" />
-              ) : (
-                <span className="font-extrabold text-[10px] text-slate-400">LOGO NU</span>
-              )}
+          {/* Header metadata to match the image precisely */}
+          <div className="mb-6">
+            <table className="w-full text-xs font-bold mb-4">
+              <tbody>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Nama Sekolah</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">{schoolIdentity.name || "SMP Ma'arif NU Pandaan"}</td>
+                </tr>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Desa / Kecamatan</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">Pandaan</td>
+                </tr>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Kabupaten / Kota</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">Pasuruan</td>
+                </tr>
+                <tr>
+                  <td className="w-36 py-0.5 text-left">Provinsi</td>
+                  <td className="w-4 py-0.5 text-center">:</td>
+                  <td className="py-0.5 text-left">Jawa Timur</td>
+                </tr>
+              </tbody>
+            </table>
+
+            <div className="text-center my-6">
+              <h1 className="text-sm font-black uppercase tracking-wider text-center decoration-solid underline">
+                {selectedBook === 'bp_kas' && 'BUKU PEMBANTU KAS'}
+                {selectedBook === 'bp_bank' && 'BUKU PEMBANTU BANK'}
+                {selectedBook === 'bku' && 'BUKU KAS UMUM (BKU)'}
+              </h1>
+              <p className="text-xs font-bold text-center mt-1 uppercase">
+                BULAN: {getIndonesianMonthYear()}
+              </p>
             </div>
           </div>
 
-          <div className="text-center mb-6">
-            <h2 className="text-sm font-bold uppercase decoration-solid underline">LAPORAN BUKU KAS BESAR TERPADU</h2>
-            <p className="text-[10px] text-slate-500 mt-1 font-semibold">
-              Tanggal Cetak: {new Date().toLocaleDateString('id-ID')} {filterStartDate || filterEndDate ? `| Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : ''} | POS Kategori: {filterCategory === 'all' ? 'SEMUA POS KATEGORI' : filterCategory.toUpperCase()} | Sumber: {filterSource === 'all' ? 'Semua Sumber' : filterSource.toUpperCase()} ({filterType === 'all' ? 'Semua Arus Kas' : filterType === 'incoming' ? 'Hanya Pemasukan' : 'Hanya Pengeluaran'})
-            </p>
-          </div>
-
-          {/* Printable summary card */}
-          <div className="grid grid-cols-3 gap-2 border p-3 rounded-lg bg-slate-50 mb-6 font-semibold">
-            <div>
-              <div className="text-slate-500 text-[9px] uppercase">TOTAL PEMASUKAN (DEBIT)</div>
-              <div className="text-xs font-bold text-emerald-800">Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</div>
-            </div>
-            <div>
-              <div className="text-slate-500 text-[9px] uppercase">TOTAL PENGELUARAN (KREDIT)</div>
-              <div className="text-xs font-bold text-rose-800">Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</div>
-            </div>
-            <div>
-              <div className="text-slate-500 text-[9px] uppercase">SALDO KAS NETO BERJALAN</div>
-              <div className="text-xs font-extrabold text-blue-800">Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}</div>
-            </div>
-          </div>
-
-          {/* Books Table */}
-          <table className="w-full border-collapse border border-slate-300 text-[10px] text-left">
+          {/* Books Table with 8 Columns matching the image */}
+          <table className="w-full border-collapse border border-black text-[10px] text-left">
             <thead>
-              <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-300">
-                <th className="border border-slate-300 p-2">Tgl</th>
-                <th className="border border-slate-300 p-2">Deskripsi Transaksi Pokok</th>
-                <th className="border border-slate-300 p-2">Sumber / Pos</th>
-                <th className="border border-slate-300 p-2 text-right">Debit (+)</th>
-                <th className="border border-slate-300 p-2 text-right">Kredit (-)</th>
+              <tr className="bg-slate-100 text-slate-800 font-bold border border-black text-center uppercase tracking-wide">
+                <th className="border border-black p-2 text-center w-10">No</th>
+                <th className="border border-black p-2 text-center w-24">Tanggal</th>
+                <th className="border border-black p-2 text-center w-28">Kode Rekening</th>
+                <th className="border border-black p-2 text-center w-28">No Bukti</th>
+                <th className="border border-black p-2 text-left">Uraian</th>
+                <th className="border border-black p-2 text-right w-28">Penerimaan</th>
+                <th className="border border-black p-2 text-right w-28">Pengeluaran</th>
+                <th className="border border-black p-2 text-right w-28">Saldo</th>
+              </tr>
+              <tr className="bg-slate-50 text-slate-500 font-bold border border-black text-center text-[9px]">
+                <th className="border border-black p-1">1</th>
+                <th className="border border-black p-1">2</th>
+                <th className="border border-black p-1">3</th>
+                <th className="border border-black p-1">4</th>
+                <th className="border border-black p-1">5</th>
+                <th className="border border-black p-1">6</th>
+                <th className="border border-black p-1">7</th>
+                <th className="border border-black p-1">8</th>
               </tr>
             </thead>
             <tbody>
-              {filteredTransactions.map((tx) => (
-                <tr key={tx.id} className="border-b border-slate-250 hover:bg-slate-50">
-                  <td className="border border-slate-300 p-2 font-mono whitespace-nowrap">{tx.date}</td>
-                  <td className="border border-slate-300 p-2">
-                    <div className="font-bold">{tx.description}</div>
-                    {tx.studentName && (
-                      <div className="text-[9px] text-slate-500 font-semibold">Siswa: {tx.studentName} ({tx.nis})</div>
-                    )}
-                    {tx.recipientName && (
-                      <div className="text-[9px] text-indigo-600 font-extrabold">Penerima: {tx.recipientName}</div>
-                    )}
-                    {tx.fundingSource && (
-                      <div className="text-[9px] text-emerald-800 font-extrabold">Sumber Dana: {tx.fundingSource}</div>
-                    )}
-                  </td>
-                  <td className="border border-slate-300 p-2 font-bold uppercase">{tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : `Manual (${tx.category})`}</td>
-                  <td className="border border-slate-300 p-2 text-right font-mono text-emerald-700 font-bold">
-                    {tx.type === 'incoming' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
-                  </td>
-                  <td className="border border-slate-300 p-2 text-right font-mono text-rose-700 font-bold">
-                    {tx.type === 'outgoing' ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
-                  </td>
-                </tr>
-              ))}
+              {transactionsWithRunningBalance.map((tx, idx) => {
+                const isIncoming = tx.type === 'incoming';
+                const kodeRekening = getKodeRekening(tx);
+                const noBukti = getNoBukti(tx);
+                
+                return (
+                  <tr key={tx.id} className="border-b border-black">
+                    <td className="border border-black p-2 text-center font-bold">{idx + 1}</td>
+                    <td className="border border-black p-2 text-center font-mono whitespace-nowrap">{tx.date}</td>
+                    <td className="border border-black p-2 text-center font-mono font-semibold">{kodeRekening}</td>
+                    <td className="border border-black p-2 text-center font-mono font-semibold">{noBukti}</td>
+                    <td className="border border-black p-2">
+                      <div className="font-bold">{tx.description}</div>
+                      {tx.studentName && (
+                        <div className="text-[9px] text-slate-500 font-semibold mt-0.5">Siswa: {tx.studentName} ({tx.nis})</div>
+                      )}
+                      {tx.recipientName && (
+                        <div className="text-[9px] text-slate-600 font-extrabold mt-0.5">Penerima: {tx.recipientName}</div>
+                      )}
+                      {tx.fundingSource && (
+                        <div className="text-[9px] text-emerald-800 font-extrabold mt-0.5">Sumber Dana: {tx.fundingSource}</div>
+                      )}
+                    </td>
+                    <td className="border border-black p-2 text-right font-mono font-bold">
+                      {isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
+                    </td>
+                    <td className="border border-black p-2 text-right font-mono font-bold">
+                      {!isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
+                    </td>
+                    <td className="border border-black p-2 text-right font-mono font-black">
+                      Rp {tx.runningBalance.toLocaleString('id-ID')}
+                    </td>
+                  </tr>
+                );
+              })}
+              {/* Grand Total Row at the bottom of print */}
+              <tr className="bg-slate-100 font-bold border-t border-black text-black">
+                <td className="border border-black p-2 text-left" colSpan={5}>
+                  JUMLAH TOTAL BULAN INI
+                </td>
+                <td className="border border-black p-2 text-right font-mono font-bold">
+                  Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}
+                </td>
+                <td className="border border-black p-2 text-right font-mono font-bold">
+                  Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}
+                </td>
+                <td className="border border-black p-2 text-right font-mono font-black">
+                  Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}
+                </td>
+              </tr>
             </tbody>
           </table>
 
-          {/* Footers for signature */}
-          <div className="mt-12 grid grid-cols-2 text-center text-[10px]">
-            <div>
-              <p>Mengetahui,</p>
-              <p className="font-bold mt-2">Kepala Sekolah</p>
-              <div className="h-16 flex items-center justify-center">
-                {/* Stamp removed per request */}
-              </div>
-              <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.principal}</p>
-              <p className="text-[9px] text-slate-500">NIP. -</p>
+          {/* Footers for signature with BOS style */}
+          <div className="mt-12 flex justify-between text-xs px-4" style={{ pageBreakInside: 'avoid' }}>
+            <div className="text-center w-64">
+              <p className="mb-1">Mengetahui,</p>
+              <p className="font-bold">Kepala Sekolah</p>
+              <div className="h-16"></div>
+              <p className="font-bold underline decoration-solid">{schoolIdentity.principal || '................................'}</p>
+              <p className="text-[10px] text-slate-500">NIP. ....................................</p>
             </div>
-            <div>
-              <p>Pandaan, {new Date().toLocaleDateString('id-ID')}</p>
-              <p className="font-bold mt-2">Bendahara Keuangan / Kas</p>
+            <div className="text-center w-64">
+              <p className="mb-1">Pandaan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+              <p className="font-bold">Bendahara BOS</p>
               <div className="h-16 flex items-center justify-center">
                 {schoolIdentity.treasurerSignature && (
                   <img src={schoolIdentity.treasurerSignature} className="h-14 object-contain" alt="Signature" referrerPolicy="no-referrer" />
                 )}
               </div>
-              <p className="font-bold text-slate-900 underline decoration-solid">{schoolIdentity.treasurer}</p>
-              <p className="text-[9px] text-slate-500 font-medium">SMP Ma'arif NU Pandaan</p>
+              <p className="font-bold underline decoration-solid">{schoolIdentity.treasurer || '................................'}</p>
+              <p className="text-[10px] text-slate-500">NIP. ....................................</p>
             </div>
           </div>
         </div>
@@ -1966,18 +2135,63 @@ export default function TreasurerPanel({
 
               {/* Ledger Management Spreadsheet / Table list */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs mt-6 flex flex-col">
+                
+                {/* Buku Kas Tabs (BKU, BP Kas, BP Bank) */}
+                <div className="flex flex-wrap border-b border-slate-150 bg-slate-50/50 p-2 gap-1 rounded-t-2xl">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBook('bku')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-[11px] uppercase tracking-wider font-extrabold transition-all cursor-pointer ${
+                      selectedBook === 'bku'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>📖 Buku Kas Umum</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBook('bp_kas')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-[11px] uppercase tracking-wider font-extrabold transition-all cursor-pointer ${
+                      selectedBook === 'bp_kas'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>💵 Buku Pembantu Kas</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBook('bp_bank')}
+                    className={`flex-1 sm:flex-initial flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl text-[11px] uppercase tracking-wider font-extrabold transition-all cursor-pointer ${
+                      selectedBook === 'bp_bank'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
+                    }`}
+                  >
+                    <span>🏦 Buku Pembantu Bank</span>
+                  </button>
+                </div>
             
-            {/* Header controls */}
-            <div className="p-6 border-b border-slate-150 flex flex-col gap-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <div>
-                  <h3 className="font-bold text-sm text-slate-900">Buku Kas Pembukuan Terpadu</h3>
-                  <p className="text-[11px] text-slate-500 font-semibold">Sistem ini memadukan iuran SPP siswa, simpanan/tarikan Tabungan, dan belanja operasional secara real-time.</p>
-                </div>
-                <div className="text-[10px] font-mono font-bold text-slate-400 text-right">
-                  Ditemukan: <span className="text-indigo-600 font-extrabold">{filteredTransactions.length}</span> dari {transactions.length} total transaksi
-                </div>
-              </div>
+                {/* Header controls */}
+                <div className="p-6 border-b border-slate-150 flex flex-col gap-4">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div>
+                      <h3 className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
+                        {selectedBook === 'bku' && <span>📖 Buku Kas Umum (BKU) Sekolah</span>}
+                        {selectedBook === 'bp_kas' && <span>💵 Buku Pembantu Kas (Kas Tunai)</span>}
+                        {selectedBook === 'bp_bank' && <span>🏦 Buku Pembantu Bank (Giro / Rekening)</span>}
+                      </h3>
+                      <p className="text-[11px] text-slate-500 font-semibold leading-relaxed max-w-3xl mt-0.5">
+                        {selectedBook === 'bku' && 'Laporan konsolidasi arus kas masuk dan keluar secara menyeluruh (gabungan tunai dan transaksi bank sekolah).'}
+                        {selectedBook === 'bp_kas' && 'Laporan pembantu khusus transaksi tunai (uang fisik di brankas sekolah) yang diinput oleh bendahara.'}
+                        {selectedBook === 'bp_bank' && 'Laporan pembantu khusus penampungan kas bank, rekening sekolah, dan transfer online terintegrasi.'}
+                      </p>
+                    </div>
+                    <div className="text-[10px] font-mono font-bold text-slate-400 text-right shrink-0">
+                      Ditemukan: <span className="text-indigo-600 font-extrabold">{filteredTransactions.length}</span> dari {transactions.length} total transaksi
+                    </div>
+                  </div>
 
               {/* Filter Row */}
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 pt-2">
@@ -2127,31 +2341,50 @@ export default function TreasurerPanel({
             </div>
 
             {/* Table layout */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-left border-collapse text-xs">
+            <div className="overflow-x-auto relative rounded-2xl border border-slate-200">
+              {/* FORMULIR BPK watermark background to match requested design */}
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none opacity-[0.03] select-none text-[8vw] font-black tracking-[1.5rem] text-slate-900 rotate-[-12deg] z-0">
+                FORMULIR BPK
+              </div>
+
+              <table className="w-full text-left border-collapse text-xs relative z-10 bg-white/70 backdrop-blur-3xs">
                 <thead>
-                  <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200 uppercase text-[10px] tracking-wider">
-                    <th className="py-3.5 px-6">Tanggal</th>
-                    <th className="py-3.5 px-4">Sumber Pos</th>
-                    <th className="py-3.5 px-4">Deskripsi Transaksi Pokok</th>
-                    <th className="py-3.5 px-4 text-center">Tipe Kas</th>
-                    <th className="py-3.5 px-4 text-right">Jumlah (Nominal)</th>
-                    <th className="py-3.5 px-6 text-center">Modul / Operator</th>
+                  <tr className="bg-slate-100/80 text-slate-700 font-extrabold border-b border-slate-200 uppercase text-[10px] tracking-wider text-center">
+                    <th className="py-3 px-3 border border-slate-200 text-center w-12">No</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-28">Tanggal</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-36">Kode Rekening</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-36">No Bukti</th>
+                    <th className="py-3 px-3 border border-slate-200 text-left">Uraian</th>
+                    <th className="py-3 px-3 border border-slate-200 text-right w-36">Penerimaan</th>
+                    <th className="py-3 px-3 border border-slate-200 text-right w-36">Pengeluaran</th>
+                    <th className="py-3 px-3 border border-slate-200 text-right w-36">Saldo</th>
+                    <th className="py-3 px-3 border border-slate-200 text-center w-28 print:hidden">Aksi</th>
+                  </tr>
+                  <tr className="bg-slate-50 text-slate-400 font-bold border-b border-slate-200 text-[9px] text-center">
+                    <th className="py-1 px-3 border border-slate-200">1</th>
+                    <th className="py-1 px-3 border border-slate-200">2</th>
+                    <th className="py-1 px-3 border border-slate-200">3</th>
+                    <th className="py-1 px-3 border border-slate-200">4</th>
+                    <th className="py-1 px-3 border border-slate-200">5</th>
+                    <th className="py-1 px-3 border border-slate-200">6</th>
+                    <th className="py-1 px-3 border border-slate-200">7</th>
+                    <th className="py-1 px-3 border border-slate-200">8</th>
+                    <th className="py-1 px-3 border border-slate-200 print:hidden">-</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-150 font-medium">
                   {isLoading ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
                         <div className="inline-flex items-center gap-2 font-semibold">
                           <RefreshCw size={14} className="animate-spin" />
                           <span>Sedang memproses & sinkronisasi data pembukuan...</span>
                         </div>
                       </td>
                     </tr>
-                  ) : filteredTransactions.length === 0 ? (
+                  ) : transactionsWithRunningBalance.length === 0 ? (
                     <tr>
-                      <td colSpan={6} className="py-12 text-center text-slate-400">
+                      <td colSpan={9} className="py-12 text-center text-slate-400">
                         <div className="flex flex-col items-center justify-center gap-1">
                           <AlertTriangle size={24} className="text-amber-500 mb-1" />
                           <p className="font-bold text-slate-700">Tidak ada data transaksi ditemukan</p>
@@ -2160,79 +2393,84 @@ export default function TreasurerPanel({
                       </td>
                     </tr>
                   ) : (
-                    filteredTransactions.map((tx) => {
+                    transactionsWithRunningBalance.map((tx, idx) => {
                       const isIncoming = tx.type === 'incoming';
+                      const kodeRekening = getKodeRekening(tx);
+                      const noBukti = getNoBukti(tx);
                       
                       return (
-                        <tr key={tx.id} className="hover:bg-slate-100/50 transition-colors">
+                        <tr key={tx.id} className="hover:bg-slate-100/50 transition-colors text-slate-800">
+                          {/* 1. NO */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-bold text-slate-600">
+                            {idx + 1}
+                          </td>
                           
-                          {/* 1. Date */}
-                          <td className="py-3 px-6 font-mono font-bold text-slate-500 whitespace-nowrap">
+                          {/* 2. TANGGAL */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-mono text-[11px] font-bold text-slate-600 whitespace-nowrap">
                             {tx.date}
                           </td>
 
-                          {/* 2. Source Badge */}
-                          <td className="py-3 px-4 whitespace-nowrap">
-                            {tx.source === 'spp' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold rounded-lg bg-blue-50 text-blue-700 border border-blue-150">
-                                <CheckCircle2 size={11} /> SPP LUNAS
-                              </span>
-                            ) : tx.source === 'savings' ? (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold rounded-lg bg-amber-50 text-amber-700 border border-amber-150">
-                                <Wallet size={11} /> TABUNGAN
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 text-[10px] font-extrabold rounded-lg bg-emerald-50 text-emerald-800 border border-emerald-150">
-                                <Plus size={11} /> {tx.category}
-                              </span>
-                            )}
+                          {/* 3. KODE REKENING */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-mono text-[11px] font-bold text-indigo-700 whitespace-nowrap">
+                            {kodeRekening}
                           </td>
 
-                          {/* 3. Description & Student Info */}
-                          <td className="py-3 px-4 max-w-xs md:max-w-md">
+                          {/* 4. NO BUKTI */}
+                          <td className="py-3 px-3 text-center border border-slate-150 font-mono text-[11px] font-bold text-slate-600 whitespace-nowrap">
+                            {noBukti}
+                          </td>
+
+                          {/* 5. URAIAN */}
+                          <td className="py-3 px-3 border border-slate-150">
                             <div className="font-black text-slate-800 leading-tight">
                               {tx.description}
                             </div>
                             {tx.studentName && (
-                              <div className="text-[10px] text-indigo-600 font-bold mt-0.5 inline-flex items-center gap-1 bg-indigo-50 px-1.5 py-0.5 rounded">
+                              <div className="text-[9px] text-indigo-600 font-bold mt-1 inline-flex items-center gap-1 bg-indigo-50 px-1.5 py-0.5 rounded">
                                 <UserCheck size={9} />
                                 <span>{tx.studentName} (NIS: {tx.nis || '-'})</span>
                               </div>
                             )}
                             {tx.recipientName && (
-                              <div className="text-[10px] text-amber-700 font-extrabold mt-0.5 inline-flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
+                              <div className="text-[9px] text-amber-700 font-extrabold mt-1 inline-flex items-center gap-1 bg-amber-50 px-1.5 py-0.5 rounded border border-amber-200">
                                 <UserCheck size={9} />
                                 <span>Penerima: {tx.recipientName}</span>
                               </div>
                             )}
                             {tx.fundingSource && (
-                              <div className="text-[10px] text-emerald-800 font-extrabold mt-0.5 inline-flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
+                              <div className="text-[9px] text-emerald-800 font-extrabold mt-1 inline-flex items-center gap-1 bg-emerald-50 px-1.5 py-0.5 rounded border border-emerald-200">
                                 <DollarSign size={9} />
                                 <span>Sumber Dana: {tx.fundingSource}</span>
                               </div>
                             )}
+                            <span className="inline-block ml-1.5">
+                              {tx.source === 'spp' ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-extrabold rounded bg-blue-50 text-blue-700 border border-blue-100">SPP LUNAS</span>
+                              ) : tx.source === 'savings' ? (
+                                <span className="px-1.5 py-0.5 text-[8px] font-extrabold rounded bg-amber-50 text-amber-700 border border-amber-100">TABUNGAN</span>
+                              ) : (
+                                <span className="px-1.5 py-0.5 text-[8px] font-extrabold rounded bg-emerald-50 text-emerald-800 border border-emerald-150">{tx.category}</span>
+                              )}
+                            </span>
                           </td>
 
-                          {/* 4. Type (Debit/Kredit) */}
-                          <td className="py-3 px-4 text-center whitespace-nowrap">
-                            {isIncoming ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-md bg-emerald-100 text-emerald-800 uppercase tracking-wide">
-                                Debit (+)
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 text-[9px] font-bold rounded-md bg-rose-100 text-rose-800 uppercase tracking-wide">
-                                Kredit (-)
-                              </span>
-                            )}
+                          {/* 6. PENERIMAAN */}
+                          <td className="py-3 px-3 text-right border border-slate-150 font-mono font-bold text-emerald-700 whitespace-nowrap">
+                            {isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
                           </td>
 
-                          {/* 5. Amount */}
-                          <td className={`py-3 px-4 text-right font-mono font-bold whitespace-nowrap text-xs ${isIncoming ? 'text-emerald-700' : 'text-rose-700'}`}>
-                            {isIncoming ? '+' : '-'}Rp {tx.amount.toLocaleString('id-ID')}
+                          {/* 7. PENGELUARAN */}
+                          <td className="py-3 px-3 text-right border border-slate-150 font-mono font-bold text-rose-700 whitespace-nowrap">
+                            {!isIncoming ? `Rp ${tx.amount.toLocaleString('id-ID')}` : '-'}
                           </td>
 
-                          {/* 6. Action buttons / Operator */}
-                          <td className="py-3 px-6 whitespace-nowrap text-slate-500 font-semibold text-center">
+                          {/* 8. SALDO */}
+                          <td className={`py-3 px-3 text-right border border-slate-150 font-mono font-black whitespace-nowrap ${tx.runningBalance >= 0 ? 'text-slate-800 bg-slate-50/10' : 'text-rose-700'}`}>
+                            Rp {tx.runningBalance.toLocaleString('id-ID')}
+                          </td>
+
+                          {/* 9. AKSI */}
+                          <td className="py-3 px-3 text-center border border-slate-150 whitespace-nowrap text-slate-500 font-semibold print:hidden">
                             {tx.source === 'custom' ? (
                               <div className="flex items-center justify-center gap-1.5">
                                 <button
@@ -2270,40 +2508,36 @@ export default function TreasurerPanel({
                                   title="Cetak Kuitansi Resmi"
                                 >
                                   <Printer size={10} />
-                                  <span>Cetak Kuitansi</span>
+                                  <span>Kuitansi</span>
                                 </button>
                               </div>
                             )}
                           </td>
-
                         </tr>
                       );
                     })
                   )}
                 </tbody>
                 {filteredTransactions.length > 0 && (
-                  <tfoot className="bg-slate-100/80 font-mono text-xs border-t-2 border-slate-300">
-                    <tr className="font-extrabold text-slate-800">
-                      <td className="py-3.5 px-6" colSpan={3}>
+                  <tfoot className="bg-slate-100/80 font-mono text-xs border-t-2 border-slate-300 relative z-10">
+                    <tr className="font-extrabold text-slate-800 bg-slate-100">
+                      <td className="py-3.5 px-4 text-left border border-slate-200" colSpan={5}>
                         TOTAL TERFILTER ({filteredTransactions.length} Transaksi)
                       </td>
-                      <td className="py-3.5 px-4 text-center">
-                        <div className="flex flex-col gap-0.5 text-[10px] items-center">
-                          <span className="text-[9px] text-emerald-750 bg-emerald-50 px-1.5 py-0.5 rounded font-extrabold">MASUK: Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}</span>
-                          <span className="text-[9px] text-rose-750 bg-rose-50 px-1.5 py-0.5 rounded font-extrabold">KELUAR: Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}</span>
-                        </div>
+                      <td className="py-3.5 px-3 text-right border border-slate-200 text-emerald-800 font-bold whitespace-nowrap bg-emerald-50/10">
+                        Rp {filteredMetrics.totalInflow.toLocaleString('id-ID')}
                       </td>
-                      <td className="py-3.5 px-4 text-right pr-4 text-slate-900 text-sm whitespace-nowrap">
+                      <td className="py-3.5 px-3 text-right border border-slate-200 text-rose-800 font-bold whitespace-nowrap bg-rose-50/10">
+                        Rp {filteredMetrics.totalOutflow.toLocaleString('id-ID')}
+                      </td>
+                      <td className="py-3.5 px-3 text-right border border-slate-200 text-slate-900 font-black whitespace-nowrap" colSpan={2}>
                         <div className="flex flex-col items-end">
-                          <span className={`text-[10px] font-sans font-bold uppercase ${filteredMetrics.netBalance >= 0 ? 'text-emerald-700' : 'text-rose-750'}`}>
-                            {filteredMetrics.netBalance >= 0 ? 'Surplus:' : 'Defisit:'}
-                          </span>
-                          <span className={`font-black font-mono ${filteredMetrics.netBalance >= 0 ? 'text-emerald-800' : 'text-rose-800'}`}>
+                          <span className="text-[8px] font-sans font-bold uppercase text-slate-400">Saldo Akhir Terfilter:</span>
+                          <span className={`text-xs font-black font-mono ${filteredMetrics.netBalance >= 0 ? 'text-indigo-800' : 'text-rose-800'}`}>
                             Rp {filteredMetrics.netBalance.toLocaleString('id-ID')}
                           </span>
                         </div>
                       </td>
-                      <td className="py-3.5 px-6"></td>
                     </tr>
                   </tfoot>
                 )}
@@ -3002,6 +3236,51 @@ export default function TreasurerPanel({
                     rows={3}
                     className="w-full p-3 border border-slate-200 rounded-lg text-slate-800 text-xs font-semibold"
                   />
+                </div>
+
+                {/* 5.2. Media/Metode Transaksi (Kas vs Bank) */}
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">METODE / MEDIA PENYIMPANAN (BUKU PEMBANTU)</label>
+                  <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
+                    <button
+                      type="button"
+                      onClick={() => setFormPaymentMethod('kas')}
+                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'kas' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      <span>💵 Tunai / Kas</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setFormPaymentMethod('bank')}
+                      className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'bank' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
+                    >
+                      <span>🏦 Bank / Rekening</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Kode Rekening & No Bukti */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">KODE REKENING</label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 5.1.01.01"
+                      value={formKodeRekening}
+                      onChange={(e) => setFormKodeRekening(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase mb-1">NO BUKTI TRANSAKSI</label>
+                    <input
+                      type="text"
+                      placeholder="Contoh: 001/BPK/2026"
+                      value={formNoBukti}
+                      onChange={(e) => setFormNoBukti(e.target.value)}
+                      className="w-full px-3 py-2.5 border border-slate-200 rounded-lg text-slate-800 text-xs font-mono font-bold focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 bg-white"
+                    />
+                  </div>
                 </div>
 
                 {/* 5.1. Sumber Dana (Penerimaan/Pemasukan Only) */}

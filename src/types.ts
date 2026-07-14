@@ -213,6 +213,9 @@ export interface TreasurerTransaction {
   createdBy?: string;
   recipientName?: string;
   fundingSource?: string;
+  paymentMethod?: string;
+  kodeRekening?: string;
+  noBukti?: string;
 }
 
 

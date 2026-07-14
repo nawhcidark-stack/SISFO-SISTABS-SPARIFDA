@@ -1087,11 +1087,11 @@ export default function TreasurerPanel({
 
     if (selectedBook === 'bp_kas') {
       bookSheetName = 'Buku Pembantu Kas';
-      bookTitleExcel = 'BUKU PEMBANTU KAS (TUNAI / BRANKAS)';
+      bookTitleExcel = 'BUKU PEMBANTU KAS';
       filenamePrefix = 'BUKU_PEMBANTU_KAS';
     } else if (selectedBook === 'bp_bank') {
       bookSheetName = 'Buku Pembantu Bank';
-      bookTitleExcel = 'BUKU PEMBANTU BANK (GIRO / REKENING)';
+      bookTitleExcel = 'BUKU PEMBANTU BANK';
       filenamePrefix = 'BUKU_PEMBANTU_BANK';
     }
 
@@ -1102,51 +1102,80 @@ export default function TreasurerPanel({
 <meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>
 <style>
   table { border-collapse: collapse; }
-  .table-header { background-color: #4f46e5; color: white; font-weight: bold; text-align: center; border: 1px solid #cbd5e1; }
-  td { border: 1px solid #cbd5e1; padding: 6px; font-size: 10pt; }
+  .table-header { background-color: #f1f5f9; color: #1e293b; font-weight: bold; text-align: center; border: 1px solid #000000; font-size: 10pt; }
+  td { border: 1px solid #000000; padding: 6px; font-size: 10pt; }
   .title { font-size: 14pt; font-weight: bold; text-align: center; }
-  .subtitle { font-size: 11pt; font-weight: bold; text-align: center; color: #475569; }
+  .subtitle { font-size: 11pt; font-weight: bold; text-align: center; color: #1e293b; }
   .text-right { text-align: right; }
   .font-bold { font-weight: bold; }
-  .bg-gray { background-color: #f1f5f9; }
+  .bg-gray { background-color: #f8fafc; }
 </style>
 </head>
 <body>
   <table>
-    <tr><td colspan="7" class="title">${bookTitleExcel}</td></tr>
-    <tr><td colspan="7" class="subtitle">${schoolNameUpper} - PORTAL BK & KEUANGAN</td></tr>
-    <tr><td colspan="7" style="text-align: center; font-style: italic; color: #64748b;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')}</td></tr>
-    <tr><td colspan="7" style="text-align: center; font-weight: bold;">Kategori Pos: ${catStr} | Sumber: ${sourceStr} | Arus Kas: ${typeStr}</td></tr>
-    <tr><td colspan="7" style="text-align: center; font-weight: bold; color: #dc2626;">${dateRangeStr}</td></tr>
+    <tr><td colspan="8" class="title">${bookTitleExcel}</td></tr>
+    <tr><td colspan="8" class="subtitle">BULAN: ${getIndonesianMonthYear()}</td></tr>
+    <tr></tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Nama Sekolah</td>
+      <td colspan="5" style="border: none;">: ${schoolIdentity.name || "SMP Ma'arif NU Pandaan"}</td>
+    </tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Desa / Kecamatan</td>
+      <td colspan="5" style="border: none;">: Pandaan</td>
+    </tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Kabupaten / Kota</td>
+      <td colspan="5" style="border: none;">: Pasuruan</td>
+    </tr>
+    <tr>
+      <td colspan="3" style="font-weight: bold; border: none;">Provinsi</td>
+      <td colspan="5" style="border: none;">: Jawa Timur</td>
+    </tr>
+    <tr></tr>
+    <tr><td colspan="8" style="text-align: left; font-style: italic; color: #64748b; border: none;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')} | Kategori: ${catStr} | Sumber: ${sourceStr} | Periode: ${dateRangeStr}</td></tr>
     <tr></tr>
     <tr class="bg-gray">
-      <td colspan="3" class="font-bold">TOTAL DEBIT (+)</td>
-      <td colspan="4" class="font-bold text-right" style="color: #047857;">Rp ${filteredMetrics.totalInflow.toLocaleString('id-ID')}</td>
+      <td colspan="5" class="font-bold">TOTAL PENERIMAAN (DEBIT)</td>
+      <td colspan="3" class="font-bold text-right" style="color: #047857;">Rp ${filteredMetrics.totalInflow.toLocaleString('id-ID')}</td>
     </tr>
     <tr class="bg-gray">
-      <td colspan="3" class="font-bold">TOTAL KREDIT (-)</td>
-      <td colspan="4" class="font-bold text-right" style="color: #be123c;">Rp ${filteredMetrics.totalOutflow.toLocaleString('id-ID')}</td>
+      <td colspan="5" class="font-bold">TOTAL PENGELUARAN (KREDIT)</td>
+      <td colspan="3" class="font-bold text-right" style="color: #be123c;">Rp ${filteredMetrics.totalOutflow.toLocaleString('id-ID')}</td>
     </tr>
     <tr class="bg-gray">
-      <td colspan="3" class="font-bold">SALDO NETO</td>
-      <td colspan="4" class="font-bold text-right" style="color: #1d4ed8;">Rp ${filteredMetrics.netBalance.toLocaleString('id-ID')}</td>
+      <td colspan="5" class="font-bold">SALDO AKHIR BERJALAN</td>
+      <td colspan="3" class="font-bold text-right" style="color: #1d4ed8;">Rp ${filteredMetrics.netBalance.toLocaleString('id-ID')}</td>
     </tr>
     <tr></tr>
     <tr>
-      <td class="table-header" style="width: 50px;">No</td>
-      <td class="table-header" style="width: 100px;">Tanggal</td>
-      <td class="table-header" style="width: 300px;">Deskripsi Transaksi</td>
-      <td class="table-header" style="width: 150px;">Kategori / Pos</td>
-      <td class="table-header" style="width: 120px;">Sumber Pos</td>
-      <td class="table-header" style="width: 130px; text-align: right;">Debit (+)</td>
-      <td class="table-header" style="width: 130px; text-align: right;">Kredit (-)</td>
+      <td class="table-header" style="width: 50px;">NO</td>
+      <td class="table-header" style="width: 100px;">TANGGAL</td>
+      <td class="table-header" style="width: 120px;">KODE REKENING</td>
+      <td class="table-header" style="width: 140px;">NO BUKTI</td>
+      <td class="table-header" style="width: 320px; text-align: left;">URAIAN</td>
+      <td class="table-header" style="width: 130px; text-align: right;">PENERIMAAN</td>
+      <td class="table-header" style="width: 130px; text-align: right;">PENGELUARAN</td>
+      <td class="table-header" style="width: 140px; text-align: right;">SALDO</td>
+    </tr>
+    <tr class="bg-gray" style="font-size: 8pt; text-align: center; font-weight: bold; color: #64748b;">
+      <td>1</td>
+      <td>2</td>
+      <td>3</td>
+      <td>4</td>
+      <td style="text-align: left;">5</td>
+      <td style="text-align: right;">6</td>
+      <td style="text-align: right;">7</td>
+      <td style="text-align: right;">8</td>
     </tr>
 `;
 
-    filteredTransactions.forEach((tx, idx) => {
-      const srcDisplay = tx.source === 'spp' ? 'SPP (Sistem)' : tx.source === 'savings' ? 'Tabungan' : 'Manual (Bendahara)';
-      const debitVal = tx.type === 'incoming' ? tx.amount : 0;
-      const kreditVal = tx.type === 'outgoing' ? tx.amount : 0;
+    transactionsWithRunningBalance.forEach((tx, idx) => {
+      const isIncoming = tx.type === 'incoming';
+      const kodeRekening = getKodeRekening(tx);
+      const noBukti = getNoBukti(tx);
+      const debitVal = isIncoming ? tx.amount : 0;
+      const kreditVal = !isIncoming ? tx.amount : 0;
       
       let descWord = tx.description;
       if (tx.studentName) {
@@ -1163,25 +1192,31 @@ export default function TreasurerPanel({
     <tr>
       <td style="text-align: center;">${idx + 1}</td>
       <td style="text-align: center;">${tx.date}</td>
+      <td style="text-align: center; font-family: monospace;">${kodeRekening}</td>
+      <td style="text-align: center; font-family: monospace;">${noBukti}</td>
       <td>${descWord}</td>
-      <td style="text-align: center; text-transform: uppercase;">${tx.category}</td>
-      <td style="text-align: center;">${srcDisplay}</td>
       <td class="text-right" style="color: #047857;">${debitVal ? 'Rp ' + debitVal.toLocaleString('id-ID') : '-'}</td>
       <td class="text-right" style="color: #be123c;">${kreditVal ? 'Rp ' + kreditVal.toLocaleString('id-ID') : '-'}</td>
+      <td class="text-right font-bold">Rp ${tx.runningBalance.toLocaleString('id-ID')}</td>
     </tr>
 `;
     });
 
     excelHtml += `
+    <tr class="bg-gray" style="font-weight: bold;">
+      <td colspan="5">JUMLAH TOTAL BULAN INI</td>
+      <td class="text-right" style="color: #047857;">Rp ${filteredMetrics.totalInflow.toLocaleString('id-ID')}</td>
+      <td class="text-right" style="color: #be123c;">Rp ${filteredMetrics.totalOutflow.toLocaleString('id-ID')}</td>
+      <td class="text-right" style="color: #1d4ed8;">Rp ${filteredMetrics.netBalance.toLocaleString('id-ID')}</td>
+    </tr>
     <tr></tr>
     <tr>
-      <td colspan="3" style="text-align: center; border: none;">
+      <td colspan="4" style="text-align: center; border: none;">
         <br/>Mengetahui,<br/>Kepala Sekolah<br/><br/><br/><br/>
         <b>${schoolIdentity.principal || '-'}</b>
       </td>
-      <td colspan="1" style="border: none;"></td>
-      <td colspan="3" style="text-align: center; border: none;">
-        <br/>Pandaan, ${new Date().toLocaleDateString('id-ID')}<br/>Bendahara Kas Sekolah<br/><br/><br/><br/>
+      <td colspan="4" style="text-align: center; border: none;">
+        <br/>Pandaan, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}<br/>Bendahara BOS<br/><br/><br/><br/>
         <b>${schoolIdentity.treasurer || '-'}</b>
       </td>
     </tr>
@@ -1536,21 +1571,21 @@ export default function TreasurerPanel({
               <button
                 type="button"
                 onClick={handlePrintLedger}
-                className="p-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display"
+                className="p-2.5 px-3 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display transition-colors"
                 title="Cetak Buku Kas / Simpan PDF Sesuai Hasil Filter Kategori/Pos Saat Ini"
               >
                 <Printer size={13} />
-                <span>Cetak Buku Kas ({filterCategory === 'all' ? 'Global' : filterCategory})</span>
+                <span>Cetak {selectedBook === 'bku' ? 'Buku Kas Umum (BKU)' : selectedBook === 'bp_kas' ? 'Buku Pembantu Kas' : 'Buku Pembantu Bank'}</span>
               </button>
 
               <button
                 type="button"
                 onClick={handleDownloadExcelLedger}
-                className="p-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display"
+                className="p-2.5 px-3 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-xs font-display transition-colors"
                 title="Ekspor Buku Kas Sesuai Hasil Filter Kategori/Pos ke Spreadsheet Excel"
               >
                 <Download size={13} className="text-emerald-700" />
-                <span>Unduh Excel ({filterCategory === 'all' ? 'Global' : filterCategory})</span>
+                <span>Unduh Excel {selectedBook === 'bku' ? 'BKU' : selectedBook === 'bp_kas' ? 'BP Kas' : 'BP Bank'}</span>
               </button>
 
               <button
@@ -2175,8 +2210,8 @@ export default function TreasurerPanel({
             
                 {/* Header controls */}
                 <div className="p-6 border-b border-slate-150 flex flex-col gap-4">
-                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                    <div>
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                    <div className="flex-1">
                       <h3 className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
                         {selectedBook === 'bku' && <span>📖 Buku Kas Umum (BKU) Sekolah</span>}
                         {selectedBook === 'bp_kas' && <span>💵 Buku Pembantu Kas (Kas Tunai)</span>}
@@ -2188,8 +2223,30 @@ export default function TreasurerPanel({
                         {selectedBook === 'bp_bank' && 'Laporan pembantu khusus penampungan kas bank, rekening sekolah, dan transfer online terintegrasi.'}
                       </p>
                     </div>
-                    <div className="text-[10px] font-mono font-bold text-slate-400 text-right shrink-0">
-                      Ditemukan: <span className="text-indigo-600 font-extrabold">{filteredTransactions.length}</span> dari {transactions.length} total transaksi
+                    <div className="flex flex-wrap items-center gap-2.5 shrink-0 mt-2 lg:mt-0">
+                      <button
+                        type="button"
+                        onClick={handlePrintLedger}
+                        className="p-2 px-3.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-3xs transition-colors"
+                        title="Cetak Buku Kas Aktif ini atau Simpan sebagai PDF"
+                      >
+                        <Printer size={13} />
+                        <span>Cetak Buku ({selectedBook === 'bku' ? 'BKU' : selectedBook === 'bp_kas' ? 'BP Kas' : 'BP Bank'})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={handleDownloadExcelLedger}
+                        className="p-2 px-3.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 cursor-pointer shadow-3xs transition-colors"
+                        title="Ekspor Buku Kas Aktif ini ke Spreadsheet Excel (.xls)"
+                      >
+                        <Download size={13} className="text-emerald-700" />
+                        <span>Ekspor Excel</span>
+                      </button>
+
+                      <div className="text-[10px] font-mono font-bold text-slate-400 bg-slate-50 border border-slate-150 px-2.5 py-2 rounded-xl shrink-0">
+                        Ditemukan: <span className="text-indigo-600 font-extrabold">{filteredTransactions.length}</span> dari {transactions.length} total
+                      </div>
                     </div>
                   </div>
 

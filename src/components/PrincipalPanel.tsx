@@ -207,8 +207,14 @@ export default function PrincipalPanel({
   const [evalPersonal, setEvalPersonal] = useState(85);
   const [evalSocial, setEvalSocial] = useState(85);
   const [evalNotes, setEvalNotes] = useState('');
-  const [evalAcademicYear, setEvalAcademicYear] = useState('2025/2026');
+  const [evalAcademicYear, setEvalAcademicYear] = useState(schoolIdentity?.activeAcademicYear || '2026/2027');
   const [evalDate, setEvalDate] = useState(new Date().toISOString().split('T')[0]);
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setEvalAcademicYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
 
   // Student specific inspection state (Lookup Roster)
   const [searchStudentQuery, setSearchStudentQuery] = useState('');

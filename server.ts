@@ -497,7 +497,7 @@ let schoolIdentity = {
   iosUrl: "",
   favicon: "",
   paymentCardTemplate: "",
-  activeAcademicYear: "2025/2026"
+  activeAcademicYear: "2026/2027"
 };
 
 // WhatsApp API notification settings

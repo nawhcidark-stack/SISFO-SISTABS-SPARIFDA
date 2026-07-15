@@ -2432,6 +2432,7 @@ export default function AdminPanel({
   const [iosUrl, setIosUrl] = useState("");
   const [treasurerSkUrl, setTreasurerSkUrl] = useState("");
   const [sarprasSkUrl, setSarprasSkUrl] = useState("");
+  const [schoolActiveAcademicYear, setSchoolActiveAcademicYear] = useState("");
   const [isSavingSchoolIdentity, setIsSavingSchoolIdentity] = useState(false);
   const [schoolIdentityMsg, setSchoolIdentityMsg] = useState<{
     type: "success" | "error";
@@ -2458,6 +2459,7 @@ export default function AdminPanel({
       setIosUrl(schoolIdentity.iosUrl || "");
       setTreasurerSkUrl(schoolIdentity.treasurerSkUrl || "");
       setSarprasSkUrl(schoolIdentity.sarprasSkUrl || "");
+      setSchoolActiveAcademicYear(schoolIdentity.activeAcademicYear || "");
       if (schoolIdentity.sppRates) {
         setSppConfigRates(schoolIdentity.sppRates);
       }
@@ -3480,6 +3482,7 @@ export default function AdminPanel({
       iosUrl: iosUrl,
       treasurerSkUrl: treasurerSkUrl,
       sarprasSkUrl: sarprasSkUrl,
+      activeAcademicYear: schoolActiveAcademicYear,
     });
 
     if (success) {
@@ -7679,8 +7682,8 @@ export default function AdminPanel({
                   </div>
                 </div>
 
-                {/* Official Signatures Row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 border-t border-slate-100 pt-4">
+                {/* Official Signatures & Academic Year Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 border-t border-slate-100 pt-4">
                   <div className="flex flex-col gap-1">
                     <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-left">
                       Nama Kepala Sekolah / Jabatan 1 (Ttd Kuitansi)
@@ -7705,6 +7708,21 @@ export default function AdminPanel({
                       placeholder="Contoh: Bendahara Sekolah"
                       className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-xs"
                     />
+                  </div>
+
+                  <div className="flex flex-col gap-1">
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider text-left">
+                      Tahun Ajaran Aktif Portal 🗓️
+                    </label>
+                    <select
+                      value={schoolActiveAcademicYear}
+                      onChange={(e) => setSchoolActiveAcademicYear(e.target.value)}
+                      className="w-full px-3 py-2 text-xs bg-white border border-slate-200 rounded-lg text-slate-800 font-semibold focus:outline-none focus:border-indigo-600 shadow-xs cursor-pointer"
+                    >
+                      <option value="2026/2027">2026/2027</option>
+                      <option value="2025/2026">2025/2026</option>
+                      <option value="2024/2025">2024/2025</option>
+                    </select>
                   </div>
                 </div>
 

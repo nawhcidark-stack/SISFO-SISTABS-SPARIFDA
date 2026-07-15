@@ -654,7 +654,13 @@ export default function HomeroomPanel({
     }
   }, [scannedStudentNis, scannedStudentAt, classStudents]);
   const [selectedReportSemester, setSelectedReportSemester] = useState<string>('Genap');
-  const [selectedReportYear, setSelectedReportYear] = useState<string>('2025/2026');
+  const [selectedReportYear, setSelectedReportYear] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setSelectedReportYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
   const [waliKelasNotes, setWaliKelasNotes] = useState<Record<string, string>>({
     "default": "Pertahankan prestasi belajarmu, tingkatkan disiplin dan rajin beribadah."
   });
@@ -5210,8 +5216,14 @@ Wassalamualaikum Wr. Wb.
                       onChange={(e) => setSelectedReportYear(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
                     >
-                      <option value="2025/2026">2025/2026</option>
-                      <option value="2024/2025">2024/2025</option>
+                      {Array.from(new Set([
+                        ...(schoolIdentity?.activeAcademicYear ? [schoolIdentity.activeAcademicYear] : []),
+                        '2025/2026',
+                        '2024/2025',
+                        '2023/2024'
+                      ])).map(year => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
                     </select>
                   </div>
                 </div>

@@ -178,7 +178,13 @@ export default function SubjectTeacherPanel({
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
   const [selectedGradeClass, setSelectedGradeClass] = useState<string>('');
   const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>('Genap');
-  const [selectedYearGrading, setSelectedYearGrading] = useState<string>('2025/2026');
+  const [selectedYearGrading, setSelectedYearGrading] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setSelectedYearGrading(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
   
   // High quality default TPs based on popular subjects
   const defaultTpsMap: Record<string, string[]> = {
@@ -1930,8 +1936,14 @@ export default function SubjectTeacherPanel({
                   onChange={(e) => setSelectedYearGrading(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
                 >
-                  <option value="2025/2026">2025/2026</option>
-                  <option value="2024/2025">2024/2025</option>
+                  {Array.from(new Set([
+                    ...(schoolIdentity?.activeAcademicYear ? [schoolIdentity.activeAcademicYear] : []),
+                    '2025/2026',
+                    '2024/2025',
+                    '2023/2024'
+                  ])).map(year => (
+                    <option key={year} value={year}>{year}</option>
+                  ))}
                 </select>
               </div>
             </div>

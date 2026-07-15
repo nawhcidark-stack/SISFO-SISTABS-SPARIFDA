@@ -496,7 +496,8 @@ let schoolIdentity = {
   apkUrl: "",
   iosUrl: "",
   favicon: "",
-  paymentCardTemplate: ""
+  paymentCardTemplate: "",
+  activeAcademicYear: "2025/2026"
 };
 
 // WhatsApp API notification settings
@@ -2259,7 +2260,7 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, principalSignature, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate, favicon } = req.body;
+    const { name, subheading, accreditation, address, phone, principal, principalSignature, treasurer, logo, logo2, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate, favicon, activeAcademicYear } = req.body;
     
     if (name !== undefined) schoolIdentity.name = String(name).trim();
     if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
@@ -2280,6 +2281,7 @@ async function startServer() {
     if (sarprasSkUrl !== undefined) (schoolIdentity as any).sarprasSkUrl = String(sarprasSkUrl).trim();
     if (paymentCardTemplate !== undefined) (schoolIdentity as any).paymentCardTemplate = String(paymentCardTemplate); // can be empty or base64 data URI
     if (favicon !== undefined) (schoolIdentity as any).favicon = String(favicon); // can be empty or base64 data URI
+    if (activeAcademicYear !== undefined) (schoolIdentity as any).activeAcademicYear = String(activeAcademicYear).trim();
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
@@ -6459,6 +6461,9 @@ async function startServer() {
       });
     }
 
+    // Set active academic year
+    (schoolIdentity as any).activeAcademicYear = `${nextStartYear}/${nextStartYear + 1}`;
+
     // Save changes
     saveState();
 
@@ -6579,6 +6584,9 @@ async function startServer() {
         });
       });
     }
+
+    // Set active academic year
+    (schoolIdentity as any).activeAcademicYear = `${yearNum}/${yearNum + 1}`;
 
     // Save changes
     saveState();

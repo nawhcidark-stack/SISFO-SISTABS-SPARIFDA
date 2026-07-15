@@ -13,7 +13,7 @@ import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
-import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode } from 'lucide-react';
+import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar } from 'lucide-react';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
 export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -2186,6 +2186,13 @@ export default function App() {
             </div>
 
             <div className="flex items-center gap-3.5 font-sans">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-lg text-[11px] font-bold shadow-3xs">
+                <Calendar size={12} className="text-indigo-650" />
+                <span>Tahun Ajaran: <span className="font-extrabold">{schoolIdentity.activeAcademicYear || '2025/2026'}</span></span>
+              </div>
+
+              <div className="w-px h-4 bg-slate-200" />
+
               <div className="flex items-center gap-1 text-[11px] text-emerald-850 font-bold">
                 <span className="w-2 h-2 rounded-full bg-emerald-500 animate-ping" />
                 <span>Kanal Real-time Aktif</span>

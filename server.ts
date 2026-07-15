@@ -4467,16 +4467,35 @@ async function startServer() {
 
   // Create manual bookkeeping transaction
   app.post("/api/treasurer/transactions", (req, res) => {
-    const { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
-    if (!type || !category || !amount || !description || !date) {
-      return res.status(400).json({ error: "Semua field wajib diisi." });
+    let { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
+    
+    // Parse amount robustly by removing all non-digits (e.g., "50.000", "Rp 50,000" -> 50000)
+    let parsedAmount = 0;
+    if (amount !== undefined && amount !== null) {
+      if (typeof amount === 'number') {
+        parsedAmount = amount;
+      } else {
+        const cleanedStr = String(amount).replace(/[^0-9]/g, '');
+        parsedAmount = Number(cleanedStr) || 0;
+      }
+    }
+
+    const missingFields: string[] = [];
+    if (!type) missingFields.push("Tipe Arus Keuangan (pemasukan/pengeluaran)");
+    if (!category) missingFields.push("Kategori POS BUDGET");
+    if (!parsedAmount || parsedAmount <= 0) missingFields.push("Nominal/Jumlah");
+    if (!description || !description.trim()) missingFields.push("Deskripsi");
+    if (!date) missingFields.push("Tanggal");
+
+    if (missingFields.length > 0) {
+      return res.status(400).json({ error: `Gagal menyimpan: Kolom berikut wajib diisi dengan benar: ${missingFields.join(', ')}.` });
     }
 
     const newTx: TreasurerTransaction = {
       id: `tx-bnd-${Date.now()}`,
       type: type as 'incoming' | 'outgoing',
       category: String(category),
-      amount: Number(amount) || 0,
+      amount: parsedAmount,
       description: String(description),
       date: String(date),
       source: 'custom' as const,
@@ -4495,7 +4514,7 @@ async function startServer() {
 
   // Update manual bookkeeping transaction
   app.put("/api/treasurer/transactions/:id", (req, res) => {
-    const { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
+    let { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
     const { id } = req.params;
 
     const txIndex = treasurerTransactions.findIndex(t => t.id === id);
@@ -4503,11 +4522,22 @@ async function startServer() {
       return res.status(444).json({ error: "Transaksi manual tidak ditemukan." });
     }
 
+    // Parse amount robustly if provided
+    let parsedAmount = treasurerTransactions[txIndex].amount;
+    if (amount !== undefined && amount !== null) {
+      if (typeof amount === 'number') {
+        parsedAmount = amount;
+      } else {
+        const cleanedStr = String(amount).replace(/[^0-9]/g, '');
+        parsedAmount = Number(cleanedStr) || 0;
+      }
+    }
+
     const updatedTx = {
       ...treasurerTransactions[txIndex],
       type: type ? (type as 'incoming' | 'outgoing') : treasurerTransactions[txIndex].type,
       category: category ? String(category) : treasurerTransactions[txIndex].category,
-      amount: amount ? Number(amount) : treasurerTransactions[txIndex].amount,
+      amount: parsedAmount,
       description: description ? String(description) : treasurerTransactions[txIndex].description,
       date: date ? String(date) : treasurerTransactions[txIndex].date,
       recipientName: recipientName !== undefined ? String(recipientName) : treasurerTransactions[txIndex].recipientName,

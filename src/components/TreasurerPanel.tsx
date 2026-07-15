@@ -731,8 +731,13 @@ export default function TreasurerPanel({
 
   const handleFormSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formAmount || Number(formAmount) <= 0 || !formDescription.trim()) {
-      alert('Harap isi jumlah dan deskripsi dengan benar.');
+    
+    // Parse amount robustly by removing any formatting like dots, commas, Rp (e.g. "50.000" -> 50000)
+    const cleanAmountStr = formAmount.toString().replace(/[^0-9]/g, '');
+    const numericAmount = Number(cleanAmountStr) || 0;
+
+    if (numericAmount <= 0 || !formDescription.trim()) {
+      alert('Harap isi jumlah nominal dan deskripsi dengan benar.');
       return;
     }
 
@@ -745,7 +750,7 @@ export default function TreasurerPanel({
     const bodyArgs = {
       type: formType,
       category: formCategory,
-      amount: Number(formAmount),
+      amount: numericAmount,
       description: formDescription,
       date: formDate,
       recipientName: formType === 'outgoing' ? formRecipientName : '',

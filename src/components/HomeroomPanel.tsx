@@ -2555,8 +2555,9 @@ Wassalamualaikum Wr. Wb.
                                   <button
                                     key={st}
                                     type="button"
+                                    translate="no"
                                     onClick={() => handleStatusChange(student.id, st)}
-                                    className={`py-2 px-0.5 text-xs border font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${isActive ? activeColors[st] : defaultColors}`}
+                                    className={`notranslate py-2 px-0.5 text-xs border font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${isActive ? activeColors[st] : defaultColors}`}
                                     title={st}
                                   >
                                     {shortLabel}

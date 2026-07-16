@@ -1235,9 +1235,10 @@ export default function SubjectTeacherPanel({
                               return (
                                 <button
                                   key={status}
+                                  translate="no"
                                   onClick={() => handleStatusChange(student.id, status)}
                                   type="button"
-                                  className={`py-2 px-0.5 border text-xs font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${bgClass}`}
+                                  className={`notranslate py-2 px-0.5 border text-xs font-black uppercase tracking-wider rounded-md text-center cursor-pointer transition-all ${bgClass}`}
                                   title={status}
                                 >
                                   {shortLabel}

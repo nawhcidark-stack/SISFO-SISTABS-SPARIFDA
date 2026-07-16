@@ -3,6 +3,11 @@ import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, Stude
 import { motion, AnimatePresence } from 'motion/react';
 import BukuIndukManagement from './BukuIndukManagement';
 import { 
+  exportSppRecapToExcel, 
+  exportMiscRecapToExcel, 
+  exportSavingsRecapToExcel 
+} from '../utils/excelExport';
+import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
   Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key,
@@ -668,6 +673,140 @@ export default function HomeroomPanel({
   const [rekapEndDate, setRekapEndDate] = useState(todayStr);
   const [financeSearch, setFinanceSearch] = useState('');
   const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
+
+  // Excel export functions for homeroom class payments
+  const handleExportSppExcel = () => {
+    const rekapSppYearFilter = schoolIdentity?.activeAcademicYear || "all";
+    
+    const getAcademicYearOfBill = (bill: SppBill) => {
+      const startYear = [
+        "Juli",
+        "Agustus",
+        "September",
+        "Oktober",
+        "November",
+        "Desember",
+      ].includes(bill.month)
+        ? bill.year
+        : bill.year - 1;
+      return `${startYear}/${startYear + 1}`;
+    };
+
+    const summaryMatrix = classStudents.map((student) => {
+      const sBills = bills.filter(
+        (b) =>
+          b.studentId === student.id &&
+          (rekapSppYearFilter === "all" ||
+            getAcademicYearOfBill(b) === rekapSppYearFilter),
+      );
+      const paid = sBills.filter((b) => b.status === "paid");
+      const unpaid = sBills.filter((b) => b.status === "unpaid");
+      const totalPaidNominal = paid.reduce((sum, b) => sum + b.amount, 0);
+      const totalUnpaidNominal = unpaid.reduce((sum, b) => sum + b.amount, 0);
+      const pct = sBills.length > 0 ? Math.round((paid.length / sBills.length) * 100) : 0;
+      return {
+        student,
+        totalBillsCount: sBills.length,
+        paidCount: paid.length,
+        unpaidCount: unpaid.length,
+        totalPaidNominal,
+        totalUnpaidNominal,
+        pct,
+      };
+    });
+
+    const globalTotalPaid = summaryMatrix.reduce((acc, current) => acc + current.totalPaidNominal, 0);
+    const globalTotalUnpaid = summaryMatrix.reduce((acc, current) => acc + current.totalUnpaidNominal, 0);
+
+    exportSppRecapToExcel({
+      rekapSppGradeFilter: currentTeacher.className.substring(0, 1) || "all",
+      rekapSppClassFilter: currentTeacher.className,
+      rekapSppYearFilter,
+      summaryMatrix,
+      globalTotalPaid,
+      globalTotalUnpaid,
+    });
+  };
+
+  const handleExportMiscExcel = () => {
+    const rekapMiscGradeFilter = currentTeacher.className.substring(0, 1) || "all";
+    const rekapMiscClassFilter = currentTeacher.className;
+
+    const studentIdsSet = new Set(classStudents.map(s => s.id));
+    const activeMiscBills = (miscBills || []).filter(b => studentIdsSet.has(b.studentId));
+
+    const totalMiscTarget = activeMiscBills.reduce((sum, b) => sum + b.amount, 0);
+    const totalMiscPaid = activeMiscBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+    const totalMiscUnpaid = activeMiscBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+
+    const groupedMiscMap: { [title: string]: { targetCount: number, paidCount: number, targetNominal: number, paidNominal: number } } = {};
+    activeMiscBills.forEach((bill) => {
+      const title = bill.title;
+      if (!groupedMiscMap[title]) {
+        groupedMiscMap[title] = {
+          targetCount: 0,
+          paidCount: 0,
+          targetNominal: 0,
+          paidNominal: 0
+        };
+      }
+      groupedMiscMap[title].targetCount += 1;
+      groupedMiscMap[title].targetNominal += bill.amount;
+      if (bill.status === "paid") {
+        groupedMiscMap[title].paidCount += 1;
+        groupedMiscMap[title].paidNominal += bill.amount;
+      }
+    });
+
+    const groupedMiscList = Object.entries(groupedMiscMap).map(([title, stats]) => ({
+      title,
+      ...stats,
+      pct: stats.targetNominal > 0 ? Math.round((stats.paidNominal / stats.targetNominal) * 100) : 0
+    })).sort((a, b) => a.title.localeCompare(b.title));
+
+    const studentMiscDetails = classStudents.map(student => {
+      const sBills = activeMiscBills.filter(b => b.studentId === student.id);
+      const totalBilled = sBills.reduce((sum, b) => sum + b.amount, 0);
+      const totalPaid = sBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
+      const totalUnpaid = sBills.filter(b => b.status !== "paid").reduce((sum, b) => sum + b.amount, 0);
+      return {
+        student,
+        bills: sBills,
+        totalBilled,
+        totalPaid,
+        totalUnpaid
+      };
+    }).filter(item => item.bills.length > 0).sort((a, b) => a.student.name.localeCompare(b.student.name));
+
+    exportMiscRecapToExcel({
+      rekapMiscGradeFilter,
+      rekapMiscClassFilter,
+      totalMiscTarget,
+      totalMiscPaid,
+      totalMiscUnpaid,
+      groupedMiscList,
+      studentMiscDetails,
+    });
+  };
+
+  const handleExportSavingsExcel = () => {
+    const rekapTabunganGradeFilter = currentTeacher.className.substring(0, 1) || "all";
+    const rekapTabunganClassFilter = currentTeacher.className;
+
+    const orderedStudentsBySavings = [...classStudents].sort((a, b) => (b.savingsBalance || 0) - (a.savingsBalance || 0));
+    const totalGlobalSavings = orderedStudentsBySavings.reduce((sum, s) => sum + (s.savingsBalance || 0), 0);
+    const countActiveAccounts = orderedStudentsBySavings.filter(s => (s.savingsBalance || 0) > 0).length;
+    const filteredTabunganStudentsLength = orderedStudentsBySavings.length;
+
+    exportSavingsRecapToExcel({
+      rekapTabunganGradeFilter,
+      rekapTabunganClassFilter,
+      orderedStudentsBySavings,
+      totalGlobalSavings,
+      countActiveAccounts,
+      filteredTabunganStudentsLength,
+    });
+  };
 
   // Active workspace for Homeroom Journals
   const [selectedJournalTab, setSelectedJournalTab] = useState<'menu' | 'development' | 'infraction' | 'counseling' | 'announcement' | 'meeting'>('menu');
@@ -2992,21 +3131,49 @@ Wassalamualaikum Wr. Wb.
 
           {activeSubTab === 'finance' && (
             <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left p-6">
-              <div className="mb-6 flex flex-col md:flex-row md:items-center justify-between gap-4">
+              <div className="mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
                   <h3 className="text-slate-900 font-extrabold text-sm">Monitoring Administrasi & Keuangan Kelas</h3>
                   <p className="text-slate-450 text-xs mt-0.5">Informasi rincian saldo tabungan, tunggakan tagihan SPP, dan iuran lain-lain murid untuk sinkronisasi pengingat (Reminder).</p>
                 </div>
-                {/* Search input inside Tab */}
-                <div className="relative">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari nama atau NIS siswa..."
-                    value={financeSearch}
-                    onChange={(e) => setFinanceSearch(e.target.value)}
-                    className="w-full md:w-56 pl-9 pr-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:bg-white"
-                  />
+                <div className="flex flex-wrap items-center gap-3">
+                  <div className="flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={handleExportSppExcel}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      title="Export Rekap SPP Kelas ke Excel"
+                    >
+                      <Download size={12} /> Rekap SPP 📊
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportMiscExcel}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      title="Export Rekap Iuran Lain-lain ke Excel"
+                    >
+                      <Download size={12} /> Rekap Iuran 📊
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handleExportSavingsExcel}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      title="Export Rekap Tabungan Kelas ke Excel"
+                    >
+                      <Download size={12} /> Rekap Tabungan 📊
+                    </button>
+                  </div>
+                  {/* Search input inside Tab */}
+                  <div className="relative w-full sm:w-auto">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari nama atau NIS siswa..."
+                      value={financeSearch}
+                      onChange={(e) => setFinanceSearch(e.target.value)}
+                      className="w-full sm:w-56 pl-9 pr-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:bg-white"
+                    />
+                  </div>
                 </div>
               </div>
 

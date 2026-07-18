@@ -70,6 +70,7 @@ export default function TreasurerPanel({
   const [filterType, setFilterType] = useState<'all' | 'incoming' | 'outgoing'>('all');
   const [filterSource, setFilterSource] = useState<'all' | 'spp' | 'savings' | 'custom'>('all');
   const [filterCategory, setFilterCategory] = useState<'all' | string>('all');
+  const [filterRecipient, setFilterRecipient] = useState<'all' | string>('all');
 
   // --- STATE PENGGAJIAN GURU ---
   const [salaries, setSalaries] = useState<TeacherSalary[]>([]);
@@ -963,6 +964,17 @@ export default function TreasurerPanel({
     return 'JULI 2026';
   };
 
+  // Unique recipient names from outgoing transactions
+  const uniqueRecipients = useMemo(() => {
+    const recipientsSet = new Set<string>();
+    transactions.forEach(t => {
+      if (t.type === 'outgoing' && t.recipientName) {
+        recipientsSet.add(t.recipientName.trim());
+      }
+    });
+    return Array.from(recipientsSet).sort();
+  }, [transactions]);
+
   // Filtered transactions list
   const filteredTransactions = useMemo(() => {
     return transactions.filter(t => {
@@ -977,6 +989,7 @@ export default function TreasurerPanel({
       const matchCategory = filterCategory === 'all' || t.category === filterCategory;
       const matchStartDate = !filterStartDate || t.date >= filterStartDate;
       const matchEndDate = !filterEndDate || t.date <= filterEndDate;
+      const matchRecipient = filterRecipient === 'all' || (t.recipientName && t.recipientName.trim() === filterRecipient);
 
       // Filter by Buku Kas Umum, Buku Pembantu Kas, or Buku Pembantu Bank
       const isCash = isCashTransaction(t);
@@ -985,9 +998,9 @@ export default function TreasurerPanel({
         (selectedBook === 'bp_kas' && isCash) ||
         (selectedBook === 'bp_bank' && !isCash);
 
-      return matchTerm && matchType && matchSource && matchCategory && matchStartDate && matchEndDate && matchBook;
+      return matchTerm && matchType && matchSource && matchCategory && matchStartDate && matchEndDate && matchBook && matchRecipient;
     });
-  }, [transactions, term, filterType, filterSource, filterCategory, filterStartDate, filterEndDate, selectedBook]);
+  }, [transactions, term, filterType, filterSource, filterCategory, filterRecipient, filterStartDate, filterEndDate, selectedBook]);
 
   // Compute chronologically sorted transactions with running balances for ledger
   const transactionsWithRunningBalance = useMemo(() => {
@@ -1085,6 +1098,8 @@ export default function TreasurerPanel({
     const sourceStr = filterSource === 'all' ? 'SEMUA SUMBER' : filterSource.toUpperCase();
     const typeStr = filterType === 'all' ? 'SEMUA ARUS KAS' : filterType === 'incoming' ? 'DEBIT (UANG MASUK)' : 'KREDIT (UANG KELUAR)';
     const dateRangeStr = filterStartDate || filterEndDate ? `Periode: ${filterStartDate || 'Awal'} s/d ${filterEndDate || 'Akhir'}` : 'Semua Periode';
+    const recipientStr = filterRecipient === 'all' ? '' : ` | Penerima: ${filterRecipient.toUpperCase()}`;
+    const recipientFilename = filterRecipient === 'all' ? '' : `_RECIPIENT_${filterRecipient.toUpperCase().replace(/\s+/g, '_')}`;
     
     let bookSheetName = 'Buku Kas Umum';
     let bookTitleExcel = 'BUKU KAS UMUM (BKU) SEKOLAH';
@@ -1138,7 +1153,7 @@ export default function TreasurerPanel({
       <td colspan="5" style="border: none;">: Jawa Timur</td>
     </tr>
     <tr></tr>
-    <tr><td colspan="8" style="text-align: left; font-style: italic; color: #64748b; border: none;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')} | Kategori: ${catStr} | Sumber: ${sourceStr} | Periode: ${dateRangeStr}</td></tr>
+    <tr><td colspan="8" style="text-align: left; font-style: italic; color: #64748b; border: none;">Tanggal Unduh: ${new Date().toLocaleDateString('id-ID')} | Kategori: ${catStr} | Sumber: ${sourceStr} | Periode: ${dateRangeStr}${recipientStr}</td></tr>
     <tr></tr>
     <tr class="bg-gray">
       <td colspan="5" class="font-bold">TOTAL PENERIMAAN (DEBIT)</td>
@@ -1236,7 +1251,7 @@ export default function TreasurerPanel({
     link.href = url;
     const catNameFilename = filterCategory === 'all' ? 'GLOBAL' : filterCategory.toUpperCase().replace(/\s+/g, '_');
     const dateSuffix = filterStartDate || filterEndDate ? `_PERIOD_${filterStartDate || 'AWAL'}_TO_${filterEndDate || 'AKHIR'}` : `_${new Date().toISOString().split('T')[0]}`;
-    link.download = `${filenamePrefix}_${catNameFilename}${dateSuffix}.xls`;
+    link.download = `${filenamePrefix}_${catNameFilename}${recipientFilename}${dateSuffix}.xls`;
     link.click();
     URL.revokeObjectURL(url);
   };
@@ -2311,7 +2326,7 @@ export default function TreasurerPanel({
               <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-12 gap-3 pt-2">
                 
                 {/* Search Bar */}
-                <div className="md:col-span-5 relative">
+                <div className="md:col-span-4 relative">
                   <input
                     type="text"
                     placeholder="Cari deskripsi, nama siswa, NIS, atau kategori..."
@@ -2328,7 +2343,13 @@ export default function TreasurerPanel({
                 <div className="md:col-span-2">
                   <select
                     value={filterType}
-                    onChange={(e) => setFilterType(e.target.value as any)}
+                    onChange={(e) => {
+                      const val = e.target.value as any;
+                      setFilterType(val);
+                      if (val === 'incoming') {
+                        setFilterRecipient('all');
+                      }
+                    }}
                     className="w-full text-xs font-semibold p-2 border border-slate-200 rounded-xl bg-white text-slate-700"
                   >
                     <option value="all">Semua Arus Kas</option>
@@ -2352,7 +2373,7 @@ export default function TreasurerPanel({
                 </div>
 
                 {/* Filter custom categories */}
-                <div className="md:col-span-3">
+                <div className="md:col-span-2">
                   <select
                     value={filterCategory}
                     onChange={(e) => setFilterCategory(e.target.value)}
@@ -2363,6 +2384,22 @@ export default function TreasurerPanel({
                     <option value="Tabungan">Tabungan</option>
                     {categories.map(c => (
                       <option key={c.name} value={c.name}>{c.name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Recipient (Penerima pada pengeluaran) */}
+                <div className="md:col-span-2">
+                  <select
+                    value={filterRecipient}
+                    onChange={(e) => setFilterRecipient(e.target.value)}
+                    className="w-full text-xs font-semibold p-2 border border-slate-200 rounded-xl bg-white text-slate-700 disabled:bg-slate-100 disabled:text-slate-400"
+                    disabled={filterType === 'incoming'}
+                    title={filterType === 'incoming' ? "Filter penerima hanya tersedia untuk pengeluaran" : "Filter berdasarkan penerima pengeluaran"}
+                  >
+                    <option value="all">Semua Penerima</option>
+                    {uniqueRecipients.map(r => (
+                      <option key={r} value={r}>{r}</option>
                     ))}
                   </select>
                 </div>

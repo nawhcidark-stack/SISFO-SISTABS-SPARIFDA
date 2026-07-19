@@ -5418,8 +5418,8 @@ Wassalamualaikum Wr. Wb.
 
                         let sumFinal = 0;
                         scores.forEach(a => {
-                          const avgF = Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0)) / 3);
-                          const finalSc = Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
+                          const avgF = a.nilaiFormatif !== undefined ? Number(a.nilaiFormatif) : Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0) + (a.tp4Grade !== undefined ? Number(a.tp4Grade) : Number(a.tp1Grade || 0))) / 4);
+                          const finalSc = a.nilaiRapor !== undefined ? Number(a.nilaiRapor) : Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
                           sumFinal += finalSc;
                         });
 
@@ -5505,8 +5505,8 @@ Wassalamualaikum Wr. Wb.
                               const rowGrids = scores.length === 0 
                                 ? `<tr><td colspan="7" style="text-align:center; padding: 20px;">Belum ada asessment mata pelajaran terdaftar untuk semester ini</td></tr>`
                                 : scores.map((a, idx) => {
-                                    const avgF = Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0)) / 3);
-                                    const finalSc = Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
+                                    const avgF = a.nilaiFormatif !== undefined ? Number(a.nilaiFormatif) : Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0) + (a.tp4Grade !== undefined ? Number(a.tp4Grade) : Number(a.tp1Grade || 0))) / 4);
+                                    const finalSc = a.nilaiRapor !== undefined ? Number(a.nilaiRapor) : Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
                                     
                                     let capNotes = "";
                                     if (finalSc >= 85) {
@@ -5672,8 +5672,8 @@ Wassalamualaikum Wr. Wb.
                                   </tr>
                                 ) : (
                                   scores.map((a, idx) => {
-                                    const avgF = Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0)) / 3);
-                                    const finalSc = Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
+                                    const avgF = a.nilaiFormatif !== undefined ? Number(a.nilaiFormatif) : Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0) + (a.tp4Grade !== undefined ? Number(a.tp4Grade) : Number(a.tp1Grade || 0))) / 4);
+                                    const finalSc = a.nilaiRapor !== undefined ? Number(a.nilaiRapor) : Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
 
                                     return (
                                       <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">

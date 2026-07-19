@@ -325,6 +325,8 @@ export interface MerdekaAssessment {
   tp2Grade?: number;
   tp3Name?: string;
   tp3Grade?: number;
+  tp4Name?: string;
+  tp4Grade?: number;
   nilaiFormatif: number; // calculated as avg of available TPs
   nilaiSumatifLM: number; // Sumatif Lingkup Materi
   nilaiSAS: number; // Sumatif Akhir Semester

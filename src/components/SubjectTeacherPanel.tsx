@@ -191,37 +191,44 @@ export default function SubjectTeacherPanel({
     'Matematika': [
       'Memahami konsep & penyelesaian masalah relasi harian',
       'Menerapkan analisis logis persamaan nilai kompetensi',
-      'Menyajikan representasi grafis hasil observasi'
+      'Menyajikan representasi grafis hasil observasi',
+      'Mengevaluasi hasil pemecahan masalah matematis kontekstual'
     ],
     'Bahasa Inggris': [
       'Identify main ideas in descriptive and narrative English texts',
       'Compose short conversations about expressing opinion and advice',
-      'Use proper greeting, warning, and simple structures'
+      'Use proper greeting, warning, and simple structures',
+      'Construct simple reflective essays on daily topics'
     ],
     'Ilmu Pengetahuan Alam': [
       'Menjelaskan klasifikasi makhluk hidup dan ekosistem lokal',
       'Menganalisis konsep suhu, kalor, pemuaian, dan wujud benda',
-      'Melakukan penyelidikan ilmiah tentang sifat zat kompleks'
+      'Melakukan penyelidikan ilmiah tentang sifat zat kompleks',
+      'Menyusun laporan hasil eksperimen sains secara sistematis'
     ],
     'Ilmu Pengetahuan Sosial': [
       'Menilai kontribusi interaksi sosial terhadap ruang geografis',
       'Mengidentifikasi kegiatan ekonomi masyarakat dan kebutuhan',
-      'Menceritakan sejarah pembentukan budaya di wilayah Nusantara'
+      'Menceritakan sejarah pembentukan budaya di wilayah Nusantara',
+      'Menganalisis dampak perubahan sosial terhadap kearifan lokal'
     ],
     'Bahasa Indonesia': [
       'Menulis teks deskripsi deskriptif dari objek observasi',
       'Menelaah unsur buku fiksi dan non-fiksi secara obyektif',
-      'Menyajikan teks prosedur dengan susunan kalimat efektif'
+      'Menyajikan teks prosedur dengan susunan kalimat efektif',
+      'Menyusun naskah ulasan sastra dengan argumentasi kritis'
     ],
     'Pendidikan Agama Islam': [
       'Membaca dan melafalkan ayat Al-Quran mengenai adab',
       'Mendemonstrasikan rukun shalat fardhu dan khusyuk berniat',
-      'Mengimplementasikan akhlakul karimah kepada guru dan teman'
+      'Mengimplementasikan akhlakul karimah kepada guru dan teman',
+      'Memahami nilai-nilai sejarah perjuangan dakwah Islamiah'
     ],
     'Pendidikan Jasmani & OR': [
       'Melakukan teknik dasar olahraga bersahabat koordinatif',
       'Menjaga kebugaran jasmani melalui senam ketangkasan terlatih',
-      'Mengetahui pola makan seimbang pencegah penyakit menular'
+      'Mengetahui pola makan seimbang pencegah penyakit menular',
+      'Menerapkan pola hidup sehat dan kebiasaan berolahraga teratur'
     ]
   };
 
@@ -229,19 +236,22 @@ export default function SubjectTeacherPanel({
     return defaultTpsMap[currentTeacher.subject] || [
       'Mengidentifikasi elemen kompetensi dasar materi pembelajaran',
       'Menyelesaikan tugas analisis praktis secara mandiri berfikir',
-      'Menyajikan hasil evaluasi materi dalam bentuk simpulan logis'
+      'Menyajikan hasil evaluasi materi dalam bentuk simpulan logis',
+      'Merefleksikan hasil pencapaian belajar demi perbaikan berkelanjutan'
     ];
   }, [currentTeacher.subject]);
 
   const [tp1InputName, setTp1InputName] = useState<string>('');
   const [tp2InputName, setTp2InputName] = useState<string>('');
   const [tp3InputName, setTp3InputName] = useState<string>('');
+  const [tp4InputName, setTp4InputName] = useState<string>('');
 
   useEffect(() => {
     if (currentSubjectDefaultTps) {
       setTp1InputName(currentSubjectDefaultTps[0] || '');
       setTp2InputName(currentSubjectDefaultTps[1] || '');
       setTp3InputName(currentSubjectDefaultTps[2] || '');
+      setTp4InputName(currentSubjectDefaultTps[3] || '');
     }
   }, [currentSubjectDefaultTps]);
 
@@ -249,6 +259,7 @@ export default function SubjectTeacherPanel({
     tp1Grade: string;
     tp2Grade: string;
     tp3Grade: string;
+    tp4Grade: string;
     nilaiSumatifLM: string;
     nilaiSAS: string;
     deskripsiCapaian: string;
@@ -360,6 +371,7 @@ export default function SubjectTeacherPanel({
       tp1Grade: string;
       tp2Grade: string;
       tp3Grade: string;
+      tp4Grade: string;
       nilaiSumatifLM: string;
       nilaiSAS: string;
       deskripsiCapaian: string;
@@ -377,6 +389,7 @@ export default function SubjectTeacherPanel({
           tp1Grade: String(match.tp1Grade ?? ''),
           tp2Grade: match.tp2Grade !== undefined && match.tp2Grade !== null ? String(match.tp2Grade) : '',
           tp3Grade: match.tp3Grade !== undefined && match.tp3Grade !== null ? String(match.tp3Grade) : '',
+          tp4Grade: match.tp4Grade !== undefined && match.tp4Grade !== null ? String(match.tp4Grade) : '',
           nilaiSumatifLM: String(match.nilaiSumatifLM ?? ''),
           nilaiSAS: String(match.nilaiSAS ?? ''),
           deskripsiCapaian: match.deskripsiCapaian ?? ''
@@ -386,6 +399,7 @@ export default function SubjectTeacherPanel({
           tp1Grade: '',
           tp2Grade: '',
           tp3Grade: '',
+          tp4Grade: '',
           nilaiSumatifLM: '',
           nilaiSAS: '',
           deskripsiCapaian: ''
@@ -427,8 +441,20 @@ export default function SubjectTeacherPanel({
         const tp1Str = cells[2];
         const tp2Str = cells[3] || "";
         const tp3Str = cells[4] || "";
-        const slmStr = cells[5] || "";
-        const sasStr = cells[6] || "";
+        
+        let tp4Str = "";
+        let slmStr = "";
+        let sasStr = "";
+
+        if (cells.length >= 8) {
+          tp4Str = cells[5] || "";
+          slmStr = cells[6] || "";
+          sasStr = cells[7] || "";
+        } else {
+          tp4Str = "";
+          slmStr = cells[5] || "";
+          sasStr = cells[6] || "";
+        }
 
         if (!rawNis && !nameInput) return;
 
@@ -448,6 +474,7 @@ export default function SubjectTeacherPanel({
             tp1Grade: Number(tp1Str) || 0,
             tp2Grade: tp2Str !== "" ? Number(tp2Str) : undefined,
             tp3Grade: tp3Str !== "" ? Number(tp3Str) : undefined,
+            tp4Grade: tp4Str !== "" ? Number(tp4Str) : undefined,
             nilaiSumatifLM: Number(slmStr) || 0,
             nilaiSAS: Number(sasStr) || 0,
             matched: true
@@ -487,6 +514,7 @@ export default function SubjectTeacherPanel({
           tp1Grade: String(item.tp1Grade),
           tp2Grade: item.tp2Grade !== undefined ? String(item.tp2Grade) : "",
           tp3Grade: item.tp3Grade !== undefined ? String(item.tp3Grade) : "",
+          tp4Grade: item.tp4Grade !== undefined ? String(item.tp4Grade) : "",
           nilaiSumatifLM: String(item.nilaiSumatifLM),
           nilaiSAS: String(item.nilaiSAS),
           deskripsiCapaian: ""
@@ -1882,6 +1910,7 @@ export default function SubjectTeacherPanel({
                           tp1Grade: String(Math.floor(Math.random() * 16) + 80),
                           tp2Grade: String(Math.floor(Math.random() * 16) + 78),
                           tp3Grade: String(Math.floor(Math.random() * 16) + 82),
+                          tp4Grade: String(Math.floor(Math.random() * 16) + 84),
                           nilaiSumatifLM: String(Math.floor(Math.random() * 16) + 78),
                           nilaiSAS: String(Math.floor(Math.random() * 16) + 80),
                           deskripsiCapaian: ''
@@ -1959,7 +1988,7 @@ export default function SubjectTeacherPanel({
               </h3>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
                 <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 1 (TP-1)</span>
                 <textarea
@@ -1995,6 +2024,18 @@ export default function SubjectTeacherPanel({
                   placeholder="Isi uraian TP-3 (kosongkan jika tidak ada)..."
                 />
               </div>
+
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
+                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 4 (TP-4) - Opsional</span>
+                <textarea
+                  value={tp4InputName}
+                  onChange={(e) => setTp4InputName(e.target.value)}
+                  rows={2}
+                  maxLength={100}
+                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
+                  placeholder="Isi uraian TP-4 (kosongkan jika tidak ada)..."
+                />
+              </div>
             </div>
           </div>
 
@@ -2009,6 +2050,7 @@ export default function SubjectTeacherPanel({
                     <th className="py-3 px-2 w-20 text-indigo-300">TP-1</th>
                     <th className="py-3 px-2 w-20 text-indigo-300">TP-2</th>
                     <th className="py-3 px-2 w-20 text-indigo-300">TP-3</th>
+                    <th className="py-3 px-2 w-20 text-indigo-300">TP-4</th>
                     <th className="py-3 px-2 w-24 bg-indigo-950 text-indigo-300">Avg Formatif</th>
                     <th className="py-3 px-2 w-24 text-amber-400">Sumatif LM</th>
                     <th className="py-3 px-2 w-20 text-amber-400">SAS</th>
@@ -2018,7 +2060,7 @@ export default function SubjectTeacherPanel({
                 <tbody>
                   {gradingClassStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={9} className="py-20 text-center text-slate-400 font-semibold text-xs">
+                      <td colSpan={10} className="py-20 text-center text-slate-400 font-semibold text-xs">
                         Tidak ada data siswa ditemukan untuk kelas {selectedGradeClass}.
                       </td>
                     </tr>
@@ -2028,6 +2070,7 @@ export default function SubjectTeacherPanel({
                         tp1Grade: '',
                         tp2Grade: '',
                         tp3Grade: '',
+                        tp4Grade: '',
                         nilaiSumatifLM: '',
                         nilaiSAS: '',
                         deskripsiCapaian: ''
@@ -2037,12 +2080,14 @@ export default function SubjectTeacherPanel({
                       const tp1G = Number(inputState.tp1Grade) || 0;
                       const tp2G = inputState.tp2Grade !== '' ? Number(inputState.tp2Grade) : undefined;
                       const tp3G = inputState.tp3Grade !== '' ? Number(inputState.tp3Grade) : undefined;
+                      const tp4G = inputState.tp4Grade !== '' ? Number(inputState.tp4Grade) : undefined;
 
                       let tpCount = 0;
                       let sumTp = 0;
                       if (inputState.tp1Grade !== '') { tpCount++; sumTp += tp1G; }
                       if (tp2G !== undefined) { tpCount++; sumTp += tp2G; }
                       if (tp3G !== undefined) { tpCount++; sumTp += tp3G; }
+                      if (tp4G !== undefined) { tpCount++; sumTp += tp4G; }
 
                       const avgF = tpCount > 0 ? Math.round(sumTp / tpCount) : 0;
                       const slm = Number(inputState.nilaiSumatifLM) || 0;
@@ -2065,6 +2110,7 @@ export default function SubjectTeacherPanel({
                               tp1Grade: '',
                               tp2Grade: '',
                               tp3Grade: '',
+                              tp4Grade: '',
                               nilaiSumatifLM: '',
                               nilaiSAS: '',
                               deskripsiCapaian: ''
@@ -2113,6 +2159,17 @@ export default function SubjectTeacherPanel({
                               className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
                               placeholder="-"
                               disabled={!tp3InputName.trim()}
+                            />
+                          </td>
+                          <td className="py-2.5 px-1.5 text-center">
+                            <input
+                              type="text"
+                              maxLength={3}
+                              value={inputState.tp4Grade || ''}
+                              onChange={(e) => handleGradeChange('tp4Grade', e.target.value)}
+                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
+                              placeholder="-"
+                              disabled={!tp4InputName.trim()}
                             />
                           </td>
 
@@ -2174,6 +2231,7 @@ export default function SubjectTeacherPanel({
                         tp1Grade: '',
                         tp2Grade: '',
                         tp3Grade: '',
+                        tp4Grade: '',
                         nilaiSumatifLM: '',
                         nilaiSAS: '',
                         deskripsiCapaian: ''
@@ -2193,6 +2251,8 @@ export default function SubjectTeacherPanel({
                         tp2Grade: inputState.tp2Grade !== "" ? inputState.tp2Grade : undefined,
                         tp3Name: tp3InputName || undefined,
                         tp3Grade: inputState.tp3Grade !== "" ? inputState.tp3Grade : undefined,
+                        tp4Name: tp4InputName || undefined,
+                        tp4Grade: inputState.tp4Grade !== "" ? inputState.tp4Grade : undefined,
                         nilaiSumatifLM: inputState.nilaiSumatifLM || "0",
                         nilaiSAS: inputState.nilaiSAS || "0"
                       };
@@ -2739,7 +2799,7 @@ export default function SubjectTeacherPanel({
                     rows={8}
                     value={excelPasteContent}
                     onChange={(e) => setExcelPasteContent(e.target.value)}
-                    placeholder="NIS&#9;Nama&#9;Nilai TP1&#9;Nilai TP2&#9;Nilai TP3&#9;Nilai LM&#9;Nilai SAS&#10;24001&#9;Achmad Fauzi&#9;85&#9;80&#9;90&#9;88&#9;82"
+                    placeholder="NIS&#9;Nama&#9;Nilai TP1&#9;Nilai TP2&#9;Nilai TP3&#9;Nilai TP4&#9;Nilai LM&#9;Nilai SAS&#10;24001&#9;Achmad Fauzi&#9;85&#9;80&#9;90&#9;85&#9;88&#9;82"
                     className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-3 font-mono text-xs bg-slate-50/50 leading-relaxed"
                   />
                 </div>
@@ -2777,6 +2837,7 @@ export default function SubjectTeacherPanel({
                             <th className="py-2 px-2 text-center">TP1</th>
                             <th className="py-2 px-2 text-center">TP2</th>
                             <th className="py-2 px-2 text-center">TP3</th>
+                            <th className="py-2 px-2 text-center">TP4</th>
                             <th className="py-2 px-2 text-center">Sum LM</th>
                             <th className="py-2 px-2 text-center">SAS</th>
                             <th className="py-2 px-3 text-right">Status Match</th>
@@ -2790,6 +2851,7 @@ export default function SubjectTeacherPanel({
                               <td className="py-1.5 px-2 text-center">{item.tp1Grade}</td>
                               <td className="py-1.5 px-2 text-center">{item.tp2Grade ?? "-"}</td>
                               <td className="py-1.5 px-2 text-center">{item.tp3Grade ?? "-"}</td>
+                              <td className="py-1.5 px-2 text-center">{item.tp4Grade ?? "-"}</td>
                               <td className="py-1.5 px-2 text-center">{item.nilaiSumatifLM}</td>
                               <td className="py-1.5 px-2 text-center">{item.nilaiSAS}</td>
                               <td className="py-1.5 px-3 text-right">

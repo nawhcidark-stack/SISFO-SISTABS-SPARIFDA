@@ -3569,6 +3569,8 @@ async function startServer() {
           tp2Grade,
           tp3Name,
           tp3Grade,
+          tp4Name,
+          tp4Grade,
           nilaiSumatifLM,
           nilaiSAS
         } = item;
@@ -3580,6 +3582,7 @@ async function startServer() {
         const tp1G = Number(tp1Grade) || 0;
         const tp2G = tp2Grade !== undefined && tp2Grade !== "" ? Number(tp2Grade) : undefined;
         const tp3G = tp3Grade !== undefined && tp3Grade !== "" ? Number(tp3Grade) : undefined;
+        const tp4G = tp4Grade !== undefined && tp4Grade !== "" ? Number(tp4Grade) : undefined;
 
         let tpCount = 1;
         let sumTp = tp1G;
@@ -3591,6 +3594,10 @@ async function startServer() {
           tpCount++;
           sumTp += tp3G;
         }
+        if (tp4G !== undefined) {
+          tpCount++;
+          sumTp += tp4G;
+        }
         const calculatedFormatif = Math.round(sumTp / tpCount);
 
         const slm = Number(nilaiSumatifLM) || 0;
@@ -3600,6 +3607,7 @@ async function startServer() {
         const tps = [{ name: tp1Name, score: tp1G }];
         if (tp2Name && tp2G !== undefined) tps.push({ name: tp2Name, score: tp2G });
         if (tp3Name && tp3G !== undefined) tps.push({ name: tp3Name, score: tp3G });
+        if (tp4Name && tp4G !== undefined) tps.push({ name: tp4Name, score: tp4G });
 
         tps.sort((a, b) => b.score - a.score);
         const highestTp = tps[0];
@@ -3638,6 +3646,8 @@ async function startServer() {
           tp2Grade: tp2G,
           tp3Name: tp3Name || undefined,
           tp3Grade: tp3G,
+          tp4Name: tp4Name || undefined,
+          tp4Grade: tp4G,
           nilaiFormatif: calculatedFormatif,
           nilaiSumatifLM: slm,
           nilaiSAS: sas,
@@ -3671,6 +3681,8 @@ async function startServer() {
         tp2Grade,
         tp3Name,
         tp3Grade,
+        tp4Name,
+        tp4Grade,
         nilaiSumatifLM,
         nilaiSAS,
         deskripsiCapaian
@@ -3683,6 +3695,7 @@ async function startServer() {
       const tp1G = Number(tp1Grade) || 0;
       const tp2G = tp2Grade !== undefined && tp2Grade !== "" ? Number(tp2Grade) : undefined;
       const tp3G = tp3Grade !== undefined && tp3Grade !== "" ? Number(tp3Grade) : undefined;
+      const tp4G = tp4Grade !== undefined && tp4Grade !== "" ? Number(tp4Grade) : undefined;
 
       let tpCount = 1;
       let sumTp = tp1G;
@@ -3693,6 +3706,10 @@ async function startServer() {
       if (tp3G !== undefined) {
         tpCount++;
         sumTp += tp3G;
+      }
+      if (tp4G !== undefined) {
+        tpCount++;
+        sumTp += tp4G;
       }
       const calculatedFormatif = Math.round(sumTp / tpCount);
 
@@ -3705,6 +3722,7 @@ async function startServer() {
         const tps = [{ name: tp1Name, score: tp1G }];
         if (tp2Name && tp2G !== undefined) tps.push({ name: tp2Name, score: tp2G });
         if (tp3Name && tp3G !== undefined) tps.push({ name: tp3Name, score: tp3G });
+        if (tp4Name && tp4G !== undefined) tps.push({ name: tp4Name, score: tp4G });
 
         tps.sort((a, b) => b.score - a.score);
         const highestTp = tps[0];
@@ -3745,6 +3763,8 @@ async function startServer() {
         tp2Grade: tp2G,
         tp3Name: tp3Name || undefined,
         tp3Grade: tp3G,
+        tp4Name: tp4Name || undefined,
+        tp4Grade: tp4G,
         nilaiFormatif: calculatedFormatif,
         nilaiSumatifLM: slm,
         nilaiSAS: sas,

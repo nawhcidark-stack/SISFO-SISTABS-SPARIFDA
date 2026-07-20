@@ -6409,7 +6409,7 @@ Wassalamualaikum Wr. Wb.
                       Jurnal Pembelajaran &amp; Presensi Mata Pelajaran
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
-                      Kelas: {selectedJournalToPrint.className} &bull; Semester Genap &bull; Tahun Ajaran 2025/2026
+                      Kelas: {selectedJournalToPrint.className} &bull; Semester {selectedJournalToPrint.semester || "Genap"} &bull; Tahun Ajaran 2025/2026
                     </p>
                   </div>
 
@@ -6433,6 +6433,16 @@ Wassalamualaikum Wr. Wb.
                           {new Date(selectedJournalToPrint.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                         </span>
                       </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Pertemuan Ke</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">{selectedJournalToPrint.pertemuanKe || "-"}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Jam Ke</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">{selectedJournalToPrint.jamKe || "-"}</span>
+                      </div>
                     </div>
 
                     <div className="flex flex-col gap-2">
@@ -6445,6 +6455,17 @@ Wassalamualaikum Wr. Wb.
                         <span className="font-bold text-slate-500">Catatan KBM</span>
                         <span>:</span>
                         <span className="font-medium text-slate-700 italic">{selectedJournalToPrint.notes || "-"}</span>
+                      </div>
+                      <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
+                        <span className="font-bold text-slate-500">Alokasi Waktu</span>
+                        <span>:</span>
+                        <span className="font-bold text-slate-800">
+                          {selectedJournalToPrint.alokasiWaktu 
+                            ? (String(selectedJournalToPrint.alokasiWaktu).toLowerCase().includes('jp')
+                              ? selectedJournalToPrint.alokasiWaktu 
+                              : `${selectedJournalToPrint.alokasiWaktu} JP`)
+                            : "-"}
+                        </span>
                       </div>
                       <div className="grid grid-cols-[120px_10px_1fr] text-[11px]">
                         <span className="font-bold text-slate-500">Tingkat Absensi</span>
@@ -6669,21 +6690,24 @@ Wassalamualaikum Wr. Wb.
                     <table className="w-full border-collapse border border-slate-300 text-[10px] text-slate-800">
                       <thead>
                         <tr className="bg-slate-100 font-extrabold uppercase tracking-wider text-slate-700 text-center">
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '4%' }}>No</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Hari &amp; Tanggal</th>
+                          <th className="border border-slate-300 px-2 py-2" style={{ width: '4%' }}>No</th>
+                          <th className="border border-slate-300 px-2 py-2" style={{ width: '12%' }}>Hari &amp; Tanggal</th>
                           {compiledJournalPrintType === 'binaan' ? (
                             <>
-                              <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Mata Pelajaran</th>
-                              <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Guru Pengampu</th>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '15%' }}>Mata Pelajaran</th>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '15%' }}>Guru Pengampu</th>
                             </>
                           ) : (
                             <>
-                              <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Kelas</th>
-                              <th className="border border-slate-300 px-3 py-2" style={{ width: '25%' }}>Mata Pelajaran</th>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '10%' }}>Kelas</th>
+                              <th className="border border-slate-300 px-2 py-2" style={{ width: '17%' }}>Mata Pelajaran</th>
                             </>
                           )}
-                          <th className="border border-slate-300 px-3 py-2 text-left" style={{ width: '26%' }}>Materi / Pembahasan Belajar</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Kehadiran Jam Mapel</th>
+                          <th className="border border-slate-300 px-1 py-2" style={{ width: '5%' }}>Jam Ke</th>
+                          <th className="border border-slate-300 px-1 py-2" style={{ width: '6%' }}>Alokasi</th>
+                          <th className="border border-slate-300 px-1 py-2" style={{ width: '7%' }}>Pertemuan Ke</th>
+                          <th className="border border-slate-300 px-2.5 py-2 text-left" style={{ width: '23%' }}>Materi / Pembahasan Belajar</th>
+                          <th className="border border-slate-300 px-2 py-2" style={{ width: '13%' }}>Kehadiran Jam Mapel</th>
                         </tr>
                       </thead>
                       <tbody>
@@ -6716,6 +6740,15 @@ Wassalamualaikum Wr. Wb.
                                     <td className="border border-slate-300 px-3 py-1.5 text-center font-bold text-slate-900">{journal.subject}</td>
                                   </>
                                 )}
+                                <td className="border border-slate-300 px-1 py-1.5 text-center font-mono">{journal.jamKe || "-"}</td>
+                                <td className="border border-slate-300 px-1 py-1.5 text-center font-mono">
+                                  {journal.alokasiWaktu 
+                                    ? (String(journal.alokasiWaktu).toLowerCase().includes('jp') 
+                                      ? journal.alokasiWaktu 
+                                      : `${journal.alokasiWaktu} JP`)
+                                    : "-"}
+                                </td>
+                                <td className="border border-slate-300 px-1 py-1.5 text-center font-mono">{journal.pertemuanKe || "-"}</td>
                                 <td className="border border-slate-300 px-3 py-1.5 text-left leading-relaxed font-semibold">
                                   <div>{journal.topic}</div>
                                   {journal.notes && <div className="text-[8.5px] italic text-slate-400 mt-0.5">Note: &ldquo;{journal.notes}&rdquo;</div>}

@@ -3203,6 +3203,100 @@ async function startServer() {
     res.json({ success: true, teachingJournals, newJournal });
   });
 
+  app.put("/api/teaching-journals/:id", (req, res) => {
+    const { id } = req.params;
+    const {
+      subject,
+      className,
+      date,
+      topic,
+      attendance,
+      notes,
+      fase,
+      semester,
+      alokasiWaktu,
+      jamKe,
+      pertemuanKe,
+      tujuanPembelajaran,
+      pencapaianKktp
+    } = req.body;
+
+    const journalIndex = teachingJournals.findIndex(j => j.id === id);
+    if (journalIndex === -1) {
+      return res.status(404).json({ error: "Jurnal Pembelajaran tidak ditemukan." });
+    }
+
+    const journal = teachingJournals[journalIndex];
+
+    if (subject !== undefined) journal.subject = subject;
+    if (className !== undefined) journal.className = className;
+    if (date !== undefined) journal.date = date;
+    if (topic !== undefined) journal.topic = topic;
+    if (notes !== undefined) journal.notes = notes;
+    if (fase !== undefined) journal.fase = fase;
+    if (semester !== undefined) journal.semester = semester;
+    if (alokasiWaktu !== undefined) journal.alokasiWaktu = alokasiWaktu;
+    if (jamKe !== undefined) journal.jamKe = jamKe;
+    if (pertemuanKe !== undefined) journal.pertemuanKe = pertemuanKe;
+    if (tujuanPembelajaran !== undefined) journal.tujuanPembelajaran = tujuanPembelajaran;
+    if (pencapaianKktp !== undefined) journal.pencapaianKktp = pencapaianKktp;
+    
+    if (attendance !== undefined && Array.isArray(attendance)) {
+      journal.attendance = attendance;
+
+      // Also sync/merge into standard attendanceLogs
+      attendance.forEach((studentAtt: any) => {
+        const { studentId, status, notes: attNotes } = studentAtt;
+        const targetDate = date || journal.date;
+        const existingLogIndex = attendanceLogs.findIndex(log => log.studentId === studentId && log.date === targetDate);
+        
+        const newSubNote = {
+          subject: subject || journal.subject,
+          teacherName: journal.teacherName,
+          status,
+          notes: attNotes || ''
+        };
+
+        if (existingLogIndex !== -1) {
+          attendanceLogs[existingLogIndex].status = status;
+          if (!attendanceLogs[existingLogIndex].subjectNotes) {
+            attendanceLogs[existingLogIndex].subjectNotes = [];
+          }
+          const existingSubNotesIndex = attendanceLogs[existingLogIndex].subjectNotes!.findIndex((sn: any) => sn.subject === (subject || journal.subject));
+          if (existingSubNotesIndex !== -1) {
+            attendanceLogs[existingLogIndex].subjectNotes![existingSubNotesIndex] = newSubNote;
+          } else {
+            attendanceLogs[existingLogIndex].subjectNotes!.push(newSubNote);
+          }
+        } else {
+          attendanceLogs.push({
+            id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            studentId,
+            date: targetDate,
+            status,
+            notes: "",
+            subjectNotes: [newSubNote]
+          });
+        }
+      });
+    }
+
+    saveState();
+    res.json({ success: true, teachingJournals, updatedJournal: journal });
+  });
+
+  app.delete("/api/teaching-journals/:id", (req, res) => {
+    const { id } = req.params;
+    const journalIndex = teachingJournals.findIndex(j => j.id === id);
+    if (journalIndex === -1) {
+      return res.status(404).json({ error: "Jurnal Pembelajaran tidak ditemukan." });
+    }
+
+    const [deletedJournal] = teachingJournals.splice(journalIndex, 1);
+    saveState();
+    res.json({ success: true, message: "Jurnal Pembelajaran berhasil dihapus.", deletedJournal });
+  });
+
   // --- STUDENT DEVELOPMENT LOGS (CATATAN PERKEMBANGAN SISWA) ENDPOINTS ---
   app.get("/api/student-development-logs", (req, res) => {
     res.json(studentDevelopmentLogs);

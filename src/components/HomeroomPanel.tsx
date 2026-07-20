@@ -11,7 +11,7 @@ import {
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
   Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key,
-  Printer, FileText, Plus, Trash2, Award, Heart, Smile, Megaphone, AlertTriangle,
+  Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
   LayoutGrid, Home, Smartphone, Apple
 } from 'lucide-react';
 
@@ -1028,6 +1028,8 @@ export default function HomeroomPanel({
   const [journalSearchQuery, setJournalSearchQuery] = useState('');
   const [journalClassName, setJournalClassName] = useState<string>(currentTeacher.className);
 
+  const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+
   // Get all unique classes taught in school
   const allClassNames = useMemo(() => {
     const classes = new Set<string>();
@@ -1054,16 +1056,17 @@ export default function HomeroomPanel({
 
   // Automatically reset the attendance map when the selected journal class changes
   useEffect(() => {
-    if (isAddJournalOpen && journalStudents.length > 0) {
+    if (isAddJournalOpen && journalStudents.length > 0 && !editingJournalId) {
       const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
       journalStudents.forEach(st => {
         initialMap[st.id] = { status: 'Hadir', notes: '' };
       });
       setJournalAttendanceMap(initialMap);
     }
-  }, [journalStudents, isAddJournalOpen]);
+  }, [journalStudents, isAddJournalOpen, editingJournalId]);
 
   const handleOpenAddJournalModal = () => {
+    setEditingJournalId(null);
     setJournalClassName(currentTeacher.className);
     const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
     const defaultStudents = students
@@ -1082,6 +1085,33 @@ export default function HomeroomPanel({
     setJournalTujuanPembelajaran('');
     setJournalPencapaianKktp('Tercapai');
     setJournalNotes('');
+    setIsAddJournalOpen(true);
+  };
+
+  const handleOpenEditJournalModal = (journal: any) => {
+    setEditingJournalId(journal.id);
+    setJournalClassName(journal.className || currentTeacher.className);
+    setJournalSubject(journal.subject || 'Bimbingan Wali Kelas');
+    setJournalDate(journal.date || new Date().toISOString().substring(0, 10));
+    setJournalTopic(journal.topic || '');
+    setJournalPertemuanKe(journal.pertemuanKe || '');
+    setJournalJamKe(journal.jamKe || '');
+    setJournalAlokasiWaktu(journal.alokasiWaktu || '2 JP');
+    setJournalTujuanPembelajaran(journal.tujuanPembelajaran || '');
+    setJournalPencapaianKktp(journal.pencapaianKktp || 'Tercapai');
+    setJournalNotes(journal.notes || '');
+
+    // Initialize attendance map from the existing journal record
+    const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
+    if (Array.isArray(journal.attendance)) {
+      journal.attendance.forEach((att: any) => {
+        initialMap[att.studentId] = {
+          status: att.status || 'Hadir',
+          notes: att.notes || ''
+        };
+      });
+    }
+    setJournalAttendanceMap(initialMap);
     setIsAddJournalOpen(true);
   };
 
@@ -1108,8 +1138,11 @@ export default function HomeroomPanel({
         };
       });
 
-      const response = await fetch('/api/teaching-journals', {
-        method: 'POST',
+      const url = editingJournalId ? `/api/teaching-journals/${editingJournalId}` : '/api/teaching-journals';
+      const method = editingJournalId ? 'PUT' : 'POST';
+
+      const response = await fetch(url, {
+        method,
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           teacherId: currentTeacher.id,
@@ -3054,19 +3087,54 @@ Wassalamualaikum Wr. Wb.
                                 </div>
                               </div>
 
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setSelectedJournalToPrint(journal);
-                                  setTimeout(() => {
-                                    window.print();
-                                  }, 350);
-                                }}
-                                className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer self-start md:self-center"
-                              >
-                                <Printer size={13} />
-                                <span>Cetak Jurnal PDF</span>
-                              </button>
+                              <div className="flex items-center gap-2 self-start md:self-center flex-wrap select-none">
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditJournalModal(journal)}
+                                  className="px-3 py-2 bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                >
+                                  <Edit size={13} className="text-amber-600" />
+                                  <span>Edit Jurnal</span>
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={async () => {
+                                    if (window.confirm("Apakah Anda yakin ingin menghapus jurnal pembelajaran ini?")) {
+                                      try {
+                                        const res = await fetch(`/api/teaching-journals/${journal.id}`, { method: 'DELETE' });
+                                        if (res.ok) {
+                                          setNotifMsg({ type: 'success', text: 'Jurnal pembelajaran berhasil dihapus.' });
+                                          fetchTeachingJournals();
+                                        } else {
+                                          setNotifMsg({ type: 'error', text: 'Gagal menghapus jurnal.' });
+                                        }
+                                      } catch (err) {
+                                        console.error(err);
+                                        setNotifMsg({ type: 'error', text: 'Koneksi gagal saat menghapus jurnal.' });
+                                      }
+                                    }
+                                  }}
+                                  className="p-2 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-xl transition-all flex items-center shadow-2xs cursor-pointer"
+                                  title="Hapus Jurnal"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSelectedJournalToPrint(journal);
+                                    setTimeout(() => {
+                                      window.print();
+                                    }, 350);
+                                  }}
+                                  className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                >
+                                  <Printer size={13} />
+                                  <span>Cetak Jurnal PDF</span>
+                                </button>
+                              </div>
                             </div>
                           );
                         })}
@@ -6566,7 +6634,7 @@ Wassalamualaikum Wr. Wb.
                     Jurnal Mengajar Wali Kelas
                   </span>
                   <h3 className="font-extrabold text-slate-950 text-base mt-0.5">
-                    Buat Jurnal & Presensi Kelas {journalClassName}
+                    {editingJournalId ? "Edit Jurnal & Presensi Kelas" : "Buat Jurnal & Presensi Kelas"} {journalClassName}
                   </h3>
                 </div>
                 <button
@@ -6773,7 +6841,7 @@ Wassalamualaikum Wr. Wb.
                       ) : (
                         <>
                           <Save size={13} />
-                          <span>Simpan Jurnal & Absensi</span>
+                          <span>{editingJournalId ? "Update Jurnal & Absensi" : "Simpan Jurnal & Absensi"}</span>
                         </>
                       )}
                     </button>

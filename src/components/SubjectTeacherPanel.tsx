@@ -5,7 +5,7 @@ import {
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
   Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer,
-  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download
+  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2
 } from 'lucide-react';
 
 interface SubjectTeacherPanelProps {
@@ -42,6 +42,22 @@ export default function SubjectTeacherPanel({
   const [pencapaianKktp, setPencapaianKktp] = useState<string>('Tercapai');
   const [journals, setJournals] = useState<TeachingJournal[]>([]);
   const [loadingJournals, setLoadingJournals] = useState<boolean>(false);
+
+  // Edit journal states for Subject Teacher panel
+  const [editingJournal, setEditingJournal] = useState<any | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState<boolean>(false);
+  const [editTopic, setEditTopic] = useState<string>('');
+  const [editNotes, setEditNotes] = useState<string>('');
+  const [editDate, setEditDate] = useState<string>('');
+  const [editFase, setEditFase] = useState<string>('D');
+  const [editSemester, setEditSemester] = useState<string>('Genap');
+  const [editAlokasiWaktu, setEditAlokasiWaktu] = useState<string>('2 JP');
+  const [editJamKe, setEditJamKe] = useState<string>('');
+  const [editPertemuanKe, setEditPertemuanKe] = useState<string>('');
+  const [editTujuanPembelajaran, setEditTujuanPembelajaran] = useState<string>('');
+  const [editPencapaianKktp, setEditPencapaianKktp] = useState<string>('Tercapai');
+  const [editDailyStatusMap, setEditDailyStatusMap] = useState<Record<string, { status: string; notes: string }>>({});
+  const [isSavingEdit, setIsSavingEdit] = useState<boolean>(false);
   
   // Realtime notification lists for Teacher panel view
   const [systemNotifications, setSystemNotifications] = useState<RealtimeNotification[]>([]);
@@ -319,6 +335,111 @@ export default function SubjectTeacherPanel({
       console.error(err);
     } finally {
       setLoadingJournals(false);
+    }
+  };
+
+  const handleOpenEditModal = (journal: any) => {
+    setEditingJournal(journal);
+    setEditTopic(journal.topic || '');
+    setEditNotes(journal.notes || '');
+    setEditDate(journal.date || '');
+    setEditFase(journal.fase || 'D');
+    setEditSemester(journal.semester || 'Genap');
+    setEditAlokasiWaktu(journal.alokasiWaktu || '2 JP');
+    setEditJamKe(journal.jamKe || '');
+    setEditPertemuanKe(journal.pertemuanKe || '');
+    setEditTujuanPembelajaran(journal.tujuanPembelajaran || '');
+    setEditPencapaianKktp(journal.pencapaianKktp || 'Tercapai');
+
+    const statusMap: Record<string, { status: string; notes: string }> = {};
+    if (Array.isArray(journal.attendance)) {
+      journal.attendance.forEach((att: any) => {
+        statusMap[att.studentId] = {
+          status: att.status || 'Hadir',
+          notes: att.notes || ''
+        };
+      });
+    }
+    setEditDailyStatusMap(statusMap);
+    setIsEditModalOpen(true);
+  };
+
+  const handleUpdateJournal = async () => {
+    if (!editingJournal) return;
+    if (!editTopic.trim()) {
+      alert("Materi KBM / Topik Pembelajaran harus diisi.");
+      return;
+    }
+
+    setIsSavingEdit(true);
+    try {
+      const journalClassStudents = students
+        .filter(s => s.class && s.class.toLowerCase() === editingJournal.className.toLowerCase())
+        .sort((a, b) => a.name.localeCompare(b.name));
+
+      const attendanceList = journalClassStudents.map(student => {
+        const studentRecord = editDailyStatusMap[student.id] || { status: 'Hadir', notes: '' };
+        return {
+          studentId: student.id,
+          studentName: student.name,
+          status: studentRecord.status,
+          notes: studentRecord.notes
+        };
+      });
+
+      const response = await fetch(`/api/teaching-journals/${editingJournal.id}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          topic: editTopic.trim(),
+          notes: editNotes.trim(),
+          date: editDate,
+          fase: editFase,
+          semester: editSemester,
+          alokasiWaktu: editAlokasiWaktu,
+          jamKe: editJamKe,
+          pertemuanKe: editPertemuanKe,
+          tujuanPembelajaran: editTujuanPembelajaran,
+          pencapaianKktp: editPencapaianKktp,
+          attendance: attendanceList
+        })
+      });
+
+      if (response.ok) {
+        setIsEditModalOpen(false);
+        setEditingJournal(null);
+        fetchJournals();
+        if (onRefresh) onRefresh();
+        alert("Jurnal KBM berhasil diperbarui!");
+      } else {
+        const errData = await response.json();
+        alert(errData.error || "Gagal memperbarui Jurnal Pembelajaran.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal terhubung dengan server.");
+    } finally {
+      setIsSavingEdit(false);
+    }
+  };
+
+  const handleDeleteJournalSubject = async (journalId: string) => {
+    if (!window.confirm("Apakah Anda yakin ingin menghapus jurnal pembelajaran ini beserta seluruh catatan absensi terkait?")) {
+      return;
+    }
+
+    try {
+      const res = await fetch(`/api/teaching-journals/${journalId}`, { method: 'DELETE' });
+      if (res.ok) {
+        fetchJournals();
+        if (onRefresh) onRefresh();
+        alert("Jurnal pembelajaran berhasil dihapus.");
+      } else {
+        alert("Gagal menghapus jurnal.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Gagal terhubung dengan server.");
     }
   };
 
@@ -1482,6 +1603,20 @@ export default function SubjectTeacherPanel({
                         <ChevronRight size={13} strokeWidth={2.5} />
                       </button>
                       <button
+                        onClick={() => handleOpenEditModal(journal)}
+                        className="px-3 py-2 bg-amber-55 hover:bg-amber-100 border border-amber-202 text-amber-800 font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                      >
+                        <Edit size={13} className="text-amber-600" />
+                        <span>Edit</span>
+                      </button>
+                      <button
+                        onClick={() => handleDeleteJournalSubject(journal.id)}
+                        className="p-2 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-600 rounded-xl transition-all flex items-center shadow-xs cursor-pointer"
+                        title="Hapus Jurnal"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                      <button
                         onClick={() => setSelectedJournalToPrint(journal)}
                         className="px-3.5 py-2 bg-indigo-50 hover:bg-indigo-100 border border-indigo-120 text-indigo-700 font-black text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5 shadow-xs"
                         title="Cetak Jurnal (PDF)"
@@ -2422,6 +2557,340 @@ export default function SubjectTeacherPanel({
                 >
                   Tutup Rincian
                 </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* Edit Jurnal KBM & Presensi Modal */}
+      <AnimatePresence>
+        {isEditModalOpen && editingJournal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.95, opacity: 0, y: 15 }}
+              className="bg-slate-50 w-full max-w-6xl rounded-3xl overflow-hidden shadow-2xl flex flex-col my-8 max-h-[90vh]"
+            >
+              {/* Header */}
+              <div className="px-6 py-4 border-b border-slate-200 bg-white flex items-center justify-between">
+                <div className="text-left animate-fade-in">
+                  <span className="px-2 py-0.5 bg-amber-100 text-amber-850 font-extrabold text-[9px] rounded-full uppercase tracking-wider">
+                    Mode Edit Jurnal KBM Mapel
+                  </span>
+                  <h3 className="font-extrabold text-slate-950 text-base mt-0.5">
+                    Edit Jurnal & Presensi Kelas {editingJournal.className}
+                  </h3>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setIsEditModalOpen(false);
+                    setEditingJournal(null);
+                  }}
+                  className="p-1 px-2.5 text-slate-400 hover:text-slate-800 font-bold transition-all hover:bg-slate-100 rounded-lg cursor-pointer text-xs"
+                >
+                  Batal
+                </button>
+              </div>
+
+              {/* Form Content Scrollable */}
+              <div className="flex-1 overflow-y-auto p-6 flex flex-col lg:grid lg:grid-cols-12 gap-6">
+                
+                {/* Left side: Meta details */}
+                <div className="lg:col-span-4 flex flex-col gap-4 text-left">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-4 flex flex-col gap-3.5 shadow-2xs">
+                    <h4 className="font-bold text-slate-900 text-xs border-b border-slate-100 pb-2 flex items-center gap-1.5 font-sans font-black">
+                      <FileText size={14} className="text-amber-600" />
+                      Detail KBM / Pelajaran
+                    </h4>
+
+                    {/* Subject/Class Info (Readonly) */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-400 uppercase">Mata Pelajaran & Kelas</label>
+                      <div className="px-3 py-2 bg-slate-50 border border-slate-150 rounded-xl font-extrabold text-xs text-slate-700">
+                        {editingJournal.subject} - Kelas {editingJournal.className}
+                      </div>
+                    </div>
+
+                    {/* Tanggal KBM */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Tanggal KBM</label>
+                      <input
+                        type="date"
+                        value={editDate}
+                        onChange={(e) => setEditDate(e.target.value)}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white"
+                      />
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-3">
+                      {/* Fase */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Fase</label>
+                        <select
+                          value={editFase}
+                          onChange={(e) => setEditFase(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-850 bg-white cursor-pointer"
+                        >
+                          <option value="A">Fase A (Kls 1-2)</option>
+                          <option value="B">Fase B (Kls 3-4)</option>
+                          <option value="C">Fase C (Kls 5-6)</option>
+                          <option value="D">Fase D (Kls 7-9)</option>
+                          <option value="E">Fase E (Kls 10)</option>
+                          <option value="F">Fase F (Kls 11-12)</option>
+                        </select>
+                      </div>
+
+                      {/* Semester */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Semester</label>
+                        <select
+                          value={editSemester}
+                          onChange={(e) => setEditSemester(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-850 bg-white cursor-pointer"
+                        >
+                          <option value="Ganjil">Ganjil</option>
+                          <option value="Genap">Genap</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-3 gap-2">
+                      {/* Jam Ke */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Jam Ke</label>
+                        <input
+                          type="text"
+                          value={editJamKe}
+                          onChange={(e) => setEditJamKe(e.target.value)}
+                          placeholder="e.g. 1 - 2"
+                          className="px-2 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 text-center bg-white"
+                        />
+                      </div>
+
+                      {/* Pertemuan Ke */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
+                        <input
+                          type="text"
+                          value={editPertemuanKe}
+                          onChange={(e) => setEditPertemuanKe(e.target.value)}
+                          placeholder="e.g. 1"
+                          className="px-2 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 text-center bg-white"
+                        />
+                      </div>
+
+                      {/* Alokasi Waktu */}
+                      <div className="flex flex-col gap-1">
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Alokasi Waktu</label>
+                        <select
+                          value={editAlokasiWaktu}
+                          onChange={(e) => setEditAlokasiWaktu(e.target.value)}
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                        >
+                          <option value="1 JP">1 JP (40 Menit)</option>
+                          <option value="2 JP">2 JP (80 Menit)</option>
+                          <option value="3 JP">3 JP (120 Menit)</option>
+                          <option value="4 JP">4 JP (160 Menit)</option>
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Materi KBM / Topik Pembelajaran */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Materi KBM / Topik</label>
+                      <input
+                        type="text"
+                        value={editTopic}
+                        onChange={(e) => setEditTopic(e.target.value)}
+                        placeholder="e.g. Aljabar Linier & Matriks"
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-850 bg-white"
+                      />
+                    </div>
+
+                    {/* Tujuan Pembelajaran */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Tujuan Pembelajaran</label>
+                      <textarea
+                        value={editTujuanPembelajaran}
+                        onChange={(e) => setEditTujuanPembelajaran(e.target.value)}
+                        placeholder="Siswa dapat mendeskripsikan dan menyelesaikan..."
+                        rows={2}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-850 resize-none font-sans bg-white"
+                      />
+                    </div>
+
+                    {/* Pencapaian KKTP */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Pecapaian KKTP</label>
+                      <select
+                        value={editPencapaianKktp}
+                        onChange={(e) => setEditPencapaianKktp(e.target.value)}
+                        className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                      >
+                        <option value="Tercapai">Tercapai</option>
+                        <option value="Sebagian Tercapai">Sebagian Tercapai</option>
+                        <option value="Belum Tercapai">Belum Tercapai</option>
+                      </select>
+                    </div>
+
+                    {/* Catatan KBM Tambahan */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Catatan Tambahan</label>
+                      <textarea
+                        value={editNotes}
+                        onChange={(e) => setEditNotes(e.target.value)}
+                        placeholder="Hambatan, penugasan, atau rekap khusus..."
+                        rows={2}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-semibold text-xs text-slate-850 resize-none font-sans bg-white"
+                      />
+                    </div>
+
+                    {/* Update Action Button */}
+                    <button
+                      type="button"
+                      onClick={handleUpdateJournal}
+                      disabled={isSavingEdit}
+                      className="w-full mt-2 py-2.5 bg-amber-600 hover:bg-amber-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-amber-50 border border-amber-700 flex items-center justify-center gap-1.5"
+                    >
+                      {isSavingEdit ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" />
+                          <span>Menyimpan Perubahan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Save size={13} />
+                          <span>Perbarui Jurnal & Absensi</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Right side: Student list for attendance */}
+                <div className="lg:col-span-8 flex flex-col gap-4 text-left">
+                  <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-2xs flex-1 flex flex-col">
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-3 mb-4 select-none flex-wrap gap-2">
+                      <div>
+                        <h4 className="font-extrabold text-slate-950 text-xs flex items-center gap-1.5 font-sans font-black">
+                          <Users size={14} className="text-amber-600" />
+                          Presensi KBM Siswa (Kelas {editingJournal.className})
+                        </h4>
+                        <p className="text-[10px] text-slate-450 mt-0.5 font-medium">Ubah status kehadiran siswa untuk jam pelajaran ini.</p>
+                      </div>
+
+                      {/* Quick Bulk actions */}
+                      <div className="flex items-center gap-1">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const newMap: Record<string, { status: string; notes: string }> = {};
+                            students
+                              .filter(s => s.class && s.class.toLowerCase() === editingJournal.className.toLowerCase())
+                              .forEach(s => {
+                                newMap[s.id] = { status: 'Hadir', notes: '' };
+                              });
+                            setEditDailyStatusMap(newMap);
+                          }}
+                          className="px-2 py-1 text-[10px] font-bold bg-slate-50 text-slate-600 border border-slate-200 hover:bg-emerald-50 hover:text-emerald-700 hover:border-emerald-200 rounded-lg cursor-pointer transition-all animate-fade-in"
+                        >
+                          Hadir Semua
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Scrollable list/table of students */}
+                    <div className="flex-1 overflow-y-auto max-h-[50vh] pr-1">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        {students
+                          .filter(s => s.class && s.class.toLowerCase() === editingJournal.className.toLowerCase())
+                          .sort((a, b) => a.name.localeCompare(b.name))
+                          .map((student, idx) => {
+                            const currentRecord = editDailyStatusMap[student.id] || { status: 'Hadir', notes: '' };
+                            return (
+                              <div
+                                key={student.id}
+                                className={`p-3 border rounded-xl transition-all flex flex-col gap-2 bg-slate-50/30 ${
+                                  currentRecord.status === 'Hadir' ? 'border-slate-200 focus-within:border-slate-500' :
+                                  currentRecord.status === 'Terlambat' ? 'border-amber-250 bg-amber-50/10' :
+                                  currentRecord.status === 'Sakit' ? 'border-yellow-250 bg-yellow-50/10' :
+                                  currentRecord.status === 'Izin' ? 'border-blue-250 bg-blue-50/10' :
+                                  'border-rose-250 bg-rose-50/10'
+                                }`}
+                              >
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2">
+                                    <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-800 font-extrabold text-[10px] flex items-center justify-center select-none font-mono font-black">
+                                      {idx + 1}
+                                    </span>
+                                    <div className="text-left">
+                                      <p className="font-extrabold text-xs text-slate-900 leading-tight font-black">
+                                        {student.name}
+                                      </p>
+                                      <p className="text-[10px] text-slate-400 font-bold font-mono uppercase font-black">
+                                        NISN: {student.nisn || student.id}
+                                      </p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Status Radio Buttons */}
+                                <div className="grid grid-cols-5 gap-1 select-none">
+                                  {(['Hadir', 'Terlambat', 'Sakit', 'Izin', 'Alpa'] as const).map(st => (
+                                    <button
+                                      key={st}
+                                      type="button"
+                                      onClick={() => {
+                                        setEditDailyStatusMap(prev => ({
+                                          ...prev,
+                                          [student.id]: {
+                                            ...prev[student.id],
+                                            status: st
+                                          }
+                                        }));
+                                      }}
+                                      className={`py-1 text-[10px] font-extrabold rounded-lg border transition-all text-center cursor-pointer font-black ${
+                                        currentRecord.status === st
+                                          ? st === 'Hadir' ? 'bg-emerald-600 border-emerald-700 text-white shadow-xs' :
+                                            st === 'Terlambat' ? 'bg-amber-500 border-amber-600 text-white shadow-xs' :
+                                            st === 'Sakit' ? 'bg-yellow-500 border-yellow-600 text-white shadow-xs' :
+                                            st === 'Izin' ? 'bg-blue-600 border-blue-700 text-white shadow-xs' :
+                                            'bg-rose-600 border-rose-700 text-white shadow-xs'
+                                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                                      }`}
+                                    >
+                                      {st}
+                                    </button>
+                                  ))}
+                                </div>
+
+                                {/* Attendance Notes */}
+                                <input
+                                  type="text"
+                                  placeholder="Keterangan (misal: Surat Sakit, telat 10m)..."
+                                  value={currentRecord.notes || ''}
+                                  onChange={(e) => {
+                                    setEditDailyStatusMap(prev => ({
+                                      ...prev,
+                                      [student.id]: {
+                                        ...prev[student.id],
+                                        notes: e.target.value
+                                      }
+                                    }));
+                                  }}
+                                  className="px-2.5 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-lg text-[10.5px] font-semibold text-slate-700 bg-white"
+                                />
+                              </div>
+                            );
+                          })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
               </div>
             </motion.div>
           </div>

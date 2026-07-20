@@ -1026,11 +1026,50 @@ export default function HomeroomPanel({
   const [journalAttendanceMap, setJournalAttendanceMap] = useState<Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }>>({});
   const [savingJournal, setSavingJournal] = useState(false);
   const [journalSearchQuery, setJournalSearchQuery] = useState('');
+  const [journalClassName, setJournalClassName] = useState<string>(currentTeacher.className);
+
+  // Get all unique classes taught in school
+  const allClassNames = useMemo(() => {
+    const classes = new Set<string>();
+    if (currentTeacher?.className) {
+      classes.add(currentTeacher.className);
+    }
+    students.forEach(s => {
+      if (s.class) {
+        classes.add(s.class);
+      }
+    });
+    return Array.from(classes).sort();
+  }, [students, currentTeacher?.className]);
+
+  // Dynamic journalStudents list based on selected class in the modal
+  const journalStudents = useMemo(() => {
+    const targetClass = journalClassName || currentTeacher.className;
+    return students
+      .filter(
+        (s) => s.class.toLowerCase() === targetClass.toLowerCase()
+      )
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [students, journalClassName, currentTeacher.className]);
+
+  // Automatically reset the attendance map when the selected journal class changes
+  useEffect(() => {
+    if (isAddJournalOpen && journalStudents.length > 0) {
+      const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
+      journalStudents.forEach(st => {
+        initialMap[st.id] = { status: 'Hadir', notes: '' };
+      });
+      setJournalAttendanceMap(initialMap);
+    }
+  }, [journalStudents, isAddJournalOpen]);
 
   const handleOpenAddJournalModal = () => {
-    // Initialize attendance map for all students in class as "Hadir"
+    setJournalClassName(currentTeacher.className);
     const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
-    classStudents.forEach(st => {
+    const defaultStudents = students
+      .filter((s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase())
+      .sort((a, b) => a.name.localeCompare(b.name));
+    defaultStudents.forEach(st => {
       initialMap[st.id] = { status: 'Hadir', notes: '' };
     });
     setJournalAttendanceMap(initialMap);
@@ -1059,7 +1098,7 @@ export default function HomeroomPanel({
 
     setSavingJournal(true);
     try {
-      const attendanceList = classStudents.map(student => {
+      const attendanceList = journalStudents.map(student => {
         const record = journalAttendanceMap[student.id] || { status: 'Hadir', notes: '' };
         return {
           studentId: student.id,
@@ -1077,7 +1116,7 @@ export default function HomeroomPanel({
           teacherName: currentTeacher.name,
           teacherType: 'homeroom',
           subject: journalSubject.trim(),
-          className: currentTeacher.className,
+          className: journalClassName,
           date: journalDate,
           topic: journalTopic.trim(),
           notes: journalNotes.trim(),
@@ -1114,8 +1153,11 @@ export default function HomeroomPanel({
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
         const data = await res.json();
-        // Filter journals that belong to current homeroom teacher's class
-        const filtered = data.filter((j: any) => j.className.toLowerCase() === currentTeacher.className.toLowerCase());
+        // Filter journals that belong to current homeroom teacher's class OR are taught by this teacher
+        const filtered = data.filter((j: any) => 
+          j.className.toLowerCase() === currentTeacher.className.toLowerCase() || 
+          j.teacherId === currentTeacher.id
+        );
         setTeachingJournalsList(filtered);
       }
     } catch (err) {
@@ -6524,7 +6566,7 @@ Wassalamualaikum Wr. Wb.
                     Jurnal Mengajar Wali Kelas
                   </span>
                   <h3 className="font-extrabold text-slate-950 text-base mt-0.5">
-                    Buat Jurnal & Presensi Kelas {currentTeacher.className}
+                    Buat Jurnal & Presensi Kelas {journalClassName}
                   </h3>
                 </div>
                 <button
@@ -6546,6 +6588,22 @@ Wassalamualaikum Wr. Wb.
                       <FileText size={14} className="text-emerald-600" />
                       Detail KBM / Bimbingan
                     </h4>
+
+                    {/* Kelas yang Diajarkan */}
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black text-slate-500 uppercase">Kelas yang Diajarkan</label>
+                      <select
+                        value={journalClassName}
+                        onChange={(e) => setJournalClassName(e.target.value)}
+                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer shadow-2xs"
+                      >
+                        {allClassNames.map(cls => (
+                          <option key={cls} value={cls}>
+                            Kelas {cls} {cls === currentTeacher.className ? "(Kelas Binaan)" : "(Kelas Lain)"}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
 
                     {/* Mata Pelajaran / Kegiatan */}
                     <div className="flex flex-col gap-1">
@@ -6704,7 +6762,7 @@ Wassalamualaikum Wr. Wb.
                     <button
                       type="button"
                       onClick={handleSaveHomeroomJournal}
-                      disabled={savingJournal || classStudents.length === 0}
+                      disabled={savingJournal || journalStudents.length === 0}
                       className="w-full mt-1.5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-100 disabled:text-slate-400 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-emerald-50 border border-emerald-700 flex items-center justify-center gap-1.5"
                     >
                       {savingJournal ? (
@@ -6732,7 +6790,7 @@ Wassalamualaikum Wr. Wb.
                           Roster Absensi Presensi Siswa
                         </h4>
                         <p className="text-[10px] text-slate-400 font-semibold mt-0.5">
-                          Tentukan status kehadiran untuk {classStudents.length} siswa kelas bimbingan Anda.
+                          Tentukan status kehadiran untuk {journalStudents.length} siswa kelas {journalClassName}.
                         </p>
                       </div>
 
@@ -6740,7 +6798,7 @@ Wassalamualaikum Wr. Wb.
                         type="button"
                         onClick={() => {
                           const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
-                          classStudents.forEach(st => {
+                          journalStudents.forEach(st => {
                             initialMap[st.id] = { status: 'Hadir', notes: '' };
                           });
                           setJournalAttendanceMap(initialMap);
@@ -6770,7 +6828,7 @@ Wassalamualaikum Wr. Wb.
 
                     {/* List */}
                     <div className="max-h-[350px] overflow-y-auto divide-y divide-slate-100 bg-white">
-                      {classStudents
+                      {journalStudents
                         .filter(s => s.name?.toLowerCase().includes(journalSearchQuery.toLowerCase()) || s.nis?.toLowerCase().includes(journalSearchQuery.toLowerCase()))
                         .map((student, idx) => {
                           const record = journalAttendanceMap[student.id] || { status: 'Hadir', notes: '' };

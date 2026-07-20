@@ -1053,6 +1053,7 @@ export default function HomeroomPanel({
   const [journalClassName, setJournalClassName] = useState<string>(currentTeacher.className);
 
   const [editingJournalId, setEditingJournalId] = useState<string | null>(null);
+  const [isCustomSubject, setIsCustomSubject] = useState(false);
 
   // Get all unique classes taught in school
   const allClassNames = useMemo(() => {
@@ -1101,6 +1102,7 @@ export default function HomeroomPanel({
     });
     setJournalAttendanceMap(initialMap);
     setJournalSubject('Bimbingan Wali Kelas');
+    setIsCustomSubject(false);
     const todayStr = new Date().toISOString().substring(0, 10);
     setJournalDate(todayStr);
     setJournalSemester(getSemesterFromDate(todayStr));
@@ -1119,13 +1121,33 @@ export default function HomeroomPanel({
     setEditingJournalId(journal.id);
     setJournalClassName(journal.className || currentTeacher.className);
     setJournalSubject(journal.subject || 'Bimbingan Wali Kelas');
+    
+    const isPredefined = [
+      'Bimbingan Wali Kelas', 
+      'Matematika', 
+      'IPA', 
+      'IPS', 
+      'Bahasa Indonesia', 
+      'Bahasa Inggris', 
+      'PJOK', 
+      'Pendidikan Agama Islam', 
+      'Seni Budaya', 
+      'Informatika', 
+      'Pendidikan Pancasila', 
+      'Prakarya',
+      'Jam Kelas/Koordinasi', 
+      'Pendidikan Karakter', 
+      'Literasi Mandiri'
+    ].includes(journal.subject || 'Bimbingan Wali Kelas');
+    setIsCustomSubject(!isPredefined);
+
     setJournalDate(journal.date || new Date().toISOString().substring(0, 10));
     setJournalSemester(journal.semester || getSemesterFromDate(journal.date || ''));
     setJournalFase(journal.fase || 'D');
     setJournalTopic(journal.topic || '');
 
     const cleanPertemuan = journal.pertemuanKe ? String(journal.pertemuanKe).replace(/\D/g, '') : '';
-    const cleanJam = journal.jamKe ? String(journal.jamKe).replace(/\D/g, '') : '';
+    const cleanJam = journal.jamKe ? String(journal.jamKe) : '';
     const cleanAlokasi = journal.alokasiWaktu ? String(journal.alokasiWaktu).replace(/\D/g, '') : '2';
 
     setJournalPertemuanKe(cleanPertemuan);
@@ -6872,47 +6894,60 @@ Wassalamualaikum Wr. Wb.
                     </div>
 
                     {/* Mata Pelajaran / Kegiatan */}
-                    <div className="flex flex-col gap-1">
+                    <div className="flex flex-col gap-1.5">
                       <label className="text-[10px] font-black text-slate-500 uppercase">Mata Pelajaran / Kegiatan</label>
-                      <input
-                        type="text"
-                        value={journalSubject}
-                        onChange={(e) => setJournalSubject(e.target.value)}
-                        placeholder="Contoh: Bimbingan Wali Kelas, Bahasa Indonesia..."
-                        className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white shadow-2xs"
-                      />
-                      <select
-                        onChange={(e) => {
-                          if (e.target.value) {
-                            setJournalSubject(e.target.value);
-                          }
-                        }}
-                        value={['Bimbingan Wali Kelas', 'Matematika', 'IPA', 'IPS', 'Bahasa Indonesia', 'Bahasa Inggris', 'PJOK', 'Pendidikan Agama Islam', 'Seni Budaya', 'Informatika', 'PP', 'Prakarya', 'Jam Kelas/Koordinasi', 'Pendidikan Karakter', 'Literasi Mandiri'].includes(journalSubject) ? journalSubject : ""}
-                        className="mt-1 px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-slate-50 hover:bg-slate-100 cursor-pointer shadow-3xs"
-                      >
-                        <option value="">-- Pilih Mata Pelajaran Cepat --</option>
-                        {[
-                          'Bimbingan Wali Kelas', 
-                          'Matematika', 
-                          'IPA', 
-                          'IPS', 
-                          'Bahasa Indonesia', 
-                          'Bahasa Inggris', 
-                          'PJOK', 
-                          'Pendidikan Agama Islam', 
-                          'Seni Budaya', 
-                          'Informatika', 
-                          'PP', 
-                          'Prakarya',
-                          'Jam Kelas/Koordinasi', 
-                          'Pendidikan Karakter', 
-                          'Literasi Mandiri'
-                        ].map(tag => (
-                          <option key={tag} value={tag}>
-                            {tag}
-                          </option>
-                        ))}
-                      </select>
+                      {!isCustomSubject ? (
+                        <select
+                          value={journalSubject}
+                          onChange={(e) => setJournalSubject(e.target.value)}
+                          className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer shadow-2xs"
+                        >
+                          {[
+                            'Bimbingan Wali Kelas', 
+                            'Matematika', 
+                            'IPA', 
+                            'IPS', 
+                            'Bahasa Indonesia', 
+                            'Bahasa Inggris', 
+                            'PJOK', 
+                            'Pendidikan Agama Islam', 
+                            'Seni Budaya', 
+                            'Informatika', 
+                            'Pendidikan Pancasila', 
+                            'Prakarya',
+                            'Jam Kelas/Koordinasi', 
+                            'Pendidikan Karakter', 
+                            'Literasi Mandiri'
+                          ].map(tag => (
+                            <option key={tag} value={tag}>
+                              {tag}
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={journalSubject}
+                          onChange={(e) => setJournalSubject(e.target.value)}
+                          placeholder="Contoh: Bimbingan Wali Kelas, Bahasa Indonesia..."
+                          className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white shadow-2xs"
+                        />
+                      )}
+                      <label className="flex items-center gap-2 mt-1 select-none cursor-pointer">
+                        <input 
+                          type="checkbox"
+                          checked={isCustomSubject}
+                          onChange={(e) => {
+                            const checked = e.target.checked;
+                            setIsCustomSubject(checked);
+                            if (!checked) {
+                              setJournalSubject('Bimbingan Wali Kelas');
+                            }
+                          }}
+                          className="rounded text-indigo-600 focus:ring-indigo-500 h-3.5 w-3.5 border-slate-300"
+                        />
+                        <span className="text-[10px] font-bold text-slate-600">Tulis Manual Mata Pelajaran / Kegiatan</span>
+                      </label>
                     </div>
 
                     {/* Tanggal */}
@@ -6965,39 +7000,39 @@ Wassalamualaikum Wr. Wb.
                     <div className="grid grid-cols-3 gap-1.5">
                       <div className="flex flex-col gap-1">
                         <label className="text-[9px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder="1"
+                        <select
                           value={journalPertemuanKe}
                           onChange={(e) => setJournalPertemuanKe(e.target.value)}
-                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
-                        />
+                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white cursor-pointer text-center"
+                        >
+                          <option value="">Pilih</option>
+                          {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                            <option key={num} value={String(num)}>{num}</option>
+                          ))}
+                        </select>
                       </div>
                       <div className="flex flex-col gap-1">
                         <label className="text-[9px] font-black text-slate-500 uppercase">Jam Ke</label>
                         <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder="1"
+                          type="text"
+                          placeholder="misal: 1"
                           value={journalJamKe}
                           onChange={(e) => setJournalJamKe(e.target.value)}
-                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
+                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-850 bg-white text-center"
                         />
                       </div>
                       <div className="flex flex-col gap-1">
                         <label className="text-[9px] font-black text-slate-500 uppercase">Alokasi (JP)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
-                          placeholder="2"
+                        <select
                           value={journalAlokasiWaktu}
                           onChange={(e) => setJournalAlokasiWaktu(e.target.value)}
-                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
-                        />
+                          className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white cursor-pointer text-center"
+                        >
+                          <option value="">Pilih</option>
+                          {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                            <option key={num} value={String(num)}>{num} JP</option>
+                          ))}
+                        </select>
                       </div>
                     </div>
 

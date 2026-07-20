@@ -355,7 +355,7 @@ export default function SubjectTeacherPanel({
     setEditSemester(journal.semester || 'Genap');
 
     const cleanPertemuan = journal.pertemuanKe ? String(journal.pertemuanKe).replace(/\D/g, '') : '';
-    const cleanJam = journal.jamKe ? String(journal.jamKe).replace(/\D/g, '') : '';
+    const cleanJam = journal.jamKe ? String(journal.jamKe) : '';
     const cleanAlokasi = journal.alokasiWaktu ? String(journal.alokasiWaktu).replace(/\D/g, '') : '2';
 
     setEditPertemuanKe(cleanPertemuan);
@@ -1094,24 +1094,23 @@ export default function SubjectTeacherPanel({
               <div className="grid grid-cols-3 gap-2">
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650">Pertemuan Ke</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="1"
+                  <select
                     value={pertemuanKe}
                     onChange={(e) => setPertemuanKe(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
-                  />
+                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
+                  >
+                    <option value="">Pilih</option>
+                    {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                      <option key={num} value={String(num)}>{num}</option>
+                    ))}
+                  </select>
                 </div>
 
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650">Jam Ke</label>
                   <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="1"
+                    type="text"
+                    placeholder="misal: 1 - 2"
                     value={jamKe}
                     onChange={(e) => setJamKe(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
@@ -1120,15 +1119,16 @@ export default function SubjectTeacherPanel({
 
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650">Alokasi (JP)</label>
-                  <input
-                    type="number"
-                    min="1"
-                    step="1"
-                    placeholder="2"
+                  <select
                     value={alokasiWaktu}
                     onChange={(e) => setAlokasiWaktu(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
-                  />
+                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
+                  >
+                    <option value="">Pilih</option>
+                    {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                      <option key={num} value={String(num)}>{num} JP</option>
+                    ))}
+                  </select>
                 </div>
               </div>
 
@@ -2688,9 +2688,7 @@ export default function SubjectTeacherPanel({
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-black text-slate-500 uppercase">Jam Ke</label>
                         <input
-                          type="number"
-                          min="1"
-                          step="1"
+                          type="text"
                           value={editJamKe}
                           onChange={(e) => setEditJamKe(e.target.value)}
                           placeholder="e.g. 1"
@@ -2701,29 +2699,31 @@ export default function SubjectTeacherPanel({
                       {/* Pertemuan Ke */}
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
+                        <select
                           value={editPertemuanKe}
                           onChange={(e) => setEditPertemuanKe(e.target.value)}
-                          placeholder="e.g. 1"
-                          className="px-2 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 text-center bg-white"
-                        />
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                        >
+                          <option value="">Pilih</option>
+                          {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                            <option key={num} value={String(num)}>{num}</option>
+                          ))}
+                        </select>
                       </div>
 
                       {/* Alokasi Waktu */}
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-black text-slate-500 uppercase">Alokasi Waktu (JP)</label>
-                        <input
-                          type="number"
-                          min="1"
-                          step="1"
+                        <select
                           value={editAlokasiWaktu}
                           onChange={(e) => setEditAlokasiWaktu(e.target.value)}
-                          placeholder="e.g. 2"
-                          className="px-2 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 text-center bg-white"
-                        />
+                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
+                        >
+                          <option value="">Pilih</option>
+                          {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
+                            <option key={num} value={String(num)}>{num} JP</option>
+                          ))}
+                        </select>
                       </div>
                     </div>             </div>
 

@@ -595,6 +595,14 @@ function printStudentCombinedRecap(
   printWin.document.close();
 }
 
+const getSemesterFromDate = (dateStr: string): 'Ganjil' | 'Genap' => {
+  if (!dateStr) return 'Genap';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Genap';
+  const month = d.getMonth(); // 0 = Jan, 11 = Dec
+  return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+};
+
 interface HomeroomPanelProps {
   currentTeacher: HomeroomTeacher;
   students: Student[];
@@ -1032,10 +1040,10 @@ export default function HomeroomPanel({
   const [journalDate, setJournalDate] = useState(() => new Date().toISOString().substring(0, 10));
   const [journalTopic, setJournalTopic] = useState('');
   const [journalFase, setJournalFase] = useState('D');
-  const [journalSemester, setJournalSemester] = useState('Genap');
+  const [journalSemester, setJournalSemester] = useState(() => getSemesterFromDate(new Date().toISOString().substring(0, 10)));
   const [journalPertemuanKe, setJournalPertemuanKe] = useState('');
   const [journalJamKe, setJournalJamKe] = useState('');
-  const [journalAlokasiWaktu, setJournalAlokasiWaktu] = useState('2 JP');
+  const [journalAlokasiWaktu, setJournalAlokasiWaktu] = useState('2');
   const [journalTujuanPembelajaran, setJournalTujuanPembelajaran] = useState('');
   const [journalPencapaianKktp, setJournalPencapaianKktp] = useState('Tercapai');
   const [journalNotes, setJournalNotes] = useState('');
@@ -1093,11 +1101,14 @@ export default function HomeroomPanel({
     });
     setJournalAttendanceMap(initialMap);
     setJournalSubject('Bimbingan Wali Kelas');
-    setJournalDate(new Date().toISOString().substring(0, 10));
+    const todayStr = new Date().toISOString().substring(0, 10);
+    setJournalDate(todayStr);
+    setJournalSemester(getSemesterFromDate(todayStr));
+    setJournalFase('D');
     setJournalTopic('');
     setJournalPertemuanKe('');
     setJournalJamKe('');
-    setJournalAlokasiWaktu('2 JP');
+    setJournalAlokasiWaktu('2');
     setJournalTujuanPembelajaran('');
     setJournalPencapaianKktp('Tercapai');
     setJournalNotes('');
@@ -1109,10 +1120,18 @@ export default function HomeroomPanel({
     setJournalClassName(journal.className || currentTeacher.className);
     setJournalSubject(journal.subject || 'Bimbingan Wali Kelas');
     setJournalDate(journal.date || new Date().toISOString().substring(0, 10));
+    setJournalSemester(journal.semester || getSemesterFromDate(journal.date || ''));
+    setJournalFase(journal.fase || 'D');
     setJournalTopic(journal.topic || '');
-    setJournalPertemuanKe(journal.pertemuanKe || '');
-    setJournalJamKe(journal.jamKe || '');
-    setJournalAlokasiWaktu(journal.alokasiWaktu || '2 JP');
+
+    const cleanPertemuan = journal.pertemuanKe ? String(journal.pertemuanKe).replace(/\D/g, '') : '';
+    const cleanJam = journal.jamKe ? String(journal.jamKe).replace(/\D/g, '') : '';
+    const cleanAlokasi = journal.alokasiWaktu ? String(journal.alokasiWaktu).replace(/\D/g, '') : '2';
+
+    setJournalPertemuanKe(cleanPertemuan);
+    setJournalJamKe(cleanJam);
+    setJournalAlokasiWaktu(cleanAlokasi);
+
     setJournalTujuanPembelajaran(journal.tujuanPembelajaran || '');
     setJournalPencapaianKktp(journal.pencapaianKktp || 'Tercapai');
     setJournalNotes(journal.notes || '');
@@ -6829,18 +6848,38 @@ Wassalamualaikum Wr. Wb.
                         placeholder="Contoh: Bimbingan Wali Kelas, Bahasa Indonesia..."
                         className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white shadow-2xs"
                       />
-                      <div className="flex flex-wrap gap-1 mt-1">
-                        {['Bimbingan Wali Kelas', 'Jam Kelas/Koordinasi', 'Pendidikan Karakter', 'Literasi Mandiri'].map(tag => (
-                          <button
-                            key={tag}
-                            type="button"
-                            onClick={() => setJournalSubject(tag)}
-                            className="px-1.5 py-0.5 text-[8.5px] font-bold border rounded bg-slate-50 hover:bg-slate-100 text-slate-600 cursor-pointer border-slate-200"
-                          >
+                      <select
+                        onChange={(e) => {
+                          if (e.target.value) {
+                            setJournalSubject(e.target.value);
+                          }
+                        }}
+                        value={['Bimbingan Wali Kelas', 'Matematika', 'IPA', 'IPS', 'Bahasa Indonesia', 'Bahasa Inggris', 'PJOK', 'Pendidikan Agama Islam', 'Seni Budaya', 'Informatika', 'PP', 'Prakarya', 'Jam Kelas/Koordinasi', 'Pendidikan Karakter', 'Literasi Mandiri'].includes(journalSubject) ? journalSubject : ""}
+                        className="mt-1 px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-slate-50 hover:bg-slate-100 cursor-pointer shadow-3xs"
+                      >
+                        <option value="">-- Pilih Mata Pelajaran Cepat --</option>
+                        {[
+                          'Bimbingan Wali Kelas', 
+                          'Matematika', 
+                          'IPA', 
+                          'IPS', 
+                          'Bahasa Indonesia', 
+                          'Bahasa Inggris', 
+                          'PJOK', 
+                          'Pendidikan Agama Islam', 
+                          'Seni Budaya', 
+                          'Informatika', 
+                          'PP', 
+                          'Prakarya',
+                          'Jam Kelas/Koordinasi', 
+                          'Pendidikan Karakter', 
+                          'Literasi Mandiri'
+                        ].map(tag => (
+                          <option key={tag} value={tag}>
                             {tag}
-                          </button>
+                          </option>
                         ))}
-                      </div>
+                      </select>
                     </div>
 
                     {/* Tanggal */}
@@ -6849,7 +6888,11 @@ Wassalamualaikum Wr. Wb.
                       <input
                         type="date"
                         value={journalDate}
-                        onChange={(e) => setJournalDate(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setJournalDate(val);
+                          setJournalSemester(getSemesterFromDate(val));
+                        }}
                         className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white"
                       />
                     </div>
@@ -6890,8 +6933,10 @@ Wassalamualaikum Wr. Wb.
                       <div className="flex flex-col gap-1">
                         <label className="text-[9px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
                         <input
-                          type="text"
-                          placeholder="misal: 1"
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="1"
                           value={journalPertemuanKe}
                           onChange={(e) => setJournalPertemuanKe(e.target.value)}
                           className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
@@ -6900,18 +6945,22 @@ Wassalamualaikum Wr. Wb.
                       <div className="flex flex-col gap-1">
                         <label className="text-[9px] font-black text-slate-500 uppercase">Jam Ke</label>
                         <input
-                          type="text"
-                          placeholder="cth: 1 - 2"
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="1"
                           value={journalJamKe}
                           onChange={(e) => setJournalJamKe(e.target.value)}
                           className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"
                         />
                       </div>
                       <div className="flex flex-col gap-1">
-                        <label className="text-[9px] font-black text-slate-500 uppercase">Alokasi</label>
+                        <label className="text-[9px] font-black text-slate-500 uppercase">Alokasi (JP)</label>
                         <input
-                          type="text"
-                          placeholder="cth: 2 JP"
+                          type="number"
+                          min="1"
+                          step="1"
+                          placeholder="2"
                           value={journalAlokasiWaktu}
                           onChange={(e) => setJournalAlokasiWaktu(e.target.value)}
                           className="px-2.5 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-805 bg-white text-center"

@@ -8,6 +8,14 @@ import {
   User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2
 } from 'lucide-react';
 
+const getSemesterFromDate = (dateStr: string): 'Ganjil' | 'Genap' => {
+  if (!dateStr) return 'Genap';
+  const d = new Date(dateStr);
+  if (isNaN(d.getTime())) return 'Genap';
+  const month = d.getMonth(); // 0 = Jan, 11 = Dec
+  return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+};
+
 interface SubjectTeacherPanelProps {
   currentTeacher: SubjectTeacher;
   students: Student[];
@@ -34,9 +42,9 @@ export default function SubjectTeacherPanel({
   const [topic, setTopic] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [fase, setFase] = useState<string>('D');
-  const [semester, setSemester] = useState<string>('Genap');
-  const [alokasiWaktu, setAlokasiWaktu] = useState<string>('2 JP');
-  const [jamKe, setJamKe] = useState<string>('1 - 2');
+  const [semester, setSemester] = useState<string>(() => getSemesterFromDate(new Date().toISOString().split('T')[0]));
+  const [alokasiWaktu, setAlokasiWaktu] = useState<string>('2');
+  const [jamKe, setJamKe] = useState<string>('1');
   const [pertemuanKe, setPertemuanKe] = useState<string>('');
   const [tujuanPembelajaran, setTujuanPembelajaran] = useState<string>('');
   const [pencapaianKktp, setPencapaianKktp] = useState<string>('Tercapai');
@@ -51,7 +59,7 @@ export default function SubjectTeacherPanel({
   const [editDate, setEditDate] = useState<string>('');
   const [editFase, setEditFase] = useState<string>('D');
   const [editSemester, setEditSemester] = useState<string>('Genap');
-  const [editAlokasiWaktu, setEditAlokasiWaktu] = useState<string>('2 JP');
+  const [editAlokasiWaktu, setEditAlokasiWaktu] = useState<string>('2');
   const [editJamKe, setEditJamKe] = useState<string>('');
   const [editPertemuanKe, setEditPertemuanKe] = useState<string>('');
   const [editTujuanPembelajaran, setEditTujuanPembelajaran] = useState<string>('');
@@ -345,9 +353,15 @@ export default function SubjectTeacherPanel({
     setEditDate(journal.date || '');
     setEditFase(journal.fase || 'D');
     setEditSemester(journal.semester || 'Genap');
-    setEditAlokasiWaktu(journal.alokasiWaktu || '2 JP');
-    setEditJamKe(journal.jamKe || '');
-    setEditPertemuanKe(journal.pertemuanKe || '');
+
+    const cleanPertemuan = journal.pertemuanKe ? String(journal.pertemuanKe).replace(/\D/g, '') : '';
+    const cleanJam = journal.jamKe ? String(journal.jamKe).replace(/\D/g, '') : '';
+    const cleanAlokasi = journal.alokasiWaktu ? String(journal.alokasiWaktu).replace(/\D/g, '') : '2';
+
+    setEditPertemuanKe(cleanPertemuan);
+    setEditJamKe(cleanJam);
+    setEditAlokasiWaktu(cleanAlokasi);
+
     setEditTujuanPembelajaran(journal.tujuanPembelajaran || '');
     setEditPencapaianKktp(journal.pencapaianKktp || 'Tercapai');
 
@@ -1034,7 +1048,11 @@ export default function SubjectTeacherPanel({
                 <input
                   type="date"
                   value={selectedDate}
-                  onChange={(e) => setSelectedDate(e.target.value)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    setSelectedDate(val);
+                    setSemester(getSemesterFromDate(val));
+                  }}
                   className="px-3.5 py-2.5 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-slate-800 text-xs bg-white shadow-xs"
                 />
               </div>
@@ -1077,8 +1095,10 @@ export default function SubjectTeacherPanel({
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650">Pertemuan Ke</label>
                   <input
-                    type="text"
-                    placeholder="misal: 1"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="1"
                     value={pertemuanKe}
                     onChange={(e) => setPertemuanKe(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
@@ -1088,8 +1108,10 @@ export default function SubjectTeacherPanel({
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650">Jam Ke</label>
                   <input
-                    type="text"
-                    placeholder="misal: 1 - 2"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="1"
                     value={jamKe}
                     onChange={(e) => setJamKe(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
@@ -1099,8 +1121,10 @@ export default function SubjectTeacherPanel({
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650">Alokasi (JP)</label>
                   <input
-                    type="text"
-                    placeholder="misal: 2 JP"
+                    type="number"
+                    min="1"
+                    step="1"
+                    placeholder="2"
                     value={alokasiWaktu}
                     onChange={(e) => setAlokasiWaktu(e.target.value)}
                     className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
@@ -2620,7 +2644,11 @@ export default function SubjectTeacherPanel({
                       <input
                         type="date"
                         value={editDate}
-                        onChange={(e) => setEditDate(e.target.value)}
+                        onChange={(e) => {
+                          const val = e.target.value;
+                          setEditDate(val);
+                          setEditSemester(getSemesterFromDate(val));
+                        }}
                         className="px-3 py-2 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 bg-white"
                       />
                     </div>
@@ -2655,17 +2683,17 @@ export default function SubjectTeacherPanel({
                           <option value="Genap">Genap</option>
                         </select>
                       </div>
-                    </div>
-
-                    <div className="grid grid-cols-3 gap-2">
+                              <div className="grid grid-cols-3 gap-2">
                       {/* Jam Ke */}
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-black text-slate-500 uppercase">Jam Ke</label>
                         <input
-                          type="text"
+                          type="number"
+                          min="1"
+                          step="1"
                           value={editJamKe}
                           onChange={(e) => setEditJamKe(e.target.value)}
-                          placeholder="e.g. 1 - 2"
+                          placeholder="e.g. 1"
                           className="px-2 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 text-center bg-white"
                         />
                       </div>
@@ -2674,7 +2702,9 @@ export default function SubjectTeacherPanel({
                       <div className="flex flex-col gap-1">
                         <label className="text-[10px] font-black text-slate-500 uppercase">Pertemuan Ke</label>
                         <input
-                          type="text"
+                          type="number"
+                          min="1"
+                          step="1"
                           value={editPertemuanKe}
                           onChange={(e) => setEditPertemuanKe(e.target.value)}
                           placeholder="e.g. 1"
@@ -2684,19 +2714,18 @@ export default function SubjectTeacherPanel({
 
                       {/* Alokasi Waktu */}
                       <div className="flex flex-col gap-1">
-                        <label className="text-[10px] font-black text-slate-500 uppercase">Alokasi Waktu</label>
-                        <select
+                        <label className="text-[10px] font-black text-slate-500 uppercase">Alokasi Waktu (JP)</label>
+                        <input
+                          type="number"
+                          min="1"
+                          step="1"
                           value={editAlokasiWaktu}
                           onChange={(e) => setEditAlokasiWaktu(e.target.value)}
-                          className="px-2 py-1.5 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 bg-white cursor-pointer"
-                        >
-                          <option value="1 JP">1 JP (40 Menit)</option>
-                          <option value="2 JP">2 JP (80 Menit)</option>
-                          <option value="3 JP">3 JP (120 Menit)</option>
-                          <option value="4 JP">4 JP (160 Menit)</option>
-                        </select>
+                          placeholder="e.g. 2"
+                          className="px-2 py-1.5 border border-slate-200 focus:outline-none focus:border-slate-800 rounded-xl font-bold text-xs text-slate-800 text-center bg-white"
+                        />
                       </div>
-                    </div>
+                    </div>             </div>
 
                     {/* Materi KBM / Topik Pembelajaran */}
                     <div className="flex flex-col gap-1">

@@ -25,6 +25,7 @@ export interface Student {
   siblingsCount?: string | number;
   stepSiblingsCount?: string | number;
   address?: string;
+  googleDriveLink?: string;
 
   // Data Orang Tua - Ayah
   fatherName?: string;

@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 
@@ -3099,6 +3099,16 @@ export default function StudentPanel({
                                 className="w-full p-2.5 border border-slate-205 rounded-xl text-xs font-bold outline-none focus:border-indigo-500"
                               />
                             </div>
+                            <div className="md:col-span-2">
+                              <label className="text-[10px] font-black text-indigo-600 uppercase tracking-wider block mb-1">Link Google Drive Berkas Pendukung (KK, Akta Lahir, dll.)</label>
+                              <input
+                                type="url"
+                                value={bukuIndukForm.googleDriveLink || ''}
+                                onChange={(e) => handleBukuIndukInputChange('googleDriveLink', e.target.value)}
+                                className="w-full p-2.5 border border-indigo-250 text-indigo-750 bg-indigo-50/20 rounded-xl text-xs font-mono font-bold outline-none focus:border-indigo-500 focus:bg-white placeholder-indigo-300"
+                                placeholder="Contoh: https://drive.google.com/drive/folders/..."
+                              />
+                            </div>
                           </div>
                         )}
 
@@ -3455,7 +3465,7 @@ export default function StudentPanel({
                             <span className="font-bold text-slate-500">Kredensial Profil:</span>{' '}
                             <span className="font-black text-indigo-705">
                               {(() => {
-                                const fields = ['nis', 'nisn', 'name', 'nickname', 'nik', 'gender', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber', 'phone', 'address', 'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'fatherName', 'fatherNik', 'motherName', 'motherNik'];
+                                const fields = ['nis', 'nisn', 'name', 'nickname', 'nik', 'gender', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber', 'phone', 'address', 'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'googleDriveLink', 'fatherName', 'fatherNik', 'motherName', 'motherNik'];
                                 const filled = fields.filter(f => (currentStudent as any)[f]).length;
                                 return `${Math.round((filled / fields.length) * 100)}% Terisi`;
                               })()}
@@ -3520,6 +3530,21 @@ export default function StudentPanel({
                             <div className="pt-2 border-t border-slate-100 flex flex-col gap-1">
                               <span className="text-slate-400">Alamat Domisili Siswa</span>
                               <p className="text-slate-700 leading-relaxed font-bold block">{currentStudent.address || 'Alamat tidak diinput'}</p>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100 flex flex-col gap-1">
+                              <span className="text-slate-450 font-bold text-[9.5px] uppercase tracking-wider block">Berkas Google Drive</span>
+                              {currentStudent.googleDriveLink ? (
+                                <a 
+                                  href={currentStudent.googleDriveLink} 
+                                  target="_blank" 
+                                  rel="noreferrer"
+                                  className="text-indigo-650 hover:text-indigo-850 font-black flex items-center gap-1 transition text-[10.5px] bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-150 p-2 rounded-xl"
+                                >
+                                  <ExternalLink size={12} /> Buka Folder Berkas Google Drive (KK, Akte, dll)
+                                </a>
+                              ) : (
+                                <span className="text-slate-400 italic text-[10px]">Belum diinput / belum ada berkas Google Drive</span>
+                              )}
                             </div>
                           </div>
                         </div>

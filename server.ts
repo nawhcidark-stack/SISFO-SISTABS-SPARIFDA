@@ -6855,7 +6855,7 @@ async function startServer() {
         // Import of Buku Induk detail keys
         const bioFields = [
           'nisn', 'nickname', 'nik', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber',
-          'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'address',
+          'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'address', 'googleDriveLink',
           'fatherName', 'fatherNik', 'fatherBirthPlace', 'fatherBirthDate', 'fatherEducation',
           'fatherOccupation', 'fatherIncome', 'fatherAddress', 'fatherPhone', 'fatherStatus',
           'motherName', 'motherNik', 'motherBirthPlace', 'motherBirthDate', 'motherEducation',
@@ -6941,7 +6941,7 @@ async function startServer() {
         // Import of Buku Induk detail keys for new student
         const bioFields = [
           'nisn', 'nickname', 'nik', 'birthPlace', 'birthDate', 'kkNumber', 'birthCertNumber',
-          'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'address',
+          'livingWith', 'childOrder', 'siblingsCount', 'stepSiblingsCount', 'address', 'googleDriveLink',
           'fatherName', 'fatherNik', 'fatherBirthPlace', 'fatherBirthDate', 'fatherEducation',
           'fatherOccupation', 'fatherIncome', 'fatherAddress', 'fatherPhone', 'fatherStatus',
           'motherName', 'motherNik', 'motherBirthPlace', 'motherBirthDate', 'motherEducation',

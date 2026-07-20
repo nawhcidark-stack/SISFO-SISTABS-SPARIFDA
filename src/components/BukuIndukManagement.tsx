@@ -683,7 +683,7 @@ export default function BukuIndukManagement({
                     <th className="w-40">Identitas (NIS / NISN)</th>
                     <th className="w-48">Biodata Orang Tua (Ayah / Ibu)</th>
                     <th className="w-40">Kelengkapan Data</th>
-                    <th className="pr-6 text-right w-24">Aksi</th>
+                    <th className="pr-6 text-right w-64">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-medium">
@@ -757,22 +757,32 @@ export default function BukuIndukManagement({
                             <div className="flex items-center justify-end gap-1.5">
                               <button
                                 onClick={() => handleOpenView(student)}
-                                className="p-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-650 rounded-lg transition"
+                                className="p-1.5 bg-slate-100 hover:bg-emerald-50 text-slate-600 hover:text-emerald-650 rounded-lg transition inline-flex items-center gap-1 text-[10px] font-bold"
                                 title="Lihat detail lengkap data & berkas siswa"
                               >
-                                <Eye size={13.5} />
+                                <Eye size={13.5} /> <span className="hidden xl:inline">Detail</span>
                               </button>
-                              {student.googleDriveLink && (
+                              
+                              {student.googleDriveLink ? (
                                 <a
                                   href={student.googleDriveLink}
                                   target="_blank"
                                   rel="noreferrer"
-                                  className="p-1.5 bg-emerald-55 border border-emerald-150 hover:bg-emerald-100 text-emerald-700 rounded-lg transition inline-flex items-center justify-center"
+                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-750 text-white rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-extrabold uppercase shadow-sm tracking-wider hover:scale-[1.02] active:scale-95 shrink-0"
                                   title="Buka Folder Google Drive Siswa (KK, Akte, dll)"
                                 >
-                                  <ExternalLink size={13.5} />
+                                  <ExternalLink size={11} /> BERKAS SISWA
                                 </a>
+                              ) : (
+                                <button
+                                  onClick={() => handleOpenEdit(student)}
+                                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-200 rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider"
+                                  title="Belum ada link berkas, klik untuk tambah"
+                                >
+                                  <ExternalLink size={11} className="opacity-40" /> + Berkas
+                                </button>
                               )}
+
                               <button
                                 onClick={() => handleOpenEdit(student)}
                                 className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-600 hover:text-indigo-650 rounded-lg transition"

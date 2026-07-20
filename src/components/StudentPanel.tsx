@@ -3532,15 +3532,15 @@ export default function StudentPanel({
                               <p className="text-slate-700 leading-relaxed font-bold block">{currentStudent.address || 'Alamat tidak diinput'}</p>
                             </div>
                             <div className="pt-2 border-t border-slate-100 flex flex-col gap-1">
-                              <span className="text-slate-450 font-bold text-[9.5px] uppercase tracking-wider block">Berkas Google Drive</span>
+                              <span className="text-slate-455 font-bold text-[9.5px] uppercase tracking-wider block">Berkas Google Drive</span>
                               {currentStudent.googleDriveLink ? (
                                 <a 
                                   href={currentStudent.googleDriveLink} 
                                   target="_blank" 
                                   rel="noreferrer"
-                                  className="text-indigo-650 hover:text-indigo-850 font-black flex items-center gap-1 transition text-[10.5px] bg-indigo-50/50 hover:bg-indigo-50 border border-indigo-150 p-2 rounded-xl"
+                                  className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold flex items-center justify-center gap-2 transition text-xs rounded-xl shadow-sm hover:shadow-md uppercase tracking-wider w-full text-center"
                                 >
-                                  <ExternalLink size={12} /> Buka Folder Berkas Google Drive (KK, Akte, dll)
+                                  <ExternalLink size={13} /> BERKAS SISWA
                                 </a>
                               ) : (
                                 <span className="text-slate-400 italic text-[10px]">Belum diinput / belum ada berkas Google Drive</span>

@@ -6349,6 +6349,7 @@ async function startServer() {
     student.siblingsCount = req.body.siblingsCount;
     student.stepSiblingsCount = req.body.stepSiblingsCount;
     student.address = req.body.address;
+    student.googleDriveLink = req.body.googleDriveLink;
 
     // Ayah
     student.fatherName = req.body.fatherName;

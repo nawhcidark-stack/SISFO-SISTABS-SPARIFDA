@@ -14892,7 +14892,7 @@ export default function AdminPanel({
                     <div className="border-b-2 border-slate-900 pb-2 flex flex-col items-center">
                       <img
                         src={schoolIdentity.letterhead}
-                        className="w-full max-h-24 object-contain"
+                        className="w-full h-auto block"
                         alt="Kop Surat"
                         referrerPolicy="no-referrer"
                       />
@@ -15262,7 +15262,7 @@ export default function AdminPanel({
                   <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
                     <img
                       src={schoolIdentity.letterhead}
-                      className="w-full max-h-28 object-contain"
+                      className="w-full h-auto block"
                       alt="Kop Surat"
                       referrerPolicy="no-referrer"
                     />

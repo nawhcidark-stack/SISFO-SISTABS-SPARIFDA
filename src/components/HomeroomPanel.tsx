@@ -1007,8 +1007,24 @@ export default function HomeroomPanel({
   const [teachingJournalsList, setTeachingJournalsList] = useState<any[]>([]);
   const [loadingJournals, setLoadingJournals] = useState(false);
   const [journalViewMode, setJournalViewMode] = useState<'presensi' | 'kbm'>('presensi');
+  const [kbmJournalSubTab, setKbmJournalSubTab] = useState<'binaan' | 'kelas_lain'>('binaan');
   const [selectedJournalToPrint, setSelectedJournalToPrint] = useState<any | null>(null);
   const [compiledJournalPrint, setCompiledJournalPrint] = useState<boolean>(false);
+  const [compiledJournalPrintType, setCompiledJournalPrintType] = useState<'binaan' | 'kelas_lain'>('binaan');
+
+  // Compute separated journals for Wali Kelas (Guided class binaan vs Subject teaching in other classes)
+  const binaanJournals = useMemo(() => {
+    return teachingJournalsList.filter((j: any) => 
+      j.className && j.className.toLowerCase() === currentTeacher.className.toLowerCase()
+    );
+  }, [teachingJournalsList, currentTeacher.className]);
+
+  const kelasLainJournals = useMemo(() => {
+    return teachingJournalsList.filter((j: any) => 
+      j.teacherId === currentTeacher.id && 
+      j.className && j.className.toLowerCase() !== currentTeacher.className.toLowerCase()
+    );
+  }, [teachingJournalsList, currentTeacher.id, currentTeacher.className]);
 
   // Create Journal For Homeroom state
   const [isAddJournalOpen, setIsAddJournalOpen] = useState(false);
@@ -2961,8 +2977,18 @@ Wassalamualaikum Wr. Wb.
                 <div className="flex flex-col gap-6 animate-fade-in">
                   <div className="flex justify-between items-center bg-indigo-50 border border-indigo-100 p-4 rounded-xl flex-wrap gap-4 select-none">
                     <div className="text-left">
-                      <h4 className="text-indigo-950 font-black text-xs uppercase tracking-wider">Jurnal Kegiatan Belajar Mengajar (KBM) Kelas {currentTeacher.className}</h4>
-                      <p className="text-slate-500 text-[11px] mt-0.5 font-semibold">Berikut adalah rincian materi pembelajaran dan administrasi presensi harian per jam mata pelajaran dari guru bidang studi.</p>
+                      <h4 className="text-indigo-950 font-black text-xs uppercase tracking-wider">
+                        {kbmJournalSubTab === 'binaan' 
+                          ? `Jurnal Kegiatan Belajar Mengajar (KBM) Kelas Binaan ${currentTeacher.className}`
+                          : 'Jurnal KBM Mengajar di Kelas Lain'
+                        }
+                      </h4>
+                      <p className="text-slate-500 text-[11px] mt-0.5 font-semibold">
+                        {kbmJournalSubTab === 'binaan'
+                          ? `Berikut adalah rincian materi pembelajaran dan administrasi presensi harian per jam mata pelajaran dari guru bidang studi di kelas binaan Anda (${currentTeacher.className}).`
+                          : 'Berikut adalah rincian materi pelajaran yang Anda ampu sebagai guru mata pelajaran di kelas lain.'
+                        }
+                      </p>
                     </div>
 
                     <div className="flex items-center gap-2">
@@ -2982,10 +3008,11 @@ Wassalamualaikum Wr. Wb.
                         <Plus size={13} strokeWidth={2.5} />
                         <span>Isi Jurnal Mengajar</span>
                       </button>
-                      {teachingJournalsList.length > 0 && (
+                      {kbmJournalSubTab === 'binaan' && binaanJournals.length > 0 && (
                         <button
                           type="button"
                           onClick={() => {
+                            setCompiledJournalPrintType('binaan');
                             setCompiledJournalPrint(true);
                             // Trigger native browser printing immediately
                             setTimeout(() => {
@@ -2998,148 +3025,215 @@ Wassalamualaikum Wr. Wb.
                           <span>Cetak Buku KBM Kelas</span>
                         </button>
                       )}
+                      {kbmJournalSubTab === 'kelas_lain' && kelasLainJournals.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setCompiledJournalPrintType('kelas_lain');
+                            setCompiledJournalPrint(true);
+                            // Trigger native browser printing immediately
+                            setTimeout(() => {
+                              window.print();
+                            }, 350);
+                          }}
+                          className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-xs border border-indigo-700 transition-all"
+                        >
+                          <Printer size={13} strokeWidth={2.5} />
+                          <span>Cetak Buku Jurnal Mengajar di Kelas Lain</span>
+                        </button>
+                      )}
                     </div>
                   </div>
 
-                  {loadingJournals ? (
-                    <div className="p-12 text-center text-slate-400 font-semibold flex flex-col items-center justify-center gap-3">
-                      <Loader2 className="animate-spin text-indigo-600" size={26} />
-                      <p className="text-xs">Menghubungkan ke pusat data KBM...</p>
-                    </div>
-                  ) : teachingJournalsList.length === 0 ? (
-                    <div className="p-12 text-center text-slate-400 bg-slate-50 border border-slate-150 rounded-2xl">
-                      <BookOpen size={28} className="mx-auto text-slate-300 mb-2" />
-                      <p className="text-xs font-bold text-slate-700">Belum ada Rekaman Jurnal Pembelajaran</p>
-                      <p className="text-[11px] text-slate-440 max-w-sm mx-auto mt-0.5">Guru Mata Pelajaran belum mengisi Jurnal KBM maupun absensi khusus jam pelajaran di kelas {currentTeacher.className}.</p>
-                    </div>
-                  ) : (
-                    <div className="flex flex-col gap-4">
-                      {teachingJournalsList
-                        .sort((a,b) => b.date.localeCompare(a.date))
-                        .map((journal) => {
-                          const totalSiswa = journal.attendance?.length || 0;
-                          const hadirCount = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;
-                          const terlambatCount = journal.attendance?.filter((a: any) => a.status === 'Terlambat').length || 0;
-                          const sakitCount = journal.attendance?.filter((a: any) => a.status === 'Sakit').length || 0;
-                          const izinCount = journal.attendance?.filter((a: any) => a.status === 'Izin').length || 0;
-                          const alpaCount = journal.attendance?.filter((a: any) => a.status === 'Alpa').length || 0;
-                          const totalHadir = hadirCount + terlambatCount;
-                          const totalAbsen = sakitCount + izinCount + alpaCount;
+                  {/* Sub Tab Switcher for KBM Journal Types */}
+                  <div className="flex border-b border-slate-200 select-none mb-2">
+                    <button
+                      type="button"
+                      onClick={() => setKbmJournalSubTab('binaan')}
+                      className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                        kbmJournalSubTab === 'binaan'
+                          ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <Home size={14} />
+                      <span>Jurnal KBM Kelas Binaan ({binaanJournals.length})</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setKbmJournalSubTab('kelas_lain')}
+                      className={`px-4 py-2.5 text-xs font-black uppercase tracking-wider transition-all border-b-2 cursor-pointer flex items-center gap-1.5 ${
+                        kbmJournalSubTab === 'kelas_lain'
+                          ? 'border-indigo-600 text-indigo-600 font-extrabold'
+                          : 'border-transparent text-slate-500 hover:text-slate-800'
+                      }`}
+                    >
+                      <BookOpen size={14} />
+                      <span>Jurnal Mengajar di Kelas Lain ({kelasLainJournals.length})</span>
+                    </button>
+                  </div>
 
-                          return (
-                            <div key={journal.id} className="bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-xs transition-all rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
-                              <div className="flex-grow min-w-0 flex gap-3 text-left">
-                                <div className="p-3 bg-indigo-50 text-indigo-700 rounded-xl hidden sm:block h-fit shrink-0">
-                                  <FileText size={18} />
-                                </div>
-                                <div className="min-w-0 flex flex-col gap-1">
-                                  <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="font-extrabold text-sm text-slate-900">{journal.subject}</span>
-                                    <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
-                                      {journal.teacherName}
-                                    </span>
-                                    <span className="text-[10px] text-slate-400 font-bold font-mono">
-                                      {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
-                                    </span>
+                  {(() => {
+                    const currentJournals = kbmJournalSubTab === 'binaan' ? binaanJournals : kelasLainJournals;
+
+                    if (loadingJournals) {
+                      return (
+                        <div className="p-12 text-center text-slate-400 font-semibold flex flex-col items-center justify-center gap-3">
+                          <Loader2 className="animate-spin text-indigo-600" size={26} />
+                          <p className="text-xs">Menghubungkan ke pusat data KBM...</p>
+                        </div>
+                      );
+                    }
+
+                    if (currentJournals.length === 0) {
+                      return (
+                        <div className="p-12 text-center text-slate-400 bg-slate-50 border border-slate-150 rounded-2xl">
+                          <BookOpen size={28} className="mx-auto text-slate-300 mb-2" />
+                          <p className="text-xs font-bold text-slate-700">
+                            {kbmJournalSubTab === 'binaan'
+                              ? 'Belum ada Rekaman Jurnal Pembelajaran Kelas Binaan'
+                              : 'Belum ada Rekaman Jurnal Mengajar Anda di Kelas Lain'
+                            }
+                          </p>
+                          <p className="text-[11px] text-slate-440 max-w-sm mx-auto mt-0.5">
+                            {kbmJournalSubTab === 'binaan'
+                              ? `Guru bidang studi belum mengisi Jurnal KBM maupun absensi khusus jam pelajaran di kelas binaan Anda (${currentTeacher.className}).`
+                              : 'Anda belum mencatatkan Jurnal KBM maupun presensi jam mata pelajaran yang Anda ampu di kelas lain.'
+                            }
+                          </p>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="flex flex-col gap-4">
+                        {currentJournals
+                          .sort((a,b) => b.date.localeCompare(a.date))
+                          .map((journal) => {
+                            const totalSiswa = journal.attendance?.length || 0;
+                            const hadirCount = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;
+                            const terlambatCount = journal.attendance?.filter((a: any) => a.status === 'Terlambat').length || 0;
+                            const sakitCount = journal.attendance?.filter((a: any) => a.status === 'Sakit').length || 0;
+                            const izinCount = journal.attendance?.filter((a: any) => a.status === 'Izin').length || 0;
+                            const alpaCount = journal.attendance?.filter((a: any) => a.status === 'Alpa').length || 0;
+                            const totalHadir = hadirCount + terlambatCount;
+                            const totalAbsen = sakitCount + izinCount + alpaCount;
+
+                            return (
+                              <div key={journal.id} className="bg-white border border-slate-200 hover:border-indigo-200 hover:shadow-xs transition-all rounded-2xl p-4 flex flex-col md:flex-row md:items-center justify-between gap-4">
+                                <div className="flex-grow min-w-0 flex gap-3 text-left">
+                                  <div className="p-3 bg-indigo-50 text-indigo-700 rounded-xl hidden sm:block h-fit shrink-0">
+                                    <FileText size={18} />
                                   </div>
-                                  <p className="text-xs text-slate-700 font-semibold leading-tight"><strong className="text-slate-400 font-extrabold text-[10px] uppercase">Materi KBM:</strong> {journal.topic}</p>
-                                  {journal.notes && (
-                                    <p className="text-[11px] text-slate-500 italic mt-0.5">Catatan: &ldquo;{journal.notes}&rdquo;</p>
-                                  )}
-                                  <div className="flex gap-1.5 mt-2 flex-wrap">
-                                    <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-emerald-50 text-emerald-800 border border-emerald-100 uppercase">Hadir: {totalHadir}</span>
-                                    {totalAbsen > 0 && (
-                                      <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-rose-50 text-rose-800 border border-rose-100 uppercase">Absen: {totalAbsen}</span>
+                                  <div className="min-w-0 flex flex-col gap-1">
+                                    <div className="flex items-center gap-2 flex-wrap">
+                                      <span className="font-extrabold text-sm text-slate-900">{journal.subject}</span>
+                                      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[9px] font-semibold bg-indigo-50 text-indigo-700 border border-indigo-100">
+                                        {journal.teacherName}
+                                      </span>
+                                      <span className="text-[10px] text-slate-400 font-bold font-mono">
+                                        {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                      </span>
+                                    </div>
+                                    <p className="text-xs text-slate-700 font-semibold leading-tight"><strong className="text-slate-400 font-extrabold text-[10px] uppercase">Materi KBM:</strong> {journal.topic}</p>
+                                    {journal.notes && (
+                                      <p className="text-[11px] text-slate-500 italic mt-0.5">Catatan: &ldquo;{journal.notes}&rdquo;</p>
                                     )}
-                                    {sakitCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-amber-600 font-mono">Sakit: {sakitCount}</span>}
-                                    {izinCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-blue-600 font-mono">Izin: {izinCount}</span>}
-                                    {alpaCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-bold text-rose-600 font-mono">Alpa: {alpaCount}</span>}
-                                  </div>
+                                    <div className="flex gap-1.5 mt-2 flex-wrap">
+                                      <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-emerald-50 text-emerald-800 border border-emerald-100 uppercase">Hadir: {totalHadir}</span>
+                                      {totalAbsen > 0 && (
+                                        <span className="px-1.5 py-0.5 text-[9px] font-bold tracking-wider rounded bg-rose-50 text-rose-800 border border-rose-100 uppercase">Absen: {totalAbsen}</span>
+                                      )}
+                                      {sakitCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-amber-600 font-mono">Sakit: {sakitCount}</span>}
+                                      {izinCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-semibold text-blue-600 font-mono">Izin: {izinCount}</span>}
+                                      {alpaCount > 0 && <span className="px-1 py-0.5 text-[8.5px] font-bold text-rose-600 font-mono">Alpa: {alpaCount}</span>}
+                                    </div>
 
-                                  {/* List of absent students */}
-                                  {(() => {
-                                    const nonPresent = (journal.attendance || []).filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
-                                    if (nonPresent.length > 0) {
-                                      return (
-                                        <div className="mt-2 text-xs text-slate-700 leading-relaxed bg-rose-50/20 border border-slate-150 rounded-xl p-2.5 max-w-xl">
-                                          <span className="font-extrabold text-slate-800 text-[10px] uppercase tracking-wider block mb-1">Daftar Siswa Tidak Hadir:</span>
-                                          <div className="flex flex-wrap gap-1.5">
-                                            {nonPresent.map((a: any, i: number) => (
-                                              <span key={i} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
-                                                a.status === 'Sakit' ? 'bg-amber-50 text-amber-850 border-amber-100' :
-                                                a.status === 'Izin' ? 'bg-sky-50 text-sky-850 border-sky-100' :
-                                                'bg-rose-50 text-rose-850 border-rose-100'
-                                              }`}>
-                                                {a.studentName} ({a.status}{a.notes ? `: ${a.notes}` : ''})
-                                              </span>
-                                            ))}
+                                    {/* List of absent students */}
+                                    {(() => {
+                                      const nonPresent = (journal.attendance || []).filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+                                      if (nonPresent.length > 0) {
+                                        return (
+                                          <div className="mt-2 text-xs text-slate-700 leading-relaxed bg-rose-50/20 border border-slate-150 rounded-xl p-2.5 max-w-xl">
+                                            <span className="font-extrabold text-slate-800 text-[10px] uppercase tracking-wider block mb-1">Daftar Siswa Tidak Hadir:</span>
+                                            <div className="flex flex-wrap gap-1.5">
+                                              {nonPresent.map((a: any, i: number) => (
+                                                <span key={i} className={`inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-bold border ${
+                                                  a.status === 'Sakit' ? 'bg-amber-50 text-amber-850 border-amber-100' :
+                                                  a.status === 'Izin' ? 'bg-sky-50 text-sky-850 border-sky-100' :
+                                                  'bg-rose-50 text-rose-850 border-rose-100'
+                                                }`}>
+                                                  {a.studentName} ({a.status}{a.notes ? `: ${a.notes}` : ''})
+                                                </span>
+                                              ))}
+                                            </div>
                                           </div>
-                                        </div>
-                                      );
-                                    } else {
-                                      return (
-                                        <div className="mt-2 text-[10.5px] font-extrabold text-emerald-700 bg-emerald-50/40 border border-emerald-100 rounded-lg p-1.5 w-fit px-2.5">
-                                          ✓ Nihil (Semua siswa hadir)
-                                        </div>
-                                      );
-                                    }
-                                  })()}
+                                        );
+                                      } else {
+                                        return (
+                                          <div className="mt-2 text-[10.5px] font-extrabold text-emerald-700 bg-emerald-50/40 border border-emerald-100 rounded-lg p-1.5 w-fit px-2.5">
+                                            ✓ Nihil (Semua siswa hadir)
+                                          </div>
+                                        );
+                                      }
+                                    })()}
+                                  </div>
+                                </div>
+
+                                <div className="flex items-center gap-2 self-start md:self-center flex-wrap select-none">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenEditJournalModal(journal)}
+                                    className="px-3 py-2 bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
+                                  >
+                                    <Edit size={13} className="text-amber-600" />
+                                    <span>Edit Jurnal</span>
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={async () => {
+                                      if (window.confirm("Apakah Anda yakin ingin menghapus jurnal pembelajaran ini?")) {
+                                        try {
+                                          const res = await fetch(`/api/teaching-journals/${journal.id}`, { method: 'DELETE' });
+                                          if (res.ok) {
+                                            setNotifMsg({ type: 'success', text: 'Jurnal pembelajaran berhasil dihapus.' });
+                                            fetchTeachingJournals();
+                                          } else {
+                                            setNotifMsg({ type: 'error', text: 'Gagal menghapus jurnal.' });
+                                          }
+                                        } catch (err) {
+                                          console.error(err);
+                                          setNotifMsg({ type: 'error', text: 'Koneksi gagal saat menghapus jurnal.' });
+                                        }
+                                      }
+                                    }}
+                                    className="p-2 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-xl transition-all flex items-center shadow-2xs cursor-pointer"
+                                    title="Hapus Jurnal"
+                                  >
+                                    <Trash2 size={13} />
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setSelectedJournalToPrint(journal);
+                                      setTimeout(() => {
+                                        window.print();
+                                      }, 350);
+                                    }}
+                                    className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
+                                  >
+                                    <Printer size={13} />
+                                    <span>Cetak Jurnal PDF</span>
+                                  </button>
                                 </div>
                               </div>
-
-                              <div className="flex items-center gap-2 self-start md:self-center flex-wrap select-none">
-                                <button
-                                  type="button"
-                                  onClick={() => handleOpenEditJournalModal(journal)}
-                                  className="px-3 py-2 bg-slate-50 hover:bg-amber-50 border border-slate-200 hover:border-amber-200 text-slate-700 hover:text-amber-800 rounded-xl text-xs font-bold transition-all flex items-center gap-1 shadow-2xs cursor-pointer"
-                                >
-                                  <Edit size={13} className="text-amber-600" />
-                                  <span>Edit Jurnal</span>
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={async () => {
-                                    if (window.confirm("Apakah Anda yakin ingin menghapus jurnal pembelajaran ini?")) {
-                                      try {
-                                        const res = await fetch(`/api/teaching-journals/${journal.id}`, { method: 'DELETE' });
-                                        if (res.ok) {
-                                          setNotifMsg({ type: 'success', text: 'Jurnal pembelajaran berhasil dihapus.' });
-                                          fetchTeachingJournals();
-                                        } else {
-                                          setNotifMsg({ type: 'error', text: 'Gagal menghapus jurnal.' });
-                                        }
-                                      } catch (err) {
-                                        console.error(err);
-                                        setNotifMsg({ type: 'error', text: 'Koneksi gagal saat menghapus jurnal.' });
-                                      }
-                                    }
-                                  }}
-                                  className="p-2 bg-slate-50 hover:bg-rose-50 border border-slate-200 hover:border-rose-200 text-slate-400 hover:text-rose-600 rounded-xl transition-all flex items-center shadow-2xs cursor-pointer"
-                                  title="Hapus Jurnal"
-                                >
-                                  <Trash2 size={13} />
-                                </button>
-
-                                <button
-                                  type="button"
-                                  onClick={() => {
-                                    setSelectedJournalToPrint(journal);
-                                    setTimeout(() => {
-                                      window.print();
-                                    }, 350);
-                                  }}
-                                  className="px-3.5 py-2 bg-slate-50 hover:bg-indigo-50 border border-slate-200 hover:border-indigo-200 text-slate-700 hover:text-indigo-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-xs cursor-pointer"
-                                >
-                                  <Printer size={13} />
-                                  <span>Cetak Jurnal PDF</span>
-                                </button>
-                              </div>
-                            </div>
-                          );
-                        })}
-                    </div>
-                  )}
+                            );
+                          })}
+                      </div>
+                    );
+                  })()}
                 </div>
               )}
             </div>
@@ -5646,7 +5740,7 @@ Wassalamualaikum Wr. Wb.
                                     <title>RAPOR AKHIR - ${selectedStudent.name}</title>
                                     <style>
                                       body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 30px; color: #000; font-size: 11.5px; line-height:1.5; }
-                                      .kop-img { width:100%; max-height:85px; object-fit:contain; border-bottom:3px double #000; padding-bottom:10px; margin-bottom:20px; }
+                                      .kop-img { width:100%; height:auto; display:block; border-bottom:3px double #000; padding-bottom:10px; margin-bottom:20px; }
                                       .meta-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
                                       .meta-table td { padding: 4px 0; font-size: 11px; }
                                       .meta-table td.label { font-weight:bold; width: 15%; }
@@ -6257,7 +6351,7 @@ Wassalamualaikum Wr. Wb.
                     <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
                       <img 
                         src={schoolIdentity.letterhead} 
-                        className="w-full max-h-24 object-contain" 
+                        className="w-full h-auto block" 
                         alt="Kop Surat" 
                         referrerPolicy="no-referrer"
                       />
@@ -6444,7 +6538,12 @@ Wassalamualaikum Wr. Wb.
               <div className="flex justify-between items-center pb-3 border-b border-slate-100 flex-wrap gap-2 select-none">
                 <div className="flex items-center gap-2">
                   <Printer size={18} className="text-indigo-600" />
-                  <span className="font-extrabold text-slate-800 text-sm">Pratinjau PDF Buku Rekap Jurnal Pembelajaran KBM Kelas</span>
+                  <span className="font-extrabold text-slate-800 text-sm">
+                    {compiledJournalPrintType === 'binaan' 
+                      ? 'Pratinjau PDF Buku Rekap Jurnal Pembelajaran KBM Kelas' 
+                      : 'Pratinjau PDF Buku Rekap Jurnal Mengajar di Kelas Lain'
+                    }
+                  </span>
                 </div>
                 <div className="flex items-center gap-2">
                   <button
@@ -6474,12 +6573,17 @@ Wassalamualaikum Wr. Wb.
                     <div className="w-full border-b-4 border-double border-slate-900 pb-2 flex flex-col items-center text-left select-none">
                       <img 
                         src={schoolIdentity.letterhead} 
-                        className="w-full max-h-24 object-contain" 
+                        className="w-full h-auto block" 
                         alt="Kop Surat" 
                         referrerPolicy="no-referrer"
                       />
                       <div className="w-full text-right font-mono mt-1 text-[8px] text-slate-400 flex justify-between items-center">
-                        <span className="text-[9px] font-black text-slate-800">REKAPITULASI JURNAL MENGAJAR KBM KELAS</span>
+                        <span className="text-[9px] font-black text-slate-800">
+                          {compiledJournalPrintType === 'binaan' 
+                            ? 'REKAPITULASI JURNAL MENGAJAR KBM KELAS' 
+                            : 'REKAPITULASI JURNAL MENGAJAR KELAS LAIN'
+                          }
+                        </span>
                         <span>Dicetak: {new Date().toLocaleDateString('id-ID')}</span>
                       </div>
                     </div>
@@ -6501,7 +6605,9 @@ Wassalamualaikum Wr. Wb.
                         </div>
                       </div>
                       <div className="text-right flex flex-col gap-0.5 font-mono shrink-0">
-                        <span className="text-xs font-black text-slate-800">BUKU KBM KELAS</span>
+                        <span className="text-xs font-black text-slate-800">
+                          {compiledJournalPrintType === 'binaan' ? 'BUKU KBM KELAS' : 'BUKU JURNAL MENGAJAR'}
+                        </span>
                         <span className="text-[8px] text-slate-400 block mt-1">Dicetak: {new Date().toLocaleDateString('id-ID')}</span>
                       </div>
                     </div>
@@ -6510,17 +6616,32 @@ Wassalamualaikum Wr. Wb.
                   {/* Title of Document */}
                   <div className="text-center my-1 text-slate-900">
                     <h2 className="text-sm font-extrabold uppercase tracking-widest underline">
-                      Buku Rekapitulasi Jurnal Mengajar &amp; KBM Kelas
+                      {compiledJournalPrintType === 'binaan' 
+                        ? 'Buku Rekapitulasi Jurnal Mengajar & KBM Kelas' 
+                        : 'Buku Rekapitulasi Jurnal Mengajar di Kelas Lain'
+                      }
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
-                      Kelas Rujukan: {currentTeacher.className} &bull; Wali Kelas: {currentTeacher.name} &bull; Semester Genap &bull; Tahun Ajaran 2025/2026
+                      {compiledJournalPrintType === 'binaan'
+                        ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester Genap • Tahun Ajaran 2025/2026`
+                        : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester Genap • Tahun Ajaran 2025/2026`
+                      }
                     </p>
                   </div>
 
                   {/* Summary counts panel */}
                   <div className="p-3 border border-slate-200 rounded-xl bg-slate-50/50 flex justify-between items-center text-[10px] text-slate-600 font-bold uppercase tracking-wider">
-                    <span>Nama Kelas: {currentTeacher.className}</span>
-                    <span>Total Jurnal Terdaftar: {teachingJournalsList.length} Entri Kegiatan</span>
+                    {compiledJournalPrintType === 'binaan' ? (
+                      <>
+                        <span>Nama Kelas: {currentTeacher.className}</span>
+                        <span>Total Jurnal Terdaftar: {binaanJournals.length} Entri Kegiatan</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>Guru Pengampu: {currentTeacher.name}</span>
+                        <span>Total Jurnal Terdaftar: {kelasLainJournals.length} Entri Kegiatan</span>
+                      </>
+                    )}
                     <span>Tanggal Dicetak: {new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</span>
                   </div>
 
@@ -6531,14 +6652,23 @@ Wassalamualaikum Wr. Wb.
                         <tr className="bg-slate-100 font-extrabold uppercase tracking-wider text-slate-700 text-center">
                           <th className="border border-slate-300 px-3 py-2" style={{ width: '4%' }}>No</th>
                           <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Hari &amp; Tanggal</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Mata Pelajaran</th>
-                          <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Guru Pengampu</th>
+                          {compiledJournalPrintType === 'binaan' ? (
+                            <>
+                              <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Mata Pelajaran</th>
+                              <th className="border border-slate-300 px-3 py-2" style={{ width: '20%' }}>Guru Pengampu</th>
+                            </>
+                          ) : (
+                            <>
+                              <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Kelas</th>
+                              <th className="border border-slate-300 px-3 py-2" style={{ width: '25%' }}>Mata Pelajaran</th>
+                            </>
+                          )}
                           <th className="border border-slate-300 px-3 py-2 text-left" style={{ width: '26%' }}>Materi / Pembahasan Belajar</th>
                           <th className="border border-slate-300 px-3 py-2" style={{ width: '15%' }}>Kehadiran Jam Mapel</th>
                         </tr>
                       </thead>
                       <tbody>
-                        {teachingJournalsList
+                        {(compiledJournalPrintType === 'binaan' ? binaanJournals : kelasLainJournals)
                           .sort((a,b) => b.date.localeCompare(a.date))
                           .map((journal, idx) => {
                             const total = journal.attendance?.length || 0;
@@ -6556,8 +6686,17 @@ Wassalamualaikum Wr. Wb.
                                 <td className="border border-slate-300 px-3 py-1.5 text-center font-bold">
                                   {new Date(journal.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: '2-digit' })}
                                 </td>
-                                <td className="border border-slate-300 px-3 py-1.5 text-center font-extrabold text-slate-900">{journal.subject}</td>
-                                <td className="border border-slate-300 px-3 py-1.5 text-center font-medium text-slate-700">{journal.teacherName}</td>
+                                {compiledJournalPrintType === 'binaan' ? (
+                                  <>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-extrabold text-slate-900">{journal.subject}</td>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-medium text-slate-700">{journal.teacherName}</td>
+                                  </>
+                                ) : (
+                                  <>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-extrabold text-indigo-950 uppercase">{journal.className}</td>
+                                    <td className="border border-slate-300 px-3 py-1.5 text-center font-bold text-slate-900">{journal.subject}</td>
+                                  </>
+                                )}
                                 <td className="border border-slate-300 px-3 py-1.5 text-left leading-relaxed font-semibold">
                                   <div>{journal.topic}</div>
                                   {journal.notes && <div className="text-[8.5px] italic text-slate-400 mt-0.5">Note: &ldquo;{journal.notes}&rdquo;</div>}
@@ -6595,10 +6734,17 @@ Wassalamualaikum Wr. Wb.
                   <div className="grid grid-cols-2 gap-8 mt-12 mb-4 text-center">
                     <div className="flex flex-col items-center">
                       <span className="text-[10px] text-slate-500">Mengesahkan Rekap,</span>
-                      <span className="text-xs font-bold text-slate-800 mt-0.5">Wali Kelas {currentTeacher.className}</span>
+                      <span className="text-xs font-bold text-slate-800 mt-0.5">
+                        {compiledJournalPrintType === 'binaan' 
+                          ? `Wali Kelas ${currentTeacher.className}`
+                          : "Guru Mata Pelajaran"
+                        }
+                      </span>
                       <div className="h-16" />
                       <span className="text-xs font-bold text-slate-900 border-b border-slate-900 pb-0.5 min-w-[180px]">{currentTeacher.name}</span>
-                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">WALI KELAS KBM RESMI</span>
+                      <span className="text-[8px] text-slate-400 font-mono mt-0.5">
+                        {compiledJournalPrintType === 'binaan' ? 'WALI KELAS KBM RESMI' : 'GURU MATA PELAJARAN'}
+                      </span>
                     </div>
 
                     <div className="flex flex-col items-center">

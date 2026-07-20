@@ -4592,7 +4592,7 @@ export default function StudentPanel({
                     <div className="border-b-2 border-slate-900 pb-2 flex flex-col items-center">
                       <img 
                         src={schoolIdentity.letterhead} 
-                        className="w-full max-h-24 object-contain" 
+                        className="w-full h-auto block" 
                         alt="Kop Surat" 
                         referrerPolicy="no-referrer"
                       />

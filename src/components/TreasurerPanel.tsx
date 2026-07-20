@@ -1267,7 +1267,7 @@ export default function TreasurerPanel({
               <div className="w-full flex flex-col items-center mb-4">
                 <img
                   src={schoolIdentity.letterhead}
-                  className="w-full max-h-28 object-contain"
+                  className="w-full h-auto block"
                   alt="Kop Surat"
                   referrerPolicy="no-referrer"
                 />

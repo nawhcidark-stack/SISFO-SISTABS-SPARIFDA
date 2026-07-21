@@ -608,6 +608,41 @@ const getSemesterFromDate = (dateStr: string): 'Ganjil' | 'Genap' => {
   return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
 };
 
+const isMutationStudent = (student: Student | null | undefined) => {
+  if (!student) return false;
+  return !!student.mutationDate || (student.class && (student.class.toLowerCase() === 'mutasi' || student.class.toLowerCase() === 'mutasi keluar'));
+};
+
+const checkIsBillActiveInHomeroom = (bill: SppBill, studentId: string, allBills: SppBill[]) => {
+  const studentBills = allBills.filter((b) => b.studentId === studentId);
+  const MONTH_MAP: Record<string, number> = {
+    Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
+    Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11,
+  };
+
+  const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
+  const billScore = bill.year * 12 + billMonthIdx;
+
+  const now = new Date();
+  const currentYear = now.getFullYear();
+  const currentMonthIdx = now.getMonth();
+  const currentScore = currentYear * 12 + currentMonthIdx;
+
+  // 1. If it's a past month or current month, it is always active
+  if (billScore <= currentScore) {
+    return true;
+  }
+
+  // 2. If it is a future month, check if all bills strictly prior are paid/waived
+  const priorBills = studentBills.filter((b) => {
+    const bMonthIdx = MONTH_MAP[b.month] !== undefined ? MONTH_MAP[b.month] : 0;
+    const bScore = b.year * 12 + bMonthIdx;
+    return bScore < billScore;
+  });
+
+  return priorBills.every((b) => b.status === 'paid' || b.status === 'waived');
+};
+
 interface HomeroomPanelProps {
   currentTeacher: HomeroomTeacher;
   students: Student[];
@@ -713,7 +748,7 @@ export default function HomeroomPanel({
             getAcademicYearOfBill(b) === rekapSppYearFilter),
       );
       const paid = sBills.filter((b) => b.status === "paid");
-      const unpaid = sBills.filter((b) => b.status === "unpaid");
+      const unpaid = sBills.filter((b) => b.status === "unpaid" && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
       const totalPaidNominal = paid.reduce((sum, b) => sum + b.amount, 0);
       const totalUnpaidNominal = unpaid.reduce((sum, b) => sum + b.amount, 0);
       const pct = sBills.length > 0 ? Math.round((paid.length / sBills.length) * 100) : 0;
@@ -2314,7 +2349,7 @@ Wassalamualaikum Wr. Wb.
     classStudents.forEach(student => {
       totalSavings += student.savingsBalance || 0;
       
-      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
       const unpaidSum = sBills.reduce((acc, curr) => acc + curr.amount, 0);
       totalUnpaidSpp += unpaidSum;
       if (sBills.length > 0) {
@@ -3502,7 +3537,7 @@ Wassalamualaikum Wr. Wb.
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {filteredClassStudents.map((student) => {
-                            const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+                            const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
                             const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
                             const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
 
@@ -3607,7 +3642,7 @@ Wassalamualaikum Wr. Wb.
                     {/* Mobile View (Bento Cards to avoid scroll completely) */}
                     <div className="block md:hidden space-y-4">
                       {filteredClassStudents.map((student) => {
-                        const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b));
+                        const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
                         const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
                         const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
 

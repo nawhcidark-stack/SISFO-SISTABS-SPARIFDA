@@ -8,6 +8,11 @@ import {
   User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2
 } from 'lucide-react';
 
+const getWIBDateStr = (date: Date = new Date()): string => {
+  const wibTime = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return wibTime.toISOString().substring(0, 10);
+};
+
 const getSemesterFromDate = (dateStr: string): 'Ganjil' | 'Genap' => {
   if (!dateStr) return 'Genap';
   const d = new Date(dateStr);
@@ -38,11 +43,11 @@ export default function SubjectTeacherPanel({
   const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg'>('create');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>('');
-  const [selectedDate, setSelectedDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [selectedDate, setSelectedDate] = useState<string>(getWIBDateStr());
   const [topic, setTopic] = useState<string>('');
   const [notes, setNotes] = useState<string>('');
   const [fase, setFase] = useState<string>('D');
-  const [semester, setSemester] = useState<string>(() => getSemesterFromDate(new Date().toISOString().split('T')[0]));
+  const [semester, setSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [alokasiWaktu, setAlokasiWaktu] = useState<string>('2');
   const [jamKe, setJamKe] = useState<string>('1');
   const [pertemuanKe, setPertemuanKe] = useState<string>('');

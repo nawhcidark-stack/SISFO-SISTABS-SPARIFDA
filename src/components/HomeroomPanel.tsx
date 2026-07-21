@@ -595,6 +595,11 @@ function printStudentCombinedRecap(
   printWin.document.close();
 }
 
+const getWIBDateStr = (date: Date = new Date()): string => {
+  const wibTime = new Date(date.getTime() + 7 * 60 * 60 * 1000);
+  return wibTime.toISOString().substring(0, 10);
+};
+
 const getSemesterFromDate = (dateStr: string): 'Ganjil' | 'Genap' => {
   if (!dateStr) return 'Genap';
   const d = new Date(dateStr);
@@ -634,11 +639,11 @@ export default function HomeroomPanel({
   scannedStudentAt,
   miscBills = []
 }: HomeroomPanelProps) {
-  const todayStr = new Date().toISOString().substring(0, 10);
+  const todayStr = getWIBDateStr();
 
   const getFirstDayOfMonth = () => {
-    const d = new Date();
-    return new Date(d.getFullYear(), d.getMonth(), 1).toISOString().substring(0, 10);
+    const wibToday = getWIBDateStr();
+    return `${wibToday.substring(0, 8)}01`;
   };
 
   const [selectedDate, setSelectedDate] = useState(todayStr);
@@ -1037,10 +1042,10 @@ export default function HomeroomPanel({
   // Create Journal For Homeroom state
   const [isAddJournalOpen, setIsAddJournalOpen] = useState(false);
   const [journalSubject, setJournalSubject] = useState('Bimbingan Wali Kelas');
-  const [journalDate, setJournalDate] = useState(() => new Date().toISOString().substring(0, 10));
+  const [journalDate, setJournalDate] = useState(() => getWIBDateStr());
   const [journalTopic, setJournalTopic] = useState('');
   const [journalFase, setJournalFase] = useState('D');
-  const [journalSemester, setJournalSemester] = useState(() => getSemesterFromDate(new Date().toISOString().substring(0, 10)));
+  const [journalSemester, setJournalSemester] = useState(() => getSemesterFromDate(getWIBDateStr()));
   const [journalPertemuanKe, setJournalPertemuanKe] = useState('');
   const [journalJamKe, setJournalJamKe] = useState('');
   const [journalAlokasiWaktu, setJournalAlokasiWaktu] = useState('2');
@@ -1103,7 +1108,7 @@ export default function HomeroomPanel({
     setJournalAttendanceMap(initialMap);
     setJournalSubject('Bimbingan Wali Kelas');
     setIsCustomSubject(false);
-    const todayStr = new Date().toISOString().substring(0, 10);
+    const todayStr = getWIBDateStr();
     setJournalDate(todayStr);
     setJournalSemester(getSemesterFromDate(todayStr));
     setJournalFase('D');
@@ -1141,7 +1146,7 @@ export default function HomeroomPanel({
     ].includes(journal.subject || 'Bimbingan Wali Kelas');
     setIsCustomSubject(!isPredefined);
 
-    setJournalDate(journal.date || new Date().toISOString().substring(0, 10));
+    setJournalDate(journal.date || getWIBDateStr());
     setJournalSemester(journal.semester || getSemesterFromDate(journal.date || ''));
     setJournalFase(journal.fase || 'D');
     setJournalTopic(journal.topic || '');

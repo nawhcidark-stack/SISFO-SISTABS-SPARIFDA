@@ -1,7 +1,7 @@
 import React, { useState, useRef } from 'react';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers } from 'lucide-react';
 
 interface StudentManagementProps {
   students: Student[];
@@ -512,6 +512,54 @@ export default function StudentManagement({
     return acc;
   }, {} as Record<string, number>);
 
+  const tingkatStats = React.useMemo(() => {
+    const stats: Record<string, { total: number; male: number; female: number }> = {};
+    
+    activeStudentsList.forEach(s => {
+      const clsName = s.class ? s.class.trim() : '';
+      if (!clsName) return;
+      
+      // Extract tingkat (e.g. from "7-A" or "10-B" or "Kelas 7")
+      let tingkat = 'Lainnya';
+      const match = clsName.match(/^\d+/);
+      if (match) {
+        tingkat = `Tingkat ${match[0]}`;
+      } else {
+        const romanMatch = clsName.match(/^(IX|IV|V?I{1,3})/i);
+        if (romanMatch && romanMatch[0]) {
+          tingkat = `Tingkat ${romanMatch[0].toUpperCase()}`;
+        } else {
+          const wordMatch = clsName.match(/^(Kelas\s+)?(\d+)/i);
+          if (wordMatch) {
+            tingkat = `Tingkat ${wordMatch[2]}`;
+          }
+        }
+      }
+      
+      if (!stats[tingkat]) {
+        stats[tingkat] = { total: 0, male: 0, female: 0 };
+      }
+      
+      stats[tingkat].total++;
+      const isFemale = s.gender && (s.gender.toLowerCase().startsWith('p') || s.gender === 'Perempuan');
+      if (isFemale) {
+        stats[tingkat].female++;
+      } else {
+        stats[tingkat].male++;
+      }
+    });
+    
+    // Sort keys naturally (e.g. Tingkat 7, Tingkat 8, Tingkat 9)
+    return Object.keys(stats)
+      .sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }))
+      .map(key => ({
+        tingkat: key,
+        total: stats[key].total,
+        male: stats[key].male,
+        female: stats[key].female
+      }));
+  }, [activeStudentsList]);
+
   return (
     <div id="student-crud-root" className="flex flex-col gap-5 text-slate-800">
       {/* Upper header section */}
@@ -619,6 +667,73 @@ export default function StudentManagement({
           <span className="text-[10px] font-bold text-rose-600 bg-rose-50 px-2 py-0.5 rounded-full">
             {totalActive > 0 ? ((femaleCount / totalActive) * 100).toFixed(0) : 0}%
           </span>
+        </div>
+      </div>
+
+      {/* Statistik Jumlah Siswa per Tingkat */}
+      <div className="bg-white p-4.5 rounded-xl border border-slate-200 shadow-sm">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-2">
+            <Layers className="text-indigo-650" size={16} />
+            <h4 className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">Statistik Jumlah Siswa Per Tingkat</h4>
+          </div>
+          <span className="text-[9px] bg-slate-100 text-slate-500 px-2.5 py-1 rounded font-black tracking-wider uppercase">Grafik & Gender</span>
+        </div>
+
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {tingkatStats.map((stat) => {
+            const malePct = stat.total > 0 ? (stat.male / stat.total) * 100 : 0;
+            const femalePct = stat.total > 0 ? (stat.female / stat.total) * 100 : 0;
+            return (
+              <div key={stat.tingkat} className="bg-slate-50/50 p-4 rounded-xl border border-slate-150 hover:border-slate-300 transition-all flex flex-col justify-between">
+                <div className="flex items-center justify-between mb-3">
+                  <span className="text-xs font-black text-slate-700 tracking-wide">{stat.tingkat}</span>
+                  <span className="text-xs font-extrabold text-slate-900 bg-white border border-slate-200/80 px-2.5 py-0.5 rounded-lg shadow-2xs">
+                    {stat.total} <span className="text-[9.5px] font-medium text-slate-400">Siswa</span>
+                  </span>
+                </div>
+
+                {/* Progress bar ratio L & P */}
+                <div className="w-full bg-slate-200/70 rounded-full h-3.5 overflow-hidden flex mb-3 shadow-2xs">
+                  {stat.male > 0 && (
+                    <div 
+                      style={{ width: `${malePct}%` }} 
+                      className="bg-indigo-600 h-full flex items-center justify-center text-[8px] font-black text-white"
+                      title={`Laki-laki: ${stat.male} (${malePct.toFixed(1)}%)`}
+                    >
+                      {malePct >= 15 && `${malePct.toFixed(0)}%`}
+                    </div>
+                  )}
+                  {stat.female > 0 && (
+                    <div 
+                      style={{ width: `${femalePct}%` }} 
+                      className="bg-rose-500 h-full flex items-center justify-center text-[8px] font-black text-white"
+                      title={`Perempuan: ${stat.female} (${femalePct.toFixed(1)}%)`}
+                    >
+                      {femalePct >= 15 && `${femalePct.toFixed(0)}%`}
+                    </div>
+                  )}
+                </div>
+
+                {/* Gender detailed metrics */}
+                <div className="flex items-center justify-between text-[11px] font-bold text-slate-500 mt-1">
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-indigo-600 block"></span>
+                    <span>Laki-Laki: <strong className="text-indigo-650 font-black">{stat.male}</strong></span>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="w-2 h-2 rounded-full bg-rose-500 block"></span>
+                    <span>Perempuan: <strong className="text-rose-600 font-black">{stat.female}</strong></span>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+          {tingkatStats.length === 0 && (
+            <div className="col-span-1 md:col-span-3 text-center py-6 text-slate-400 text-xs">
+              Tidak ada data siswa aktif untuk dikelompokkan per tingkat.
+            </div>
+          )}
         </div>
       </div>
 

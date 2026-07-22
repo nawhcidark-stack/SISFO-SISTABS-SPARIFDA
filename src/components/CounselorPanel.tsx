@@ -1372,7 +1372,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                         <button
                           onClick={() => handleInitiateCounseling(st.name, st.className, st.reason)}
-                          className="w-full py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-colors cursor-pointer text-center inline-flex items-center justify-center gap-1"
+                          className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-colors cursor-pointer text-center inline-flex items-center justify-center gap-1 shadow-xs"
                         >
                           <Brain size={12} />
                           <span>Buat Sesi Bimbingan Siswa BK ini 🧠</span>

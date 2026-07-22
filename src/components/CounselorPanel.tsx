@@ -33,7 +33,8 @@ import {
   ArrowRight,
   TrendingUp,
   FileText,
-  Check
+  Check,
+  Filter
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student } from "../types";
@@ -62,6 +63,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [searchQuery, setSearchQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved'>('all');
   const [classFilter, setClassFilter] = useState("all");
+  const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<'all' | 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'>('all');
 
   // Date range filters for attendance & infractions
   const [attendanceStartDate, setAttendanceStartDate] = useState("");
@@ -515,20 +517,41 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     printWindow.document.close();
   };
 
+  // Helper function to resolve student name and class from allStudents, logs, or infractions
+  const getStudentInfo = (studentId: string) => {
+    const s = allStudents.find(st => st.id === studentId);
+    if (s && s.name) {
+      return { name: s.name, className: s.class || "7-A" };
+    }
+    const foundC = logs.find(l => l.studentId === studentId);
+    if (foundC && foundC.studentName) {
+      return { name: foundC.studentName, className: foundC.className || "7-A" };
+    }
+    const foundI = infractions.find(i => i.studentId === studentId);
+    if (foundI && foundI.studentName) {
+      return { name: foundI.studentName, className: foundI.className || "7-A" };
+    }
+    return { name: `Siswa (${studentId})`, className: "7-A" };
+  };
+
   // Get distinct classes from available logs for filters
   const uniqueClasses = useMemo(() => {
     const list = new Set<string>();
+    allStudents.forEach(s => {
+      if (s.class) list.add(s.class);
+    });
     logs.forEach(l => {
       if (l.className) list.add(l.className);
     });
     attendance.forEach(a => {
-      // Find class name if available, otherwise skip
+      const info = getStudentInfo(a.studentId);
+      if (info.className) list.add(info.className);
     });
     infractions.forEach(i => {
       if (i.className) list.add(i.className);
     });
     return Array.from(list).sort();
-  }, [logs, attendance, infractions]);
+  }, [allStudents, logs, attendance, infractions]);
 
   // Aggregate Attendance states grouping per student
   const aggregatedAttendance = useMemo(() => {
@@ -544,25 +567,12 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
       const key = `${log.studentId}`;
       if (!studentMap[key]) {
-        // Let's find student name from other logs or search
-        let name = "Siswa Terdaftar";
-        let cName = "7-A";
-
-        // Try lookup in logs or infractions
-        const foundC = logs.find(l => l.studentId === log.studentId);
-        const foundI = infractions.find(i => i.studentId === log.studentId);
-        if (foundC) {
-          name = foundC.studentName;
-          cName = foundC.className;
-        } else if (foundI) {
-          name = foundI.studentName;
-          cName = foundI.className;
-        }
+        const info = getStudentInfo(log.studentId);
 
         studentMap[key] = {
           id: log.studentId,
-          name: name,
-          className: cName,
+          name: info.name,
+          className: info.className,
           hadir: 0,
           sakit: 0,
           izin: 0,
@@ -583,7 +593,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     });
 
     return Object.values(studentMap);
-  }, [attendance, logs, infractions, attendanceStartDate, attendanceEndDate]);
+  }, [attendance, logs, infractions, allStudents, attendanceStartDate, attendanceEndDate]);
 
   // Aggregate Infractions (Leaderboard points)
   const aggregatedInfractions = useMemo(() => {
@@ -680,13 +690,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   // Attendance filter mapping
   const filteredAttendanceDiary = useMemo(() => {
     return attendance.filter(log => {
-      // Find name from counseling / infractions
-      let name = "Siswa Terdaftar";
-      let cName = "7-A";
-      const foundC = logs.find(l => l.studentId === log.studentId);
-      const foundI = infractions.find(i => i.studentId === log.studentId);
-      if (foundC) { name = foundC.studentName; cName = foundC.className; }
-      else if (foundI) { name = foundI.studentName; cName = foundI.className; }
+      const info = getStudentInfo(log.studentId);
+      const name = info.name;
+      const cName = info.className;
 
       const searchMatch = 
         name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -695,6 +701,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       const classMatch = 
         classFilter === "all" ? true : cName === classFilter;
 
+      // Filter by status H S I A T
+      const statusMatch = 
+        attendanceStatusFilter === 'all' ? true : log.status === attendanceStatusFilter;
+
       // Filter by date range if provided
       if (attendanceStartDate || attendanceEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
@@ -702,17 +712,25 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         if (attendanceEndDate && d > attendanceEndDate) return false;
       }
 
-      return searchMatch && classMatch;
+      return searchMatch && classMatch && statusMatch;
     });
-  }, [attendance, logs, infractions, searchQuery, classFilter, attendanceStartDate, attendanceEndDate]);
+  }, [attendance, logs, infractions, allStudents, searchQuery, classFilter, attendanceStatusFilter, attendanceStartDate, attendanceEndDate]);
 
   const filteredAttendanceAggregate = useMemo(() => {
     return aggregatedAttendance.filter(st => {
       const searchMatch = st.name.toLowerCase().includes(searchQuery.toLowerCase());
       const classMatch = classFilter === "all" ? true : st.className === classFilter;
-      return searchMatch && classMatch;
+
+      let statusMatch = true;
+      if (attendanceStatusFilter === 'Hadir') statusMatch = st.hadir > 0;
+      else if (attendanceStatusFilter === 'Sakit') statusMatch = st.sakit > 0;
+      else if (attendanceStatusFilter === 'Izin') statusMatch = st.izin > 0;
+      else if (attendanceStatusFilter === 'Alpa') statusMatch = st.alpa > 0;
+      else if (attendanceStatusFilter === 'Terlambat') statusMatch = st.terlambat > 0;
+
+      return searchMatch && classMatch && statusMatch;
     }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [aggregatedAttendance, searchQuery, classFilter]);
+  }, [aggregatedAttendance, searchQuery, classFilter, attendanceStatusFilter]);
 
   // Infractions filter mapping
   const filteredInfractionsList = useMemo(() => {
@@ -1389,9 +1407,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       };
                       
                       // Find student info
-                      const f = logs.find(log => log.studentId === a.studentId) || infractions.find(inf => inf.studentId === a.studentId);
-                      const stdName = f ? f.studentName : "Siswa No Rekam " + a.studentId;
-                      const cName = f ? f.className : "7-A";
+                      const info = getStudentInfo(a.studentId);
+                      const stdName = info.name;
+                      const cName = info.className;
 
                       return (
                         <div key={i} className="flex items-center justify-between p-2.5 bg-slate-50 border border-slate-105 rounded-xl text-[11px]">
@@ -1881,6 +1899,87 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   </select>
                 </div>
 
+                {/* Status Filter H S I A T */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 p-2.5 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Filter size={13} className="text-indigo-600" />
+                    <span>Filter Status Presensi (H / S / I / A / T):</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceStatusFilter('all')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'all'
+                          ? 'bg-slate-800 text-white shadow-2xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Semua
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceStatusFilter('Hadir')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Hadir'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                      title="Hadir (H)"
+                    >
+                      H <span className="text-[10px] font-bold hidden sm:inline">(Hadir)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceStatusFilter('Sakit')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Sakit'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                      }`}
+                      title="Sakit (S)"
+                    >
+                      S <span className="text-[10px] font-bold hidden sm:inline">(Sakit)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceStatusFilter('Izin')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Izin'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      }`}
+                      title="Izin (I)"
+                    >
+                      I <span className="text-[10px] font-bold hidden sm:inline">(Izin)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceStatusFilter('Alpa')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Alpa'
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      }`}
+                      title="Alpa (A)"
+                    >
+                      A <span className="text-[10px] font-bold hidden sm:inline">(Alpa)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setAttendanceStatusFilter('Terlambat')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        attendanceStatusFilter === 'Terlambat'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                      }`}
+                      title="Terlambat (T)"
+                    >
+                      T <span className="text-[10px] font-bold hidden sm:inline">(Terlambat)</span>
+                    </button>
+                  </div>
+                </div>
+
                 {/* Saringan Tanggal Export & Tampilan */}
                 <div className="flex flex-wrap items-center justify-between gap-3 bg-emerald-50/30 border border-emerald-100 p-3 rounded-2xl">
                   <div className="text-[11px] font-black text-emerald-800 flex items-center gap-1.5 uppercase tracking-wide">
@@ -1995,9 +2094,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                       {filteredAttendanceDiary.map((a, i) => {
-                        const f = logs.find(log => log.studentId === a.studentId) || infractions.find(inf => inf.studentId === a.studentId);
-                        const name = f ? f.studentName : "Siswa No Registrasi " + a.studentId;
-                        const cName = f ? f.className : "7-A";
+                        const info = getStudentInfo(a.studentId);
+                        const name = info.name;
+                        const cName = info.className;
 
                         return (
                           <tr key={i} className="hover:bg-slate-50 bg-white">

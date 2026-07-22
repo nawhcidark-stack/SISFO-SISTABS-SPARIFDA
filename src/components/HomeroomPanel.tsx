@@ -12,7 +12,7 @@ import {
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
   Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key,
   Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
-  LayoutGrid, Home, Smartphone, Apple
+  LayoutGrid, Home, Smartphone, Apple, Filter
 } from 'lucide-react';
 
 // Standalone Type-Safe Print Helper Functions (Isolated from JSX rendering context)
@@ -719,6 +719,7 @@ export default function HomeroomPanel({
   });
   const [rekapStartDate, setRekapStartDate] = useState(getFirstDayOfMonth());
   const [rekapEndDate, setRekapEndDate] = useState(todayStr);
+  const [rekapStatusFilter, setRekapStatusFilter] = useState<'all' | 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'>('all');
   const [financeSearch, setFinanceSearch] = useState('');
   const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
 
@@ -2138,6 +2139,18 @@ Wassalamualaikum Wr. Wb.
     });
   }, [classStudents, attendanceLogs, rekapStartDate, rekapEndDate]);
 
+  const filteredRekapData = useMemo(() => {
+    if (rekapStatusFilter === 'all') return rekapData;
+    return rekapData.filter(r => {
+      if (rekapStatusFilter === 'Hadir') return r.hadir > 0;
+      if (rekapStatusFilter === 'Sakit') return r.sakit > 0;
+      if (rekapStatusFilter === 'Izin') return r.izin > 0;
+      if (rekapStatusFilter === 'Alpa') return r.alpa > 0;
+      if (rekapStatusFilter === 'Terlambat') return r.terlambat > 0;
+      return true;
+    });
+  }, [rekapData, rekapStatusFilter]);
+
   // Excel (.xls format with clean XML and styles optimized for Microsoft Excel)
   const downloadExcelRekap = () => {
     const totalHadirClass = rekapData.reduce((acc, r) => acc + r.hadir, 0);
@@ -3339,31 +3352,114 @@ Wassalamualaikum Wr. Wb.
                 </div>
               </div>
 
-              {/* Date pickers for rekapitulasi */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 mb-6 p-4 bg-slate-50 border border-slate-200 rounded-xl col-span-1">
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Mulai</label>
-                  <input
-                    type="date"
-                    value={rekapStartDate}
-                    onChange={(e) => setRekapStartDate(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
+              {/* Date pickers for rekapitulasi & status filter */}
+              <div className="flex flex-col gap-4 mb-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 p-4 bg-slate-50 border border-slate-200 rounded-xl">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Mulai</label>
+                    <input
+                      type="date"
+                      value={rekapStartDate}
+                      onChange={(e) => setRekapStartDate(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Akhir</label>
+                    <input
+                      type="date"
+                      value={rekapEndDate}
+                      onChange={(e) => setRekapEndDate(e.target.value)}
+                      className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Akhir</label>
-                  <input
-                    type="date"
-                    value={rekapEndDate}
-                    onChange={(e) => setRekapEndDate(e.target.value)}
-                    className="w-full text-xs font-semibold px-3 py-2 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-slate-200"
-                  />
+
+                {/* Filter Status H S I A T */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-slate-50 border border-slate-200 p-3 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-slate-700 flex items-center gap-1.5 uppercase tracking-wide">
+                    <Filter size={13} className="text-indigo-600" />
+                    <span>Filter Siswa Berdasarkan Status Kehadiran (H / S / I / A / T):</span>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => setRekapStatusFilter('all')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'all'
+                          ? 'bg-slate-800 text-white shadow-2xs'
+                          : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
+                      }`}
+                    >
+                      Semua Siswa
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRekapStatusFilter('Hadir')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Hadir'
+                          ? 'bg-emerald-600 text-white shadow-2xs'
+                          : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                      }`}
+                      title="Siswa Ada Hadir (H)"
+                    >
+                      H <span className="text-[10px] font-bold hidden sm:inline">(Hadir)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRekapStatusFilter('Sakit')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Sakit'
+                          ? 'bg-indigo-600 text-white shadow-2xs'
+                          : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
+                      }`}
+                      title="Siswa Ada Sakit (S)"
+                    >
+                      S <span className="text-[10px] font-bold hidden sm:inline">(Sakit)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRekapStatusFilter('Izin')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Izin'
+                          ? 'bg-amber-600 text-white shadow-2xs'
+                          : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
+                      }`}
+                      title="Siswa Ada Izin (I)"
+                    >
+                      I <span className="text-[10px] font-bold hidden sm:inline">(Izin)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRekapStatusFilter('Alpa')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Alpa'
+                          ? 'bg-rose-600 text-white shadow-2xs'
+                          : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                      }`}
+                      title="Siswa Ada Alpa (A)"
+                    >
+                      A <span className="text-[10px] font-bold hidden sm:inline">(Alpa)</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRekapStatusFilter('Terlambat')}
+                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                        rekapStatusFilter === 'Terlambat'
+                          ? 'bg-purple-600 text-white shadow-2xs'
+                          : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
+                      }`}
+                      title="Siswa Ada Terlambat (T)"
+                    >
+                      T <span className="text-[10px] font-bold hidden sm:inline">(Terlambat)</span>
+                    </button>
+                  </div>
                 </div>
               </div>
 
-              {rekapData.length === 0 ? (
+              {filteredRekapData.length === 0 ? (
                 <div className="p-12 text-center text-slate-450 text-xs">
-                  Tidak ada data siswa untuk kelas ini.
+                  Tidak ada data siswa yang cocok dengan filter.
                 </div>
               ) : (
                 <div className="overflow-x-auto rounded-xl border border-slate-200">
@@ -3383,7 +3479,7 @@ Wassalamualaikum Wr. Wb.
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
-                      {rekapData.map((row) => (
+                      {filteredRekapData.map((row) => (
                         <tr key={row.student.id} className="hover:bg-slate-50/55 transition-colors">
                           <td className="py-2 px-3 text-center font-semibold text-slate-400">{row.index}</td>
                           <td className="py-2 px-3 font-mono text-slate-500 font-bold">{row.student.nis}</td>

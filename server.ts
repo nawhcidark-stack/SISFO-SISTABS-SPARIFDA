@@ -3163,8 +3163,13 @@ async function startServer() {
       };
 
       if (existingLogIndex !== -1) {
-        // Update existing daily attendance status
-        attendanceLogs[existingLogIndex].status = status;
+        // Update existing daily attendance status ONLY if we are not erasing a special non-Hadir status (Terlambat, Sakit, Izin, Alpa) with a default 'Hadir' from subject teacher
+        const currentDailyStatus = attendanceLogs[existingLogIndex].status;
+        const nonPresentStatuses = ['Terlambat', 'Sakit', 'Izin', 'Alpa'];
+
+        if (!nonPresentStatuses.includes(currentDailyStatus) || status !== 'Hadir') {
+          attendanceLogs[existingLogIndex].status = status;
+        }
 
         if (!attendanceLogs[existingLogIndex].subjectNotes) {
           attendanceLogs[existingLogIndex].subjectNotes = [];
@@ -3258,7 +3263,13 @@ async function startServer() {
         };
 
         if (existingLogIndex !== -1) {
-          attendanceLogs[existingLogIndex].status = status;
+          const currentDailyStatus = attendanceLogs[existingLogIndex].status;
+          const nonPresentStatuses = ['Terlambat', 'Sakit', 'Izin', 'Alpa'];
+
+          if (!nonPresentStatuses.includes(currentDailyStatus) || status !== 'Hadir') {
+            attendanceLogs[existingLogIndex].status = status;
+          }
+
           if (!attendanceLogs[existingLogIndex].subjectNotes) {
             attendanceLogs[existingLogIndex].subjectNotes = [];
           }

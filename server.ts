@@ -2825,7 +2825,38 @@ async function startServer() {
 
   // --- STUDENT ATTENDANCE (ABSENSI) ENDPOINTS ---
   app.get("/api/attendance", (req, res) => {
-    res.json(attendanceLogs);
+    const enrichedLogs = attendanceLogs.map(log => {
+      let resolvedName = log.studentName;
+      if (!resolvedName || resolvedName.startsWith("Siswa (std-")) {
+        const st = students.find(s => 
+          s.id === log.studentId || 
+          (s.id && s.id.toLowerCase() === log.studentId?.toLowerCase()) ||
+          s.nis === log.studentId || 
+          (s.nis && s.nis.toLowerCase() === log.studentId?.toLowerCase())
+        );
+        if (st && st.name) {
+          resolvedName = st.name;
+        } else {
+          for (const j of teachingJournals) {
+            if (Array.isArray(j.attendance)) {
+              const att = j.attendance.find((a: any) => 
+                a.studentId === log.studentId || 
+                (a.studentId && a.studentId.toLowerCase() === log.studentId?.toLowerCase())
+              );
+              if (att && att.studentName && !att.studentName.startsWith("Siswa (std-")) {
+                resolvedName = att.studentName;
+                break;
+              }
+            }
+          }
+        }
+      }
+      return {
+        ...log,
+        studentName: resolvedName || log.studentName || ""
+      };
+    });
+    res.json(enrichedLogs);
   });
 
   app.get("/api/attendance/student/:studentId", (req, res) => {
@@ -2836,19 +2867,26 @@ async function startServer() {
 
   // Save single attendance entry
   app.post("/api/attendance", (req, res) => {
-    const { studentId, date, status, notes } = req.body;
+    const { studentId, studentName, date, status, notes } = req.body;
     if (!studentId || !date || !status) {
       return res.status(400).json({ error: "Data absensi tidak lengkap." });
     }
+
+    const st = students.find(s => s.id === studentId || s.nis === studentId);
+    const resolvedName = (st && st.name) ? st.name : (studentName || "");
 
     const index = attendanceLogs.findIndex(l => l.studentId === studentId && l.date === date);
     if (index !== -1) {
       attendanceLogs[index].status = status;
       attendanceLogs[index].notes = notes || "";
+      if (resolvedName && (!attendanceLogs[index].studentName || attendanceLogs[index].studentName.startsWith("Siswa (std-"))) {
+        attendanceLogs[index].studentName = resolvedName;
+      }
     } else {
       attendanceLogs.push({
         id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         studentId,
+        studentName: resolvedName,
         date,
         status,
         notes: notes || ""
@@ -2860,23 +2898,30 @@ async function startServer() {
 
   // Batch save attendance entries
   app.post("/api/attendance/batch", (req, res) => {
-    const { logs } = req.body; // array of { studentId, date, status, notes }
+    const { logs } = req.body; // array of { studentId, studentName, date, status, notes }
     if (!Array.isArray(logs)) {
       return res.status(400).json({ error: "Logs harus berupa array." });
     }
 
     logs.forEach(item => {
-      const { studentId, date, status, notes } = item;
+      const { studentId, studentName, date, status, notes } = item;
       if (!studentId || !date || !status) return;
+
+      const st = students.find(s => s.id === studentId || s.nis === studentId);
+      const resolvedName = (st && st.name) ? st.name : (studentName || "");
 
       const index = attendanceLogs.findIndex(l => l.studentId === studentId && l.date === date);
       if (index !== -1) {
         attendanceLogs[index].status = status;
         attendanceLogs[index].notes = notes || "";
+        if (resolvedName && (!attendanceLogs[index].studentName || attendanceLogs[index].studentName.startsWith("Siswa (std-"))) {
+          attendanceLogs[index].studentName = resolvedName;
+        }
       } else {
         attendanceLogs.push({
           id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           studentId,
+          studentName: resolvedName,
           date,
           status,
           notes: notes || ""
@@ -3152,9 +3197,12 @@ async function startServer() {
 
     // Also sync/merge into standard attendanceLogs
     attendance.forEach((studentAtt: any) => {
-      const { studentId, status, notes: attNotes } = studentAtt;
+      const { studentId, studentName, status, notes: attNotes } = studentAtt;
       const existingLogIndex = attendanceLogs.findIndex(log => log.studentId === studentId && log.date === date);
       
+      const st = students.find(s => s.id === studentId || s.nis === studentId);
+      const nameToSet = (st && st.name) ? st.name : (studentName || "");
+
       const newSubNote = {
         subject,
         teacherName,
@@ -3171,6 +3219,10 @@ async function startServer() {
           attendanceLogs[existingLogIndex].status = status;
         }
 
+        if (nameToSet && (!attendanceLogs[existingLogIndex].studentName || attendanceLogs[existingLogIndex].studentName.startsWith("Siswa (std-"))) {
+          attendanceLogs[existingLogIndex].studentName = nameToSet;
+        }
+
         if (!attendanceLogs[existingLogIndex].subjectNotes) {
           attendanceLogs[existingLogIndex].subjectNotes = [];
         }
@@ -3185,6 +3237,7 @@ async function startServer() {
         attendanceLogs.push({
           id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           studentId,
+          studentName: nameToSet,
           date,
           status,
           notes: "",

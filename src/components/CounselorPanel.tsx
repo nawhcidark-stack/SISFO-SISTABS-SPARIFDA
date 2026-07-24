@@ -528,20 +528,64 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     printWindow.document.close();
   };
 
-  // Helper function to resolve student name and class from allStudents, logs, or infractions
+  // Helper function to resolve student name and class from allStudents, teachingJournals, logs, or infractions
   const getStudentInfo = (studentId: string) => {
-    const s = allStudents.find(st => st.id === studentId);
-    if (s && s.name) {
-      return { name: s.name, className: s.class || "7-A" };
+    if (!studentId) return { name: "Siswa Tidak Dikenal", className: "-" };
+
+    const cleanId = String(studentId).trim();
+    const lowerId = cleanId.toLowerCase();
+
+    // 1. Check allStudents by id (exact, trimmed, lowercase) or NIS or NISN
+    const s = allStudents.find(st => 
+      st.id === cleanId || 
+      (st.id && String(st.id).trim().toLowerCase() === lowerId) ||
+      (st.nis && String(st.nis).trim().toLowerCase() === lowerId) ||
+      (st.nisn && String(st.nisn).trim().toLowerCase() === lowerId)
+    );
+    if (s && s.name && s.name.trim()) {
+      return { name: s.name.trim(), className: s.class || "7-A" };
     }
-    const foundC = logs.find(l => l.studentId === studentId);
-    if (foundC && foundC.studentName) {
-      return { name: foundC.studentName, className: foundC.className || "7-A" };
+
+    // 2. Check teachingJournals attendance array
+    for (const j of teachingJournals) {
+      if (Array.isArray(j.attendance)) {
+        const foundAtt = j.attendance.find((att: any) => 
+          att.studentId === cleanId ||
+          (att.studentId && String(att.studentId).trim().toLowerCase() === lowerId)
+        );
+        if (foundAtt && foundAtt.studentName && foundAtt.studentName.trim() && !foundAtt.studentName.startsWith("Siswa (std-")) {
+          return { name: foundAtt.studentName.trim(), className: j.className || "7-A" };
+        }
+      }
     }
-    const foundI = infractions.find(i => i.studentId === studentId);
-    if (foundI && foundI.studentName) {
-      return { name: foundI.studentName, className: foundI.className || "7-A" };
+
+    // 3. Check attendance array itself if entry has studentName
+    const foundA = attendance.find((a: any) => 
+      (a.studentId === cleanId || (a.studentId && String(a.studentId).trim().toLowerCase() === lowerId)) &&
+      (a as any).studentName && (a as any).studentName.trim() && !(a as any).studentName.startsWith("Siswa (std-")
+    );
+    if (foundA && (foundA as any).studentName) {
+      return { name: (foundA as any).studentName.trim(), className: (foundA as any).className || "7-A" };
     }
+
+    // 4. Check counseling logs (logs)
+    const foundC = logs.find(l => 
+      l.studentId === cleanId || 
+      (l.studentId && String(l.studentId).trim().toLowerCase() === lowerId)
+    );
+    if (foundC && foundC.studentName && foundC.studentName.trim() && !foundC.studentName.startsWith("Siswa (std-")) {
+      return { name: foundC.studentName.trim(), className: foundC.className || "7-A" };
+    }
+
+    // 5. Check infraction logs (infractions)
+    const foundI = infractions.find(i => 
+      i.studentId === cleanId || 
+      (i.studentId && String(i.studentId).trim().toLowerCase() === lowerId)
+    );
+    if (foundI && foundI.studentName && foundI.studentName.trim() && !foundI.studentName.startsWith("Siswa (std-")) {
+      return { name: foundI.studentName.trim(), className: foundI.className || "7-A" };
+    }
+
     return { name: `Siswa (${studentId})`, className: "7-A" };
   };
 
@@ -626,6 +670,12 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           terlambat: 0,
           total: 0
         };
+      } else if (studentMap[key].name.startsWith("Siswa (std-")) {
+        const info = getStudentInfo(log.studentId);
+        if (!info.name.startsWith("Siswa (std-")) {
+          studentMap[key].name = info.name;
+          if (info.className) studentMap[key].className = info.className;
+        }
       }
 
       const status = log.status;
@@ -639,7 +689,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     });
 
     return Object.values(studentMap);
-  }, [attendance, logs, infractions, allStudents, attendanceStartDate, attendanceEndDate]);
+  }, [attendance, logs, infractions, allStudents, teachingJournals, attendanceStartDate, attendanceEndDate]);
 
   // Aggregate Infractions (Leaderboard points)
   const aggregatedInfractions = useMemo(() => {
@@ -760,7 +810,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
       return searchMatch && classMatch && statusMatch;
     });
-  }, [attendance, logs, infractions, allStudents, searchQuery, classFilter, attendanceStatusFilter, attendanceStartDate, attendanceEndDate]);
+  }, [attendance, logs, infractions, allStudents, teachingJournals, searchQuery, classFilter, attendanceStatusFilter, attendanceStartDate, attendanceEndDate]);
 
   const filteredAttendanceAggregate = useMemo(() => {
     return aggregatedAttendance.filter(st => {
@@ -3061,11 +3111,15 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                                     "Izin": "bg-amber-100 text-amber-800 border-amber-200"
                                   };
 
+                                  const stdDisplayName = (st.studentName && !st.studentName.startsWith("Siswa (std-"))
+                                    ? st.studentName
+                                    : getStudentInfo(st.studentId).name;
+
                                   return (
                                     <div key={idx} className="bg-white border border-rose-100 p-2.5 rounded-xl flex items-center justify-between gap-2 shadow-2xs">
                                       <div className="min-w-0 flex-1">
                                         <span className="font-extrabold text-slate-800 text-xs block truncate">
-                                          {st.studentName}
+                                          {stdDisplayName}
                                         </span>
                                         <div className="flex items-center gap-1.5 mt-0.5">
                                           <span className={`px-1.5 py-0.2 rounded text-[9.5px] font-extrabold border uppercase ${statusColors[st.status] || "bg-slate-100 text-slate-700"}`}>

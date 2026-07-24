@@ -166,6 +166,7 @@ export interface WhatsappConfig {
 export interface AttendanceLog {
   id: string;
   studentId: string;
+  studentName?: string;
   date: string; // "YYYY-MM-DD"
   status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
   notes?: string;

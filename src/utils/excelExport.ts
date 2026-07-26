@@ -213,6 +213,98 @@ export function exportSppRecapToExcel(params: {
   XLSX.writeFile(wb, fileName);
 }
 
+// 2b. Export SPP Checklist Matrix (Rekap Ceklist SPP) to Excel
+export function exportSppChecklistToExcel(params: {
+  rekapSppGradeFilter: string;
+  rekapSppClassFilter: string;
+  rekapSppYearFilter: string;
+  checklistMatrix: any[];
+  globalTotalPaid: number;
+  globalTotalUnpaid: number;
+}) {
+  const {
+    rekapSppGradeFilter,
+    rekapSppClassFilter,
+    rekapSppYearFilter,
+    checklistMatrix,
+    globalTotalPaid,
+    globalTotalUnpaid,
+  } = params;
+
+  const wb = XLSX.utils.book_new();
+
+  const headers = [
+    "No",
+    "NIS",
+    "Nama Siswa",
+    "Kelas",
+    "Juli",
+    "Agustus",
+    "September",
+    "Oktober",
+    "November",
+    "Desember",
+    "Januari",
+    "Februari",
+    "Maret",
+    "April",
+    "Mei",
+    "Juni",
+    "Kelunasan (Bulan)",
+    "Total Tunggakan (IDR)"
+  ];
+
+  const months = ["Juli", "Agustus", "September", "Oktober", "November", "Desember", "Januari", "Februari", "Maret", "April", "Mei", "Juni"];
+
+  const rows = checklistMatrix.map((item, idx) => {
+    const monthCols = months.map(m => {
+      const st = item.monthlyMap?.[m]?.status;
+      if (st === "paid") return "✓";
+      if (st === "waived") return "Beasiswa";
+      if (st === "unpaid") return "✗";
+      return "-";
+    });
+
+    return [
+      idx + 1,
+      item.student.nis,
+      item.student.name,
+      item.student.class ? `Kelas ${item.student.class}` : "-",
+      ...monthCols,
+      `${item.paidCount} / ${item.totalBillsCount} Bulan`,
+      item.totalUnpaidNominal,
+    ];
+  });
+
+  const sheetData = [
+    ["REKAPITULASI CEKLIST PEMBAYARAN SPP BULANAN"],
+    ["SMP MAARIF NU PANDAAN"],
+    [`Tingkat: ${rekapSppGradeFilter === "all" ? "Semua" : `Kelas ${rekapSppGradeFilter}`}`],
+    [`Kelas: ${rekapSppClassFilter === "all" ? "Semua" : `Kelas ${rekapSppClassFilter}`}`],
+    [`Tahun Ajaran: ${rekapSppYearFilter === "all" ? "Semua" : `TA ${rekapSppYearFilter}`}`],
+    [],
+    ["Ringkasan Dana"],
+    ["Total Dana Masuk SPP", globalTotalPaid],
+    ["Total Piutang Tertunggak SPP", globalTotalUnpaid],
+    [],
+    headers,
+    ...rows,
+    [],
+    ["Keterangan: ✓ = Lunas, Beasiswa = Bebas/Beasiswa, ✗ = Belum Lunas, - = Non-Aktif/Tanpa Tagihan"]
+  ];
+
+  const ws = XLSX.utils.aoa_to_sheet(sheetData);
+  XLSX.utils.book_append_sheet(wb, ws, "Rekap Ceklist SPP");
+
+  const gradeName = rekapSppGradeFilter === "all" ? "SemuaTingkat" : `Tingkat${rekapSppGradeFilter}`;
+  const className = rekapSppClassFilter === "all" ? "SemuaKelas" : `Kelas${rekapSppClassFilter}`;
+  const rawYear = rekapSppYearFilter === "all" ? "SemuaTA" : `TA_${rekapSppYearFilter}`;
+  const safeYear = rawYear.replace(/\//g, "-");
+
+  const fileName = `Rekap_Ceklist_SPP_${gradeName}_${className}_${safeYear}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+
 // 3. Export Savings Recap (Rekap Tabungan) to Excel
 export function exportSavingsRecapToExcel(params: {
   rekapTabunganGradeFilter: string;

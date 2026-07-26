@@ -15,6 +15,7 @@ import { motion, AnimatePresence } from "motion/react";
 import {
   exportDailyReportToExcel,
   exportSppRecapToExcel,
+  exportSppChecklistToExcel,
   exportSavingsRecapToExcel,
   exportMiscRecapToExcel,
 } from "../utils/excelExport";
@@ -2045,6 +2046,7 @@ export default function AdminPanel({
   );
   const [rekapSppGradeFilter, setRekapSppGradeFilter] = useState<string>("all");
   const [rekapSppYearFilter, setRekapSppYearFilter] = useState<string>("all");
+  const [rekapSppFormat, setRekapSppFormat] = useState<"standard" | "checklist">("standard");
 
   const [absenStartDate, setAbsenStartDate] = useState<string>(() => {
     const d = new Date();
@@ -13284,6 +13286,11 @@ export default function AdminPanel({
                 });
 
                 // Compute SPP matrix for activeStudents
+                const sppMonthsOrder = [
+                  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+                  "Januari", "Februari", "Maret", "April", "Mei", "Juni"
+                ];
+
                 const summaryMatrix = activeStudents.map((student) => {
                   const sBills = bills.filter(
                     (b) =>
@@ -13306,6 +13313,28 @@ export default function AdminPanel({
                     sBills.length > 0
                       ? Math.round((paid.length / sBills.length) * 100)
                       : 0;
+
+                  const monthlyMap: Record<string, { status: "paid" | "waived" | "unpaid" | "inactive" | "none"; symbol: string }> = {};
+                  sppMonthsOrder.forEach((m) => {
+                    const b = sBills.find((bill) => bill.month === m);
+                    if (b) {
+                      if (b.status === "paid") {
+                        monthlyMap[m] = { status: "paid", symbol: "✓" };
+                      } else if (b.status === "waived") {
+                        monthlyMap[m] = { status: "waived", symbol: "B" };
+                      } else {
+                        const isActive = !isMut || checkIsBillActive(b, student.id);
+                        if (!isActive) {
+                          monthlyMap[m] = { status: "inactive", symbol: "-" };
+                        } else {
+                          monthlyMap[m] = { status: "unpaid", symbol: "✗" };
+                        }
+                      }
+                    } else {
+                      monthlyMap[m] = { status: "none", symbol: "-" };
+                    }
+                  });
+
                   return {
                     student,
                     totalBillsCount: sBills.length,
@@ -13314,6 +13343,7 @@ export default function AdminPanel({
                     totalPaidNominal,
                     totalUnpaidNominal,
                     pct,
+                    monthlyMap,
                   };
                 });
 
@@ -13435,14 +13465,25 @@ export default function AdminPanel({
                         <button
                           type="button"
                           onClick={() => {
-                            exportSppRecapToExcel({
-                              rekapSppGradeFilter,
-                              rekapSppClassFilter,
-                              rekapSppYearFilter,
-                              summaryMatrix,
-                              globalTotalPaid,
-                              globalTotalUnpaid,
-                            });
+                            if (rekapSppFormat === "checklist") {
+                              exportSppChecklistToExcel({
+                                rekapSppGradeFilter,
+                                rekapSppClassFilter,
+                                rekapSppYearFilter,
+                                checklistMatrix: summaryMatrix,
+                                globalTotalPaid,
+                                globalTotalUnpaid,
+                              });
+                            } else {
+                              exportSppRecapToExcel({
+                                rekapSppGradeFilter,
+                                rekapSppClassFilter,
+                                rekapSppYearFilter,
+                                summaryMatrix,
+                                globalTotalPaid,
+                                globalTotalUnpaid,
+                              });
+                            }
                           }}
                           className="flex items-center gap-1.5 px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all w-full sm:w-auto justify-center shadow-xs uppercase tracking-wider font-sans ml-0 md:ml-3"
                         >
@@ -13451,89 +13492,176 @@ export default function AdminPanel({
                       </div>
                     </div>
 
-                    {/* Main Table */}
+                    {/* Main Table Container */}
                     <div className="bg-white p-5 border border-slate-200 rounded-xl shadow-xs flex flex-col gap-4">
-                      <div>
-                        <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
-                          Rekapitulasi Tagihan SPP Bulanan (
-                          {summaryMatrix.length} Siswa)
-                        </h4>
-                        <p className="text-[10px] text-slate-400 mt-0.5">
-                          Pantau prosentase kelunasan serta total tunggakan per
-                          masing-masing wali murid secara real-time
-                        </p>
+                      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+                        <div>
+                          <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                            Rekapitulasi Tagihan SPP Bulanan ({summaryMatrix.length} Siswa)
+                          </h4>
+                          <p className="text-[10px] text-slate-400 mt-0.5">
+                            Pilih format tampilan ringkasan nominal atau matriks ceklist kelunasan per bulan SPP
+                          </p>
+                        </div>
+
+                        {/* Format Switcher Tabs */}
+                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-xl border border-slate-200 self-start sm:self-auto">
+                          <button
+                            type="button"
+                            onClick={() => setRekapSppFormat("standard")}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              rekapSppFormat === "standard"
+                                ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            📊 Ringkasan Standar
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setRekapSppFormat("checklist")}
+                            className={`px-3 py-1.5 rounded-lg text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
+                              rekapSppFormat === "checklist"
+                                ? "bg-white text-indigo-700 shadow-xs border border-slate-200"
+                                : "text-slate-500 hover:text-slate-800"
+                            }`}
+                          >
+                            ☑️ Ceklist Bulan SPP
+                          </button>
+                        </div>
                       </div>
 
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
-                          <thead>
-                            <tr className="text-slate-400 font-bold uppercase text-[9px] tracking-wider pb-2">
-                              <th className="pb-2">Ref/NIS</th>
-                              <th className="pb-2">Nama Siswa</th>
-                              <th className="pb-2">Kelas</th>
-                              <th className="pb-2">Progres / Status Lunas</th>
-                              <th className="pb-2 text-right">
-                                Lunas (Nominal)
-                              </th>
-                              <th className="pb-2 text-right">
-                                Tertunggak (Nominal)
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-105">
-                            {summaryMatrix.map(
-                              ({
-                                student,
-                                totalBillsCount,
-                                paidCount,
-                                unpaidCount,
-                                totalPaidNominal,
-                                totalUnpaidNominal,
-                                pct,
-                              }) => (
-                                <tr
-                                  key={student.id}
-                                  className="hover:bg-slate-50/50"
-                                >
-                                  <td className="py-2.5 font-mono text-slate-500 font-medium">
-                                    {student.nis}
-                                  </td>
-                                  <td className="py-2.5 font-bold text-slate-800">
-                                    {student.name}
-                                  </td>
-                                  <td className="py-2.5 text-slate-650 font-bold">
-                                    Kelas {student.class}
-                                  </td>
-                                  <td className="py-2.5">
-                                    <div className="flex items-center gap-2">
-                                      <div className="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
-                                        <div
-                                          className="bg-indigo-600 h-1.5 rounded-full"
-                                          style={{ width: `${pct}%` }}
-                                        ></div>
+                      {rekapSppFormat === "standard" ? (
+                        /* Standard Summary Table */
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left font-sans text-[11px] divide-y divide-slate-100">
+                            <thead>
+                              <tr className="text-slate-400 font-bold uppercase text-[9px] tracking-wider pb-2">
+                                <th className="pb-2">Ref/NIS</th>
+                                <th className="pb-2">Nama Siswa</th>
+                                <th className="pb-2">Kelas</th>
+                                <th className="pb-2">Progres / Status Lunas</th>
+                                <th className="pb-2 text-right">
+                                  Lunas (Nominal)
+                                </th>
+                                <th className="pb-2 text-right">
+                                  Tertunggak (Nominal)
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-105">
+                              {summaryMatrix.map(
+                                ({
+                                  student,
+                                  totalBillsCount,
+                                  paidCount,
+                                  totalPaidNominal,
+                                  totalUnpaidNominal,
+                                  pct,
+                                }) => (
+                                  <tr
+                                    key={student.id}
+                                    className="hover:bg-slate-50/50"
+                                  >
+                                    <td className="py-2.5 font-mono text-slate-500 font-medium">
+                                      {student.nis}
+                                    </td>
+                                    <td className="py-2.5 font-bold text-slate-800">
+                                      {student.name}
+                                    </td>
+                                    <td className="py-2.5 text-slate-650 font-bold">
+                                      Kelas {student.class}
+                                    </td>
+                                    <td className="py-2.5">
+                                      <div className="flex items-center gap-2">
+                                        <div className="w-20 bg-slate-100 rounded-full h-1.5 overflow-hidden">
+                                          <div
+                                            className="bg-indigo-600 h-1.5 rounded-full"
+                                            style={{ width: `${pct}%` }}
+                                          ></div>
+                                        </div>
+                                        <span className="font-bold font-mono text-[10px]">
+                                          {pct}%
+                                        </span>
+                                        <span className="text-[10px] text-slate-400 font-semibold">
+                                          ({paidCount}/{totalBillsCount} Bulan)
+                                        </span>
                                       </div>
-                                      <span className="font-bold font-mono text-[10px]">
-                                        {pct}%
-                                      </span>
-                                      <span className="text-[10px] text-slate-400 font-semibold">
-                                        ({paidCount}/{totalBillsCount} Bulan)
-                                      </span>
-                                    </div>
+                                    </td>
+                                    <td className="py-2.5 text-right font-mono font-bold text-emerald-700">
+                                      Rp{" "}
+                                      {totalPaidNominal.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="py-2.5 text-right font-mono font-bold text-rose-600">
+                                      Rp{" "}
+                                      {totalUnpaidNominal.toLocaleString("id-ID")}
+                                    </td>
+                                  </tr>
+                                ),
+                              )}
+                            </tbody>
+                          </table>
+                        </div>
+                      ) : (
+                        /* Monthly Checklist Matrix Table */
+                        <div className="overflow-x-auto">
+                          <table className="w-full text-left font-sans text-[11px] border-collapse">
+                            <thead>
+                              <tr className="bg-slate-50 text-slate-500 font-bold uppercase text-[9px] tracking-wider border-b border-slate-200">
+                                <th className="py-2.5 px-2">NIS</th>
+                                <th className="py-2.5 px-2 min-w-[130px]">Nama Siswa</th>
+                                <th className="py-2.5 px-2">Kelas</th>
+                                {["Jul", "Agu", "Sep", "Okt", "Nov", "Des", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun"].map((m) => (
+                                  <th key={m} className="py-2.5 px-1 text-center w-8">{m}</th>
+                                ))}
+                                <th className="py-2.5 px-2 text-center">Kelunasan</th>
+                                <th className="py-2.5 px-2 text-right">Tertunggak</th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {summaryMatrix.map(({ student, monthlyMap, paidCount, totalBillsCount, totalUnpaidNominal }) => (
+                                <tr key={student.id} className="hover:bg-slate-50/60">
+                                  <td className="py-2 px-2 font-mono text-slate-500 font-medium text-[10px]">{student.nis}</td>
+                                  <td className="py-2 px-2 font-bold text-slate-800 text-xs">{student.name}</td>
+                                  <td className="py-2 px-2 text-slate-600 font-bold text-[10px]">Kelas {student.class}</td>
+                                  {["Juli", "Agustus", "September", "Oktober", "November", "Desember", "Januari", "Februari", "Maret", "April", "Mei", "Juni"].map((m) => {
+                                    const st = monthlyMap[m]?.status;
+                                    return (
+                                      <td key={m} className="py-2 px-1 text-center font-bold">
+                                        {st === "paid" && (
+                                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-emerald-100 text-emerald-800 font-extrabold text-[10px]" title={`${m}: Lunas`}>✓</span>
+                                        )}
+                                        {st === "waived" && (
+                                          <span className="inline-flex items-center justify-center px-1 py-0.5 rounded bg-blue-100 text-blue-800 font-extrabold text-[8px]" title={`${m}: Beasiswa`}>B</span>
+                                        )}
+                                        {st === "unpaid" && (
+                                          <span className="inline-flex items-center justify-center w-5 h-5 rounded-full bg-rose-100 text-rose-700 font-extrabold text-[10px]" title={`${m}: Belum Lunas`}>✗</span>
+                                        )}
+                                        {(st === "inactive" || st === "none") && (
+                                          <span className="text-slate-300 font-medium text-[10px]">-</span>
+                                        )}
+                                      </td>
+                                    );
+                                  })}
+                                  <td className="py-2 px-2 text-center font-mono font-bold text-[10px] text-slate-700">
+                                    {paidCount}/{totalBillsCount} Bln
                                   </td>
-                                  <td className="py-2.5 text-right font-mono font-bold text-emerald-700">
-                                    Rp{" "}
-                                    {totalPaidNominal.toLocaleString("id-ID")}
-                                  </td>
-                                  <td className="py-2.5 text-right font-mono font-bold text-rose-600">
-                                    Rp{" "}
-                                    {totalUnpaidNominal.toLocaleString("id-ID")}
+                                  <td className="py-2 px-2 text-right font-mono font-bold text-rose-600 text-[10.5px]">
+                                    Rp {totalUnpaidNominal.toLocaleString("id-ID")}
                                   </td>
                                 </tr>
-                              ),
-                            )}
-                          </tbody>
-                        </table>
-                      </div>
+                              ))}
+                            </tbody>
+                          </table>
+                          <div className="flex flex-wrap items-center gap-4 mt-3 pt-3 border-t border-slate-100 text-[10px] text-slate-500 font-medium">
+                            <span className="font-bold uppercase text-slate-700">Keterangan Status:</span>
+                            <span className="inline-flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-emerald-100 text-emerald-800 font-bold inline-flex items-center justify-center text-[9px]">✓</span> Lunas</span>
+                            <span className="inline-flex items-center gap-1"><span className="px-1 bg-blue-100 text-blue-800 font-bold rounded text-[8px]">B</span> Beasiswa / Bebas</span>
+                            <span className="inline-flex items-center gap-1"><span className="w-4 h-4 rounded-full bg-rose-100 text-rose-700 font-bold inline-flex items-center justify-center text-[9px]">✗</span> Belum Lunas</span>
+                            <span className="inline-flex items-center gap-1"><span className="text-slate-400 font-bold">-</span> Non-Aktif / Belum Ada Tagihan</span>
+                          </div>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -15238,11 +15366,39 @@ export default function AdminPanel({
         <div className="fixed inset-0 z-50 bg-slate-905-notif bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4 no-print">
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 md:p-8 max-w-4xl w-full flex flex-col gap-6 relative max-h-[90vh]">
             {/* Action buttons inside modal overlay */}
-            <div className="flex justify-between items-center pb-3 border-b border-slate-100 flex-shrink-0">
-              <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
-                Pratinjau Cetak Laporan - SMP Ma'Arif Pandaan
-              </span>
-              <div className="flex gap-2">
+            <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100 flex-shrink-0">
+              <div className="flex items-center gap-3">
+                <span className="text-xs font-bold uppercase tracking-wider text-indigo-600">
+                  Pratinjau Cetak Laporan
+                </span>
+                {reportToPrint === "rekap-spp" && (
+                  <div className="flex items-center gap-1 bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setRekapSppFormat("standard")}
+                      className={`px-2.5 py-1 rounded text-[10.5px] font-bold cursor-pointer transition-all ${
+                        rekapSppFormat === "standard"
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      📊 Standar
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setRekapSppFormat("checklist")}
+                      className={`px-2.5 py-1 rounded text-[10.5px] font-bold cursor-pointer transition-all ${
+                        rekapSppFormat === "checklist"
+                          ? "bg-white text-indigo-700 shadow-xs"
+                          : "text-slate-600 hover:text-slate-900"
+                      }`}
+                    >
+                      ☑️ Ceklist Bulan
+                    </button>
+                  </div>
+                )}
+              </div>
+              <div className="flex gap-2 self-end sm:self-auto">
                 <button
                   type="button"
                   onClick={() => window.print()}
@@ -15348,7 +15504,9 @@ export default function AdminPanel({
                   <h2 className="text-sm font-extrabold uppercase tracking-widest underline">
                     {reportToPrint === "harian" && `Laporan Kas Harian Teller`}
                     {reportToPrint === "rekap-spp" &&
-                      `Laporan Rekapitulasi Pembayaran SPP`}
+                      (rekapSppFormat === "checklist"
+                        ? `Laporan Rekapitulasi Ceklist Pembayaran SPP Bulanan`
+                        : `Laporan Rekapitulasi Pembayaran SPP`)}
                     {reportToPrint === "rekap-tabungan" &&
                       `Laporan Peringkat & Rekap Buku Tabungan`}
                     {reportToPrint === "rekap-misc" &&
@@ -15832,6 +15990,11 @@ export default function AdminPanel({
                       return a.name.localeCompare(b.name);
                     });
 
+                    const sppMonthsOrder = [
+                      "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+                      "Januari", "Februari", "Maret", "April", "Mei", "Juni"
+                    ];
+
                     const summaryMatrix = activeStudents.map((student) => {
                       const sBills = bills.filter(
                         (b) =>
@@ -15856,6 +16019,28 @@ export default function AdminPanel({
                         sBills.length > 0
                           ? Math.round((paid.length / sBills.length) * 100)
                           : 0;
+
+                      const monthlyMap: Record<string, { status: "paid" | "waived" | "unpaid" | "inactive" | "none"; symbol: string }> = {};
+                      sppMonthsOrder.forEach((m) => {
+                        const b = sBills.find((bill) => bill.month === m);
+                        if (b) {
+                          if (b.status === "paid") {
+                            monthlyMap[m] = { status: "paid", symbol: "✓" };
+                          } else if (b.status === "waived") {
+                            monthlyMap[m] = { status: "waived", symbol: "B" };
+                          } else {
+                            const isActive = !isMut || checkIsBillActive(b, student.id);
+                            if (!isActive) {
+                              monthlyMap[m] = { status: "inactive", symbol: "-" };
+                            } else {
+                              monthlyMap[m] = { status: "unpaid", symbol: "✗" };
+                            }
+                          }
+                        } else {
+                          monthlyMap[m] = { status: "none", symbol: "-" };
+                        }
+                      });
+
                       return {
                         student,
                         totalBillsCount: sBills.length,
@@ -15864,88 +16049,105 @@ export default function AdminPanel({
                         totalPaidNominal,
                         totalUnpaidNominal,
                         pct,
+                        monthlyMap,
                       };
                     });
 
-                    const globalTotalPaid = summaryMatrix.reduce(
-                      (acc, current) => acc + current.totalPaidNominal,
-                      0,
-                    );
-                    const globalTotalUnpaid = summaryMatrix.reduce(
-                      (acc, current) => acc + current.totalUnpaidNominal,
-                      0,
-                    );
-
                     return (
                       <div className="flex flex-col gap-4 text-slate-900">
-                        {/* Table core */}
-                        <table className="w-full text-left font-sans border-collapse text-[9px] mt-2">
-                          <thead>
-                            <tr className="bg-slate-200 border border-slate-400 text-slate-800 font-bold uppercase text-[8px]">
-                              <th className="p-1 px-2 border border-slate-350">
-                                NIS
-                              </th>
-                              <th className="p-1 px-2 border border-slate-350">
-                                Nama Lengkap Siswa
-                              </th>
-                              <th className="p-1 px-2 border border-slate-350">
-                                Kelas Belajar
-                              </th>
-                              <th className="p-1 px-2 border border-slate-350 text-center">
-                                Kelunasan (Bulan)
-                              </th>
-                              <th className="p-1 px-2 border border-slate-350 text-center">
-                                Progres %
-                              </th>
-                              <th className="p-1 px-2 border border-slate-350 text-right">
-                                Lunas (Nominal)
-                              </th>
-                              <th className="p-1 px-2 border border-slate-350 text-right">
-                                Tunggakan (Nominal)
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {summaryMatrix.map(
-                              ({
-                                student,
-                                totalBillsCount,
-                                paidCount,
-                                unpaidCount,
-                                totalPaidNominal,
-                                totalUnpaidNominal,
-                                pct,
-                              }) => (
-                                <tr
-                                  key={student.id}
-                                  className="border border-slate-300 text-slate-900"
-                                >
-                                  <td className="p-1 px-2 border border-slate-300 font-mono text-[8px]">
-                                    {student.nis}
-                                  </td>
-                                  <td className="p-1 px-2 border border-slate-300 font-bold">
-                                    {student.name}
-                                  </td>
-                                  <td className="p-1 px-2 border border-slate-300 font-semibold">
-                                    {student.class}
-                                  </td>
-                                  <td className="p-1 px-2 border border-slate-300 text-center">
-                                    {paidCount} / {totalBillsCount} Bulan
-                                  </td>
-                                  <td className="p-1 px-2 border border-slate-300 text-center font-bold font-mono">
-                                    {pct}%
-                                  </td>
-                                  <td className="p-1 px-2 border border-slate-300 text-right font-mono text-emerald-800 font-semibold">
-                                    Rp {totalPaidNominal.toLocaleString("id-ID")}
-                                  </td>
-                                  <td className="p-1 px-2 border border-slate-300 text-right font-mono text-rose-800 font-semibold">
-                                    Rp {totalUnpaidNominal.toLocaleString("id-ID")}
-                                  </td>
+                        {rekapSppFormat === "checklist" ? (
+                          /* Print View: Monthly Checklist Matrix */
+                          <>
+                            <table className="w-full text-left font-sans border-collapse text-[8.5px] mt-2">
+                              <thead>
+                                <tr className="bg-slate-200 border border-slate-400 text-slate-800 font-bold uppercase text-[7.5px]">
+                                  <th className="p-1 border border-slate-350">NIS</th>
+                                  <th className="p-1 border border-slate-350">Nama Siswa</th>
+                                  <th className="p-1 border border-slate-350">Kelas</th>
+                                  {["Jul", "Agu", "Sep", "Okt", "Nov", "Des", "Jan", "Feb", "Mar", "Apr", "Mei", "Jun"].map((m) => (
+                                    <th key={m} className="p-1 border border-slate-350 text-center w-5">{m}</th>
+                                  ))}
+                                  <th className="p-1 border border-slate-350 text-center">Kelunasan</th>
+                                  <th className="p-1 border border-slate-350 text-right">Tertunggak</th>
                                 </tr>
-                              ),
-                            )}
-                          </tbody>
-                        </table>
+                              </thead>
+                              <tbody>
+                                {summaryMatrix.map(({ student, monthlyMap, paidCount, totalBillsCount, totalUnpaidNominal }) => (
+                                  <tr key={student.id} className="border border-slate-300 text-slate-900">
+                                    <td className="p-1 border border-slate-300 font-mono text-[7.5px]">{student.nis}</td>
+                                    <td className="p-1 border border-slate-300 font-bold">{student.name}</td>
+                                    <td className="p-1 border border-slate-300 font-semibold">{student.class}</td>
+                                    {["Juli", "Agustus", "September", "Oktober", "November", "Desember", "Januari", "Februari", "Maret", "April", "Mei", "Juni"].map((m) => {
+                                      const st = monthlyMap[m]?.status;
+                                      return (
+                                        <td key={m} className="p-1 border border-slate-300 text-center font-bold">
+                                          {st === "paid" && <span className="text-emerald-800 font-extrabold">✓</span>}
+                                          {st === "waived" && <span className="text-blue-800 font-extrabold text-[7px]">B</span>}
+                                          {st === "unpaid" && <span className="text-rose-700 font-extrabold">✗</span>}
+                                          {(st === "inactive" || st === "none") && <span className="text-slate-300 font-normal">-</span>}
+                                        </td>
+                                      );
+                                    })}
+                                    <td className="p-1 border border-slate-300 text-center font-mono font-bold text-[8px]">
+                                      {paidCount}/{totalBillsCount}
+                                    </td>
+                                    <td className="p-1 border border-slate-300 text-right font-mono font-bold text-rose-800 text-[8px]">
+                                      Rp {totalUnpaidNominal.toLocaleString("id-ID")}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                            <div className="flex items-center gap-3 text-[8px] text-slate-600 font-medium pt-1">
+                              <span className="font-bold uppercase">Keterangan:</span>
+                              <span>✓ = Lunas</span>
+                              <span>B = Beasiswa / Bebas</span>
+                              <span>✗ = Belum Lunas</span>
+                              <span>- = Non-Aktif / Belum Ada Tagihan</span>
+                            </div>
+                          </>
+                        ) : (
+                          /* Print View: Standard Summary Table */
+                          <table className="w-full text-left font-sans border-collapse text-[9px] mt-2">
+                            <thead>
+                              <tr className="bg-slate-200 border border-slate-400 text-slate-800 font-bold uppercase text-[8px]">
+                                <th className="p-1 px-2 border border-slate-350">NIS</th>
+                                <th className="p-1 px-2 border border-slate-350">Nama Lengkap Siswa</th>
+                                <th className="p-1 px-2 border border-slate-350">Kelas Belajar</th>
+                                <th className="p-1 px-2 border border-slate-350 text-center">Kelunasan (Bulan)</th>
+                                <th className="p-1 px-2 border border-slate-350 text-center">Progres %</th>
+                                <th className="p-1 px-2 border border-slate-350 text-right">Lunas (Nominal)</th>
+                                <th className="p-1 px-2 border border-slate-350 text-right">Tunggakan (Nominal)</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {summaryMatrix.map(
+                                ({
+                                  student,
+                                  totalBillsCount,
+                                  paidCount,
+                                  totalPaidNominal,
+                                  totalUnpaidNominal,
+                                  pct,
+                                }) => (
+                                  <tr key={student.id} className="border border-slate-300 text-slate-900">
+                                    <td className="p-1 px-2 border border-slate-300 font-mono text-[8px]">{student.nis}</td>
+                                    <td className="p-1 px-2 border border-slate-300 font-bold">{student.name}</td>
+                                    <td className="p-1 px-2 border border-slate-300 font-semibold">{student.class}</td>
+                                    <td className="p-1 px-2 border border-slate-300 text-center">{paidCount} / {totalBillsCount} Bulan</td>
+                                    <td className="p-1 px-2 border border-slate-300 text-center font-bold font-mono">{pct}%</td>
+                                    <td className="p-1 px-2 border border-slate-300 text-right font-mono text-emerald-800 font-semibold">
+                                      Rp {totalPaidNominal.toLocaleString("id-ID")}
+                                    </td>
+                                    <td className="p-1 px-2 border border-slate-300 text-right font-mono text-rose-800 font-semibold">
+                                      Rp {totalUnpaidNominal.toLocaleString("id-ID")}
+                                    </td>
+                                  </tr>
+                                ),
+                              )}
+                            </tbody>
+                          </table>
+                        )}
                       </div>
                     );
                   })()}

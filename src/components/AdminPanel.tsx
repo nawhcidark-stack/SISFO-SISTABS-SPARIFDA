@@ -372,6 +372,7 @@ export default function AdminPanel({
   const [miscTitle, setMiscTitle] = useState("");
   const [miscAmount, setMiscAmount] = useState("");
   const [miscSearch, setMiscSearch] = useState("");
+  const [miscClassFilter, setMiscClassFilter] = useState<string>("all");
   const [miscStatusFilter, setMiscStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
   const [miscStudentSearchQuery, setMiscStudentSearchQuery] = useState("");
   const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
@@ -5927,42 +5928,62 @@ export default function AdminPanel({
                 />
               </div>
 
-              <div className="flex items-center gap-2">
-                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status:</span>
-                <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
-                  <button
-                    type="button"
-                    onClick={() => setMiscStatusFilter("all")}
-                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                      miscStatusFilter === "all"
-                        ? "bg-white text-slate-900 shadow-xs"
-                        : "text-slate-500 hover:text-slate-950"
-                    }`}
+              <div className="flex flex-wrap items-center gap-3">
+                {/* Filter Kelas */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Kelas:</span>
+                  <select
+                    value={miscClassFilter}
+                    onChange={(e) => setMiscClassFilter(e.target.value)}
+                    className="px-3 py-1.5 text-xs font-bold border border-slate-200 focus:border-slate-400 bg-slate-50 focus:bg-white rounded-xl focus:outline-none transition-all text-slate-700 cursor-pointer shadow-xs"
                   >
-                    Semua
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMiscStatusFilter("unpaid")}
-                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                      miscStatusFilter === "unpaid"
-                        ? "bg-white text-orange-600 shadow-xs"
-                        : "text-slate-500 hover:text-slate-950"
-                    }`}
-                  >
-                    Belum Lunas
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMiscStatusFilter("paid")}
-                    className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
-                      miscStatusFilter === "paid"
-                        ? "bg-white text-emerald-600 shadow-xs"
-                        : "text-slate-500 hover:text-slate-950"
-                    }`}
-                  >
-                    Lunas
-                  </button>
+                    <option value="all">Semua Kelas</option>
+                    {uniqueClasses.map((cls) => (
+                      <option key={cls} value={cls}>
+                        Kelas {cls}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Status */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Status:</span>
+                  <div className="flex bg-slate-100 p-0.5 rounded-lg border border-slate-200">
+                    <button
+                      type="button"
+                      onClick={() => setMiscStatusFilter("all")}
+                      className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        miscStatusFilter === "all"
+                          ? "bg-white text-slate-900 shadow-xs"
+                          : "text-slate-500 hover:text-slate-950"
+                      }`}
+                    >
+                      Semua
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMiscStatusFilter("unpaid")}
+                      className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        miscStatusFilter === "unpaid"
+                          ? "bg-white text-orange-600 shadow-xs"
+                          : "text-slate-500 hover:text-slate-950"
+                      }`}
+                    >
+                      Belum Lunas
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setMiscStatusFilter("paid")}
+                      className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all cursor-pointer ${
+                        miscStatusFilter === "paid"
+                          ? "bg-white text-emerald-600 shadow-xs"
+                          : "text-slate-500 hover:text-slate-950"
+                      }`}
+                    >
+                      Lunas
+                    </button>
+                  </div>
                 </div>
               </div>
             </div>
@@ -5984,6 +6005,11 @@ export default function AdminPanel({
                     {(() => {
                       const filtered = miscBills.filter(bill => {
                         const s = students.find(st => st.id === bill.studentId);
+                        
+                        if (miscClassFilter !== "all") {
+                          if (!s || s.class !== miscClassFilter) return false;
+                        }
+
                         const matchText = (
                           bill.title.toLowerCase().includes(miscSearch.toLowerCase()) ||
                           bill.id.toLowerCase().includes(miscSearch.toLowerCase()) ||

@@ -5293,6 +5293,62 @@ async function startServer() {
     res.json({ success: true, bill });
   });
 
+  // Pay multiple miscellaneous bills manually in bulk (Teller)
+  app.post("/api/admin/pay-misc-manual-bulk", (req, res) => {
+    const { billIds } = req.body;
+    if (!Array.isArray(billIds) || billIds.length === 0) {
+      return res.status(400).json({ error: "Daftar tagihan yang diproses tidak boleh kosong." });
+    }
+
+    const updatedBills: any[] = [];
+    const nowISO = new Date().toISOString();
+    const batchTimestamp = Date.now();
+
+    billIds.forEach((billId: string, idx: number) => {
+      const bill = miscBills.find(b => b.id === billId);
+      if (!bill || bill.status === "paid") return;
+
+      const student = students.find(s => s.id === bill.studentId);
+      bill.status = "paid";
+      bill.paidAt = nowISO;
+      bill.paymentMethod = "Manual Teller (Sekolah)";
+      bill.orderId = `MISC-MANUAL-BULK-${batchTimestamp}-${idx + 1}`;
+
+      // Broadcast SSE notification
+      const notification: RealtimeNotification = {
+        id: `notif-misc-paid-${batchTimestamp}-${idx + 1}`,
+        studentId: bill.studentId,
+        title: `Pembayaran ${bill.title} Lunas`,
+        message: `Pembayaran ${bill.title} ${student?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIVERIFIKASI oleh Admin Sekolah (Massal).`,
+        type: "success",
+        createdAt: nowISO
+      };
+      broadcastNotification(notification);
+
+      // Send automated WhatsApp confirmation if enabled
+      if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
+        const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+          `📢 *KUITANSI PEMBAYARAN DIGITAL*\n` +
+          `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL diterima & diverifikasi oleh teller sekolah pada ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}.\n\n` +
+          `Metode Pembayaran: *${bill.paymentMethod}*\n` +
+          `No. Transaksi: *${bill.orderId}*\n` +
+          `Status: *LUNAS (PAID)*\n\n` +
+          `Terima kasih atas partisipasi aktif Anda.\n` +
+          `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+        sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending auto payment WA:", err));
+      }
+
+      updatedBills.push(bill);
+    });
+
+    if (updatedBills.length === 0) {
+      return res.status(400).json({ error: "Tidak ada tagihan valid atau belum lunas yang dapat diproses." });
+    }
+
+    saveState();
+    res.json({ success: true, count: updatedBills.length, bills: updatedBills });
+  });
+
   // Cancel/Void a paid miscellaneous bill payment (revert to unpaid)
   app.post("/api/admin/cancel-misc-payment", (req, res) => {
     const { billId } = req.body;

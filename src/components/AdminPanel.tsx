@@ -69,6 +69,7 @@ import {
   CreditCard,
   Database,
   HardDrive,
+  CheckSquare,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -372,10 +373,20 @@ export default function AdminPanel({
   const [miscTitle, setMiscTitle] = useState("");
   const [miscAmount, setMiscAmount] = useState("");
   const [miscSearch, setMiscSearch] = useState("");
+  const [miscGradeFilter, setMiscGradeFilter] = useState<string>("all");
   const [miscClassFilter, setMiscClassFilter] = useState<string>("all");
   const [miscStatusFilter, setMiscStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [selectedMiscBillIds, setSelectedMiscBillIds] = useState<string[]>([]);
   const [miscStudentSearchQuery, setMiscStudentSearchQuery] = useState("");
   const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
+
+  // States for Pembayaran Massal (Bulk Payment) Pembayaran Lain-lain
+  const [isPayMiscBulkOpen, setIsPayMiscBulkOpen] = useState(false);
+  const [payMiscBulkTitleFilter, setPayMiscBulkTitleFilter] = useState<string>("all");
+  const [payMiscBulkGradeFilter, setPayMiscBulkGradeFilter] = useState<string>("all");
+  const [payMiscBulkClassFilter, setPayMiscBulkClassFilter] = useState<string>("all");
+  const [payMiscBulkSearch, setPayMiscBulkSearch] = useState<string>("");
+  const [isSubmittingPayMiscBulk, setIsSubmittingPayMiscBulk] = useState(false);
 
   // Helper to extract grade level
   const getGradeLevel = (className: string): string => {
@@ -577,6 +588,51 @@ export default function AdminPanel({
       alert(err.message || "Terjadi kesalahan saat menghapus massal.");
     } finally {
       setIsDeletingMiscBulk(false);
+    }
+  };
+
+  const handlePayMiscBulk = async (billIdsToPay: string[]) => {
+    if (!billIdsToPay || billIdsToPay.length === 0) {
+      alert("Pilih minimal 1 tagihan berstatus belum lunas untuk diproses.");
+      return;
+    }
+
+    const targetBills = miscBills.filter(b => billIdsToPay.includes(b.id) && b.status !== "paid");
+    if (targetBills.length === 0) {
+      alert("Tidak ada tagihan berstatus belum lunas dalam daftar terpilih.");
+      return;
+    }
+
+    const totalNominal = targetBills.reduce((sum, b) => sum + b.amount, 0);
+    const confirmPay = window.confirm(
+      `KONFIRMASI PEMBAYARAN MASSAL TELLER:\n\n` +
+      `Anda akan melunaskan secara MASSAL sebanyak ${targetBills.length} tagihan siswa.\n` +
+      `Total Nominal: Rp ${totalNominal.toLocaleString("id-ID")}\n` +
+      `Metode: Manual Teller (Sekolah)\n\n` +
+      `Apakah Anda yakin ingin memproses pembayaran lunas ini?`
+    );
+    if (!confirmPay) return;
+
+    try {
+      setIsSubmittingPayMiscBulk(true);
+      const res = await fetch("/api/admin/pay-misc-manual-bulk", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ billIds: targetBills.map(b => b.id) })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal memproses pembayaran massal.");
+      }
+      alert(`Berhasil! ${data.count} tagihan pembayaran lain-lain telah dilunaskan.`);
+      setSelectedMiscBillIds([]);
+      setIsPayMiscBulkOpen(false);
+      onRefresh();
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || "Terjadi kesalahan saat memproses pembayaran massal.");
+    } finally {
+      setIsSubmittingPayMiscBulk(false);
     }
   };
 
@@ -5906,6 +5962,20 @@ export default function AdminPanel({
                 </button>
                 <button
                   type="button"
+                  onClick={() => {
+                    setIsPayMiscBulkOpen(true);
+                    setPayMiscBulkTitleFilter("all");
+                    setPayMiscBulkGradeFilter("all");
+                    setPayMiscBulkClassFilter("all");
+                    setPayMiscBulkSearch("");
+                  }}
+                  className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all shadow-sm shadow-emerald-600/10"
+                >
+                  <CheckSquare size={15} />
+                  <span>Bayar Massal Siswa</span>
+                </button>
+                <button
+                  type="button"
                   onClick={() => setIsDeleteMiscBulkOpen(true)}
                   className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white font-bold rounded-xl text-xs flex items-center gap-2 cursor-pointer transition-all shadow-sm shadow-red-600/10"
                 >
@@ -5929,6 +5999,29 @@ export default function AdminPanel({
               </div>
 
               <div className="flex flex-wrap items-center gap-3">
+                {/* Filter Tingkat */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tingkat:</span>
+                  <select
+                    value={miscGradeFilter}
+                    onChange={(e) => {
+                      const val = e.target.value;
+                      setMiscGradeFilter(val);
+                      if (val !== "all" && miscClassFilter !== "all" && !miscClassFilter.startsWith(val)) {
+                        setMiscClassFilter("all");
+                      }
+                    }}
+                    className="px-3 py-1.5 text-xs font-bold border border-slate-200 focus:border-slate-400 bg-slate-50 focus:bg-white rounded-xl focus:outline-none transition-all text-slate-700 cursor-pointer shadow-xs"
+                  >
+                    <option value="all">Semua Tingkat</option>
+                    {availableGrades.map((g) => (
+                      <option key={g} value={g}>
+                        Tingkat {g}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
                 {/* Filter Kelas */}
                 <div className="flex items-center gap-2">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Kelas:</span>
@@ -5938,11 +6031,13 @@ export default function AdminPanel({
                     className="px-3 py-1.5 text-xs font-bold border border-slate-200 focus:border-slate-400 bg-slate-50 focus:bg-white rounded-xl focus:outline-none transition-all text-slate-700 cursor-pointer shadow-xs"
                   >
                     <option value="all">Semua Kelas</option>
-                    {uniqueClasses.map((cls) => (
-                      <option key={cls} value={cls}>
-                        Kelas {cls}
-                      </option>
-                    ))}
+                    {uniqueClasses
+                      .filter((cls) => miscGradeFilter === "all" || cls.startsWith(miscGradeFilter))
+                      .map((cls) => (
+                        <option key={cls} value={cls}>
+                          Kelas {cls}
+                        </option>
+                      ))}
                   </select>
                 </div>
 
@@ -5994,6 +6089,45 @@ export default function AdminPanel({
                 <table className="w-full border-collapse text-left">
                   <thead>
                     <tr className="bg-slate-50 border-b border-slate-150 text-[10px] font-bold text-slate-400 uppercase tracking-wider font-sans">
+                      {(() => {
+                        const filteredList = miscBills.filter(bill => {
+                          const s = students.find(st => st.id === bill.studentId);
+                          if (miscGradeFilter !== "all" && (!s || !s.class || !s.class.startsWith(miscGradeFilter))) return false;
+                          if (miscClassFilter !== "all" && (!s || s.class !== miscClassFilter)) return false;
+                          const matchText = (
+                            bill.title.toLowerCase().includes(miscSearch.toLowerCase()) ||
+                            bill.id.toLowerCase().includes(miscSearch.toLowerCase()) ||
+                            (s?.name || "").toLowerCase().includes(miscSearch.toLowerCase()) ||
+                            (s?.nis || "").toLowerCase().includes(miscSearch.toLowerCase()) ||
+                            (s?.class || "").toLowerCase().includes(miscSearch.toLowerCase())
+                          );
+                          if (!matchText) return false;
+                          if (miscStatusFilter === "unpaid") return bill.status === "unpaid" || bill.status === "pending";
+                          if (miscStatusFilter === "paid") return bill.status === "paid";
+                          return true;
+                        });
+                        const visibleUnpaid = filteredList.filter(b => b.status !== "paid");
+                        const isAllSelected = visibleUnpaid.length > 0 && visibleUnpaid.every(b => selectedMiscBillIds.includes(b.id));
+
+                        return (
+                          <th className="px-4 py-3 w-10 text-center">
+                            <input
+                              type="checkbox"
+                              className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                              checked={isAllSelected}
+                              onChange={(e) => {
+                                const unpaidIds = visibleUnpaid.map(b => b.id);
+                                if (e.target.checked) {
+                                  setSelectedMiscBillIds(prev => Array.from(new Set([...prev, ...unpaidIds])));
+                                } else {
+                                  setSelectedMiscBillIds(prev => prev.filter(id => !unpaidIds.includes(id)));
+                                }
+                              }}
+                              title="Pilih semua tagihan belum lunas yang tampil"
+                            />
+                          </th>
+                        );
+                      })()}
                       <th className="px-5 py-3">ID / Siswa</th>
                       <th className="px-5 py-3">Tagihan &amp; Deskripsi</th>
                       <th className="px-5 py-3">Nominal</th>
@@ -6006,6 +6140,10 @@ export default function AdminPanel({
                       const filtered = miscBills.filter(bill => {
                         const s = students.find(st => st.id === bill.studentId);
                         
+                        if (miscGradeFilter !== "all") {
+                          if (!s || !s.class || !s.class.startsWith(miscGradeFilter)) return false;
+                        }
+
                         if (miscClassFilter !== "all") {
                           if (!s || s.class !== miscClassFilter) return false;
                         }
@@ -6027,7 +6165,7 @@ export default function AdminPanel({
                       if (filtered.length === 0) {
                         return (
                           <tr>
-                            <td colSpan={5} className="text-center py-10 text-slate-400">
+                            <td colSpan={6} className="text-center py-10 text-slate-400">
                               Tidak ada data tagihan pembayaran lain-lain yang cocok dengan kriteria pencarian Anda.
                             </td>
                           </tr>
@@ -6036,8 +6174,27 @@ export default function AdminPanel({
 
                       return filtered.map(bill => {
                         const s = students.find(st => st.id === bill.studentId);
+                        const isSelected = selectedMiscBillIds.includes(bill.id);
                         return (
-                          <tr key={bill.id} className="hover:bg-slate-50/50 transition-colors">
+                          <tr key={bill.id} className={`hover:bg-slate-50/50 transition-colors ${isSelected ? "bg-emerald-50/40" : ""}`}>
+                            <td className="px-4 py-4 text-center">
+                              {bill.status !== "paid" ? (
+                                <input
+                                  type="checkbox"
+                                  className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500 cursor-pointer"
+                                  checked={isSelected}
+                                  onChange={(e) => {
+                                    if (e.target.checked) {
+                                      setSelectedMiscBillIds(prev => [...prev, bill.id]);
+                                    } else {
+                                      setSelectedMiscBillIds(prev => prev.filter(id => id !== bill.id));
+                                    }
+                                  }}
+                                />
+                              ) : (
+                                <span className="text-slate-300 text-xs">&mdash;</span>
+                              )}
+                            </td>
                             <td className="px-5 py-4">
                               <div className="flex flex-col">
                                 <span className="font-extrabold text-slate-800">{s?.name || "Siswa Tidak Ditemukan"}</span>
@@ -6142,6 +6299,277 @@ export default function AdminPanel({
                 </table>
               </div>
             </div>
+
+            {/* Sticky Batch Pay Action Bar */}
+            {selectedMiscBillIds.length > 0 && (
+              <div className="sticky bottom-4 bg-slate-900 text-white p-4 rounded-2xl shadow-xl flex flex-col sm:flex-row items-center justify-between gap-3 z-30 animate-slide-up border border-slate-800">
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center font-black text-sm border border-emerald-500/30">
+                    {selectedMiscBillIds.length}
+                  </div>
+                  <div>
+                    <p className="text-xs font-bold text-slate-100">
+                      {selectedMiscBillIds.length} Tagihan Terpilih
+                    </p>
+                    <p className="text-[10px] text-slate-400">
+                      Total Nominal:{" "}
+                      <strong className="text-emerald-400 font-mono text-xs">
+                        Rp{" "}
+                        {miscBills
+                          .filter(b => selectedMiscBillIds.includes(b.id))
+                          .reduce((sum, b) => sum + b.amount, 0)
+                          .toLocaleString("id-ID")}
+                      </strong>
+                    </p>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setSelectedMiscBillIds([])}
+                    className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                  >
+                    Batal Pilih
+                  </button>
+                  <button
+                    type="button"
+                    disabled={isSubmittingPayMiscBulk}
+                    onClick={() => handlePayMiscBulk(selectedMiscBillIds)}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                  >
+                    <CheckCircle size={15} />
+                    <span>{isSubmittingPayMiscBulk ? "Memproses..." : `Bayar Lunas (${selectedMiscBillIds.length} Siswa)`}</span>
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Pembayaran Massal Bill Modal Overlay */}
+            {isPayMiscBulkOpen && (
+              <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center z-[100] p-4 font-sans">
+                <div className="bg-white rounded-2xl w-full max-w-2xl border border-slate-150 shadow-2xl overflow-hidden animate-slide-up flex flex-col max-h-[90vh]">
+                  {/* Modal Header */}
+                  <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center shrink-0">
+                    <div className="flex items-center gap-2.5">
+                      <div className="p-2 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+                        <CheckSquare size={18} />
+                      </div>
+                      <div>
+                        <h4 className="font-extrabold text-sm">Pembayaran Massal Tagihan Lain-lain</h4>
+                        <p className="text-[10px] text-slate-400">Pilih tagihan siswa yang akan dilunaskan sekaligus oleh Teller</p>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsPayMiscBulkOpen(false)}
+                      className="text-slate-400 hover:text-white font-bold text-lg cursor-pointer"
+                    >
+                      &times;
+                    </button>
+                  </div>
+
+                  {/* Modal Body & Filters */}
+                  <div className="p-6 flex flex-col gap-4 overflow-y-auto text-xs">
+                    {/* Filters Row */}
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 bg-slate-50 p-3.5 rounded-xl border border-slate-200">
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Judul Tagihan:</label>
+                        <select
+                          value={payMiscBulkTitleFilter}
+                          onChange={(e) => setPayMiscBulkTitleFilter(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs font-bold border border-slate-200 bg-white rounded-lg focus:outline-none focus:border-slate-400"
+                        >
+                          <option value="all">-- Semua Jenis Tagihan --</option>
+                          {Array.from(new Set(miscBills.map(b => b.title))).filter(Boolean).map(title => (
+                            <option key={title} value={title}>
+                              {title}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Tingkat Kelas:</label>
+                        <select
+                          value={payMiscBulkGradeFilter}
+                          onChange={(e) => {
+                            const val = e.target.value;
+                            setPayMiscBulkGradeFilter(val);
+                            if (val !== "all" && payMiscBulkClassFilter !== "all" && !payMiscBulkClassFilter.startsWith(val)) {
+                              setPayMiscBulkClassFilter("all");
+                            }
+                          }}
+                          className="w-full px-2.5 py-1.5 text-xs font-bold border border-slate-200 bg-white rounded-lg focus:outline-none focus:border-slate-400"
+                        >
+                          <option value="all">-- Semua Tingkat --</option>
+                          {availableGrades.map(g => (
+                            <option key={g} value={g}>
+                              Tingkat {g}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+
+                      <div>
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase mb-1">Kelas Target:</label>
+                        <select
+                          value={payMiscBulkClassFilter}
+                          onChange={(e) => setPayMiscBulkClassFilter(e.target.value)}
+                          className="w-full px-2.5 py-1.5 text-xs font-bold border border-slate-200 bg-white rounded-lg focus:outline-none focus:border-slate-400"
+                        >
+                          <option value="all">-- Semua Kelas --</option>
+                          {uniqueClasses
+                            .filter(cls => payMiscBulkGradeFilter === "all" || cls.startsWith(payMiscBulkGradeFilter))
+                            .map(cls => (
+                              <option key={cls} value={cls}>
+                                Kelas {cls}
+                              </option>
+                            ))}
+                        </select>
+                      </div>
+                    </div>
+
+                    {/* Search Candidate */}
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Filter siswa berdasarkan nama / NIS / judul..."
+                        value={payMiscBulkSearch}
+                        onChange={(e) => setPayMiscBulkSearch(e.target.value)}
+                        className="w-full pl-9 pr-3 py-1.5 text-xs border border-slate-200 rounded-lg focus:outline-none focus:border-slate-400"
+                      />
+                    </div>
+
+                    {/* Candidate Unpaid List */}
+                    {(() => {
+                      const candidateUnpaid = miscBills.filter(bill => {
+                        if (bill.status === "paid") return false;
+                        if (payMiscBulkTitleFilter !== "all" && bill.title !== payMiscBulkTitleFilter) return false;
+                        const s = students.find(st => st.id === bill.studentId);
+                        if (!s) return false;
+                        if (payMiscBulkGradeFilter !== "all" && (!s.class || !s.class.startsWith(payMiscBulkGradeFilter))) return false;
+                        if (payMiscBulkClassFilter !== "all" && s.class !== payMiscBulkClassFilter) return false;
+                        if (payMiscBulkSearch.trim()) {
+                          const q = payMiscBulkSearch.toLowerCase();
+                          const matchName = s.name.toLowerCase().includes(q);
+                          const matchNis = s.nis.toLowerCase().includes(q);
+                          const matchClass = s.class.toLowerCase().includes(q);
+                          const matchTitle = bill.title.toLowerCase().includes(q);
+                          if (!matchName && !matchNis && !matchClass && !matchTitle) return false;
+                        }
+                        return true;
+                      });
+
+                      const candidateIds = candidateUnpaid.map(b => b.id);
+                      const isAllCandidateSelected = candidateIds.length > 0 && candidateIds.every(id => selectedMiscBillIds.includes(id));
+
+                      return (
+                        <div className="flex flex-col gap-2">
+                          <div className="flex justify-between items-center text-[11px] font-bold text-slate-600 bg-slate-100 px-3 py-2 rounded-lg">
+                            <span>Daftar Tagihan Belum Lunas ({candidateUnpaid.length} Tagihan)</span>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (isAllCandidateSelected) {
+                                  setSelectedMiscBillIds(prev => prev.filter(id => !candidateIds.includes(id)));
+                                } else {
+                                  setSelectedMiscBillIds(prev => Array.from(new Set([...prev, ...candidateIds])));
+                                }
+                              }}
+                              className="text-emerald-700 hover:text-emerald-900 font-extrabold cursor-pointer"
+                            >
+                              {isAllCandidateSelected ? "Batal Pilih Semua" : `Pilih Semua (${candidateUnpaid.length})`}
+                            </button>
+                          </div>
+
+                          {candidateUnpaid.length === 0 ? (
+                            <div className="py-8 text-center text-slate-400 bg-slate-50 rounded-xl border border-dashed border-slate-200">
+                              Tidak ada tagihan belum lunas yang sesuai dengan filter di atas.
+                            </div>
+                          ) : (
+                            <div className="max-h-60 overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100">
+                              {candidateUnpaid.map(bill => {
+                                const s = students.find(st => st.id === bill.studentId);
+                                const isChecked = selectedMiscBillIds.includes(bill.id);
+                                return (
+                                  <label
+                                    key={bill.id}
+                                    className={`flex items-center justify-between p-3 cursor-pointer hover:bg-slate-50 transition-colors ${
+                                      isChecked ? "bg-emerald-50/50" : ""
+                                    }`}
+                                  >
+                                    <div className="flex items-center gap-3">
+                                      <input
+                                        type="checkbox"
+                                        checked={isChecked}
+                                        onChange={(e) => {
+                                          if (e.target.checked) {
+                                            setSelectedMiscBillIds(prev => [...prev, bill.id]);
+                                          } else {
+                                            setSelectedMiscBillIds(prev => prev.filter(id => id !== bill.id));
+                                          }
+                                        }}
+                                        className="rounded border-slate-300 text-emerald-600 focus:ring-emerald-500"
+                                      />
+                                      <div className="flex flex-col">
+                                        <span className="font-extrabold text-slate-800">{s?.name || "Siswa"}</span>
+                                        <span className="text-[10px] text-slate-500 font-mono">
+                                          NIS: {s?.nis || "-"} &bull; Kelas: {s?.class || "-"} &bull; Tagihan: <strong className="text-slate-700">{bill.title}</strong>
+                                        </span>
+                                      </div>
+                                    </div>
+                                    <span className="font-mono font-bold text-slate-800 text-xs">
+                                      Rp {bill.amount.toLocaleString("id-ID")}
+                                    </span>
+                                  </label>
+                                );
+                              })}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+                  </div>
+
+                  {/* Modal Footer */}
+                  <div className="p-4 bg-slate-50 border-t border-slate-150 flex flex-col sm:flex-row justify-between items-center gap-3 shrink-0">
+                    <div className="text-left w-full sm:w-auto">
+                      <span className="text-[10px] text-slate-400 uppercase font-bold block">Ringkasan Pilihan:</span>
+                      <span className="text-xs font-black text-slate-800">
+                        {selectedMiscBillIds.length} Siswa Terpilih &bull; Total:{" "}
+                        <span className="text-emerald-600 font-mono">
+                          Rp{" "}
+                          {miscBills
+                            .filter(b => selectedMiscBillIds.includes(b.id))
+                            .reduce((sum, b) => sum + b.amount, 0)
+                            .toLocaleString("id-ID")}
+                        </span>
+                      </span>
+                    </div>
+
+                    <div className="flex gap-2.5 w-full sm:w-auto justify-end">
+                      <button
+                        type="button"
+                        onClick={() => setIsPayMiscBulkOpen(false)}
+                        className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 font-bold rounded-xl text-xs transition-all cursor-pointer"
+                      >
+                        Batal
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isSubmittingPayMiscBulk || selectedMiscBillIds.length === 0}
+                        onClick={() => handlePayMiscBulk(selectedMiscBillIds)}
+                        className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold rounded-xl text-xs flex items-center justify-center gap-2 transition-all cursor-pointer shadow-md disabled:opacity-50"
+                      >
+                        <CheckSquare size={15} />
+                        <span>{isSubmittingPayMiscBulk ? "Memproses..." : `Proses Bayar Lunas (${selectedMiscBillIds.length})`}</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Create Bill Modal Overlay */}
             {isCreateMiscOpen && (

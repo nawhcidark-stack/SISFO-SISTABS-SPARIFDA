@@ -337,8 +337,8 @@ export default function SubjectTeacherPanel({
     if (endDate) {
       list = list.filter(journal => journal.date <= endDate);
     }
-    // Sort chronological (oldest to newest) for school logs printable order
-    return [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+    // Sort chronological (oldest to newest) for school logs printable order (No. 1 is earliest date)
+    return [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
   }, [journals, startDate, endDate]);
 
   // Load journals history
@@ -3538,20 +3538,24 @@ export default function SubjectTeacherPanel({
                     <table className="w-full border-collapse border border-slate-900 text-[10px] text-slate-950">
                       <thead>
                         <tr className="bg-slate-100 font-bold uppercase tracking-wider text-slate-900 text-center select-none">
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '4%', border: '1px solid #000' }}>No</th>
                           <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '12%', border: '1px solid #000' }}>Hari / Tanggal / Kelas</th>
-                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '6%', border: '1px solid #000' }}>Jam Ke</th>
-                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '6%', border: '1px solid #000' }}>JP</th>
-                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '7%', border: '1px solid #000' }}>Pertemuan Ke</th>
-                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Tujuan Pembelajaran</th>
-                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '23%', border: '1px solid #000' }}>Materi Pembelajaran</th>
-                          <th className="border border-slate-900 px-1.5 py-3 text-[9px]" style={{ width: '8%', border: '1px solid #000' }}>Pencapaian KKTP</th>
-                          <th className="border border-slate-900 px-1.5 py-3 text-[10px]" style={{ width: '15%', border: '1px solid #000' }}>Rekap Presensi KBM</th>
-                          <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '10%', border: '1px solid #000' }}>Keterangan</th>
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '5%', border: '1px solid #000' }}>Jam Ke</th>
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '5%', border: '1px solid #000' }}>JP</th>
+                          <th className="border border-slate-900 px-1 py-3 text-[9px]" style={{ width: '6%', border: '1px solid #000' }}>Pertemuan Ke</th>
+                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '22%', border: '1px solid #000' }}>Tujuan Pembelajaran</th>
+                          <th className="border border-slate-900 px-2.5 py-3 text-[10px]" style={{ width: '22%', border: '1px solid #000' }}>Materi Pembelajaran</th>
+                          <th className="border border-slate-900 px-1.5 py-3 text-[9px]" style={{ width: '7%', border: '1px solid #000' }}>Pencapaian KKTP</th>
+                          <th className="border border-slate-900 px-1.5 py-3 text-[10px]" style={{ width: '10%', border: '1px solid #000' }}>Rekap Presensi KBM</th>
+                          <th className="border border-slate-900 px-2 py-3 text-[10px]" style={{ width: '7%', border: '1px solid #000' }}>Keterangan</th>
                         </tr>
                       </thead>
                       <tbody>
                         {filteredJournals.map((journalToPrint, index) => (
                           <tr key={journalToPrint.id || index} className="align-top">
+                            <td className="border border-slate-900 text-center px-1 py-2.5 font-bold" style={{ border: '1px solid #000' }}>
+                              {index + 1}
+                            </td>
                             <td className="border border-slate-900 text-center px-1.5 py-2.5 font-bold" style={{ border: '1px solid #000' }}>
                               <div>{new Date(journalToPrint.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
                               <div className="text-[9px] bg-slate-100 rounded px-1 py-0.5 mt-1 text-slate-705 select-none inline-block font-sans font-black uppercase">{journalToPrint.className}</div>

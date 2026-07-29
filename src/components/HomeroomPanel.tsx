@@ -6878,7 +6878,7 @@ Wassalamualaikum Wr. Wb.
                       </thead>
                       <tbody>
                         {(compiledJournalPrintType === 'binaan' ? binaanJournals : kelasLainJournals)
-                          .sort((a,b) => b.date.localeCompare(a.date))
+                          .sort((a,b) => a.date.localeCompare(b.date) || (new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime()))
                           .map((journal, idx) => {
                             const total = journal.attendance?.length || 0;
                             const h = journal.attendance?.filter((a: any) => a.status === 'Hadir').length || 0;

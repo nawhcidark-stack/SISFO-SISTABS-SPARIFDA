@@ -3109,7 +3109,7 @@ export default function SubjectTeacherPanel({
                       JURNAL MENGAJAR GURU
                     </h2>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 font-mono mt-0.5">
-                      TAHUN AJARAN 2026 / 2027
+                      TAHUN PELAJARAN {(schoolIdentity?.activeAcademicYear || '2026/2027').replace('/', ' / ')}
                     </h3>
                   </div>
 
@@ -3479,7 +3479,7 @@ export default function SubjectTeacherPanel({
                       JURNAL MENGAJAR GURU
                     </h2>
                     <h3 className="text-xs font-bold uppercase tracking-wider text-slate-800 font-mono mt-0.5">
-                      TAHUN PELAJARAN 2026 / 2027
+                      TAHUN PELAJARAN {(schoolIdentity?.activeAcademicYear || '2026/2027').replace('/', ' / ')}
                     </h3>
                     <p className="text-[9px] text-slate-500 font-semibold font-sans mt-0.5">
                       {startDate && endDate ? (

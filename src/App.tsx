@@ -2188,7 +2188,7 @@ export default function App() {
             <div className="flex items-center gap-3.5 font-sans">
               <div className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 text-indigo-800 border border-indigo-100 rounded-lg text-[11px] font-bold shadow-3xs">
                 <Calendar size={12} className="text-indigo-650" />
-                <span>Tahun Ajaran: <span className="font-extrabold">{schoolIdentity.activeAcademicYear || '2025/2026'}</span></span>
+                <span>Tahun Ajaran: <span className="font-extrabold">{schoolIdentity.activeAcademicYear || '2026/2027'}</span></span>
               </div>
 
               <div className="w-px h-4 bg-slate-200" />

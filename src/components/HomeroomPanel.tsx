@@ -344,7 +344,7 @@ function printStudentDevelopmentRecap(student: any, logs: StudentDevelopmentLog[
             <td class="label">NIS / NISN</td>
             <td class="value">: ${student.nis} / -</td>
             <td class="label">Tahun Ajaran</td>
-            <td class="value">: 2025 / 2026</td>
+            <td class="value">: ${schoolIdentity?.activeAcademicYear ? schoolIdentity.activeAcademicYear.replace('/', ' / ') : '2026 / 2027'}</td>
           </tr>
           <tr>
             <td class="label">Kelas Asal</td>
@@ -499,7 +499,7 @@ function printStudentCombinedRecap(
             <td class="label">NIS / NISN</td>
             <td class="value">: ${student.nis} / -</td>
             <td class="label">Tahun Ajaran</td>
-            <td class="value">: 2025 / 2026</td>
+            <td class="value">: ${schoolIdentity?.activeAcademicYear ? schoolIdentity.activeAcademicYear.replace('/', ' / ') : '2026 / 2027'}</td>
           </tr>
           <tr>
             <td class="label">Kelas Asal</td>
@@ -6567,7 +6567,7 @@ Wassalamualaikum Wr. Wb.
                       Jurnal Pembelajaran &amp; Presensi Mata Pelajaran
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
-                      Kelas: {selectedJournalToPrint.className} &bull; Semester {selectedJournalToPrint.semester || "Genap"} &bull; Tahun Ajaran 2025/2026
+                      Kelas: {selectedJournalToPrint.className} &bull; Semester {selectedJournalToPrint.semester || "Genap"} &bull; Tahun Ajaran {schoolIdentity?.activeAcademicYear || "2026/2027"}
                     </p>
                   </div>
 
@@ -6821,8 +6821,8 @@ Wassalamualaikum Wr. Wb.
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
                       {compiledJournalPrintType === 'binaan'
-                        ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester Genap • Tahun Ajaran 2025/2026`
-                        : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester Genap • Tahun Ajaran 2025/2026`
+                        ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester Genap • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
+                        : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester Genap • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
                       }
                     </p>
                   </div>

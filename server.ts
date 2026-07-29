@@ -1977,6 +1977,26 @@ async function startServer() {
     }
   });
 
+  // Helper function to calculate UTF-8 byte length safely without string slice offset range limits
+  function getUtf8ByteLength(str: string): number {
+    if (!str) return 0;
+    let bytes = 0;
+    for (let i = 0; i < str.length; i++) {
+      const code = str.charCodeAt(i);
+      if (code <= 0x7f) {
+        bytes += 1;
+      } else if (code <= 0x7ff) {
+        bytes += 2;
+      } else if (code >= 0xd800 && code <= 0xdbff) {
+        bytes += 4;
+        i++;
+      } else {
+        bytes += 3;
+      }
+    }
+    return bytes;
+  }
+
   // Helper function to build a complete application backup snapshot
   async function buildFullBackupSnapshot() {
     const uploadedFiles = await getUploadedFilesSnapshot();
@@ -2047,7 +2067,7 @@ async function startServer() {
     return { snapshot, counts };
   }
 
-  // Helper function to query uploaded files metadata & base64
+  // Helper function to query uploaded files metadata & base64 (safely capped for large binary files)
   async function getUploadedFilesSnapshot() {
     const uploadDir = path.join(process.cwd(), "uploads");
     const filesList: any[] = [];
@@ -2058,7 +2078,13 @@ async function startServer() {
           const storedFiles = await filesCol.find({}).toArray();
           storedFiles.forEach((f: any) => {
             const { _id, ...rest } = f;
-            filesList.push(rest);
+            // Keep base64 for small/medium files (up to ~750KB) to ensure single snapshot stays safely within MongoDB 16MB document limit
+            if (rest.base64Data && typeof rest.base64Data === "string" && rest.base64Data.length > 1000000) {
+              const { base64Data, ...metaOnly } = rest;
+              filesList.push({ ...metaOnly, hasExternalBinary: true });
+            } else {
+              filesList.push(rest);
+            }
           });
         });
       } else if (fs.existsSync(uploadDir)) {
@@ -2066,16 +2092,29 @@ async function startServer() {
         diskFiles.forEach(filename => {
           const filePath = path.join(uploadDir, filename);
           if (fs.statSync(filePath).isFile()) {
-            const buf = fs.readFileSync(filePath);
-            filesList.push({
-              id: filename,
-              filename,
-              originalName: filename,
-              size: buf.length,
-              mimetype: filename.endsWith(".png") ? "image/png" : filename.endsWith(".jpg") || filename.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream",
-              base64Data: buf.toString("base64"),
-              createdAt: new Date().toISOString()
-            });
+            const stats = fs.statSync(filePath);
+            if (stats.size <= 750000) {
+              const buf = fs.readFileSync(filePath);
+              filesList.push({
+                id: filename,
+                filename,
+                originalName: filename,
+                size: stats.size,
+                mimetype: filename.endsWith(".png") ? "image/png" : filename.endsWith(".jpg") || filename.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream",
+                base64Data: buf.toString("base64"),
+                createdAt: new Date().toISOString()
+              });
+            } else {
+              filesList.push({
+                id: filename,
+                filename,
+                originalName: filename,
+                size: stats.size,
+                mimetype: filename.endsWith(".png") ? "image/png" : filename.endsWith(".jpg") || filename.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream",
+                hasExternalBinary: true,
+                createdAt: new Date().toISOString()
+              });
+            }
           }
         });
       }
@@ -2175,7 +2214,7 @@ async function startServer() {
 
       const { snapshot, counts } = await buildFullBackupSnapshot();
       const snapshotStr = JSON.stringify(snapshot);
-      const sizeBytes = Buffer.byteLength(snapshotStr, 'utf8');
+      const sizeBytes = getUtf8ByteLength(snapshotStr);
 
       const newBackup = {
         id: backupId,
@@ -8440,7 +8479,7 @@ async function startServer() {
 
         const { snapshot, counts } = await buildFullBackupSnapshot();
         const snapshotStr = JSON.stringify(snapshot);
-        const sizeBytes = Buffer.byteLength(snapshotStr, 'utf8');
+        const sizeBytes = getUtf8ByteLength(snapshotStr);
 
         const newBackup = {
           id: backupId,

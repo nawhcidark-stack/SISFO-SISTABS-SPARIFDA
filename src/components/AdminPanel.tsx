@@ -9841,19 +9841,31 @@ export default function AdminPanel({
 
                             {/* Collections contents count preview badge style */}
                             {bkp.collections && Object.keys(bkp.collections).length > 0 && (
-                              <div className="flex flex-wrap gap-1.5 mt-0.5 border-t border-slate-100 pt-2 font-mono text-[9.5px] text-slate-500">
-                                <span className="font-sans font-bold text-slate-400">Isi Snapshot:</span>
+                              <div className="flex flex-wrap gap-x-2 gap-y-1 mt-0.5 border-t border-slate-100 pt-2 font-mono text-[9.5px] text-slate-500">
+                                <span className="font-sans font-bold text-slate-400 shrink-0">Isi Snapshot (Lengkap):</span>
                                 <span>Siswa: <strong className="text-slate-700">{bkp.collections.students || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
-                                <span>Tagihan SPP: <strong className="text-slate-700">{bkp.collections.sppBills || 0}</strong></span>
+                                <span>SPP: <strong className="text-slate-700">{bkp.collections.sppBills || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
-                                <span>Tagihan Lain-lain: <strong className="text-slate-700">{bkp.collections.miscBills || 0}</strong></span>
+                                <span>Tagihan Lain: <strong className="text-slate-700">{bkp.collections.miscBills || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
                                 <span>Tabungan: <strong className="text-slate-700">{bkp.collections.savingsTransactions || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
-                                <span>Kas &amp; Transaksi Admin: <strong className="text-slate-700">{bkp.collections.treasurerTransactions || 0}</strong></span>
+                                <span>Kas Admin: <strong className="text-slate-700">{bkp.collections.treasurerTransactions || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
-                                <span>Kredensial Midtrans: <strong className="text-emerald-600">{bkp.collections.midtransConfig ? "Tersimpan" : "Kosong"}</strong></span>
+                                <span>Absensi: <strong className="text-slate-700">{bkp.collections.attendanceLogs || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Guru/Wali: <strong className="text-slate-700">{(bkp.collections.homeroomTeachers || 0) + (bkp.collections.subjectTeachers || 0)}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>BK &amp; Konseling: <strong className="text-slate-700">{(bkp.collections.studentDevelopmentLogs || 0) + (bkp.collections.studentInfractionLogs || 0) + (bkp.collections.studentCounselingLogs || 0)}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Sarpras: <strong className="text-slate-700">{(bkp.collections.sarprasItems || 0) + (bkp.collections.sarprasProposals || 0) + (bkp.collections.sarprasLoans || 0)}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Gaji Guru: <strong className="text-slate-700">{bkp.collections.teacherSalaries || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>File/Dokumen: <strong className="text-slate-700">{bkp.collections.uploadedFiles || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
+                                <span>Midtrans: <strong className="text-emerald-600">{bkp.collections.midtransConfig ? "Tersimpan" : "Kosong"}</strong></span>
                               </div>
                             )}
                           </div>

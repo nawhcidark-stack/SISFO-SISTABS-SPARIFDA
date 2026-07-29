@@ -1977,6 +1977,195 @@ async function startServer() {
     }
   });
 
+  // Helper function to build a complete application backup snapshot
+  async function buildFullBackupSnapshot() {
+    const uploadedFiles = await getUploadedFilesSnapshot();
+    const snapshot = {
+      students,
+      sppBills,
+      miscBills,
+      savingsTransactions,
+      notifications,
+      attendanceLogs,
+      homeroomTeachers,
+      subjectTeachers,
+      teachingJournals,
+      treasurerTransactions,
+      studentDevelopmentLogs,
+      studentInfractionLogs,
+      studentCounselingLogs,
+      classAnnouncements,
+      classMeetingLogs,
+      merdekaAssessments,
+      principalWorkPrograms,
+      teacherEvaluations,
+      infractionRules,
+      sarprasItems,
+      sarprasProposals,
+      sarprasLoans,
+      teacherSalaries,
+      sppRates,
+      schoolIdentity,
+      midtransConfig,
+      whatsappConfig,
+      treasurerConfig,
+      principalConfig,
+      sarprasConfig,
+      bkConfig,
+      adminConfig,
+      salaryConfig,
+      uploadedFiles
+    };
+
+    const counts = {
+      students: students.length,
+      sppBills: sppBills.length,
+      miscBills: miscBills.length,
+      savingsTransactions: savingsTransactions.length,
+      treasurerTransactions: treasurerTransactions.length,
+      attendanceLogs: attendanceLogs.length,
+      teachingJournals: teachingJournals.length,
+      homeroomTeachers: homeroomTeachers.length,
+      subjectTeachers: subjectTeachers.length,
+      studentDevelopmentLogs: studentDevelopmentLogs.length,
+      studentInfractionLogs: studentInfractionLogs.length,
+      studentCounselingLogs: studentCounselingLogs.length,
+      classAnnouncements: classAnnouncements.length,
+      classMeetingLogs: classMeetingLogs.length,
+      merdekaAssessments: merdekaAssessments.length,
+      principalWorkPrograms: principalWorkPrograms.length,
+      teacherEvaluations: teacherEvaluations.length,
+      infractionRules: infractionRules.length,
+      sarprasItems: sarprasItems.length,
+      sarprasProposals: sarprasProposals.length,
+      sarprasLoans: sarprasLoans.length,
+      teacherSalaries: teacherSalaries.length,
+      uploadedFiles: uploadedFiles.length,
+      midtransConfig: (midtransConfig && midtransConfig.clientKey) ? 1 : 0
+    };
+
+    return { snapshot, counts };
+  }
+
+  // Helper function to query uploaded files metadata & base64
+  async function getUploadedFilesSnapshot() {
+    const uploadDir = path.join(process.cwd(), "uploads");
+    const filesList: any[] = [];
+    try {
+      if (mongoDb) {
+        await executeMongoOperationWithRetry(async () => {
+          const filesCol = mongoDb.collection("uploadedFiles");
+          const storedFiles = await filesCol.find({}).toArray();
+          storedFiles.forEach((f: any) => {
+            const { _id, ...rest } = f;
+            filesList.push(rest);
+          });
+        });
+      } else if (fs.existsSync(uploadDir)) {
+        const diskFiles = fs.readdirSync(uploadDir);
+        diskFiles.forEach(filename => {
+          const filePath = path.join(uploadDir, filename);
+          if (fs.statSync(filePath).isFile()) {
+            const buf = fs.readFileSync(filePath);
+            filesList.push({
+              id: filename,
+              filename,
+              originalName: filename,
+              size: buf.length,
+              mimetype: filename.endsWith(".png") ? "image/png" : filename.endsWith(".jpg") || filename.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream",
+              base64Data: buf.toString("base64"),
+              createdAt: new Date().toISOString()
+            });
+          }
+        });
+      }
+    } catch (e) {
+      console.warn("Error getting uploaded files for snapshot:", e);
+    }
+    return filesList;
+  }
+
+  // Helper function to restore a full application backup snapshot
+  async function restoreFullBackupSnapshot(snapshot: any) {
+    if (!snapshot || typeof snapshot !== "object") {
+      throw new Error("Format file JSON snapshot tidak valid.");
+    }
+
+    if (Array.isArray(snapshot.students)) { students.length = 0; students.push(...snapshot.students); }
+    if (Array.isArray(snapshot.sppBills)) { sppBills.length = 0; sppBills.push(...snapshot.sppBills); }
+    if (Array.isArray(snapshot.miscBills)) { miscBills.length = 0; miscBills.push(...snapshot.miscBills); }
+    if (Array.isArray(snapshot.savingsTransactions)) { savingsTransactions.length = 0; savingsTransactions.push(...snapshot.savingsTransactions); }
+    if (Array.isArray(snapshot.notifications)) { notifications.length = 0; notifications.push(...snapshot.notifications); }
+    if (Array.isArray(snapshot.attendanceLogs)) { attendanceLogs.length = 0; attendanceLogs.push(...snapshot.attendanceLogs); }
+    if (Array.isArray(snapshot.homeroomTeachers)) { homeroomTeachers.length = 0; homeroomTeachers.push(...snapshot.homeroomTeachers); }
+    if (Array.isArray(snapshot.subjectTeachers)) { subjectTeachers.length = 0; subjectTeachers.push(...snapshot.subjectTeachers); }
+    if (Array.isArray(snapshot.teachingJournals)) { teachingJournals.length = 0; teachingJournals.push(...snapshot.teachingJournals); }
+    if (Array.isArray(snapshot.treasurerTransactions)) { treasurerTransactions.length = 0; treasurerTransactions.push(...snapshot.treasurerTransactions); }
+    if (Array.isArray(snapshot.studentDevelopmentLogs)) { studentDevelopmentLogs.length = 0; studentDevelopmentLogs.push(...snapshot.studentDevelopmentLogs); }
+    if (Array.isArray(snapshot.studentInfractionLogs)) { studentInfractionLogs.length = 0; studentInfractionLogs.push(...snapshot.studentInfractionLogs); }
+    if (Array.isArray(snapshot.studentCounselingLogs)) { studentCounselingLogs.length = 0; studentCounselingLogs.push(...snapshot.studentCounselingLogs); }
+    if (Array.isArray(snapshot.classAnnouncements)) { classAnnouncements.length = 0; classAnnouncements.push(...snapshot.classAnnouncements); }
+    if (Array.isArray(snapshot.classMeetingLogs)) { classMeetingLogs.length = 0; classMeetingLogs.push(...snapshot.classMeetingLogs); }
+    if (Array.isArray(snapshot.merdekaAssessments)) { merdekaAssessments.length = 0; merdekaAssessments.push(...snapshot.merdekaAssessments); }
+    if (Array.isArray(snapshot.principalWorkPrograms)) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...snapshot.principalWorkPrograms); }
+    if (Array.isArray(snapshot.teacherEvaluations)) { teacherEvaluations.length = 0; teacherEvaluations.push(...snapshot.teacherEvaluations); }
+    if (Array.isArray(snapshot.infractionRules)) { infractionRules.length = 0; infractionRules.push(...snapshot.infractionRules); }
+    if (Array.isArray(snapshot.sarprasItems)) { sarprasItems.length = 0; sarprasItems.push(...snapshot.sarprasItems); }
+    if (Array.isArray(snapshot.sarprasProposals)) { sarprasProposals.length = 0; sarprasProposals.push(...snapshot.sarprasProposals); }
+    if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
+    if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
+
+    if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
+    if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
+    if (snapshot.midtransConfig) Object.assign(midtransConfig, snapshot.midtransConfig);
+    if (snapshot.whatsappConfig) Object.assign(whatsappConfig, snapshot.whatsappConfig);
+    if (snapshot.treasurerConfig) Object.assign(treasurerConfig, snapshot.treasurerConfig);
+    if (snapshot.principalConfig) Object.assign(principalConfig, snapshot.principalConfig);
+    if (snapshot.sarprasConfig) Object.assign(sarprasConfig, snapshot.sarprasConfig);
+    if (snapshot.bkConfig) Object.assign(bkConfig, snapshot.bkConfig);
+    if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
+    if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
+
+    // Restore uploaded files to disk and MongoDB if present
+    if (Array.isArray(snapshot.uploadedFiles) && snapshot.uploadedFiles.length > 0) {
+      const uploadDir = path.join(process.cwd(), "uploads");
+      if (!fs.existsSync(uploadDir)) {
+        fs.mkdirSync(uploadDir, { recursive: true });
+      }
+      for (const fileDoc of snapshot.uploadedFiles) {
+        if (fileDoc.filename && fileDoc.base64Data) {
+          try {
+            const destPath = path.join(uploadDir, fileDoc.filename);
+            fs.writeFileSync(destPath, Buffer.from(fileDoc.base64Data, "base64"));
+            if (mongoDb) {
+              await executeMongoOperationWithRetry(async () => {
+                const filesCol = mongoDb.collection("uploadedFiles");
+                await filesCol.replaceOne(
+                  { id: fileDoc.filename },
+                  {
+                    id: fileDoc.filename,
+                    filename: fileDoc.filename,
+                    originalName: fileDoc.originalName || fileDoc.filename,
+                    size: fileDoc.size || 0,
+                    mimetype: fileDoc.mimetype || "application/octet-stream",
+                    base64Data: fileDoc.base64Data,
+                    createdAt: fileDoc.createdAt || new Date().toISOString()
+                  },
+                  { upsert: true }
+                );
+              });
+            }
+          } catch (errFile) {
+            console.warn(`Failed to restore uploaded file ${fileDoc.filename}:`, errFile);
+          }
+        }
+      }
+    }
+
+    saveState();
+    await saveStateToFirestore();
+  }
+
   // Database Backups - Create a Backup Snapshot
   app.post("/api/admin/backups/create", async (req, res) => {
     try {
@@ -1984,55 +2173,9 @@ async function startServer() {
       const backupId = `bkp-${Date.now()}`;
       const createdAt = new Date().toISOString();
 
-      const snapshot = {
-        students,
-        sppBills,
-        miscBills,
-        savingsTransactions,
-        notifications,
-        attendanceLogs,
-        homeroomTeachers,
-        subjectTeachers,
-        teachingJournals,
-        treasurerTransactions,
-        studentDevelopmentLogs,
-        studentInfractionLogs,
-        studentCounselingLogs,
-        classAnnouncements,
-        classMeetingLogs,
-        merdekaAssessments,
-        principalWorkPrograms,
-        teacherEvaluations,
-        infractionRules,
-        sarprasItems,
-        sarprasProposals,
-        sarprasLoans,
-        teacherSalaries,
-        sppRates,
-        schoolIdentity,
-        midtransConfig,
-        whatsappConfig,
-        treasurerConfig,
-        principalConfig,
-        sarprasConfig,
-        bkConfig,
-        adminConfig,
-        salaryConfig
-      };
-
+      const { snapshot, counts } = await buildFullBackupSnapshot();
       const snapshotStr = JSON.stringify(snapshot);
       const sizeBytes = Buffer.byteLength(snapshotStr, 'utf8');
-
-      const counts = {
-        students: students.length,
-        sppBills: sppBills.length,
-        miscBills: miscBills.length,
-        savingsTransactions: savingsTransactions.length,
-        treasurerTransactions: treasurerTransactions.length,
-        attendanceLogs: attendanceLogs.length,
-        teachingJournals: teachingJournals.length,
-        midtransConfig: (midtransConfig && midtransConfig.clientKey) ? 1 : 0
-      };
 
       const newBackup = {
         id: backupId,
@@ -2045,8 +2188,10 @@ async function startServer() {
       };
 
       if (mongoDb) {
-        const col = mongoDb.collection("databaseBackups");
-        await col.insertOne({ ...newBackup, _id: backupId });
+        await executeMongoOperationWithRetry(async () => {
+          const col = mongoDb.collection("databaseBackups");
+          await col.insertOne({ ...newBackup, _id: backupId });
+        });
       }
 
       databaseBackups.push(newBackup);
@@ -2074,7 +2219,9 @@ async function startServer() {
       backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
 
       if (mongoDb) {
-        await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
+        await executeMongoOperationWithRetry(async () => {
+          await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
+        });
       }
       saveState();
 
@@ -2112,45 +2259,9 @@ async function startServer() {
       }
 
       const snapshot = JSON.parse(backup.data);
+      await restoreFullBackupSnapshot(snapshot);
 
-      if (Array.isArray(snapshot.students)) { students.length = 0; students.push(...snapshot.students); }
-      if (Array.isArray(snapshot.sppBills)) { sppBills.length = 0; sppBills.push(...snapshot.sppBills); }
-      if (Array.isArray(snapshot.miscBills)) { miscBills.length = 0; miscBills.push(...snapshot.miscBills); }
-      if (Array.isArray(snapshot.savingsTransactions)) { savingsTransactions.length = 0; savingsTransactions.push(...snapshot.savingsTransactions); }
-      if (Array.isArray(snapshot.notifications)) { notifications.length = 0; notifications.push(...snapshot.notifications); }
-      if (Array.isArray(snapshot.attendanceLogs)) { attendanceLogs.length = 0; attendanceLogs.push(...snapshot.attendanceLogs); }
-      if (Array.isArray(snapshot.homeroomTeachers)) { homeroomTeachers.length = 0; homeroomTeachers.push(...snapshot.homeroomTeachers); }
-      if (Array.isArray(snapshot.subjectTeachers)) { subjectTeachers.length = 0; subjectTeachers.push(...snapshot.subjectTeachers); }
-      if (Array.isArray(snapshot.teachingJournals)) { teachingJournals.length = 0; teachingJournals.push(...snapshot.teachingJournals); }
-      if (Array.isArray(snapshot.treasurerTransactions)) { treasurerTransactions.length = 0; treasurerTransactions.push(...snapshot.treasurerTransactions); }
-      if (Array.isArray(snapshot.studentDevelopmentLogs)) { studentDevelopmentLogs.length = 0; studentDevelopmentLogs.push(...snapshot.studentDevelopmentLogs); }
-      if (Array.isArray(snapshot.studentInfractionLogs)) { studentInfractionLogs.length = 0; studentInfractionLogs.push(...snapshot.studentInfractionLogs); }
-      if (Array.isArray(snapshot.studentCounselingLogs)) { studentCounselingLogs.length = 0; studentCounselingLogs.push(...snapshot.studentCounselingLogs); }
-      if (Array.isArray(snapshot.classAnnouncements)) { classAnnouncements.length = 0; classAnnouncements.push(...snapshot.classAnnouncements); }
-      if (Array.isArray(snapshot.classMeetingLogs)) { classMeetingLogs.length = 0; classMeetingLogs.push(...snapshot.classMeetingLogs); }
-      if (Array.isArray(snapshot.merdekaAssessments)) { merdekaAssessments.length = 0; merdekaAssessments.push(...snapshot.merdekaAssessments); }
-      if (Array.isArray(snapshot.principalWorkPrograms)) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...snapshot.principalWorkPrograms); }
-      if (Array.isArray(snapshot.teacherEvaluations)) { teacherEvaluations.length = 0; teacherEvaluations.push(...snapshot.teacherEvaluations); }
-      if (Array.isArray(snapshot.infractionRules)) { infractionRules.length = 0; infractionRules.push(...snapshot.infractionRules); }
-      if (Array.isArray(snapshot.sarprasItems)) { sarprasItems.length = 0; sarprasItems.push(...snapshot.sarprasItems); }
-      if (Array.isArray(snapshot.sarprasProposals)) { sarprasProposals.length = 0; sarprasProposals.push(...snapshot.sarprasProposals); }
-      if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
-      if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
-
-      if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
-      if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
-      if (snapshot.midtransConfig) Object.assign(midtransConfig, snapshot.midtransConfig);
-      if (snapshot.whatsappConfig) Object.assign(whatsappConfig, snapshot.whatsappConfig);
-      if (snapshot.treasurerConfig) Object.assign(treasurerConfig, snapshot.treasurerConfig);
-      if (snapshot.principalConfig) Object.assign(principalConfig, snapshot.principalConfig);
-      if (snapshot.sarprasConfig) Object.assign(sarprasConfig, snapshot.sarprasConfig);
-      if (snapshot.bkConfig) Object.assign(bkConfig, snapshot.bkConfig);
-      if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
-      if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
-
-      saveState();
-
-      res.json({ success: true, message: "Restorasi data dari backup berhasil diselesaikan." });
+      res.json({ success: true, message: "Restorasi data seluruh aplikasi dari backup berhasil diselesaikan." });
     } catch (err: any) {
       console.error("Error restoring backup:", err);
       res.status(500).json({ error: "Gagal merestorasi backup data: " + err.message });
@@ -2165,44 +2276,9 @@ async function startServer() {
         return res.status(400).json({ error: "Konten backup (snapshot) tidak ditemukan atau kosong." });
       }
 
-      if (Array.isArray(snapshot.students)) { students.length = 0; students.push(...snapshot.students); }
-      if (Array.isArray(snapshot.sppBills)) { sppBills.length = 0; sppBills.push(...snapshot.sppBills); }
-      if (Array.isArray(snapshot.miscBills)) { miscBills.length = 0; miscBills.push(...snapshot.miscBills); }
-      if (Array.isArray(snapshot.savingsTransactions)) { savingsTransactions.length = 0; savingsTransactions.push(...snapshot.savingsTransactions); }
-      if (Array.isArray(snapshot.notifications)) { notifications.length = 0; notifications.push(...snapshot.notifications); }
-      if (Array.isArray(snapshot.attendanceLogs)) { attendanceLogs.length = 0; attendanceLogs.push(...snapshot.attendanceLogs); }
-      if (Array.isArray(snapshot.homeroomTeachers)) { homeroomTeachers.length = 0; homeroomTeachers.push(...snapshot.homeroomTeachers); }
-      if (Array.isArray(snapshot.subjectTeachers)) { subjectTeachers.length = 0; subjectTeachers.push(...snapshot.subjectTeachers); }
-      if (Array.isArray(snapshot.teachingJournals)) { teachingJournals.length = 0; teachingJournals.push(...snapshot.teachingJournals); }
-      if (Array.isArray(snapshot.treasurerTransactions)) { treasurerTransactions.length = 0; treasurerTransactions.push(...snapshot.treasurerTransactions); }
-      if (Array.isArray(snapshot.studentDevelopmentLogs)) { studentDevelopmentLogs.length = 0; studentDevelopmentLogs.push(...snapshot.studentDevelopmentLogs); }
-      if (Array.isArray(snapshot.studentInfractionLogs)) { studentInfractionLogs.length = 0; studentInfractionLogs.push(...snapshot.studentInfractionLogs); }
-      if (Array.isArray(snapshot.studentCounselingLogs)) { studentCounselingLogs.length = 0; studentCounselingLogs.push(...snapshot.studentCounselingLogs); }
-      if (Array.isArray(snapshot.classAnnouncements)) { classAnnouncements.length = 0; classAnnouncements.push(...snapshot.classAnnouncements); }
-      if (Array.isArray(snapshot.classMeetingLogs)) { classMeetingLogs.length = 0; classMeetingLogs.push(...snapshot.classMeetingLogs); }
-      if (Array.isArray(snapshot.merdekaAssessments)) { merdekaAssessments.length = 0; merdekaAssessments.push(...snapshot.merdekaAssessments); }
-      if (Array.isArray(snapshot.principalWorkPrograms)) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...snapshot.principalWorkPrograms); }
-      if (Array.isArray(snapshot.teacherEvaluations)) { teacherEvaluations.length = 0; teacherEvaluations.push(...snapshot.teacherEvaluations); }
-      if (Array.isArray(snapshot.infractionRules)) { infractionRules.length = 0; infractionRules.push(...snapshot.infractionRules); }
-      if (Array.isArray(snapshot.sarprasItems)) { sarprasItems.length = 0; sarprasItems.push(...snapshot.sarprasItems); }
-      if (Array.isArray(snapshot.sarprasProposals)) { sarprasProposals.length = 0; sarprasProposals.push(...snapshot.sarprasProposals); }
-      if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
-      if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
+      await restoreFullBackupSnapshot(snapshot);
 
-      if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
-      if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
-      if (snapshot.midtransConfig) Object.assign(midtransConfig, snapshot.midtransConfig);
-      if (snapshot.whatsappConfig) Object.assign(whatsappConfig, snapshot.whatsappConfig);
-      if (snapshot.treasurerConfig) Object.assign(treasurerConfig, snapshot.treasurerConfig);
-      if (snapshot.principalConfig) Object.assign(principalConfig, snapshot.principalConfig);
-      if (snapshot.sarprasConfig) Object.assign(sarprasConfig, snapshot.sarprasConfig);
-      if (snapshot.bkConfig) Object.assign(bkConfig, snapshot.bkConfig);
-      if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
-      if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
-
-      saveState();
-
-      res.json({ success: true, message: "Restorasi data dari file backup lokal berhasil diselesaikan." });
+      res.json({ success: true, message: "Restorasi data seluruh aplikasi dari file backup lokal berhasil diselesaikan." });
     } catch (err: any) {
       console.error("Error restoring uploaded backup:", err);
       res.status(500).json({ error: "Gagal merestorasi backup lokal: " + err.message });
@@ -8362,55 +8438,9 @@ async function startServer() {
         const backupId = `bkp-${Date.now()}`;
         const createdAt = new Date().toISOString();
 
-        const snapshot = {
-          students,
-          sppBills,
-          miscBills,
-          savingsTransactions,
-          notifications,
-          attendanceLogs,
-          homeroomTeachers,
-          subjectTeachers,
-          teachingJournals,
-          treasurerTransactions,
-          studentDevelopmentLogs,
-          studentInfractionLogs,
-          studentCounselingLogs,
-          classAnnouncements,
-          classMeetingLogs,
-          merdekaAssessments,
-          principalWorkPrograms,
-          teacherEvaluations,
-          infractionRules,
-          sarprasItems,
-          sarprasProposals,
-          sarprasLoans,
-          teacherSalaries,
-          sppRates,
-          schoolIdentity,
-          midtransConfig,
-          whatsappConfig,
-          treasurerConfig,
-          principalConfig,
-          sarprasConfig,
-          bkConfig,
-          adminConfig,
-          salaryConfig
-        };
-
+        const { snapshot, counts } = await buildFullBackupSnapshot();
         const snapshotStr = JSON.stringify(snapshot);
         const sizeBytes = Buffer.byteLength(snapshotStr, 'utf8');
-
-        const counts = {
-          students: students.length,
-          sppBills: sppBills.length,
-          miscBills: miscBills.length,
-          savingsTransactions: savingsTransactions.length,
-          treasurerTransactions: treasurerTransactions.length,
-          attendanceLogs: attendanceLogs.length,
-          teachingJournals: teachingJournals.length,
-          midtransConfig: (midtransConfig && midtransConfig.clientKey) ? 1 : 0
-        };
 
         const newBackup = {
           id: backupId,
@@ -8423,8 +8453,10 @@ async function startServer() {
         };
 
         if (mongoDb) {
-          const col = mongoDb.collection("databaseBackups");
-          await col.insertOne({ ...newBackup, _id: backupId });
+          await executeMongoOperationWithRetry(async () => {
+            const col = mongoDb.collection("databaseBackups");
+            await col.insertOne({ ...newBackup, _id: backupId });
+          });
         }
 
         databaseBackups.push(newBackup);

@@ -707,11 +707,55 @@ let dbSyncError: string | null = null;
 let lastSyncTime: string | null = null;
 let isInitialSyncCompleted = false;
 
+async function reconnectMongoClient() {
+  try {
+    const rawUri = process.env.MONGODB_URI || "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
+    if (mongoClient) {
+      try {
+        await mongoClient.close();
+      } catch (e) {}
+      mongoClient = null;
+      mongoDb = null;
+    }
+    const cleanUri = sanitizeMongoUri(rawUri);
+    mongoClient = new MongoClient(cleanUri, {
+      retryWrites: true,
+      retryReads: true,
+      serverSelectionTimeoutMS: 10000,
+    });
+    await mongoClient.connect();
+    mongoDb = mongoClient.db("spp_maarif");
+    console.log("[MongoDB] Connection refreshed successfully after stale topology/election switch.");
+  } catch (err: any) {
+    console.warn("[MongoDB] Failed to refresh connection:", err?.message || err);
+  }
+}
+
+async function executeMongoOperationWithRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      return await fn();
+    } catch (err: any) {
+      const msg = err?.message || String(err);
+      const isStaleTopology = msg.includes("stale") || msg.includes("electionId") || msg.includes("setVersion") || msg.includes("topology") || msg.includes("pool") || msg.includes("connection") || msg.includes("reset");
+      if (isStaleTopology && attempt < retries) {
+        console.warn(`[MongoDB Retry] Topology/Election error detected (attempt ${attempt + 1}/${retries}): ${msg}. Reconnecting MongoClient...`);
+        await reconnectMongoClient();
+      } else {
+        throw err;
+      }
+    }
+  }
+  throw new Error("Mongo operation failed after retries.");
+}
+
 async function deleteDocFromFirestore(colName: string, docId: string) {
   if (!mongoDb) return;
   try {
-    const col = mongoDb.collection(colName);
-    await col.deleteOne({ _id: docId });
+    await executeMongoOperationWithRetry(async () => {
+      const col = mongoDb.collection(colName);
+      await col.deleteOne({ $or: [{ _id: docId }, { id: docId }] });
+    });
     console.log(`Deleted document ${docId} from ${colName} in MongoDB`);
   } catch (err) {
     console.error(`Failed to delete document ${docId} from ${colName} in MongoDB:`, err);
@@ -725,19 +769,21 @@ async function saveStateToFirestore() {
     
     // Save list helper
     const saveList = async (collectionName: string, list: any[]) => {
-      const col = mongoDb.collection(collectionName);
-      // Clean collection and bulk insert to mirror current in-memory state cleanly
-      await col.deleteMany({});
-      if (list.length > 0) {
-        const docs = list.map(item => {
-          const doc = { ...item };
-          if (doc.id) {
-            doc._id = doc.id;
-          }
-          return doc;
-        });
-        await col.insertMany(docs);
-      }
+      await executeMongoOperationWithRetry(async () => {
+        const col = mongoDb.collection(collectionName);
+        // Clean collection and bulk insert to mirror current in-memory state cleanly
+        await col.deleteMany({});
+        if (list.length > 0) {
+          const docs = list.map(item => {
+            const doc = { ...item };
+            if (doc.id) {
+              doc._id = doc.id;
+            }
+            return doc;
+          });
+          await col.insertMany(docs);
+        }
+      });
     };
 
     await saveList("students", students);
@@ -2013,7 +2059,13 @@ async function startServer() {
           const idx = databaseBackups.findIndex(b => b.id === item.id);
           if (idx > -1) databaseBackups.splice(idx, 1);
           if (mongoDb) {
-            await mongoDb.collection("databaseBackups").deleteOne({ _id: item.id });
+            try {
+              await executeMongoOperationWithRetry(async () => {
+                await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: item.id }, { id: item.id }] });
+              });
+            } catch (delErr) {
+              console.warn("Failed to prune old backup from MongoDB:", delErr);
+            }
           }
         }
       }
@@ -2169,7 +2221,13 @@ async function startServer() {
       databaseBackups.splice(idx, 1);
 
       if (mongoDb) {
-        await mongoDb.collection("databaseBackups").deleteOne({ _id: id });
+        try {
+          await executeMongoOperationWithRetry(async () => {
+            await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: id }, { id: id }] });
+          });
+        } catch (dbErr: any) {
+          console.warn("MongoDB backup deletion warning (in-memory deleted):", dbErr?.message || dbErr);
+        }
       }
       saveState();
 
@@ -8379,7 +8437,13 @@ async function startServer() {
             const idx = databaseBackups.findIndex(b => b.id === item.id);
             if (idx > -1) databaseBackups.splice(idx, 1);
             if (mongoDb) {
-              await mongoDb.collection("databaseBackups").deleteOne({ _id: item.id });
+              try {
+                await executeMongoOperationWithRetry(async () => {
+                  await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: item.id }, { id: item.id }] });
+                });
+              } catch (delErr) {
+                console.warn("Failed to prune auto backup from MongoDB:", delErr);
+              }
             }
           }
         }

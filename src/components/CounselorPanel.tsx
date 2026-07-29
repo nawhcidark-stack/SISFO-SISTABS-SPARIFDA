@@ -62,6 +62,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   // Teaching Journals State & Filters (Monitoring Jurnal Walas & KBM)
   const [teachingJournals, setTeachingJournals] = useState<any[]>([]);
   const [journalTeacherTypeFilter, setJournalTeacherTypeFilter] = useState<'all' | 'subject' | 'homeroom'>('all');
+  const [selectedSubjectTeacherFilter, setSelectedSubjectTeacherFilter] = useState<string>('all');
+  const [selectedHomeroomTeacherFilter, setSelectedHomeroomTeacherFilter] = useState<string>('all');
   const [journalStartDate, setJournalStartDate] = useState("");
   const [journalEndDate, setJournalEndDate] = useState("");
 
@@ -611,12 +613,43 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     return Array.from(list).sort();
   }, [allStudents, logs, attendance, infractions, teachingJournals]);
 
+  // Extract unique subject teachers for BK Journal Monitoring
+  const uniqueSubjectTeacherNames = useMemo(() => {
+    const set = new Set<string>();
+    teachingJournals.forEach(j => {
+      if ((j.teacherType === 'subject_teacher' || !j.teacherType) && j.teacherName) {
+        set.add(j.teacherName);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [teachingJournals]);
+
+  // Extract unique homeroom teachers for BK Journal Monitoring
+  const uniqueHomeroomTeacherList = useMemo(() => {
+    const map = new Map<string, { name: string; className?: string; label: string }>();
+    teachingJournals.forEach(j => {
+      if (j.teacherType === 'homeroom' && j.teacherName) {
+        if (!map.has(j.teacherName)) {
+          const label = j.className ? `${j.teacherName} (Wali Kelas ${j.className})` : j.teacherName;
+          map.set(j.teacherName, { name: j.teacherName, className: j.className, label });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [teachingJournals]);
+
   // Filtered Teaching Journals for BK Monitoring
   const filteredTeachingJournals = useMemo(() => {
     return teachingJournals.filter(j => {
       // Teacher Type Filter
       if (journalTeacherTypeFilter === 'subject' && j.teacherType === 'homeroom') return false;
       if (journalTeacherTypeFilter === 'homeroom' && j.teacherType !== 'homeroom') return false;
+
+      // Subject Teacher Filter
+      if (selectedSubjectTeacherFilter !== 'all' && j.teacherName !== selectedSubjectTeacherFilter) return false;
+
+      // Homeroom Teacher Filter
+      if (selectedHomeroomTeacherFilter !== 'all' && j.teacherName !== selectedHomeroomTeacherFilter) return false;
 
       // Class Filter
       if (classFilter !== 'all' && j.className !== classFilter) return false;
@@ -641,7 +674,16 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
       return true;
     });
-  }, [teachingJournals, journalTeacherTypeFilter, classFilter, searchQuery, journalStartDate, journalEndDate]);
+  }, [
+    teachingJournals, 
+    journalTeacherTypeFilter, 
+    selectedSubjectTeacherFilter, 
+    selectedHomeroomTeacherFilter, 
+    classFilter, 
+    searchQuery, 
+    journalStartDate, 
+    journalEndDate
+  ]);
 
   // Aggregate Attendance states grouping per student
   const aggregatedAttendance = useMemo(() => {
@@ -2919,6 +2961,38 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                   {/* Filter Dropdowns & Search */}
                   <div className="flex flex-wrap items-center gap-2">
+                    {/* Filter Guru Mapel */}
+                    <div className="flex items-center gap-1.5 bg-indigo-50/70 border border-indigo-100 px-3 py-1.5 rounded-xl">
+                      <User size={13} className="text-indigo-600 shrink-0" />
+                      <span className="text-[10px] font-black text-indigo-700 uppercase">Guru Mapel:</span>
+                      <select
+                        value={selectedSubjectTeacherFilter}
+                        onChange={(e) => setSelectedSubjectTeacherFilter(e.target.value)}
+                        className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[160px] truncate"
+                      >
+                        <option value="all">Semua Guru Mapel</option>
+                        {uniqueSubjectTeacherNames.map(name => (
+                          <option key={name} value={name}>{name}</option>
+                        ))}
+                      </select>
+                    </div>
+
+                    {/* Filter Wali Kelas */}
+                    <div className="flex items-center gap-1.5 bg-teal-50/70 border border-teal-100 px-3 py-1.5 rounded-xl">
+                      <User size={13} className="text-teal-600 shrink-0" />
+                      <span className="text-[10px] font-black text-teal-700 uppercase">Wali Kelas:</span>
+                      <select
+                        value={selectedHomeroomTeacherFilter}
+                        onChange={(e) => setSelectedHomeroomTeacherFilter(e.target.value)}
+                        className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[180px] truncate"
+                      >
+                        <option value="all">Semua Wali Kelas</option>
+                        {uniqueHomeroomTeacherList.map(item => (
+                          <option key={item.name} value={item.name}>{item.label}</option>
+                        ))}
+                      </select>
+                    </div>
+
                     {/* Class Filter */}
                     <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
                       <span className="text-[10px] font-black text-slate-400 uppercase">Kelas:</span>
@@ -2935,7 +3009,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     </div>
 
                     {/* Search Box */}
-                    <div className="relative flex-1 min-w-[200px]">
+                    <div className="relative flex-1 min-w-[180px]">
                       <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
                       <input
                         type="text"
@@ -2966,12 +3040,19 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       onChange={(e) => setJournalEndDate(e.target.value)}
                       className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none"
                     />
-                    {(journalStartDate || journalEndDate) && (
+                    {(journalStartDate || journalEndDate || selectedSubjectTeacherFilter !== 'all' || selectedHomeroomTeacherFilter !== 'all' || classFilter !== 'all' || searchQuery) && (
                       <button
-                        onClick={() => { setJournalStartDate(''); setJournalEndDate(''); }}
+                        onClick={() => { 
+                          setJournalStartDate(''); 
+                          setJournalEndDate(''); 
+                          setSelectedSubjectTeacherFilter('all');
+                          setSelectedHomeroomTeacherFilter('all');
+                          setClassFilter('all');
+                          setSearchQuery('');
+                        }}
                         className="text-[10px] font-extrabold text-rose-600 hover:underline ml-1 cursor-pointer"
                       >
-                        Reset Tanggal
+                        Reset Filter
                       </button>
                     )}
                   </div>

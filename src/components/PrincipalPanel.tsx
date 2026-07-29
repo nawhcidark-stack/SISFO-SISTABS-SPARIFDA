@@ -99,18 +99,102 @@ export default function PrincipalPanel({
   // Additional data fetched from endpoints
   const [journals, setJournals] = useState<TeachingJournal[]>([]);
   const [journalFilter, setJournalFilter] = useState<'all' | 'subject' | 'homeroom'>('all');
+  const [selectedSubjectTeacherFilter, setSelectedSubjectTeacherFilter] = useState<string>('all');
+  const [selectedHomeroomTeacherFilter, setSelectedHomeroomTeacherFilter] = useState<string>('all');
+  const [journalClassFilter, setJournalClassFilter] = useState<string>('all');
+  const [journalSearchQuery, setJournalSearchQuery] = useState<string>('');
+  const [journalStartDate, setJournalStartDate] = useState<string>('');
+  const [journalEndDate, setJournalEndDate] = useState<string>('');
+
+  // Extract unique subject teachers
+  const uniqueSubjectTeacherNames = useMemo(() => {
+    const set = new Set<string>();
+    if (subjectTeachers) {
+      subjectTeachers.forEach(st => { if (st.name) set.add(st.name); });
+    }
+    journals.forEach(j => {
+      if ((j.teacherType === 'subject_teacher' || !j.teacherType) && j.teacherName) {
+        set.add(j.teacherName);
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b));
+  }, [subjectTeachers, journals]);
+
+  // Extract unique homeroom teachers
+  const uniqueHomeroomTeacherList = useMemo(() => {
+    const map = new Map<string, { name: string; className?: string; label: string }>();
+    if (homerooms) {
+      homerooms.forEach(ht => {
+        if (ht.name) {
+          const label = ht.className ? `${ht.name} (Wali Kelas ${ht.className})` : ht.name;
+          map.set(ht.name, { name: ht.name, className: ht.className, label });
+        }
+      });
+    }
+    journals.forEach(j => {
+      if (j.teacherType === 'homeroom' && j.teacherName) {
+        if (!map.has(j.teacherName)) {
+          const label = j.className ? `${j.teacherName} (Wali Kelas ${j.className})` : j.teacherName;
+          map.set(j.teacherName, { name: j.teacherName, className: j.className, label });
+        }
+      }
+    });
+    return Array.from(map.values()).sort((a, b) => a.name.localeCompare(b.name));
+  }, [homerooms, journals]);
+
+  // Extract unique classes
+  const uniqueJournalClasses = useMemo(() => {
+    const set = new Set<string>();
+    journals.forEach(j => {
+      if (j.className) set.add(j.className);
+    });
+    return Array.from(set).sort();
+  }, [journals]);
 
   const filteredJournals = useMemo(() => {
     return journals.filter(j => {
-      if (journalFilter === 'subject') {
-        return j.teacherType === 'subject_teacher' || !j.teacherType;
+      if (journalFilter === 'subject' && j.teacherType === 'homeroom') return false;
+      if (journalFilter === 'homeroom' && j.teacherType !== 'homeroom') return false;
+
+      // Subject Teacher Filter
+      if (selectedSubjectTeacherFilter !== 'all' && j.teacherName !== selectedSubjectTeacherFilter) return false;
+
+      // Homeroom Teacher Filter
+      if (selectedHomeroomTeacherFilter !== 'all' && j.teacherName !== selectedHomeroomTeacherFilter) return false;
+
+      // Class Filter
+      if (journalClassFilter !== 'all' && j.className !== journalClassFilter) return false;
+
+      // Search Query
+      if (journalSearchQuery.trim()) {
+        const q = journalSearchQuery.toLowerCase();
+        const matchTopic = (j.topic || '').toLowerCase().includes(q);
+        const matchTeacher = (j.teacherName || '').toLowerCase().includes(q);
+        const matchSubject = (j.subject || '').toLowerCase().includes(q);
+        const matchNotes = (j.notes || '').toLowerCase().includes(q);
+        const matchClass = (j.className || '').toLowerCase().includes(q);
+        if (!matchTopic && !matchTeacher && !matchSubject && !matchNotes && !matchClass) return false;
       }
-      if (journalFilter === 'homeroom') {
-        return j.teacherType === 'homeroom';
+
+      // Date Range Filter
+      if (journalStartDate || journalEndDate) {
+        const d = j.date ? j.date.substring(0, 10) : "";
+        if (journalStartDate && d < journalStartDate) return false;
+        if (journalEndDate && d > journalEndDate) return false;
       }
+
       return true;
     });
-  }, [journals, journalFilter]);
+  }, [
+    journals, 
+    journalFilter, 
+    selectedSubjectTeacherFilter, 
+    selectedHomeroomTeacherFilter, 
+    journalClassFilter, 
+    journalSearchQuery, 
+    journalStartDate, 
+    journalEndDate
+  ]);
   const [counselingLogs, setCounselingLogs] = useState<StudentCounselingLog[]>([]);
   const [infractionLogs, setInfractionLogs] = useState<StudentInfractionLog[]>([]);
   const [loadingSecondaryData, setLoadingSecondaryData] = useState(false);
@@ -2181,46 +2265,150 @@ export default function PrincipalPanel({
           </div>
 
           <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs text-left">
-            {/* Filter segments */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-slate-100 mb-5">
-              <div className="flex flex-wrap gap-2">
-                <button
-                  type="button"
-                  onClick={() => setJournalFilter('all')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                    journalFilter === 'all'
-                      ? 'bg-slate-900 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  Semua ({journals.length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setJournalFilter('subject')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                    journalFilter === 'subject'
-                      ? 'bg-indigo-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  Guru Mapel ({journals.filter(j => j.teacherType === 'subject_teacher' || !j.teacherType).length})
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setJournalFilter('homeroom')}
-                  className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
-                    journalFilter === 'homeroom'
-                      ? 'bg-emerald-600 text-white shadow-xs'
-                      : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
-                  }`}
-                >
-                  Wali Kelas ({journals.filter(j => j.teacherType === 'homeroom').length})
-                </button>
+            {/* Filter segments & Toolbar */}
+            <div className="flex flex-col gap-4 pb-4 border-b border-slate-100 mb-5">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div className="flex flex-wrap gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('all')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      journalFilter === 'all'
+                        ? 'bg-slate-900 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    Semua ({journals.length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('subject')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      journalFilter === 'subject'
+                        ? 'bg-indigo-600 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    Guru Mapel ({journals.filter(j => j.teacherType === 'subject_teacher' || !j.teacherType).length})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('homeroom')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer ${
+                      journalFilter === 'homeroom'
+                        ? 'bg-emerald-600 text-white shadow-xs'
+                        : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                    }`}
+                  >
+                    Wali Kelas ({journals.filter(j => j.teacherType === 'homeroom').length})
+                  </button>
+                </div>
+
+                {/* Search Box */}
+                <div className="relative flex-1 max-w-xs">
+                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                  <input
+                    type="text"
+                    placeholder="Cari materi, guru, mapel, kelas..."
+                    value={journalSearchQuery}
+                    onChange={(e) => setJournalSearchQuery(e.target.value)}
+                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                  />
+                </div>
               </div>
-              <span className="text-[10px] bg-slate-100 px-2 py-1 rounded-md text-slate-700 font-extrabold font-mono uppercase tracking-wider">
-                {filteredJournals.length} Jurnal Ditampilkan
-              </span>
+
+              {/* Secondary Filter Row: Filter Guru Mapel, Filter Wali Kelas, Filter Kelas */}
+              <div className="flex flex-wrap items-center gap-2 pt-2 border-t border-slate-100">
+                {/* Filter Guru Mapel */}
+                <div className="flex items-center gap-1.5 bg-indigo-50/60 border border-indigo-100 px-3 py-1.5 rounded-xl">
+                  <User size={13} className="text-indigo-600 shrink-0" />
+                  <span className="text-[10px] font-black text-indigo-700 uppercase">Guru Mapel:</span>
+                  <select
+                    value={selectedSubjectTeacherFilter}
+                    onChange={(e) => setSelectedSubjectTeacherFilter(e.target.value)}
+                    className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[170px] truncate"
+                  >
+                    <option value="all">Semua Guru Mapel</option>
+                    {uniqueSubjectTeacherNames.map(name => (
+                      <option key={name} value={name}>{name}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Wali Kelas */}
+                <div className="flex items-center gap-1.5 bg-emerald-50/60 border border-emerald-100 px-3 py-1.5 rounded-xl">
+                  <User size={13} className="text-emerald-600 shrink-0" />
+                  <span className="text-[10px] font-black text-emerald-700 uppercase">Wali Kelas:</span>
+                  <select
+                    value={selectedHomeroomTeacherFilter}
+                    onChange={(e) => setSelectedHomeroomTeacherFilter(e.target.value)}
+                    className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer max-w-[200px] truncate"
+                  >
+                    <option value="all">Semua Wali Kelas</option>
+                    {uniqueHomeroomTeacherList.map(item => (
+                      <option key={item.name} value={item.name}>{item.label}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Kelas */}
+                <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl">
+                  <span className="text-[10px] font-black text-slate-500 uppercase">Kelas:</span>
+                  <select
+                    value={journalClassFilter}
+                    onChange={(e) => setJournalClassFilter(e.target.value)}
+                    className="bg-transparent text-xs font-extrabold text-slate-800 focus:outline-none cursor-pointer"
+                  >
+                    <option value="all">Semua Kelas</option>
+                    {uniqueJournalClasses.map(c => (
+                      <option key={c} value={c}>Kelas {c}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Reset Filters */}
+                {(selectedSubjectTeacherFilter !== 'all' || selectedHomeroomTeacherFilter !== 'all' || journalClassFilter !== 'all' || journalSearchQuery || journalStartDate || journalEndDate) && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedSubjectTeacherFilter('all');
+                      setSelectedHomeroomTeacherFilter('all');
+                      setJournalClassFilter('all');
+                      setJournalSearchQuery('');
+                      setJournalStartDate('');
+                      setJournalEndDate('');
+                    }}
+                    className="text-[10px] font-extrabold text-rose-600 hover:underline px-2 py-1 cursor-pointer"
+                  >
+                    Reset Filter
+                  </button>
+                )}
+              </div>
+
+              {/* Date Range & Total Count */}
+              <div className="flex flex-wrap items-center justify-between gap-3 pt-2">
+                <div className="flex items-center gap-2 text-xs text-slate-600 font-semibold flex-wrap">
+                  <Calendar size={13} className="text-teal-600 shrink-0" />
+                  <span>Tanggal:</span>
+                  <input
+                    type="date"
+                    value={journalStartDate}
+                    onChange={(e) => setJournalStartDate(e.target.value)}
+                    className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none"
+                  />
+                  <span>s.d.</span>
+                  <input
+                    type="date"
+                    value={journalEndDate}
+                    onChange={(e) => setJournalEndDate(e.target.value)}
+                    className="px-2.5 py-1 bg-slate-50 border border-slate-200 rounded-lg text-xs font-bold text-slate-700 focus:outline-none"
+                  />
+                </div>
+
+                <span className="text-[10px] bg-slate-100 px-2.5 py-1 rounded-md text-slate-700 font-extrabold font-mono uppercase tracking-wider">
+                  {filteredJournals.length} Jurnal Ditampilkan
+                </span>
+              </div>
             </div>
 
             {filteredJournals.length === 0 ? (

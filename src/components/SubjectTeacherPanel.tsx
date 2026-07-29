@@ -13,10 +13,18 @@ const getWIBDateStr = (date: Date = new Date()): string => {
   return wibTime.toISOString().substring(0, 10);
 };
 
-const getSemesterFromDate = (dateStr: string): 'Ganjil' | 'Genap' => {
-  if (!dateStr) return 'Genap';
+const getSemesterFromDate = (dateStr?: string): 'Ganjil' | 'Genap' => {
+  if (!dateStr) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return 'Genap';
+  if (isNaN(d.getTime())) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
   const month = d.getMonth(); // 0 = Jan, 11 = Dec
   return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
 };
@@ -63,7 +71,7 @@ export default function SubjectTeacherPanel({
   const [editNotes, setEditNotes] = useState<string>('');
   const [editDate, setEditDate] = useState<string>('');
   const [editFase, setEditFase] = useState<string>('D');
-  const [editSemester, setEditSemester] = useState<string>('Genap');
+  const [editSemester, setEditSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [editAlokasiWaktu, setEditAlokasiWaktu] = useState<string>('2');
   const [editJamKe, setEditJamKe] = useState<string>('');
   const [editPertemuanKe, setEditPertemuanKe] = useState<string>('');
@@ -206,7 +214,7 @@ export default function SubjectTeacherPanel({
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
   const [selectedGradeClass, setSelectedGradeClass] = useState<string>('');
-  const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>('Genap');
+  const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [selectedYearGrading, setSelectedYearGrading] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
 
   useEffect(() => {
@@ -357,7 +365,7 @@ export default function SubjectTeacherPanel({
     setEditNotes(journal.notes || '');
     setEditDate(journal.date || '');
     setEditFase(journal.fase || 'D');
-    setEditSemester(journal.semester || 'Genap');
+    setEditSemester(journal.semester || getSemesterFromDate(journal.date));
 
     const cleanPertemuan = journal.pertemuanKe ? String(journal.pertemuanKe).replace(/\D/g, '') : '';
     const cleanJam = journal.jamKe ? String(journal.jamKe) : '';
@@ -3124,7 +3132,7 @@ export default function SubjectTeacherPanel({
                       <div className="grid grid-cols-[110px_10px_1fr]">
                         <span className="font-semibold text-slate-500">Kelas/Semester</span>
                         <span>:</span>
-                        <span className="font-black text-slate-1000">Kelas {selectedJournalToPrint.className} / {selectedJournalToPrint.semester || "Genap"}</span>
+                        <span className="font-black text-slate-1000">Kelas {selectedJournalToPrint.className} / {selectedJournalToPrint.semester || getSemesterFromDate(selectedJournalToPrint.date)}</span>
                       </div>
                     </div>
 

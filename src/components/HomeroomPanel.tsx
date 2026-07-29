@@ -600,10 +600,18 @@ const getWIBDateStr = (date: Date = new Date()): string => {
   return wibTime.toISOString().substring(0, 10);
 };
 
-const getSemesterFromDate = (dateStr: string): 'Ganjil' | 'Genap' => {
-  if (!dateStr) return 'Genap';
+const getSemesterFromDate = (dateStr?: string): 'Ganjil' | 'Genap' => {
+  if (!dateStr) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
   const d = new Date(dateStr);
-  if (isNaN(d.getTime())) return 'Genap';
+  if (isNaN(d.getTime())) {
+    const now = new Date();
+    const month = now.getMonth();
+    return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
+  }
   const month = d.getMonth(); // 0 = Jan, 11 = Dec
   return (month >= 6 && month <= 11) ? 'Ganjil' : 'Genap';
 };
@@ -706,7 +714,7 @@ export default function HomeroomPanel({
       }
     }
   }, [scannedStudentNis, scannedStudentAt, classStudents]);
-  const [selectedReportSemester, setSelectedReportSemester] = useState<string>('Genap');
+  const [selectedReportSemester, setSelectedReportSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [selectedReportYear, setSelectedReportYear] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
 
   useEffect(() => {
@@ -6567,7 +6575,7 @@ Wassalamualaikum Wr. Wb.
                       Jurnal Pembelajaran &amp; Presensi Mata Pelajaran
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
-                      Kelas: {selectedJournalToPrint.className} &bull; Semester {selectedJournalToPrint.semester || "Genap"} &bull; Tahun Ajaran {schoolIdentity?.activeAcademicYear || "2026/2027"}
+                      Kelas: {selectedJournalToPrint.className} &bull; Semester {selectedJournalToPrint.semester || getSemesterFromDate(selectedJournalToPrint.date)} &bull; Tahun Ajaran {schoolIdentity?.activeAcademicYear || "2026/2027"}
                     </p>
                   </div>
 
@@ -6821,8 +6829,8 @@ Wassalamualaikum Wr. Wb.
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
                       {compiledJournalPrintType === 'binaan'
-                        ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester Genap • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
-                        : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester Genap • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
+                        ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
+                        : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
                       }
                     </p>
                   </div>

@@ -767,22 +767,34 @@ async function saveStateToFirestore() {
   try {
     console.log("Syncing database state to MongoDB Cluster...");
     
-    // Save list helper
+    // Save list helper with non-destructive bulk upsert
     const saveList = async (collectionName: string, list: any[]) => {
+      if (!Array.isArray(list)) return;
       await executeMongoOperationWithRetry(async () => {
         const col = mongoDb.collection(collectionName);
-        // Clean collection and bulk insert to mirror current in-memory state cleanly
-        await col.deleteMany({});
-        if (list.length > 0) {
-          const docs = list.map(item => {
-            const doc = { ...item };
-            if (doc.id) {
-              doc._id = doc.id;
-            }
-            return doc;
-          });
-          await col.insertMany(docs);
+        if (list.length === 0) {
+          await col.deleteMany({});
+          return;
         }
+        const currentIds: string[] = [];
+        const operations = list.map(item => {
+          const doc = { ...item };
+          const docId = String(doc.id || doc._id || `id-${Math.random()}`);
+          doc._id = docId;
+          doc.id = docId;
+          currentIds.push(docId);
+          return {
+            replaceOne: {
+              filter: { _id: docId },
+              replacement: doc,
+              upsert: true
+            }
+          };
+        });
+        // Write/Upsert all docs first so existing data is never wiped prematurely
+        await col.bulkWrite(operations, { ordered: false });
+        // Prune stale documents no longer present in local memory list
+        await col.deleteMany({ _id: { $nin: currentIds } });
       });
     };
 
@@ -1032,45 +1044,72 @@ async function syncWithFirestore(forcePush: boolean = false) {
       console.log("MongoDB is previously seeded. Pulling state from MongoDB...");
       dbSyncStatus = "Syncing (Loading state)...";
       
-      // Load Students
+      // Load Students (Merging local in-memory with MongoDB to ensure zero loss)
       const loadedStudents = await studentCol.find({}).toArray();
-      students.length = 0;
+      const existingStudentMap = new Map<string, Student>();
+      students.forEach(s => existingStudentMap.set(s.id, s));
       loadedStudents.forEach((d: any) => {
         const { _id, ...rest } = d;
         const s = rest as Student;
         if (!s.password) {
           s.password = s.nis.toString().trim();
         }
-        students.push(s);
+        existingStudentMap.set(s.id, s);
       });
+      students.length = 0;
+      students.push(...Array.from(existingStudentMap.values()));
 
-      // Load SPP Bills
+      // Load SPP Bills (Merging local in-memory with MongoDB, prioritizing paid status)
       const loadedBills = await mongoDb.collection("sppBills").find({}).toArray();
-      sppBills.length = 0;
+      const billMap = new Map<string, SppBill>();
+      sppBills.forEach(b => billMap.set(b.id, b));
       loadedBills.forEach((d: any) => {
         const { _id, ...rest } = d;
-        sppBills.push(rest as SppBill);
+        const remoteBill = rest as SppBill;
+        const localBill = billMap.get(remoteBill.id);
+        if (!localBill) {
+          billMap.set(remoteBill.id, remoteBill);
+        } else {
+          if (remoteBill.status === "paid" && localBill.status !== "paid") {
+            billMap.set(remoteBill.id, remoteBill);
+          } else if (remoteBill.status === "pending" && localBill.status === "unpaid") {
+            billMap.set(remoteBill.id, remoteBill);
+          }
+        }
       });
+      sppBills.length = 0;
+      sppBills.push(...Array.from(billMap.values()));
 
       // Load Misc Bills
       try {
         const loadedMiscBills = await mongoDb.collection("miscBills").find({}).toArray();
-        miscBills.length = 0;
+        const miscMap = new Map<string, MiscBill>();
+        miscBills.forEach(b => miscMap.set(b.id, b));
         loadedMiscBills.forEach((d: any) => {
           const { _id, ...rest } = d;
-          miscBills.push(rest as MiscBill);
+          const remoteMisc = rest as MiscBill;
+          const localMisc = miscMap.get(remoteMisc.id);
+          if (!localMisc || remoteMisc.status === "paid") {
+            miscMap.set(remoteMisc.id, remoteMisc);
+          }
         });
+        miscBills.length = 0;
+        miscBills.push(...Array.from(miscMap.values()));
       } catch (err) {
         console.warn("Failed loading miscBills collection:", err);
       }
 
-      // Load Savings Transactions
+      // Load Savings Transactions (Merging unique transactions from local + MongoDB)
       const loadedSav = await mongoDb.collection("savingsTransactions").find({}).toArray();
-      savingsTransactions.length = 0;
+      const savMap = new Map<string, SavingsTransaction>();
+      savingsTransactions.forEach(t => savMap.set(t.id, t));
       loadedSav.forEach((d: any) => {
         const { _id, ...rest } = d;
-        savingsTransactions.push(rest as SavingsTransaction);
+        const t = rest as SavingsTransaction;
+        savMap.set(t.id, t);
       });
+      savingsTransactions.length = 0;
+      savingsTransactions.push(...Array.from(savMap.values()));
 
       // Load Notifications
       const loadedNotif = await mongoDb.collection("realtimeNotifications").find({}).toArray();
@@ -1113,13 +1152,17 @@ async function syncWithFirestore(forcePush: boolean = false) {
         teachingJournals.push(rest as TeachingJournal);
       });
 
-      // Load Treasurer Transactions
+      // Load Treasurer Transactions (Merging unique transactions from local + MongoDB)
       const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
-      treasurerTransactions.length = 0;
+      const bndMap = new Map<string, TreasurerTransaction>();
+      treasurerTransactions.forEach(t => bndMap.set(t.id, t));
       loadedBnd.forEach((d: any) => {
         const { _id, ...rest } = d;
-        treasurerTransactions.push(rest as TreasurerTransaction);
+        const t = rest as TreasurerTransaction;
+        bndMap.set(t.id, t);
       });
+      treasurerTransactions.length = 0;
+      treasurerTransactions.push(...Array.from(bndMap.values()));
 
       // Load other logs
       const loadedDev = await mongoDb.collection("studentDevelopmentLogs").find({}).toArray();
@@ -1356,7 +1399,9 @@ function saveState() {
       backupConfig,
       databaseBackups
     };
-    fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2), "utf-8");
+    const tempPath = DATA_FILE + ".tmp";
+    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
+    fs.renameSync(tempPath, DATA_FILE);
     // Asynchronously update to MongoDB Cluster via serialized queue
     triggerFirestoreSync();
   } catch (error) {
@@ -4503,6 +4548,26 @@ async function startServer() {
   // BendaHara (Treasurer) Endpoints
   // ==========================================
 
+  // Helper to extract clean YYYY-MM-DD date string
+  function getWIBDateString(dateInput?: string | Date | null): string {
+    if (!dateInput) return new Date().toISOString().substring(0, 10);
+    if (typeof dateInput === "string") {
+      const trimmed = dateInput.trim();
+      if (trimmed.includes("T")) {
+        return trimmed.split("T")[0];
+      }
+      if (trimmed.length >= 10) {
+        return trimmed.substring(0, 10);
+      }
+      return trimmed;
+    }
+    try {
+      return dateInput.toISOString().substring(0, 10);
+    } catch {
+      return new Date().toISOString().substring(0, 10);
+    }
+  }
+
   // Get integrated treasurer ledger list of transactions
   app.get("/api/treasurer/transactions", (req, res) => {
     // 1. Get all paid SPP bills
@@ -4516,7 +4581,7 @@ async function startServer() {
           category: 'SPP',
           amount: b.amount,
           description: `Pembayaran SPP Bulan ${b.month} ${b.year} - ${student?.name || 'Siswa'} (${student?.nis || ''})`,
-          date: (b.paidAt || new Date().toISOString()).substring(0, 10),
+          date: getWIBDateString(b.paidAt || new Date()),
           source: 'spp' as const,
           studentName: student?.name || 'Siswa',
           nis: student?.nis || '',
@@ -4536,7 +4601,7 @@ async function startServer() {
           category: 'Tabungan',
           amount: t.amount,
           description: `${isDeposit ? 'Setoran' : 'Penarikan'} Tabungan Siswa - ${student?.name || 'Siswa'} (${student?.nis || ''})${t.notes ? `: ${t.notes}` : ''}`,
-          date: (t.createdAt || new Date().toISOString()).substring(0, 10),
+          date: getWIBDateString(t.createdAt || new Date()),
           source: 'savings' as const,
           studentName: student?.name || 'Siswa',
           nis: student?.nis || '',
@@ -4603,7 +4668,7 @@ async function startServer() {
           category: 'Iuran Lain',
           amount: b.amount,
           description: `${b.title} - ${student?.name || 'Siswa'} (${student?.nis || ''})`,
-          date: (b.paidAt || new Date().toISOString()).substring(0, 10),
+          date: getWIBDateString(b.paidAt || new Date()),
           source: 'custom' as const,
           studentName: student?.name || 'Siswa',
           nis: student?.nis || '',

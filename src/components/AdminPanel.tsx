@@ -124,6 +124,26 @@ function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
   );
 }
 
+// Helper to extract clean YYYY-MM-DD date string
+export const getWIBDateString = (dateInput?: string | Date | null): string => {
+  if (!dateInput) return new Date().toISOString().substring(0, 10);
+  if (typeof dateInput === "string") {
+    const trimmed = dateInput.trim();
+    if (trimmed.includes("T")) {
+      return trimmed.split("T")[0];
+    }
+    if (trimmed.length >= 10) {
+      return trimmed.substring(0, 10);
+    }
+    return trimmed;
+  }
+  try {
+    return dateInput.toISOString().substring(0, 10);
+  } catch {
+    return new Date().toISOString().substring(0, 10);
+  }
+};
+
 interface AdminPanelProps {
   students: Student[];
   bills: SppBill[];
@@ -2098,8 +2118,8 @@ export default function AdminPanel({
       fetchInfractionList();
     }
   }, [activeReportSubTab]);
-  const [currentDateFilter, setCurrentDateFilter] = useState<string>(
-    new Date().toISOString().split("T")[0],
+  const [currentDateFilter, setCurrentDateFilter] = useState<string>(() =>
+    getWIBDateString(new Date()),
   );
   const [rekapSppGradeFilter, setRekapSppGradeFilter] = useState<string>("all");
   const [rekapSppYearFilter, setRekapSppYearFilter] = useState<string>("all");
@@ -12940,13 +12960,13 @@ export default function AdminPanel({
                         (b) =>
                           b.status === "paid" &&
                           b.paidAt &&
-                          b.paidAt.split("T")[0] === currentDateFilter,
+                          getWIBDateString(b.paidAt) === currentDateFilter,
                       );
                       const savingsToday = transactions.filter(
                         (t) =>
                           t.status === "success" &&
                           t.createdAt &&
-                          t.createdAt.split("T")[0] === currentDateFilter,
+                          getWIBDateString(t.createdAt) === currentDateFilter,
                       );
 
                       const totalSppTunai = sppPaidToday
@@ -13015,7 +13035,7 @@ export default function AdminPanel({
                           (b) =>
                             b.status === "paid" &&
                             b.paidAt &&
-                            b.paidAt.split("T")[0] === currentDateFilter &&
+                            getWIBDateString(b.paidAt) === currentDateFilter &&
                             b.paymentMethod &&
                             b.paymentMethod.toLowerCase().includes("midtrans"),
                         )
@@ -13069,13 +13089,13 @@ export default function AdminPanel({
                   (b) =>
                     b.status === "paid" &&
                     b.paidAt &&
-                    b.paidAt.split("T")[0] === currentDateFilter,
+                    getWIBDateString(b.paidAt) === currentDateFilter,
                 );
                 const savingsToday = transactions.filter(
                   (t) =>
                     t.status === "success" &&
                     t.createdAt &&
-                    t.createdAt.split("T")[0] === currentDateFilter,
+                    getWIBDateString(t.createdAt) === currentDateFilter,
                 );
 
                 const totalSppTunai = sppPaidToday
@@ -13145,7 +13165,7 @@ export default function AdminPanel({
                     (b) =>
                       b.status === "paid" &&
                       b.paidAt &&
-                      b.paidAt.split("T")[0] === currentDateFilter &&
+                      getWIBDateString(b.paidAt) === currentDateFilter &&
                       b.paymentMethod &&
                       b.paymentMethod.toLowerCase().includes("midtrans"),
                   )
@@ -15998,13 +16018,13 @@ export default function AdminPanel({
                       (b) =>
                         b.status === "paid" &&
                         b.paidAt &&
-                        b.paidAt.split("T")[0] === currentDateFilter,
+                        getWIBDateString(b.paidAt) === currentDateFilter,
                     );
                     const savingsToday = transactions.filter(
                       (t) =>
                         t.status === "success" &&
                         t.createdAt &&
-                        t.createdAt.split("T")[0] === currentDateFilter,
+                        getWIBDateString(t.createdAt) === currentDateFilter,
                     );
 
                     const totalSppTunai = sppPaidToday
@@ -16076,7 +16096,7 @@ export default function AdminPanel({
                         (b) =>
                           b.status === "paid" &&
                           b.paidAt &&
-                          b.paidAt.split("T")[0] === currentDateFilter &&
+                          getWIBDateString(b.paidAt) === currentDateFilter &&
                           b.paymentMethod &&
                           b.paymentMethod.toLowerCase().includes("midtrans"),
                       )

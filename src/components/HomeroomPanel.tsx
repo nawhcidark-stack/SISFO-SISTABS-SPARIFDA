@@ -961,7 +961,10 @@ export default function HomeroomPanel({
       const res = await fetch('/api/principal/teacher-evaluations');
       if (res.ok) {
         const data = await res.json();
-        const filtered = data.filter((e: any) => e.teacherId === currentTeacher.id);
+        const filtered = data.filter((e: any) => 
+          e.teacherId === currentTeacher.id ||
+          (currentTeacher.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
+        );
         setEvaluations(filtered);
       }
     } catch (err) {
@@ -1077,11 +1080,12 @@ export default function HomeroomPanel({
   }, [teachingJournalsList, currentTeacher.className]);
 
   const kelasLainJournals = useMemo(() => {
+    const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
     return teachingJournalsList.filter((j: any) => 
-      j.teacherId === currentTeacher.id && 
+      (j.teacherId === currentTeacher.id || (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName)) && 
       j.className && j.className.toLowerCase() !== currentTeacher.className.toLowerCase()
     );
-  }, [teachingJournalsList, currentTeacher.id, currentTeacher.className]);
+  }, [teachingJournalsList, currentTeacher.id, currentTeacher.name, currentTeacher.className]);
 
   // Create Journal For Homeroom state
   const [isAddJournalOpen, setIsAddJournalOpen] = useState(false);
@@ -1293,9 +1297,11 @@ export default function HomeroomPanel({
       if (res.ok) {
         const data = await res.json();
         // Filter journals that belong to current homeroom teacher's class OR are taught by this teacher
+        const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
         const filtered = data.filter((j: any) => 
-          j.className.toLowerCase() === currentTeacher.className.toLowerCase() || 
-          j.teacherId === currentTeacher.id
+          (j.className && j.className.toLowerCase() === currentTeacher.className.toLowerCase()) || 
+          j.teacherId === currentTeacher.id ||
+          (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName)
         );
         setTeachingJournalsList(filtered);
       }

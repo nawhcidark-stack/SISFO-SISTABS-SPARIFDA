@@ -97,7 +97,10 @@ export default function SubjectTeacherPanel({
       const res = await fetch('/api/principal/teacher-evaluations');
       if (res.ok) {
         const data = await res.json();
-        const filtered = data.filter((e: any) => e.teacherId === currentTeacher.id);
+        const filtered = data.filter((e: any) => 
+          e.teacherId === currentTeacher.id ||
+          (currentTeacher.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
+        );
         setEvaluations(filtered);
       }
     } catch (err) {
@@ -348,8 +351,15 @@ export default function SubjectTeacherPanel({
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
         const data: TeachingJournal[] = await res.json();
-        // Filter journals belonging to current teacher
-        const filtered = data.filter(j => j.teacherId === currentTeacher.id);
+        // Filter journals belonging to current teacher (by teacherId, teacherName, or username)
+        const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
+        const cUser = currentTeacher.username ? currentTeacher.username.trim().toLowerCase() : '';
+        const filtered = data.filter(j => {
+          if (j.teacherId === currentTeacher.id) return true;
+          if (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName) return true;
+          if (cUser && (j as any).username && (j as any).username.trim().toLowerCase() === cUser) return true;
+          return false;
+        });
         setJournals(filtered);
       }
     } catch (err) {

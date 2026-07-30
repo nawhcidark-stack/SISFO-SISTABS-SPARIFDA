@@ -3363,7 +3363,37 @@ async function startServer() {
   });
 
   // --- TEACHING JOURNALS (JURNAL PEMBELAJARAN & ABSENSI MAPEL) ENDPOINTS ---
+  function normalizeJournalTeacherIds() {
+    try {
+      const nameToIdMap = new Map<string, string>();
+      const userToIdMap = new Map<string, string>();
+
+      [...subjectTeachers, ...homeroomTeachers, ...teachers].forEach(t => {
+        if (t.name && t.id) nameToIdMap.set(t.name.trim().toLowerCase(), t.id);
+        if ((t as any).username && t.id) userToIdMap.set((t as any).username.trim().toLowerCase(), t.id);
+      });
+
+      let changed = false;
+      teachingJournals.forEach(j => {
+        const tName = j.teacherName ? j.teacherName.trim().toLowerCase() : '';
+        const uName = (j as any).username ? (j as any).username.trim().toLowerCase() : '';
+        const targetId = nameToIdMap.get(tName) || userToIdMap.get(uName);
+        if (targetId && j.teacherId !== targetId) {
+          j.teacherId = targetId;
+          changed = true;
+        }
+      });
+
+      if (changed) {
+        saveState();
+      }
+    } catch (e) {
+      console.error("Error normalizing journal teacher IDs:", e);
+    }
+  }
+
   app.get("/api/teaching-journals", (req, res) => {
+    normalizeJournalTeacherIds();
     res.json(teachingJournals);
   });
 

@@ -15,52 +15,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 const PORT = process.env.PORT || 3000;
 
 // Initialize dynamic in-memory store
-const students: Student[] = [
-  {
-    id: "std-1",
-    nis: "20241001",
-    name: "Ahmad Fauzi",
-    class: "7-A",
-    email: "ahmad.fauzi@smpmaarifnu.sch.id",
-    phone: "081234567890",
-    savingsBalance: 120000,
-    gender: "Laki-laki",
-    password: "20241001"
-  },
-  {
-    id: "std-2",
-    nis: "20241002",
-    name: "Siti Aminah",
-    class: "7-B",
-    email: "siti.aminah@smpmaarifnu.sch.id",
-    phone: "081298765432",
-    savingsBalance: 250000,
-    gender: "Perempuan",
-    password: "20241002"
-  },
-  {
-    id: "std-3",
-    nis: "20230905",
-    name: "Muhammad Rian",
-    class: "8-A",
-    email: "rian.smp@smpmaarifnu.sch.id",
-    phone: "085612345678",
-    savingsBalance: 450000,
-    gender: "Laki-laki",
-    password: "20230905"
-  },
-  {
-    id: "std-4",
-    nis: "20220812",
-    name: "Lailatul Fitriyah",
-    class: "9-C",
-    email: "laila.fit@smpmaarifnu.sch.id",
-    phone: "089912341234",
-    savingsBalance: 80000,
-    gender: "Perempuan",
-    password: "20220812"
-  }
-];
+const students: Student[] = [];
 
 // Ensure all student passwords default to NIS during in-memory initialization
 students.forEach(s => {
@@ -83,15 +38,7 @@ const notifications: RealtimeNotification[] = [
   }
 ];
 
-const attendanceLogs: AttendanceLog[] = [
-  { id: "att-1", studentId: "std-1", date: "2026-05-18", status: "Hadir", notes: "" },
-  { id: "att-2", studentId: "std-1", date: "2026-05-19", status: "Hadir", notes: "" },
-  { id: "att-3", studentId: "std-1", date: "2026-05-20", status: "Sakit", notes: "Demam tinggi" },
-  { id: "att-4", studentId: "std-2", date: "2026-05-18", status: "Hadir", notes: "" },
-  { id: "att-5", studentId: "std-2", date: "2026-05-19", status: "Izin", notes: "Acara keluarga" },
-  { id: "att-6", studentId: "std-2", date: "2026-05-20", status: "Hadir", notes: "" },
-  { id: "att-7", studentId: "std-3", date: "2026-05-20", status: "Alpa", notes: "Tanpa keterangan" }
-];
+const attendanceLogs: AttendanceLog[] = [];
 
 const homeroomTeachers: HomeroomTeacher[] = [
   { id: "ht-1", username: "wali7a", name: "Budi Santoso, S.Pd", className: "7-A", password: "wali123" },
@@ -120,89 +67,13 @@ let salaryConfig: SalaryConfig = {
   defaultPotonganDanaSosial: 50000
 };
 
-const teachingJournals: TeachingJournal[] = [
-  {
-    id: "tj-1",
-    teacherId: "st-1",
-    teacherName: "Drs. Heru Setyawan, M.Pd",
-    subject: "Matematika",
-    className: "7-A",
-    date: "2026-05-20",
-    topic: "Persamaan Linear Satu Variabel (PLSV)",
-    attendance: [
-      { studentId: "std-1", studentName: "Ahmad Fauzi", status: "Hadir" },
-      { studentId: "std-2", studentName: "Siti Aminah", status: "Hadir" }
-    ],
-    notes: "Siswa memahami konsep dasar persamaan linear dengan sangat baik. Diperbanyak latihan soal mandiri.",
-    createdAt: new Date().toISOString()
-  }
-];
+const teachingJournals: TeachingJournal[] = [];
 
-const studentDevelopmentLogs: StudentDevelopmentLog[] = [
-  {
-    id: "sdl-1",
-    studentId: "std-1",
-    studentName: "Ahmad Fauzi",
-    className: "7-A",
-    date: "2026-05-25",
-    category: "Akademik",
-    notes: "Siswa menunjukkan peningkatan pesat dalam memahami materi Matematika Aljabar.",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: "sdl-2",
-    studentId: "std-2",
-    studentName: "Siti Aminah",
-    className: "7-A",
-    date: "2026-05-26",
-    category: "Sikap",
-    notes: "Sangat aktif membantu teman sekelas dalam kerja kelompok (Peer tutoring).",
-    createdAt: new Date().toISOString()
-  }
-];
+const studentDevelopmentLogs: StudentDevelopmentLog[] = [];
 
-const studentInfractionLogs: StudentInfractionLog[] = [
-  {
-    id: "sil-1",
-    studentId: "std-1",
-    studentName: "Ahmad Fauzi",
-    className: "7-A",
-    date: "2026-05-24",
-    time: "07:30",
-    location: "Gerbang Sekolah",
-    infractionType: "Terlambat masuk sekolah tanpa keterangan sah",
-    actionTaken: "Pemberian teguran lisan & pencatatan poin kedisiplinan ringan",
-    resolutionStatus: "Selesai",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: "sil-2",
-    studentId: "std-1",
-    studentName: "Ahmad Fauzi",
-    className: "7-A",
-    date: "2026-05-26",
-    time: "10:15",
-    location: "Kelas 7-A",
-    infractionType: "Membawa & menggunakan handphone saat KBM tanpa izin guru",
-    actionTaken: "Handphone disita sementara, diserahkan ke wali kelas, pemanggilan siswa untuk bimbingan",
-    resolutionStatus: "Dalam Proses",
-    createdAt: new Date().toISOString()
-  }
-];
+const studentInfractionLogs: StudentInfractionLog[] = [];
 
-const studentCounselingLogs: StudentCounselingLog[] = [
-  {
-    id: "scl-1",
-    studentId: "std-1",
-    studentName: "Ahmad Fauzi",
-    className: "7-A",
-    date: "2026-05-26",
-    topic: "Konseling kedisiplinan dan fokus belajar terkait insiden membawa handphone ke kelas",
-    actionPlan: "Siswa menandatangani surat janji lisan tidak membawa handphone di luar izin sekolah, diberikan pendampingan motivasi belajar",
-    result: "Siswa menyadari kesalahannya, bersikap kooperatif, berjanji untuk lebih fokus saat KBM",
-    createdAt: new Date().toISOString()
-  }
-];
+const studentCounselingLogs: StudentCounselingLog[] = [];
 
 const infractionRules: any[] = [
   { id: "ir-1", name: "Terlambat masuk sekolah tanpa keterangan sah", points: 5, category: "Ringan" },
@@ -212,78 +83,11 @@ const infractionRules: any[] = [
   { id: "ir-5", name: "Melakukan bullying / perundungan verbal maupun fisik", points: 50, category: "Berat" }
 ];
 
-const classAnnouncements: ClassAnnouncement[] = [
-  {
-    id: "ca-1",
-    className: "7-A",
-    title: "Pengumuman Persiapan Ulangan Harian Bersama",
-    content: "Diimbau bagi seluruh siswa kelas 7-A untuk mempersiapkan diri menghadapi ulangan kompetensi Matematika dan IPA minggu depan. Harap membawa alat tulis lengkap.",
-    date: "2026-05-27",
-    targetRecipient: "Semua",
-    confirmationStatus: "Sebagian Terbaca",
-    createdAt: new Date().toISOString()
-  }
-];
+const classAnnouncements: ClassAnnouncement[] = [];
 
-const classMeetingLogs: ClassMeetingLog[] = [
-  {
-    id: "cml-1",
-    className: "7-A",
-    meetingType: "Rapat Orang Tua",
-    date: "2026-05-15",
-    attendees: "Wali Kelas 7-A & 25 Orang Tua/Wali Murid",
-    agenda: "Sosialisasi program parenting digital siswa, pembagian laporan kemajuan tengah semester, koordinasi SPP bulanan",
-    followUp: "Pembentukan koordinator paguyuban kelas untuk koordinasi komunikasi cepat via WhatsApp Group",
-    createdAt: new Date().toISOString()
-  }
-];
+const classMeetingLogs: ClassMeetingLog[] = [];
 
-const merdekaAssessments: MerdekaAssessment[] = [
-  {
-    id: "ma-1",
-    studentId: "std-1",
-    studentName: "Ahmad Fauzi",
-    className: "7-A",
-    subject: "Matematika",
-    teacherName: "Drs. Heru Setyawan, M.Pd",
-    semester: "Genap",
-    academicYear: "2025/2026",
-    tp1Name: "Persamaan Linear Satu Variabel",
-    tp1Grade: 88,
-    tp2Name: "Pertidaksamaan Linear Satu Variabel",
-    tp2Grade: 75,
-    tp3Name: "Perbandingan dan Skala",
-    tp3Grade: 82,
-    nilaiFormatif: 82,
-    nilaiSumatifLM: 80,
-    nilaiSAS: 85,
-    nilaiRapor: 82,
-    deskripsiCapaian: "Menunjukkan pemahaman yang sangat baik dalam Persamaan Linear Satu Variabel. Perlu pendampingan lebih lanjut dalam Pertidaksamaan Linear Satu Variabel.",
-    createdAt: new Date().toISOString()
-  },
-  {
-    id: "ma-2",
-    studentId: "std-2",
-    studentName: "Siti Aminah",
-    className: "7-A",
-    subject: "Matematika",
-    teacherName: "Drs. Heru Setyawan, M.Pd",
-    semester: "Genap",
-    academicYear: "2025/2026",
-    tp1Name: "Persamaan Linear Satu Variabel",
-    tp1Grade: 92,
-    tp2Name: "Pertidaksamaan Linear Satu Variabel",
-    tp2Grade: 88,
-    tp3Name: "Perbandingan dan Skala",
-    tp3Grade: 90,
-    nilaiFormatif: 90,
-    nilaiSumatifLM: 92,
-    nilaiSAS: 94,
-    nilaiRapor: 92,
-    deskripsiCapaian: "Menunjukkan pemahaman yang sangat baik dalam seluruh materi, khususnya Persamaan Linear Satu Variabel.",
-    createdAt: new Date().toISOString()
-  }
-];
+const merdekaAssessments: MerdekaAssessment[] = [];
 
 const principalWorkPrograms: any[] = [
   {
@@ -1053,14 +857,27 @@ async function syncWithFirestore(forcePush: boolean = false) {
       // Load Students (Merging local in-memory with MongoDB to ensure zero loss)
       const loadedStudents = await studentCol.find({}).toArray();
       const existingStudentMap = new Map<string, Student>();
-      students.forEach(s => existingStudentMap.set(s.id, s));
+      
+      const sampleIds = new Set(["std-1", "std-2", "std-3", "std-4"]);
+      const sampleNis = new Set(["20241001", "20241002", "20230905", "20220812"]);
+      const isSampleStudent = (s: any) => s && (sampleIds.has(s.id) || sampleNis.has(String(s.nis || '').trim()));
+
+      students.forEach(s => {
+        if (!isSampleStudent(s)) {
+          existingStudentMap.set(s.id, s);
+        }
+      });
       loadedStudents.forEach((d: any) => {
         const { _id, ...rest } = d;
         const s = rest as Student;
-        if (!s.password) {
-          s.password = s.nis.toString().trim();
+        if (!isSampleStudent(s)) {
+          if (!s.password) {
+            s.password = s.nis.toString().trim();
+          }
+          existingStudentMap.set(s.id, s);
+        } else {
+          studentCol.deleteOne({ $or: [{ id: s.id }, { nis: s.nis }] }).catch(() => {});
         }
-        existingStudentMap.set(s.id, s);
       });
       students.length = 0;
       students.push(...Array.from(existingStudentMap.values()));
@@ -1424,13 +1241,19 @@ function loadState() {
       const data = JSON.parse(raw);
       if (Array.isArray(data.students)) {
         students.length = 0;
-        students.push(...data.students);
-        students.forEach(s => {
-          if (s.email && s.email.includes("example.org")) {
-            s.email = s.email.replace("example.org", "smpmaarifnu.sch.id");
-          }
-          if (!s.password) {
-            s.password = s.nis.toString().trim();
+        const sampleIds = new Set(["std-1", "std-2", "std-3", "std-4"]);
+        const sampleNis = new Set(["20241001", "20241002", "20230905", "20220812"]);
+        const isSampleStudent = (s: any) => s && (sampleIds.has(s.id) || sampleNis.has(String(s.nis || '').trim()));
+
+        data.students.forEach((s: Student) => {
+          if (!isSampleStudent(s)) {
+            if (s.email && s.email.includes("example.org")) {
+              s.email = s.email.replace("example.org", "smpmaarifnu.sch.id");
+            }
+            if (!s.password) {
+              s.password = s.nis.toString().trim();
+            }
+            students.push(s);
           }
         });
       }

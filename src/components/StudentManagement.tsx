@@ -79,7 +79,7 @@ export default function StudentManagement({
     const rows = [
       "20261010,Budi Santoso,7-A,Laki-laki,budi@smpmaarifnu.sch.id,081234567812,budi123,100000",
       "20261011,Aisyah Putri,7-B,Perempuan,aisyah@smpmaarifnu.sch.id,081234567813,aisyah77,0",
-      "20241001,Ahmad Fauzi,7-A,Laki-laki,ahmad.fauzi@smpmaarifnu.sch.id,081234567890,fauzi321,0"
+      "0012345678,Contoh Siswa,7-A,Laki-laki,contoh@smpmaarifnu.sch.id,081234567890,contoh123,0"
     ].join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);

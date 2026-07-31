@@ -346,10 +346,14 @@ export default function SubjectTeacherPanel({
     tp4Grade?: string;
     nilaiSumatifLM?: string;
     nilaiSAS?: string;
+    kokurikuler?: string;
+    pts?: string;
+    pas?: string;
     deskripsiCapaian?: string;
   }>>({});
 
   const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
+  const [showPrintGradePdfModal, setShowPrintGradePdfModal] = useState<boolean>(false);
   const [excelPasteContent, setExcelPasteContent] = useState<string>('');
   const [excelParseError, setExcelParseError] = useState<string | null>(null);
   const [excelParsedPreview, setExcelParsedPreview] = useState<any[]>([]);
@@ -620,6 +624,145 @@ export default function SubjectTeacherPanel({
     return (sub1 || '').trim().toLowerCase() === (sub2 || '').trim().toLowerCase();
   }
 
+  // Download Template Excel Penilaian Format Terbaru
+  const handleDownloadExcelTemplate = () => {
+    const headers = [
+      "No", "NIS", "Nama Siswa",
+      "TP1_Tugas1", "TP1_Tugas2", "TP1_UH",
+      "TP2_Tugas1", "TP2_Tugas2", "TP2_UH",
+      "TP3_Tugas1", "TP3_Tugas2", "TP3_UH",
+      "TP4_Tugas1", "TP4_Tugas2", "TP4_UH",
+      "Kokurikuler", "PTS", "PAS"
+    ];
+
+    const rows = gradingClassStudents.map((st, idx) => [
+      idx + 1,
+      `"${st.nis || st.id}"`,
+      `"${st.name.replace(/"/g, '""')}"`,
+      "", "", "",
+      "", "", "",
+      "", "", "",
+      "", "", "",
+      "", "", ""
+    ]);
+
+    const csvContent = "\uFEFF" + [
+      headers.join(","),
+      ...rows.map(r => r.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Template_Penilaian_Format_Terbaru_${selectedGradeClass}_${(selectedSubject || 'Mapel').replace(/\s+/g, '_')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setFeedback({ type: 'success', text: "Template Excel format terbaru berhasil diunduh!" });
+  };
+
+  // Export Excel Rapi Penilaian Format Terbaru
+  const handleExportExcelRapi = () => {
+    const headers = [
+      "No", "NIS", "Nama Siswa",
+      "TP1_Tugas1", "TP1_Tugas2", "TP1_UH",
+      "TP2_Tugas1", "TP2_Tugas2", "TP2_UH",
+      "TP3_Tugas1", "TP3_Tugas2", "TP3_UH",
+      "TP4_Tugas1", "TP4_Tugas2", "TP4_UH",
+      "Rata_TP", "Kokurikuler", "PTS", "PAS", "Nilai_Akhir_Mapel"
+    ];
+
+    const rows = gradingClassStudents.map((st, idx) => {
+      const inputState = gradeInputMap[st.id] || {
+        tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+        tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+        tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+        tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
+      };
+
+      const calcTp = (t1: any, t2: any, uh: any) => {
+        const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
+        const n2 = t2 !== '' && !isNaN(Number(t2)) ? Number(t2) : null;
+        const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
+        if (n1 === null && n2 === null && n3 === null) return null;
+        let tugasAvg = null;
+        if (n1 !== null && n2 !== null) tugasAvg = (n1 + n2) / 2;
+        else if (n1 !== null) tugasAvg = n1;
+        else if (n2 !== null) tugasAvg = n2;
+
+        if (tugasAvg !== null && n3 !== null) return Math.round((tugasAvg * 0.6) + (n3 * 0.4));
+        if (tugasAvg !== null) return Math.round(tugasAvg);
+        if (n3 !== null) return Math.round(n3);
+        return null;
+      };
+
+      const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Tugas2, inputState.tp1Uh);
+      const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Tugas2, inputState.tp2Uh);
+      const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Tugas2, inputState.tp3Uh);
+      const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Tugas2, inputState.tp4Uh);
+
+      const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+      const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+      const matchedAssessment = merdekaAssessments.find(a =>
+        a.studentId === st.id &&
+        (a.subject || '').trim().toLowerCase() === selectedSubject.trim().toLowerCase() &&
+        a.semester === selectedSemesterGrading &&
+        a.academicYear === selectedYearGrading
+      );
+
+      const kokuVal = inputState.kokurikuler ? Number(inputState.kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
+      const ptsVal = inputState.pts ? Number(inputState.pts) : (matchedAssessment?.nilaiPts ?? 0);
+      const pasVal = inputState.pas ? Number(inputState.pas) : (matchedAssessment?.nilaiPas ?? 0);
+
+      const finalMapel = avgTp !== null
+        ? Math.round(((avgTp * 2) + kokuVal + ptsVal + pasVal) / 5)
+        : null;
+
+      return [
+        idx + 1,
+        `"${st.nis || st.id}"`,
+        `"${st.name.replace(/"/g, '""')}"`,
+        inputState.tp1Tugas1 || "", inputState.tp1Tugas2 || "", inputState.tp1Uh || "",
+        inputState.tp2Tugas1 || "", inputState.tp2Tugas2 || "", inputState.tp2Uh || "",
+        inputState.tp3Tugas1 || "", inputState.tp3Tugas2 || "", inputState.tp3Uh || "",
+        inputState.tp4Tugas1 || "", inputState.tp4Tugas2 || "", inputState.tp4Uh || "",
+        avgTp ?? "",
+        kokuVal || "",
+        ptsVal || "",
+        pasVal || "",
+        finalMapel ?? ""
+      ];
+    });
+
+    const titleRow = [`"REKAP NILAI PENILAIAN KURIKULUM MERDEKA TERBARU"`];
+    const metaRows = [
+      [`"Mata Pelajaran: ${selectedSubject}"`],
+      [`"Kelas: ${selectedGradeClass}"`],
+      [`"Semester: ${selectedSemesterGrading}"`],
+      [`"Tahun Ajaran: ${selectedYearGrading}"`],
+      []
+    ];
+
+    const csvContent = "\uFEFF" + [
+      ...titleRow,
+      ...metaRows.map(r => r.join(",")),
+      headers.join(","),
+      ...rows.map(r => r.join(","))
+    ].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Export_Nilai_Rapi_${selectedGradeClass}_${(selectedSubject || 'Mapel').replace(/\s+/g, '_')}_${selectedSemesterGrading}_${selectedYearGrading.replace('/', '-')}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+    setFeedback({ type: 'success', text: "Data nilai berhasil diexport ke Excel dengan rapi!" });
+  };
+
   const handleImportExcelData = () => {
     if (!excelPasteContent.trim()) {
       setExcelParseError("Silakan tempel data dari Excel atau unggah file terlebih dahulu.");
@@ -632,35 +775,27 @@ export default function SubjectTeacherPanel({
       
       rows.forEach((row, idx) => {
         const cells = row.split(/\t|,/).map(c => c.trim().replace(/^["']|["']$/g, ''));
-        
+        if (cells.length < 2) return;
+
+        // Skip header row if detected
         if (idx === 0 && (
           cells[0].toLowerCase().includes("nis") || 
+          cells[0].toLowerCase().includes("no") || 
           cells[1].toLowerCase().includes("nama") || 
-          (cells[2] && cells[2].toLowerCase().includes("tp")) ||
-          (cells[2] && cells[2].toLowerCase().includes("nilai"))
+          cells[1].toLowerCase().includes("nis") || 
+          (cells[2] && cells[2].toLowerCase().includes("tp"))
         )) {
           return;
         }
 
-        const rawNis = cells[0];
-        const nameInput = cells[1];
-        const tp1Str = cells[2];
-        const tp2Str = cells[3] || "";
-        const tp3Str = cells[4] || "";
-        
-        let tp4Str = "";
-        let slmStr = "";
-        let sasStr = "";
-
-        if (cells.length >= 8) {
-          tp4Str = cells[5] || "";
-          slmStr = cells[6] || "";
-          sasStr = cells[7] || "";
-        } else {
-          tp4Str = "";
-          slmStr = cells[5] || "";
-          sasStr = cells[6] || "";
+        // Determine shift if column 0 is No
+        let shift = 0;
+        if (!isNaN(Number(cells[0])) && Number(cells[0]) < 1000 && (cells[1] || '').length >= 3) {
+          shift = 1;
         }
+
+        const rawNis = cells[shift] || "";
+        const nameInput = cells[shift + 1] || "";
 
         if (!rawNis && !nameInput) return;
 
@@ -671,18 +806,49 @@ export default function SubjectTeacherPanel({
           (nameInput && s.name.toLowerCase().includes(nameInput.toLowerCase()))
         );
 
+        const gradeCells = cells.slice(shift + 2);
+
+        let tp1T1 = "", tp1T2 = "", tp1Uh = "";
+        let tp2T1 = "", tp2T2 = "", tp2Uh = "";
+        let tp3T1 = "", tp3T2 = "", tp3Uh = "";
+        let tp4T1 = "", tp4T2 = "", tp4Uh = "";
+        let kokurikuler = "";
+        let pts = "";
+        let pas = "";
+
+        if (gradeCells.length >= 15) {
+          tp1T1 = gradeCells[0] || ""; tp1T2 = gradeCells[1] || ""; tp1Uh = gradeCells[2] || "";
+          tp2T1 = gradeCells[3] || ""; tp2T2 = gradeCells[4] || ""; tp2Uh = gradeCells[5] || "";
+          tp3T1 = gradeCells[6] || ""; tp3T2 = gradeCells[7] || ""; tp3Uh = gradeCells[8] || "";
+          tp4T1 = gradeCells[9] || ""; tp4T2 = gradeCells[10] || ""; tp4Uh = gradeCells[11] || "";
+          kokurikuler = gradeCells[12] || "";
+          pts = gradeCells[13] || "";
+          pas = gradeCells[14] || "";
+        } else if (gradeCells.length >= 12) {
+          tp1T1 = gradeCells[0] || ""; tp1T2 = gradeCells[1] || ""; tp1Uh = gradeCells[2] || "";
+          tp2T1 = gradeCells[3] || ""; tp2T2 = gradeCells[4] || ""; tp2Uh = gradeCells[5] || "";
+          tp3T1 = gradeCells[6] || ""; tp3T2 = gradeCells[7] || ""; tp3Uh = gradeCells[8] || "";
+          tp4T1 = gradeCells[9] || ""; tp4T2 = gradeCells[10] || ""; tp4Uh = gradeCells[11] || "";
+        } else {
+          tp1Uh = gradeCells[0] || "";
+          tp2Uh = gradeCells[1] || "";
+          tp3Uh = gradeCells[2] || "";
+          tp4Uh = gradeCells[3] || "";
+          pts = gradeCells[4] || "";
+          pas = gradeCells[5] || "";
+        }
+
         if (matched) {
           parsedData.push({
             studentId: matched.id,
             studentName: matched.name,
             nis: matched.nis,
             className: matched.class,
-            tp1Grade: Number(tp1Str) || 0,
-            tp2Grade: tp2Str !== "" ? Number(tp2Str) : undefined,
-            tp3Grade: tp3Str !== "" ? Number(tp3Str) : undefined,
-            tp4Grade: tp4Str !== "" ? Number(tp4Str) : undefined,
-            nilaiSumatifLM: Number(slmStr) || 0,
-            nilaiSAS: Number(sasStr) || 0,
+            tp1Tugas1: tp1T1, tp1Tugas2: tp1T2, tp1Uh: tp1Uh,
+            tp2Tugas1: tp2T1, tp2Tugas2: tp2T2, tp2Uh: tp2Uh,
+            tp3Tugas1: tp3T1, tp3Tugas2: tp3T2, tp3Uh: tp3Uh,
+            tp4Tugas1: tp4T1, tp4Tugas2: tp4T2, tp4Uh: tp4Uh,
+            kokurikuler, pts, pas,
             matched: true
           });
         } else {
@@ -690,9 +856,11 @@ export default function SubjectTeacherPanel({
             nis: rawNis || "-",
             studentName: nameInput || "Siswa Tidak Ditemukan",
             matched: false,
-            tp1Grade: Number(tp1Str) || 0,
-            nilaiSumatifLM: Number(slmStr) || 0,
-            nilaiSAS: Number(sasStr) || 0
+            tp1Tugas1: tp1T1, tp1Tugas2: tp1T2, tp1Uh: tp1Uh,
+            tp2Tugas1: tp2T1, tp2Tugas2: tp2T2, tp2Uh: tp2Uh,
+            tp3Tugas1: tp3T1, tp3Tugas2: tp3T2, tp3Uh: tp3Uh,
+            tp4Tugas1: tp4T1, tp4Tugas2: tp4T2, tp4Uh: tp4Uh,
+            kokurikuler, pts, pas
           });
         }
       });
@@ -717,13 +885,26 @@ export default function SubjectTeacherPanel({
     excelParsedPreview.forEach(item => {
       if (item.matched && item.studentId) {
         updatedMap[item.studentId] = {
-          tp1Grade: String(item.tp1Grade),
-          tp2Grade: item.tp2Grade !== undefined ? String(item.tp2Grade) : "",
-          tp3Grade: item.tp3Grade !== undefined ? String(item.tp3Grade) : "",
-          tp4Grade: item.tp4Grade !== undefined ? String(item.tp4Grade) : "",
-          nilaiSumatifLM: String(item.nilaiSumatifLM),
-          nilaiSAS: String(item.nilaiSAS),
-          deskripsiCapaian: ""
+          ...(updatedMap[item.studentId] || {}),
+          tp1Tugas1: item.tp1Tugas1 !== undefined ? String(item.tp1Tugas1) : "",
+          tp1Tugas2: item.tp1Tugas2 !== undefined ? String(item.tp1Tugas2) : "",
+          tp1Uh: item.tp1Uh !== undefined ? String(item.tp1Uh) : "",
+
+          tp2Tugas1: item.tp2Tugas1 !== undefined ? String(item.tp2Tugas1) : "",
+          tp2Tugas2: item.tp2Tugas2 !== undefined ? String(item.tp2Tugas2) : "",
+          tp2Uh: item.tp2Uh !== undefined ? String(item.tp2Uh) : "",
+
+          tp3Tugas1: item.tp3Tugas1 !== undefined ? String(item.tp3Tugas1) : "",
+          tp3Tugas2: item.tp3Tugas2 !== undefined ? String(item.tp3Tugas2) : "",
+          tp3Uh: item.tp3Uh !== undefined ? String(item.tp3Uh) : "",
+
+          tp4Tugas1: item.tp4Tugas1 !== undefined ? String(item.tp4Tugas1) : "",
+          tp4Tugas2: item.tp4Tugas2 !== undefined ? String(item.tp4Tugas2) : "",
+          tp4Uh: item.tp4Uh !== undefined ? String(item.tp4Uh) : "",
+
+          kokurikuler: item.kokurikuler !== undefined ? String(item.kokurikuler) : "",
+          pts: item.pts !== undefined ? String(item.pts) : "",
+          pas: item.pas !== undefined ? String(item.pas) : ""
         };
         importCount++;
       }
@@ -2125,32 +2306,72 @@ export default function SubjectTeacherPanel({
                     setExcelParsedPreview([]);
                     setShowExcelModal(true);
                   }}
-                  className="px-3.5 py-2.5 rounded-xl border-2 border-emerald-500/20 bg-emerald-500/5 hover:bg-emerald-500/10 text-emerald-700 font-bold text-xs transition-colors flex items-center gap-2 cursor-pointer shadow-xs"
+                  className="px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <FileText size={14} className="text-emerald-600" />
                   Import dari MS Excel
                 </button>
+
+                <button
+                  type="button"
+                  onClick={handleDownloadExcelTemplate}
+                  className="px-3 py-2 rounded-xl border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Download size={14} className="text-teal-600" />
+                  Unduh Template Excel
+                </button>
+
+                <button
+                  type="button"
+                  onClick={handleExportExcelRapi}
+                  className="px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <FileText size={14} className="text-indigo-600" />
+                  Export Excel Rapi
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setShowPrintGradePdfModal(true)}
+                  className="px-3 py-2 rounded-xl border border-amber-300 bg-amber-50 hover:bg-amber-100 text-amber-900 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Printer size={14} className="text-amber-600" />
+                  Cetak PDF Rapor
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {
                     const updated = { ...gradeInputMap };
                     gradingClassStudents.forEach(s => {
-                      if (!updated[s.id]?.tp1Grade) {
+                      if (!updated[s.id]?.tp1Tugas1 && !updated[s.id]?.tp1Uh) {
                         updated[s.id] = {
-                          tp1Grade: String(Math.floor(Math.random() * 16) + 80),
-                          tp2Grade: String(Math.floor(Math.random() * 16) + 78),
-                          tp3Grade: String(Math.floor(Math.random() * 16) + 82),
-                          tp4Grade: String(Math.floor(Math.random() * 16) + 84),
-                          nilaiSumatifLM: String(Math.floor(Math.random() * 16) + 78),
-                          nilaiSAS: String(Math.floor(Math.random() * 16) + 80),
-                          deskripsiCapaian: ''
+                          tp1Tugas1: String(Math.floor(Math.random() * 11) + 85),
+                          tp1Tugas2: String(Math.floor(Math.random() * 11) + 82),
+                          tp1Uh: String(Math.floor(Math.random() * 11) + 84),
+
+                          tp2Tugas1: String(Math.floor(Math.random() * 11) + 80),
+                          tp2Tugas2: String(Math.floor(Math.random() * 11) + 85),
+                          tp2Uh: String(Math.floor(Math.random() * 11) + 83),
+
+                          tp3Tugas1: String(Math.floor(Math.random() * 11) + 86),
+                          tp3Tugas2: String(Math.floor(Math.random() * 11) + 88),
+                          tp3Uh: String(Math.floor(Math.random() * 11) + 85),
+
+                          tp4Tugas1: String(Math.floor(Math.random() * 11) + 87),
+                          tp4Tugas2: String(Math.floor(Math.random() * 11) + 90),
+                          tp4Uh: String(Math.floor(Math.random() * 11) + 88),
+
+                          kokurikuler: String(Math.floor(Math.random() * 11) + 85),
+                          pts: String(Math.floor(Math.random() * 11) + 82),
+                          pas: String(Math.floor(Math.random() * 11) + 86)
                         };
                       }
                     });
                     setGradeInputMap(updated);
-                    setFeedback({ type: 'success', text: "Berhasil mengisi otomatis sampel nilai (80-95) yang kosong untuk demo penilaian!" });
+                    setFeedback({ type: 'success', text: "Berhasil mengisi contoh nilai lengkap (TP1-TP4 Tugas & UH, Kokurikuler, PTS, PAS) untuk demo!" });
                   }}
-                  className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
+                  className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
                 >
                   <Sparkles size={13} className="text-slate-500" />
                   Isi Contoh Nilai
@@ -3425,17 +3646,31 @@ export default function SubjectTeacherPanel({
               {/* Modal Content */}
               <div className="p-6 overflow-y-auto max-h-[75vh] flex flex-col gap-4">
                 {/* Instructions */}
-                <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-4 text-[11px] leading-relaxed text-emerald-900">
-                  <span className="font-black text-xs block mb-1">Panduan Penggunaan Template Excel:</span>
+                <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-4 text-[11px] leading-relaxed text-emerald-900 flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2">
+                    <div>
+                      <span className="font-black text-xs block">Panduan Penggunaan Template Excel (Format Terbaru):</span>
+                      <p className="text-[10px] text-emerald-700 mt-0.5">Mendukung format terbaru Kurikulum Merdeka (TP1-TP4 Tugas 1, Tugas 2, UH, Kokurikuler, PTS, PAS)</p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadExcelTemplate}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+                    >
+                      <Download size={13} />
+                      <span>Unduh Template Excel Baru</span>
+                    </button>
+                  </div>
+
                   <ol className="list-decimal pl-4 flex flex-col gap-1">
                     <li>Gunakan software <strong>MS Excel</strong> atau <strong>Google Sheets</strong>.</li>
                     <li>
-                      Buatlah tabel dengan kolom yang berurutan dari kiri ke kanan sebagai berikut:
-                      <div className="py-1 px-2 border border-emerald-200 bg-emerald-150/40 rounded-lg font-mono text-[9px] mt-1 text-slate-700">
-                        NIS | Nama Siswa | Nilai TP1 | Nilai TP2 | Nilai TP3 | Nilai Sumatif LM | Nilai SAS
+                      Urutan kolom format terbaru:
+                      <div className="py-1.5 px-2.5 border border-emerald-200 bg-emerald-100/50 rounded-lg font-mono text-[9px] mt-1 text-slate-800 overflow-x-auto">
+                        No | NIS | Nama | TP1_T1 | TP1_T2 | TP1_UH | TP2_T1 | TP2_T2 | TP2_UH | TP3_T1 | TP3_T2 | TP3_UH | TP4_T1 | TP4_T2 | TP4_UH | Kokurikuler | PTS | PAS
                       </div>
                     </li>
-                    <li>Sistem akan mendeteksi baris siswa berdasarkan <strong>NIS</strong> (disarankan) atau <strong>Nama Lengkap</strong> yang sesuai di kelas terpilih.</li>
+                    <li>Sistem mendeteksi siswa secara cerdas berdasarkan <strong>NIS</strong> atau <strong>Nama Lengkap</strong> yang sesuai di kelas terpilih.</li>
                     <li>Cukup blok tabel nilai di Excel Anda, tekan <strong>Ctrl+C</strong> (salin), lalu tekan <strong>Ctrl+V</strong> (tempel) di kotak teks di bawah ini.</li>
                   </ol>
                 </div>
@@ -4018,6 +4253,228 @@ export default function SubjectTeacherPanel({
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+      {/* MODAL CETAK PDF RAPOR PENILAIAN */}
+      <AnimatePresence>
+        {showPrintGradePdfModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 backdrop-blur-md p-4 no-print overflow-y-auto">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl shadow-2xl border border-slate-200 max-w-5xl w-full text-slate-900 overflow-hidden flex flex-col my-auto"
+            >
+              {/* Modal Actions Header - hidden during print */}
+              <div className="px-6 py-4 bg-slate-900 text-white flex justify-between items-center no-print select-none">
+                <div className="flex items-center gap-2">
+                  <Printer size={18} className="text-amber-400" />
+                  <span className="font-extrabold text-sm uppercase">Cetak PDF / Print Rapor Penilaian</span>
+                </div>
+                <div className="flex items-center gap-3">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl flex items-center gap-1.5 cursor-pointer shadow-md transition-all"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak PDF Sekarang</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintGradePdfModal(false)}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-300 hover:text-white cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Printable Paper Document Container */}
+              <div className="p-8 text-slate-900 bg-white" id="print-penilaian-document">
+                {/* Kop Surat Sekolah */}
+                <div className="flex items-center justify-between border-b-4 border-double border-slate-800 pb-4 mb-4">
+                  <div className="w-16 h-16 flex items-center justify-center shrink-0">
+                    {schoolIdentity?.logo ? (
+                      <img src={schoolIdentity.logo} alt="Logo Sekolah" className="max-h-16 object-contain" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-slate-800 text-white flex items-center justify-center font-black text-xl">
+                        S
+                      </div>
+                    )}
+                  </div>
+                  <div className="text-center flex-1 px-4">
+                    <h1 className="text-lg font-black uppercase tracking-wider text-slate-900">{schoolIdentity?.name || "PEMERINTAH KABUPATEN / MADRASAH"}</h1>
+                    <p className="text-xs font-bold text-slate-700">{schoolIdentity?.subheading || "LAPORAN HASIL EVALUASI PEMBELAJARAN KURIKULUM MERDEKA"}</p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">{schoolIdentity?.address || "Jl. Pendidikan No. 1"} | Telp: {schoolIdentity?.phone || "(021) 1234567"}</p>
+                  </div>
+                  <div className="w-16 h-16 flex items-center justify-center shrink-0">
+                    {schoolIdentity?.logo2 ? (
+                      <img src={schoolIdentity.logo2} alt="Logo 2" className="max-h-16 object-contain" />
+                    ) : (
+                      <div className="w-14 h-14 rounded-full bg-indigo-900 text-white flex items-center justify-center font-black text-xs">
+                        {schoolIdentity?.accreditation ? `AKREDITASI ${schoolIdentity.accreditation}` : "MERDEKA"}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Title */}
+                <div className="text-center mb-6">
+                  <h2 className="text-base font-black uppercase text-slate-900 underline underline-offset-4 decoration-2">
+                    REKAPITULASI PENILAIAN RAPOR KURIKULUM MERDEKA
+                  </h2>
+                  <p className="text-xs font-bold text-slate-600 mt-1">
+                    Format Penilaian Capaian Pembelajaran Terbaru
+                  </p>
+                </div>
+
+                {/* Metadata Grid */}
+                <div className="grid grid-cols-2 gap-x-6 gap-y-1.5 text-xs font-medium text-slate-800 mb-6 bg-slate-50 p-4 rounded-xl border border-slate-200">
+                  <div><span className="font-bold text-slate-500">Mata Pelajaran:</span> <strong className="text-slate-900">{selectedSubject}</strong></div>
+                  <div><span className="font-bold text-slate-500">Kelas:</span> <strong className="text-slate-900">{selectedGradeClass}</strong></div>
+                  <div><span className="font-bold text-slate-500">Semester:</span> <strong className="text-slate-900">{selectedSemesterGrading}</strong></div>
+                  <div><span className="font-bold text-slate-500">Tahun Ajaran:</span> <strong className="text-slate-900">{selectedYearGrading}</strong></div>
+                  <div><span className="font-bold text-slate-500">Guru Pengampu:</span> <strong className="text-slate-900">{currentTeacher.name}</strong></div>
+                  <div><span className="font-bold text-slate-500">Tanggal Cetak:</span> <strong className="text-slate-900">{new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</strong></div>
+                </div>
+
+                {/* Grade Table */}
+                <div className="overflow-x-auto mb-8">
+                  <table className="w-full text-left text-[10px] border-collapse border border-slate-800">
+                    <thead>
+                      <tr className="bg-slate-100 text-slate-900 font-black uppercase text-center border-b border-slate-800">
+                        <th className="p-1.5 border border-slate-800 w-8" rowSpan={2}>No</th>
+                        <th className="p-1.5 border border-slate-800 text-left" rowSpan={2}>NIS / Nama Siswa</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 1</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 2</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 3</th>
+                        <th className="p-1 border border-slate-800" colSpan={3}>TP 4</th>
+                        <th className="p-1.5 border border-slate-800 w-12" rowSpan={2}>Rata TP</th>
+                        <th className="p-1.5 border border-slate-800 w-12" rowSpan={2}>Kokur.</th>
+                        <th className="p-1.5 border border-slate-800 w-10" rowSpan={2}>PTS</th>
+                        <th className="p-1.5 border border-slate-800 w-10" rowSpan={2}>PAS</th>
+                        <th className="p-1.5 border border-slate-800 w-12 font-black bg-slate-200" rowSpan={2}>NA Mapel</th>
+                      </tr>
+                      <tr className="bg-slate-50 text-slate-700 font-bold text-[9px] text-center border-b border-slate-800">
+                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
+                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
+                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
+                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {gradingClassStudents.map((st, idx) => {
+                        const inputState = gradeInputMap[st.id] || {
+                          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+                          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
+                        };
+
+                        const calcTp = (t1: any, t2: any, uh: any) => {
+                          const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
+                          const n2 = t2 !== '' && !isNaN(Number(t2)) ? Number(t2) : null;
+                          const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
+                          if (n1 === null && n2 === null && n3 === null) return null;
+                          let tugasAvg = null;
+                          if (n1 !== null && n2 !== null) tugasAvg = (n1 + n2) / 2;
+                          else if (n1 !== null) tugasAvg = n1;
+                          else if (n2 !== null) tugasAvg = n2;
+
+                          if (tugasAvg !== null && n3 !== null) return Math.round((tugasAvg * 0.6) + (n3 * 0.4));
+                          if (tugasAvg !== null) return Math.round(tugasAvg);
+                          if (n3 !== null) return Math.round(n3);
+                          return null;
+                        };
+
+                        const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Tugas2, inputState.tp1Uh);
+                        const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Tugas2, inputState.tp2Uh);
+                        const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Tugas2, inputState.tp3Uh);
+                        const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Tugas2, inputState.tp4Uh);
+
+                        const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+                        const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+                        const matchedAssessment = merdekaAssessments.find(a =>
+                          a.studentId === st.id &&
+                          (a.subject || '').trim().toLowerCase() === selectedSubject.trim().toLowerCase() &&
+                          a.semester === selectedSemesterGrading &&
+                          a.academicYear === selectedYearGrading
+                        );
+
+                        const kokuVal = inputState.kokurikuler ? Number(inputState.kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
+                        const ptsVal = inputState.pts ? Number(inputState.pts) : (matchedAssessment?.nilaiPts ?? 0);
+                        const pasVal = inputState.pas ? Number(inputState.pas) : (matchedAssessment?.nilaiPas ?? 0);
+
+                        const finalMapel = avgTp !== null
+                          ? Math.round(((avgTp * 2) + kokuVal + ptsVal + pasVal) / 5)
+                          : null;
+
+                        return (
+                          <tr key={st.id} className="border-b border-slate-300 hover:bg-slate-50 text-center">
+                            <td className="p-1 border border-slate-300 font-mono text-slate-500">{idx + 1}</td>
+                            <td className="p-1 border border-slate-300 text-left">
+                              <div className="font-bold text-slate-900">{st.name}</div>
+                              <div className="text-[9px] font-mono text-slate-500">{st.nis || st.id}</div>
+                            </td>
+                            <td className="p-1 border border-slate-300">{inputState.tp1Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300">{inputState.tp1Tugas2 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp1Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300">{inputState.tp2Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300">{inputState.tp2Tugas2 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp2Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300">{inputState.tp3Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300">{inputState.tp3Tugas2 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp3Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300">{inputState.tp4Tugas1 || "-"}</td>
+                            <td className="p-1 border border-slate-300">{inputState.tp4Tugas2 || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold">{inputState.tp4Uh || "-"}</td>
+
+                            <td className="p-1 border border-slate-300 font-bold text-indigo-900 bg-indigo-50/30">{avgTp !== null ? avgTp : "-"}</td>
+                            <td className="p-1 border border-slate-300 font-bold text-purple-900">{kokuVal || "-"}</td>
+                            <td className="p-1 border border-slate-300">{ptsVal || "-"}</td>
+                            <td className="p-1 border border-slate-300">{pasVal || "-"}</td>
+                            <td className="p-1 border border-slate-300 font-black text-slate-900 bg-slate-100 text-xs">{finalMapel !== null ? finalMapel : "-"}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Signatures */}
+                <div className="grid grid-cols-2 gap-8 text-xs font-semibold text-slate-800 text-center pt-6">
+                  <div>
+                    <p>Mengetahui,</p>
+                    <p className="font-bold">Kepala Sekolah</p>
+                    <div className="h-16 flex items-center justify-center my-1">
+                      {schoolIdentity?.principalSignature ? (
+                        <img src={schoolIdentity.principalSignature} alt="TTD Kepala Sekolah" className="max-h-14 object-contain" />
+                      ) : (
+                        <div className="text-[10px] italic text-slate-400">(Tanda Tangan)</div>
+                      )}
+                    </div>
+                    <p className="font-extrabold underline text-slate-900">{schoolIdentity?.principal || "NUR HASAN, S.Pd., M.Si."}</p>
+                    <p className="text-[10px] text-slate-500">NIP. 19780512 200501 1 003</p>
+                  </div>
+
+                  <div>
+                    <p>Sidoarjo, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
+                    <p className="font-bold">Guru Mata Pelajaran</p>
+                    <div className="h-16 flex items-center justify-center my-1">
+                      <div className="text-[10px] italic text-slate-400">(Tanda Tangan)</div>
+                    </div>
+                    <p className="font-extrabold underline text-slate-900">{currentTeacher.name}</p>
+                    <p className="text-[10px] text-slate-500">NIP / NIK. {currentTeacher.username || "202401001"}</p>
+                  </div>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
     </div>

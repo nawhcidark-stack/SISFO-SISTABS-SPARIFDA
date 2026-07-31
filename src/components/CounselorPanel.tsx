@@ -588,8 +588,23 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       (cleanId && (st.id === cleanId || String(st.id).trim().toLowerCase() === lowerId || String(st.nis || "").trim().toLowerCase() === lowerId || String(st.nisn || "").trim().toLowerCase() === lowerId)) ||
       (lowerFallback && st.name && st.name.trim().toLowerCase() === lowerFallback)
     );
-    if (s && s.name && s.name.trim()) {
+    if (s && s.name && s.name.trim() && !s.name.startsWith("Siswa (std-")) {
       return { name: s.name.trim(), className: s.class || "7-A" };
+    }
+
+    // 1b. Check by student index if cleanId contains index (std-TIMESTAMP-INDEX-SUFFIX)
+    const idParts = cleanId.split("-");
+    if (idParts.length >= 3) {
+      const idxStr = idParts[2];
+      if (/^\d+$/.test(idxStr)) {
+        const indexMatch = allStudents.find(st => {
+          const stParts = (st.id || "").split("-");
+          return stParts.length >= 3 && stParts[2] === idxStr && st.name && !st.name.startsWith("Siswa (std-");
+        });
+        if (indexMatch && indexMatch.name) {
+          return { name: indexMatch.name.trim(), className: indexMatch.class || "7-A" };
+        }
+      }
     }
 
     // 2. If cleanFallback is valid, return cleanFallback

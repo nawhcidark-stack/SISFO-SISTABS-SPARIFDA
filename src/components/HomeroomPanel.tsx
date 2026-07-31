@@ -2220,6 +2220,151 @@ Wassalamualaikum Wr. Wb.
     });
   }, [rekapData, rekapStatusFilter]);
 
+  // PDF Rekapitulasi Presensi Function
+  const downloadPdfRekap = () => {
+    const totalHadirClass = rekapData.reduce((acc, r) => acc + r.hadir, 0);
+    const totalTerlambatClass = rekapData.reduce((acc, r) => acc + r.terlambat, 0);
+    const totalSakitClass = rekapData.reduce((acc, r) => acc + r.sakit, 0);
+    const totalIzinClass = rekapData.reduce((acc, r) => acc + r.izin, 0);
+    const totalAlpaClass = rekapData.reduce((acc, r) => acc + r.alpa, 0);
+    const totalPencatatanClass = rekapData.reduce((acc, r) => acc + r.total, 0);
+    const avgRateClass = rekapData.length > 0
+      ? Math.round(rekapData.reduce((acc, r) => acc + r.rate, 0) / rekapData.length)
+      : 0;
+
+    const schoolNameUpper = (schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN").toUpperCase();
+    const schoolAddress = schoolIdentity?.address || "Jl. Niaga No. 05 Pandaan, Pasuruan";
+    const schoolPhone = schoolIdentity?.phone || "(0343) 631456";
+    const principalName = schoolIdentity?.principal || "H. Ahmad Fuad, S.Pd, M.PdI";
+
+    const printWin = window.open("", "_blank");
+    if (!printWin) return;
+
+    let rowsHtml = '';
+    rekapData.forEach((row, idx) => {
+      rowsHtml += `
+        <tr>
+          <td style="text-align:center;">${idx + 1}</td>
+          <td style="text-align:center; font-family:monospace;">${row.student.nis || '-'}</td>
+          <td style="text-align:left; font-weight:bold;">${row.student.name}</td>
+          <td style="text-align:center;">${currentTeacher.className}</td>
+          <td style="text-align:center; color:#16a34a; font-weight:bold;">${row.hadir}</td>
+          <td style="text-align:center; color:#ca8a04;">${row.terlambat}</td>
+          <td style="text-align:center; color:#2563eb;">${row.sakit}</td>
+          <td style="text-align:center; color:#7c3aed;">${row.izin}</td>
+          <td style="text-align:center; color:#db2777;">${row.alpa}</td>
+          <td style="text-align:center; font-weight:bold;">${row.total}</td>
+          <td style="text-align:center; font-weight:bold; color:#0f766e;">${row.rate}%</td>
+        </tr>
+      `;
+    });
+
+    printWin.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Rekap Presensi Kelas ${currentTeacher.className} (${rekapStartDate} - ${rekapEndDate})</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; padding: 15px; color: #1e293b; font-size: 11px; line-height: 1.4; }
+            .header-school { text-align: center; border-bottom: 3px double #0f172a; padding-bottom: 10px; margin-bottom: 15px; }
+            .school-title { font-size: 18px; font-weight: 900; color: #15803d; letter-spacing: 0.5px; }
+            .school-meta { font-size: 10px; color: #475569; margin-top: 2px; }
+            .doc-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; margin-bottom: 12px; color: #0f172a; text-decoration: underline; }
+            .meta-table { width: 100%; margin-bottom: 12px; border-collapse: collapse; font-size: 11px; }
+            .meta-table td { padding: 3px 0; }
+            .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; font-size: 10.5px; }
+            .data-table th, .data-table td { border: 1px solid #64748b; padding: 6px 8px; }
+            .data-table th { background-color: #1e293b; color: #ffffff; font-weight: 700; text-transform: uppercase; font-size: 9.5px; }
+            .data-table tbody tr:nth-child(even) { background-color: #f8fafc; }
+            .summary-row { background-color: #e2e8f0 !important; font-weight: bold; }
+            .summary-row td { border-top: 2px solid #0f172a; }
+            .signatures { width: 100%; margin-top: 30px; page-break-inside: avoid; }
+            .signatures td { text-align: center; width: 50%; vertical-align: top; }
+          </style>
+        </head>
+        <body>
+          <div class="header-school">
+            <div class="school-title">${schoolNameUpper}</div>
+            <div class="school-meta">Alamat: ${schoolAddress} | Telepon: ${schoolPhone}</div>
+          </div>
+
+          <div class="doc-title">REKAPITULASI PRESENSI KEHADIRAN SISWA</div>
+
+          <table class="meta-table">
+            <tr>
+              <td style="width: 12%; font-weight: bold;">Kelas</td>
+              <td style="width: 38%;">: <strong>${currentTeacher.className}</strong></td>
+              <td style="width: 15%; font-weight: bold;">Rentang Waktu</td>
+              <td style="width: 35%;">: ${rekapStartDate} s.d. ${rekapEndDate}</td>
+            </tr>
+            <tr>
+              <td style="font-weight: bold;">Wali Kelas</td>
+              <td>: ${currentTeacher.name}</td>
+              <td style="font-weight: bold;">Tanggal Cetak</td>
+              <td>: ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</td>
+            </tr>
+          </table>
+
+          <table class="data-table">
+            <thead>
+              <tr>
+                <th style="width: 35px;">No</th>
+                <th style="width: 80px;">NIS</th>
+                <th>Nama Siswa</th>
+                <th style="width: 50px;">Kelas</th>
+                <th style="width: 65px;">Hadir (H)</th>
+                <th style="width: 75px;">Terlambat (T)</th>
+                <th style="width: 65px;">Sakit (S)</th>
+                <th style="width: 65px;">Izin (I)</th>
+                <th style="width: 65px;">Alpa (A)</th>
+                <th style="width: 70px;">Total Hari</th>
+                <th style="width: 75px;">Kehadiran</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rowsHtml}
+              <tr class="summary-row">
+                <td colspan="4" style="text-align: right; padding-right: 12px;">TOTAL / RATA-RATA KELAS</td>
+                <td style="text-align: center; color: #16a34a;">${totalHadirClass}</td>
+                <td style="text-align: center; color: #ca8a04;">${totalTerlambatClass}</td>
+                <td style="text-align: center; color: #2563eb;">${totalSakitClass}</td>
+                <td style="text-align: center; color: #7c3aed;">${totalIzinClass}</td>
+                <td style="text-align: center; color: #db2777;">${totalAlpaClass}</td>
+                <td style="text-align: center;">${totalPencatatanClass}</td>
+                <td style="text-align: center; color: #0f766e;">${avgRateClass}%</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <table class="signatures">
+            <tr>
+              <td>
+                Mengetahui,<br/>
+                Kepala Sekolah
+                <div style="height: 60px;"></div>
+                <strong><u>${principalName}</u></strong>
+              </td>
+              <td>
+                Pasuruan, ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}<br/>
+                Wali Kelas ${currentTeacher.className}
+                <div style="height: 60px;"></div>
+                <strong><u>${currentTeacher.name}</u></strong>
+              </td>
+            </tr>
+          </table>
+
+          <script>
+            window.onload = function() {
+              window.print();
+            };
+          </script>
+        </body>
+      </html>
+    `);
+    printWin.document.close();
+  };
+
   // Excel (.xls format with clean XML and styles optimized for Microsoft Excel)
   const downloadExcelRekap = () => {
     const totalHadirClass = rekapData.reduce((acc, r) => acc + r.hadir, 0);
@@ -3423,7 +3568,15 @@ Wassalamualaikum Wr. Wb.
                   <h3 className="text-slate-900 font-extrabold text-sm">Rekapitulasi Presensi Kehadiran Siswa</h3>
                   <p className="text-slate-450 text-xs mt-0.5">Pantau rasio persentase absensi kelas {currentTeacher.className} pada rentang waktu terpilih.</p>
                 </div>
-                <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={downloadPdfRekap}
+                    className="inline-flex items-center gap-1.5 px-3 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold shadow-sm transition-all focus:ring-2 focus:ring-rose-200 cursor-pointer"
+                  >
+                    <Printer size={14} />
+                    Unduh PDF Rekap (.pdf)
+                  </button>
                   <button
                     type="button"
                     onClick={downloadExcelRekap}

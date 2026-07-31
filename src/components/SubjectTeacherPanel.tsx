@@ -216,9 +216,36 @@ export default function SubjectTeacherPanel({
   // --- Kurikulum Merdeka State Settings ---
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
+  const [selectedSubject, setSelectedSubject] = useState<string>(() => currentTeacher?.subject || 'Matematika');
   const [selectedGradeClass, setSelectedGradeClass] = useState<string>('');
   const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [selectedYearGrading, setSelectedYearGrading] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
+
+  useEffect(() => {
+    if (currentTeacher?.subject) {
+      setSelectedSubject(currentTeacher.subject);
+    }
+  }, [currentTeacher?.subject]);
+
+  const subjectOptions = useMemo(() => {
+    const list = [
+      currentTeacher?.subject,
+      'Matematika',
+      'Bahasa Indonesia',
+      'Bahasa Inggris',
+      'Ilmu Pengetahuan Alam',
+      'Ilmu Pengetahuan Sosial',
+      'Pendidikan Agama Islam',
+      'Pendidikan Pancasila',
+      'Pendidikan Jasmani & OR',
+      'Seni Budaya',
+      'Informatika',
+      'Prakarya',
+      'Bahasa Jawa',
+      'Bimbingan Konseling'
+    ].filter(Boolean);
+    return Array.from(new Set(list));
+  }, [currentTeacher?.subject]);
 
   useEffect(() => {
     if (schoolIdentity?.activeAcademicYear) {
@@ -273,13 +300,13 @@ export default function SubjectTeacherPanel({
   };
 
   const currentSubjectDefaultTps = useMemo(() => {
-    return defaultTpsMap[currentTeacher.subject] || [
+    return defaultTpsMap[selectedSubject] || [
       'Mengidentifikasi elemen kompetensi dasar materi pembelajaran',
       'Menyelesaikan tugas analisis praktis secara mandiri berfikir',
       'Menyajikan hasil evaluasi materi dalam bentuk simpulan logis',
       'Merefleksikan hasil pencapaian belajar demi perbaikan berkelanjutan'
     ];
-  }, [currentTeacher.subject]);
+  }, [selectedSubject]);
 
   const [tp1InputName, setTp1InputName] = useState<string>('');
   const [tp2InputName, setTp2InputName] = useState<string>('');
@@ -547,7 +574,7 @@ export default function SubjectTeacherPanel({
     gradingClassStudents.forEach(s => {
       const match = merdekaAssessments.find(a => 
         a.studentId === s.id && 
-        matchSubject(a.subject, currentTeacher.subject) && 
+        matchSubject(a.subject, selectedSubject) && 
         a.semester === selectedSemesterGrading && 
         a.academicYear === selectedYearGrading
       );
@@ -587,7 +614,7 @@ export default function SubjectTeacherPanel({
     });
 
     setGradeInputMap(newMap);
-  }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, currentTeacher.subject]);
+  }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, selectedSubject]);
 
   function matchSubject(sub1: string, sub2: string): boolean {
     return (sub1 || '').trim().toLowerCase() === (sub2 || '').trim().toLowerCase();
@@ -2081,7 +2108,7 @@ export default function SubjectTeacherPanel({
                 <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Guru Mata Pelajaran</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
                   <Sparkles size={18} className="text-amber-500" />
-                  Penilaian Rapor Kurikulum Merdeka ({currentTeacher.subject})
+                  Penilaian Rapor Kurikulum Merdeka ({selectedSubject})
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
                   Isi kriteria ketercapaian tujuan pembelajaran (KKTP), formatif harian, sumatif materi, dan SAS untuk nilai rapor akhir otomatis.
@@ -2132,7 +2159,20 @@ export default function SubjectTeacherPanel({
             </div>
 
             {/* Filter Row */}
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
+              <div>
+                <label className="block text-[10px] font-black uppercase text-indigo-600 tracking-wider mb-1.5">Mata Pelajaran</label>
+                <select
+                  value={selectedSubject}
+                  onChange={(e) => setSelectedSubject(e.target.value)}
+                  className="w-full bg-indigo-50/50 border border-indigo-200 hover:border-indigo-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-black text-indigo-900 transition-colors cursor-pointer"
+                >
+                  {subjectOptions.map(subj => (
+                    <option key={subj} value={subj}>{subj}</option>
+                  ))}
+                </select>
+              </div>
+
               <div>
                 <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas</label>
                 <select
@@ -2512,7 +2552,7 @@ export default function SubjectTeacherPanel({
                         studentId: s.id,
                         studentName: s.name,
                         className: s.class,
-                        subject: currentTeacher.subject,
+                        subject: selectedSubject,
                         teacherName: currentTeacher.name,
                         semester: selectedSemesterGrading,
                         academicYear: selectedYearGrading,

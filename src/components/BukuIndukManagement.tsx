@@ -20,6 +20,7 @@ export default function BukuIndukManagement({
   onRefresh
 }: BukuIndukManagementProps) {
   const [searchTerm, setSearchTerm] = useState('');
+  const [selectedGrade, setSelectedGrade] = useState('ALL');
   const [selectedClass, setSelectedClass] = useState('ALL');
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
@@ -38,6 +39,20 @@ export default function BukuIndukManagement({
   const [importResult, setImportResult] = useState<{ success: boolean; added: number; updated: number } | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // List of unique grades (tingkat) for grade filter
+  const gradesList = useMemo(() => {
+    const set = new Set<string>();
+    students.forEach(s => {
+      if (s.class) {
+        const firstDigit = s.class.trim().charAt(0);
+        if (/^\d$/.test(firstDigit)) {
+          set.add(firstDigit);
+        }
+      }
+    });
+    return ['ALL', ...Array.from(set).sort()];
+  }, [students]);
 
   // List of unique classes for class filter
   const classesList = useMemo(() => {
@@ -88,7 +103,7 @@ export default function BukuIndukManagement({
     return { filled, total, pct };
   };
 
-  // Filter students based on search and class selection
+  // Filter students based on search, grade, and class selection
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
       const matchSearch = 
@@ -99,10 +114,11 @@ export default function BukuIndukManagement({
         (s.fatherName && s.fatherName.toLowerCase().includes(searchTerm.toLowerCase())) ||
         (s.motherName && s.motherName.toLowerCase().includes(searchTerm.toLowerCase()));
       
+      const matchGrade = selectedGrade === 'ALL' || (s.class && s.class.trim().startsWith(selectedGrade));
       const matchClass = selectedClass === 'ALL' || s.class === selectedClass;
-      return matchSearch && matchClass;
+      return matchSearch && matchGrade && matchClass;
     }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, searchTerm, selectedClass]);
+  }, [students, searchTerm, selectedGrade, selectedClass]);
 
   // Handle changes in edit fields
   const handleInputChange = (field: keyof Student, value: any) => {
@@ -823,20 +839,48 @@ export default function BukuIndukManagement({
                 />
               </div>
 
-              {/* Class Filter */}
-              <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
-                <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
-                  <Filter size={12} /> Filter Kelas
-                </span>
-                <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
-                  className="p-1.5 px-3 border border-slate-200 bg-white text-xs font-bold rounded-xl focus:outline-none focus:border-indigo-500 shadow-xs"
-                >
-                  {classesList.map(cls => (
-                    <option key={cls} value={cls}>{cls === 'ALL' ? 'Semua Kelas' : `Kelas ${cls}`}</option>
-                  ))}
-                </select>
+              {/* Grade and Class Filters */}
+              <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto justify-end">
+                {/* Filter Tingkat */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider flex items-center gap-1">
+                    <Filter size={12} /> Tingkat
+                  </span>
+                  <select
+                    value={selectedGrade}
+                    onChange={(e) => {
+                      const newGrade = e.target.value;
+                      setSelectedGrade(newGrade);
+                      if (selectedClass !== 'ALL' && newGrade !== 'ALL' && !selectedClass.startsWith(newGrade)) {
+                        setSelectedClass('ALL');
+                      }
+                    }}
+                    className="p-1.5 px-3 border border-slate-200 bg-white text-xs font-bold rounded-xl focus:outline-none focus:border-indigo-500 shadow-xs cursor-pointer"
+                  >
+                    <option value="ALL">Semua Tingkat</option>
+                    {gradesList.filter(g => g !== 'ALL').map(g => (
+                      <option key={g} value={g}>Tingkat {g}</option>
+                    ))}
+                  </select>
+                </div>
+
+                {/* Filter Kelas */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] text-slate-400 font-bold uppercase tracking-wider">
+                    Kelas
+                  </span>
+                  <select
+                    value={selectedClass}
+                    onChange={(e) => setSelectedClass(e.target.value)}
+                    className="p-1.5 px-3 border border-slate-200 bg-white text-xs font-bold rounded-xl focus:outline-none focus:border-indigo-500 shadow-xs cursor-pointer"
+                  >
+                    {classesList
+                      .filter(cls => cls === 'ALL' || selectedGrade === 'ALL' || cls.trim().startsWith(selectedGrade))
+                      .map(cls => (
+                        <option key={cls} value={cls}>{cls === 'ALL' ? 'Semua Kelas' : `Kelas ${cls}`}</option>
+                      ))}
+                  </select>
+                </div>
               </div>
 
             </div>

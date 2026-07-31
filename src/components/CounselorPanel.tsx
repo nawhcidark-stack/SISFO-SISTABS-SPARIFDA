@@ -223,49 +223,6 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     }
   };
 
-  const handleDeleteStudentAttendance = async (studentId: string, studentName: string) => {
-    if (!window.confirm(`Hapus seluruh rekap absensi untuk siswa "${studentName}"?`)) return;
-    try {
-      const res = await fetch(`/api/attendance/student/${encodeURIComponent(studentId)}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        await fetch(`/api/attendance/student/${encodeURIComponent(studentName)}`, {
-          method: 'DELETE'
-        });
-        setSuccessMsg(`Berhasil menghapus seluruh rekap absensi siswa ${studentName}.`);
-        setTimeout(() => setSuccessMsg(null), 4000);
-        fetchAllData();
-        onRefresh();
-      } else {
-        alert("Gagal menghapus data absensi siswa.");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Terjadi kesalahan sistem saat menghapus absensi.");
-    }
-  };
-
-  const handleDeleteSingleAttendance = async (id: string, studentName: string, date: string) => {
-    if (!window.confirm(`Hapus catatan presensi ${studentName} pada tanggal ${date}?`)) return;
-    try {
-      const res = await fetch(`/api/attendance/${encodeURIComponent(id)}`, {
-        method: 'DELETE'
-      });
-      if (res.ok) {
-        setSuccessMsg(`Berhasil menghapus catatan presensi ${studentName} tanggal ${date}.`);
-        setTimeout(() => setSuccessMsg(null), 4000);
-        fetchAllData();
-        onRefresh();
-      } else {
-        alert("Gagal menghapus catatan presensi.");
-      }
-    } catch (err) {
-      console.error(err);
-      alert("Terjadi kesalahan sistem saat menghapus presensi.");
-    }
-  };
-
   const handleSaveRule = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!ruleNameInput.trim() || rulePointsInput === undefined) {
@@ -2287,26 +2244,16 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                               {st.total > 0 ? Math.round((st.hadir / st.total) * 100) : 0}%
                             </td>
                             <td className="py-3 px-4 text-center">
-                              <div className="flex items-center justify-center gap-1.5">
-                                {st.alpa > 0 || st.terlambat > 0 ? (
-                                  <button
-                                    onClick={() => handleInitiateCounseling(st.name, st.className, `${st.alpa} hari ALPA & ${st.terlambat} kali Terlambat`)}
-                                    className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-705 text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors cursor-pointer"
-                                  >
-                                    Inisiasi BK 🧠
-                                  </button>
-                                ) : (
-                                  <span className="text-[10px] text-emerald-600 font-bold">Baik/Tertib ✅</span>
-                                )}
+                              {st.alpa > 0 || st.terlambat > 0 ? (
                                 <button
-                                  type="button"
-                                  onClick={() => handleDeleteStudentAttendance(st.id, st.name)}
-                                  title={`Hapus seluruh rekap absensi ${st.name}`}
-                                  className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                                  onClick={() => handleInitiateCounseling(st.name, st.className, `${st.alpa} hari ALPA & ${st.terlambat} kali Terlambat`)}
+                                  className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-705 text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors cursor-pointer"
                                 >
-                                  <Trash2 size={13} />
+                                  Inisiasi BK 🧠
                                 </button>
-                              </div>
+                              ) : (
+                                <span className="text-[10px] text-emerald-600 font-bold">Baik/Tertib ✅</span>
+                              )}
                             </td>
                           </tr>
                         );
@@ -2329,7 +2276,6 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         <th className="py-3 px-4 font-black text-center">Kelas</th>
                         <th className="py-3 px-4 font-black text-center">Status</th>
                         <th className="py-3 px-4 font-black">Catatan Keterangan Sakit/Alpa</th>
-                        <th className="py-3 px-3 font-black text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
@@ -2355,22 +2301,12 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                               </span>
                             </td>
                             <td className="py-3 px-4 text-slate-500 italic text-[11px] font-medium">"{a.notes || "Tidak ada rincian daktili kelas"}"</td>
-                            <td className="py-3 px-3 text-center">
-                              <button
-                                type="button"
-                                onClick={() => handleDeleteSingleAttendance(a.id, name, a.date)}
-                                title={`Hapus presensi tanggal ${a.date}`}
-                                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
-                              >
-                                <Trash2 size={13} />
-                              </button>
-                            </td>
                           </tr>
                         );
                       })}
                       {filteredAttendanceDiary.length === 0 && (
                         <tr>
-                          <td colSpan={6} className="py-8 text-center text-slate-400 font-medium italic">Belum ada riwayat presensi terekam saat ini.</td>
+                          <td colSpan={5} className="py-8 text-center text-slate-400 font-medium italic">Belum ada riwayat presensi terekam saat ini.</td>
                         </tr>
                       )}
                     </tbody>

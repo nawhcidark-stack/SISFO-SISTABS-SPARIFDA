@@ -1,4 +1,5 @@
 import React, { useState, useRef, useMemo } from 'react';
+import * as XLSX from 'xlsx';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { 
@@ -143,21 +144,93 @@ export default function BukuIndukManagement({
     }
   };
 
-  // Helper to escape CSV cell contents
+  // Helper to escape CSV cell contents preserving numeric string format
   const escapeCsvVal = (val: any) => {
     const str = String(val === undefined || val === null ? '' : val).trim();
-    // Prevent Excel from displaying long digit strings in scientific notation (e.g. NISN, NIK, KK, No HP)
-    if (str.length >= 10 && /^\d+$/.test(str)) {
+    if (!str) return '';
+    // Prevent Excel from displaying digit strings (NIS, NISN, NIK, KK, No HP, Dates) in scientific notation or stripping leading zeros
+    if (/^\d+$/.test(str) || /^0\d+/.test(str) || (str.length >= 6 && /^[\d\-\.\/]+$/.test(str))) {
       return `"=""${str}"""`;
     }
-    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r')) {
+    if (str.includes(',') || str.includes('"') || str.includes('\n') || str.includes('\r') || str.includes(';')) {
       return `"${str.replace(/"/g, '""')}"`;
     }
     return str;
   };
 
-  // Download CSV Import Template (Contoh Template)
-  const downloadImportTemplate = () => {
+  // Helper to clean raw cell values from CSV or Excel
+  const clean = (val: any) => {
+    if (val === undefined || val === null) return '';
+    let s = String(val).trim();
+    // Remove wrapping double quotes
+    if (s.startsWith('"') && s.endsWith('"')) {
+      s = s.substring(1, s.length - 1).trim();
+    }
+    // Remove Excel formula prefix like =""3514..."" or ="3514..." or ='3514...'
+    if (s.startsWith('=')) {
+      s = s.substring(1).trim();
+      if (s.startsWith('"') && s.endsWith('"')) {
+        s = s.substring(1, s.length - 1).trim();
+      }
+    }
+    // Remove single quote prefix like '0812345678 or '3514...
+    if (s.startsWith("'")) {
+      s = s.substring(1).trim();
+    }
+    // Handle potential scientific notation strings like 3.514096e+15 or 3.5141E+15
+    if (/[eE]\+/.test(s) && /^\d+(\.\d+)?[eE]\+\d+$/.test(s)) {
+      try {
+        const num = Number(s);
+        if (!isNaN(num)) {
+          s = BigInt(Math.round(num)).toString();
+        }
+      } catch {
+        // keep as is
+      }
+    }
+    return s.trim();
+  };
+
+  // Download Excel (.xlsx) Import Template
+  const downloadImportTemplateExcel = () => {
+    const headers = [
+      'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
+      'no_kk', 'no_akte_kelahiran', 'no_hp_siswa', 'alamat_siswa', 'tinggal_bersama', 'anak_ke',
+      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas', 'link_google_drive',
+      'ayah_nama', 'ayah_nik', 'ayah_tempat_lahir', 'ayah_tanggal_lahir', 'ayah_pendidikan', 'ayah_pekerjaan', 'ayah_penghasilan', 'ayah_alamat', 'ayah_no_hp', 'ayah_status',
+      'ibu_nama', 'ibu_nik', 'ibu_tempat_lahir', 'ibu_tanggal_lahir', 'ibu_pendidikan', 'ibu_pekerjaan', 'ibu_penghasilan', 'ibu_alamat', 'ibu_no_hp', 'ibu_status',
+      'wali_nama', 'wali_nik', 'wali_tempat_lahir', 'wali_tanggal_lahir', 'wali_pendidikan', 'wali_pekerjaan', 'wali_penghasilan', 'wali_alamat', 'wali_no_hp', 'wali_status',
+      'wali_sama_dengan_ayah'
+    ];
+
+    const exampleRow = [
+      '0012345678', '0112345678', 'Siswa Contoh', 'Contoh', '35140212040003', 'Laki-laki', 'Pandaan', '2011-04-12',
+      '35140012012001', '40532/DISDUK/2011', '081234567890', 'Jl. Kebon No. 4 Pandaan Pasuruan', 'Orang Tua', '1',
+      '2', '0', '7-A', 'https://drive.google.com/drive/folders/1abc123xyz_example',
+      'Fauzi Sr', '351402101072002', 'Malang', '1972-05-18', 'S1', 'Wiraswasta', '4500000', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081255556666', 'Hidup',
+      'Siti Aminah', '351402102062002', 'Pasuruan', '1976-06-22', 'SMA', 'Ibu Rumah Tangga', '0', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081277778888', 'Hidup',
+      '', '', '', '', '', '', '', '', '', '', 'ya'
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, exampleRow]);
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_address = XLSX.utils.encode_cell({ r: R, c: C });
+        if (ws[cell_address]) {
+          ws[cell_address].t = 's';
+          ws[cell_address].z = '@';
+        }
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Template Buku Induk");
+    XLSX.writeFile(wb, "template_import_buku_induk.xlsx");
+  };
+
+  // Download CSV Import Template
+  const downloadImportTemplateCSV = () => {
     const headers = [
       'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
       'no_kk', 'no_akte_kelahiran', 'no_hp_siswa', 'alamat_siswa', 'tinggal_bersama', 'anak_ke',
@@ -187,7 +260,89 @@ export default function BukuIndukManagement({
     document.body.removeChild(link);
   };
 
-  // Export existing Buku Induk Database for Updating
+  // Export existing Buku Induk Database to Excel (.xlsx) with text cell preservation
+  const exportBukuIndukExcel = () => {
+    const headers = [
+      'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
+      'no_kk', 'no_akte_kelahiran', 'no_hp_siswa', 'alamat_siswa', 'tinggal_bersama', 'anak_ke',
+      'jumlah_saudara_kandung', 'jumlah_saudara_tiri', 'kelas', 'link_google_drive',
+      'ayah_nama', 'ayah_nik', 'ayah_tempat_lahir', 'ayah_tanggal_lahir', 'ayah_pendidikan', 'ayah_pekerjaan', 'ayah_penghasilan', 'ayah_alamat', 'ayah_no_hp', 'ayah_status',
+      'ibu_nama', 'ibu_nik', 'ibu_tempat_lahir', 'ibu_tanggal_lahir', 'ibu_pendidikan', 'ibu_pekerjaan', 'ibu_penghasilan', 'ibu_alamat', 'ibu_no_hp', 'ibu_status',
+      'wali_nama', 'wali_nik', 'wali_tempat_lahir', 'wali_tanggal_lahir', 'wali_pendidikan', 'wali_pekerjaan', 'wali_penghasilan', 'wali_alamat', 'wali_no_hp', 'wali_status',
+      'wali_sama_dengan_ayah'
+    ];
+
+    const rows = students.map(s => [
+      String(s.nis || ''),
+      String(s.nisn || ''),
+      String(s.name || ''),
+      String(s.nickname || ''),
+      String(s.nik || ''),
+      String(s.gender || 'Laki-laki'),
+      String(s.birthPlace || ''),
+      String(s.birthDate || ''),
+      String(s.kkNumber || ''),
+      String(s.birthCertNumber || ''),
+      String(s.phone || ''),
+      String(s.address || ''),
+      String(s.livingWith || ''),
+      String(s.childOrder || ''),
+      String(s.siblingsCount || ''),
+      String(s.stepSiblingsCount || ''),
+      String(s.class || ''),
+      String(s.googleDriveLink || ''),
+      String(s.fatherName || ''),
+      String(s.fatherNik || ''),
+      String(s.fatherBirthPlace || ''),
+      String(s.fatherBirthDate || ''),
+      String(s.fatherEducation || ''),
+      String(s.fatherOccupation || ''),
+      String(s.fatherIncome || ''),
+      String(s.fatherAddress || ''),
+      String(s.fatherPhone || ''),
+      String(s.fatherStatus || 'Hidup'),
+      String(s.motherName || ''),
+      String(s.motherNik || ''),
+      String(s.motherBirthPlace || ''),
+      String(s.motherBirthDate || ''),
+      String(s.motherEducation || ''),
+      String(s.motherOccupation || ''),
+      String(s.motherIncome || ''),
+      String(s.motherAddress || ''),
+      String(s.motherPhone || ''),
+      String(s.motherStatus || 'Hidup'),
+      String(s.guardianName || ''),
+      String(s.guardianNik || ''),
+      String(s.guardianBirthPlace || ''),
+      String(s.guardianBirthDate || ''),
+      String(s.guardianEducation || ''),
+      String(s.guardianOccupation || ''),
+      String(s.guardianIncome || ''),
+      String(s.guardianAddress || ''),
+      String(s.guardianPhone || ''),
+      String(s.guardianStatus || 'Hidup'),
+      s.guardianIsSameAsFather ? 'ya' : 'tidak'
+    ]);
+
+    const ws = XLSX.utils.aoa_to_sheet([headers, ...rows]);
+    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+    for (let R = range.s.r; R <= range.e.r; ++R) {
+      for (let C = range.s.c; C <= range.e.c; ++C) {
+        const cell_address = XLSX.utils.encode_cell({ r: R, c: C });
+        if (ws[cell_address]) {
+          ws[cell_address].t = 's';
+          ws[cell_address].z = '@';
+        }
+      }
+    }
+
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Update Buku Induk");
+    const dateStr = new Date().toISOString().slice(0, 10);
+    XLSX.writeFile(wb, `Buku_Induk_Siswa_Backup_${dateStr}.xlsx`);
+  };
+
+  // Export existing Buku Induk Database to CSV
   const exportBukuIndukForUpdate = () => {
     const headers = [
       'nis', 'nisn', 'nama_lengkap', 'nama_panggilan', 'nik', 'jenis_kelamin', 'tempat_lahir', 'tanggal_lahir',
@@ -291,8 +446,8 @@ export default function BukuIndukManagement({
     return result;
   };
 
-  // Handle uploading and parsing of the CSV file
-  const handleCSVImportUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  // Handle uploading and parsing of the CSV or Excel file (.xlsx/.xls/.csv)
+  const handleCSVImportUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -300,150 +455,149 @@ export default function BukuIndukManagement({
     setImportResult(null);
     setPreviewData([]);
 
-    const reader = new FileReader();
-    reader.onload = async (event) => {
-      try {
-        const text = event.target?.result as string;
+    try {
+      const fileName = file.name.toLowerCase();
+      let rawMatrix: string[][] = [];
+
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as any[][];
+        rawMatrix = rows.map(r => r.map(cell => clean(cell)));
+      } else {
+        const text = await file.text();
         if (!text) {
           setImportError('File kosong atau rusak.');
           return;
         }
-
         const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
         if (lines.length < 2) {
           setImportError('File CSV minimal harus berisi header & satu baris data.');
           return;
         }
-
-        const clean = (val: string) => {
-          let s = (val || "").trim();
-          if (s.startsWith('"') && s.endsWith('"')) {
-            s = s.substring(1, s.length - 1);
-          }
-          if (s.startsWith('=') && (s.substring(1).startsWith('"') || s.substring(1).startsWith("'"))) {
-            s = s.substring(2, s.length - 1);
-          }
-          if (s.startsWith("'")) {
-            s = s.substring(1);
-          }
-          return s.trim();
-        };
-
-        // Detect delimiter: comma (,) or semicolon (;)
         const firstLine = lines[0];
         const delimiter = firstLine.includes(';') ? ';' : ',';
-        const headers = parseCSVLineRobust(firstLine, delimiter).map(h => clean(h).toLowerCase());
-
-        // Validate required headers
-        const nisIdx = headers.findIndex(h => h === 'nis');
-        const namaIdx = headers.findIndex(h => h === 'nama_lengkap' || h === 'nama');
-        const kelasIdx = headers.findIndex(h => h === 'kelas' || h === 'class');
-        
-        if (nisIdx === -1) {
-          setImportError('Header "nis" tidak ditemukan pada file Anda.');
-          return;
-        }
-
-        // Prepare raw parsed models
-        const parsedRows: any[] = [];
-        
-        // Header mapping helper
-        const fieldsMapping: Record<string, string> = {
-          nisn: 'nisn',
-          nama_lengkap: 'name',
-          nama: 'name',
-          nama_panggilan: 'nickname',
-          nik: 'nik',
-          jenis_kelamin: 'gender',
-          jk: 'gender',
-          tempat_lahir: 'birthPlace',
-          tanggal_lahir: 'birthDate',
-          no_kk: 'kkNumber',
-          no_akte_kelahiran: 'birthCertNumber',
-          no_hp_siswa: 'phone',
-          alamat_siswa: 'address',
-          tinggal_bersama: 'livingWith',
-          anak_ke: 'childOrder',
-          jumlah_saudara_kandung: 'siblingsCount',
-          jumlah_saudara_tiri: 'stepSiblingsCount',
-          kelas: 'class',
-          link_google_drive: 'googleDriveLink',
-          berkas_google_drive: 'googleDriveLink',
-          google_drive_link: 'googleDriveLink',
-          // Ayah
-          ayah_nama: 'fatherName',
-          ayah_nik: 'fatherNik',
-          ayah_tempat_lahir: 'fatherBirthPlace',
-          ayah_tanggal_lahir: 'fatherBirthDate',
-          ayah_pendidikan: 'fatherEducation',
-          ayah_pekerjaan: 'fatherOccupation',
-          ayah_penghasilan: 'fatherIncome',
-          ayah_alamat: 'fatherAddress',
-          ayah_no_hp: 'fatherPhone',
-          ayah_status: 'fatherStatus',
-          // Ibu
-          ibu_nama: 'motherName',
-          ibu_nik: 'motherNik',
-          ibu_tempat_lahir: 'motherBirthPlace',
-          ibu_tanggal_lahir: 'motherBirthDate',
-          ibu_pendidikan: 'motherEducation',
-          ibu_pekerjaan: 'motherOccupation',
-          ibu_penghasilan: 'motherIncome',
-          ibu_alamat: 'motherAddress',
-          ibu_no_hp: 'motherPhone',
-          ibu_status: 'motherStatus',
-          // Wali
-          wali_nama: 'guardianName',
-          wali_nik: 'guardianNik',
-          wali_tempat_lahir: 'guardianBirthPlace',
-          wali_tanggal_lahir: 'guardianBirthDate',
-          wali_pendidikan: 'guardianEducation',
-          wali_pekerjaan: 'guardianOccupation',
-          wali_penghasilan: 'guardianIncome',
-          wali_alamat: 'guardianAddress',
-          wali_no_hp: 'guardianPhone',
-          wali_status: 'guardianStatus',
-          wali_sama_dengan_ayah: 'guardianIsSameAsFather'
-        };
-
-        for (let i = 1; i < lines.length; i++) {
-          const cells = parseCSVLineRobust(lines[i], delimiter);
-          if (cells.length < headers.length) continue; // Skip malformed rows
-          
-          const rowObj: any = {};
-          headers.forEach((h, hIdx) => {
-            const mappedField = fieldsMapping[h];
-            if (mappedField) {
-              const cleanedVal = clean(cells[hIdx]);
-              if (mappedField === 'guardianIsSameAsFather') {
-                rowObj[mappedField] = (cleanedVal.toLowerCase() === 'ya' || cleanedVal.toLowerCase() === 'true');
-              } else {
-                rowObj[mappedField] = cleanedVal;
-              }
-            }
-          });
-
-          // Extra validation: fallback for standard fields matching current app
-          if (!rowObj.name && namaIdx !== -1) rowObj.name = clean(cells[namaIdx]);
-          if (!rowObj.class && kelasIdx !== -1) rowObj.class = clean(cells[kelasIdx]);
-          if (!rowObj.nis) rowObj.nis = clean(cells[nisIdx]);
-
-          if (rowObj.nis && rowObj.name) {
-            parsedRows.push(rowObj);
-          }
-        }
-
-        if (parsedRows.length === 0) {
-          setImportError('Tidak ada baris data siswa valid yang berhasil diproses.');
-        } else {
-          setPreviewData(parsedRows);
-        }
-
-      } catch (err: any) {
-        setImportError(`Gagal membaca file: ${err.message}`);
+        rawMatrix = lines.map(line => parseCSVLineRobust(line, delimiter).map(clean));
       }
-    };
-    reader.readAsText(file);
+
+      if (rawMatrix.length < 2) {
+        setImportError('File spreadsheet minimal harus berisi header & satu baris data.');
+        return;
+      }
+
+      const headers = rawMatrix[0].map(h => clean(h).toLowerCase());
+
+      // Validate required headers
+      const nisIdx = headers.findIndex(h => h === 'nis');
+      const namaIdx = headers.findIndex(h => h === 'nama_lengkap' || h === 'nama');
+      const kelasIdx = headers.findIndex(h => h === 'kelas' || h === 'class');
+      
+      if (nisIdx === -1) {
+        setImportError('Header "nis" tidak ditemukan pada file Anda.');
+        return;
+      }
+
+      // Prepare raw parsed models
+      const parsedRows: any[] = [];
+      
+      // Header mapping helper
+      const fieldsMapping: Record<string, string> = {
+        nis: 'nis',
+        nisn: 'nisn',
+        nama_lengkap: 'name',
+        nama: 'name',
+        nama_panggilan: 'nickname',
+        nik: 'nik',
+        jenis_kelamin: 'gender',
+        jk: 'gender',
+        tempat_lahir: 'birthPlace',
+        tanggal_lahir: 'birthDate',
+        no_kk: 'kkNumber',
+        no_akte_kelahiran: 'birthCertNumber',
+        no_hp_siswa: 'phone',
+        alamat_siswa: 'address',
+        tinggal_bersama: 'livingWith',
+        anak_ke: 'childOrder',
+        jumlah_saudara_kandung: 'siblingsCount',
+        jumlah_saudara_tiri: 'stepSiblingsCount',
+        kelas: 'class',
+        link_google_drive: 'googleDriveLink',
+        berkas_google_drive: 'googleDriveLink',
+        google_drive_link: 'googleDriveLink',
+        // Ayah
+        ayah_nama: 'fatherName',
+        ayah_nik: 'fatherNik',
+        ayah_tempat_lahir: 'fatherBirthPlace',
+        ayah_tanggal_lahir: 'fatherBirthDate',
+        ayah_pendidikan: 'fatherEducation',
+        ayah_pekerjaan: 'fatherOccupation',
+        ayah_penghasilan: 'fatherIncome',
+        ayah_alamat: 'fatherAddress',
+        ayah_no_hp: 'fatherPhone',
+        ayah_status: 'fatherStatus',
+        // Ibu
+        ibu_nama: 'motherName',
+        ibu_nik: 'motherNik',
+        ibu_tempat_lahir: 'motherBirthPlace',
+        ibu_tanggal_lahir: 'motherBirthDate',
+        ibu_pendidikan: 'motherEducation',
+        ibu_pekerjaan: 'motherOccupation',
+        ibu_penghasilan: 'motherIncome',
+        ibu_alamat: 'motherAddress',
+        ibu_no_hp: 'motherPhone',
+        ibu_status: 'motherStatus',
+        // Wali
+        wali_nama: 'guardianName',
+        wali_nik: 'guardianNik',
+        wali_tempat_lahir: 'guardianBirthPlace',
+        wali_tanggal_lahir: 'guardianBirthDate',
+        wali_pendidikan: 'guardianEducation',
+        wali_pekerjaan: 'guardianOccupation',
+        wali_penghasilan: 'guardianIncome',
+        wali_alamat: 'guardianAddress',
+        wali_no_hp: 'guardianPhone',
+        wali_status: 'guardianStatus',
+        wali_sama_dengan_ayah: 'guardianIsSameAsFather'
+      };
+
+      for (let i = 1; i < rawMatrix.length; i++) {
+        const cells = rawMatrix[i];
+        if (!cells || cells.length === 0) continue;
+        
+        const rowObj: any = {};
+        headers.forEach((h, hIdx) => {
+          const mappedField = fieldsMapping[h];
+          if (mappedField && cells[hIdx] !== undefined) {
+            const cleanedVal = clean(cells[hIdx]);
+            if (mappedField === 'guardianIsSameAsFather') {
+              rowObj[mappedField] = (cleanedVal.toLowerCase() === 'ya' || cleanedVal.toLowerCase() === 'true');
+            } else {
+              rowObj[mappedField] = cleanedVal;
+            }
+          }
+        });
+
+        // Extra validation: fallback for standard fields matching current app
+        if (!rowObj.name && namaIdx !== -1 && cells[namaIdx] !== undefined) rowObj.name = clean(cells[namaIdx]);
+        if (!rowObj.class && kelasIdx !== -1 && cells[kelasIdx] !== undefined) rowObj.class = clean(cells[kelasIdx]);
+        if (!rowObj.nis && nisIdx !== -1 && cells[nisIdx] !== undefined) rowObj.nis = clean(cells[nisIdx]);
+
+        if (rowObj.nis) {
+          parsedRows.push(rowObj);
+        }
+      }
+
+      if (parsedRows.length === 0) {
+        setImportError('Tidak ada baris data siswa valid yang berhasil diproses.');
+      } else {
+        setPreviewData(parsedRows);
+      }
+
+    } catch (err: any) {
+      setImportError(`Gagal membaca file: ${err.message}`);
+    }
   };
 
   // Submit the batch import data to the App backend
@@ -493,20 +647,34 @@ export default function BukuIndukManagement({
               Manajemen buku induk profil lengkap siswa Pasuruan yang terintegrasi langsung dengan akun murid, wali kelas, backup stempel virtual, dan sistem laporan rekapitulasi data periodik.
             </p>
           </div>
-          <div className="flex flex-wrap items-center gap-2.5">
+          <div className="flex flex-wrap items-center gap-2">
             <button
-              onClick={downloadImportTemplate}
-              className="px-3.5 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Unduh contoh template berkas excel/csv"
+              onClick={downloadImportTemplateExcel}
+              className="px-3 py-2 bg-slate-800 border border-slate-700 hover:bg-slate-750 text-slate-200 text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Unduh contoh template berkas Excel (.xlsx) dengan format NISN, NIK, No HP, dan Tanggal Lahir aman"
             >
-              <FileDown size={14} className="text-indigo-400" /> Unduh Template
+              <FileDown size={14} className="text-emerald-400" /> Template Excel (.xlsx)
+            </button>
+            <button
+              onClick={downloadImportTemplateCSV}
+              className="px-3 py-2 bg-slate-800/80 border border-slate-700/80 hover:bg-slate-750 text-slate-300 text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Unduh contoh template berkas CSV (.csv)"
+            >
+              <FileDown size={14} className="text-indigo-400" /> Template CSV
+            </button>
+            <button
+              onClick={exportBukuIndukExcel}
+              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-550 text-white text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Ekspor seluruh database buku induk ke berkas Excel (.xlsx) - Format NISN, NIK 16 digit & tgl lahir terproteksi"
+            >
+              <FileUp size={14} /> Ekspor Excel (.xlsx)
             </button>
             <button
               onClick={exportBukuIndukForUpdate}
               className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-550 text-white text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
-              title="Ekspor seluruh database buku induk siswa Pasuruan ke berkas CSV"
+              title="Ekspor seluruh database buku induk siswa Pasuruan ke berkas CSV (.csv)"
             >
-              <FileUp size={14} /> Ekspor Buku Induk
+              <FileUp size={14} /> Ekspor CSV
             </button>
           </div>
         </div>
@@ -565,14 +733,14 @@ export default function BukuIndukManagement({
             <div className="border border-dashed border-slate-200 hover:border-indigo-500 rounded-xl p-6 text-center transition-all bg-slate-50/50 hover:bg-indigo-50/10 cursor-pointer relative">
               <input
                 type="file"
-                accept=".csv"
+                accept=".xlsx, .xls, .csv"
                 ref={fileInputRef}
                 onChange={handleCSVImportUpload}
                 className="absolute inset-0 opacity-0 cursor-pointer"
               />
-              <FileUp size={30} className="mx-auto text-slate-400 mb-2" />
-              <span className="text-xs font-extrabold text-slate-700 block mb-0.5">Klik untuk Pilih Berkas CSV</span>
-              <span className="text-[9.5px] text-slate-400 font-mono font-medium block">Format: UTF-8 CSV (nis, nama_lengkap, etc)</span>
+              <FileUp size={30} className="mx-auto text-indigo-500 mb-2" />
+              <span className="text-xs font-extrabold text-slate-700 block mb-0.5">Klik untuk Pilih Berkas Excel (.xlsx) / CSV</span>
+              <span className="text-[9.5px] text-slate-400 font-mono font-medium block">Format: .xlsx, .xls, .csv (NIS, NISN, NIK, Tgl Lahir terproteksi)</span>
             </div>
 
             {/* Error alerts */}

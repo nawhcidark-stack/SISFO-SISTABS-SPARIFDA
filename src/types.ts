@@ -168,6 +168,7 @@ export interface AttendanceLog {
   id: string;
   studentId: string;
   studentName?: string;
+  className?: string;
   date: string; // "YYYY-MM-DD"
   status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat';
   notes?: string;

@@ -33,6 +33,7 @@ import {
   ArrowRight,
   TrendingUp,
   FileText,
+  Trash2,
   Check,
   Filter
 } from "lucide-react";
@@ -220,6 +221,49 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       alert("Gagal terhubung ke server.");
     } finally {
       setSubmittingReduction(false);
+    }
+  };
+
+  const handleDeleteStudentAttendance = async (studentId: string, studentName: string) => {
+    if (!window.confirm(`Hapus seluruh rekap absensi untuk siswa "${studentName}"?`)) return;
+    try {
+      const res = await fetch(`/api/attendance/student/${encodeURIComponent(studentId)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        await fetch(`/api/attendance/student/${encodeURIComponent(studentName)}`, {
+          method: 'DELETE'
+        });
+        setSuccessMsg(`Berhasil menghapus seluruh rekap absensi siswa ${studentName}.`);
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchAllData();
+        onRefresh();
+      } else {
+        alert("Gagal menghapus data absensi siswa.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan sistem saat menghapus absensi.");
+    }
+  };
+
+  const handleDeleteSingleAttendance = async (id: string, studentName: string, date: string) => {
+    if (!window.confirm(`Hapus catatan presensi ${studentName} pada tanggal ${date}?`)) return;
+    try {
+      const res = await fetch(`/api/attendance/${encodeURIComponent(id)}`, {
+        method: 'DELETE'
+      });
+      if (res.ok) {
+        setSuccessMsg(`Berhasil menghapus catatan presensi ${studentName} tanggal ${date}.`);
+        setTimeout(() => setSuccessMsg(null), 4000);
+        fetchAllData();
+        onRefresh();
+      } else {
+        alert("Gagal menghapus catatan presensi.");
+      }
+    } catch (err) {
+      console.error(err);
+      alert("Terjadi kesalahan sistem saat menghapus presensi.");
     }
   };
 
@@ -531,29 +575,34 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   };
 
   // Helper function to resolve student name and class from allStudents, teachingJournals, logs, or infractions
-  const getStudentInfo = (studentId: string) => {
-    if (!studentId) return { name: "Siswa Tidak Dikenal", className: "-" };
+  const getStudentInfo = (studentId: string, fallbackName?: string) => {
+    if (!studentId && !fallbackName) return { name: "Siswa Tidak Dikenal", className: "-" };
 
-    const cleanId = String(studentId).trim();
+    const cleanId = String(studentId || "").trim();
     const lowerId = cleanId.toLowerCase();
+    const cleanFallback = String(fallbackName || "").trim();
+    const lowerFallback = cleanFallback.toLowerCase();
 
-    // 1. Check allStudents by id (exact, trimmed, lowercase) or NIS or NISN
+    // 1. Check allStudents by id, nis, nisn, or name
     const s = allStudents.find(st => 
-      st.id === cleanId || 
-      (st.id && String(st.id).trim().toLowerCase() === lowerId) ||
-      (st.nis && String(st.nis).trim().toLowerCase() === lowerId) ||
-      (st.nisn && String(st.nisn).trim().toLowerCase() === lowerId)
+      (cleanId && (st.id === cleanId || String(st.id).trim().toLowerCase() === lowerId || String(st.nis || "").trim().toLowerCase() === lowerId || String(st.nisn || "").trim().toLowerCase() === lowerId)) ||
+      (lowerFallback && st.name && st.name.trim().toLowerCase() === lowerFallback)
     );
     if (s && s.name && s.name.trim()) {
       return { name: s.name.trim(), className: s.class || "7-A" };
     }
 
-    // 2. Check teachingJournals attendance array
+    // 2. If cleanFallback is valid, return cleanFallback
+    if (cleanFallback && !cleanFallback.startsWith("Siswa (std-")) {
+      return { name: cleanFallback, className: "7-A" };
+    }
+
+    // 3. Check teachingJournals attendance array
     for (const j of teachingJournals) {
       if (Array.isArray(j.attendance)) {
         const foundAtt = j.attendance.find((att: any) => 
-          att.studentId === cleanId ||
-          (att.studentId && String(att.studentId).trim().toLowerCase() === lowerId)
+          (cleanId && (att.studentId === cleanId || String(att.studentId).trim().toLowerCase() === lowerId)) ||
+          (lowerFallback && att.studentName && att.studentName.trim().toLowerCase() === lowerFallback)
         );
         if (foundAtt && foundAtt.studentName && foundAtt.studentName.trim() && !foundAtt.studentName.startsWith("Siswa (std-")) {
           return { name: foundAtt.studentName.trim(), className: j.className || "7-A" };
@@ -561,35 +610,72 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       }
     }
 
-    // 3. Check attendance array itself if entry has studentName
+    // 4. Check attendance array itself if entry has studentName
     const foundA = attendance.find((a: any) => 
-      (a.studentId === cleanId || (a.studentId && String(a.studentId).trim().toLowerCase() === lowerId)) &&
+      ((cleanId && (a.studentId === cleanId || String(a.studentId).trim().toLowerCase() === lowerId)) ||
+       (lowerFallback && a.studentName && a.studentName.trim().toLowerCase() === lowerFallback)) &&
       (a as any).studentName && (a as any).studentName.trim() && !(a as any).studentName.startsWith("Siswa (std-")
     );
     if (foundA && (foundA as any).studentName) {
       return { name: (foundA as any).studentName.trim(), className: (foundA as any).className || "7-A" };
     }
 
-    // 4. Check counseling logs (logs)
+    // 5. Check counseling logs (logs)
     const foundC = logs.find(l => 
-      l.studentId === cleanId || 
-      (l.studentId && String(l.studentId).trim().toLowerCase() === lowerId)
+      (cleanId && (l.studentId === cleanId || String(l.studentId).trim().toLowerCase() === lowerId)) ||
+      (lowerFallback && l.studentName && l.studentName.trim().toLowerCase() === lowerFallback)
     );
     if (foundC && foundC.studentName && foundC.studentName.trim() && !foundC.studentName.startsWith("Siswa (std-")) {
       return { name: foundC.studentName.trim(), className: foundC.className || "7-A" };
     }
 
-    // 5. Check infraction logs (infractions)
+    // 6. Check infraction logs (infractions)
     const foundI = infractions.find(i => 
-      i.studentId === cleanId || 
-      (i.studentId && String(i.studentId).trim().toLowerCase() === lowerId)
+      (cleanId && (i.studentId === cleanId || String(i.studentId).trim().toLowerCase() === lowerId)) ||
+      (lowerFallback && i.studentName && i.studentName.trim().toLowerCase() === lowerFallback)
     );
     if (foundI && foundI.studentName && foundI.studentName.trim() && !foundI.studentName.startsWith("Siswa (std-")) {
       return { name: foundI.studentName.trim(), className: foundI.className || "7-A" };
     }
 
-    return { name: `Siswa (${studentId})`, className: "7-A" };
+    return { name: cleanFallback || `Siswa (${studentId})`, className: "7-A" };
   };
+
+  // Unified attendance list combining /api/attendance and teachingJournals attendance
+  const allAttendance = useMemo(() => {
+    const list: AttendanceLog[] = [...attendance];
+    const existingIds = new Set(list.map(a => a.id));
+
+    teachingJournals.forEach(j => {
+      if (Array.isArray(j.attendance)) {
+        j.attendance.forEach((att: any, idx: number) => {
+          const generatedId = att.id || `tj-att-${j.id}-${att.studentId || idx}`;
+          if (!existingIds.has(generatedId)) {
+            const duplicate = list.find(a => 
+              ((att.studentId && a.studentId === att.studentId) || 
+               (a.studentName && att.studentName && a.studentName.toLowerCase().trim() === att.studentName.toLowerCase().trim())) && 
+              a.date === j.date
+            );
+            if (!duplicate) {
+              list.push({
+                id: generatedId,
+                studentId: att.studentId || "",
+                studentName: att.studentName || "",
+                className: j.className || "",
+                date: j.date || "",
+                status: att.status || "Hadir",
+                notes: att.notes || (j.subject ? `Jurnal Mapel: ${j.subject}` : ""),
+                subjectNotes: []
+              });
+              existingIds.add(generatedId);
+            }
+          }
+        });
+      }
+    });
+
+    return list;
+  }, [attendance, teachingJournals]);
 
   // Get distinct classes from available logs for filters
   const uniqueClasses = useMemo(() => {
@@ -600,9 +686,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     logs.forEach(l => {
       if (l.className) list.add(l.className);
     });
-    attendance.forEach(a => {
-      const info = getStudentInfo(a.studentId);
-      if (info.className) list.add(info.className);
+    allAttendance.forEach(a => {
+      const info = getStudentInfo(a.studentId, a.studentName);
+      if (info.className && info.className !== "-") list.add(info.className);
     });
     infractions.forEach(i => {
       if (i.className) list.add(i.className);
@@ -611,7 +697,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       if (j.className) list.add(j.className);
     });
     return Array.from(list).sort();
-  }, [allStudents, logs, attendance, infractions, teachingJournals]);
+  }, [allStudents, logs, allAttendance, infractions, teachingJournals]);
 
   // Extract unique subject teachers for BK Journal Monitoring
   const uniqueSubjectTeacherNames = useMemo(() => {
@@ -689,7 +775,23 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const aggregatedAttendance = useMemo(() => {
     const studentMap: { [key: string]: { id: string; name: string; className: string; hadir: number; sakit: number; izin: number; alpa: number; terlambat: number; total: number } } = {};
 
-    attendance.forEach(log => {
+    // 1. Seed with all active master students
+    allStudents.forEach(st => {
+      studentMap[st.id] = {
+        id: st.id,
+        name: st.name,
+        className: st.class || "7-A",
+        hadir: 0,
+        sakit: 0,
+        izin: 0,
+        alpa: 0,
+        terlambat: 0,
+        total: 0
+      };
+    });
+
+    // 2. Process all attendance records
+    allAttendance.forEach(log => {
       // Filter by date range if provided
       if (attendanceStartDate || attendanceEndDate) {
         const d = log.date ? log.date.substring(0, 10) : "";
@@ -697,12 +799,20 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         if (attendanceEndDate && d > attendanceEndDate) return;
       }
 
-      const key = `${log.studentId}`;
-      if (!studentMap[key]) {
-        const info = getStudentInfo(log.studentId);
+      let key = log.studentId;
+      if (!key || !studentMap[key]) {
+        const match = allStudents.find(s => 
+          log.studentName && s.name && s.name.trim().toLowerCase() === log.studentName.trim().toLowerCase()
+        );
+        if (match) {
+          key = match.id;
+        }
+      }
 
+      if (!studentMap[key]) {
+        const info = getStudentInfo(log.studentId, log.studentName);
         studentMap[key] = {
-          id: log.studentId,
+          id: log.studentId || key || `std-unmapped-${Math.random()}`,
           name: info.name,
           className: info.className,
           hadir: 0,
@@ -712,12 +822,6 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           terlambat: 0,
           total: 0
         };
-      } else if (studentMap[key].name.startsWith("Siswa (std-")) {
-        const info = getStudentInfo(log.studentId);
-        if (!info.name.startsWith("Siswa (std-")) {
-          studentMap[key].name = info.name;
-          if (info.className) studentMap[key].className = info.className;
-        }
       }
 
       const status = log.status;
@@ -731,7 +835,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     });
 
     return Object.values(studentMap);
-  }, [attendance, logs, infractions, allStudents, teachingJournals, attendanceStartDate, attendanceEndDate]);
+  }, [allStudents, allAttendance, attendanceStartDate, attendanceEndDate]);
 
   // Aggregate Infractions (Leaderboard points)
   const aggregatedInfractions = useMemo(() => {
@@ -827,10 +931,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
   // Attendance filter mapping
   const filteredAttendanceDiary = useMemo(() => {
-    return attendance.filter(log => {
-      const info = getStudentInfo(log.studentId);
+    return allAttendance.filter(log => {
+      const info = getStudentInfo(log.studentId, log.studentName);
       const name = info.name;
-      const cName = info.className;
+      const cName = info.className || log.className || "7-A";
 
       const searchMatch = 
         name.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -852,7 +956,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
       return searchMatch && classMatch && statusMatch;
     });
-  }, [attendance, logs, infractions, allStudents, teachingJournals, searchQuery, classFilter, attendanceStatusFilter, attendanceStartDate, attendanceEndDate]);
+  }, [allAttendance, searchQuery, classFilter, attendanceStatusFilter, attendanceStartDate, attendanceEndDate]);
 
   const filteredAttendanceAggregate = useMemo(() => {
     return aggregatedAttendance.filter(st => {
@@ -2244,16 +2348,26 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                               {st.total > 0 ? Math.round((st.hadir / st.total) * 100) : 0}%
                             </td>
                             <td className="py-3 px-4 text-center">
-                              {st.alpa > 0 || st.terlambat > 0 ? (
+                              <div className="flex items-center justify-center gap-1.5">
+                                {st.alpa > 0 || st.terlambat > 0 ? (
+                                  <button
+                                    onClick={() => handleInitiateCounseling(st.name, st.className, `${st.alpa} hari ALPA & ${st.terlambat} kali Terlambat`)}
+                                    className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-705 text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors cursor-pointer"
+                                  >
+                                    Inisiasi BK 🧠
+                                  </button>
+                                ) : (
+                                  <span className="text-[10px] text-emerald-600 font-bold">Baik/Tertib ✅</span>
+                                )}
                                 <button
-                                  onClick={() => handleInitiateCounseling(st.name, st.className, `${st.alpa} hari ALPA & ${st.terlambat} kali Terlambat`)}
-                                  className="px-2 py-1 bg-indigo-50 border border-indigo-200 hover:bg-indigo-100 text-indigo-705 text-[10px] uppercase font-black tracking-wider rounded-lg transition-colors cursor-pointer"
+                                  type="button"
+                                  onClick={() => handleDeleteStudentAttendance(st.id, st.name)}
+                                  title={`Hapus seluruh rekap absensi ${st.name}`}
+                                  className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
                                 >
-                                  Inisiasi BK 🧠
+                                  <Trash2 size={13} />
                                 </button>
-                              ) : (
-                                <span className="text-[10px] text-emerald-600 font-bold">Baik/Tertib ✅</span>
-                              )}
+                              </div>
                             </td>
                           </tr>
                         );
@@ -2276,13 +2390,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         <th className="py-3 px-4 font-black text-center">Kelas</th>
                         <th className="py-3 px-4 font-black text-center">Status</th>
                         <th className="py-3 px-4 font-black">Catatan Keterangan Sakit/Alpa</th>
+                        <th className="py-3 px-3 font-black text-center">Aksi</th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
                       {filteredAttendanceDiary.map((a, i) => {
-                        const info = getStudentInfo(a.studentId);
+                        const info = getStudentInfo(a.studentId, a.studentName);
                         const name = info.name;
-                        const cName = info.className;
+                        const cName = info.className || a.className || "7-A";
 
                         return (
                           <tr key={i} className="hover:bg-slate-50 bg-white">
@@ -2301,12 +2416,22 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                               </span>
                             </td>
                             <td className="py-3 px-4 text-slate-500 italic text-[11px] font-medium">"{a.notes || "Tidak ada rincian daktili kelas"}"</td>
+                            <td className="py-3 px-3 text-center">
+                              <button
+                                type="button"
+                                onClick={() => handleDeleteSingleAttendance(a.id, name, a.date)}
+                                title={`Hapus presensi tanggal ${a.date}`}
+                                className="p-1 text-rose-500 hover:text-rose-700 hover:bg-rose-50 rounded-lg transition-colors cursor-pointer"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
                       {filteredAttendanceDiary.length === 0 && (
                         <tr>
-                          <td colSpan={5} className="py-8 text-center text-slate-400 font-medium italic">Belum ada riwayat presensi terekam saat ini.</td>
+                          <td colSpan={6} className="py-8 text-center text-slate-400 font-medium italic">Belum ada riwayat presensi terekam saat ini.</td>
                         </tr>
                       )}
                     </tbody>

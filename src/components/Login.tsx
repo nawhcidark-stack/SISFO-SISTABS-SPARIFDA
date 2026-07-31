@@ -6,7 +6,7 @@ import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, Smartphone
 interface LoginProps {
   students: Student[];
   onLoginSuccess: (
-    role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk', 
+    role: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk' | 'waka_kurikulum', 
     student: Student | null, 
     homeroom: HomeroomTeacher | null, 
     subjectTeacher?: SubjectTeacher | null
@@ -129,6 +129,25 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
           const errData = await res.json();
           setIsValidating(false);
           setErrorMsg(errData.error || 'Password Guru BK salah.');
+        }
+        return;
+      }
+
+      if (cleanUser === 'kurikulum' || cleanUser === 'waka_kurikulum' || cleanUser === 'kurikulum123') {
+        const res = await fetch('/api/curriculum/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_kurikulum', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Password Waka Kurikulum salah.');
         }
         return;
       }

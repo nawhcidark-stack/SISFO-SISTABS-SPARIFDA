@@ -690,11 +690,17 @@ export default function HomeroomPanel({
   };
 
   const [selectedDate, setSelectedDate] = useState(todayStr);
-  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'rapor_merdeka' | 'pkg' | 'buku_induk'>('record');
+  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'rapor_merdeka' | 'pkg' | 'buku_induk' | 'kokurikuler'>('record');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
   const [selectedReportStudentId, setSelectedReportStudentId] = useState<string | null>(null);
+
+  // Kokurikuler states
+  const [kokurikulerSemester, setKokurikulerSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
+  const [kokurikulerYear, setKokurikulerYear] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
+  const [kokurikulerScores, setKokurikulerScores] = useState<Record<string, string>>({});
+  const [isSavingKokurikuler, setIsSavingKokurikuler] = useState<boolean>(false);
 
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
@@ -1835,7 +1841,7 @@ export default function HomeroomPanel({
       fetchCounseling();
       fetchAnnouncements();
       fetchMeetings();
-    } else if (activeSubTab === 'rapor_merdeka') {
+    } else if (activeSubTab === 'rapor_merdeka' || activeSubTab === 'kokurikuler') {
       fetchMerdekaAssessments();
     } else if (activeSubTab === 'profile') {
       fetchPrincipalWorkPrograms();
@@ -1843,6 +1849,55 @@ export default function HomeroomPanel({
       fetchEvaluations();
     }
   }, [activeSubTab, currentTeacher.className]);
+
+  useEffect(() => {
+    if ((activeSubTab === 'kokurikuler' || activeSubTab === 'rapor_merdeka') && classStudents.length > 0) {
+      const initialMap: Record<string, string> = {};
+      classStudents.forEach(st => {
+        const match = merdekaAssessments.find(a => 
+          a.studentId === st.id && 
+          a.semester === kokurikulerSemester && 
+          a.academicYear === kokurikulerYear
+        );
+        if (match && match.nilaiKokurikuler !== undefined && match.nilaiKokurikuler !== null) {
+          initialMap[st.id] = String(match.nilaiKokurikuler);
+        } else {
+          initialMap[st.id] = initialMap[st.id] || "0";
+        }
+      });
+      setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
+    }
+  }, [activeSubTab, merdekaAssessments, classStudents, kokurikulerSemester, kokurikulerYear]);
+
+  const handleSaveKokurikulerBatch = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingKokurikuler(true);
+    setNotifMsg(null);
+    try {
+      const res = await fetch('/api/kokurikuler/batch-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          className: currentTeacher.className,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          scores: kokurikulerScores
+        })
+      });
+      if (res.ok) {
+        setNotifMsg({ type: 'success', text: '🎉 Nilai Kokurikuler berhasil disimpan & otomatis terhubung ke perhitungan Guru Mapel!' });
+        setShowSuccessCheck(true);
+        fetchMerdekaAssessments();
+      } else {
+        const d = await res.json();
+        setNotifMsg({ type: 'error', text: d.error || 'Gagal menyimpan nilai kokurikuler.' });
+      }
+    } catch (err) {
+      setNotifMsg({ type: 'error', text: 'Terjadi kesalahan koneksi ke server.' });
+    } finally {
+      setIsSavingKokurikuler(false);
+    }
+  };
 
   useEffect(() => {
     if (classStudents.length > 0 && !selectedReportStudentId) {
@@ -2592,6 +2647,20 @@ Wassalamualaikum Wr. Wb.
               >
                 <span className="text-sm">🎓</span>
                 <span className="hidden md:inline">Rapor Merdeka</span>
+              </button>
+
+              <button
+                _id="tab-btn-kokurikuler"
+                onClick={() => setActiveSubTab('kokurikuler')}
+                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
+                  activeSubTab === 'kokurikuler'
+                    ? 'bg-purple-600 text-white shadow-md'
+                    : 'text-purple-700 bg-purple-50 hover:bg-purple-100'
+                }`}
+                title="Input Nilai Kokurikuler Kelas Binaan"
+              >
+                <span className="text-sm">⭐</span>
+                <span className="hidden md:inline">Nilai Kokurikuler</span>
               </button>
 
               <button
@@ -6155,6 +6224,140 @@ Wassalamualaikum Wr. Wb.
                   )}
                 </div>
               </div>
+            </div>
+          )}
+
+          {activeSubTab === 'kokurikuler' && (
+            <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
+              {/* Header Card */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-600 to-indigo-600" />
+                <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Khusus Wali Kelas ({currentTeacher.className})</span>
+                <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
+                  ⭐ Input Nilai Kokurikuler Siswa
+                </h2>
+                <p className="text-slate-500 text-[11px] mt-0.5">
+                  Input 1 kolom Nilai Kokurikuler per siswa. Nilai ini otomatis terhubung secara real-time ke akun Guru Mata Pelajaran & Waka Kurikulum untuk kalkulasi Nilai Akhir Tiap Mapel.
+                </p>
+
+                {/* Filter Row */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Kelas Binaan</label>
+                    <input
+                      type="text"
+                      disabled
+                      value={currentTeacher.className}
+                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 cursor-not-allowed"
+                    />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Semester</label>
+                    <select
+                      value={kokurikulerSemester}
+                      onChange={(e) => setKokurikulerSemester(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
+                    >
+                      <option value="Ganjil">Semester Ganjil</option>
+                      <option value="Genap">Semester Genap</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Tahun Ajaran</label>
+                    <select
+                      value={kokurikulerYear}
+                      onChange={(e) => setKokurikulerYear(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
+                    >
+                      {Array.from(new Set([
+                        ...(schoolIdentity?.activeAcademicYear ? [schoolIdentity.activeAcademicYear] : []),
+                        '2025/2026',
+                        '2024/2025',
+                        '2023/2024'
+                      ])).map(year => (
+                        <option key={year} value={year}>{year}</option>
+                      ))}
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Input Form Table */}
+              <form onSubmit={handleSaveKokurikulerBatch} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">Daftar Nilai Kokurikuler Siswa ({classStudents.length} Siswa)</h3>
+                    <p className="text-slate-400 text-[10.5px]">Nilai antara 0 hingga 100.</p>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={isSavingKokurikuler || classStudents.length === 0}
+                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer self-end sm:self-auto"
+                  >
+                    {isSavingKokurikuler ? (
+                      <>
+                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        <span>Menyimpan...</span>
+                      </>
+                    ) : (
+                      <>
+                        <span>💾 Simpan Semua Nilai Kokurikuler</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+
+                {classStudents.length === 0 ? (
+                  <div className="py-12 text-center text-slate-400 font-semibold text-xs">
+                    Tidak ada siswa terdaftar pada kelas {currentTeacher.className}.
+                  </div>
+                ) : (
+                  <div className="overflow-x-auto border border-slate-100 rounded-2xl">
+                    <table className="w-full text-left text-xs border-collapse">
+                      <thead>
+                        <tr className="bg-slate-50 text-slate-500 font-black border-b border-slate-200/80 uppercase text-[10px] tracking-wider">
+                          <th className="py-3 px-4 w-12 text-center">No</th>
+                          <th className="py-3 px-4 w-28">NIS</th>
+                          <th className="py-3 px-4">Nama Siswa</th>
+                          <th className="py-3 px-4 w-44 text-center">Nilai Kokurikuler (0-100)</th>
+                        </tr>
+                      </thead>
+                      <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
+                        {classStudents.map((st, idx) => {
+                          const val = kokurikulerScores[st.id] ?? "0";
+                          return (
+                            <tr key={st.id} className="hover:bg-purple-50/30 transition-colors">
+                              <td className="py-2.5 px-4 text-center font-mono text-[11px] text-slate-400">{idx + 1}</td>
+                              <td className="py-2.5 px-4 font-mono font-bold text-slate-600">{st.nis || st.id}</td>
+                              <td className="py-2.5 px-4 font-bold text-slate-900">{st.name}</td>
+                              <td className="py-2.5 px-4 text-center">
+                                <input
+                                  type="number"
+                                  min={0}
+                                  max={100}
+                                  value={val}
+                                  onChange={(e) => {
+                                    const numStr = e.target.value;
+                                    setKokurikulerScores(prev => ({
+                                      ...prev,
+                                      [st.id]: numStr
+                                    }));
+                                  }}
+                                  className="w-24 px-3 py-1.5 text-center font-extrabold text-slate-900 bg-purple-50/50 border border-purple-200 focus:border-purple-600 focus:bg-white rounded-xl text-xs outline-none transition-all"
+                                  placeholder="0-100"
+                                />
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </form>
             </div>
           )}
         </div>

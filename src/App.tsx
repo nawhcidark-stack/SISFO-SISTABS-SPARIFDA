@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill } from './types';
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill, MerdekaAssessment } from './types';
 import StudentPanel from './components/StudentPanel';
 import AdminPanel from './components/AdminPanel';
 import HomeroomPanel from './components/HomeroomPanel';
@@ -9,6 +9,7 @@ import TreasurerPanel from './components/TreasurerPanel';
 import PrincipalPanel from './components/PrincipalPanel';
 import WakaSarprasPanel from './components/WakaSarprasPanel';
 import CounselorPanel from './components/CounselorPanel';
+import WakaKurikulumPanel from './components/WakaKurikulumPanel';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
@@ -46,7 +47,7 @@ export default function App() {
   const [isLoggedIn, setIsLoggedIn] = useState<boolean>(() => {
     return localStorage.getItem('smp_maarif_logged_in') === 'true';
   });
-  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk'>(() => {
+  const [role, setRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk' | 'waka_kurikulum'>(() => {
     return (localStorage.getItem('smp_maarif_role') as any) || 'student';
   });
   const [loggedStudentId, setLoggedStudentId] = useState<string | null>(() => {
@@ -111,6 +112,7 @@ export default function App() {
   const [attendanceList, setAttendanceList] = useState<AttendanceLog[]>([]);
   const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>([]);
   const [subjectTeachersList, setSubjectTeachersList] = useState<SubjectTeacher[]>([]);
+  const [merdekaAssessmentsList, setMerdekaAssessmentsList] = useState<MerdekaAssessment[]>([]);
   
   // School Identity state
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity>({
@@ -537,6 +539,17 @@ export default function App() {
         console.error("Gagal memuat guru mapel", e);
       }
 
+      // Load Merdeka Assessments
+      try {
+        const maRes = await fetchNoCache('/api/merdeka-assessments');
+        if (maRes.ok) {
+          const maData = await maRes.json();
+          setMerdekaAssessmentsList(maData);
+        }
+      } catch (e) {
+        console.error("Gagal memuat penilaian merdeka", e);
+      }
+
       await fetchMiscBills();
       setIsLoading(false);
     } catch (err) {
@@ -610,7 +623,7 @@ export default function App() {
   };
 
   const handleLoginSuccess = (
-    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk', 
+    userRole: 'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk' | 'waka_kurikulum', 
     student: Student | null, 
     homeroom: HomeroomTeacher | null,
     subjectTeacher?: SubjectTeacher | null
@@ -2335,6 +2348,15 @@ export default function App() {
             onLogout={handleLogout}
             onRefresh={handleReload}
             onUpdateStudent={handleUpdateStudent}
+          />
+        ) : role === 'waka_kurikulum' ? (
+          <WakaKurikulumPanel
+            students={studentsList}
+            subjectTeachers={subjectTeachersList}
+            homerooms={homeroomsList}
+            merdekaAssessments={merdekaAssessmentsList}
+            schoolIdentity={schoolIdentity}
+            onRefreshData={handleReload}
           />
         ) : (
           <AdminPanel

@@ -532,6 +532,11 @@ let bkConfig = {
   password: "bk123"
 };
 
+// Waka Kurikulum Credentials Config
+let curriculumConfig = {
+  password: "kurikulum123"
+};
+
 // Admin Credentials Config
 let adminConfig = {
   password: "admin123"
@@ -841,6 +846,7 @@ async function saveStateToFirestore() {
     await saveConfig("principalConfig", principalConfig);
     await saveConfig("sarprasConfig", sarprasConfig);
     await saveConfig("bkConfig", bkConfig);
+    await saveConfig("curriculumConfig", curriculumConfig);
     await saveConfig("adminConfig", adminConfig);
     await saveConfig("salaryConfig", salaryConfig);
     await saveConfig("backupConfig", backupConfig);
@@ -1230,6 +1236,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
         else if (id === "principalConfig") Object.assign(principalConfig, cleaned);
         else if (id === "sarprasConfig") Object.assign(sarprasConfig, cleaned);
         else if (id === "bkConfig") Object.assign(bkConfig, cleaned);
+        else if (id === "curriculumConfig") Object.assign(curriculumConfig, cleaned);
         else if (id === "adminConfig") Object.assign(adminConfig, cleaned);
         else if (id === "salaryConfig") Object.assign(salaryConfig, cleaned);
         else if (id === "backupConfig") Object.assign(backupConfig, cleaned);
@@ -1395,6 +1402,7 @@ function saveState() {
       sarprasProposals,
       sarprasLoans,
       bkConfig,
+      curriculumConfig,
       adminConfig,
       backupConfig,
       databaseBackups
@@ -1586,6 +1594,7 @@ function loadState() {
       if (data.principalConfig) Object.assign(principalConfig, data.principalConfig);
       if (data.sarprasConfig) Object.assign(sarprasConfig, data.sarprasConfig);
       if (data.bkConfig) Object.assign(bkConfig, data.bkConfig);
+      if (data.curriculumConfig) Object.assign(curriculumConfig, data.curriculumConfig);
       if (data.adminConfig) Object.assign(adminConfig, data.adminConfig);
       if (data.backupConfig) Object.assign(backupConfig, data.backupConfig);
       if (Array.isArray(data.databaseBackups)) {
@@ -2956,6 +2965,79 @@ async function startServer() {
     res.json({ success: true, message: "Sandi Guru BK sukses diperbarui oleh Admin." });
   });
 
+  // Waka Kurikulum Credentials Validation Endpoints
+  app.post("/api/curriculum/login", (req, res) => {
+    const { username, password } = req.body;
+    if (!username || !password) {
+      return res.status(400).json({ error: "Username dan password wajib diisi." });
+    }
+    const cleanUser = username.trim().toLowerCase();
+    if ((cleanUser === "kurikulum" || cleanUser === "waka_kurikulum" || cleanUser === "waka") && password === curriculumConfig.password) {
+      res.json({ success: true, message: "Login Waka Kurikulum berhasil." });
+    } else {
+      res.status(401).json({ error: "Password Waka Kurikulum salah. Coba periksa kembali password Anda atau hubungi admin." });
+    }
+  });
+
+  app.post("/api/curriculum/change-password", (req, res) => {
+    const { oldPassword, newPassword } = req.body;
+    if (!newPassword) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    if (oldPassword !== curriculumConfig.password) {
+      return res.status(400).json({ error: "Kata sandi lama yang Anda masukkan tidak sesuai." });
+    }
+    curriculumConfig.password = newPassword.trim();
+    saveState();
+
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-curriculum-${Date.now()}`,
+      title: "Sandi Akun Waka Kurikulum Berubah 🔑",
+      message: `Password akun Waka Kurikulum baru saja diperbarui melalui portal kurikulum.`,
+      type: "warning",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Kata sandi Waka Kurikulum sukses disimpan." });
+  });
+
+  app.post("/api/admin/curriculum/reset-password", (req, res) => {
+    curriculumConfig.password = "kurikulum123";
+    saveState();
+
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-curriculum-reset-${Date.now()}`,
+      title: "Sandi Waka Kurikulum Direset 🔒",
+      message: `Akun Waka Kurikulum disetel ulang ke sandi bawaan (kurikulum123) oleh Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Password Waka Kurikulum berhasil di-reset ke sandi bawaan: kurikulum123" });
+  });
+
+  app.post("/api/admin/curriculum/change-password", (req, res) => {
+    const { newPassword } = req.body;
+    if (!newPassword || !newPassword.trim()) {
+      return res.status(400).json({ error: "Sandi baru wajib diisi." });
+    }
+    curriculumConfig.password = newPassword.trim();
+    saveState();
+
+    const notification: RealtimeNotification = {
+      id: `notif-pwd-curriculum-admin-${Date.now()}`,
+      title: "Sandi Waka Kurikulum Diubah Admin 🔑",
+      message: `Password akun Waka Kurikulum telah disetel oleh Kepala/Staf Administrasi.`,
+      type: "info",
+      createdAt: new Date().toISOString()
+    };
+    broadcastNotification(notification);
+
+    res.json({ success: true, message: "Sandi Waka Kurikulum sukses diperbarui oleh Admin." });
+  });
+
   // Administrator Utama Credentials Validation Endpoints
   app.post("/api/admin/login", (req, res) => {
     const { username, password } = req.body;
@@ -3368,7 +3450,7 @@ async function startServer() {
       const nameToIdMap = new Map<string, string>();
       const userToIdMap = new Map<string, string>();
 
-      [...subjectTeachers, ...homeroomTeachers, ...teachers].forEach(t => {
+      [...subjectTeachers, ...homeroomTeachers].forEach(t => {
         if (t.name && t.id) nameToIdMap.set(t.name.trim().toLowerCase(), t.id);
         if ((t as any).username && t.id) userToIdMap.set((t as any).username.trim().toLowerCase(), t.id);
       });
@@ -3949,7 +4031,66 @@ async function startServer() {
     res.json({ success: true, classMeetingLogs });
   });
 
-  // --- PENILAIAN KURIKULUM MERDEKA ENDPOINTS ---
+  // --- PENILAIAN KURIKULUM MERDEKA ENDPOINTS & FORMULAS ---
+  function parseVal(v: any): number | null {
+    if (v === undefined || v === null || v === "") return null;
+    const n = Number(v);
+    return isNaN(n) ? null : n;
+  }
+
+  function calcTpScore(tugas1: any, tugas2: any, uh: any): number | null {
+    const t1 = parseVal(tugas1);
+    const t2 = parseVal(tugas2);
+    const u = parseVal(uh);
+
+    const tList = [t1, t2].filter((x): x is number => x !== null);
+    if (tList.length === 0 && u === null) return null;
+
+    const avgTugas = tList.length > 0 ? (tList.reduce((a, b) => a + b, 0) / tList.length) : null;
+
+    if (avgTugas !== null && u !== null) {
+      return Math.round((avgTugas * 0.6) + (u * 0.4));
+    } else if (avgTugas !== null) {
+      return Math.round(avgTugas);
+    } else if (u !== null) {
+      return Math.round(u);
+    }
+    return null;
+  }
+
+  function recalculateAssessmentScores(ass: MerdekaAssessment) {
+    const tp1 = calcTpScore(ass.tp1Tugas1, ass.tp1Tugas2, ass.tp1Uh);
+    ass.nilaiTp1 = tp1 !== null ? tp1 : (ass.tp1Grade !== undefined ? Number(ass.tp1Grade) : undefined);
+
+    const tp2 = calcTpScore(ass.tp2Tugas1, ass.tp2Tugas2, ass.tp2Uh);
+    ass.nilaiTp2 = tp2 !== null ? tp2 : (ass.tp2Grade !== undefined ? Number(ass.tp2Grade) : undefined);
+
+    const tp3 = calcTpScore(ass.tp3Tugas1, ass.tp3Tugas2, ass.tp3Uh);
+    ass.nilaiTp3 = tp3 !== null ? tp3 : (ass.tp3Grade !== undefined ? Number(ass.tp3Grade) : undefined);
+
+    const tp4 = calcTpScore(ass.tp4Tugas1, ass.tp4Tugas2, ass.tp4Uh);
+    ass.nilaiTp4 = tp4 !== null ? tp4 : (ass.tp4Grade !== undefined ? Number(ass.tp4Grade) : undefined);
+
+    const validTps = [ass.nilaiTp1, ass.nilaiTp2, ass.nilaiTp3, ass.nilaiTp4].filter((x): x is number => x !== undefined && x !== null && !isNaN(x));
+    const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : 0;
+    ass.nilaiRataTp = avgTp;
+
+    const koku = Number(ass.nilaiKokurikuler) || 0;
+    const pts = Number(ass.nilaiPts) || 0;
+    const pas = Number(ass.nilaiPas) || 0;
+
+    // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 2) + Nilai Kokurikuler + PTS + PAS) / 5
+    const finalMapel = Math.round(((avgTp * 2) + koku + pts + pas) / 5);
+    ass.nilaiAkhirMapel = finalMapel;
+
+    // Fallbacks
+    ass.nilaiFormatif = avgTp;
+    ass.nilaiSumatifLM = pts;
+    ass.nilaiSAS = pas;
+    ass.nilaiRapor = finalMapel;
+    ass.updatedAt = new Date().toISOString();
+  }
+
   app.get("/api/merdeka-assessments", (req, res) => {
     res.json(merdekaAssessments);
   });
@@ -3957,122 +4098,11 @@ async function startServer() {
   app.post("/api/merdeka-assessments", (req, res) => {
     const data = req.body;
     
-    // Support bulk insert (Excel Import) or single insert
-    if (Array.isArray(data)) {
-      const results: MerdekaAssessment[] = [];
-      data.forEach((item: any) => {
-        const {
-          studentId,
-          studentName,
-          className,
-          subject,
-          teacherName,
-          semester,
-          academicYear,
-          tp1Name,
-          tp1Grade,
-          tp2Name,
-          tp2Grade,
-          tp3Name,
-          tp3Grade,
-          tp4Name,
-          tp4Grade,
-          nilaiSumatifLM,
-          nilaiSAS
-        } = item;
+    // Support bulk insert (Excel Import / Batch Save) or single insert
+    const items = Array.isArray(data) ? data : [data];
+    const results: MerdekaAssessment[] = [];
 
-        if (!studentId || !studentName || !className || !subject || !teacherName) {
-          return;
-        }
-
-        const tp1G = Number(tp1Grade) || 0;
-        const tp2G = tp2Grade !== undefined && tp2Grade !== "" ? Number(tp2Grade) : undefined;
-        const tp3G = tp3Grade !== undefined && tp3Grade !== "" ? Number(tp3Grade) : undefined;
-        const tp4G = tp4Grade !== undefined && tp4Grade !== "" ? Number(tp4Grade) : undefined;
-
-        let tpCount = 1;
-        let sumTp = tp1G;
-        if (tp2G !== undefined) {
-          tpCount++;
-          sumTp += tp2G;
-        }
-        if (tp3G !== undefined) {
-          tpCount++;
-          sumTp += tp3G;
-        }
-        if (tp4G !== undefined) {
-          tpCount++;
-          sumTp += tp4G;
-        }
-        const calculatedFormatif = Math.round(sumTp / tpCount);
-
-        const slm = Number(nilaiSumatifLM) || 0;
-        const sas = Number(nilaiSAS) || 0;
-        const calculatedRapor = Math.round((calculatedFormatif + slm + sas) / 3);
-
-        const tps = [{ name: tp1Name, score: tp1G }];
-        if (tp2Name && tp2G !== undefined) tps.push({ name: tp2Name, score: tp2G });
-        if (tp3Name && tp3G !== undefined) tps.push({ name: tp3Name, score: tp3G });
-        if (tp4Name && tp4G !== undefined) tps.push({ name: tp4Name, score: tp4G });
-
-        tps.sort((a, b) => b.score - a.score);
-        const highestTp = tps[0];
-        const lowestTp = tps[tps.length - 1];
-
-        let desc = "";
-        if (highestTp && highestTp.score >= 75) {
-          desc += `Menunjukkan penguasaan sangat baik dalam ${highestTp.name}.`;
-        } else if (highestTp) {
-          desc += `Menunjukkan penguasaan cukup dalam ${highestTp.name}.`;
-        }
-
-        if (lowestTp && lowestTp.score < 70 && lowestTp.name !== highestTp.name) {
-          desc += ` Perlu pendampingan lebih lanjut dalam meningkatkan kompetensi ${lowestTp.name}.`;
-        }
-
-        const existingIdx = merdekaAssessments.findIndex(
-          a => a.studentId === studentId &&
-               a.subject === subject &&
-               a.semester === (semester || "Genap") &&
-               a.academicYear === (academicYear || "2025/2026")
-        );
-
-        const cleanItem: MerdekaAssessment = {
-          id: existingIdx !== -1 ? merdekaAssessments[existingIdx].id : `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
-          studentId,
-          studentName,
-          className,
-          subject,
-          teacherName,
-          semester: semester || "Genap",
-          academicYear: academicYear || "2025/2026",
-          tp1Name,
-          tp1Grade: tp1G,
-          tp2Name: tp2Name || undefined,
-          tp2Grade: tp2G,
-          tp3Name: tp3Name || undefined,
-          tp3Grade: tp3G,
-          tp4Name: tp4Name || undefined,
-          tp4Grade: tp4G,
-          nilaiFormatif: calculatedFormatif,
-          nilaiSumatifLM: slm,
-          nilaiSAS: sas,
-          nilaiRapor: calculatedRapor,
-          deskripsiCapaian: desc || "Telah menunjukkan kompetensi sesuai kriteria.",
-          createdAt: new Date().toISOString()
-        };
-
-        if (existingIdx !== -1) {
-          merdekaAssessments[existingIdx] = cleanItem;
-        } else {
-          merdekaAssessments.unshift(cleanItem);
-        }
-        results.push(cleanItem);
-      });
-
-      saveState();
-      return res.json({ success: true, count: results.length, merdekaAssessments });
-    } else {
+    items.forEach((item: any) => {
       const {
         studentId,
         studentName,
@@ -4082,112 +4112,235 @@ async function startServer() {
         semester,
         academicYear,
         tp1Name,
-        tp1Grade,
+        tp1Tugas1,
+        tp1Tugas2,
+        tp1Uh,
         tp2Name,
-        tp2Grade,
+        tp2Tugas1,
+        tp2Tugas2,
+        tp2Uh,
         tp3Name,
-        tp3Grade,
+        tp3Tugas1,
+        tp3Tugas2,
+        tp3Uh,
         tp4Name,
+        tp4Tugas1,
+        tp4Tugas2,
+        tp4Uh,
+        nilaiKokurikuler,
+        nilaiPts,
+        nilaiPas,
+        // legacy compatibility
+        tp1Grade,
+        tp2Grade,
+        tp3Grade,
         tp4Grade,
         nilaiSumatifLM,
         nilaiSAS,
         deskripsiCapaian
-      } = req.body;
+      } = item;
 
-      if (!studentId || !studentName || !className || !subject || !teacherName || !tp1Name) {
-        return res.status(400).json({ error: "Data nilai Kurikulum Merdeka tidak lengkap." });
+      if (!studentId || !studentName || !className || !subject) {
+        return;
       }
 
-      const tp1G = Number(tp1Grade) || 0;
-      const tp2G = tp2Grade !== undefined && tp2Grade !== "" ? Number(tp2Grade) : undefined;
-      const tp3G = tp3Grade !== undefined && tp3Grade !== "" ? Number(tp3Grade) : undefined;
-      const tp4G = tp4Grade !== undefined && tp4Grade !== "" ? Number(tp4Grade) : undefined;
-
-      let tpCount = 1;
-      let sumTp = tp1G;
-      if (tp2G !== undefined) {
-        tpCount++;
-        sumTp += tp2G;
-      }
-      if (tp3G !== undefined) {
-        tpCount++;
-        sumTp += tp3G;
-      }
-      if (tp4G !== undefined) {
-        tpCount++;
-        sumTp += tp4G;
-      }
-      const calculatedFormatif = Math.round(sumTp / tpCount);
-
-      const slm = Number(nilaiSumatifLM) || 0;
-      const sas = Number(nilaiSAS) || 0;
-      const calculatedRapor = Math.round((calculatedFormatif + slm + sas) / 3);
-
-      let finalDesc = deskripsiCapaian;
-      if (!finalDesc) {
-        const tps = [{ name: tp1Name, score: tp1G }];
-        if (tp2Name && tp2G !== undefined) tps.push({ name: tp2Name, score: tp2G });
-        if (tp3Name && tp3G !== undefined) tps.push({ name: tp3Name, score: tp3G });
-        if (tp4Name && tp4G !== undefined) tps.push({ name: tp4Name, score: tp4G });
-
-        tps.sort((a, b) => b.score - a.score);
-        const highestTp = tps[0];
-        const lowestTp = tps[tps.length - 1];
-
-        let desc = "";
-        if (highestTp && highestTp.score >= 75) {
-          desc += `Menunjukkan penguasaan sangat baik dalam ${highestTp.name}.`;
-        } else if (highestTp) {
-          desc += `Menunjukkan penguasaan cukup dalam ${highestTp.name}.`;
-        }
-
-        if (lowestTp && lowestTp.score < 70 && lowestTp.name !== highestTp.name) {
-          desc += ` Perlu bimbingan lebih lanjut dalam memahami ${lowestTp.name}.`;
-        }
-        finalDesc = desc || "Telah menunjukkan kompetensi sesuai kriteria.";
-      }
+      const sem = semester || "Genap";
+      const year = academicYear || "2025/2026";
 
       const existingIdx = merdekaAssessments.findIndex(
         a => a.studentId === studentId &&
              a.subject === subject &&
-             a.semester === (semester || "Genap") &&
-             a.academicYear === (academicYear || "2025/2026")
+             a.semester === sem &&
+             a.academicYear === year
       );
 
-      const newAssessment: MerdekaAssessment = {
-        id: existingIdx !== -1 ? merdekaAssessments[existingIdx].id : `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      const existing = existingIdx !== -1 ? merdekaAssessments[existingIdx] : null;
+
+      const assessmentItem: MerdekaAssessment = {
+        id: existing ? existing.id : `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         studentId,
         studentName,
         className,
         subject,
-        teacherName,
-        semester: semester || "Genap",
-        academicYear: academicYear || "2025/2026",
-        tp1Name,
-        tp1Grade: tp1G,
-        tp2Name: tp2Name || undefined,
-        tp2Grade: tp2G,
-        tp3Name: tp3Name || undefined,
-        tp3Grade: tp3G,
-        tp4Name: tp4Name || undefined,
-        tp4Grade: tp4G,
-        nilaiFormatif: calculatedFormatif,
-        nilaiSumatifLM: slm,
-        nilaiSAS: sas,
-        nilaiRapor: calculatedRapor,
-        deskripsiCapaian: finalDesc,
-        createdAt: new Date().toISOString()
+        teacherName: teacherName || (existing ? existing.teacherName : "Guru Mapel"),
+        semester: sem,
+        academicYear: year,
+
+        tp1Name: tp1Name || (existing ? existing.tp1Name : undefined),
+        tp1Tugas1: tp1Tugas1 !== undefined ? tp1Tugas1 : existing?.tp1Tugas1,
+        tp1Tugas2: tp1Tugas2 !== undefined ? tp1Tugas2 : existing?.tp1Tugas2,
+        tp1Uh: tp1Uh !== undefined ? tp1Uh : existing?.tp1Uh,
+
+        tp2Name: tp2Name || (existing ? existing.tp2Name : undefined),
+        tp2Tugas1: tp2Tugas1 !== undefined ? tp2Tugas1 : existing?.tp2Tugas1,
+        tp2Tugas2: tp2Tugas2 !== undefined ? tp2Tugas2 : existing?.tp2Tugas2,
+        tp2Uh: tp2Uh !== undefined ? tp2Uh : existing?.tp2Uh,
+
+        tp3Name: tp3Name || (existing ? existing.tp3Name : undefined),
+        tp3Tugas1: tp3Tugas1 !== undefined ? tp3Tugas1 : existing?.tp3Tugas1,
+        tp3Tugas2: tp3Tugas2 !== undefined ? tp3Tugas2 : existing?.tp3Tugas2,
+        tp3Uh: tp3Uh !== undefined ? tp3Uh : existing?.tp3Uh,
+
+        tp4Name: tp4Name || (existing ? existing.tp4Name : undefined),
+        tp4Tugas1: tp4Tugas1 !== undefined ? tp4Tugas1 : existing?.tp4Tugas1,
+        tp4Tugas2: tp4Tugas2 !== undefined ? tp4Tugas2 : existing?.tp4Tugas2,
+        tp4Uh: tp4Uh !== undefined ? tp4Uh : existing?.tp4Uh,
+
+        nilaiKokurikuler: nilaiKokurikuler !== undefined ? Number(nilaiKokurikuler) : existing?.nilaiKokurikuler ?? 0,
+        nilaiPts: nilaiPts !== undefined ? Number(nilaiPts) : (nilaiSumatifLM !== undefined ? Number(nilaiSumatifLM) : (existing?.nilaiPts ?? 0)),
+        nilaiPas: nilaiPas !== undefined ? Number(nilaiPas) : (nilaiSAS !== undefined ? Number(nilaiSAS) : (existing?.nilaiPas ?? 0)),
+
+        // legacy compatibility
+        tp1Grade: tp1Grade !== undefined ? Number(tp1Grade) : existing?.tp1Grade,
+        tp2Grade: tp2Grade !== undefined ? Number(tp2Grade) : existing?.tp2Grade,
+        tp3Grade: tp3Grade !== undefined ? Number(tp3Grade) : existing?.tp3Grade,
+        tp4Grade: tp4Grade !== undefined ? Number(tp4Grade) : existing?.tp4Grade,
+        deskripsiCapaian: deskripsiCapaian || existing?.deskripsiCapaian || "Telah menunjukkan kompetensi sesuai kriteria.",
+
+        createdAt: existing ? existing.createdAt : new Date().toISOString()
       };
 
+      recalculateAssessmentScores(assessmentItem);
+
       if (existingIdx !== -1) {
-        merdekaAssessments[existingIdx] = newAssessment;
+        merdekaAssessments[existingIdx] = assessmentItem;
       } else {
-        merdekaAssessments.unshift(newAssessment);
+        merdekaAssessments.unshift(assessmentItem);
+      }
+      results.push(assessmentItem);
+    });
+
+    saveState();
+    return res.json({ success: true, count: results.length, merdekaAssessments, newAssessment: results[0] });
+  });
+
+  // Batch import PTS & PAS from Waka Kurikulum
+  app.post("/api/curriculum/import-pts-pas", (req, res) => {
+    const { items, semester, academicYear } = req.body;
+    if (!Array.isArray(items)) {
+      return res.status(400).json({ error: "Data import tidak valid." });
+    }
+
+    const sem = semester || "Genap";
+    const year = academicYear || "2025/2026";
+    let updatedCount = 0;
+
+    items.forEach((item: any) => {
+      let targetStudent = null;
+      if (item.studentId) {
+        targetStudent = students.find(s => s.id === item.studentId);
+      }
+      if (!targetStudent && item.nis) {
+        targetStudent = students.find(s => s.nis.trim() === String(item.nis).trim());
+      }
+      if (!targetStudent && item.studentName) {
+        targetStudent = students.find(s => s.name.toLowerCase().trim() === String(item.studentName).toLowerCase().trim());
       }
 
-      saveState();
-      res.json({ success: true, merdekaAssessments, newAssessment });
+      if (!targetStudent) return;
+
+      const targetSubj = item.subject ? item.subject.trim() : null;
+
+      if (!targetSubj) return;
+
+      // Find existing assessment or create one
+      let existingIdx = merdekaAssessments.findIndex(a =>
+        a.studentId === targetStudent.id &&
+        a.subject.toLowerCase() === targetSubj.toLowerCase() &&
+        a.semester === sem &&
+        a.academicYear === year
+      );
+
+      const ptsVal = item.pts !== undefined && item.pts !== "" ? Number(item.pts) : undefined;
+      const pasVal = item.pas !== undefined && item.pas !== "" ? Number(item.pas) : undefined;
+
+      if (existingIdx !== -1) {
+        if (ptsVal !== undefined) merdekaAssessments[existingIdx].nilaiPts = ptsVal;
+        if (pasVal !== undefined) merdekaAssessments[existingIdx].nilaiPas = pasVal;
+        recalculateAssessmentScores(merdekaAssessments[existingIdx]);
+        updatedCount++;
+      } else {
+        const newAss: MerdekaAssessment = {
+          id: `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          studentId: targetStudent.id,
+          studentName: targetStudent.name,
+          className: targetStudent.class,
+          subject: targetSubj,
+          teacherName: item.teacherName || "Guru Mapel",
+          semester: sem,
+          academicYear: year,
+          nilaiKokurikuler: 0,
+          nilaiPts: ptsVal ?? 0,
+          nilaiPas: pasVal ?? 0,
+          createdAt: new Date().toISOString()
+        };
+        recalculateAssessmentScores(newAss);
+        merdekaAssessments.unshift(newAss);
+        updatedCount++;
+      }
+    });
+
+    saveState();
+    res.json({ success: true, updatedCount, merdekaAssessments });
+  });
+
+  // Batch Save Kokurikuler by Wali Kelas
+  app.post("/api/kokurikuler/batch-save", (req, res) => {
+    const { className, semester, academicYear, scores } = req.body;
+    if (!scores || typeof scores !== 'object') {
+      return res.status(400).json({ error: "Data nilai kokurikuler tidak valid." });
     }
+
+    const sem = semester || "Genap";
+    const year = academicYear || "2025/2026";
+    let updatedCount = 0;
+
+    Object.entries(scores).forEach(([studentId, scoreVal]) => {
+      const kokuScore = Number(scoreVal) || 0;
+      
+      // Update all existing subject assessments for this student in this sem & year
+      const matchedAssessments = merdekaAssessments.filter(a =>
+        a.studentId === studentId &&
+        a.semester === sem &&
+        a.academicYear === year
+      );
+
+      if (matchedAssessments.length > 0) {
+        matchedAssessments.forEach(ass => {
+          ass.nilaiKokurikuler = kokuScore;
+          recalculateAssessmentScores(ass);
+          updatedCount++;
+        });
+      } else {
+        // If student has no assessments created yet, pre-create empty assessments for subjects in student's class
+        const studentObj = students.find(s => s.id === studentId);
+        if (studentObj) {
+          const distinctSubjects = Array.from(new Set(subjectTeachers.map(st => st.subject)));
+          distinctSubjects.forEach(subj => {
+            const newAss: MerdekaAssessment = {
+              id: `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              studentId: studentObj.id,
+              studentName: studentObj.name,
+              className: studentObj.class,
+              subject: subj,
+              teacherName: "Guru Mapel",
+              semester: sem,
+              academicYear: year,
+              nilaiKokurikuler: kokuScore,
+              nilaiPts: 0,
+              nilaiPas: 0,
+              createdAt: new Date().toISOString()
+            };
+            recalculateAssessmentScores(newAss);
+            merdekaAssessments.unshift(newAss);
+            updatedCount++;
+          });
+        }
+      }
+    });
+
+    saveState();
+    res.json({ success: true, updatedCount, merdekaAssessments });
   });
 
   app.delete("/api/merdeka-assessments/:id", (req, res) => {

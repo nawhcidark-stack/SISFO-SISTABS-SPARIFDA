@@ -296,13 +296,30 @@ export default function SubjectTeacherPanel({
   }, [currentSubjectDefaultTps]);
 
   const [gradeInputMap, setGradeInputMap] = useState<Record<string, {
-    tp1Grade: string;
-    tp2Grade: string;
-    tp3Grade: string;
-    tp4Grade: string;
-    nilaiSumatifLM: string;
-    nilaiSAS: string;
-    deskripsiCapaian: string;
+    tp1Tugas1: string;
+    tp1Tugas2: string;
+    tp1Uh: string;
+
+    tp2Tugas1: string;
+    tp2Tugas2: string;
+    tp2Uh: string;
+
+    tp3Tugas1: string;
+    tp3Tugas2: string;
+    tp3Uh: string;
+
+    tp4Tugas1: string;
+    tp4Tugas2: string;
+    tp4Uh: string;
+
+    // legacy / computed
+    tp1Grade?: string;
+    tp2Grade?: string;
+    tp3Grade?: string;
+    tp4Grade?: string;
+    nilaiSumatifLM?: string;
+    nilaiSAS?: string;
+    deskripsiCapaian?: string;
   }>>({});
 
   const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
@@ -525,15 +542,7 @@ export default function SubjectTeacherPanel({
   }, [students, selectedGradeClass]);
 
   useEffect(() => {
-    const newMap: Record<string, {
-      tp1Grade: string;
-      tp2Grade: string;
-      tp3Grade: string;
-      tp4Grade: string;
-      nilaiSumatifLM: string;
-      nilaiSAS: string;
-      deskripsiCapaian: string;
-    }> = {};
+    const newMap: Record<string, any> = {};
 
     gradingClassStudents.forEach(s => {
       const match = merdekaAssessments.find(a => 
@@ -544,20 +553,32 @@ export default function SubjectTeacherPanel({
       );
       if (match) {
         newMap[s.id] = {
-          tp1Grade: String(match.tp1Grade ?? ''),
-          tp2Grade: match.tp2Grade !== undefined && match.tp2Grade !== null ? String(match.tp2Grade) : '',
-          tp3Grade: match.tp3Grade !== undefined && match.tp3Grade !== null ? String(match.tp3Grade) : '',
-          tp4Grade: match.tp4Grade !== undefined && match.tp4Grade !== null ? String(match.tp4Grade) : '',
+          tp1Tugas1: match.tp1Tugas1 !== undefined && match.tp1Tugas1 !== null ? String(match.tp1Tugas1) : (match.tp1Grade !== undefined ? String(match.tp1Grade) : ''),
+          tp1Tugas2: match.tp1Tugas2 !== undefined && match.tp1Tugas2 !== null ? String(match.tp1Tugas2) : '',
+          tp1Uh: match.tp1Uh !== undefined && match.tp1Uh !== null ? String(match.tp1Uh) : '',
+
+          tp2Tugas1: match.tp2Tugas1 !== undefined && match.tp2Tugas1 !== null ? String(match.tp2Tugas1) : (match.tp2Grade !== undefined ? String(match.tp2Grade) : ''),
+          tp2Tugas2: match.tp2Tugas2 !== undefined && match.tp2Tugas2 !== null ? String(match.tp2Tugas2) : '',
+          tp2Uh: match.tp2Uh !== undefined && match.tp2Uh !== null ? String(match.tp2Uh) : '',
+
+          tp3Tugas1: match.tp3Tugas1 !== undefined && match.tp3Tugas1 !== null ? String(match.tp3Tugas1) : (match.tp3Grade !== undefined ? String(match.tp3Grade) : ''),
+          tp3Tugas2: match.tp3Tugas2 !== undefined && match.tp3Tugas2 !== null ? String(match.tp3Tugas2) : '',
+          tp3Uh: match.tp3Uh !== undefined && match.tp3Uh !== null ? String(match.tp3Uh) : '',
+
+          tp4Tugas1: match.tp4Tugas1 !== undefined && match.tp4Tugas1 !== null ? String(match.tp4Tugas1) : (match.tp4Grade !== undefined ? String(match.tp4Grade) : ''),
+          tp4Tugas2: match.tp4Tugas2 !== undefined && match.tp4Tugas2 !== null ? String(match.tp4Tugas2) : '',
+          tp4Uh: match.tp4Uh !== undefined && match.tp4Uh !== null ? String(match.tp4Uh) : '',
+
           nilaiSumatifLM: String(match.nilaiSumatifLM ?? ''),
           nilaiSAS: String(match.nilaiSAS ?? ''),
           deskripsiCapaian: match.deskripsiCapaian ?? ''
         };
       } else {
         newMap[s.id] = {
-          tp1Grade: '',
-          tp2Grade: '',
-          tp3Grade: '',
-          tp4Grade: '',
+          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
           nilaiSumatifLM: '',
           nilaiSAS: '',
           deskripsiCapaian: ''
@@ -2227,56 +2248,94 @@ export default function SubjectTeacherPanel({
               <table className="w-full border-collapse text-xs select-none">
                 <thead>
                   <tr className="bg-slate-900 text-white font-extrabold uppercase tracking-wider text-[10px] text-center">
-                    <th className="py-3 px-3 w-12 text-center rounded-tl-3xl">No</th>
-                    <th className="py-3 px-4 text-left min-w-[160px]">Nama Siswa [NIS]</th>
-                    <th className="py-3 px-2 w-20 text-indigo-300">TP-1</th>
-                    <th className="py-3 px-2 w-20 text-indigo-300">TP-2</th>
-                    <th className="py-3 px-2 w-20 text-indigo-300">TP-3</th>
-                    <th className="py-3 px-2 w-20 text-indigo-300">TP-4</th>
-                    <th className="py-3 px-2 w-24 bg-indigo-950 text-indigo-300">Avg Formatif</th>
-                    <th className="py-3 px-2 w-24 text-amber-400">Sumatif LM</th>
-                    <th className="py-3 px-2 w-20 text-amber-400">SAS</th>
-                    <th className="py-3 px-2 w-24 bg-slate-950 text-emerald-400 font-black rounded-tr-3xl">Nilai Rapor</th>
+                    <th className="py-3 px-3 w-10 text-center rounded-tl-3xl" rowSpan={2}>No</th>
+                    <th className="py-3 px-3 text-left min-w-[150px]" rowSpan={2}>Nama Siswa [NIS]</th>
+                    
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 1</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 2</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 3</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 4</th>
+
+                    <th className="py-3 px-2 w-16 bg-blue-900 text-blue-200 font-black" rowSpan={2}>Rata2 TP</th>
+                    <th className="py-3 px-2 w-16 bg-violet-900 text-violet-200 font-black" rowSpan={2}>Kokurikuler</th>
+                    <th className="py-3 px-2 w-16 bg-amber-900 text-amber-200 font-black" rowSpan={2}>PTS</th>
+                    <th className="py-3 px-2 w-16 bg-amber-950 text-amber-200 font-black" rowSpan={2}>PAS</th>
+                    <th className="py-3 px-2 w-24 bg-emerald-950 text-emerald-300 font-black rounded-tr-3xl" rowSpan={2}>Nilai Akhir Mapel</th>
+                  </tr>
+                  <tr className="bg-slate-800 text-slate-300 font-bold text-[9px] uppercase tracking-wider text-center">
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
+
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
+
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
+
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
                   </tr>
                 </thead>
                 <tbody>
                   {gradingClassStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={10} className="py-20 text-center text-slate-400 font-semibold text-xs">
+                      <td colSpan={18} className="py-20 text-center text-slate-400 font-semibold text-xs">
                         Tidak ada data siswa ditemukan untuk kelas {selectedGradeClass}.
                       </td>
                     </tr>
                   ) : (
                     gradingClassStudents.map((s, idx) => {
                       const inputState = gradeInputMap[s.id] || {
-                        tp1Grade: '',
-                        tp2Grade: '',
-                        tp3Grade: '',
-                        tp4Grade: '',
-                        nilaiSumatifLM: '',
-                        nilaiSAS: '',
-                        deskripsiCapaian: ''
+                        tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                        tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                        tp3Tugas1: '', tp3Tugas2: '', tp3Uh: ''
                       };
 
-                      // On-the-fly calculations
-                      const tp1G = Number(inputState.tp1Grade) || 0;
-                      const tp2G = inputState.tp2Grade !== '' ? Number(inputState.tp2Grade) : undefined;
-                      const tp3G = inputState.tp3Grade !== '' ? Number(inputState.tp3Grade) : undefined;
-                      const tp4G = inputState.tp4Grade !== '' ? Number(inputState.tp4Grade) : undefined;
+                      // Get matched assessment to display Kokurikuler, PTS, PAS
+                      const matchedAss = merdekaAssessments.find(a =>
+                        a.studentId === s.id &&
+                        matchSubject(a.subject, currentTeacher.subject) &&
+                        a.semester === selectedSemesterGrading &&
+                        a.academicYear === selectedYearGrading
+                      );
 
-                      let tpCount = 0;
-                      let sumTp = 0;
-                      if (inputState.tp1Grade !== '') { tpCount++; sumTp += tp1G; }
-                      if (tp2G !== undefined) { tpCount++; sumTp += tp2G; }
-                      if (tp3G !== undefined) { tpCount++; sumTp += tp3G; }
-                      if (tp4G !== undefined) { tpCount++; sumTp += tp4G; }
+                      const parseVal = (v: any) => {
+                        if (v === undefined || v === null || v === "") return null;
+                        const n = Number(v);
+                        return isNaN(n) ? null : n;
+                      };
 
-                      const avgF = tpCount > 0 ? Math.round(sumTp / tpCount) : 0;
-                      const slm = Number(inputState.nilaiSumatifLM) || 0;
-                      const sas = Number(inputState.nilaiSAS) || 0;
+                      const calcTpScore = (t1Val: any, t2Val: any, uhVal: any) => {
+                        const t1 = parseVal(t1Val);
+                        const t2 = parseVal(t2Val);
+                        const u = parseVal(uhVal);
+                        const tList = [t1, t2].filter((x): x is number => x !== null);
+                        if (tList.length === 0 && u === null) return null;
+                        const avgTugas = tList.length > 0 ? (tList.reduce((a, b) => a + b, 0) / tList.length) : null;
+                        if (avgTugas !== null && u !== null) return Math.round((avgTugas * 0.6) + (u * 0.4));
+                        if (avgTugas !== null) return Math.round(avgTugas);
+                        if (u !== null) return Math.round(u);
+                        return null;
+                      };
 
-                      // Final assessment weight (avgFormatif + sumatifLM + SAS)/3
-                      const raporScore = tpCount > 0 || slm > 0 || sas > 0 ? Math.round((avgF + slm + sas) / 3) : 0;
+                      const tp1Score = calcTpScore(inputState.tp1Tugas1, inputState.tp1Tugas2, inputState.tp1Uh);
+                      const tp2Score = calcTpScore(inputState.tp2Tugas1, inputState.tp2Tugas2, inputState.tp2Uh);
+                      const tp3Score = calcTpScore(inputState.tp3Tugas1, inputState.tp3Tugas2, inputState.tp3Uh);
+                      const tp4Score = calcTpScore((inputState as any).tp4Tugas1, (inputState as any).tp4Tugas2, (inputState as any).tp4Uh);
+
+                      const validTps = [tp1Score, tp2Score, tp3Score, tp4Score].filter((x): x is number => x !== null);
+                      const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : 0;
+
+                      const kokurikulerVal = matchedAss?.nilaiKokurikuler ?? 0;
+                      const ptsVal = matchedAss?.nilaiPts ?? 0;
+                      const pasVal = matchedAss?.nilaiPas ?? 0;
+
+                      // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 2) + Nilai Kokurikuler + PTS + PAS) / 5
+                      const finalMapelScore = Math.round(((avgTp * 2) + kokurikulerVal + ptsVal + pasVal) / 5);
 
                       const handleGradeChange = (field: string, val: string) => {
                         let cleanIdx = val;
@@ -2288,106 +2347,139 @@ export default function SubjectTeacherPanel({
                         setGradeInputMap(prev => ({
                           ...prev,
                           [s.id]: {
-                            ...prev[s.id] || {
-                              tp1Grade: '',
-                              tp2Grade: '',
-                              tp3Grade: '',
-                              tp4Grade: '',
-                              nilaiSumatifLM: '',
-                              nilaiSAS: '',
-                              deskripsiCapaian: ''
-                            },
+                            ...(prev[s.id] || {
+                              tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                              tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                              tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+                              tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
+                            }),
                             [field]: cleanIdx
                           }
                         }));
                       };
 
                       return (
-                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                          <td className="py-3 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
-                          <td className="py-3 px-4 text-left">
-                            <div className="font-extrabold text-slate-800 text-[12px]">{s.name}</div>
-                            <div className="text-[10px] text-slate-400 font-mono mt-0.5">NIS: {s.nis}</div>
+                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-[11px]">
+                          <td className="py-2.5 px-2 text-center text-slate-400 font-bold">{idx + 1}</td>
+                          <td className="py-2.5 px-3 text-left">
+                            <div className="font-extrabold text-slate-800">{s.name}</div>
+                            <div className="text-[9px] text-slate-400 font-mono">NIS: {s.nis}</div>
                           </td>
                           
-                          {/* TP Grades Inputs */}
-                          <td className="py-2.5 px-1.5 text-center">
+                          {/* TP 1 Inputs */}
+                          <td className="py-2 px-1 text-center">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.tp1Grade}
-                              onChange={(e) => handleGradeChange('tp1Grade', e.target.value)}
-                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30"
-                              placeholder="-"
+                              type="text" maxLength={3} value={inputState.tp1Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp1Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
-                          <td className="py-2.5 px-1.5 text-center">
+                          <td className="py-2 px-1 text-center">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.tp2Grade}
-                              onChange={(e) => handleGradeChange('tp2Grade', e.target.value)}
-                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
-                              placeholder="-"
-                              disabled={!tp2InputName.trim()}
+                              type="text" maxLength={3} value={inputState.tp1Tugas2 || ''}
+                              onChange={(e) => handleGradeChange('tp1Tugas2', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
-                          <td className="py-2.5 px-1.5 text-center">
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.tp3Grade}
-                              onChange={(e) => handleGradeChange('tp3Grade', e.target.value)}
-                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
-                              placeholder="-"
-                              disabled={!tp3InputName.trim()}
-                            />
-                          </td>
-                          <td className="py-2.5 px-1.5 text-center">
-                            <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.tp4Grade || ''}
-                              onChange={(e) => handleGradeChange('tp4Grade', e.target.value)}
-                              className="w-14 text-center border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-slate-50/30 disabled:opacity-50"
-                              placeholder="-"
-                              disabled={!tp4InputName.trim()}
+                              type="text" maxLength={3} value={inputState.tp1Uh || ''}
+                              onChange={(e) => handleGradeChange('tp1Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
 
-                          {/* Computed Formative Average */}
-                          <td className="py-2.5 px-2 text-center font-black text-indigo-700 bg-indigo-50/10 text-[12px]">
-                            {avgF || "-"}
-                          </td>
-
-                          {/* Sumatif LM & Final SAS */}
-                          <td className="py-2.5 px-1.5 text-center">
+                          {/* TP 2 Inputs */}
+                          <td className="py-2 px-1 text-center">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.nilaiSumatifLM}
-                              onChange={(e) => handleGradeChange('nilaiSumatifLM', e.target.value)}
-                              className="w-14 text-center border border-amber-200 focus:border-amber-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-amber-500/5"
-                              placeholder="-"
+                              type="text" maxLength={3} value={inputState.tp2Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp2Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
-                          <td className="py-2.5 px-1.5 text-center">
+                          <td className="py-2 px-1 text-center">
                             <input
-                              type="text"
-                              maxLength={3}
-                              value={inputState.nilaiSAS}
-                              onChange={(e) => handleGradeChange('nilaiSAS', e.target.value)}
-                              className="w-14 text-center border border-amber-200 focus:border-amber-600 focus:outline-none rounded-lg py-1 px-1 font-black text-slate-800 bg-amber-500/5"
-                              placeholder="-"
+                              type="text" maxLength={3} value={inputState.tp2Tugas2 || ''}
+                              onChange={(e) => handleGradeChange('tp2Tugas2', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
+                            <input
+                              type="text" maxLength={3} value={inputState.tp2Uh || ''}
+                              onChange={(e) => handleGradeChange('tp2Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
 
-                          {/* Computed Final Report Score */}
-                          <td className="py-2.5 px-2 text-center font-black text-slate-900 bg-slate-100 text-sm">
-                            <span className={`px-2 py-0.5 rounded-md ${
-                              raporScore >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800 font-extrabold'
-                            }`}>
-                              {raporScore || "-"}
+                          {/* TP 3 Inputs */}
+                          <td className="py-2 px-1 text-center">
+                            <input
+                              type="text" maxLength={3} value={inputState.tp3Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp3Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2 px-1 text-center">
+                            <input
+                              type="text" maxLength={3} value={inputState.tp3Tugas2 || ''}
+                              onChange={(e) => handleGradeChange('tp3Tugas2', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
+                            <input
+                              type="text" maxLength={3} value={inputState.tp3Uh || ''}
+                              onChange={(e) => handleGradeChange('tp3Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+
+                          {/* TP 4 Inputs */}
+                          <td className="py-2 px-1 text-center">
+                            <input
+                              type="text" maxLength={3} value={(inputState as any).tp4Tugas1 || ''}
+                              onChange={(e) => handleGradeChange('tp4Tugas1', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2 px-1 text-center">
+                            <input
+                              type="text" maxLength={3} value={(inputState as any).tp4Tugas2 || ''}
+                              onChange={(e) => handleGradeChange('tp4Tugas2', e.target.value)}
+                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+                          <td className="py-2 px-1 text-center bg-indigo-50/30">
+                            <input
+                              type="text" maxLength={3} value={(inputState as any).tp4Uh || ''}
+                              onChange={(e) => handleGradeChange('tp4Uh', e.target.value)}
+                              className="w-10 text-center border border-indigo-200 rounded py-0.5 font-black text-indigo-900 bg-indigo-50/50 focus:border-indigo-600 focus:outline-none" placeholder="-"
+                            />
+                          </td>
+
+                          {/* Computed Rata-rata TP */}
+                          <td className="py-2 px-2 text-center font-black text-blue-700 bg-blue-50/30">
+                            {avgTp || "-"}
+                          </td>
+
+                          {/* Kokurikuler (Wali Kelas) */}
+                          <td className="py-2 px-2 text-center font-black text-violet-700 bg-violet-50/30" title="Diinput oleh Wali Kelas">
+                            {kokurikulerVal || "-"}
+                          </td>
+
+                          {/* PTS & PAS (Waka Kurikulum) */}
+                          <td className="py-2 px-2 text-center font-black text-amber-700 bg-amber-50/20" title="Diimport Waka Kurikulum">
+                            {ptsVal || "-"}
+                          </td>
+                          <td className="py-2 px-2 text-center font-black text-amber-800 bg-amber-50/30" title="Diimport Waka Kurikulum">
+                            {pasVal || "-"}
+                          </td>
+
+                          {/* NILAI AKHIR MAPEL */}
+                          <td className="py-2 px-2 text-center font-black text-slate-900 bg-emerald-50 text-sm">
+                            <span className="px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 font-extrabold">
+                              {finalMapelScore || "-"}
                             </span>
                           </td>
                         </tr>
@@ -2399,9 +2491,9 @@ export default function SubjectTeacherPanel({
             </div>
 
             {/* Bottom Form Actions */}
-            <div className="p-4 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+            <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-[10px] font-semibold text-slate-500">
-                Nilai akhir rapor Kurikulum Merdeka dihitung dengan bobot seimbang rata formatif, sumatif l/m dan SAS.
+                Formula: Nilai Akhir TP = (Rata2 Tugas × 60%) + (UH × 40%) | Nilai Akhir Mapel = ((Rata2 TP × 2) + Kokurikuler + PTS + PAS) / 5
               </span>
               <button
                 type="button"
@@ -2410,13 +2502,10 @@ export default function SubjectTeacherPanel({
                   try {
                     const batchData = gradingClassStudents.map(s => {
                       const inputState = gradeInputMap[s.id] || {
-                        tp1Grade: '',
-                        tp2Grade: '',
-                        tp3Grade: '',
-                        tp4Grade: '',
-                        nilaiSumatifLM: '',
-                        nilaiSAS: '',
-                        deskripsiCapaian: ''
+                        tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                        tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                        tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+                        tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
                       };
 
                       return {
@@ -2428,15 +2517,24 @@ export default function SubjectTeacherPanel({
                         semester: selectedSemesterGrading,
                         academicYear: selectedYearGrading,
                         tp1Name: tp1InputName,
-                        tp1Grade: inputState.tp1Grade || "0",
+                        tp1Tugas1: inputState.tp1Tugas1,
+                        tp1Tugas2: inputState.tp1Tugas2,
+                        tp1Uh: inputState.tp1Uh,
+
                         tp2Name: tp2InputName || undefined,
-                        tp2Grade: inputState.tp2Grade !== "" ? inputState.tp2Grade : undefined,
+                        tp2Tugas1: inputState.tp2Tugas1,
+                        tp2Tugas2: inputState.tp2Tugas2,
+                        tp2Uh: inputState.tp2Uh,
+
                         tp3Name: tp3InputName || undefined,
-                        tp3Grade: inputState.tp3Grade !== "" ? inputState.tp3Grade : undefined,
+                        tp3Tugas1: inputState.tp3Tugas1,
+                        tp3Tugas2: inputState.tp3Tugas2,
+                        tp3Uh: inputState.tp3Uh,
+
                         tp4Name: tp4InputName || undefined,
-                        tp4Grade: inputState.tp4Grade !== "" ? inputState.tp4Grade : undefined,
-                        nilaiSumatifLM: inputState.nilaiSumatifLM || "0",
-                        nilaiSAS: inputState.nilaiSAS || "0"
+                        tp4Tugas1: (inputState as any).tp4Tugas1,
+                        tp4Tugas2: (inputState as any).tp4Tugas2,
+                        tp4Uh: (inputState as any).tp4Uh
                       };
                     });
 

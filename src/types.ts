@@ -192,6 +192,7 @@ export interface SubjectTeacher {
   username: string;
   name: string;
   subject: string; // e.g., "Matematika", "Bahasa Inggris", "IPA", etc.
+  className?: string; // e.g., "7-A" or "SEMUA KELAS"
   password?: string;
   skUrl?: string;
 }
@@ -321,20 +322,55 @@ export interface MerdekaAssessment {
   teacherName: string;
   semester: string; // "Ganjil" | "Genap"
   academicYear: string; // e.g. "2025/2026"
-  tp1Name: string;
-  tp1Grade: number;
+
+  // TP 1
+  tp1Name?: string;
+  tp1Tugas1?: number | string;
+  tp1Tugas2?: number | string;
+  tp1Uh?: number | string;
+  nilaiTp1?: number; // (Rata2 Tugas * 0.6) + (UH * 0.4)
+
+  // TP 2
   tp2Name?: string;
-  tp2Grade?: number;
+  tp2Tugas1?: number | string;
+  tp2Tugas2?: number | string;
+  tp2Uh?: number | string;
+  nilaiTp2?: number;
+
+  // TP 3
   tp3Name?: string;
-  tp3Grade?: number;
+  tp3Tugas1?: number | string;
+  tp3Tugas2?: number | string;
+  tp3Uh?: number | string;
+  nilaiTp3?: number;
+
+  // TP 4
   tp4Name?: string;
+  tp4Tugas1?: number | string;
+  tp4Tugas2?: number | string;
+  tp4Uh?: number | string;
+  nilaiTp4?: number;
+
+  // Aggregates & Scores
+  nilaiRataTp?: number; // Rata-rata dari nilai TP1..4 yang valid
+  nilaiKokurikuler?: number; // Khusus Wali Kelas, terhubung ke Guru Mapel
+  nilaiPts?: number; // Input Waka Kurikulum
+  nilaiPas?: number; // Input Waka Kurikulum
+  nilaiAkhirMapel?: number; // ((Nilai Rata2 TP * 2) + Kokurikuler + PTS + PAS) / 5
+
+  // Legacy/Fallback compatibility
+  tp1Grade?: number;
+  tp2Grade?: number;
+  tp3Grade?: number;
   tp4Grade?: number;
-  nilaiFormatif: number; // calculated as avg of available TPs
-  nilaiSumatifLM: number; // Sumatif Lingkup Materi
-  nilaiSAS: number; // Sumatif Akhir Semester
-  nilaiRapor: number; // calculated as e.g., (nilaiFormatif + nilaiSumatifLM + nilaiSAS) / 3 or customized weights
-  deskripsiCapaian: string;
+  nilaiFormatif?: number;
+  nilaiSumatifLM?: number;
+  nilaiSAS?: number;
+  nilaiRapor?: number;
+  deskripsiCapaian?: string;
+
   createdAt: string;
+  updatedAt?: string;
 }
 
 export interface PrincipalWorkProgram {

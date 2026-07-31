@@ -77,9 +77,9 @@ export default function StudentManagement({
   const handleDownloadTemplate = () => {
     const headers = "nis,nama,kelas,jenis_kelamin,email,telepon,password,saldo_awal\n";
     const rows = [
-      "20261010,Budi Santoso,7-A,Laki-laki,budi@example.com,081234567812,budi123,100000",
-      "20261011,Aisyah Putri,7-B,Perempuan,aisyah@example.com,081234567813,aisyah77,0",
-      "20241001,Ahmad Fauzi,7-A,Laki-laki,ahmad.new_email@example.org,081234567890,fauzi321,0"
+      "20261010,Budi Santoso,7-A,Laki-laki,budi@smpmaarifnu.sch.id,081234567812,budi123,100000",
+      "20261011,Aisyah Putri,7-B,Perempuan,aisyah@smpmaarifnu.sch.id,081234567813,aisyah77,0",
+      "20241001,Ahmad Fauzi,7-A,Laki-laki,ahmad.fauzi@smpmaarifnu.sch.id,081234567890,fauzi321,0"
     ].join("\n");
     const blob = new Blob([headers + rows], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -966,7 +966,7 @@ export default function StudentManagement({
                     <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Email Wali Murid</label>
                     <input
                       type="email"
-                      placeholder="wali@example.com"
+                      placeholder="wali@smpmaarifnu.sch.id"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-slate-800 focus:bg-white"
@@ -1118,7 +1118,7 @@ export default function StudentManagement({
                     <label className="font-bold text-slate-500 uppercase text-[9px] tracking-wide">Email Wali Murid</label>
                     <input
                       type="email"
-                      placeholder="wali@example.com"
+                      placeholder="wali@smpmaarifnu.sch.id"
                       value={formData.email}
                       onChange={(e) => setFormData({ ...formData, email: e.target.value })}
                       className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs outline-none focus:border-slate-800 focus:bg-white"

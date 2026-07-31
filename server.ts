@@ -21,7 +21,7 @@ const students: Student[] = [
     nis: "20241001",
     name: "Ahmad Fauzi",
     class: "7-A",
-    email: "ahmad.fauzi@example.org",
+    email: "ahmad.fauzi@smpmaarifnu.sch.id",
     phone: "081234567890",
     savingsBalance: 120000,
     gender: "Laki-laki",
@@ -32,7 +32,7 @@ const students: Student[] = [
     nis: "20241002",
     name: "Siti Aminah",
     class: "7-B",
-    email: "siti.aminah@example.org",
+    email: "siti.aminah@smpmaarifnu.sch.id",
     phone: "081298765432",
     savingsBalance: 250000,
     gender: "Perempuan",
@@ -43,7 +43,7 @@ const students: Student[] = [
     nis: "20230905",
     name: "Muhammad Rian",
     class: "8-A",
-    email: "rian.smp@example.org",
+    email: "rian.smp@smpmaarifnu.sch.id",
     phone: "085612345678",
     savingsBalance: 450000,
     gender: "Laki-laki",
@@ -54,7 +54,7 @@ const students: Student[] = [
     nis: "20220812",
     name: "Lailatul Fitriyah",
     class: "9-C",
-    email: "laila.fit@example.org",
+    email: "laila.fit@smpmaarifnu.sch.id",
     phone: "089912341234",
     savingsBalance: 80000,
     gender: "Perempuan",
@@ -1426,6 +1426,9 @@ function loadState() {
         students.length = 0;
         students.push(...data.students);
         students.forEach(s => {
+          if (s.email && s.email.includes("example.org")) {
+            s.email = s.email.replace("example.org", "smpmaarifnu.sch.id");
+          }
           if (!s.password) {
             s.password = s.nis.toString().trim();
           }
@@ -2971,11 +2974,11 @@ async function startServer() {
     if (!username || !password) {
       return res.status(400).json({ error: "Username dan password wajib diisi." });
     }
-    const cleanUser = username.trim().toLowerCase();
-    if ((cleanUser === "kurikulum" || cleanUser === "waka_kurikulum" || cleanUser === "waka") && password === curriculumConfig.password) {
+    const cleanUser = username.trim().toLowerCase().replace(/[\s\-_]+/g, "");
+    if ((cleanUser.includes("kurikulum") || cleanUser === "waka" || cleanUser === "wakakur") && password === curriculumConfig.password) {
       res.json({ success: true, message: "Login Waka Kurikulum berhasil." });
     } else {
-      res.status(401).json({ error: "Password Waka Kurikulum salah. Coba periksa kembali password Anda atau hubungi admin." });
+      res.status(401).json({ error: "Password Waka Kurikulum salah. Gunakan sandi bawaan 'kurikulum123' atau hubungi admin." });
     }
   });
 

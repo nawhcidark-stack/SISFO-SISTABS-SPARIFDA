@@ -34,11 +34,40 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
     setIsValidating(true);
 
     try {
-      const cleanUser = username.trim().toLowerCase();
       const rawUser = username.trim();
+      const cleanUser = rawUser.toLowerCase();
+      const normalizedUser = cleanUser.replace(/[\s\-_]+/g, '');
 
-      // 1. Detect built-in system administration roles
-      if (cleanUser === 'admin') {
+      // 1. Detect Waka Kurikulum
+      if (
+        normalizedUser.includes('kurikulum') || 
+        cleanUser === 'waka_kurikulum' || 
+        cleanUser === 'waka kurikulum' || 
+        cleanUser === 'waka-kurikulum' || 
+        normalizedUser === 'wakakurikulum' || 
+        normalizedUser === 'kurikulum123' ||
+        normalizedUser === 'wakakur'
+      ) {
+        const res = await fetch('/api/curriculum/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (res.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_kurikulum', null, null, null);
+          }, 600);
+        } else {
+          const errData = await res.json();
+          setIsValidating(false);
+          setErrorMsg(errData.error || 'Password Waka Kurikulum salah. Gunakan sandi bawaan "kurikulum123".');
+        }
+        return;
+      }
+
+      // 2. Detect Administrator
+      if (cleanUser === 'admin' || normalizedUser === 'admin') {
         const res = await fetch('/api/admin/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -57,7 +86,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'bendahara') {
+      // 3. Detect Bendahara Keuangan
+      if (cleanUser === 'bendahara' || normalizedUser === 'bendahara') {
         const res = await fetch('/api/treasurer/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -76,7 +106,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'kepala') {
+      // 4. Detect Kepala Sekolah
+      if (cleanUser === 'kepala' || normalizedUser === 'kepalasekolah' || cleanUser === 'kepala sekolah') {
         const res = await fetch('/api/principal/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -95,7 +126,13 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'sarpras' || cleanUser === 'waka') {
+      // 5. Detect Waka Sarpras
+      if (
+        normalizedUser.includes('sarpras') || 
+        cleanUser === 'waka_sarpras' || 
+        cleanUser === 'waka sarpras' || 
+        normalizedUser === 'wakasarpras'
+      ) {
         const res = await fetch('/api/sarpras/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -114,7 +151,8 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'bk') {
+      // 6. Detect Guru BK
+      if (cleanUser === 'bk' || normalizedUser === 'gurubk' || cleanUser === 'guru bk') {
         const res = await fetch('/api/bk/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -133,22 +171,34 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
         return;
       }
 
-      if (cleanUser === 'kurikulum' || cleanUser === 'waka_kurikulum' || cleanUser === 'kurikulum123') {
-        const res = await fetch('/api/curriculum/login', {
+      // 7. If user typed "waka", check curriculum then sarpras
+      if (cleanUser === 'waka') {
+        const resCur = await fetch('/api/curriculum/login', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ username: rawUser, password })
         });
-        if (res.ok) {
+        if (resCur.ok) {
           setTimeout(() => {
             setIsValidating(false);
             onLoginSuccess('waka_kurikulum', null, null, null);
           }, 600);
-        } else {
-          const errData = await res.json();
-          setIsValidating(false);
-          setErrorMsg(errData.error || 'Password Waka Kurikulum salah.');
+          return;
         }
+        const resSar = await fetch('/api/sarpras/login', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: rawUser, password })
+        });
+        if (resSar.ok) {
+          setTimeout(() => {
+            setIsValidating(false);
+            onLoginSuccess('waka_sarpras', null, null, null);
+          }, 600);
+          return;
+        }
+        setIsValidating(false);
+        setErrorMsg('Password Waka Kurikulum / Sarpras salah.');
         return;
       }
 
@@ -350,7 +400,7 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
               <button
                 type="submit"
                 disabled={isValidating}
-                className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
+                className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs uppercase tracking-wider rounded-xl transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-2"
               >
                 {isValidating ? (
                   'Menghubungkan...'
@@ -362,8 +412,6 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
                 )}
               </button>
             </form>
-
-
           </div>
         </div>
 

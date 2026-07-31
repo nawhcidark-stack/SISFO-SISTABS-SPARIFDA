@@ -145,6 +145,7 @@ export interface SchoolIdentity {
   paymentCardTemplate?: string;
   favicon?: string;
   activeAcademicYear?: string;
+  activeSemester?: string;
   sppRates?: {
     grade7: number;
     grade8: number;

@@ -696,11 +696,29 @@ export default function HomeroomPanel({
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
   const [selectedReportStudentId, setSelectedReportStudentId] = useState<string | null>(null);
 
-  // Kokurikuler states
+  // Kokurikuler & Full Merdeka Assessment states for Wali Kelas
   const [kokurikulerSemester, setKokurikulerSemester] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [kokurikulerYear, setKokurikulerYear] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
   const [kokurikulerScores, setKokurikulerScores] = useState<Record<string, string>>({});
   const [isSavingKokurikuler, setIsSavingKokurikuler] = useState<boolean>(false);
+
+  const [selectedSubjectForGrading, setSelectedSubjectForGrading] = useState<string>('Pendidikan Pancasila');
+  const [gradeInputMap, setGradeInputMap] = useState<Record<string, any>>({});
+  const [tp1InputName, setTp1InputName] = useState<string>('Memahami konsep dasar dan penerapannya');
+  const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
+  const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
+  const [tp4InputName, setTp4InputName] = useState<string>('Evaluasi & pengerjaan proyek');
+  const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
+  const [excelPasteContent, setExcelPasteContent] = useState<string>('');
+  const [excelParseError, setExcelParseError] = useState<string | null>(null);
+  const [excelParsedPreview, setExcelParsedPreview] = useState<any[]>([]);
+  const [isSavingFullGrades, setIsSavingFullGrades] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setKokurikulerYear(schoolIdentity.activeAcademicYear);
+    }
+  }, [schoolIdentity?.activeAcademicYear]);
 
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
@@ -1853,21 +1871,194 @@ export default function HomeroomPanel({
   useEffect(() => {
     if ((activeSubTab === 'kokurikuler' || activeSubTab === 'rapor_merdeka') && classStudents.length > 0) {
       const initialMap: Record<string, string> = {};
+      const fullGradeMap: Record<string, any> = {};
+
       classStudents.forEach(st => {
         const match = merdekaAssessments.find(a => 
           a.studentId === st.id && 
+          a.subject?.toLowerCase() === selectedSubjectForGrading.toLowerCase() &&
           a.semester === kokurikulerSemester && 
           a.academicYear === kokurikulerYear
         );
-        if (match && match.nilaiKokurikuler !== undefined && match.nilaiKokurikuler !== null) {
-          initialMap[st.id] = String(match.nilaiKokurikuler);
+
+        // General kokurikuler score
+        const generalMatch = merdekaAssessments.find(a =>
+          a.studentId === st.id &&
+          a.semester === kokurikulerSemester &&
+          a.academicYear === kokurikulerYear &&
+          a.nilaiKokurikuler !== undefined &&
+          a.nilaiKokurikuler > 0
+        );
+
+        const currentKoku = generalMatch?.nilaiKokurikuler !== undefined 
+          ? String(generalMatch.nilaiKokurikuler) 
+          : (match?.nilaiKokurikuler !== undefined ? String(match.nilaiKokurikuler) : "0");
+
+        initialMap[st.id] = currentKoku;
+
+        if (match) {
+          fullGradeMap[st.id] = {
+            tp1Tugas1: match.tp1Tugas1 !== undefined ? String(match.tp1Tugas1) : '',
+            tp1Tugas2: match.tp1Tugas2 !== undefined ? String(match.tp1Tugas2) : '',
+            tp1Uh: match.tp1Uh !== undefined ? String(match.tp1Uh) : '',
+
+            tp2Tugas1: match.tp2Tugas1 !== undefined ? String(match.tp2Tugas1) : '',
+            tp2Tugas2: match.tp2Tugas2 !== undefined ? String(match.tp2Tugas2) : '',
+            tp2Uh: match.tp2Uh !== undefined ? String(match.tp2Uh) : '',
+
+            tp3Tugas1: match.tp3Tugas1 !== undefined ? String(match.tp3Tugas1) : '',
+            tp3Tugas2: match.tp3Tugas2 !== undefined ? String(match.tp3Tugas2) : '',
+            tp3Uh: match.tp3Uh !== undefined ? String(match.tp3Uh) : '',
+
+            tp4Tugas1: match.tp4Tugas1 !== undefined ? String(match.tp4Tugas1) : '',
+            tp4Tugas2: match.tp4Tugas2 !== undefined ? String(match.tp4Tugas2) : '',
+            tp4Uh: match.tp4Uh !== undefined ? String(match.tp4Uh) : '',
+
+            kokurikuler: currentKoku,
+            pts: match.nilaiPts !== undefined ? String(match.nilaiPts) : '',
+            pas: match.nilaiPas !== undefined ? String(match.nilaiPas) : '',
+            deskripsi: match.deskripsiCapaian || ''
+          };
+          if (match.tp1Name && !tp1InputName) setTp1InputName(match.tp1Name);
+          if (match.tp2Name && !tp2InputName) setTp2InputName(match.tp2Name);
+          if (match.tp3Name && !tp3InputName) setTp3InputName(match.tp3Name);
+          if (match.tp4Name && !tp4InputName) setTp4InputName(match.tp4Name);
         } else {
-          initialMap[st.id] = initialMap[st.id] || "0";
+          fullGradeMap[st.id] = {
+            tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+            tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+            tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+            tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+            kokurikuler: currentKoku,
+            pts: '', pas: '', deskripsi: ''
+          };
         }
       });
       setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
+      setGradeInputMap(fullGradeMap);
     }
-  }, [activeSubTab, merdekaAssessments, classStudents, kokurikulerSemester, kokurikulerYear]);
+  }, [activeSubTab, merdekaAssessments, selectedSubjectForGrading, classStudents, kokurikulerSemester, kokurikulerYear]);
+
+  const handleSaveFullGrades = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setIsSavingFullGrades(true);
+    setNotifMsg(null);
+    try {
+      const newKokuScores = { ...kokurikulerScores };
+
+      const batchData = classStudents.map(s => {
+        const inputState = gradeInputMap[s.id] || {
+          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+          kokurikuler: '0', pts: '', pas: '', deskripsi: ''
+        };
+
+        const kokuVal = Number(inputState.kokurikuler) || Number(kokurikulerScores[s.id]) || 0;
+        newKokuScores[s.id] = String(kokuVal);
+
+        return {
+          studentId: s.id,
+          studentName: s.name,
+          className: currentTeacher.className,
+          subject: selectedSubjectForGrading,
+          teacherName: currentTeacher.name,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          tp1Name: tp1InputName,
+          tp1Tugas1: inputState.tp1Tugas1,
+          tp1Tugas2: inputState.tp1Tugas2,
+          tp1Uh: inputState.tp1Uh,
+
+          tp2Name: tp2InputName || undefined,
+          tp2Tugas1: inputState.tp2Tugas1,
+          tp2Tugas2: inputState.tp2Tugas2,
+          tp2Uh: inputState.tp2Uh,
+
+          tp3Name: tp3InputName || undefined,
+          tp3Tugas1: inputState.tp3Tugas1,
+          tp3Tugas2: inputState.tp3Tugas2,
+          tp3Uh: inputState.tp3Uh,
+
+          tp4Name: tp4InputName || undefined,
+          tp4Tugas1: inputState.tp4Tugas1,
+          tp4Tugas2: inputState.tp4Tugas2,
+          tp4Uh: inputState.tp4Uh,
+
+          nilaiKokurikuler: kokuVal,
+          nilaiPts: inputState.pts !== '' ? Number(inputState.pts) : undefined,
+          nilaiPas: inputState.pas !== '' ? Number(inputState.pas) : undefined,
+          deskripsiCapaian: inputState.deskripsi || undefined
+        };
+      });
+
+      setKokurikulerScores(newKokuScores);
+
+      const res1 = await fetch('/api/merdeka-assessments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(batchData)
+      });
+
+      await fetch('/api/kokurikuler/batch-save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          className: currentTeacher.className,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          scores: newKokuScores
+        })
+      });
+
+      if (res1.ok) {
+        setNotifMsg({ type: 'success', text: `🎉 Penilaian Kurikulum Merdeka & Nilai Kokurikuler Kelas ${currentTeacher.className} (${selectedSubjectForGrading}) berhasil disimpan!` });
+        setShowSuccessCheck(true);
+        fetchMerdekaAssessments();
+      } else {
+        const d = await res1.json();
+        setNotifMsg({ type: 'error', text: d.error || 'Gagal menyimpan nilai.' });
+      }
+    } catch (err) {
+      setNotifMsg({ type: 'error', text: 'Terjadi kesalahan koneksi ke server.' });
+    } finally {
+      setIsSavingFullGrades(false);
+    }
+  };
+
+  const handleFillSampleGrades = () => {
+    const updatedMap = { ...gradeInputMap };
+    classStudents.forEach((st, index) => {
+      const cur = updatedMap[st.id] || {};
+      const base = 80 + ((index * 3) % 15);
+      updatedMap[st.id] = {
+        ...cur,
+        tp1Tugas1: cur.tp1Tugas1 || String(base),
+        tp1Tugas2: cur.tp1Tugas2 || String(base + 2 > 100 ? 98 : base + 2),
+        tp1Uh: cur.tp1Uh || String(base - 1),
+
+        tp2Tugas1: cur.tp2Tugas1 || String(base + 1),
+        tp2Tugas2: cur.tp2Tugas2 || String(base + 3 > 100 ? 95 : base + 3),
+        tp2Uh: cur.tp2Uh || String(base),
+
+        tp3Tugas1: cur.tp3Tugas1 || String(base),
+        tp3Tugas2: cur.tp3Tugas2 || String(base + 1),
+        tp3Uh: cur.tp3Uh || String(base + 2 > 100 ? 96 : base + 2),
+
+        tp4Tugas1: cur.tp4Tugas1 || String(base - 2 < 75 ? 80 : base - 2),
+        tp4Tugas2: cur.tp4Tugas2 || String(base + 2),
+        tp4Uh: cur.tp4Uh || String(base + 1),
+
+        kokurikuler: cur.kokurikuler && cur.kokurikuler !== '0' ? cur.kokurikuler : String(base + 3 > 100 ? 92 : base + 3),
+        pts: cur.pts || String(base + 1),
+        pas: cur.pas || String(base + 2)
+      };
+    });
+    setGradeInputMap(updatedMap);
+    setNotifMsg({ type: 'success', text: '✨ Berhasil mengisi contoh nilai (80-95) untuk seluruh siswa. Klik Simpan untuk memperbarui database.' });
+    setShowSuccessCheck(true);
+  };
 
   const handleSaveKokurikulerBatch = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -6387,14 +6578,14 @@ Wassalamualaikum Wr. Wb.
                 <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-600 to-indigo-600" />
                 <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Khusus Wali Kelas ({currentTeacher.className})</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                  ⭐ Input Nilai Kokurikuler Siswa
+                  ⭐ Input Penilaian Rapor Merdeka & Kokurikuler
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
-                  Input 1 kolom Nilai Kokurikuler per siswa. Nilai ini otomatis terhubung secara real-time ke akun Guru Mata Pelajaran & Waka Kurikulum untuk kalkulasi Nilai Akhir Tiap Mapel.
+                  Input nilai TP 1 s.d. TP 4 (Tugas 1, Tugas 2, UH), Rata-rata TP, Nilai Kokurikuler, PTS, dan PAS. Nilai Kokurikuler otomatis terhitung ke Nilai Akhir Mapel Rapor.
                 </p>
 
                 {/* Filter Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100">
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
                   <div>
                     <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Kelas Binaan</label>
                     <input
@@ -6403,6 +6594,34 @@ Wassalamualaikum Wr. Wb.
                       value={currentTeacher.className}
                       className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 cursor-not-allowed"
                     />
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Mata Pelajaran</label>
+                    <select
+                      value={selectedSubjectForGrading}
+                      onChange={(e) => setSelectedSubjectForGrading(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
+                    >
+                      {[
+                        'Pendidikan Pancasila',
+                        'Bahasa Indonesia',
+                        'Matematika',
+                        'Ilmu Pengetahuan Alam',
+                        'Ilmu Pengetahuan Sosial',
+                        'Bahasa Inggris',
+                        'Informatika',
+                        'Pendidikan Jasmani & OR',
+                        'Seni Budaya',
+                        'Prakarya',
+                        'Bahasa Jawa',
+                        'Pendidikan Agama Islam',
+                        'Aswaja',
+                        'Bimbingan Konseling'
+                      ].map(subj => (
+                        <option key={subj} value={subj}>{subj}</option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
@@ -6437,30 +6656,87 @@ Wassalamualaikum Wr. Wb.
                 </div>
               </div>
 
+              {/* Uraian TP Accordion */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col gap-3">
+                <h3 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">Deskripsi Tujuan Pembelajaran (TP 1 - TP 4) - {selectedSubjectForGrading}</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-1</label>
+                    <input
+                      type="text"
+                      value={tp1InputName}
+                      onChange={(e) => setTp1InputName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-2</label>
+                    <input
+                      type="text"
+                      value={tp2InputName}
+                      onChange={(e) => setTp2InputName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-3</label>
+                    <input
+                      type="text"
+                      value={tp3InputName}
+                      onChange={(e) => setTp3InputName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-4</label>
+                    <input
+                      type="text"
+                      value={tp4InputName}
+                      onChange={(e) => setTp4InputName(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                    />
+                  </div>
+                </div>
+              </div>
+
               {/* Input Form Table */}
-              <form onSubmit={handleSaveKokurikulerBatch} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
+              <form onSubmit={handleSaveFullGrades} className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-4">
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
                   <div>
-                    <h3 className="font-extrabold text-sm text-slate-900">Daftar Nilai Kokurikuler Siswa ({classStudents.length} Siswa)</h3>
-                    <p className="text-slate-400 text-[10.5px]">Nilai antara 0 hingga 100.</p>
+                    <h3 className="font-extrabold text-sm text-slate-900">
+                      Tabel Penilaian Rapor Merdeka & Kokurikuler ({classStudents.length} Siswa)
+                    </h3>
+                    <p className="text-slate-400 text-[10.5px]">
+                      Poin TP1..TP4, Rata TP, Kokurikuler (Wali Kelas), PTS & PAS otomatis membentuk Nilai Akhir Mapel.
+                    </p>
                   </div>
 
-                  <button
-                    type="submit"
-                    disabled={isSavingKokurikuler || classStudents.length === 0}
-                    className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer self-end sm:self-auto"
-                  >
-                    {isSavingKokurikuler ? (
-                      <>
-                        <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        <span>Menyimpan...</span>
-                      </>
-                    ) : (
-                      <>
-                        <span>💾 Simpan Semua Nilai Kokurikuler</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={handleFillSampleGrades}
+                      className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                    >
+                      <span>✨ Isi Contoh Nilai</span>
+                    </button>
+
+                    <button
+                      type="submit"
+                      disabled={isSavingFullGrades || classStudents.length === 0}
+                      className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
+                    >
+                      {isSavingFullGrades ? (
+                        <>
+                          <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                          <span>Menyimpan...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>💾 Simpan Penilaian & Kokurikuler</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 </div>
 
                 {classStudents.length === 0 ? (
@@ -6468,40 +6744,186 @@ Wassalamualaikum Wr. Wb.
                     Tidak ada siswa terdaftar pada kelas {currentTeacher.className}.
                   </div>
                 ) : (
-                  <div className="overflow-x-auto border border-slate-100 rounded-2xl">
-                    <table className="w-full text-left text-xs border-collapse">
+                  <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-inner">
+                    <table className="w-full text-left text-[11px] border-collapse min-w-[1100px]">
                       <thead>
-                        <tr className="bg-slate-50 text-slate-500 font-black border-b border-slate-200/80 uppercase text-[10px] tracking-wider">
-                          <th className="py-3 px-4 w-12 text-center">No</th>
-                          <th className="py-3 px-4 w-28">NIS</th>
-                          <th className="py-3 px-4">Nama Siswa</th>
-                          <th className="py-3 px-4 w-44 text-center">Nilai Kokurikuler (0-100)</th>
+                        <tr className="bg-slate-800 text-white font-black border-b border-slate-700 uppercase text-[9.5px] tracking-wider">
+                          <th className="py-3 px-3 w-10 text-center border-r border-slate-700">No</th>
+                          <th className="py-3 px-3 w-48 border-r border-slate-700">NIS / Nama Siswa</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 1</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 2</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 3</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 4</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-indigo-900/80">Rata TP</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-purple-900/80 text-amber-300">⭐ Kokurikuler</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-slate-700/60">PTS</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-slate-700/60">PAS</th>
+                          <th className="py-3 px-3 text-center bg-emerald-900/90 text-emerald-200">NA Mapel</th>
+                        </tr>
+                        <tr className="bg-slate-700 text-slate-300 font-bold border-b border-slate-600 text-[9px]">
+                          <th className="py-1 px-1 border-r border-slate-600"></th>
+                          <th className="py-1 px-1 border-r border-slate-600"></th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
+                          <th className="py-1 px-1 text-center w-12 border-r border-slate-600">Formative</th>
+                          <th className="py-1 px-1 text-center w-20 border-r border-slate-600 text-amber-300">Wali Kelas</th>
+                          <th className="py-1 px-1 text-center w-12 border-r border-slate-600">Mid</th>
+                          <th className="py-1 px-1 text-center w-12 border-r border-slate-600">Final</th>
+                          <th className="py-1 px-1 text-center w-14">Rapor</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
                         {classStudents.map((st, idx) => {
-                          const val = kokurikulerScores[st.id] ?? "0";
+                          const state = gradeInputMap[st.id] || {
+                            tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+                            tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+                            tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+                            tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+                            kokurikuler: kokurikulerScores[st.id] || '0',
+                            pts: '', pas: ''
+                          };
+
+                          const calcTp = (t1: any, t2: any, uh: any) => {
+                            const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
+                            const n2 = t2 !== '' && !isNaN(Number(t2)) ? Number(t2) : null;
+                            const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
+                            if (n1 === null && n2 === null && n3 === null) return null;
+                            let tugasAvg = null;
+                            if (n1 !== null && n2 !== null) tugasAvg = (n1 + n2) / 2;
+                            else if (n1 !== null) tugasAvg = n1;
+                            else if (n2 !== null) tugasAvg = n2;
+
+                            if (tugasAvg !== null && n3 !== null) return Math.round((tugasAvg * 0.6) + (n3 * 0.4));
+                            if (tugasAvg !== null) return Math.round(tugasAvg);
+                            if (n3 !== null) return Math.round(n3);
+                            return null;
+                          };
+
+                          const tp1 = calcTp(state.tp1Tugas1, state.tp1Tugas2, state.tp1Uh);
+                          const tp2 = calcTp(state.tp2Tugas1, state.tp2Tugas2, state.tp2Uh);
+                          const tp3 = calcTp(state.tp3Tugas1, state.tp3Tugas2, state.tp3Uh);
+                          const tp4 = calcTp(state.tp4Tugas1, state.tp4Tugas2, state.tp4Uh);
+
+                          const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+                          const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+                          const koku = Number(state.kokurikuler) || Number(kokurikulerScores[st.id]) || 0;
+                          const pts = state.pts !== '' && !isNaN(Number(state.pts)) ? Number(state.pts) : 0;
+                          const pas = state.pas !== '' && !isNaN(Number(state.pas)) ? Number(state.pas) : 0;
+
+                          const finalMapel = avgTp !== null 
+                            ? Math.round(((avgTp * 2) + koku + pts + pas) / 5) 
+                            : null;
+
+                          const updateField = (field: string, val: string) => {
+                            setGradeInputMap(prev => ({
+                              ...prev,
+                              [st.id]: {
+                                ...(prev[st.id] || {}),
+                                [field]: val
+                              }
+                            }));
+                            if (field === 'kokurikuler') {
+                              setKokurikulerScores(prev => ({
+                                ...prev,
+                                [st.id]: val
+                              }));
+                            }
+                          };
+
                           return (
-                            <tr key={st.id} className="hover:bg-purple-50/30 transition-colors">
-                              <td className="py-2.5 px-4 text-center font-mono text-[11px] text-slate-400">{idx + 1}</td>
-                              <td className="py-2.5 px-4 font-mono font-bold text-slate-600">{st.nis || st.id}</td>
-                              <td className="py-2.5 px-4 font-bold text-slate-900">{st.name}</td>
-                              <td className="py-2.5 px-4 text-center">
+                            <tr key={st.id} className="hover:bg-purple-50/40 transition-colors">
+                              <td className="py-2 px-2 text-center font-mono text-[11px] text-slate-400 border-r border-slate-100">{idx + 1}</td>
+                              <td className="py-2 px-3 border-r border-slate-100">
+                                <div className="font-bold text-slate-900 leading-tight">{st.name}</div>
+                                <div className="text-[10px] font-mono text-slate-400">{st.nis || st.id}</div>
+                              </td>
+
+                              {/* TP1 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp1Tugas1} onChange={e => updateField('tp1Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp1Tugas2} onChange={e => updateField('tp1Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp1Uh} onChange={e => updateField('tp1Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* TP2 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp2Tugas1} onChange={e => updateField('tp2Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp2Tugas2} onChange={e => updateField('tp2Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp2Uh} onChange={e => updateField('tp2Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* TP3 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp3Tugas1} onChange={e => updateField('tp3Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp3Tugas2} onChange={e => updateField('tp3Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp3Uh} onChange={e => updateField('tp3Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* TP4 */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp4Tugas1} onChange={e => updateField('tp4Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp4Tugas2} onChange={e => updateField('tp4Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.tp4Uh} onChange={e => updateField('tp4Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
+                              </td>
+
+                              {/* Rata TP */}
+                              <td className="p-1 border-r border-slate-100 text-center bg-indigo-50/50 font-black text-indigo-700">
+                                {avgTp !== null ? avgTp : '-'}
+                              </td>
+
+                              {/* KOKURIKULER (EDITABLE FOR WALI KELAS!) */}
+                              <td className="p-1 border-r border-slate-100 text-center bg-purple-50/80">
                                 <input
                                   type="number"
                                   min={0}
                                   max={100}
-                                  value={val}
-                                  onChange={(e) => {
-                                    const numStr = e.target.value;
-                                    setKokurikulerScores(prev => ({
-                                      ...prev,
-                                      [st.id]: numStr
-                                    }));
-                                  }}
-                                  className="w-24 px-3 py-1.5 text-center font-extrabold text-slate-900 bg-purple-50/50 border border-purple-200 focus:border-purple-600 focus:bg-white rounded-xl text-xs outline-none transition-all"
+                                  value={state.kokurikuler}
+                                  onChange={e => updateField('kokurikuler', e.target.value)}
+                                  className="w-16 text-center font-black text-purple-900 bg-white border border-purple-300 focus:border-purple-600 rounded-lg px-1 py-1 text-xs shadow-sm"
                                   placeholder="0-100"
                                 />
+                              </td>
+
+                              {/* PTS */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.pts} onChange={e => updateField('pts', e.target.value)} className="w-11 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" placeholder="PTS" />
+                              </td>
+
+                              {/* PAS */}
+                              <td className="p-1 border-r border-slate-100 text-center">
+                                <input type="number" min={0} max={100} value={state.pas} onChange={e => updateField('pas', e.target.value)} className="w-11 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" placeholder="PAS" />
+                              </td>
+
+                              {/* Nilai Akhir Mapel */}
+                              <td className="p-1 text-center bg-emerald-50 font-black text-emerald-800 text-xs">
+                                {finalMapel !== null ? finalMapel : '-'}
                               </td>
                             </tr>
                           );

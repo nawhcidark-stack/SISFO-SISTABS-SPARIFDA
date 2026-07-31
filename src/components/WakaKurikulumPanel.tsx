@@ -43,10 +43,31 @@ export default function WakaKurikulumPanel({
   const [activeTab, setActiveTab] = useState<'monitoring' | 'import_pts_pas' | 'rekap_nilai' | 'password'>('monitoring');
 
   // Filter States
-  const [selectedSemester, setSelectedSemester] = useState<string>('Genap');
+  const [selectedSemester, setSelectedSemester] = useState<string>(
+    schoolIdentity?.activeSemester || 'Genap'
+  );
   const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(
     schoolIdentity?.activeAcademicYear || '2025/2026'
   );
+
+  React.useEffect(() => {
+    if (schoolIdentity?.activeAcademicYear) {
+      setSelectedAcademicYear(schoolIdentity.activeAcademicYear);
+    }
+    if (schoolIdentity?.activeSemester) {
+      setSelectedSemester(schoolIdentity.activeSemester);
+    }
+  }, [schoolIdentity?.activeAcademicYear, schoolIdentity?.activeSemester]);
+
+  const academicYearOptions = useMemo(() => {
+    const list = [
+      schoolIdentity?.activeAcademicYear,
+      '2025/2026',
+      '2024/2025',
+      '2023/2024'
+    ].filter(Boolean) as string[];
+    return Array.from(new Set(list));
+  }, [schoolIdentity?.activeAcademicYear]);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
@@ -427,9 +448,9 @@ export default function WakaKurikulumPanel({
               onChange={(e) => setSelectedAcademicYear(e.target.value)}
               className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
             >
-              <option value="2025/2026">2025/2026</option>
-              <option value="2024/2025">2024/2025</option>
-              <option value="2023/2024">2023/2024</option>
+              {academicYearOptions.map(year => (
+                <option key={year} value={year}>{year}</option>
+              ))}
             </select>
           </div>
 

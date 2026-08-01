@@ -2509,8 +2509,8 @@ export default function SubjectTeacherPanel({
               <table className="w-full border-collapse text-xs select-none">
                 <thead>
                   <tr className="bg-slate-900 text-white font-extrabold uppercase tracking-wider text-[10px] text-center">
-                    <th className="py-3 px-3 w-10 text-center rounded-tl-3xl" rowSpan={2}>No</th>
-                    <th className="py-3 px-3 text-left min-w-[150px]" rowSpan={2}>Nama Siswa [NIS]</th>
+                    <th className="py-3 px-3 w-10 text-center rounded-tl-3xl sticky left-0 z-20 bg-slate-900" rowSpan={2}>No</th>
+                    <th className="py-3 px-3 text-left min-w-[150px] w-48 sticky left-10 z-20 bg-slate-900 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)] border-r border-slate-700" rowSpan={2}>Nama Siswa [NIS]</th>
                     
                     <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 1</th>
                     <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 2</th>
@@ -2620,10 +2620,10 @@ export default function SubjectTeacherPanel({
                       };
 
                       return (
-                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-[11px]">
-                          <td className="py-2.5 px-2 text-center text-slate-400 font-bold">{idx + 1}</td>
-                          <td className="py-2.5 px-3 text-left">
-                            <div className="font-extrabold text-slate-800">{s.name}</div>
+                        <tr key={s.id} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors text-[11px] group">
+                          <td className="py-2.5 px-2 text-center text-slate-400 font-bold sticky left-0 z-10 bg-white group-hover:bg-slate-50">{idx + 1}</td>
+                          <td className="py-2.5 px-3 text-left sticky left-10 z-10 bg-white group-hover:bg-slate-50 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.08)] border-r border-slate-200 min-w-[150px] max-w-[180px]">
+                            <div className="font-extrabold text-slate-800 truncate" title={s.name}>{s.name}</div>
                             <div className="text-[9px] text-slate-400 font-mono">NIS: {s.nis}</div>
                           </td>
                           
@@ -4344,8 +4344,8 @@ export default function SubjectTeacherPanel({
                   <table className="w-full text-left text-[10px] border-collapse border border-slate-800">
                     <thead>
                       <tr className="bg-slate-100 text-slate-900 font-black uppercase text-center border-b border-slate-800">
-                        <th className="p-1.5 border border-slate-800 w-8" rowSpan={2}>No</th>
-                        <th className="p-1.5 border border-slate-800 text-left" rowSpan={2}>NIS / Nama Siswa</th>
+                        <th className="p-1.5 border border-slate-800 w-8 sticky left-0 z-20 bg-slate-100" rowSpan={2}>No</th>
+                        <th className="p-1.5 border border-slate-800 text-left min-w-[140px] sticky left-8 z-20 bg-slate-100 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.2)]" rowSpan={2}>NIS / Nama Siswa</th>
                         <th className="p-1 border border-slate-800" colSpan={3}>TP 1</th>
                         <th className="p-1 border border-slate-800" colSpan={3}>TP 2</th>
                         <th className="p-1 border border-slate-800" colSpan={3}>TP 3</th>
@@ -4412,10 +4412,10 @@ export default function SubjectTeacherPanel({
                           : null;
 
                         return (
-                          <tr key={st.id} className="border-b border-slate-300 hover:bg-slate-50 text-center">
-                            <td className="p-1 border border-slate-300 font-mono text-slate-500">{idx + 1}</td>
-                            <td className="p-1 border border-slate-300 text-left">
-                              <div className="font-bold text-slate-900">{st.name}</div>
+                          <tr key={st.id} className="border-b border-slate-300 hover:bg-slate-50 text-center group">
+                            <td className="p-1 border border-slate-300 font-mono text-slate-500 sticky left-0 z-10 bg-white group-hover:bg-slate-50">{idx + 1}</td>
+                            <td className="p-1 border border-slate-300 text-left sticky left-8 z-10 bg-white group-hover:bg-slate-50 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.08)] min-w-[140px] max-w-[180px]">
+                              <div className="font-bold text-slate-900 truncate" title={st.name}>{st.name}</div>
                               <div className="text-[9px] font-mono text-slate-500">{st.nis || st.id}</div>
                             </td>
                             <td className="p-1 border border-slate-300">{inputState.tp1Tugas1 || "-"}</td>

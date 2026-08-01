@@ -2880,6 +2880,40 @@ Wassalamualaikum Wr. Wb.
         </div>
       </div>
 
+      {/* Mobile Sub-Navigation Pills (Horizontal Scrollable for Fast Access on Mobile) */}
+      <div className="flex md:hidden items-center gap-2 overflow-x-auto pb-1 no-scrollbar select-none">
+        {[
+          { id: 'record', label: 'Absensi', icon: '📝' },
+          { id: 'history', label: 'Jurnal', icon: '📊' },
+          { id: 'rekap_absensi', label: 'Rekap', icon: '📉' },
+          { id: 'finance', label: 'Keuangan', icon: '💳' },
+          { id: 'perkembangan', label: 'Perkembangan', icon: '📈' },
+          { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '⭐', highlight: true },
+          { id: 'rapor_merdeka', label: 'Rapor Merdeka', icon: '🎓' },
+          { id: 'buku_induk', label: 'Buku Induk', icon: '📗' },
+          { id: 'pkg', label: 'PKG', icon: '🎖️' },
+          { id: 'profile', label: 'Profil', icon: '👤' },
+        ].map((tab) => (
+          <button
+            key={tab.id}
+            type="button"
+            onClick={() => setActiveSubTab(tab.id as any)}
+            className={`px-3 py-1.5 rounded-xl text-xs font-bold whitespace-nowrap flex items-center gap-1.5 transition-all cursor-pointer shrink-0 border ${
+              activeSubTab === tab.id
+                ? tab.highlight
+                  ? 'bg-purple-600 text-white border-purple-700 shadow-xs'
+                  : 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                : tab.highlight
+                  ? 'bg-purple-50 text-purple-700 border-purple-200 hover:bg-purple-100'
+                  : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'
+            }`}
+          >
+            <span>{tab.icon}</span>
+            <span>{tab.label}</span>
+          </button>
+        ))}
+      </div>
+
       {/* Primary Workspace */}
       <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-start">
         {/* Left Control Column (Date and Subtabs selector) - Hidden on mobile, controlled via bottom nav */}
@@ -2903,7 +2937,7 @@ Wassalamualaikum Wr. Wb.
                 title="Pengisian Absensi"
               >
                 <span className="text-sm">📝</span>
-                <span className="hidden md:inline">Pengisian Absensi</span>
+                <span className="inline">Pengisian Absensi</span>
               </button>
               <button
                 _id="tab-btn-history"
@@ -2916,7 +2950,7 @@ Wassalamualaikum Wr. Wb.
                 title="Riwayat Jurnal Kelas"
               >
                 <span className="text-sm">📊</span>
-                <span className="hidden md:inline">Riwayat Jurnal</span>
+                <span className="inline">Riwayat Jurnal</span>
               </button>
               <button
                 _id="tab-btn-rekap"
@@ -2929,7 +2963,7 @@ Wassalamualaikum Wr. Wb.
                 title="Rekap Absensi Kelas"
               >
                 <span className="text-sm">📉</span>
-                <span className="hidden md:inline">Rekap Absensi</span>
+                <span className="inline">Rekap Absensi</span>
               </button>
               <button
                 _id="tab-btn-finance"
@@ -2942,7 +2976,7 @@ Wassalamualaikum Wr. Wb.
                 title="Tabungan & Tagihan SPP"
               >
                 <span className="text-sm">💳</span>
-                <span className="hidden md:inline">Tabungan & SPP</span>
+                <span className="inline">Tabungan & SPP</span>
               </button>
               <button
                 _id="tab-btn-perkembangan"
@@ -2955,7 +2989,7 @@ Wassalamualaikum Wr. Wb.
                 title="Jurnal Perkembangan Siswa"
               >
                 <span className="text-sm">📈</span>
-                <span className="hidden md:inline">Jurnal Perkembangan</span>
+                <span className="inline">Jurnal Perkembangan</span>
               </button>
               <button
                 _id="tab-btn-profile"
@@ -2968,7 +3002,7 @@ Wassalamualaikum Wr. Wb.
                 title="Profil Wali Kelas & Ubah Sandi"
               >
                 <span className="text-sm">👤</span>
-                <span className="hidden md:inline">Profil & Sandi</span>
+                <span className="inline">Profil & Sandi</span>
               </button>
 
               <button
@@ -2982,7 +3016,7 @@ Wassalamualaikum Wr. Wb.
                 title="Halaman Rapor Kurikulum Merdeka Siswa"
               >
                 <span className="text-sm">🎓</span>
-                <span className="hidden md:inline">Rapor Merdeka</span>
+                <span className="inline">Rapor Merdeka</span>
               </button>
 
               <button
@@ -2996,7 +3030,7 @@ Wassalamualaikum Wr. Wb.
                 title="Input Nilai Kokurikuler Kelas Binaan"
               >
                 <span className="text-sm">⭐</span>
-                <span className="hidden md:inline">Nilai Kokurikuler</span>
+                <span className="inline">Nilai Kokurikuler</span>
               </button>
 
               <button
@@ -3010,7 +3044,7 @@ Wassalamualaikum Wr. Wb.
                 title="Evaluasi Penilaian Kinerja Guru oleh Kepala Sekolah"
               >
                 <span className="text-sm">🎖️</span>
-                <span className="hidden md:inline">Kinerja (PKG)</span>
+                <span className="inline">Kinerja (PKG)</span>
               </button>
 
               <button
@@ -3024,7 +3058,7 @@ Wassalamualaikum Wr. Wb.
                 title="Buku Induk Kesiswaan Digital Kelas Binaan"
               >
                 <span className="text-sm">📗</span>
-                <span className="hidden md:inline">Buku Induk Kelas</span>
+                <span className="inline">Buku Induk Kelas</span>
               </button>
             </div>
 
@@ -6748,8 +6782,8 @@ Wassalamualaikum Wr. Wb.
                     <table className="w-full text-left text-[11px] border-collapse min-w-[1100px]">
                       <thead>
                         <tr className="bg-slate-800 text-white font-black border-b border-slate-700 uppercase text-[9.5px] tracking-wider">
-                          <th className="py-3 px-3 w-10 text-center border-r border-slate-700">No</th>
-                          <th className="py-3 px-3 w-48 border-r border-slate-700">NIS / Nama Siswa</th>
+                          <th className="py-3 px-3 w-10 text-center border-r border-slate-700 sticky left-0 z-20 bg-slate-800">No</th>
+                          <th className="py-3 px-3 w-48 border-r border-slate-700 sticky left-10 z-20 bg-slate-800 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)]">NIS / Nama Siswa</th>
                           <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 1</th>
                           <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 2</th>
                           <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 3</th>
@@ -6761,8 +6795,8 @@ Wassalamualaikum Wr. Wb.
                           <th className="py-3 px-3 text-center bg-emerald-900/90 text-emerald-200">NA Mapel</th>
                         </tr>
                         <tr className="bg-slate-700 text-slate-300 font-bold border-b border-slate-600 text-[9px]">
-                          <th className="py-1 px-1 border-r border-slate-600"></th>
-                          <th className="py-1 px-1 border-r border-slate-600"></th>
+                          <th className="py-1 px-1 border-r border-slate-600 sticky left-0 z-20 bg-slate-700"></th>
+                          <th className="py-1 px-1 border-r border-slate-600 sticky left-10 z-20 bg-slate-700 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)]"></th>
                           <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
                           <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
                           <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
@@ -6842,10 +6876,10 @@ Wassalamualaikum Wr. Wb.
                           };
 
                           return (
-                            <tr key={st.id} className="hover:bg-purple-50/40 transition-colors">
-                              <td className="py-2 px-2 text-center font-mono text-[11px] text-slate-400 border-r border-slate-100">{idx + 1}</td>
-                              <td className="py-2 px-3 border-r border-slate-100">
-                                <div className="font-bold text-slate-900 leading-tight">{st.name}</div>
+                            <tr key={st.id} className="hover:bg-purple-50/40 transition-colors group">
+                              <td className="py-2 px-2 text-center font-mono text-[11px] text-slate-400 border-r border-slate-100 sticky left-0 z-10 bg-white group-hover:bg-purple-50/90">{idx + 1}</td>
+                              <td className="py-2 px-3 border-r border-slate-100 sticky left-10 z-10 bg-white group-hover:bg-purple-50/90 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.12)] min-w-[140px] max-w-[180px]">
+                                <div className="font-bold text-slate-900 leading-tight truncate" title={st.name}>{st.name}</div>
                                 <div className="text-[10px] font-mono text-slate-400">{st.nis || st.id}</div>
                               </td>
 
@@ -7009,10 +7043,10 @@ Wassalamualaikum Wr. Wb.
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(['perkembangan', 'rapor_merdeka', 'profile', 'pkg'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg', 'kokurikuler', 'buku_induk'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(['perkembangan', 'rapor_merdeka', 'profile', 'pkg', 'kokurikuler', 'buku_induk'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg', 'kokurikuler', 'buku_induk'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -7048,6 +7082,44 @@ Wassalamualaikum Wr. Wb.
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('kokurikuler');
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeSubTab === 'kokurikuler'
+                      ? 'border-purple-600 bg-purple-50/80 shadow-xs'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-purple-100 rounded-xl text-purple-700 text-lg">⭐</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Nilai Kokurikuler</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Input &amp; rekap nilai kokurikuler kelas binaan</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('buku_induk');
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeSubTab === 'buku_induk'
+                      ? 'border-slate-800 bg-slate-100 shadow-xs'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-slate-100 rounded-xl text-slate-800 text-lg">📗</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Buku Induk Kelas</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Buku induk kesiswaan digital kelas binaan</p>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

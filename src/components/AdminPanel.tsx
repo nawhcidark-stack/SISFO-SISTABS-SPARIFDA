@@ -19,6 +19,7 @@ import {
   exportSavingsRecapToExcel,
   exportMiscRecapToExcel,
 } from "../utils/excelExport";
+import { MidtransBulkReportModal } from "./MidtransBulkReportModal";
 import {
   ShieldAlert,
   BookOpen,
@@ -409,6 +410,9 @@ export default function AdminPanel({
   const [payMiscBulkClassFilter, setPayMiscBulkClassFilter] = useState<string>("all");
   const [payMiscBulkSearch, setPayMiscBulkSearch] = useState<string>("");
   const [isSubmittingPayMiscBulk, setIsSubmittingPayMiscBulk] = useState(false);
+
+  // State for Midtrans Bulk Report Modal
+  const [isMidtransBulkReportModalOpen, setIsMidtransBulkReportModalOpen] = useState(false);
 
   // Helper to extract grade level
   const getGradeLevel = (className: string): string => {
@@ -8888,6 +8892,15 @@ export default function AdminPanel({
                       <span>Sinkronkan Transaksi</span>
                     </>
                   )}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setIsMidtransBulkReportModalOpen(true)}
+                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-md shadow-emerald-100 flex items-center justify-center gap-2 border border-emerald-500/30 shrink-0"
+                  title="Upload file report CSV/Excel dari Midtrans MAP untuk verifikasi status transaksi massal secara otomatis"
+                >
+                  <UploadCloud className="w-4 h-4" />
+                  <span>Upload Report Midtrans (Bulk Cek)</span>
                 </button>
               </div>
 
@@ -18276,6 +18289,10 @@ export default function AdminPanel({
           </motion.div>
         </div>
       )}
+      <MidtransBulkReportModal
+        isOpen={isMidtransBulkReportModalOpen}
+        onClose={() => setIsMidtransBulkReportModalOpen(false)}
+      />
     </div>
   );
 }

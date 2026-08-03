@@ -213,8 +213,9 @@ export interface TreasurerTransaction {
   amount: number;
   description: string;
   date: string; // "YYYY-MM-DD"
-  source: 'spp' | 'savings' | 'custom';
+  source?: 'spp' | 'savings' | 'custom';
   studentName?: string;
+  studentId?: string;
   nis?: string;
   createdBy?: string;
   recipientName?: string;

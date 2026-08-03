@@ -8719,6 +8719,339 @@ async function startServer() {
     }
   });
 
+  // Bulk Midtrans Report Upload & Reconciliation Endpoint
+  app.post("/api/verify-midtrans-bulk-report", async (req, res) => {
+    try {
+      const { items, rawContent } = req.body;
+      let parsedItems: Array<{
+        orderId: string;
+        status?: string;
+        grossAmount?: number | string;
+        paymentType?: string;
+        transactionTime?: string;
+      }> = [];
+
+      if (Array.isArray(items) && items.length > 0) {
+        parsedItems = items;
+      } else if (rawContent && typeof rawContent === "string" && rawContent.trim()) {
+        const lines = rawContent.split(/\r?\n/).filter(line => line.trim().length > 0);
+        if (lines.length > 0) {
+          const delimiter = lines[0].includes("\t") ? "\t" : (lines[0].includes(";") ? ";" : ",");
+          const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
+          
+          let orderIdIdx = headers.findIndex(h => h.includes("order_id") || h.includes("order id") || h.includes("orderid") || h.includes("no. order") || h.includes("ref"));
+          let statusIdx = headers.findIndex(h => h.includes("status") || h.includes("transaction_status") || h.includes("state"));
+          let amountIdx = headers.findIndex(h => h.includes("amount") || h.includes("gross") || h.includes("total") || h.includes("nominal") || h.includes("jumlah"));
+          let paymentIdx = headers.findIndex(h => h.includes("payment") || h.includes("channel") || h.includes("metode"));
+          let timeIdx = headers.findIndex(h => h.includes("time") || h.includes("date") || h.includes("tanggal") || h.includes("waktu") || h.includes("settlement"));
+
+          if (orderIdIdx === -1) orderIdIdx = 0;
+
+          const startRow = (statusIdx !== -1 || headers.some(h => h.includes("order") || h.includes("status"))) ? 1 : 0;
+          
+          for (let i = startRow; i < lines.length; i++) {
+            const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^['"]|['"]$/g, ''));
+            const orderId = cols[orderIdIdx];
+            if (orderId && orderId.length > 2 && !orderId.toLowerCase().includes("order_id")) {
+              parsedItems.push({
+                orderId,
+                status: statusIdx !== -1 && cols[statusIdx] ? cols[statusIdx] : "settlement",
+                grossAmount: amountIdx !== -1 && cols[amountIdx] ? cols[amountIdx] : 0,
+                paymentType: paymentIdx !== -1 && cols[paymentIdx] ? cols[paymentIdx] : "Midtrans Gateway",
+                transactionTime: timeIdx !== -1 && cols[timeIdx] ? cols[timeIdx] : ""
+              });
+            }
+          }
+        }
+      }
+
+      if (parsedItems.length === 0) {
+        return res.status(400).json({ error: "Tidak ada data transaksi yang dapat dibaca dari file report." });
+      }
+
+      let reconciledCount = 0;
+      let alreadyPaidCount = 0;
+      let notFoundCount = 0;
+      let pendingCount = 0;
+      let failedCount = 0;
+      let totalAmountReconciled = 0;
+      let stateChanged = false;
+
+      const results: any[] = [];
+
+      for (const item of parsedItems) {
+        if (!item.orderId || typeof item.orderId !== "string") continue;
+        const cleanOrderId = item.orderId.trim();
+        if (!cleanOrderId) continue;
+
+        const rawStatus = (item.status || "settlement").toString().toLowerCase().trim();
+        const isSettled = rawStatus.includes("settlement") || rawStatus.includes("capture") || rawStatus.includes("success") || rawStatus.includes("lunas") || rawStatus.includes("paid") || rawStatus.includes("settled");
+        const isPending = rawStatus.includes("pending");
+
+        const actualPaymentType = item.paymentType ? (item.paymentType.toLowerCase().includes("midtrans") ? item.paymentType : `Midtrans (${item.paymentType})`) : "Midtrans Online";
+
+        if (!isSettled) {
+          if (isPending) {
+            pendingCount++;
+            results.push({
+              orderId: cleanOrderId,
+              studentName: "-",
+              studentNis: "-",
+              category: "Transaksi Online",
+              amount: Number(item.grossAmount) || 0,
+              reportStatus: rawStatus || "pending",
+              reportPaymentType: actualPaymentType,
+              reportTime: item.transactionTime || "-",
+              reconciliationStatus: "report_pending",
+              message: "Status di report Midtrans masih PENDING (Menunggu pembayaran dari wali murid)."
+            });
+          } else {
+            failedCount++;
+            results.push({
+              orderId: cleanOrderId,
+              studentName: "-",
+              studentNis: "-",
+              category: "Transaksi Online",
+              amount: Number(item.grossAmount) || 0,
+              reportStatus: rawStatus || "failed",
+              reportPaymentType: actualPaymentType,
+              reportTime: item.transactionTime || "-",
+              reconciliationStatus: "report_failed",
+              message: `Status di report Midtrans: ${rawStatus.toUpperCase()} (Transaksi dibatalkan/kadaluarsa).`
+            });
+          }
+          continue;
+        }
+
+        // Search SPP Bill
+        let sppBill = sppBills.find(b => b.orderId === cleanOrderId);
+        if (!sppBill && cleanOrderId.startsWith("SPP-")) {
+          const middle = cleanOrderId.slice(4);
+          const lastHyphenIndex = middle.lastIndexOf("-");
+          const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+          const cleanBillId = decompressBillIdForMidtrans(billId);
+          sppBill = sppBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
+        }
+
+        if (sppBill) {
+          const student = students.find(s => s.id === sppBill.studentId);
+          if (sppBill.status === "paid") {
+            alreadyPaidCount++;
+            results.push({
+              orderId: cleanOrderId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: `SPP ${sppBill.month} ${sppBill.year}`,
+              amount: sppBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: item.transactionTime || sppBill.paidAt || "-",
+              reconciliationStatus: "already_paid",
+              message: `SUDAH LUNAS: Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} sudah berstatus LUNAS sebelumnya.`
+            });
+          } else {
+            sppBill.status = "paid";
+            sppBill.paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
+            sppBill.paymentMethod = actualPaymentType;
+            sppBill.orderId = cleanOrderId;
+            reconciledCount++;
+            totalAmountReconciled += sppBill.amount;
+            stateChanged = true;
+
+            treasurerTransactions.push({
+              id: `tr-midtrans-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              type: "incoming",
+              category: "SPP",
+              amount: sppBill.amount,
+              description: `Pembayaran SPP ${sppBill.month} ${sppBill.year} (Midtrans Report) - ${student?.name || ""} (${student?.nis || ""})`,
+              recipientName: student?.name || "Siswa",
+              fundingSource: "Kas Bank/Midtrans",
+              date: sppBill.paidAt.substring(0, 10),
+              paymentMethod: "bank",
+              nis: student?.nis,
+              studentId: student?.id,
+              createdBy: "Midtrans Bulk Report"
+            });
+
+            results.push({
+              orderId: cleanOrderId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: `SPP ${sppBill.month} ${sppBill.year}`,
+              amount: sppBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: sppBill.paidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} berhasil diset sebagai LUNAS.`
+            });
+          }
+          continue;
+        }
+
+        // Search Misc Bill
+        let miscBill = miscBills.find(b => b.orderId === cleanOrderId);
+        if (!miscBill && cleanOrderId.startsWith("MISC-")) {
+          const middle = cleanOrderId.slice(5);
+          const lastHyphenIndex = middle.lastIndexOf("-");
+          const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+          const cleanBillId = decompressMiscBillIdForMidtrans(billId);
+          miscBill = miscBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
+        }
+
+        if (miscBill) {
+          const student = students.find(s => s.id === miscBill.studentId);
+          if (miscBill.status === "paid") {
+            alreadyPaidCount++;
+            results.push({
+              orderId: cleanOrderId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: miscBill.title,
+              amount: miscBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: item.transactionTime || miscBill.paidAt || "-",
+              reconciliationStatus: "already_paid",
+              message: `SUDAH LUNAS: Tagihan ${miscBill.title} a.n ${student?.name || 'Siswa'} sudah berstatus LUNAS sebelumnya.`
+            });
+          } else {
+            miscBill.status = "paid";
+            miscBill.paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
+            miscBill.paymentMethod = actualPaymentType;
+            miscBill.orderId = cleanOrderId;
+            reconciledCount++;
+            totalAmountReconciled += miscBill.amount;
+            stateChanged = true;
+
+            treasurerTransactions.push({
+              id: `tr-midtrans-misc-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+              type: "incoming",
+              category: miscBill.title || "Lain-lain",
+              amount: miscBill.amount,
+              description: `Pembayaran ${miscBill.title} (Midtrans Report) - ${student?.name || ""} (${student?.nis || ""})`,
+              recipientName: student?.name || "Siswa",
+              fundingSource: "Kas Bank/Midtrans",
+              date: miscBill.paidAt.substring(0, 10),
+              paymentMethod: "bank",
+              nis: student?.nis,
+              studentId: student?.id,
+              createdBy: "Midtrans Bulk Report"
+            });
+
+            results.push({
+              orderId: cleanOrderId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: miscBill.title,
+              amount: miscBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: miscBill.paidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan ${miscBill.title} a.n ${student?.name || 'Siswa'} berhasil diset sebagai LUNAS.`
+            });
+          }
+          continue;
+        }
+
+        // Search Savings Transaction
+        let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId);
+        if (!savingsTx && cleanOrderId.startsWith("SAV-")) {
+          const parts = cleanOrderId.split("-");
+          if (parts.length >= 2) {
+            const studentId = parts[1];
+            savingsTx = savingsTransactions.find(t => t.studentId === studentId && t.status === "pending");
+          }
+        }
+
+        if (savingsTx) {
+          const student = students.find(s => s.id === savingsTx.studentId);
+          if (savingsTx.status === "success") {
+            alreadyPaidCount++;
+            results.push({
+              orderId: cleanOrderId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: "Setoran Tabungan",
+              amount: savingsTx.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: item.transactionTime || "-",
+              reconciliationStatus: "already_paid",
+              message: `SUDAH LUNAS: Setoran Tabungan a.n ${student?.name || 'Siswa'} sudah dikonfirmasi LUNAS sebelumnya.`
+            });
+          } else {
+            savingsTx.status = "success";
+            savingsTx.paymentMethod = actualPaymentType;
+            if (student) {
+              student.savingsBalance += savingsTx.amount;
+            }
+            reconciledCount++;
+            totalAmountReconciled += savingsTx.amount;
+            stateChanged = true;
+
+            results.push({
+              orderId: cleanOrderId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: "Setoran Tabungan",
+              amount: savingsTx.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: savingsTx.createdAt || new Date().toISOString(),
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n ${student?.name || 'Siswa'} telah ditambahkan ke saldo tabungan.`
+            });
+          }
+          continue;
+        }
+
+        notFoundCount++;
+        results.push({
+          orderId: cleanOrderId,
+          studentName: "-",
+          studentNis: "-",
+          studentClass: "-",
+          category: "Order Midtrans",
+          amount: Number(item.grossAmount) || 0,
+          reportStatus: rawStatus,
+          reportPaymentType: actualPaymentType,
+          reportTime: item.transactionTime || "-",
+          reconciliationStatus: "not_found",
+          message: `REF TIDAK DITEMUKAN: Order ID '${cleanOrderId}' tertera SETTLEMENT di report, tetapi tidak cocok dengan ID/Ref tagihan internal di database.`
+        });
+      }
+
+      if (stateChanged) {
+        saveState();
+      }
+
+      return res.json({
+        success: true,
+        summary: {
+          totalRows: parsedItems.length,
+          reconciledCount,
+          alreadyPaidCount,
+          notFoundCount,
+          pendingCount,
+          failedCount,
+          totalAmountReconciled
+        },
+        results
+      });
+    } catch (e: any) {
+      console.error("Error processing bulk Midtrans report verification:", e);
+      return res.status(500).json({ error: "Terjadi kesalahan internal saat memproses file report: " + e.message });
+    }
+  });
+
   // Integration validation status checker
   app.get("/api/system-status", (req, res) => {
     res.json({

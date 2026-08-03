@@ -5,13 +5,14 @@ import {
   LogOut, DollarSign, Calendar, Tag, FileText, Search, Printer, 
   Download, Building2, CheckCircle2, AlertTriangle, ArrowUpRight, 
   ArrowDownRight, Wallet, UserCheck, Percent, HelpCircle, Eye, Key,
-  LayoutGrid, Home, Smartphone, Apple
+  LayoutGrid, Home, Smartphone, Apple, UploadCloud, FileSpreadsheet
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
   Legend, ResponsiveContainer, PieChart, Pie, Cell 
 } from 'recharts';
 import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
+import { MidtransBulkReportModal } from './MidtransBulkReportModal';
 
 interface TreasurerPanelProps {
   schoolIdentity: SchoolIdentity;
@@ -34,6 +35,7 @@ export default function TreasurerPanel({
   
   // Modal configurations
   const [showFormModal, setShowFormModal] = useState(false);
+  const [isBulkReportModalOpen, setIsBulkReportModalOpen] = useState(false);
   const [editingTransaction, setEditingTransaction] = useState<TreasurerTransaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -2247,7 +2249,16 @@ export default function TreasurerPanel({
                       </button>
                     </form>
 
-                    <div className="flex items-center gap-2">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsBulkReportModalOpen(true)}
+                        className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-xs flex items-center justify-center gap-1.5 border border-emerald-500/30"
+                        title="Upload file report CSV/Excel dari Midtrans MAP untuk verifikasi status transaksi massal secara otomatis"
+                      >
+                        <UploadCloud size={13} />
+                        <span>Upload Report Midtrans (Bulk Cek)</span>
+                      </button>
                       <button
                         type="button"
                         onClick={() => handleBulkReconcile(false)}
@@ -4599,6 +4610,14 @@ export default function TreasurerPanel({
           </div>
         )}
       </AnimatePresence>
+
+      <MidtransBulkReportModal
+        isOpen={isBulkReportModalOpen}
+        onClose={() => setIsBulkReportModalOpen(false)}
+        onSuccessReconciliation={() => {
+          fetchTransactions();
+        }}
+      />
 
     </div>
   );

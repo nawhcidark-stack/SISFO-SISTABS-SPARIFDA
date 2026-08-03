@@ -12,7 +12,7 @@ import {
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
   Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key,
   Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
-  LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw
+  LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw, ArrowUpDown
 } from 'lucide-react';
 
 // Standalone Type-Safe Print Helper Functions (Isolated from JSX rendering context)
@@ -733,20 +733,30 @@ export default function HomeroomPanel({
   const classStudents = useMemo(() => {
     if (!currentTeacher?.className) return [];
     const targetClass = currentTeacher.className.trim().toLowerCase();
-    return students
-      .filter(
-        (s) => !isMutationStudent(s) && s.class && s.class.trim().toLowerCase() === targetClass
-      )
-      .sort((a, b) => a.name.localeCompare(b.name));
+    const targetClean = targetClass.replace(/[^a-zA-Z0-9]/g, '');
+    return (students || [])
+      .filter((s) => {
+        if (!s || isMutationStudent(s) || !s.class) return false;
+        const sClass = s.class.trim().toLowerCase();
+        const sClean = sClass.replace(/[^a-zA-Z0-9]/g, '');
+        return sClass === targetClass || (targetClean.length > 0 && sClean === targetClean);
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
   }, [students, currentTeacher?.className]);
 
   // Filter students for grading & rapor based on selectedGradingClass
   const gradingStudents = useMemo(() => {
-    const target = (selectedGradingClass || currentTeacher.className).trim().toLowerCase();
-    return students
-      .filter((s) => !isMutationStudent(s) && s.class && s.class.trim().toLowerCase() === target)
-      .sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, selectedGradingClass, currentTeacher.className]);
+    const target = (selectedGradingClass || currentTeacher?.className || "").trim().toLowerCase();
+    const targetClean = target.replace(/[^a-zA-Z0-9]/g, '');
+    return (students || [])
+      .filter((s) => {
+        if (!s || isMutationStudent(s) || !s.class) return false;
+        const sClass = s.class.trim().toLowerCase();
+        const sClean = sClass.replace(/[^a-zA-Z0-9]/g, '');
+        return sClass === target || (targetClean.length > 0 && sClean === targetClean);
+      })
+      .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+  }, [students, selectedGradingClass, currentTeacher?.className]);
 
   useEffect(() => {
     if (scannedStudentNis) {
@@ -2407,16 +2417,23 @@ Wassalamualaikum Wr. Wb.
     const startDate = rekapStartDate || getFirstDayOfMonth();
     const endDate = rekapEndDate || todayStr;
 
-    return classStudents.map((student, idx) => {
+    return (classStudents || []).filter(Boolean).map((student, idx) => {
       // Filter logs for this student within date range
       const sLogs = (attendanceLogs || []).filter(l => {
+        if (!l) return false;
         const isStudentMatch = 
-          l.studentId === student.id || 
+          (student.id && l.studentId === student.id) || 
           (student.nis && l.studentId === student.nis) || 
-          (l.studentId && l.studentId.toLowerCase() === student.id.toLowerCase());
+          (l.studentId && student.id && l.studentId.toLowerCase() === student.id.toLowerCase());
         if (!isStudentMatch) return false;
 
-        const logDate = l.date ? l.date.substring(0, 10) : '';
+        let logDate = l.date ? l.date.substring(0, 10) : '';
+        if (logDate.includes('/')) {
+          const parts = logDate.split('/');
+          if (parts.length === 3 && parts[2].length === 4) {
+            logDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+          }
+        }
         if (startDate && logDate < startDate) return false;
         if (endDate && logDate > endDate) return false;
         return true;
@@ -2449,9 +2466,10 @@ Wassalamualaikum Wr. Wb.
   }, [classStudents, attendanceLogs, rekapStartDate, rekapEndDate]);
 
   const filteredRekapData = useMemo(() => {
-    let list = rekapData;
+    let list = rekapData || [];
     if (rekapStatusFilter !== 'all') {
-      list = rekapData.filter(r => {
+      list = list.filter(r => {
+        if (!r) return false;
         if (rekapStatusFilter === 'Hadir') return r.hadir > 0;
         if (rekapStatusFilter === 'Sakit') return r.sakit > 0;
         if (rekapStatusFilter === 'Izin') return r.izin > 0;
@@ -2462,6 +2480,7 @@ Wassalamualaikum Wr. Wb.
     }
 
     const sorted = [...list].sort((a, b) => {
+      if (!a || !b) return 0;
       const compareClasses = (clsA: string = '', clsB: string = '') => {
         return clsA.localeCompare(clsB, 'id', { numeric: true, sensitivity: 'base' });
       };
@@ -2482,6 +2501,9 @@ Wassalamualaikum Wr. Wb.
           ? valA.localeCompare(valB, 'id', { sensitivity: 'base' })
           : valB.localeCompare(valA, 'id', { sensitivity: 'base' });
       }
+
+      if (valA === undefined || valA === null) valA = 0;
+      if (valB === undefined || valB === null) valB = 0;
 
       if (valA === valB) {
         const classA = a.student?.class || a.student?.className || '';

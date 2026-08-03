@@ -12,7 +12,7 @@ import {
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
   Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key,
   Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
-  LayoutGrid, Home, Smartphone, Apple, Filter
+  LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw
 } from 'lucide-react';
 
 // Standalone Type-Safe Print Helper Functions (Isolated from JSX rendering context)
@@ -3894,7 +3894,11 @@ Wassalamualaikum Wr. Wb.
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setRekapStatusFilter('all')}
+                      onClick={() => {
+                        setRekapStatusFilter('all');
+                        setRekapSortBy('name');
+                        setRekapSortOrder('asc');
+                      }}
                       className={`notranslate px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'all'
                           ? 'bg-slate-800 text-white shadow-2xs'
@@ -3906,68 +3910,105 @@ Wassalamualaikum Wr. Wb.
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setRekapStatusFilter('Hadir')}
+                      onClick={() => {
+                        setRekapStatusFilter('Hadir');
+                        setRekapSortBy('hadir');
+                        setRekapSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Hadir'
                           ? 'bg-emerald-600 text-white shadow-2xs'
                           : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                       }`}
-                      title="Siswa Ada Hadir (H)"
+                      title="Urutkan & Saring berdasarkan Hadir (H) Terbanyak"
                     >
                       H <span className="text-[10px] font-bold">(Hadir)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setRekapStatusFilter('Sakit')}
+                      onClick={() => {
+                        setRekapStatusFilter('Sakit');
+                        setRekapSortBy('sakit');
+                        setRekapSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Sakit'
                           ? 'bg-indigo-600 text-white shadow-2xs'
                           : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
                       }`}
-                      title="Siswa Ada Sakit (S)"
+                      title="Urutkan & Saring berdasarkan Sakit (S) Terbanyak"
                     >
                       S <span className="text-[10px] font-bold">(Sakit)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setRekapStatusFilter('Izin')}
+                      onClick={() => {
+                        setRekapStatusFilter('Izin');
+                        setRekapSortBy('izin');
+                        setRekapSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Izin'
                           ? 'bg-amber-600 text-white shadow-2xs'
                           : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                       }`}
-                      title="Siswa Ada Izin (I)"
+                      title="Urutkan & Saring berdasarkan Izin (I) Terbanyak"
                     >
                       I <span className="text-[10px] font-bold">(Izin)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setRekapStatusFilter('Alpa')}
+                      onClick={() => {
+                        setRekapStatusFilter('Alpa');
+                        setRekapSortBy('alpa');
+                        setRekapSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Alpa'
                           ? 'bg-rose-600 text-white shadow-2xs'
                           : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                       }`}
-                      title="Siswa Ada Alpa (A)"
+                      title="Urutkan & Saring berdasarkan Alpa (A) Terbanyak"
                     >
                       A <span className="text-[10px] font-bold">(Alpa)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setRekapStatusFilter('Terlambat')}
+                      onClick={() => {
+                        setRekapStatusFilter('Terlambat');
+                        setRekapSortBy('terlambat');
+                        setRekapSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Terlambat'
                           ? 'bg-purple-600 text-white shadow-2xs'
                           : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
                       }`}
-                      title="Siswa Ada Terlambat (T)"
+                      title="Urutkan & Saring berdasarkan Terlambat (T) Terbanyak"
                     >
                       T <span className="text-[10px] font-bold">(Terlambat)</span>
                     </button>
+                    {(rekapStatusFilter !== 'all' || rekapStartDate !== getFirstDayOfMonth() || rekapEndDate !== todayStr || rekapSortBy !== 'name' || rekapSortOrder !== 'asc') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setRekapStartDate(getFirstDayOfMonth());
+                          setRekapEndDate(todayStr);
+                          setRekapStatusFilter('all');
+                          setRekapSortBy('name');
+                          setRekapSortOrder('asc');
+                        }}
+                        className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer flex items-center gap-1 shrink-0 ml-1"
+                        title="Reset semua filter tanggal, status kehadiran, dan pengurutan ke default"
+                      >
+                        <RotateCcw size={12} />
+                        <span>Reset Default</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -4006,7 +4047,7 @@ Wassalamualaikum Wr. Wb.
                             ? 'bg-indigo-600 text-white shadow-2xs'
                             : 'text-slate-600 hover:text-slate-900'
                         }`}
-                        title="Urutkan dari angka terbesar ke terbesar (Descending)"
+                        title="Urutkan dari angka terbesar ke terkecil (Descending)"
                       >
                         <span>⬇️ Terbesar → Terkecil</span>
                       </button>
@@ -4023,6 +4064,22 @@ Wassalamualaikum Wr. Wb.
                         <span>⬆️ Terkecil → Terbesar</span>
                       </button>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setRekapStartDate(getFirstDayOfMonth());
+                        setRekapEndDate(todayStr);
+                        setRekapStatusFilter('all');
+                        setRekapSortBy('name');
+                        setRekapSortOrder('asc');
+                      }}
+                      className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                      title="Reset semua filter tanggal, status kehadiran, dan urutan ke default"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Reset Filter & Urutan</span>
+                    </button>
                   </div>
                 </div>
               </div>

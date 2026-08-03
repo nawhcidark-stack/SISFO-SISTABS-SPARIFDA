@@ -36,7 +36,8 @@ import {
   Trash2,
   Check,
   Filter,
-  ArrowUpDown
+  ArrowUpDown,
+  RotateCcw
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student } from "../types";
@@ -2496,7 +2497,11 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setAttendanceStatusFilter('all')}
+                      onClick={() => {
+                        setAttendanceStatusFilter('all');
+                        setAttendanceSortBy('name');
+                        setAttendanceSortOrder('asc');
+                      }}
                       className={`notranslate px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'all'
                           ? 'bg-slate-800 text-white shadow-2xs'
@@ -2508,68 +2513,107 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setAttendanceStatusFilter('Hadir')}
+                      onClick={() => {
+                        setAttendanceStatusFilter('Hadir');
+                        setAttendanceSortBy('hadir');
+                        setAttendanceSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Hadir'
                           ? 'bg-emerald-600 text-white shadow-2xs'
                           : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                       }`}
-                      title="Hadir (H)"
+                      title="Urutkan & Saring berdasarkan Hadir (H) Terbanyak"
                     >
                       H <span className="text-[10px] font-bold">(Hadir)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setAttendanceStatusFilter('Sakit')}
+                      onClick={() => {
+                        setAttendanceStatusFilter('Sakit');
+                        setAttendanceSortBy('sakit');
+                        setAttendanceSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Sakit'
                           ? 'bg-indigo-600 text-white shadow-2xs'
                           : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
                       }`}
-                      title="Sakit (S)"
+                      title="Urutkan & Saring berdasarkan Sakit (S) Terbanyak"
                     >
                       S <span className="text-[10px] font-bold">(Sakit)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setAttendanceStatusFilter('Izin')}
+                      onClick={() => {
+                        setAttendanceStatusFilter('Izin');
+                        setAttendanceSortBy('izin');
+                        setAttendanceSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Izin'
                           ? 'bg-amber-600 text-white shadow-2xs'
                           : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                       }`}
-                      title="Izin (I)"
+                      title="Urutkan & Saring berdasarkan Izin (I) Terbanyak"
                     >
                       I <span className="text-[10px] font-bold">(Izin)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setAttendanceStatusFilter('Alpa')}
+                      onClick={() => {
+                        setAttendanceStatusFilter('Alpa');
+                        setAttendanceSortBy('alpa');
+                        setAttendanceSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Alpa'
                           ? 'bg-rose-600 text-white shadow-2xs'
                           : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                       }`}
-                      title="Alpa (A)"
+                      title="Urutkan & Saring berdasarkan Alpa (A) Terbanyak"
                     >
                       A <span className="text-[10px] font-bold">(Alpa)</span>
                     </button>
                     <button
                       type="button"
                       translate="no"
-                      onClick={() => setAttendanceStatusFilter('Terlambat')}
+                      onClick={() => {
+                        setAttendanceStatusFilter('Terlambat');
+                        setAttendanceSortBy('terlambat');
+                        setAttendanceSortOrder('desc');
+                      }}
                       className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Terlambat'
                           ? 'bg-purple-600 text-white shadow-2xs'
                           : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
                       }`}
-                      title="Terlambat (T)"
+                      title="Urutkan & Saring berdasarkan Terlambat (T) Terbanyak"
                     >
                       T <span className="text-[10px] font-bold">(Terlambat)</span>
                     </button>
+                    {(attendanceStatusFilter !== 'all' || attendanceStartDate !== '' || attendanceEndDate !== '' || classFilter !== 'all' || searchQuery !== '' || attendanceSortBy !== 'name' || attendanceSortOrder !== 'asc') && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setAttendanceStatusFilter('all');
+                          setClassFilter('all');
+                          setSearchQuery('');
+                          setAttendanceStartDate('');
+                          setAttendanceEndDate('');
+                          setAttendanceSortBy('name');
+                          setAttendanceSortOrder('asc');
+                        }}
+                        className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-rose-50 border border-rose-200 hover:bg-rose-100 transition-all cursor-pointer flex items-center gap-1 shrink-0 ml-1"
+                        title="Reset semua filter dan pengurutan ke default"
+                      >
+                        <RotateCcw size={12} />
+                        <span>Reset Default</span>
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -2607,7 +2651,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         }}
                         className="text-[10px] uppercase font-black tracking-wider text-rose-600 bg-rose-50 border border-rose-200 px-2.5 py-1 rounded-lg hover:bg-rose-100 transition-colors cursor-pointer"
                       >
-                        Reset Saring
+                        Reset Saring Tanggal
                       </button>
                     )}
                   </div>
@@ -2665,6 +2709,24 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         <span>⬆️ Terkecil → Terbesar</span>
                       </button>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setAttendanceStatusFilter('all');
+                        setClassFilter('all');
+                        setSearchQuery('');
+                        setAttendanceStartDate('');
+                        setAttendanceEndDate('');
+                        setAttendanceSortBy('name');
+                        setAttendanceSortOrder('asc');
+                      }}
+                      className="px-2.5 py-1 rounded-xl text-xs font-bold text-rose-600 bg-white border border-rose-200 hover:bg-rose-50 transition-all cursor-pointer flex items-center gap-1 shrink-0"
+                      title="Reset semua filter status, kelas, pencarian, tanggal, dan pengurutan ke default"
+                    >
+                      <RotateCcw size={12} />
+                      <span>Reset Filter & Urutan</span>
+                    </button>
                   </div>
                 </div>
               </div>

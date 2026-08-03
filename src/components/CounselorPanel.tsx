@@ -465,16 +465,22 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           </style>
         </head>
         <body>
-          <table class="header-table">
-            <tr>
-              ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 60px; max-width: 60px;" /></td>` : ''}
-              <td class="info-cell">
-                <div class="school-name">${schoolName}</div>
-                <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
-                <div class="school-meta">Alamat: ${address}</div>
-              </td>
-            </tr>
-          </table>
+          ${schoolIdentity?.letterhead ? `
+            <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+              <img src="${schoolIdentity.letterhead}" style="max-width: 100%; max-height: 140px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 60px; max-width: 60px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
 
           <div class="title-doc">DOKUMEN INTEGRASI PEMBINAAN BIMBINGAN & KONSELING (BK)</div>
 
@@ -1385,16 +1391,22 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           </style>
         </head>
         <body>
-          <table class="header-table">
-            <tr>
-              ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
-              <td class="info-cell">
-                <div class="school-name">${schoolName}</div>
-                <div class="school-sub">${subHeader} &bull; Akreditasi: ${accreditation}</div>
-                <div class="school-meta">Alamat: ${address}</div>
-              </td>
-            </tr>
-          </table>
+          ${schoolIdentity?.letterhead ? `
+            <div style="text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="max-width: 100%; max-height: 140px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} &bull; Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
 
           <div class="doc-title">LAPORAN REKAPITULASI PRESENSI &amp; KETIDAKHADIRAN SISWA (BK)</div>
           <div class="doc-subtitle">

@@ -12,7 +12,8 @@ import {
   TeachingJournal,
   StudentCounselingLog,
   StudentInfractionLog,
-  isSppBillOverdue
+  isSppBillOverdue,
+  sortSppBills
 } from '../types';
 import { 
   BarChart, 
@@ -740,7 +741,7 @@ export default function PrincipalPanel({
 
   const inspectedStudentBills = useMemo(() => {
     if (!inspectedStudent) return [];
-    return bills.filter(b => b.studentId === inspectedStudent.id);
+    return sortSppBills(bills.filter(b => b.studentId === inspectedStudent.id));
   }, [inspectedStudent, bills]);
 
   const inspectedStudentAttendance = useMemo(() => {

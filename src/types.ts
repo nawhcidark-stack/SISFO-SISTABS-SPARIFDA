@@ -516,6 +516,40 @@ export function isSppBillOverdue(bill: { status: string; month: string; year: nu
   return false;
 }
 
+export function getSppMonthIndex(monthName: string): number {
+  if (!monthName) return 0;
+  const clean = monthName.trim().toLowerCase();
+  const monthMap: Record<string, number> = {
+    "januari": 1, "jan": 1, "january": 1,
+    "februari": 2, "feb": 2, "february": 2,
+    "maret": 3, "mar": 3, "march": 3,
+    "april": 4, "apr": 4,
+    "mei": 5, "may": 5,
+    "juni": 6, "jun": 6, "june": 6,
+    "juli": 7, "jul": 7, "july": 7,
+    "agustus": 8, "agu": 8, "agust": 8, "august": 8, "aug": 8,
+    "september": 9, "sep": 9, "sept": 9,
+    "oktober": 10, "okt": 10, "october": 10, "oct": 10,
+    "november": 11, "nov": 11,
+    "desember": 12, "des": 12, "december": 12, "dec": 12
+  };
+  return monthMap[clean] || 0;
+}
+
+export function sortSppBills<T extends { month: string; year?: number }>(bills: T[]): T[] {
+  if (!bills || !Array.isArray(bills)) return [];
+  return [...bills].sort((a, b) => {
+    const yA = Number(a?.year) || 0;
+    const yB = Number(b?.year) || 0;
+    const mA = getSppMonthIndex(a?.month || '');
+    const mB = getSppMonthIndex(b?.month || '');
+    const scoreA = yA * 12 + mA;
+    const scoreB = yB * 12 + mB;
+    return scoreA - scoreB;
+  });
+}
+
+
 
 
 

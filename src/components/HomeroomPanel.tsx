@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill } from '../types';
+import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import BukuIndukManagement from './BukuIndukManagement';
 import { 
@@ -2375,7 +2375,7 @@ export default function HomeroomPanel({
       maximumFractionDigits: 0
     }).format(totalAllUnpaid);
 
-    const monthsStr = unpaidBills.map(b => `${b.month} ${b.year}`).join(', ');
+    const monthsStr = sortSppBills(unpaidBills).map(b => `${b.month} ${b.year}`).join(', ');
     const miscsStr = unpaidMisc.map(b => `${b.title} (${new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(b.amount)})`).join(', ');
     const schoolName = schoolIdentity?.name || "SMP Maarif";
 
@@ -4411,9 +4411,9 @@ Wassalamualaikum Wr. Wb.
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {filteredClassStudents.map((student) => {
-                            const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
+                            const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
                             const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
-                            const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
+                            const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
 
                             const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
                             const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');
@@ -4516,9 +4516,9 @@ Wassalamualaikum Wr. Wb.
                     {/* Mobile View (Bento Cards to avoid scroll completely) */}
                     <div className="block md:hidden space-y-4">
                       {filteredClassStudents.map((student) => {
-                        const overdueBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
+                        const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
                         const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
-                        const paidBills = bills.filter(b => b.studentId === student.id && b.status === 'paid');
+                        const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
 
                         const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
                         const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');

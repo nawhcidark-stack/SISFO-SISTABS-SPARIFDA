@@ -35,7 +35,8 @@ import {
   FileText,
   Trash2,
   Check,
-  Filter
+  Filter,
+  ArrowUpDown
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student } from "../types";
@@ -73,6 +74,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'resolved'>('all');
   const [classFilter, setClassFilter] = useState("all");
   const [attendanceStatusFilter, setAttendanceStatusFilter] = useState<'all' | 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'>('all');
+  const [attendanceSortBy, setAttendanceSortBy] = useState<'name' | 'class' | 'hadir' | 'sakit' | 'izin' | 'alpa' | 'terlambat' | 'total' | 'rate'>('name');
+  const [attendanceSortOrder, setAttendanceSortOrder] = useState<'asc' | 'desc'>('asc');
 
   // Date range filters for attendance & infractions
   const [attendanceStartDate, setAttendanceStartDate] = useState("");
@@ -980,7 +983,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   }, [allAttendance, searchQuery, classFilter, attendanceStatusFilter, attendanceStartDate, attendanceEndDate]);
 
   const filteredAttendanceAggregate = useMemo(() => {
-    return aggregatedAttendance.filter(st => {
+    const filtered = aggregatedAttendance.filter(st => {
       const searchMatch = st.name.toLowerCase().includes(searchQuery.toLowerCase());
       const classMatch = classFilter === "all" ? true : st.className === classFilter;
 
@@ -992,8 +995,38 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       else if (attendanceStatusFilter === 'Terlambat') statusMatch = st.terlambat > 0;
 
       return searchMatch && classMatch && statusMatch;
-    }).sort((a, b) => a.name.localeCompare(b.name));
-  }, [aggregatedAttendance, searchQuery, classFilter, attendanceStatusFilter]);
+    });
+
+    return [...filtered].sort((a, b) => {
+      if (attendanceSortBy === 'name') {
+        return attendanceSortOrder === 'asc'
+          ? a.name.localeCompare(b.name)
+          : b.name.localeCompare(a.name);
+      }
+      if (attendanceSortBy === 'class') {
+        return attendanceSortOrder === 'asc'
+          ? a.className.localeCompare(b.className)
+          : b.className.localeCompare(a.className);
+      }
+
+      let valA = 0;
+      let valB = 0;
+
+      if (attendanceSortBy === 'rate') {
+        valA = a.total > 0 ? (a.hadir / a.total) * 100 : 0;
+        valB = b.total > 0 ? (b.hadir / b.total) * 100 : 0;
+      } else {
+        valA = (a as any)[attendanceSortBy] || 0;
+        valB = (b as any)[attendanceSortBy] || 0;
+      }
+
+      if (valA === valB) {
+        return a.name.localeCompare(b.name);
+      }
+
+      return attendanceSortOrder === 'desc' ? valB - valA : valA - valB;
+    });
+  }, [aggregatedAttendance, searchQuery, classFilter, attendanceStatusFilter, attendanceSortBy, attendanceSortOrder]);
 
   // Infractions filter mapping
   const filteredInfractionsList = useMemo(() => {
@@ -2579,6 +2612,61 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     )}
                   </div>
                 </div>
+                {/* Sorting Bar: Terbesar ke Terkecil / Terkecil ke Terbesar */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-indigo-50/70 border border-indigo-150 p-3 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-indigo-900 flex items-center gap-1.5 uppercase tracking-wide">
+                    <ArrowUpDown size={13} className="text-indigo-600" />
+                    <span>Urutkan Rekap Absensi BK (Sorting):</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-xl px-2.5 py-1">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Kriteria:</span>
+                      <select
+                        value={attendanceSortBy}
+                        onChange={(e: any) => setAttendanceSortBy(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      >
+                        <option value="name">Nama Siswa (A - Z)</option>
+                        <option value="class">Kelas Siswa</option>
+                        <option value="rate">Persentase Kehadiran (%)</option>
+                        <option value="alpa">Jumlah Alpa (A)</option>
+                        <option value="terlambat">Jumlah Terlambat (T)</option>
+                        <option value="sakit">Jumlah Sakit (S)</option>
+                        <option value="izin">Jumlah Izin (I)</option>
+                        <option value="hadir">Jumlah Hadir (H)</option>
+                        <option value="total">Total Hari Pencatatan</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center rounded-xl bg-white border border-indigo-200 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceSortOrder('desc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          attendanceSortOrder === 'desc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terbesar ke terkecil (Descending)"
+                      >
+                        <span>⬇️ Terbesar → Terkecil</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setAttendanceSortOrder('asc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          attendanceSortOrder === 'asc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terkecil ke terbesar (Ascending)"
+                      >
+                        <span>⬆️ Terkecil → Terbesar</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {/* RENDER ACTIVE ATTENDANCE DISPLAY */}
@@ -2591,14 +2679,102 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   <table className="w-full text-left text-xs border-collapse">
                     <thead>
                       <tr className="bg-slate-50/75 border-b border-slate-200">
-                        <th className="py-3 px-4 font-black text-slate-800">Nama Siswa</th>
-                        <th className="py-3 px-4 font-black text-slate-850 text-center">Kelas</th>
-                        <th className="py-3 px-2 font-black text-emerald-700 text-center">Hadir</th>
-                        <th className="py-3 px-2 font-black text-indigo-700 text-center">Sakit</th>
-                        <th className="py-3 px-2 font-black text-amber-700 text-center">Izin</th>
-                        <th className="py-3 px-2 font-black text-rose-700 text-center">Alpa (A)</th>
-                        <th className="py-3 px-2 font-black text-purple-700 text-center">Terlambat</th>
-                        <th className="py-3 px-2 font-black text-slate-800 text-center">Rasio</th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'name') setAttendanceSortOrder(attendanceSortOrder === 'asc' ? 'desc' : 'asc');
+                            else { setAttendanceSortBy('name'); setAttendanceSortOrder('asc'); }
+                          }}
+                          className="py-3 px-4 font-black text-slate-800 cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Nama Siswa</span>
+                            {attendanceSortBy === 'name' && (<span>{attendanceSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'class') setAttendanceSortOrder(attendanceSortOrder === 'asc' ? 'desc' : 'asc');
+                            else { setAttendanceSortBy('class'); setAttendanceSortOrder('asc'); }
+                          }}
+                          className="py-3 px-4 font-black text-slate-850 text-center cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Kelas</span>
+                            {attendanceSortBy === 'class' && (<span>{attendanceSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'hadir') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('hadir'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-emerald-700 text-center cursor-pointer hover:bg-emerald-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Hadir</span>
+                            {attendanceSortBy === 'hadir' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'sakit') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('sakit'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-indigo-700 text-center cursor-pointer hover:bg-indigo-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Sakit</span>
+                            {attendanceSortBy === 'sakit' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'izin') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('izin'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-amber-700 text-center cursor-pointer hover:bg-amber-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Izin</span>
+                            {attendanceSortBy === 'izin' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'alpa') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('alpa'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-rose-700 text-center cursor-pointer hover:bg-rose-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Alpa (A)</span>
+                            {attendanceSortBy === 'alpa' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'terlambat') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('terlambat'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-purple-700 text-center cursor-pointer hover:bg-purple-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Terlambat</span>
+                            {attendanceSortBy === 'terlambat' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (attendanceSortBy === 'rate') setAttendanceSortOrder(attendanceSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setAttendanceSortBy('rate'); setAttendanceSortOrder('desc'); }
+                          }}
+                          className="py-3 px-2 font-black text-slate-800 text-center cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Rasio</span>
+                            {attendanceSortBy === 'rate' && (<span>{attendanceSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
                         <th className="py-3 px-4 font-black text-indigo-650 text-center">Tindakan BK</th>
                       </tr>
                     </thead>

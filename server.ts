@@ -7767,18 +7767,25 @@ async function startServer() {
 
   // Helper to fetch actual Midtrans transaction status from API (if configured)
   async function getMidtransStatus(orderId: string): Promise<any> {
-    const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
-    if (!hasMidtrans) {
+    const serverKey = (midtransConfig.serverKey || "").trim();
+    if (!serverKey) {
       console.log("Midtrans credentials not configured, skipping real status check.");
       return null;
     }
+    const cleanOrderId = (orderId || "").trim();
+    if (!cleanOrderId) return null;
+
+    const authHeader = Buffer.from(`${serverKey}:`).toString("base64");
+    const primaryUrl = midtransConfig.isProduction 
+      ? `https://api.midtrans.com/v2/${cleanOrderId}/status` 
+      : `https://api.sandbox.midtrans.com/v2/${cleanOrderId}/status`;
+    const fallbackUrl = midtransConfig.isProduction 
+      ? `https://api.sandbox.midtrans.com/v2/${cleanOrderId}/status` 
+      : `https://api.midtrans.com/v2/${cleanOrderId}/status`;
+
     try {
-      const authHeader = Buffer.from(`${midtransConfig.serverKey}:`).toString("base64");
-      const baseUrl = midtransConfig.isProduction 
-        ? "https://api.midtrans.com/v2" 
-        : "https://api.sandbox.midtrans.com/v2";
-      console.log(`Checking real Midtrans status for orderId: ${orderId} on ${baseUrl}`);
-      const response = await fetch(`${baseUrl}/${orderId}/status`, {
+      console.log(`Checking real Midtrans status for orderId: ${cleanOrderId} on ${primaryUrl}`);
+      const response = await fetch(primaryUrl, {
         headers: {
           "Authorization": `Basic ${authHeader}`,
           "Accept": "application/json"
@@ -7786,14 +7793,32 @@ async function startServer() {
       });
       if (response.ok) {
         const statusData = await response.json();
-        console.log(`Real Midtrans status for ${orderId}:`, statusData);
+        console.log(`Real Midtrans status for ${cleanOrderId} (primary):`, statusData);
         return statusData;
       } else {
-        console.warn(`Midtrans Status API returned status ${response.status} for ${orderId}`);
+        console.warn(`Midtrans Primary Status API returned status ${response.status} for ${cleanOrderId}, trying fallback...`);
       }
     } catch (err) {
-      console.error(`Failed to fetch Midtrans status for ${orderId}:`, err);
+      console.error(`Failed to fetch primary Midtrans status for ${cleanOrderId}:`, err);
     }
+
+    try {
+      console.log(`Checking fallback Midtrans status for orderId: ${cleanOrderId} on ${fallbackUrl}`);
+      const response = await fetch(fallbackUrl, {
+        headers: {
+          "Authorization": `Basic ${authHeader}`,
+          "Accept": "application/json"
+        }
+      });
+      if (response.ok) {
+        const statusData = await response.json();
+        console.log(`Real Midtrans status for ${cleanOrderId} (fallback):`, statusData);
+        return statusData;
+      }
+    } catch (err) {
+      console.error(`Failed to fetch fallback Midtrans status for ${cleanOrderId}:`, err);
+    }
+
     return null;
   }
 
@@ -8536,6 +8561,162 @@ async function startServer() {
     }
 
     res.json({ status: "success", handled: isHandled });
+  });
+
+  // Explicit Single Order ID Verification & Instant Reconciliation Endpoint
+  app.post("/api/verify-midtrans-order", async (req, res) => {
+    const { orderId } = req.body;
+    if (!orderId || typeof orderId !== "string" || !orderId.trim()) {
+      return res.status(400).json({ error: "Order ID atau nomor referensi wajib diisi." });
+    }
+
+    const cleanOrderId = orderId.trim();
+    console.log("Direct Midtrans order verification requested for:", cleanOrderId);
+
+    // 1. Fetch real status from Midtrans API (Dual-environment check)
+    const midtransStatus = await getMidtransStatus(cleanOrderId);
+    if (!midtransStatus) {
+      // If not found directly by status API, check local state or try matching by orderId
+      const localSpp = sppBills.find(b => b.orderId === cleanOrderId || b.id === cleanOrderId);
+      const localMisc = miscBills.find(b => b.orderId === cleanOrderId || b.id === cleanOrderId);
+      const localSavings = savingsTransactions.find(t => t.orderId === cleanOrderId || t.id === cleanOrderId);
+
+      if (localSpp || localMisc || localSavings) {
+        return res.json({
+          success: true,
+          message: "Data transaksi ditemukan di sistem internal sekolah.",
+          item: localSpp || localMisc || localSavings
+        });
+      }
+
+      return res.status(404).json({
+        error: `Order ID '${cleanOrderId}' tidak ditemukan di Gateway Midtrans (Sandbox & Production) maupun database lokal. Mohon pastikan Nomor Order/Ref pada kuitansi sudah benar.`
+      });
+    }
+
+    const ts = midtransStatus.transaction_status;
+    const isSettled = ts === "settlement" || ts === "capture";
+
+    if (!isSettled) {
+      return res.status(400).json({
+        error: `Transaksi ditemukan di Midtrans tetapi status saat ini adalah '${(ts || 'unknown').toUpperCase()}'. Hanya transaksi dengan status SETTLEMENT/CAPTURE yang dapat diverifikasi sebagai LUNAS.`,
+        midtransStatus
+      });
+    }
+
+    // 2. Transaksi LUNAS/SETTLED di Midtrans! Panggil simulator/perekonsiliasi internal
+    const actualPaymentType = midtransStatus.payment_type ? `Midtrans (${midtransStatus.payment_type})` : "Midtrans Online Gateway";
+    const grossAmount = Number(midtransStatus.gross_amount) || 0;
+    const midtransTime = midtransStatus.settlement_time || midtransStatus.transaction_time || "";
+
+    try {
+      // Search SPP
+      let sppBill = sppBills.find(b => b.orderId === cleanOrderId);
+      if (!sppBill && cleanOrderId.startsWith("SPP-")) {
+        const middle = cleanOrderId.slice(4);
+        const lastHyphenIndex = middle.lastIndexOf("-");
+        const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+        const cleanBillId = decompressBillIdForMidtrans(billId);
+        sppBill = sppBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
+      }
+
+      if (sppBill) {
+        sppBill.status = "paid";
+        sppBill.paidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
+        sppBill.paymentMethod = actualPaymentType;
+        sppBill.orderId = cleanOrderId;
+        saveState();
+
+        const student = students.find(s => s.id === sppBill.studentId);
+        return res.json({
+          success: true,
+          type: "spp",
+          message: `BERHASIL! Pembayaran SPP Bulan ${sppBill.month} ${sppBill.year} a.n. ${student?.name || 'Siswa'} sebesar Rp ${sppBill.amount.toLocaleString("id-ID")} terverifikasi LUNAS via ${actualPaymentType}.`,
+          bill: sppBill,
+          student,
+          midtransStatus
+        });
+      }
+
+      // Search Misc
+      let miscBill = miscBills.find(b => b.orderId === cleanOrderId);
+      if (!miscBill && cleanOrderId.startsWith("MISC-")) {
+        const middle = cleanOrderId.slice(5);
+        const lastHyphenIndex = middle.lastIndexOf("-");
+        const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+        const cleanBillId = decompressMiscBillIdForMidtrans(billId);
+        miscBill = miscBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
+      }
+
+      if (miscBill) {
+        miscBill.status = "paid";
+        miscBill.paidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
+        miscBill.paymentMethod = actualPaymentType;
+        miscBill.orderId = cleanOrderId;
+        saveState();
+
+        const student = students.find(s => s.id === miscBill.studentId);
+        return res.json({
+          success: true,
+          type: "misc",
+          message: `BERHASIL! Pembayaran ${miscBill.title} a.n. ${student?.name || 'Siswa'} sebesar Rp ${miscBill.amount.toLocaleString("id-ID")} terverifikasi LUNAS via ${actualPaymentType}.`,
+          bill: miscBill,
+          student,
+          midtransStatus
+        });
+      }
+
+      // Search Savings
+      let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId);
+      if (!savingsTx && cleanOrderId.startsWith("SAV-")) {
+        const parts = cleanOrderId.split("-");
+        if (parts.length >= 2) {
+          const studentId = parts[1];
+          savingsTx = savingsTransactions.find(t => t.studentId === studentId && t.status === "pending");
+        }
+      }
+
+      if (savingsTx) {
+        if (savingsTx.status === "pending") {
+          savingsTx.status = "success";
+          savingsTx.paymentMethod = actualPaymentType;
+          if (midtransTime) savingsTx.createdAt = parseMidtransTime(midtransTime);
+          const student = students.find(s => s.id === savingsTx.studentId);
+          if (student) {
+            student.savingsBalance += savingsTx.amount;
+          }
+          saveState();
+          return res.json({
+            success: true,
+            type: "savings",
+            message: `BERHASIL! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n. ${student?.name || 'Siswa'} terverifikasi LUNAS dan ditambahkan ke saldo!`,
+            transaction: savingsTx,
+            student,
+            midtransStatus
+          });
+        } else {
+          const student = students.find(s => s.id === savingsTx.studentId);
+          return res.json({
+            success: true,
+            type: "savings",
+            message: `Transaksi tabungan ini sudah tercatat sebelumnya sebagai LUNAS.`,
+            transaction: savingsTx,
+            student,
+            midtransStatus
+          });
+        }
+      }
+
+      res.json({
+        success: true,
+        type: "midtrans_only",
+        message: `Transaksi LUNAS di Midtrans (${actualPaymentType}) sebesar Rp ${grossAmount.toLocaleString("id-ID")}. Status: ${ts.toUpperCase()}.`,
+        midtransStatus
+      });
+    } catch (e: any) {
+      console.error("Error verifying midtrans order:", e);
+      res.status(500).json({ error: "Gagal memproses verifikasi order: " + e.message });
+    }
   });
 
   // Integration validation status checker

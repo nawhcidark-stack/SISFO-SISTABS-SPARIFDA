@@ -635,6 +635,47 @@ export default function TreasurerPanel({
     }
   };
 
+  const [manualOrderIdInput, setManualOrderIdInput] = useState('');
+
+  const handleVerifySingleOrderId = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    if (!manualOrderIdInput.trim()) {
+      alert('Masukkan Order ID / Ref Midtrans yang ingin diverifikasi.');
+      return;
+    }
+    setIsReconciling(true);
+    setReconcileStatus(null);
+    try {
+      const res = await fetch('/api/verify-midtrans-order', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ orderId: manualOrderIdInput.trim() })
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setReconcileStatus({
+          type: 'success',
+          text: `✅ ${data.message}`
+        });
+        setManualOrderIdInput('');
+        await fetchTransactions();
+      } else {
+        setReconcileStatus({
+          type: 'error',
+          text: data.error || data.message || 'Verifikasi Order ID gagal.'
+        });
+      }
+    } catch (err: any) {
+      console.error(err);
+      setReconcileStatus({
+        type: 'error',
+        text: 'Gagal terhubung ke server untuk verifikasi Midtrans.'
+      });
+    } finally {
+      setIsReconciling(false);
+    }
+  };
+
   const fetchTransactions = async () => {
     setIsLoading(true);
     setErrorMsg(null);
@@ -2184,36 +2225,59 @@ export default function TreasurerPanel({
                       </p>
                     </div>
                   </div>
-                  <div className="flex items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
-                    <button
-                      type="button"
-                      onClick={() => handleBulkReconcile(false)}
-                      disabled={isReconciling}
-                      className={`px-4 py-2.5 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
-                        isReconciling ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-750 shadow-sm shadow-indigo-100'
-                      }`}
-                    >
-                      {isReconciling ? (
-                        <>
-                          <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                          <span>Mencari...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Search size={12} />
-                          <span>Pindai Otomatis</span>
-                        </>
-                      )}
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => handleBulkReconcile(true)}
-                      disabled={isReconciling}
-                      className="px-3.5 py-2.5 bg-slate-850 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700"
-                      title="Paksa verifikasi & pulihkan transaksi simulasi sandbox"
-                    >
-                      Paksa Pulihkan Simulasi
-                    </button>
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
+                    <form onSubmit={handleVerifySingleOrderId} className="flex items-center gap-1.5 w-full sm:w-auto">
+                      <input
+                        type="text"
+                        value={manualOrderIdInput}
+                        onChange={(e) => setManualOrderIdInput(e.target.value)}
+                        placeholder="Cek Order ID / Ref Midtrans..."
+                        className="px-3 py-2 bg-white border border-indigo-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 w-full sm:w-56"
+                      />
+                      <button
+                        type="submit"
+                        disabled={isReconciling || !manualOrderIdInput.trim()}
+                        className={`px-3 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1 shrink-0 ${
+                          isReconciling || !manualOrderIdInput.trim() ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-xs'
+                        }`}
+                        title="Verifikasi Order ID atau Nomor Referensi secara langsung ke Midtrans API"
+                      >
+                        <Search size={12} />
+                        <span>Verifikasi Ref</span>
+                      </button>
+                    </form>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => handleBulkReconcile(false)}
+                        disabled={isReconciling}
+                        className={`px-3.5 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
+                          isReconciling ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-750 shadow-sm shadow-indigo-100'
+                        }`}
+                      >
+                        {isReconciling ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Mencari...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Search size={12} />
+                            <span>Pindai Massal</span>
+                          </>
+                        )}
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleBulkReconcile(true)}
+                        disabled={isReconciling}
+                        className="px-3 py-2 bg-slate-850 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700"
+                        title="Paksa verifikasi & pulihkan transaksi simulasi sandbox"
+                      >
+                        Pulihkan
+                      </button>
+                    </div>
                   </div>
                 </div>
 

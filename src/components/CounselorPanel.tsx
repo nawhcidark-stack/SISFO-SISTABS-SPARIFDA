@@ -1258,6 +1258,232 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     URL.revokeObjectURL(url);
   };
 
+  const handlePrintPdfAttendance = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Harap izinkan popup di browser Anda untuk mencetak dokumen.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const subHeader = schoolIdentity?.subheading || "Penilaian Karakter, Bimbingan & Kebiasaan Positif";
+    const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+    const address = schoolIdentity?.address || "Jl. Pandaan, Jawa Timur";
+    const logoSrc = schoolIdentity?.logo || "";
+    const principalName = schoolIdentity?.principal || "Kepala Sekolah";
+
+    const periodStr = attendanceStartDate && attendanceEndDate
+      ? `${new Date(attendanceStartDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })} s.d ${new Date(attendanceEndDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`
+      : (attendanceStartDate ? `Mulai ${new Date(attendanceStartDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}` : "Semua Periode Tanggal");
+
+    const filterClassStr = classFilter === "all" ? "Semua Kelas" : `Kelas ${classFilter}`;
+    const filterStatusStr = attendanceStatusFilter === "all" ? "Semua Status (H, S, I, A, T)" : `Status: ${attendanceStatusFilter}`;
+
+    const isAggregate = attendanceSubTab === 'aggregate';
+
+    let totalRecords = 0;
+    let totalHadir = 0;
+    let totalSakit = 0;
+    let totalIzin = 0;
+    let totalAlpa = 0;
+    let totalTerlambat = 0;
+
+    if (isAggregate) {
+      totalRecords = filteredAttendanceAggregate.length;
+      filteredAttendanceAggregate.forEach(s => {
+        totalHadir += s.hadir;
+        totalSakit += s.sakit;
+        totalIzin += s.izin;
+        totalAlpa += s.alpa;
+        totalTerlambat += s.terlambat;
+      });
+    } else {
+      totalRecords = filteredAttendanceDiary.length;
+      filteredAttendanceDiary.forEach(a => {
+        if (a.status === 'Hadir') totalHadir++;
+        else if (a.status === 'Sakit') totalSakit++;
+        else if (a.status === 'Izin') totalIzin++;
+        else if (a.status === 'Alpa') totalAlpa++;
+        else if (a.status === 'Terlambat') totalTerlambat++;
+      });
+    }
+
+    let tableRowsHtml = "";
+
+    if (isAggregate) {
+      tableRowsHtml = filteredAttendanceAggregate.map((st, idx) => {
+        const rate = st.total > 0 ? Math.round((st.hadir / st.total) * 100) : 0;
+        return `
+          <tr>
+            <td style="text-align: center;">${idx + 1}</td>
+            <td style="font-weight: bold; text-align: left;">${st.name}</td>
+            <td style="text-align: center;">Kelas ${st.className}</td>
+            <td style="text-align: center; color: #047857; font-weight: bold;">${st.hadir}</td>
+            <td style="text-align: center; color: #1d4ed8;">${st.sakit}</td>
+            <td style="text-align: center; color: #a16207;">${st.izin}</td>
+            <td style="text-align: center; color: #b91c1c; font-weight: bold; ${st.alpa > 0 ? 'background-color: #fef2f2;' : ''}">${st.alpa}</td>
+            <td style="text-align: center; color: #6b21a8;">${st.terlambat}</td>
+            <td style="text-align: center; font-weight: bold; color: #059669;">${rate}%</td>
+          </tr>
+        `;
+      }).join("");
+    } else {
+      tableRowsHtml = filteredAttendanceDiary.map((a, idx) => {
+        const info = getStudentInfo(a.studentId, a.studentName);
+        return `
+          <tr>
+            <td style="text-align: center;">${idx + 1}</td>
+            <td style="text-align: center; font-family: monospace;">${a.date}</td>
+            <td style="font-weight: bold; text-align: left;">${info.name}</td>
+            <td style="text-align: center;">Kelas ${info.className || a.className || '-'}</td>
+            <td style="text-align: center; font-weight: bold; ${
+              a.status === 'Alpa' ? 'color: #dc2626; background-color: #fef2f2;' :
+              a.status === 'Hadir' ? 'color: #16a34a;' :
+              a.status === 'Sakit' ? 'color: #2563eb;' :
+              a.status === 'Izin' ? 'color: #d97706;' : 'color: #9333ea;'
+            }">${a.status}</td>
+            <td style="text-align: left; font-size: 10px;">${a.notes || '-'}</td>
+          </tr>
+        `;
+      }).join("");
+    }
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Rekap Presensi BK - ${schoolName}</title>
+          <style>
+            @page { size: A4 portrait; margin: 12mm; }
+            body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 20px; color: #0f172a; background: white; line-height: 1.4; font-size: 11px; }
+            .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 15px; padding-bottom: 8px; }
+            .logo-cell { width: 65px; text-align: center; vertical-align: middle; }
+            .info-cell { text-align: center; vertical-align: middle; }
+            .school-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: 0.5px; }
+            .school-sub { font-size: 11px; margin: 3px 0 0 0; color: #334155; font-weight: 600; }
+            .school-meta { font-size: 9px; margin: 2px 0 0 0; color: #64748b; font-style: italic; }
+            .doc-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; margin: 15px 0 5px 0; letter-spacing: 0.5px; color: #047857; }
+            .doc-subtitle { text-align: center; font-size: 10px; font-weight: 600; color: #475569; margin-bottom: 15px; }
+            
+            .summary-cards { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 15px; }
+            .card { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 6px; text-align: center; background: #f8fafc; }
+            .card-val { font-size: 13px; font-weight: 800; margin-top: 2px; }
+            .card-lbl { font-size: 9px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+
+            .data-table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
+            .data-table th, .data-table td { border: 1px solid #cbd5e1; padding: 6px 8px; font-size: 10px; }
+            .data-table th { background-color: #f1f5f9; font-weight: bold; text-align: center; color: #0f172a; }
+            .data-table tr:nth-child(even) { background-color: #f8fafc; }
+
+            .signatures { display: flex; justify-content: space-between; margin-top: 35px; text-align: center; font-size: 10px; }
+            .sig-block { width: 200px; }
+            .sig-space { height: 60px; }
+            .sig-name { font-weight: bold; text-decoration: underline; }
+            
+            @media print {
+              body { padding: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <table class="header-table">
+            <tr>
+              ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
+              <td class="info-cell">
+                <div class="school-name">${schoolName}</div>
+                <div class="school-sub">${subHeader} &bull; Akreditasi: ${accreditation}</div>
+                <div class="school-meta">Alamat: ${address}</div>
+              </td>
+            </tr>
+          </table>
+
+          <div class="doc-title">LAPORAN REKAPITULASI PRESENSI &amp; KETIDAKHADIRAN SISWA (BK)</div>
+          <div class="doc-subtitle">
+            Tampilan: ${isAggregate ? 'Akumulasi Status Presensi per Siswa' : 'Riwayat Harian Jurnal Presensi'} &bull; Filter: ${filterClassStr} &bull; ${filterStatusStr} &bull; Periode: ${periodStr}
+          </div>
+
+          <div class="summary-cards">
+            <div class="card">
+              <div class="card-lbl">Total Record</div>
+              <div class="card-val" style="color: #0f172a;">${totalRecords}</div>
+            </div>
+            <div class="card" style="background-color: #ecfdf5; border-color: #a7f3d0;">
+              <div class="card-lbl" style="color: #047857;">Hadir (H)</div>
+              <div class="card-val" style="color: #047857;">${totalHadir}</div>
+            </div>
+            <div class="card" style="background-color: #eff6ff; border-color: #bfdbfe;">
+              <div class="card-lbl" style="color: #1d4ed8;">Sakit (S)</div>
+              <div class="card-val" style="color: #1d4ed8;">${totalSakit}</div>
+            </div>
+            <div class="card" style="background-color: #fef9c3; border-color: #fde047;">
+              <div class="card-lbl" style="color: #a16207;">Izin (I)</div>
+              <div class="card-val" style="color: #a16207;">${totalIzin}</div>
+            </div>
+            <div class="card" style="background-color: #fef2f2; border-color: #fecaca;">
+              <div class="card-lbl" style="color: #b91c1c;">Alpa (A)</div>
+              <div class="card-val" style="color: #b91c1c;">${totalAlpa}</div>
+            </div>
+            <div class="card" style="background-color: #faf5ff; border-color: #e9d5ff;">
+              <div class="card-lbl" style="color: #6b21a8;">Terlambat (T)</div>
+              <div class="card-val" style="color: #6b21a8;">${totalTerlambat}</div>
+            </div>
+          </div>
+
+          <table class="data-table">
+            <thead>
+              ${isAggregate ? `
+                <tr>
+                  <th style="width: 30px;">No</th>
+                  <th>Nama Siswa</th>
+                  <th style="width: 60px;">Kelas</th>
+                  <th style="width: 50px; background-color: #d1fae5; color: #065f46;">Hadir</th>
+                  <th style="width: 50px; background-color: #dbeafe; color: #1e40af;">Sakit</th>
+                  <th style="width: 50px; background-color: #fef3c7; color: #92400e;">Izin</th>
+                  <th style="width: 50px; background-color: #fee2e2; color: #991b1b;">Alpa</th>
+                  <th style="width: 50px; background-color: #f3e8ff; color: #6b21a8;">Terlambat</th>
+                  <th style="width: 55px;">Rasio (%)</th>
+                </tr>
+              ` : `
+                <tr>
+                  <th style="width: 30px;">No</th>
+                  <th style="width: 80px;">Tanggal</th>
+                  <th>Nama Siswa</th>
+                  <th style="width: 60px;">Kelas</th>
+                  <th style="width: 70px;">Status</th>
+                  <th>Catatan Keterangan</th>
+                </tr>
+              `}
+            </thead>
+            <tbody>
+              ${tableRowsHtml || `<tr><td colspan="${isAggregate ? 9 : 6}" style="text-align: center; padding: 20px; color: #94a3b8; font-style: italic;">Tidak ada data presensi siswa yang sesuai filter.</td></tr>`}
+            </tbody>
+          </table>
+
+          <div class="signatures">
+            <div class="sig-block">
+              <div>Mengetahui,</div>
+              <div style="font-weight: bold; margin-top: 2px;">Guru Bimbingan Konseling (BK)</div>
+              <div class="sig-space"></div>
+              <div class="sig-name">( Tim Konselor BK )</div>
+              <div style="font-size: 8px; color: #64748b;">NIP. Guru Bimbingan Konseling</div>
+            </div>
+            <div class="sig-block">
+              <div>Pandaan, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+              <div style="font-weight: bold; margin-top: 2px;">Kepala Sekolah</div>
+              <div class="sig-space"></div>
+              <div class="sig-name">( ${principalName} )</div>
+              <div style="font-size: 8px; color: #64748b;">NIP. Penanggung Jawab Lembaga</div>
+            </div>
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
   const downloadExcelInfractions = () => {
     const schoolNameUpper = (schoolIdentity?.name || 'SMP MAARIF NU PANDAAN').toUpperCase();
     const periodStr = `Periode: ${infractionStartDate ? infractionStartDate : 'Awal'} s.d ${infractionEndDate ? infractionEndDate : 'Akhir'}`;
@@ -2148,14 +2374,25 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   </h2>
                   <p className="text-slate-450 text-[11px]">Amati siswa yang kerap mangkir kelas (Alpa) untuk diprioritaskan mendapat pembinaan mental bimbingan.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={downloadExcelAttendance}
-                  className="cursor-pointer bg-emerald-50 border border-emerald-250 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>Ekspor Excel Ketidakhadiran</span>
-                </button>
+                <div className="flex flex-wrap items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handlePrintPdfAttendance}
+                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all"
+                    title="Cetak PDF Rekapitulasi Presensi Siswa BK"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak PDF Rekap Absensi</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadExcelAttendance}
+                    className="cursor-pointer bg-emerald-50 border border-emerald-250 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
+                  >
+                    <FileSpreadsheet size={13} />
+                    <span>Ekspor Excel Ketidakhadiran</span>
+                  </button>
+                </div>
               </div>
 
               {/* DUAL SELECTOR SUBTABS DIRECT ON SCREEN */}
@@ -2213,8 +2450,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setAttendanceStatusFilter('all')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'all'
                           ? 'bg-slate-800 text-white shadow-2xs'
                           : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
@@ -2224,63 +2462,68 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setAttendanceStatusFilter('Hadir')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Hadir'
                           ? 'bg-emerald-600 text-white shadow-2xs'
                           : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                       }`}
                       title="Hadir (H)"
                     >
-                      H <span className="text-[10px] font-bold hidden sm:inline">(Hadir)</span>
+                      H <span className="text-[10px] font-bold">(Hadir)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setAttendanceStatusFilter('Sakit')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Sakit'
                           ? 'bg-indigo-600 text-white shadow-2xs'
                           : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
                       }`}
                       title="Sakit (S)"
                     >
-                      S <span className="text-[10px] font-bold hidden sm:inline">(Sakit)</span>
+                      S <span className="text-[10px] font-bold">(Sakit)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setAttendanceStatusFilter('Izin')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Izin'
                           ? 'bg-amber-600 text-white shadow-2xs'
                           : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                       }`}
                       title="Izin (I)"
                     >
-                      I <span className="text-[10px] font-bold hidden sm:inline">(Izin)</span>
+                      I <span className="text-[10px] font-bold">(Izin)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setAttendanceStatusFilter('Alpa')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Alpa'
                           ? 'bg-rose-600 text-white shadow-2xs'
                           : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                       }`}
                       title="Alpa (A)"
                     >
-                      A <span className="text-[10px] font-bold hidden sm:inline">(Alpa)</span>
+                      A <span className="text-[10px] font-bold">(Alpa)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setAttendanceStatusFilter('Terlambat')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         attendanceStatusFilter === 'Terlambat'
                           ? 'bg-purple-600 text-white shadow-2xs'
                           : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
                       }`}
                       title="Terlambat (T)"
                     >
-                      T <span className="text-[10px] font-bold hidden sm:inline">(Terlambat)</span>
+                      T <span className="text-[10px] font-bold">(Terlambat)</span>
                     </button>
                   </div>
                 </div>

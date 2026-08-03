@@ -3845,8 +3845,9 @@ Wassalamualaikum Wr. Wb.
                   <div className="flex flex-wrap items-center gap-1.5">
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setRekapStatusFilter('all')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'all'
                           ? 'bg-slate-800 text-white shadow-2xs'
                           : 'bg-white text-slate-600 border border-slate-200 hover:bg-slate-100'
@@ -3856,63 +3857,68 @@ Wassalamualaikum Wr. Wb.
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setRekapStatusFilter('Hadir')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Hadir'
                           ? 'bg-emerald-600 text-white shadow-2xs'
                           : 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                       }`}
                       title="Siswa Ada Hadir (H)"
                     >
-                      H <span className="text-[10px] font-bold hidden sm:inline">(Hadir)</span>
+                      H <span className="text-[10px] font-bold">(Hadir)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setRekapStatusFilter('Sakit')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Sakit'
                           ? 'bg-indigo-600 text-white shadow-2xs'
                           : 'bg-indigo-50 text-indigo-700 border border-indigo-200 hover:bg-indigo-100'
                       }`}
                       title="Siswa Ada Sakit (S)"
                     >
-                      S <span className="text-[10px] font-bold hidden sm:inline">(Sakit)</span>
+                      S <span className="text-[10px] font-bold">(Sakit)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setRekapStatusFilter('Izin')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Izin'
                           ? 'bg-amber-600 text-white shadow-2xs'
                           : 'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'
                       }`}
                       title="Siswa Ada Izin (I)"
                     >
-                      I <span className="text-[10px] font-bold hidden sm:inline">(Izin)</span>
+                      I <span className="text-[10px] font-bold">(Izin)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setRekapStatusFilter('Alpa')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Alpa'
                           ? 'bg-rose-600 text-white shadow-2xs'
                           : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                       }`}
                       title="Siswa Ada Alpa (A)"
                     >
-                      A <span className="text-[10px] font-bold hidden sm:inline">(Alpa)</span>
+                      A <span className="text-[10px] font-bold">(Alpa)</span>
                     </button>
                     <button
                       type="button"
+                      translate="no"
                       onClick={() => setRekapStatusFilter('Terlambat')}
-                      className={`px-3 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
+                      className={`notranslate px-2.5 py-1 rounded-xl text-xs font-black transition-all cursor-pointer ${
                         rekapStatusFilter === 'Terlambat'
                           ? 'bg-purple-600 text-white shadow-2xs'
                           : 'bg-purple-50 text-purple-700 border border-purple-200 hover:bg-purple-100'
                       }`}
                       title="Siswa Ada Terlambat (T)"
                     >
-                      T <span className="text-[10px] font-bold hidden sm:inline">(Terlambat)</span>
+                      T <span className="text-[10px] font-bold">(Terlambat)</span>
                     </button>
                   </div>
                 </div>

@@ -5,54 +5,106 @@ export function exportDailyReportToExcel(params: {
   date: string;
   totalSppTunai: number;
   totalSppOnline: number;
+  totalMiscTunai?: number;
+  totalMiscOnline?: number;
   totalTabunganMasuk: number;
   totalTabunganKeluar: number;
   totalKasMasukLokal: number;
+  totalBkuPengeluaran?: number;
   netKasLokal: number;
   totalMidtransToday: number;
   sppPaidToday: any[];
+  miscPaidToday?: any[];
   savingsToday: any[];
   midtransTransactionsToday: any[];
+  bkuToday?: any[];
   students: any[];
 }) {
   const {
     date,
     totalSppTunai,
     totalSppOnline,
+    totalMiscTunai = 0,
+    totalMiscOnline = 0,
     totalTabunganMasuk,
     totalTabunganKeluar,
     totalKasMasukLokal,
+    totalBkuPengeluaran = 0,
     netKasLokal,
     totalMidtransToday,
     sppPaidToday,
+    miscPaidToday = [],
     savingsToday,
     midtransTransactionsToday,
+    bkuToday = [],
     students,
   } = params;
 
   const wb = XLSX.utils.book_new();
 
-  // --- SHEET 1: RINGKASAN ---
+  // Helper for Midtrans payment channel detection
+  const getMidtransDetail = (method?: string) => {
+    if (!method) return "Lain-lain";
+    const match = method.match(/Midtrans \(([^)]+)\)/i);
+    if (match) {
+      return match[1].toUpperCase();
+    }
+    if (method.toLowerCase().includes("snap")) {
+      return "SNAP GATEWAY";
+    }
+    if (method.toLowerCase().includes("midtrans")) {
+      return "MIDTRANS ONLINE";
+    }
+    return method.toUpperCase();
+  };
+
+  // Channel breakdown calculation
+  const channelSummary: { [channel: string]: { count: number; total: number } } = {};
+  midtransTransactionsToday.forEach((item) => {
+    const ch = getMidtransDetail(item.paymentMethod);
+    if (!channelSummary[ch]) {
+      channelSummary[ch] = { count: 0, total: 0 };
+    }
+    channelSummary[ch].count += 1;
+    channelSummary[ch].total += item.amount;
+  });
+
+  const channelRows = Object.entries(channelSummary).map(([channel, stat]) => [
+    channel,
+    stat.count,
+    stat.total,
+  ]);
+
+  // --- SHEET 1: RINGKASAN ARUS KAS ---
   const ringkasanData = [
-    ["LAPORAN HARIAN KEUANGAN SEKOLAH"],
+    ["LAPORAN LENGKAP KEUANGAN HARIAN SEKOLAH"],
     ["SMP MAARIF NU PANDAAN"],
-    [`Tanggal: ${date}`],
+    [`Tanggal Buku Teller: ${date}`],
     [],
-    ["RINGKASAN ARUS KAS"],
-    ["Kategori", "Penerimaan / Pengeluaran", "Nominal (IDR)"],
-    ["Iuran SPP Tunai / Manual", "Penerimaan", totalSppTunai],
-    ["Iuran SPP Online (Midtrans)", "Penerimaan", totalSppOnline],
-    ["Setoran Tabungan Tunai", "Penerimaan", totalTabunganMasuk],
-    ["Penarikan Tabungan Tunai", "Pengeluaran", totalTabunganKeluar],
-    ["Total Kas Masuk Lokal (SPP Tunai + Setor Tabungan)", "Penerimaan", totalKasMasukLokal],
-    ["Net Kas Lokal (Kas Masuk - Tarik Tabungan)", "Saldo", netKasLokal],
-    ["Total Transaksi Midtrans Online", "Penerimaan", totalMidtransToday],
+    ["1. RINGKASAN PENERIMAAN & PENGELUARAN"],
+    ["Kategori Pemasukan / Pengeluaran", "Jenis Aliran", "Nominal (IDR)"],
+    ["Iuran SPP Tunai / Teller Manual", "Penerimaan Brankas", totalSppTunai],
+    ["Iuran SPP Online (Midtrans Gateway)", "Penerimaan Online", totalSppOnline],
+    ["Tagihan Lain-Lain Tunai / Manual", "Penerimaan Brankas", totalMiscTunai],
+    ["Tagihan Lain-Lain Online (Midtrans Gateway)", "Penerimaan Online", totalMiscOnline],
+    ["Setoran Tabungan Siswa Tunai", "Penerimaan Brankas", totalTabunganMasuk],
+    ["Penarikan Tabungan Siswa (Kredit)", "Pengeluaran Brankas", totalTabunganKeluar],
+    ["Pengeluaran BKU / Kas Operasional Sekolah", "Pengeluaran Kas", totalBkuPengeluaran],
+    [],
+    ["2. REKONSILIASI KAS & ONLINE"],
+    ["Total Kas Masuk Brankas Lokal (SPP Tunai + Misc Tunai + Setor Tabungan)", "Penerimaan Lokal", totalKasMasukLokal],
+    ["Net Aliran Kas Teller Lokal (Kas Masuk - Tarik Tabungan - BKU)", "Saldo Net Brankas", netKasLokal],
+    ["Total Gateway Midtrans Online (SPP + Misc + Tabungan Online)", "Penerimaan Online", totalMidtransToday],
+    [],
+    ["3. BREAKDOWN METODE PEMBAYARAN MIDTRANS ONLINE"],
+    ["Channel Payment Gateway", "Jumlah Transaksi", "Total Nominal (IDR)"],
+    ...channelRows,
   ];
   const wsRingkasan = XLSX.utils.aoa_to_sheet(ringkasanData);
   XLSX.utils.book_append_sheet(wb, wsRingkasan, "Ringkasan Kas");
 
-  // --- SHEET 2: SPP TUNAI / MANUAL ---
-  const sppHeaders = ["No", "Waktu", "NIS", "Nama Siswa", "Kelas", "Bulan Tagihan", "Metode Pembayaran", "Nominal (IDR)"];
+  // --- SHEET 2: SPP LUNAS HARIAN ---
+  const sppHeaders = ["No", "Waktu", "NIS", "Nama Siswa", "Kelas", "Bulan Tagihan", "Metode Pembayaran", "Channel Detail", "Order ID / Ref", "Nominal (IDR)"];
   const sppRows = sppPaidToday.map((b, idx) => {
     const s = students.find((st) => st.id === b.studentId);
     return [
@@ -63,21 +115,57 @@ export function exportDailyReportToExcel(params: {
       s?.class ? `Kelas ${s.class}` : "-",
       `${b.month} ${b.year}`,
       b.paymentMethod || "Manual",
+      getMidtransDetail(b.paymentMethod),
+      b.orderId || "-",
       b.amount,
     ];
   });
+  const totalSppPaid = sppPaidToday.reduce((acc, c) => acc + c.amount, 0);
   const sppSheetData = [
-    ["LAPORAN TRANSAKSI SPP HARIAN (TUNAI & MANUAL)"],
+    ["LAPORAN TRANSAKSI SPP LUNAS HARIAN"],
     [`Tanggal: ${date}`],
     [],
     sppHeaders,
     ...sppRows,
+    [],
+    ["", "", "", "", "", "", "", "", "TOTAL SPP LUNAS:", totalSppPaid],
   ];
   const wsSpp = XLSX.utils.aoa_to_sheet(sppSheetData);
-  XLSX.utils.book_append_sheet(wb, wsSpp, "SPP Tunai & Manual");
+  XLSX.utils.book_append_sheet(wb, wsSpp, "SPP Lunas");
 
-  // --- SHEET 3: MUTASI TABUNGAN ---
-  const tabunganHeaders = ["No", "Waktu", "NIS", "Nama Siswa", "Kelas", "Jenis Mutasi", "Keterangan", "Nominal (IDR)"];
+  // --- SHEET 3: TAGIHAN LAIN-LAIN LUNAS HARIAN ---
+  const miscHeaders = ["No", "Waktu", "NIS", "Nama Siswa", "Kelas", "Judul Tagihan", "Pos Anggaran", "Metode Pembayaran", "Channel Detail", "Order ID / Ref", "Nominal (IDR)"];
+  const miscRows = miscPaidToday.map((b, idx) => {
+    const s = students.find((st) => st.id === b.studentId);
+    return [
+      idx + 1,
+      b.paidAt ? new Date(b.paidAt).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-",
+      s?.nis || "-",
+      s?.name || "Siswa dihapus",
+      s?.class ? `Kelas ${s.class}` : "-",
+      b.title || "Tagihan Lain",
+      b.category || "Operasional",
+      b.paymentMethod || "Manual",
+      getMidtransDetail(b.paymentMethod),
+      b.orderId || "-",
+      b.amount,
+    ];
+  });
+  const totalMiscPaid = miscPaidToday.reduce((acc, c) => acc + c.amount, 0);
+  const miscSheetData = [
+    ["LAPORAN TRANSAKSI TAGIHAN LAIN-LAIN / NON-SPP HARIAN"],
+    [`Tanggal: ${date}`],
+    [],
+    miscHeaders,
+    ...miscRows,
+    [],
+    ["", "", "", "", "", "", "", "", "", "TOTAL TAGIHAN LAIN:", totalMiscPaid],
+  ];
+  const wsMisc = XLSX.utils.aoa_to_sheet(miscSheetData);
+  XLSX.utils.book_append_sheet(wb, wsMisc, "Tagihan Lain-Lain");
+
+  // --- SHEET 4: MUTASI TABUNGAN ---
+  const tabunganHeaders = ["No", "Waktu", "NIS", "Nama Siswa", "Kelas", "Jenis Mutasi", "Metode Pembayaran", "Keterangan", "Order ID / Ref", "Nominal (IDR)"];
   const tabunganRows = savingsToday.map((t, idx) => {
     const s = students.find((st) => st.id === t.studentId);
     return [
@@ -87,37 +175,29 @@ export function exportDailyReportToExcel(params: {
       s?.name || "Siswa dihapus",
       s?.class ? `Kelas ${s.class}` : "-",
       t.type === "deposit" ? "SETOR" : "TARIK",
+      t.paymentMethod || "Cash/Teller",
       t.notes || "-",
+      t.orderId || "-",
       t.amount,
     ];
   });
   const tabunganSheetData = [
-    ["LAPORAN MUTASI TABUNGAN HARIAN"],
+    ["LAPORAN MUTASI TABUNGAN SISWA HARIAN"],
     [`Tanggal: ${date}`],
     [],
     tabunganHeaders,
     ...tabunganRows,
+    [],
+    ["", "", "", "", "", "", "", "", "TOTAL SETORAN TABUNGAN:", totalTabunganMasuk],
+    ["", "", "", "", "", "", "", "", "TOTAL PENARIKAN TABUNGAN:", totalTabunganKeluar],
   ];
   const wsTabungan = XLSX.utils.aoa_to_sheet(tabunganSheetData);
   XLSX.utils.book_append_sheet(wb, wsTabungan, "Mutasi Tabungan");
 
-  // --- SHEET 4: TRANSAKSI MIDTRANS ---
-  const midtransHeaders = ["No", "Waktu", "NIS", "Nama Siswa", "Kelas", "Kategori", "Keterangan", "Order ID", "Metode Detail", "Nominal (IDR)"];
+  // --- SHEET 5: TRANSAKSI MIDTRANS ONLINE ---
+  const midtransHeaders = ["No", "Waktu", "NIS", "Nama Siswa", "Kelas", "Kategori", "Detail Keterangan", "Order ID Midtrans", "Channel Payment", "Status", "Nominal (IDR)"];
   const midtransRows = midtransTransactionsToday.map((item, idx) => {
     const s = students.find((st) => st.id === item.studentId);
-    
-    const getMidtransDetail = (method?: string) => {
-      if (!method) return "Lain-lain";
-      const match = method.match(/Midtrans \(([^)]+)\)/i);
-      if (match) {
-        return match[1].toUpperCase();
-      }
-      if (method.toLowerCase().includes("snap")) {
-        return "SNAP GATEWAY";
-      }
-      return "ONLINE PG";
-    };
-
     return [
       idx + 1,
       item.time ? new Date(item.time).toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" }) : "-",
@@ -128,20 +208,46 @@ export function exportDailyReportToExcel(params: {
       item.details,
       item.orderId || "-",
       getMidtransDetail(item.paymentMethod),
+      "LUNAS / SETTLEMENT",
       item.amount,
     ];
   });
   const midtransSheetData = [
-    ["LAPORAN TRANSAKSI MIDTRANS ONLINE"],
+    ["LAPORAN TRANSAKSI REKAPITULASI MIDTRANS ONLINE GATEWAY"],
     [`Tanggal: ${date}`],
     [],
     midtransHeaders,
     ...midtransRows,
+    [],
+    ["", "", "", "", "", "", "", "", "", "TOTAL MIDTRANS ONLINE:", totalMidtransToday],
   ];
   const wsMidtrans = XLSX.utils.aoa_to_sheet(midtransSheetData);
   XLSX.utils.book_append_sheet(wb, wsMidtrans, "Transaksi Midtrans");
 
-  XLSX.writeFile(wb, `Laporan_Keuangan_Harian_${date}.xlsx`);
+  // --- SHEET 6: BUKU KAS UMUM (BKU) OPERASIONAL ---
+  const bkuHeaders = ["No", "Tanggal", "Jenis", "Kategori POS", "Deskripsi / Keterangan", "Pencatat / Sumber", "Nominal (IDR)"];
+  const bkuRows = bkuToday.map((t, idx) => [
+    idx + 1,
+    t.date || date,
+    t.type === "incoming" ? "Pemasukan" : "Pengeluaran",
+    t.category || "Operasional",
+    t.description || "-",
+    t.createdBy || t.source || "Bendahara",
+    t.amount || 0,
+  ]);
+  const bkuSheetData = [
+    ["BUKU KAS UMUM (BKU) OPERASIONAL BENDAHARA"],
+    [`Tanggal: ${date}`],
+    [],
+    bkuHeaders,
+    ...bkuRows,
+    [],
+    ["", "", "", "", "", "TOTAL BKU PENGELUARAN:", totalBkuPengeluaran],
+  ];
+  const wsBku = XLSX.utils.aoa_to_sheet(bkuSheetData);
+  XLSX.utils.book_append_sheet(wb, wsBku, "Jurnal BKU Operasional");
+
+  XLSX.writeFile(wb, `Laporan_Keuangan_Harian_Lengkap_${date}.xlsx`);
 }
 
 // 2. Export SPP Recap (Rekap SPP) to Excel

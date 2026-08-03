@@ -148,6 +148,7 @@ interface AdminPanelProps {
   students: Student[];
   bills: SppBill[];
   transactions: SavingsTransaction[];
+  treasurerTransactions?: any[];
   isLoading: boolean;
   midtransStatus: {
     merchantId: string;
@@ -307,6 +308,7 @@ export default function AdminPanel({
   students,
   bills,
   transactions,
+  treasurerTransactions = [],
   isLoading,
   midtransStatus,
   onPaySppManual,
@@ -12962,11 +12964,23 @@ export default function AdminPanel({
                           b.paidAt &&
                           getWIBDateString(b.paidAt) === currentDateFilter,
                       );
+
+                      const miscPaidToday = miscBills.filter(
+                        (b) =>
+                          b.status === "paid" &&
+                          b.paidAt &&
+                          getWIBDateString(b.paidAt) === currentDateFilter,
+                      );
+
                       const savingsToday = transactions.filter(
                         (t) =>
                           t.status === "success" &&
                           t.createdAt &&
                           getWIBDateString(t.createdAt) === currentDateFilter,
+                      );
+
+                      const bkuToday = (treasurerTransactions || []).filter(
+                        (t) => t.date === currentDateFilter,
                       );
 
                       const totalSppTunai = sppPaidToday
@@ -12989,6 +13003,26 @@ export default function AdminPanel({
                         )
                         .reduce((acc, c) => acc + c.amount, 0);
 
+                      const totalMiscTunai = miscPaidToday
+                        .filter(
+                          (b) =>
+                            b.paymentMethod === "cash" ||
+                            !b.paymentMethod ||
+                            b.paymentMethod.toLowerCase().includes("tunai") ||
+                            b.paymentMethod.toLowerCase().includes("manual"),
+                        )
+                        .reduce((acc, c) => acc + c.amount, 0);
+
+                      const totalMiscOnline = miscPaidToday
+                        .filter(
+                          (b) =>
+                            b.paymentMethod &&
+                            !b.paymentMethod.toLowerCase().includes("tunai") &&
+                            !b.paymentMethod.toLowerCase().includes("cash") &&
+                            !b.paymentMethod.toLowerCase().includes("manual"),
+                        )
+                        .reduce((acc, c) => acc + c.amount, 0);
+
                       const totalTabunganMasuk = savingsToday
                         .filter((t) => t.type === "deposit")
                         .reduce((acc, c) => acc + c.amount, 0);
@@ -12997,8 +13031,12 @@ export default function AdminPanel({
                         .filter((t) => t.type === "withdrawal")
                         .reduce((acc, c) => acc + c.amount, 0);
 
-                      const totalKasMasukLokal = totalSppTunai + totalTabunganMasuk;
-                      const netKasLokal = totalKasMasukLokal - totalTabunganKeluar;
+                      const totalBkuPengeluaran = bkuToday
+                        .filter((t) => t.type === "outgoing")
+                        .reduce((acc, c) => acc + c.amount, 0);
+
+                      const totalKasMasukLokal = totalSppTunai + totalMiscTunai + totalTabunganMasuk;
+                      const netKasLokal = totalKasMasukLokal - totalTabunganKeluar - totalBkuPengeluaran;
 
                       const midtransSpp = sppPaidToday
                         .filter((b) => b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans"))
@@ -13030,12 +13068,9 @@ export default function AdminPanel({
                           type: "savings" as const,
                         }));
 
-                      const midtransMisc = miscBills
+                      const midtransMisc = miscPaidToday
                         .filter(
                           (b) =>
-                            b.status === "paid" &&
-                            b.paidAt &&
-                            getWIBDateString(b.paidAt) === currentDateFilter &&
                             b.paymentMethod &&
                             b.paymentMethod.toLowerCase().includes("midtrans"),
                         )
@@ -13062,14 +13097,19 @@ export default function AdminPanel({
                         date: currentDateFilter,
                         totalSppTunai,
                         totalSppOnline,
+                        totalMiscTunai,
+                        totalMiscOnline,
                         totalTabunganMasuk,
                         totalTabunganKeluar,
                         totalKasMasukLokal,
+                        totalBkuPengeluaran,
                         netKasLokal,
                         totalMidtransToday,
                         sppPaidToday,
+                        miscPaidToday,
                         savingsToday,
                         midtransTransactionsToday,
+                        bkuToday,
                         students,
                       });
                     }}
@@ -14686,6 +14726,184 @@ export default function AdminPanel({
                   URL.revokeObjectURL(url);
                 };
 
+                const handlePrintPdfAdminAttendance = () => {
+                  if (recapList.length === 0) {
+                    alert("Tidak ada data siswa untuk filter kelas terpilih.");
+                    return;
+                  }
+
+                  const printWindow = window.open("", "_blank");
+                  if (!printWindow) {
+                    alert("Harap izinkan popup di browser Anda untuk mencetak dokumen.");
+                    return;
+                  }
+
+                  const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+                  const subHeader = schoolIdentity?.subheading || "Penilaian Karakter, Bimbingan & Kebiasaan Positif";
+                  const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+                  const address = schoolIdentity?.address || "Pasuruan, Jawa Timur";
+                  const logoSrc = schoolIdentity?.logo || "";
+                  const principalName = schoolIdentity?.principal || "Kepala Sekolah";
+
+                  const periodStr = `${formatIndonesianDateLocal(absenStartDate)} s.d ${formatIndonesianDateLocal(absenEndDate)}`;
+                  const filterClassStr = absenClassFilter === "all" ? "Semua Kelas" : `Kelas ${absenClassFilter}`;
+
+                  let totalH = 0, totalS = 0, totalI = 0, totalA = 0, totalT = 0;
+                  recapList.forEach(r => {
+                    totalH += r.H;
+                    totalS += r.S;
+                    totalI += r.I;
+                    totalA += r.A;
+                    totalT += r.T;
+                  });
+
+                  const tableRowsHtml = recapList.map((row, idx) => `
+                    <tr>
+                      <td style="text-align: center;">${idx + 1}</td>
+                      <td style="text-align: center; font-family: monospace;">${row.nis || '-'}</td>
+                      <td style="font-weight: bold; text-align: left;">${row.name}</td>
+                      <td style="text-align: center;">Kelas ${row.class}</td>
+                      <td style="text-align: left;">${row.homeroomName}</td>
+                      <td style="text-align: center; color: #047857; font-weight: bold; background-color: #ecfdf5;">${row.H}</td>
+                      <td style="text-align: center; color: #1d4ed8; background-color: #eff6ff;">${row.S}</td>
+                      <td style="text-align: center; color: #a16207; background-color: #fef9c3;">${row.I}</td>
+                      <td style="text-align: center; color: #b91c1c; font-weight: bold; ${row.A > 0 ? 'background-color: #fef2f2;' : ''}">${row.A}</td>
+                      <td style="text-align: center; color: #6b21a8; background-color: #faf5ff;">${row.T}</td>
+                      <td style="text-align: center; font-weight: bold;">${row.total}</td>
+                      <td style="text-align: center; color: #e11d48; font-weight: bold;">${row.infractionPointsPeriod}</td>
+                      <td style="text-align: center; color: #be123c; font-weight: bold;">${row.infractionPointsTotal}</td>
+                    </tr>
+                  `).join("");
+
+                  printWindow.document.write(`
+                    <html>
+                      <head>
+                        <title>Rekap Presensi Siswa - ${schoolName}</title>
+                        <style>
+                          @page { size: A4 landscape; margin: 10mm; }
+                          body { font-family: 'Segoe UI', system-ui, sans-serif; padding: 15px; color: #0f172a; background: white; line-height: 1.4; font-size: 11px; }
+                          .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 12px; padding-bottom: 6px; }
+                          .logo-cell { width: 60px; text-align: center; vertical-align: middle; }
+                          .info-cell { text-align: center; vertical-align: middle; }
+                          .school-name { font-size: 15px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: 0.5px; }
+                          .school-sub { font-size: 10px; margin: 2px 0 0 0; color: #334155; font-weight: 600; }
+                          .school-meta { font-size: 8.5px; margin: 2px 0 0 0; color: #64748b; font-style: italic; }
+                          .doc-title { text-align: center; font-size: 13px; font-weight: 800; text-transform: uppercase; margin: 12px 0 4px 0; letter-spacing: 0.5px; color: #1e3a8a; }
+                          .doc-subtitle { text-align: center; font-size: 9.5px; font-weight: 600; color: #475569; margin-bottom: 12px; }
+                          
+                          .summary-cards { display: flex; justify-content: space-between; gap: 8px; margin-bottom: 12px; }
+                          .card { flex: 1; border: 1px solid #cbd5e1; border-radius: 6px; padding: 5px; text-align: center; background: #f8fafc; }
+                          .card-val { font-size: 12px; font-weight: 800; margin-top: 2px; }
+                          .card-lbl { font-size: 8.5px; font-weight: 700; color: #64748b; text-transform: uppercase; }
+
+                          .data-table { width: 100%; border-collapse: collapse; margin-bottom: 15px; }
+                          .data-table th, .data-table td { border: 1px solid #cbd5e1; padding: 5px 6px; font-size: 9.5px; }
+                          .data-table th { background-color: #f1f5f9; font-weight: bold; text-align: center; color: #0f172a; }
+                          .data-table tr:nth-child(even) { background-color: #f8fafc; }
+
+                          .signatures { display: flex; justify-content: space-between; margin-top: 25px; text-align: center; font-size: 9.5px; }
+                          .sig-block { width: 220px; }
+                          .sig-space { height: 50px; }
+                          .sig-name { font-weight: bold; text-decoration: underline; }
+                          
+                          @media print {
+                            body { padding: 0; }
+                          }
+                        </style>
+                      </head>
+                      <body>
+                        <table class="header-table">
+                          <tr>
+                            ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 50px; max-width: 50px;" /></td>` : ''}
+                            <td class="info-cell">
+                              <div class="school-name">${schoolName}</div>
+                              <div class="school-sub">${subHeader} &bull; Akreditasi: ${accreditation}</div>
+                              <div class="school-meta">Alamat: ${address}</div>
+                            </td>
+                          </tr>
+                        </table>
+
+                        <div class="doc-title">LAPORAN REKAPITULASI PRESENSI SISWA &amp; CATATAN BK</div>
+                        <div class="doc-subtitle">
+                          Filter Kelas: ${filterClassStr} &bull; Periode Tanggal: ${periodStr}
+                        </div>
+
+                        <div class="summary-cards">
+                          <div class="card">
+                            <div class="card-lbl">Total Siswa</div>
+                            <div class="card-val" style="color: #0f172a;">${recapList.length}</div>
+                          </div>
+                          <div class="card" style="background-color: #ecfdf5; border-color: #a7f3d0;">
+                            <div class="card-lbl" style="color: #047857;">Total Hadir (H)</div>
+                            <div class="card-val" style="color: #047857;">${totalH}</div>
+                          </div>
+                          <div class="card" style="background-color: #eff6ff; border-color: #bfdbfe;">
+                            <div class="card-lbl" style="color: #1d4ed8;">Total Sakit (S)</div>
+                            <div class="card-val" style="color: #1d4ed8;">${totalS}</div>
+                          </div>
+                          <div class="card" style="background-color: #fef9c3; border-color: #fde047;">
+                            <div class="card-lbl" style="color: #a16207;">Total Izin (I)</div>
+                            <div class="card-val" style="color: #a16207;">${totalI}</div>
+                          </div>
+                          <div class="card" style="background-color: #fef2f2; border-color: #fecaca;">
+                            <div class="card-lbl" style="color: #b91c1c;">Total Alpa (A)</div>
+                            <div class="card-val" style="color: #b91c1c;">${totalA}</div>
+                          </div>
+                          <div class="card" style="background-color: #faf5ff; border-color: #e9d5ff;">
+                            <div class="card-lbl" style="color: #6b21a8;">Total Terlambat (T)</div>
+                            <div class="card-val" style="color: #6b21a8;">${totalT}</div>
+                          </div>
+                        </div>
+
+                        <table class="data-table">
+                          <thead>
+                            <tr>
+                              <th style="width: 25px;">No</th>
+                              <th style="width: 70px;">NIS</th>
+                              <th>Nama Siswa</th>
+                              <th style="width: 50px;">Kelas</th>
+                              <th>Wali Kelas</th>
+                              <th style="width: 45px; background-color: #d1fae5; color: #065f46;">Hadir</th>
+                              <th style="width: 45px; background-color: #dbeafe; color: #1e40af;">Sakit</th>
+                              <th style="width: 45px; background-color: #fef3c7; color: #92400e;">Izin</th>
+                              <th style="width: 45px; background-color: #fee2e2; color: #991b1b;">Alpa</th>
+                              <th style="width: 45px; background-color: #f3e8ff; color: #6b21a8;">Terlambat</th>
+                              <th style="width: 50px;">Total</th>
+                              <th style="width: 60px; background-color: #ffe4e6; color: #e11d48;">Poin Periode</th>
+                              <th style="width: 60px; background-color: #fecdd3; color: #be123c;">Poin Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            ${tableRowsHtml}
+                          </tbody>
+                        </table>
+
+                        <div class="signatures">
+                          <div class="sig-block">
+                            <div>Mengetahui,</div>
+                            <div style="font-weight: bold; margin-top: 2px;">Guru BK / Kesiswaan</div>
+                            <div class="sig-space"></div>
+                            <div class="sig-name">( Guru Bimbingan Konseling )</div>
+                            <div style="font-size: 8px; color: #64748b;">NIP. Pembina Kesiswaan</div>
+                          </div>
+                          <div class="sig-block">
+                            <div>Pandaan, ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</div>
+                            <div style="font-weight: bold; margin-top: 2px;">Kepala Sekolah</div>
+                            <div class="sig-space"></div>
+                            <div class="sig-name">( ${principalName} )</div>
+                            <div style="font-size: 8px; color: #64748b;">NIP. Penanggung Jawab Lembaga</div>
+                          </div>
+                        </div>
+
+                        <script>
+                          window.onload = function() { window.print(); }
+                        </script>
+                      </body>
+                    </html>
+                  `);
+                  printWindow.document.close();
+                };
+
                 return (
                   <div className="flex flex-col gap-6">
                     {/* Rentang Filter Form block */}
@@ -14693,7 +14911,7 @@ export default function AdminPanel({
                       <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
                         <div>
                           <h4 className="font-extrabold text-slate-800 text-xs sm:text-sm uppercase tracking-wider">
-                            Unduh Rekap Absensi Siswa (H, S, I, A, T)
+                            Unduh & Cetak Rekap Absensi Siswa (H, S, I, A, T)
                           </h4>
                           <p className="text-[10px] text-slate-400 mt-0.5">
                             Filter data rekapitulasi status absensi harian per
@@ -14702,6 +14920,13 @@ export default function AdminPanel({
                           </p>
                         </div>
                         <div className="flex flex-wrap gap-2 mt-2 sm:mt-0">
+                          <button
+                            type="button"
+                            onClick={handlePrintPdfAdminAttendance}
+                            className="flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-[10px] sm:text-xs cursor-pointer transition-all uppercase tracking-wider shadow-2xs"
+                          >
+                            <Printer size={13} /> Cetak PDF (.pdf)
+                          </button>
                           <button
                             type="button"
                             onClick={handleDownloadXLS}

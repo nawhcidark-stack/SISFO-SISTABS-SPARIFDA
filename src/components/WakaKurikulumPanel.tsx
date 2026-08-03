@@ -69,6 +69,7 @@ export default function WakaKurikulumPanel({
     return Array.from(new Set(list));
   }, [schoolIdentity?.activeAcademicYear]);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
+  const [homeroomFilterType, setHomeroomFilterType] = useState<'all' | 'binaan' | 'cross_class'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
   // Import PTS/PAS States
@@ -153,10 +154,18 @@ export default function WakaKurikulumPanel({
     });
   }, [subjectTeachers, students, filteredAssessments]);
 
-  // Monitoring Stats for Wali Kelas (Kokurikuler)
+  // Monitoring Stats for Wali Kelas (Kokurikuler & Penilaian Lintas Kelas)
   const homeroomProgressList = useMemo(() => {
-    return homerooms.map(hr => {
-      const clsName = hr.className ? hr.className.trim().toUpperCase() : '';
+    const allClassesSet = new Set<string>();
+    homerooms.forEach(hr => {
+      if (hr.className) allClassesSet.add(hr.className.trim().toUpperCase());
+    });
+    availableClasses.forEach(cls => {
+      if (cls) allClassesSet.add(cls.trim().toUpperCase());
+    });
+
+    return Array.from(allClassesSet).sort().map(clsName => {
+      const primaryHr = homerooms.find(hr => hr.className && hr.className.trim().toUpperCase() === clsName);
       const clsStudents = students.filter(s => s.class && s.class.trim().toUpperCase() === clsName);
       const totalStudents = clsStudents.length;
 
@@ -165,18 +174,35 @@ export default function WakaKurikulumPanel({
         return filteredAssessments.some(a => a.studentId === s.id && a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler > 0);
       }).length;
 
+      // Count distinct subjects evaluated for this class
+      const evaluatedSubjects = new Set<string>();
+      const assessedStudentIds = new Set<string>();
+      filteredAssessments.forEach(a => {
+        if (clsStudents.some(s => s.id === a.studentId)) {
+          if ((a.nilaiRataTp && a.nilaiRataTp > 0) || (a.nilaiKokurikuler && a.nilaiKokurikuler > 0)) {
+            assessedStudentIds.add(a.studentId);
+            if (a.subject) evaluatedSubjects.add(a.subject);
+          }
+        }
+      });
+
       const percentage = totalStudents > 0 ? Math.round((kokuCount / totalStudents) * 100) : 0;
+      const totalAssessedPercentage = totalStudents > 0 ? Math.round((assessedStudentIds.size / totalStudents) * 100) : 0;
 
       return {
-        id: hr.id,
-        teacherName: hr.name,
+        id: primaryHr ? primaryHr.id : `cls-${clsName}`,
+        teacherName: primaryHr ? primaryHr.name : 'Wali Kelas Lintas Kelas / Pengampu',
         className: clsName,
         totalStudents,
         kokuCount,
-        percentage
+        percentage,
+        totalAssessedPercentage,
+        evaluatedSubjectsCount: evaluatedSubjects.size,
+        hasPrimaryTeacher: !!primaryHr,
+        isCrossClass: !primaryHr || (primaryHr && evaluatedSubjects.size > 0)
       };
     });
-  }, [homerooms, students, filteredAssessments]);
+  }, [homerooms, availableClasses, students, filteredAssessments]);
 
   // Handle Parse Excel/CSV Input
   const handleParseImport = () => {
@@ -661,45 +687,109 @@ export default function WakaKurikulumPanel({
             </div>
           </div>
 
-          {/* Table 2: Progress Wali Kelas (Kokurikuler) */}
+          {/* Table 2: Progress Wali Kelas (Kokurikuler & Penilaian Rapor) */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
-            <div className="pb-3 border-b border-slate-100">
-              <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
-                <GraduationCap size={18} className="text-violet-600" />
-                <span>Progres Input Nilai Kokurikuler oleh Wali Kelas</span>
-              </h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Nilai Kokurikuler yang diinput Wali Kelas terhubung otomatis ke seluruh Guru Mapel siswa
-              </p>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100">
+              <div>
+                <h3 className="font-extrabold text-base text-slate-900 flex items-center gap-2">
+                  <GraduationCap size={18} className="text-violet-600" />
+                  <span>Progres Input Nilai Kokurikuler & Rapor oleh Wali Kelas</span>
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Monitoring keterisian nilai Kokurikuler dan nilai Rapor Merdeka yang diinput Wali Kelas (Termasuk input di kelas selain kelas binaan / Lintas Kelas)
+                </p>
+              </div>
+
+              {/* Filter Buttons */}
+              <div className="flex items-center gap-1.5 bg-slate-100 p-1 rounded-xl self-start sm:self-auto">
+                <button
+                  type="button"
+                  onClick={() => setHomeroomFilterType('all')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    homeroomFilterType === 'all'
+                      ? 'bg-white text-slate-800 shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Semua Kelas
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHomeroomFilterType('binaan')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    homeroomFilterType === 'binaan'
+                      ? 'bg-violet-600 text-white shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Kelas Binaan
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setHomeroomFilterType('cross_class')}
+                  className={`px-3 py-1 rounded-lg text-xs font-bold transition-all cursor-pointer ${
+                    homeroomFilterType === 'cross_class'
+                      ? 'bg-indigo-600 text-white shadow-2xs'
+                      : 'text-slate-500 hover:text-slate-800'
+                  }`}
+                >
+                  Input Lintas Kelas
+                </button>
+              </div>
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {homeroomProgressList.map(hr => (
-                <div key={hr.id} className="p-4 border border-slate-200 rounded-2xl bg-slate-50/50 space-y-3">
-                  <div className="flex justify-between items-start">
-                    <div>
-                      <span className="px-2 py-0.5 bg-violet-100 text-violet-800 rounded-md font-black text-[10px] uppercase">
-                        Kelas {hr.className}
-                      </span>
-                      <h4 className="font-bold text-slate-900 text-sm mt-1">{hr.teacherName}</h4>
+              {homeroomProgressList
+                .filter(hr => {
+                  if (homeroomFilterType === 'binaan') return hr.hasPrimaryTeacher;
+                  if (homeroomFilterType === 'cross_class') return hr.evaluatedSubjectsCount > 0 || !hr.hasPrimaryTeacher;
+                  return true;
+                })
+                .map(hr => (
+                  <div key={hr.id} className="p-4 border border-slate-200 rounded-2xl bg-slate-50/50 space-y-3 relative overflow-hidden">
+                    <div className="flex justify-between items-start gap-2">
+                      <div>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <span className="px-2 py-0.5 bg-violet-100 text-violet-800 rounded-md font-black text-[10px] uppercase">
+                            Kelas {hr.className}
+                          </span>
+                          {!hr.hasPrimaryTeacher && (
+                            <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md font-black text-[9px] uppercase">
+                              🌐 Lintas Kelas
+                            </span>
+                          )}
+                          {hr.evaluatedSubjectsCount > 0 && (
+                            <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 rounded-md font-bold text-[9px]">
+                              {hr.evaluatedSubjectsCount} Mapel Terisi
+                            </span>
+                          )}
+                        </div>
+                        <h4 className="font-bold text-slate-900 text-sm mt-1.5">{hr.teacherName}</h4>
+                      </div>
+                      <span className="text-xs font-black text-slate-700 shrink-0">{hr.percentage}%</span>
                     </div>
-                    <span className="text-xs font-black text-slate-700">{hr.percentage}%</span>
-                  </div>
 
-                  <div className="bg-slate-200 h-2 rounded-full overflow-hidden">
-                    <div
-                      className={`h-full transition-all duration-500 ${
-                        hr.percentage === 100 ? 'bg-emerald-500' : hr.percentage > 0 ? 'bg-violet-600' : 'bg-slate-300'
-                      }`}
-                      style={{ width: `${hr.percentage}%` }}
-                    />
-                  </div>
+                    <div className="space-y-1">
+                      <div className="flex justify-between text-[10px] font-bold text-slate-500">
+                        <span>Progres Kokurikuler</span>
+                        <span>{hr.kokuCount}/{hr.totalStudents} Siswa</span>
+                      </div>
+                      <div className="bg-slate-200 h-2 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full transition-all duration-500 ${
+                            hr.percentage === 100 ? 'bg-emerald-500' : hr.percentage > 0 ? 'bg-violet-600' : 'bg-slate-300'
+                          }`}
+                          style={{ width: `${hr.percentage}%` }}
+                        />
+                      </div>
+                    </div>
 
-                  <p className="text-[11px] font-semibold text-slate-500">
-                    Nilai Kokurikuler Terisi: <strong className="text-slate-800">{hr.kokuCount}</strong> dari {hr.totalStudents} siswa
-                  </p>
-                </div>
-              ))}
+                    <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10.5px] font-semibold text-slate-500">
+                      <span>Progres Penilaian Siswa:</span>
+                      <strong className="text-indigo-700">{hr.totalAssessedPercentage}% Terisi</strong>
+                    </div>
+                  </div>
+                ))}
             </div>
           </div>
         </div>

@@ -720,6 +720,15 @@ export default function HomeroomPanel({
     }
   }, [schoolIdentity?.activeAcademicYear]);
 
+  // Selected class for grading & rapor (defaults to homeroom class but can be changed to any class)
+  const [selectedGradingClass, setSelectedGradingClass] = useState<string>(currentTeacher.className || '');
+
+  useEffect(() => {
+    if (currentTeacher.className && !selectedGradingClass) {
+      setSelectedGradingClass(currentTeacher.className);
+    }
+  }, [currentTeacher.className]);
+
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
     return students
@@ -728,6 +737,14 @@ export default function HomeroomPanel({
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [students, currentTeacher.className]);
+
+  // Filter students for grading & rapor based on selectedGradingClass
+  const gradingStudents = useMemo(() => {
+    const target = (selectedGradingClass || currentTeacher.className).trim().toLowerCase();
+    return students
+      .filter((s) => s.class && s.class.trim().toLowerCase() === target)
+      .sort((a, b) => a.name.localeCompare(b.name));
+  }, [students, selectedGradingClass, currentTeacher.className]);
 
   useEffect(() => {
     if (scannedStudentNis) {
@@ -752,6 +769,8 @@ export default function HomeroomPanel({
   const [rekapStartDate, setRekapStartDate] = useState(getFirstDayOfMonth());
   const [rekapEndDate, setRekapEndDate] = useState(todayStr);
   const [rekapStatusFilter, setRekapStatusFilter] = useState<'all' | 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'>('all');
+  const [rekapSortBy, setRekapSortBy] = useState<'name' | 'hadir' | 'terlambat' | 'sakit' | 'izin' | 'alpa' | 'total' | 'rate'>('name');
+  const [rekapSortOrder, setRekapSortOrder] = useState<'asc' | 'desc'>('asc');
   const [financeSearch, setFinanceSearch] = useState('');
   const [copiedStudentId, setCopiedStudentId] = useState<string | null>(null);
 
@@ -1869,11 +1888,11 @@ export default function HomeroomPanel({
   }, [activeSubTab, currentTeacher.className]);
 
   useEffect(() => {
-    if ((activeSubTab === 'kokurikuler' || activeSubTab === 'rapor_merdeka') && classStudents.length > 0) {
+    if ((activeSubTab === 'kokurikuler' || activeSubTab === 'rapor_merdeka') && gradingStudents.length > 0) {
       const initialMap: Record<string, string> = {};
       const fullGradeMap: Record<string, any> = {};
 
-      classStudents.forEach(st => {
+      gradingStudents.forEach(st => {
         const match = merdekaAssessments.find(a => 
           a.studentId === st.id && 
           a.subject?.toLowerCase() === selectedSubjectForGrading.toLowerCase() &&
@@ -1937,7 +1956,7 @@ export default function HomeroomPanel({
       setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
       setGradeInputMap(fullGradeMap);
     }
-  }, [activeSubTab, merdekaAssessments, selectedSubjectForGrading, classStudents, kokurikulerSemester, kokurikulerYear]);
+  }, [activeSubTab, merdekaAssessments, selectedSubjectForGrading, gradingStudents, kokurikulerSemester, kokurikulerYear]);
 
   const handleSaveFullGrades = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1945,8 +1964,9 @@ export default function HomeroomPanel({
     setNotifMsg(null);
     try {
       const newKokuScores = { ...kokurikulerScores };
+      const targetClass = selectedGradingClass || currentTeacher.className;
 
-      const batchData = classStudents.map(s => {
+      const batchData = gradingStudents.map(s => {
         const inputState = gradeInputMap[s.id] || {
           tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
           tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
@@ -1961,7 +1981,7 @@ export default function HomeroomPanel({
         return {
           studentId: s.id,
           studentName: s.name,
-          className: currentTeacher.className,
+          className: targetClass,
           subject: selectedSubjectForGrading,
           teacherName: currentTeacher.name,
           semester: kokurikulerSemester,
@@ -2029,7 +2049,7 @@ export default function HomeroomPanel({
 
   const handleFillSampleGrades = () => {
     const updatedMap = { ...gradeInputMap };
-    classStudents.forEach((st, index) => {
+    gradingStudents.forEach((st, index) => {
       const cur = updatedMap[st.id] || {};
       const base = 80 + ((index * 3) % 15);
       updatedMap[st.id] = {
@@ -2069,7 +2089,7 @@ export default function HomeroomPanel({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          className: currentTeacher.className,
+          className: selectedGradingClass || currentTeacher.className,
           semester: kokurikulerSemester,
           academicYear: kokurikulerYear,
           scores: kokurikulerScores
@@ -2091,14 +2111,16 @@ export default function HomeroomPanel({
   };
 
   useEffect(() => {
-    if (classStudents.length > 0 && !selectedReportStudentId) {
-      setSelectedReportStudentId(classStudents[0].id);
+    const list = (activeSubTab === 'rapor_merdeka' || activeSubTab === 'kokurikuler') ? gradingStudents : classStudents;
+    if (list.length > 0 && (!selectedReportStudentId || !list.some(s => s.id === selectedReportStudentId))) {
+      setSelectedReportStudentId(list[0].id);
     }
-  }, [classStudents, selectedReportStudentId]);
+  }, [classStudents, gradingStudents, activeSubTab, selectedReportStudentId]);
 
   const selectedStudent = useMemo(() => {
-    return classStudents.find(s => s.id === selectedReportStudentId) || classStudents[0] || null;
-  }, [classStudents, selectedReportStudentId]);
+    const list = (activeSubTab === 'rapor_merdeka' || activeSubTab === 'kokurikuler') ? gradingStudents : classStudents;
+    return list.find(s => s.id === selectedReportStudentId) || list[0] || null;
+  }, [classStudents, gradingStudents, activeSubTab, selectedReportStudentId]);
 
   // In-memory state for active edits of attendance for the selected date
   const [dailyStatusMap, setDailyStatusMap] = useState<Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }>>({});
@@ -2400,16 +2422,42 @@ Wassalamualaikum Wr. Wb.
   }, [classStudents, attendanceLogs, rekapStartDate, rekapEndDate]);
 
   const filteredRekapData = useMemo(() => {
-    if (rekapStatusFilter === 'all') return rekapData;
-    return rekapData.filter(r => {
-      if (rekapStatusFilter === 'Hadir') return r.hadir > 0;
-      if (rekapStatusFilter === 'Sakit') return r.sakit > 0;
-      if (rekapStatusFilter === 'Izin') return r.izin > 0;
-      if (rekapStatusFilter === 'Alpa') return r.alpa > 0;
-      if (rekapStatusFilter === 'Terlambat') return r.terlambat > 0;
-      return true;
+    let list = rekapData;
+    if (rekapStatusFilter !== 'all') {
+      list = rekapData.filter(r => {
+        if (rekapStatusFilter === 'Hadir') return r.hadir > 0;
+        if (rekapStatusFilter === 'Sakit') return r.sakit > 0;
+        if (rekapStatusFilter === 'Izin') return r.izin > 0;
+        if (rekapStatusFilter === 'Alpa') return r.alpa > 0;
+        if (rekapStatusFilter === 'Terlambat') return r.terlambat > 0;
+        return true;
+      });
+    }
+
+    const sorted = [...list].sort((a, b) => {
+      let valA: any = a[rekapSortBy];
+      let valB: any = b[rekapSortBy];
+
+      if (rekapSortBy === 'name') {
+        valA = a.student?.name || '';
+        valB = b.student?.name || '';
+        return rekapSortOrder === 'asc'
+          ? valA.localeCompare(valB)
+          : valB.localeCompare(valA);
+      }
+
+      if (valA === valB) {
+        return (a.student?.name || '').localeCompare(b.student?.name || '');
+      }
+
+      return rekapSortOrder === 'desc' ? valB - valA : valA - valB;
     });
-  }, [rekapData, rekapStatusFilter]);
+
+    return sorted.map((item, idx) => ({
+      ...item,
+      index: idx + 1
+    }));
+  }, [rekapData, rekapStatusFilter, rekapSortBy, rekapSortOrder]);
 
   // PDF Rekapitulasi Presensi Function
   const downloadPdfRekap = () => {
@@ -3922,6 +3970,61 @@ Wassalamualaikum Wr. Wb.
                     </button>
                   </div>
                 </div>
+
+                {/* Sorting Bar: Terbesar ke Terkecil / Terkecil ke Terbesar */}
+                <div className="flex flex-wrap items-center justify-between gap-2.5 bg-indigo-50/70 border border-indigo-150 p-3 rounded-2xl">
+                  <div className="text-[11px] font-extrabold text-indigo-900 flex items-center gap-1.5 uppercase tracking-wide">
+                    <ArrowUpDown size={13} className="text-indigo-600" />
+                    <span>Urutkan Data Rekap (Sorting):</span>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2">
+                    <div className="flex items-center gap-1.5 bg-white border border-indigo-200 rounded-xl px-2.5 py-1">
+                      <span className="text-[10px] font-bold text-slate-500 uppercase">Kriteria:</span>
+                      <select
+                        value={rekapSortBy}
+                        onChange={(e: any) => setRekapSortBy(e.target.value)}
+                        className="bg-transparent text-xs font-bold text-slate-800 focus:outline-none cursor-pointer"
+                      >
+                        <option value="name">Nama Siswa (A - Z)</option>
+                        <option value="rate">Persentase Kehadiran (%)</option>
+                        <option value="alpa">Jumlah Alpa (A)</option>
+                        <option value="sakit">Jumlah Sakit (S)</option>
+                        <option value="izin">Jumlah Izin (I)</option>
+                        <option value="terlambat">Jumlah Terlambat (T)</option>
+                        <option value="hadir">Jumlah Hadir (H)</option>
+                        <option value="total">Total Hari Pencatatan</option>
+                      </select>
+                    </div>
+
+                    <div className="flex items-center rounded-xl bg-white border border-indigo-200 p-0.5">
+                      <button
+                        type="button"
+                        onClick={() => setRekapSortOrder('desc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          rekapSortOrder === 'desc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terbesar ke terbesar (Descending)"
+                      >
+                        <span>⬇️ Terbesar → Terkecil</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setRekapSortOrder('asc')}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-bold flex items-center gap-1 transition-all cursor-pointer ${
+                          rekapSortOrder === 'asc'
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'text-slate-600 hover:text-slate-900'
+                        }`}
+                        title="Urutkan dari angka terkecil ke terbesar (Ascending)"
+                      >
+                        <span>⬆️ Terkecil → Terbesar</span>
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </div>
 
               {filteredRekapData.length === 0 ? (
@@ -3935,14 +4038,102 @@ Wassalamualaikum Wr. Wb.
                       <tr className="bg-slate-50 text-slate-500 font-bold border-b border-slate-200">
                         <th className="py-2.5 px-3 text-center w-12">No</th>
                         <th className="py-2.5 px-3">NIS</th>
-                        <th className="py-2.5 px-3">Nama Siswa</th>
-                        <th className="py-2.5 px-3 text-center text-emerald-700 bg-emerald-50/50">Hadir</th>
-                        <th className="py-2.5 px-3 text-center text-purple-700 bg-purple-50/50">Terlambat</th>
-                        <th className="py-2.5 px-3 text-center text-amber-700 bg-amber-50/50">Sakit</th>
-                        <th className="py-2.5 px-3 text-center text-blue-700 bg-blue-50/50">Izin</th>
-                        <th className="py-2.5 px-3 text-center text-rose-700 bg-rose-50/50">Alpa</th>
-                        <th className="py-2.5 px-3 text-center">Total Hari</th>
-                        <th className="py-2.5 px-3 text-right">Persentase</th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'name') setRekapSortOrder(rekapSortOrder === 'asc' ? 'desc' : 'asc');
+                            else { setRekapSortBy('name'); setRekapSortOrder('asc'); }
+                          }}
+                          className="py-2.5 px-3 cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center gap-1">
+                            <span>Nama Siswa</span>
+                            {rekapSortBy === 'name' && (<span>{rekapSortOrder === 'asc' ? '▲' : '▼'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'hadir') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('hadir'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-emerald-700 bg-emerald-50/50 cursor-pointer hover:bg-emerald-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Hadir</span>
+                            {rekapSortBy === 'hadir' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'terlambat') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('terlambat'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-purple-700 bg-purple-50/50 cursor-pointer hover:bg-purple-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Terlambat</span>
+                            {rekapSortBy === 'terlambat' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'sakit') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('sakit'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-amber-700 bg-amber-50/50 cursor-pointer hover:bg-amber-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Sakit</span>
+                            {rekapSortBy === 'sakit' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'izin') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('izin'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-blue-700 bg-blue-50/50 cursor-pointer hover:bg-blue-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Izin</span>
+                            {rekapSortBy === 'izin' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'alpa') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('alpa'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center text-rose-700 bg-rose-50/50 cursor-pointer hover:bg-rose-100/60 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Alpa</span>
+                            {rekapSortBy === 'alpa' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'total') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('total'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-center cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-center gap-1">
+                            <span>Total Hari</span>
+                            {rekapSortBy === 'total' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
+                        <th 
+                          onClick={() => {
+                            if (rekapSortBy === 'rate') setRekapSortOrder(rekapSortOrder === 'desc' ? 'asc' : 'desc');
+                            else { setRekapSortBy('rate'); setRekapSortOrder('desc'); }
+                          }}
+                          className="py-2.5 px-3 text-right cursor-pointer hover:bg-slate-100 select-none"
+                        >
+                          <div className="flex items-center justify-end gap-1">
+                            <span>Persentase</span>
+                            {rekapSortBy === 'rate' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
+                          </div>
+                        </th>
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-slate-100">
@@ -6212,7 +6403,22 @@ Wassalamualaikum Wr. Wb.
                 </p>
 
                 {/* Filter Row */}
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mt-4 pt-4 border-t border-slate-100">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas Rapor</label>
+                    <select
+                      value={selectedGradingClass || currentTeacher.className}
+                      onChange={(e) => setSelectedGradingClass(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {allClassNames.map(cls => (
+                        <option key={cls} value={cls}>
+                          Kelas {cls} {cls.toLowerCase() === currentTeacher.className.toLowerCase() ? '(Kelas Binaan Anda)' : ''}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
                   <div>
                     <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Semester</label>
                     <select
@@ -6251,10 +6457,10 @@ Wassalamualaikum Wr. Wb.
                 <div className="lg:col-span-4 flex flex-col gap-4">
                   <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
                     <div className="flex justify-between items-center pb-2 border-b border-slate-100 mb-3">
-                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Daftar Siswa Kelas {currentTeacher.className}</span>
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Daftar Siswa Kelas {selectedGradingClass || currentTeacher.className}</span>
                     </div>
                     <div className="flex flex-col gap-1.5 max-h-[500px] overflow-y-auto pr-1">
-                      {classStudents.map((s, idx) => {
+                      {gradingStudents.map((s, idx) => {
                         const isSelected = selectedReportStudentId === s.id;
                         
                         // Find average grade for this student
@@ -6627,13 +6833,18 @@ Wassalamualaikum Wr. Wb.
                 {/* Filter Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Kelas Binaan</label>
-                    <input
-                      type="text"
-                      disabled
-                      value={currentTeacher.className}
-                      className="w-full bg-slate-100 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-600 cursor-not-allowed"
-                    />
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas Penilaian</label>
+                    <select
+                      value={selectedGradingClass || currentTeacher.className}
+                      onChange={(e) => setSelectedGradingClass(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {allClassNames.map(cls => (
+                        <option key={cls} value={cls}>
+                          Kelas {cls} {cls.toLowerCase() === currentTeacher.className.toLowerCase() ? '(Kelas Binaan Anda)' : ''}
+                        </option>
+                      ))}
+                    </select>
                   </div>
 
                   <div>
@@ -6744,7 +6955,7 @@ Wassalamualaikum Wr. Wb.
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-100">
                   <div>
                     <h3 className="font-extrabold text-sm text-slate-900">
-                      Tabel Penilaian Rapor Merdeka & Kokurikuler ({classStudents.length} Siswa)
+                      Tabel Penilaian Rapor Merdeka & Kokurikuler ({gradingStudents.length} Siswa) - Kelas {selectedGradingClass || currentTeacher.className}
                     </h3>
                     <p className="text-slate-400 text-[10.5px]">
                       Poin TP1..TP4, Rata TP, Kokurikuler (Wali Kelas), PTS & PAS otomatis membentuk Nilai Akhir Mapel.
@@ -6762,7 +6973,7 @@ Wassalamualaikum Wr. Wb.
 
                     <button
                       type="submit"
-                      disabled={isSavingFullGrades || classStudents.length === 0}
+                      disabled={isSavingFullGrades || gradingStudents.length === 0}
                       className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 disabled:opacity-50 text-white rounded-xl font-bold text-xs flex items-center gap-2 shadow-md hover:shadow-lg transition-all cursor-pointer"
                     >
                       {isSavingFullGrades ? (
@@ -6779,9 +6990,9 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 </div>
 
-                {classStudents.length === 0 ? (
+                {gradingStudents.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 font-semibold text-xs">
-                    Tidak ada siswa terdaftar pada kelas {currentTeacher.className}.
+                    Tidak ada siswa terdaftar pada kelas {selectedGradingClass || currentTeacher.className}.
                   </div>
                 ) : (
                   <div className="overflow-x-auto border border-slate-200 rounded-2xl shadow-inner">
@@ -6823,7 +7034,7 @@ Wassalamualaikum Wr. Wb.
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                        {classStudents.map((st, idx) => {
+                        {gradingStudents.map((st, idx) => {
                           const state = gradeInputMap[st.id] || {
                             tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
                             tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',

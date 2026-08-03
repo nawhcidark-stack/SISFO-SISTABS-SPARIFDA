@@ -731,12 +731,14 @@ export default function HomeroomPanel({
 
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
+    if (!currentTeacher?.className) return [];
+    const targetClass = currentTeacher.className.trim().toLowerCase();
     return students
       .filter(
-        (s) => !isMutationStudent(s) && s.class && s.class.toLowerCase() === currentTeacher.className.toLowerCase()
+        (s) => !isMutationStudent(s) && s.class && s.class.trim().toLowerCase() === targetClass
       )
       .sort((a, b) => a.name.localeCompare(b.name));
-  }, [students, currentTeacher.className]);
+  }, [students, currentTeacher?.className]);
 
   // Filter students for grading & rapor based on selectedGradingClass
   const gradingStudents = useMemo(() => {
@@ -2236,7 +2238,16 @@ export default function HomeroomPanel({
   };
 
   // Pre-calculate today's statistics
-  const currentFilteredLogs = attendanceLogs.filter(l => l.date === selectedDate && classStudents.some(s => s.id === l.studentId));
+  const currentFilteredLogs = attendanceLogs.filter(l => {
+    const logDate = l.date ? l.date.substring(0, 10) : '';
+    if (logDate !== selectedDate) return false;
+    return classStudents.some(s => 
+      s.id === l.studentId || 
+      (s.nis && s.nis === l.studentId) || 
+      (l.studentId && l.studentId.toLowerCase() === s.id.toLowerCase())
+    );
+  });
+
   const stats = {
     total: classStudents.length,
     hadir: currentFilteredLogs.filter(l => l.status === 'Hadir').length,
@@ -2259,7 +2270,13 @@ export default function HomeroomPanel({
   }, [dailyStatusMap, classStudents]);
 
   // All time class stats
-  const classLogs = attendanceLogs.filter(l => classStudents.some(s => s.id === l.studentId));
+  const classLogs = attendanceLogs.filter(l => 
+    classStudents.some(s => 
+      s.id === l.studentId || 
+      (s.nis && s.nis === l.studentId) || 
+      (l.studentId && l.studentId.toLowerCase() === s.id.toLowerCase())
+    )
+  );
 
   // Filtered Student Development Logs
   const filteredDevLogs = useMemo(() => {
@@ -2387,13 +2404,23 @@ Wassalamualaikum Wr. Wb.
 
   // Memoized Attendance Recap calculation in selected duration
   const rekapData = useMemo(() => {
+    const startDate = rekapStartDate || getFirstDayOfMonth();
+    const endDate = rekapEndDate || todayStr;
+
     return classStudents.map((student, idx) => {
       // Filter logs for this student within date range
-      const sLogs = attendanceLogs.filter(
-        l => l.studentId === student.id &&
-             l.date >= rekapStartDate &&
-             l.date <= rekapEndDate
-      );
+      const sLogs = (attendanceLogs || []).filter(l => {
+        const isStudentMatch = 
+          l.studentId === student.id || 
+          (student.nis && l.studentId === student.nis) || 
+          (l.studentId && l.studentId.toLowerCase() === student.id.toLowerCase());
+        if (!isStudentMatch) return false;
+
+        const logDate = l.date ? l.date.substring(0, 10) : '';
+        if (startDate && logDate < startDate) return false;
+        if (endDate && logDate > endDate) return false;
+        return true;
+      });
 
       const countHadir = sLogs.filter(l => l.status === 'Hadir').length;
       const countTerlambat = sLogs.filter(l => l.status === 'Terlambat').length;

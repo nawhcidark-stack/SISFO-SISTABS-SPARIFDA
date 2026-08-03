@@ -14544,18 +14544,26 @@ export default function AdminPanel({
                 const getStudentRecapList = () => {
                   const filteredStudents = students
                     .filter((student) => {
+                      const isMut = !!student.mutationDate || (student.class && (student.class.toLowerCase() === 'mutasi' || student.class.toLowerCase() === 'mutasi keluar'));
+                      const isLulus = student.class && (student.class.toLowerCase() === 'lulus' || student.class.toLowerCase() === 'lulusan');
+                      if (isMut || isLulus) return false;
                       if (absenClassFilter === "all") return true;
-                      return student.class === absenClassFilter;
+                      return student.class && student.class.trim().toLowerCase() === absenClassFilter.trim().toLowerCase();
                     })
                     .sort((a, b) => a.name.localeCompare(b.name));
 
                   const list = filteredStudents.map((student) => {
                     const studentLogs = attendanceLogs.filter((log) => {
-                      return (
-                        log.studentId === student.id &&
-                        log.date >= absenStartDate &&
-                        log.date <= absenEndDate
-                      );
+                      const isStudentMatch = 
+                        log.studentId === student.id || 
+                        (student.nis && log.studentId === student.nis) || 
+                        (log.studentId && log.studentId.toLowerCase() === student.id.toLowerCase());
+                      if (!isStudentMatch) return false;
+
+                      const logDate = log.date ? log.date.substring(0, 10) : '';
+                      if (absenStartDate && logDate < absenStartDate) return false;
+                      if (absenEndDate && logDate > absenEndDate) return false;
+                      return true;
                     });
 
                     const counts = {

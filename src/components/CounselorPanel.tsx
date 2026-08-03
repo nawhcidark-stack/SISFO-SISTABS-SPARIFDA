@@ -721,7 +721,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     teachingJournals.forEach(j => {
       if (j.className) list.add(j.className);
     });
-    return Array.from(list).sort();
+    return Array.from(list).sort((a, b) => a.localeCompare(b, 'id', { numeric: true, sensitivity: 'base' }));
   }, [allStudents, logs, allAttendance, infractions, teachingJournals]);
 
   // Extract unique subject teachers for BK Journal Monitoring
@@ -999,15 +999,25 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     });
 
     return [...filtered].sort((a, b) => {
+      const compareClasses = (clsA: string = '', clsB: string = '') => {
+        return clsA.localeCompare(clsB, 'id', { numeric: true, sensitivity: 'base' });
+      };
+
       if (attendanceSortBy === 'name') {
+        const classComp = compareClasses(a.className, b.className);
+        if (classComp !== 0) {
+          return attendanceSortOrder === 'asc' ? classComp : -classComp;
+        }
         return attendanceSortOrder === 'asc'
-          ? a.name.localeCompare(b.name)
-          : b.name.localeCompare(a.name);
+          ? a.name.localeCompare(b.name, 'id', { sensitivity: 'base' })
+          : b.name.localeCompare(a.name, 'id', { sensitivity: 'base' });
       }
       if (attendanceSortBy === 'class') {
-        return attendanceSortOrder === 'asc'
-          ? a.className.localeCompare(b.className)
-          : b.className.localeCompare(a.className);
+        const classComp = compareClasses(a.className, b.className);
+        if (classComp !== 0) {
+          return attendanceSortOrder === 'asc' ? classComp : -classComp;
+        }
+        return a.name.localeCompare(b.name, 'id', { sensitivity: 'base' });
       }
 
       let valA = 0;
@@ -1022,7 +1032,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       }
 
       if (valA === valB) {
-        return a.name.localeCompare(b.name);
+        const classComp = compareClasses(a.className, b.className);
+        if (classComp !== 0) return classComp;
+        return a.name.localeCompare(b.name, 'id', { sensitivity: 'base' });
       }
 
       return attendanceSortOrder === 'desc' ? valB - valA : valA - valB;

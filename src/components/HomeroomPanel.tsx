@@ -2435,19 +2435,33 @@ Wassalamualaikum Wr. Wb.
     }
 
     const sorted = [...list].sort((a, b) => {
+      const compareClasses = (clsA: string = '', clsB: string = '') => {
+        return clsA.localeCompare(clsB, 'id', { numeric: true, sensitivity: 'base' });
+      };
+
       let valA: any = a[rekapSortBy];
       let valB: any = b[rekapSortBy];
 
       if (rekapSortBy === 'name') {
+        const classA = a.student?.class || a.student?.className || '';
+        const classB = b.student?.class || b.student?.className || '';
+        const classComp = compareClasses(classA, classB);
+        if (classComp !== 0) {
+          return rekapSortOrder === 'asc' ? classComp : -classComp;
+        }
         valA = a.student?.name || '';
         valB = b.student?.name || '';
         return rekapSortOrder === 'asc'
-          ? valA.localeCompare(valB)
-          : valB.localeCompare(valA);
+          ? valA.localeCompare(valB, 'id', { sensitivity: 'base' })
+          : valB.localeCompare(valA, 'id', { sensitivity: 'base' });
       }
 
       if (valA === valB) {
-        return (a.student?.name || '').localeCompare(b.student?.name || '');
+        const classA = a.student?.class || a.student?.className || '';
+        const classB = b.student?.class || b.student?.className || '';
+        const classComp = compareClasses(classA, classB);
+        if (classComp !== 0) return classComp;
+        return (a.student?.name || '').localeCompare(b.student?.name || '', 'id', { sensitivity: 'base' });
       }
 
       return rekapSortOrder === 'desc' ? valB - valA : valA - valB;

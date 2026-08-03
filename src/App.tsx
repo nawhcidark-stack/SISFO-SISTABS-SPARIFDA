@@ -2190,6 +2190,16 @@ export default function App() {
                   <ShieldCheck size={13} className="text-indigo-700" />
                   <span>Guru BK</span>
                 </div>
+              ) : role === 'waka_kurikulum' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-purple-50 text-purple-900 border border-purple-150 rounded-lg text-xs font-bold shadow-sm">
+                  <ShieldCheck size={13} className="text-purple-700" />
+                  <span>Waka Kurikulum</span>
+                </div>
+              ) : role === 'waka_sarpras' ? (
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-sky-50 text-sky-900 border border-sky-150 rounded-lg text-xs font-bold shadow-sm">
+                  <ShieldCheck size={13} className="text-sky-700" />
+                  <span>Waka Sarpras</span>
+                </div>
               ) : (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-indigo-50 text-indigo-850 border border-indigo-150 rounded-lg text-xs font-bold shadow-sm animate-pulse">
                   <ShieldCheck size={13} className="text-indigo-700" />

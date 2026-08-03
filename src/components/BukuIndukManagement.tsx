@@ -106,6 +106,10 @@ export default function BukuIndukManagement({
   // Filter students based on search, grade, and class selection
   const filteredStudents = useMemo(() => {
     return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      if (isMut || isLulus) return false;
+
       const matchSearch = 
         s.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
         s.nis.toLowerCase().includes(searchTerm.toLowerCase()) ||

@@ -362,9 +362,13 @@ export default function SubjectTeacherPanel({
   const availableClasses = useMemo(() => {
     const classesSet = new Set<string>();
     students.forEach(s => {
-      if (s.class) classesSet.add(s.class.trim().toUpperCase());
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      if (!isMut && !isLulus && s.class) {
+        classesSet.add(s.class.trim().toUpperCase());
+      }
     });
-    return Array.from(classesSet).sort();
+    return Array.from(classesSet).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [students]);
 
   useEffect(() => {
@@ -568,8 +572,11 @@ export default function SubjectTeacherPanel({
 
   const gradingClassStudents = useMemo(() => {
     if (!selectedGradeClass) return [];
-    return students.filter(s => s.class.trim().toUpperCase() === selectedGradeClass.trim().toUpperCase())
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus && s.class && s.class.trim().toUpperCase() === selectedGradeClass.trim().toUpperCase();
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, selectedGradeClass]);
 
   useEffect(() => {
@@ -936,8 +943,11 @@ export default function SubjectTeacherPanel({
   // Class students roster
   const classStudents = useMemo(() => {
     if (!selectedClass) return [];
-    return students.filter(s => s.class.trim().toUpperCase() === selectedClass.trim().toUpperCase())
-      .sort((a, b) => a.name.localeCompare(b.name));
+    return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus && s.class && s.class.trim().toUpperCase() === selectedClass.trim().toUpperCase();
+    }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, selectedClass]);
 
   // Pre-fill attendance statuses when selecting a class or changing date, getting default from wali kelas daily attendance

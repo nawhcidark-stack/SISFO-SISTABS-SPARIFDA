@@ -467,12 +467,15 @@ export default function StudentManagement({
 
   // Filter students list
   const filteredStudents = students.filter(student => {
-    if (student.class && (
-      student.class.toLowerCase() === 'lulus' || 
-      student.class.toLowerCase() === 'lulusan' || 
-      student.class.toLowerCase() === 'mutasi' || 
-      student.class.toLowerCase() === 'mutasi keluar'
-    )) {
+    if (
+      student.mutationDate ||
+      (student.class && (
+        student.class.toLowerCase() === 'lulus' || 
+        student.class.toLowerCase() === 'lulusan' || 
+        student.class.toLowerCase() === 'mutasi' || 
+        student.class.toLowerCase() === 'mutasi keluar'
+      ))
+    ) {
       return false; // exclude alumni and mutated students from general student management list
     }
     const matchesSearch = 
@@ -486,7 +489,7 @@ export default function StudentManagement({
 
   // Statistics Calculations
   const activeStudentsList = students.filter(student => {
-    return student.class && !(
+    return !student.mutationDate && student.class && !(
       student.class.toLowerCase() === 'lulus' || 
       student.class.toLowerCase() === 'lulusan' || 
       student.class.toLowerCase() === 'mutasi' || 

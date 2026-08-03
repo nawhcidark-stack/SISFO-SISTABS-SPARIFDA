@@ -607,15 +607,24 @@ export default function PrincipalPanel({
     }
   };
 
+  // Active students excluding mutasi and alumni
+  const activeStudents = useMemo(() => {
+    return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus;
+    });
+  }, [students]);
+
   // Global statistics and metrics calculations
-  const totalStudents = students.length;
+  const totalStudents = activeStudents.length;
 
   // Gender stats
   const genderStats = useMemo(() => {
     let laki = 0;
     let perempuan = 0;
     let unspecified = 0;
-    students.forEach(s => {
+    activeStudents.forEach(s => {
       const g = (s.gender || '').trim().toLowerCase();
       if (g === 'laki-laki' || g === 'l' || g.startsWith('laki') || g === 'laki laki') {
         laki++;
@@ -626,12 +635,12 @@ export default function PrincipalPanel({
       }
     });
     return { laki, perempuan, unspecified };
-  }, [students]);
+  }, [activeStudents]);
 
   // Class stats
   const classStats = useMemo(() => {
     const counts: { [className: string]: { total: number; laki: number; perempuan: number } } = {};
-    students.forEach(s => {
+    activeStudents.forEach(s => {
       const cls = s.class || 'Tanpa Kelas';
       if (!counts[cls]) {
         counts[cls] = { total: 0, laki: 0, perempuan: 0 };
@@ -646,14 +655,14 @@ export default function PrincipalPanel({
     });
 
     // Sort classes
-    const sortedClasses = Object.keys(counts).sort((a, b) => a.localeCompare(b));
+    const sortedClasses = Object.keys(counts).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
     return sortedClasses.map(className => ({
       class: className,
       total: counts[className].total,
       laki: counts[className].laki,
       perempuan: counts[className].perempuan
     }));
-  }, [students]);
+  }, [activeStudents]);
   
   // SPP statistics
   const sppTotalInvoiced = bills.length;
@@ -668,8 +677,8 @@ export default function PrincipalPanel({
 
   // Student savings metrics
   const totalSavingsBalance = useMemo(() => {
-    return students.reduce((sum, s) => sum + (Number(s.savingsBalance) || 0), 0);
-  }, [students]);
+    return activeStudents.reduce((sum, s) => sum + (Number(s.savingsBalance) || 0), 0);
+  }, [activeStudents]);
 
   // Attendance metrics
   const attendanceRate = useMemo(() => {

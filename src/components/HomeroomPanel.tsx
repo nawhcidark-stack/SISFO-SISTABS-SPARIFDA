@@ -733,7 +733,7 @@ export default function HomeroomPanel({
   const classStudents = useMemo(() => {
     return students
       .filter(
-        (s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase()
+        (s) => !isMutationStudent(s) && s.class && s.class.toLowerCase() === currentTeacher.className.toLowerCase()
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [students, currentTeacher.className]);
@@ -742,7 +742,7 @@ export default function HomeroomPanel({
   const gradingStudents = useMemo(() => {
     const target = (selectedGradingClass || currentTeacher.className).trim().toLowerCase();
     return students
-      .filter((s) => s.class && s.class.trim().toLowerCase() === target)
+      .filter((s) => !isMutationStudent(s) && s.class && s.class.trim().toLowerCase() === target)
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [students, selectedGradingClass, currentTeacher.className]);
 
@@ -1170,7 +1170,7 @@ export default function HomeroomPanel({
     const targetClass = journalClassName || currentTeacher.className;
     return students
       .filter(
-        (s) => s.class.toLowerCase() === targetClass.toLowerCase()
+        (s) => !isMutationStudent(s) && s.class && s.class.toLowerCase() === targetClass.toLowerCase()
       )
       .sort((a, b) => a.name.localeCompare(b.name));
   }, [students, journalClassName, currentTeacher.className]);
@@ -1191,7 +1191,7 @@ export default function HomeroomPanel({
     setJournalClassName(currentTeacher.className);
     const initialMap: Record<string, { status: 'Hadir' | 'Terlambat' | 'Sakit' | 'Izin' | 'Alpa'; notes: string }> = {};
     const defaultStudents = students
-      .filter((s) => s.class.toLowerCase() === currentTeacher.className.toLowerCase())
+      .filter((s) => !isMutationStudent(s) && s.class && s.class.toLowerCase() === currentTeacher.className.toLowerCase())
       .sort((a, b) => a.name.localeCompare(b.name));
     defaultStudents.forEach(st => {
       initialMap[st.id] = { status: 'Hadir', notes: '' };

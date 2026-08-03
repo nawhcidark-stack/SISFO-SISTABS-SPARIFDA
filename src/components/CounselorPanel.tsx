@@ -706,7 +706,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const uniqueClasses = useMemo(() => {
     const list = new Set<string>();
     allStudents.forEach(s => {
-      if (s.class) list.add(s.class);
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      if (!isMut && !isLulus && s.class) list.add(s.class);
     });
     logs.forEach(l => {
       if (l.className) list.add(l.className);
@@ -802,6 +804,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
     // 1. Seed with all active master students
     allStudents.forEach(st => {
+      const isMut = !!st.mutationDate || (st.class && (st.class.toLowerCase() === 'mutasi' || st.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = st.class && (st.class.toLowerCase() === 'lulus' || st.class.toLowerCase() === 'lulusan');
+      if (isMut || isLulus) return;
+
       studentMap[st.id] = {
         id: st.id,
         name: st.name,
@@ -3210,11 +3216,19 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       >
                         <option value="">
                           {reductionStudentSearch
-                            ? `-- Hasil Pencarian (${allStudents.filter(s => s.name.toLowerCase().includes(reductionStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(reductionStudentSearch.toLowerCase()))).length} ditemukan) --`
+                            ? `-- Hasil Pencarian (${allStudents.filter(s => {
+                                const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                                const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                                if (isMut || isLulus) return false;
+                                return s.name.toLowerCase().includes(reductionStudentSearch.toLowerCase()) || (s.nis && s.nis.toLowerCase().includes(reductionStudentSearch.toLowerCase()));
+                              }).length} ditemukan) --`
                             : "-- Pilih Siswa --"}
                         </option>
                         {allStudents
                           .filter(s => {
+                            const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                            const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                            if (isMut || isLulus) return false;
                             if (!reductionStudentSearch) return true;
                             const term = reductionStudentSearch.toLowerCase();
                             return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));

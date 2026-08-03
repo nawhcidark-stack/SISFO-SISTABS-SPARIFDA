@@ -1597,11 +1597,12 @@ export default function AdminPanel({
   const filteredStudents = useMemo(() => {
     const activeStudents = students.filter(
       (s) =>
-        !s.class ||
-        (s.class.toLowerCase() !== "lulus" &&
-          s.class.toLowerCase() !== "lulusan" &&
-          s.class.toLowerCase() !== "mutasi" &&
-          s.class.toLowerCase() !== "mutasi keluar"),
+        (!s.mutationDate || s.mutationDate.trim() === '') &&
+        (!s.class ||
+          (s.class.toLowerCase() !== "lulus" &&
+            s.class.toLowerCase() !== "lulusan" &&
+            s.class.toLowerCase() !== "mutasi" &&
+            s.class.toLowerCase() !== "mutasi keluar")),
     );
     const classFiltered = rosterClassFilter === "all"
       ? activeStudents
@@ -1624,6 +1625,7 @@ export default function AdminPanel({
     const cls = new Set<string>();
     students.forEach((s) => {
       if (
+        (!s.mutationDate || s.mutationDate.trim() === '') &&
         s.class &&
         s.class.toLowerCase() !== "lulus" &&
         s.class.toLowerCase() !== "lulusan" &&
@@ -1658,9 +1660,10 @@ export default function AdminPanel({
   const filteredMutatedStudents = useMemo(() => {
     const mutatedList = students.filter(
       (s) =>
-        s.class &&
-        (s.class.toLowerCase() === "mutasi" ||
-          s.class.toLowerCase() === "mutasi keluar"),
+        (s.mutationDate && s.mutationDate.trim() !== '') ||
+        (s.class &&
+          (s.class.toLowerCase() === "mutasi" ||
+            s.class.toLowerCase() === "mutasi keluar")),
     );
     const result = !mutatedSearch.trim()
       ? mutatedList
@@ -10948,9 +10951,10 @@ export default function AdminPanel({
                     {
                       students.filter(
                         (s) =>
-                          s.class &&
-                          (s.class.toLowerCase() === "mutasi" ||
-                            s.class.toLowerCase() === "mutasi keluar"),
+                          (s.mutationDate && s.mutationDate.trim() !== "") ||
+                          (s.class &&
+                            (s.class.toLowerCase() === "mutasi" ||
+                              s.class.toLowerCase() === "mutasi keluar")),
                       ).length
                     }{" "}
                     Siswa
@@ -10970,9 +10974,10 @@ export default function AdminPanel({
                     {
                       students.filter((s) => {
                         const isMut =
-                          s.class &&
-                          (s.class.toLowerCase() === "mutasi" ||
-                            s.class.toLowerCase() === "mutasi keluar");
+                          (s.mutationDate && s.mutationDate.trim() !== "") ||
+                          (s.class &&
+                            (s.class.toLowerCase() === "mutasi" ||
+                              s.class.toLowerCase() === "mutasi keluar"));
                         if (!isMut) return false;
                         return (
                           bills.filter(
@@ -11000,9 +11005,10 @@ export default function AdminPanel({
                     {students
                       .filter(
                         (s) =>
-                          s.class &&
-                          (s.class.toLowerCase() === "mutasi" ||
-                            s.class.toLowerCase() === "mutasi keluar"),
+                          (s.mutationDate && s.mutationDate.trim() !== "") ||
+                          (s.class &&
+                            (s.class.toLowerCase() === "mutasi" ||
+                              s.class.toLowerCase() === "mutasi keluar")),
                       )
                       .reduce((sum, s) => sum + s.savingsBalance, 0)
                       .toLocaleString("id-ID")}
@@ -11024,9 +11030,10 @@ export default function AdminPanel({
                       const mutatedStudents = students
                         .filter(
                           (s) =>
-                            s.class &&
-                            (s.class.toLowerCase() === "mutasi" ||
-                              s.class.toLowerCase() === "mutasi keluar"),
+                            (s.mutationDate && s.mutationDate.trim() !== "") ||
+                            (s.class &&
+                              (s.class.toLowerCase() === "mutasi" ||
+                                s.class.toLowerCase() === "mutasi keluar")),
                         );
                       return bills
                         .filter(
@@ -12332,6 +12339,9 @@ export default function AdminPanel({
                     type="button"
                     onClick={() => {
                       const listToPrint = students.filter((s) => {
+                        const isMut = (s.mutationDate && s.mutationDate.trim() !== '') || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                        const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                        if (isMut || isLulus) return false;
                         const matchSearch =
                           !studentQrSearch.trim() ||
                           s.name
@@ -12361,6 +12371,9 @@ export default function AdminPanel({
                       Cetak Kolektif (
                       {
                         students.filter((s) => {
+                          const isMut = (s.mutationDate && s.mutationDate.trim() !== '') || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                          const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                          if (isMut || isLulus) return false;
                           const matchSearch =
                             !studentQrSearch.trim() ||
                             s.name
@@ -12385,6 +12398,9 @@ export default function AdminPanel({
                     disabled={downloadingCollectiveQr}
                     onClick={() => {
                       const listToDownload = students.filter((s) => {
+                        const isMut = (s.mutationDate && s.mutationDate.trim() !== '') || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                        const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                        if (isMut || isLulus) return false;
                         const matchSearch =
                           !studentQrSearch.trim() ||
                           s.name
@@ -13815,6 +13831,9 @@ export default function AdminPanel({
               (() => {
                 // Filters & Computations
                 const activeStudents = students.filter((s) => {
+                  const isMut = (s.mutationDate && s.mutationDate.trim() !== '') || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                  const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                  if (isMut || isLulus) return false;
                   const matchesGrade = rekapSppGradeFilter === "all" || (s.class && s.class.startsWith(rekapSppGradeFilter));
                   const matchesClass = rekapSppClassFilter === "all" || s.class === rekapSppClassFilter;
                   return matchesGrade && matchesClass;
@@ -14210,6 +14229,9 @@ export default function AdminPanel({
             {activeReportSubTab === "rekap-tabungan" &&
               (() => {
                 const filteredTabunganStudents = students.filter((s) => {
+                  const isMut = (s.mutationDate && s.mutationDate.trim() !== '') || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                  const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                  if (isMut || isLulus) return false;
                   const matchesGrade = rekapTabunganGradeFilter === "all" || (s.class && s.class.startsWith(rekapTabunganGradeFilter));
                   const matchesClass = rekapTabunganClassFilter === "all" || s.class === rekapTabunganClassFilter;
                   return matchesGrade && matchesClass;
@@ -15212,6 +15234,9 @@ export default function AdminPanel({
             {activeReportSubTab === "rekap-misc" &&
               (() => {
                 const filteredMiscStudents = students.filter((s) => {
+                  const isMut = (s.mutationDate && s.mutationDate.trim() !== '') || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+                  const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+                  if (isMut || isLulus) return false;
                   const matchesGrade = rekapMiscGradeFilter === "all" || (s.class && s.class.startsWith(rekapMiscGradeFilter));
                   const matchesClass = rekapMiscClassFilter === "all" || s.class === rekapMiscClassFilter;
                   return matchesGrade && matchesClass;

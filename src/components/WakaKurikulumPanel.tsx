@@ -86,14 +86,23 @@ export default function WakaKurikulumPanel({
   const [passwordMsg, setPasswordMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [isSavingPassword, setIsSavingPassword] = useState<boolean>(false);
 
+  // Active students excluding mutasi/lulus
+  const activeStudents = useMemo(() => {
+    return students.filter(s => {
+      const isMut = !!s.mutationDate || (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'));
+      const isLulus = s.class && (s.class.toLowerCase() === 'lulus' || s.class.toLowerCase() === 'lulusan');
+      return !isMut && !isLulus;
+    });
+  }, [students]);
+
   // Available Classes
   const availableClasses = useMemo(() => {
     const set = new Set<string>();
-    students.forEach(s => {
+    activeStudents.forEach(s => {
       if (s.class) set.add(s.class.trim().toUpperCase());
     });
-    return Array.from(set).sort();
-  }, [students]);
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [activeStudents]);
 
   // Distinct Subjects
   const availableSubjects = useMemo(() => {
@@ -119,9 +128,9 @@ export default function WakaKurikulumPanel({
     return subjectTeachers.map(teacher => {
       const targetClass = teacher.className ? teacher.className.trim().toUpperCase() : 'SEMUA KELAS';
       
-      let classStudentsList = students;
+      let classStudentsList = activeStudents;
       if (targetClass !== 'SEMUA KELAS') {
-        classStudentsList = students.filter(s => s.class && s.class.trim().toUpperCase() === targetClass);
+        classStudentsList = activeStudents.filter(s => s.class && s.class.trim().toUpperCase() === targetClass);
       }
 
       const totalStudentsInClass = classStudentsList.length;
@@ -166,7 +175,7 @@ export default function WakaKurikulumPanel({
 
     return Array.from(allClassesSet).sort().map(clsName => {
       const primaryHr = homerooms.find(hr => hr.className && hr.className.trim().toUpperCase() === clsName);
-      const clsStudents = students.filter(s => s.class && s.class.trim().toUpperCase() === clsName);
+      const clsStudents = activeStudents.filter(s => s.class && s.class.trim().toUpperCase() === clsName);
       const totalStudents = clsStudents.length;
 
       // Count students with Kokurikuler score inputted (> 0)
@@ -304,7 +313,7 @@ export default function WakaKurikulumPanel({
   // Download Excel Template for PTS/PAS
   const handleDownloadTemplate = () => {
     const templateData: any[] = [];
-    students.forEach(s => {
+    activeStudents.forEach(s => {
       availableSubjects.forEach(subj => {
         templateData.push({
           'NIS': s.nis,
@@ -328,9 +337,9 @@ export default function WakaKurikulumPanel({
     const rows: any[] = [];
 
     // Filter students by selected class
-    let listStudents = students;
+    let listStudents = activeStudents;
     if (selectedClassFilter !== 'all') {
-      listStudents = students.filter(s => s.class && s.class.trim().toUpperCase() === selectedClassFilter);
+      listStudents = activeStudents.filter(s => s.class && s.class.trim().toUpperCase() === selectedClassFilter);
     }
 
     listStudents.forEach((student, idx) => {
@@ -487,7 +496,7 @@ export default function WakaKurikulumPanel({
               onChange={(e) => setSelectedClassFilter(e.target.value)}
               className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
             >
-              <option value="all">Semua Kelas ({students.length} Siswa)</option>
+              <option value="all">Semua Kelas ({activeStudents.length} Siswa)</option>
               {availableClasses.map(cls => (
                 <option key={cls} value={cls}>Kelas {cls}</option>
               ))}
@@ -588,7 +597,7 @@ export default function WakaKurikulumPanel({
             <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex items-center justify-between">
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Siswa Aktif</p>
-                <h3 className="text-2xl font-black text-slate-900 mt-1">{students.length}</h3>
+                <h3 className="text-2xl font-black text-slate-900 mt-1">{activeStudents.length}</h3>
                 <p className="text-[10px] font-bold text-slate-500 mt-0.5">{availableClasses.length} Rombel Kelas</p>
               </div>
               <div className="p-3 bg-amber-50 text-amber-600 rounded-xl">

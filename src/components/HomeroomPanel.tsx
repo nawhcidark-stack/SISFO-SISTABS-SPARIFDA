@@ -1127,20 +1127,45 @@ export default function HomeroomPanel({
   const [compiledJournalPrint, setCompiledJournalPrint] = useState<boolean>(false);
   const [compiledJournalPrintType, setCompiledJournalPrintType] = useState<'binaan' | 'kelas_lain'>('binaan');
 
+  // Date Range Filter states for KBM Teaching Journals
+  const [kbmJournalStartDate, setKbmJournalStartDate] = useState<string>('');
+  const [kbmJournalEndDate, setKbmJournalEndDate] = useState<string>('');
+
   // Compute separated journals for Wali Kelas (Guided class binaan vs Subject teaching in other classes)
   const binaanJournals = useMemo(() => {
-    return teachingJournalsList.filter((j: any) => 
-      j.className && j.className.toLowerCase() === currentTeacher.className.toLowerCase()
-    );
-  }, [teachingJournalsList, currentTeacher.className]);
+    return teachingJournalsList.filter((j: any) => {
+      if (!j.className || j.className.toLowerCase() !== currentTeacher.className.toLowerCase()) return false;
+      let jDate = j.date ? j.date.substring(0, 10) : '';
+      if (jDate.includes('/')) {
+        const parts = jDate.split('/');
+        if (parts.length === 3 && parts[2].length === 4) {
+          jDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      if (kbmJournalStartDate && jDate < kbmJournalStartDate) return false;
+      if (kbmJournalEndDate && jDate > kbmJournalEndDate) return false;
+      return true;
+    });
+  }, [teachingJournalsList, currentTeacher.className, kbmJournalStartDate, kbmJournalEndDate]);
 
   const kelasLainJournals = useMemo(() => {
     const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
-    return teachingJournalsList.filter((j: any) => 
-      (j.teacherId === currentTeacher.id || (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName)) && 
-      j.className && j.className.toLowerCase() !== currentTeacher.className.toLowerCase()
-    );
-  }, [teachingJournalsList, currentTeacher.id, currentTeacher.name, currentTeacher.className]);
+    return teachingJournalsList.filter((j: any) => {
+      const isTeacher = (j.teacherId === currentTeacher.id || (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName));
+      const isOtherClass = j.className && j.className.toLowerCase() !== currentTeacher.className.toLowerCase();
+      if (!isTeacher || !isOtherClass) return false;
+      let jDate = j.date ? j.date.substring(0, 10) : '';
+      if (jDate.includes('/')) {
+        const parts = jDate.split('/');
+        if (parts.length === 3 && parts[2].length === 4) {
+          jDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      if (kbmJournalStartDate && jDate < kbmJournalStartDate) return false;
+      if (kbmJournalEndDate && jDate > kbmJournalEndDate) return false;
+      return true;
+    });
+  }, [teachingJournalsList, currentTeacher.id, currentTeacher.name, currentTeacher.className, kbmJournalStartDate, kbmJournalEndDate]);
 
   // Create Journal For Homeroom state
   const [isAddJournalOpen, setIsAddJournalOpen] = useState(false);
@@ -3704,7 +3729,7 @@ Wassalamualaikum Wr. Wb.
                   </div>
 
                   {/* Sub Tab Switcher for KBM Journal Types */}
-                  <div className="flex border-b border-slate-200 select-none mb-2">
+                  <div className="flex border-b border-slate-200 select-none mb-3">
                     <button
                       type="button"
                       onClick={() => setKbmJournalSubTab('binaan')}
@@ -3729,6 +3754,81 @@ Wassalamualaikum Wr. Wb.
                       <BookOpen size={14} />
                       <span>Jurnal Mengajar di Kelas Lain ({kelasLainJournals.length})</span>
                     </button>
+                  </div>
+
+                  {/* Filter Rentang Tanggal Jurnal KBM */}
+                  <div className="bg-slate-50 border border-slate-200 p-3.5 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-2">
+                    <div className="flex flex-wrap items-center gap-3">
+                      <div className="flex items-center gap-1.5 text-xs font-bold text-slate-700">
+                        <Calendar size={14} className="text-indigo-600 shrink-0" />
+                        <span>Filter Rentang Tanggal:</span>
+                      </div>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400">Dari</span>
+                          <input
+                            type="date"
+                            value={kbmJournalStartDate}
+                            onChange={(e) => setKbmJournalStartDate(e.target.value)}
+                            className="text-xs font-semibold px-2.5 py-1 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          />
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] font-extrabold uppercase text-slate-400">s.d</span>
+                          <input
+                            type="date"
+                            value={kbmJournalEndDate}
+                            onChange={(e) => setKbmJournalEndDate(e.target.value)}
+                            className="text-xs font-semibold px-2.5 py-1 bg-white border border-slate-250 rounded-lg text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                          />
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-1.5 self-start sm:self-center flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const today = getWIBDateStr();
+                          setKbmJournalStartDate(today);
+                          setKbmJournalEndDate(today);
+                        }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                          kbmJournalStartDate === getWIBDateStr() && kbmJournalEndDate === getWIBDateStr()
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Hari Ini
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setKbmJournalStartDate(getFirstDayOfMonth());
+                          setKbmJournalEndDate(getWIBDateStr());
+                        }}
+                        className={`px-2.5 py-1 rounded-md text-[11px] font-bold transition-all cursor-pointer ${
+                          kbmJournalStartDate === getFirstDayOfMonth() && kbmJournalEndDate === getWIBDateStr()
+                            ? 'bg-indigo-600 text-white shadow-2xs'
+                            : 'bg-white border border-slate-200 text-slate-600 hover:bg-slate-100'
+                        }`}
+                      >
+                        Bulan Ini
+                      </button>
+                      {(kbmJournalStartDate || kbmJournalEndDate) && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setKbmJournalStartDate('');
+                            setKbmJournalEndDate('');
+                          }}
+                          className="px-2.5 py-1 bg-rose-50 border border-rose-200 text-rose-700 hover:bg-rose-100 rounded-md text-[11px] font-extrabold transition-all cursor-pointer flex items-center gap-1"
+                        >
+                          <RotateCcw size={11} />
+                          <span>Reset Filter</span>
+                        </button>
+                      )}
+                    </div>
                   </div>
 
                   {(() => {
@@ -8025,6 +8125,11 @@ Wassalamualaikum Wr. Wb.
                         ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
                         : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
                       }
+                      {(kbmJournalStartDate || kbmJournalEndDate) && (
+                        <span className="block font-bold text-indigo-900 mt-0.5">
+                          Periode Tanggal: {kbmJournalStartDate ? new Date(kbmJournalStartDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Awal'} s.d. {kbmJournalEndDate ? new Date(kbmJournalEndDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' }) : 'Sekarang'}
+                        </span>
+                      )}
                     </p>
                   </div>
 

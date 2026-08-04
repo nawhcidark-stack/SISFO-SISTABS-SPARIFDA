@@ -59,7 +59,9 @@ import {
   LayoutGrid,
   Home,
   Smartphone,
-  Apple
+  Apple,
+  Download,
+  ArrowUpDown
 } from 'lucide-react';
 
 interface PrincipalPanelProps {
@@ -88,7 +90,7 @@ export default function PrincipalPanel({
   isLoading
 }: PrincipalPanelProps) {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'attendance_recap' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   // Local state for Principal endpoints
@@ -784,6 +786,324 @@ export default function PrincipalPanel({
     return new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', maximumFractionDigits: 0 }).format(val);
   };
 
+  // Attendance Recap State for Principal
+  const [rekapStartDate, setRekapStartDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    return `${year}-${month}-01`;
+  });
+  const [rekapEndDate, setRekapEndDate] = useState<string>(() => {
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0');
+    const day = String(now.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  });
+  const [rekapClassFilter, setRekapClassFilter] = useState<string>('all');
+  const [rekapSearchQuery, setRekapSearchQuery] = useState<string>('');
+  const [rekapStatusFilter, setRekapStatusFilter] = useState<string>('all');
+  const [rekapSortBy, setRekapSortBy] = useState<'name' | 'class' | 'hadir' | 'sakit' | 'izin' | 'alpha' | 'terlambat' | 'pct'>('class');
+  const [rekapSortOrder, setRekapSortOrder] = useState<'asc' | 'desc'>('asc');
+
+  const availableClassesForPrincipal = useMemo(() => {
+    const set = new Set<string>();
+    (homerooms || []).forEach(h => { if (h.className) set.add(h.className.trim()); });
+    (students || []).forEach(s => { if (s.class) set.add(s.class.trim()); });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, 'id', { numeric: true }));
+  }, [homerooms, students]);
+
+  const filteredRekapLogsPrincipal = useMemo(() => {
+    return (attendanceLogs || []).filter(l => {
+      if (!l) return false;
+      let logDate = l.date ? l.date.substring(0, 10) : '';
+      if (logDate.includes('/')) {
+        const parts = logDate.split('/');
+        if (parts.length === 3 && parts[2].length === 4) {
+          logDate = `${parts[2]}-${parts[1].padStart(2, '0')}-${parts[0].padStart(2, '0')}`;
+        }
+      }
+      if (rekapStartDate && logDate < rekapStartDate) return false;
+      if (rekapEndDate && logDate > rekapEndDate) return false;
+      return true;
+    });
+  }, [attendanceLogs, rekapStartDate, rekapEndDate]);
+
+  const rekapSiswaPrincipalList = useMemo(() => {
+    if (!students || !Array.isArray(students)) return [];
+
+    const logsByStudentMap = new Map<string, AttendanceLog[]>();
+    filteredRekapLogsPrincipal.forEach(log => {
+      if (!log.studentId) return;
+      const key = log.studentId.trim().toLowerCase();
+      if (!logsByStudentMap.has(key)) {
+        logsByStudentMap.set(key, []);
+      }
+      logsByStudentMap.get(key)!.push(log);
+    });
+
+    const list = students.filter(s => {
+      if (!s || s.status === 'Lulus' || s.status === 'Keluar' || s.status === 'Mutasi') return false;
+      if (rekapClassFilter !== 'all') {
+        const sClass = (s.class || '').trim().toLowerCase();
+        const targetClass = rekapClassFilter.trim().toLowerCase();
+        if (sClass !== targetClass) return false;
+      }
+      if (rekapSearchQuery.trim()) {
+        const q = rekapSearchQuery.toLowerCase();
+        const matchName = (s.name || '').toLowerCase().includes(q);
+        const matchNis = (s.nis || '').toLowerCase().includes(q);
+        if (!matchName && !matchNis) return false;
+      }
+      return true;
+    }).map(student => {
+      const sId = (student.id || '').trim().toLowerCase();
+      const sNis = (student.nis || '').trim().toLowerCase();
+
+      const logs = [
+        ...(logsByStudentMap.get(sId) || []),
+        ...(sNis && sNis !== sId ? (logsByStudentMap.get(sNis) || []) : [])
+      ];
+
+      let hadir = 0;
+      let sakit = 0;
+      let izin = 0;
+      let alpha = 0;
+      let terlambat = 0;
+
+      const dateSeen = new Set<string>();
+      logs.forEach(l => {
+        const d = l.date ? l.date.substring(0, 10) : '';
+        if (d && dateSeen.has(d)) return;
+        if (d) dateSeen.add(d);
+
+        const st = (l.status || '').toLowerCase();
+        if (st.includes('hadir') || st === 'h') {
+          hadir++;
+        } else if (st.includes('sakit') || st === 's') {
+          sakit++;
+        } else if (st.includes('izin') || st === 'i') {
+          izin++;
+        } else if (st.includes('alpha') || st.includes('alpa') || st === 'a') {
+          alpha++;
+        } else if (st.includes('terlambat') || st === 't') {
+          terlambat++;
+        } else {
+          hadir++;
+        }
+      });
+
+      const totalHari = hadir + sakit + izin + alpha + terlambat;
+      const totalHadirEffective = hadir + terlambat;
+      const pct = totalHari > 0 ? Math.round((totalHadirEffective / totalHari) * 100) : 100;
+
+      return {
+        student,
+        hadir,
+        sakit,
+        izin,
+        alpha,
+        terlambat,
+        totalHari,
+        pct
+      };
+    });
+
+    let filtered = list;
+    if (rekapStatusFilter === 'Hadir') filtered = list.filter(r => r.hadir > 0);
+    else if (rekapStatusFilter === 'Sakit') filtered = list.filter(r => r.sakit > 0);
+    else if (rekapStatusFilter === 'Izin') filtered = list.filter(r => r.izin > 0);
+    else if (rekapStatusFilter === 'Alpha') filtered = list.filter(r => r.alpha > 0);
+    else if (rekapStatusFilter === 'Terlambat') filtered = list.filter(r => r.terlambat > 0);
+
+    return [...filtered].sort((a, b) => {
+      let cmp = 0;
+      if (rekapSortBy === 'name') {
+        cmp = (a.student.name || '').localeCompare(b.student.name || '');
+      } else if (rekapSortBy === 'class') {
+        cmp = (a.student.class || '').localeCompare(b.student.class || '', 'id', { numeric: true });
+        if (cmp === 0) cmp = (a.student.name || '').localeCompare(b.student.name || '');
+      } else if (rekapSortBy === 'hadir') {
+        cmp = a.hadir - b.hadir;
+      } else if (rekapSortBy === 'sakit') {
+        cmp = a.sakit - b.sakit;
+      } else if (rekapSortBy === 'izin') {
+        cmp = a.izin - b.izin;
+      } else if (rekapSortBy === 'alpha') {
+        cmp = a.alpha - b.alpha;
+      } else if (rekapSortBy === 'terlambat') {
+        cmp = a.terlambat - b.terlambat;
+      } else if (rekapSortBy === 'pct') {
+        cmp = a.pct - b.pct;
+      }
+      return rekapSortOrder === 'asc' ? cmp : -cmp;
+    });
+  }, [students, filteredRekapLogsPrincipal, rekapClassFilter, rekapSearchQuery, rekapStatusFilter, rekapSortBy, rekapSortOrder]);
+
+  const totalRekapHadir = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.hadir, 0), [rekapSiswaPrincipalList]);
+  const totalRekapSakit = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.sakit, 0), [rekapSiswaPrincipalList]);
+  const totalRekapIzin = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.izin, 0), [rekapSiswaPrincipalList]);
+  const totalRekapAlpha = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.alpha, 0), [rekapSiswaPrincipalList]);
+  const totalRekapTerlambat = useMemo(() => rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.terlambat, 0), [rekapSiswaPrincipalList]);
+  const avgPctKehadiran = rekapSiswaPrincipalList.length > 0
+    ? Math.round(rekapSiswaPrincipalList.reduce((acc, curr) => acc + curr.pct, 0) / rekapSiswaPrincipalList.length)
+    : 100;
+
+  const rekapPerKelasSummary = useMemo(() => {
+    const map = new Map<string, { className: string; waliKelas: string; totalSiswa: number; hadir: number; sakit: number; izin: number; alpha: number; terlambat: number }>();
+
+    availableClassesForPrincipal.forEach(cls => {
+      const ht = homerooms?.find(h => (h.className || '').trim().toLowerCase() === cls.trim().toLowerCase());
+      map.set(cls, {
+        className: cls,
+        waliKelas: ht?.name || '-',
+        totalSiswa: 0,
+        hadir: 0,
+        sakit: 0,
+        izin: 0,
+        alpha: 0,
+        terlambat: 0
+      });
+    });
+
+    rekapSiswaPrincipalList.forEach(item => {
+      const cls = item.student.class || 'Lainnya';
+      if (!map.has(cls)) {
+        map.set(cls, {
+          className: cls,
+          waliKelas: '-',
+          totalSiswa: 0,
+          hadir: 0,
+          sakit: 0,
+          izin: 0,
+          alpha: 0,
+          terlambat: 0
+        });
+      }
+      const entry = map.get(cls)!;
+      entry.totalSiswa += 1;
+      entry.hadir += item.hadir;
+      entry.sakit += item.sakit;
+      entry.izin += item.izin;
+      entry.alpha += item.alpha;
+      entry.terlambat += item.terlambat;
+    });
+
+    return Array.from(map.values()).filter(c => c.totalSiswa > 0 || rekapClassFilter === 'all').sort((a, b) => a.className.localeCompare(b.className, 'id', { numeric: true }));
+  }, [availableClassesForPrincipal, homerooms, rekapSiswaPrincipalList, rekapClassFilter]);
+
+  const handlePrintPdfPrincipalAttendance = () => {
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) {
+      alert("Popup diblokir oleh browser. Izinkan popup untuk mencetak laporan.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP Maarif";
+    const schoolAddress = schoolIdentity?.address || "";
+    const principalName = schoolIdentity?.principal || "Kepala Sekolah";
+
+    printWindow.document.write(`
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <title>Rekapitulasi Presensi Siswa - ${schoolName}</title>
+          <style>
+            body { font-family: Arial, sans-serif; margin: 20px; font-size: 11px; color: #1e293b; }
+            .header { text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 10px; margin-bottom: 15px; }
+            .header h2 { margin: 0; font-size: 16px; text-transform: uppercase; color: #0f172a; }
+            .header p { margin: 2px 0; font-size: 11px; color: #64748b; }
+            table { width: 100%; border-collapse: collapse; margin-top: 10px; }
+            th, td { border: 1px solid #cbd5e1; padding: 6px 8px; text-align: left; }
+            th { background-color: #f1f5f9; font-weight: bold; text-align: center; font-size: 10px; text-transform: uppercase; }
+            .text-center { text-align: center; }
+            .footer { margin-top: 30px; display: flex; justify-content: space-between; align-items: flex-end; }
+            .signature-box { text-align: center; width: 220px; }
+            @media print {
+              body { margin: 0; }
+            }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>${schoolAddress}</p>
+            <h3 style="margin-top: 8px; font-size: 13px; font-weight: bold; text-transform: uppercase;">REKAPITULASI PRESENSI & KEHADIRAN SISWA</h3>
+            <p>Periode: ${rekapStartDate} s.d. ${rekapEndDate} ${rekapClassFilter !== 'all' ? `| Kelas: ${rekapClassFilter}` : '| Semua Kelas'}</p>
+          </div>
+
+          <div style="margin-bottom: 10px; font-weight: bold; font-size: 11px;">
+            Ringkasan: Total Siswa (${rekapSiswaPrincipalList.length}) | Total Hadir (${totalRekapHadir}) | Sakit (${totalRekapSakit}) | Izin (${totalRekapIzin}) | Alpha (${totalRekapAlpha}) | Terlambat (${totalRekapTerlambat}) | Rata-rata Kehadiran (${avgPctKehadiran}%)
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th style="width: 30px;">No</th>
+                <th style="width: 80px;">NIS</th>
+                <th>Nama Siswa</th>
+                <th style="width: 60px;">Kelas</th>
+                <th style="width: 45px;">Hadir</th>
+                <th style="width: 45px;">Sakit</th>
+                <th style="width: 45px;">Izin</th>
+                <th style="width: 45px;">Alpha</th>
+                <th style="width: 45px;">Terlambat</th>
+                <th style="width: 60px;">Total Hari</th>
+                <th style="width: 60px;">% Hadir</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${rekapSiswaPrincipalList.map((item, idx) => `
+                <tr>
+                  <td class="text-center">${idx + 1}</td>
+                  <td class="text-center">${item.student.nis || '-'}</td>
+                  <td><strong>${item.student.name}</strong></td>
+                  <td class="text-center">${item.student.class || '-'}</td>
+                  <td class="text-center" style="color: #059669; font-weight: bold;">${item.hadir}</td>
+                  <td class="text-center" style="color: #2563eb;">${item.sakit}</td>
+                  <td class="text-center" style="color: #d97706;">${item.izin}</td>
+                  <td class="text-center" style="color: #dc2626; font-weight: bold;">${item.alpha}</td>
+                  <td class="text-center" style="color: #7c3aed;">${item.terlambat}</td>
+                  <td class="text-center">${item.totalHari}</td>
+                  <td class="text-center" style="font-weight: bold;">${item.pct}%</td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="footer">
+            <div></div>
+            <div class="signature-box">
+              <p>Dicetak pada: ${new Date().toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p style="margin-bottom: 60px;">Kepala Sekolah</p>
+              <p><strong>${principalName}</strong></p>
+            </div>
+          </div>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+    setTimeout(() => {
+      printWindow.print();
+    }, 300);
+  };
+
+  const handleDownloadPrincipalAttendanceXLS = () => {
+    let content = "No\tNIS\tNama Siswa\tKelas\tHadir\tSakit\tIzin\tAlpha\tTerlambat\tTotal Hari\t% Kehadiran\n";
+    rekapSiswaPrincipalList.forEach((item, idx) => {
+      content += `${idx + 1}\t${item.student.nis || '-'}\t${item.student.name}\t${item.student.class || '-'}\t${item.hadir}\t${item.sakit}\t${item.izin}\t${item.alpha}\t${item.terlambat}\t${item.totalHari}\t${item.pct}%\n`;
+    });
+
+    const blob = new Blob([content], { type: 'application/vnd.ms-excel;charset=utf-8' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `Rekap_Presensi_KepalaSekolah_${rekapStartDate}_to_${rekapEndDate}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
     <div className="flex flex-col gap-6 text-left animate-fade-in pb-16">
       
@@ -969,6 +1289,16 @@ export default function PrincipalPanel({
             🛡️ Monitoring BK & Moral
           </button>
           <button
+            onClick={() => setActiveTab('attendance_recap')}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'attendance_recap' 
+                ? 'bg-slate-900 text-white shadow-sm' 
+                : 'text-slate-650 hover:bg-slate-50'
+            }`}
+          >
+            📅 Rekap Presensi
+          </button>
+          <button
             onClick={() => setActiveTab('finance_monitoring')}
             className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
               activeTab === 'finance_monitoring' 
@@ -1045,8 +1375,14 @@ export default function PrincipalPanel({
               <div className="text-[8px] text-slate-400 leading-none">Sistem Tabungan Aman</div>
             </div>
 
-            <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between h-28">
-              <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Tingkat Absensi KBM</span>
+            <div 
+              onClick={() => setActiveTab('attendance_recap')}
+              className="bg-white border border-slate-200 hover:border-indigo-400 rounded-3xl p-5 shadow-sm relative overflow-hidden flex flex-col justify-between h-28 cursor-pointer transition-all group"
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-[9px] font-black uppercase text-slate-400 tracking-wider">Tingkat Absensi KBM</span>
+                <span className="text-[9px] font-bold text-indigo-600 group-hover:underline">Rekap →</span>
+              </div>
               <div className="flex items-baseline justify-between mt-1">
                 <span className={`text-2xl font-black ${attendanceRate >= 85 ? 'text-emerald-700' : 'text-amber-600'}`}>{attendanceRate}%</span>
                 <span className="text-[9px] font-bold uppercase text-slate-400">Hadir</span>
@@ -2632,6 +2968,352 @@ export default function PrincipalPanel({
         </div>
       )}
 
+      {/* 5.5 ATTENDANCE RECAP VIEW */}
+      {activeTab === 'attendance_recap' && (
+        <div className="flex flex-col gap-6">
+          {/* Header Banner */}
+          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-500 via-teal-500 to-indigo-500" />
+            <div>
+              <h2 className="text-slate-900 font-black text-lg leading-tight flex items-center gap-2">
+                📅 Rekapitulasi Presensi & Kehadiran Siswa
+              </h2>
+              <p className="text-slate-500 text-xs mt-1 leading-relaxed max-w-3xl">
+                Pantau statistik kehadiran harian siswa per kelas maupun seluruh sekolah berdasarkan rentang tanggal. Hasil rekapitulasi dapat dicetak atau diekspor langsung.
+              </p>
+            </div>
+            <div className="flex flex-wrap gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handlePrintPdfPrincipalAttendance}
+                className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-black rounded-2xl text-xs cursor-pointer transition-all shadow-xs"
+              >
+                <Printer size={14} /> Cetak PDF (.pdf)
+              </button>
+              <button
+                type="button"
+                onClick={handleDownloadPrincipalAttendanceXLS}
+                className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-2xl text-xs cursor-pointer transition-all shadow-xs"
+              >
+                <Download size={14} /> Ekspor Excel (.xls)
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="bg-white p-5 border border-slate-200 rounded-3xl shadow-xs flex flex-col gap-4">
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Tanggal Mulai */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Tanggal Mulai
+                </label>
+                <input
+                  type="date"
+                  value={rekapStartDate}
+                  onChange={(e) => setRekapStartDate(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                />
+              </div>
+
+              {/* Tanggal Selesai */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Tanggal Selesai
+                </label>
+                <input
+                  type="date"
+                  value={rekapEndDate}
+                  onChange={(e) => setRekapEndDate(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                />
+              </div>
+
+              {/* Filter Kelas */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Pilih Kelas
+                </label>
+                <select
+                  value={rekapClassFilter}
+                  onChange={(e) => setRekapClassFilter(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                >
+                  <option value="all">Semua Kelas ({availableClassesForPrincipal.length} Kelas)</option>
+                  {availableClassesForPrincipal.map((cls) => (
+                    <option key={cls} value={cls}>
+                      Kelas {cls}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Status */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-wider">
+                  Status Presensi
+                </label>
+                <select
+                  value={rekapStatusFilter}
+                  onChange={(e) => setRekapStatusFilter(e.target.value)}
+                  className="px-3.5 py-2 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500 cursor-pointer w-full"
+                >
+                  <option value="all">Semua Status Presensi</option>
+                  <option value="Hadir">Ada Catatan Hadir (H)</option>
+                  <option value="Sakit">Ada Catatan Sakit (S)</option>
+                  <option value="Izin">Ada Catatan Izin (I)</option>
+                  <option value="Alpha">Ada Catatan Alpha (A)</option>
+                  <option value="Terlambat">Ada Catatan Terlambat (T)</option>
+                </select>
+              </div>
+            </div>
+
+            <div className="flex flex-col md:flex-row items-center justify-between gap-3 pt-2 border-t border-slate-100">
+              {/* Search Box */}
+              <div className="relative w-full md:w-80">
+                <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                <input
+                  type="text"
+                  placeholder="Cari nama siswa atau NIS..."
+                  value={rekapSearchQuery}
+                  onChange={(e) => setRekapSearchQuery(e.target.value)}
+                  className="pl-9 pr-3 py-2 w-full border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-slate-50 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                />
+              </div>
+
+              {/* Quick Preset Date Filters */}
+              <div className="flex items-center gap-1.5 w-full md:w-auto overflow-x-auto pb-1 md:pb-0">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider shrink-0 mr-1">Preset:</span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const y = now.getFullYear();
+                    const m = String(now.getMonth() + 1).padStart(2, '0');
+                    const d = String(now.getDate()).padStart(2, '0');
+                    setRekapStartDate(`${y}-${m}-01`);
+                    setRekapEndDate(`${y}-${m}-${d}`);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  Bulan Ini
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const startObj = new Date();
+                    startObj.setDate(startObj.getDate() - 7);
+                    const start = `${startObj.getFullYear()}-${String(startObj.getMonth() + 1).padStart(2, '0')}-${String(startObj.getDate()).padStart(2, '0')}`;
+                    setRekapStartDate(start);
+                    setRekapEndDate(end);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  7 Hari Terakhir
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    const now = new Date();
+                    const end = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+                    const startObj = new Date();
+                    startObj.setDate(startObj.getDate() - 30);
+                    const start = `${startObj.getFullYear()}-${String(startObj.getMonth() + 1).padStart(2, '0')}-${String(startObj.getDate()).padStart(2, '0')}`;
+                    setRekapStartDate(start);
+                    setRekapEndDate(end);
+                  }}
+                  className="px-2.5 py-1 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold rounded-lg cursor-pointer whitespace-nowrap"
+                >
+                  30 Hari Terakhir
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Metric Cards Summary Row */}
+          <div className="grid grid-cols-2 md:grid-cols-6 gap-3.5">
+            <div className="bg-white p-4 border border-slate-200 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-slate-400 uppercase tracking-wider">Total Siswa</span>
+              <span className="text-xl font-black text-slate-900 mt-1 font-mono">{rekapSiswaPrincipalList.length}</span>
+              <span className="text-[9px] text-slate-400 font-bold mt-0.5">{rekapClassFilter === 'all' ? 'Seluruh Kelas' : `Kelas ${rekapClassFilter}`}</span>
+            </div>
+
+            <div className="bg-emerald-50/50 p-4 border border-emerald-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-emerald-600 uppercase tracking-wider">Hadir (H)</span>
+              <span className="text-xl font-black text-emerald-700 mt-1 font-mono">{totalRekapHadir}</span>
+              <span className="text-[9px] text-emerald-600 font-bold mt-0.5">Catatan Hadir</span>
+            </div>
+
+            <div className="bg-blue-50/50 p-4 border border-blue-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-blue-600 uppercase tracking-wider">Sakit (S)</span>
+              <span className="text-xl font-black text-blue-700 mt-1 font-mono">{totalRekapSakit}</span>
+              <span className="text-[9px] text-blue-600 font-bold mt-0.5">Izin Sakit</span>
+            </div>
+
+            <div className="bg-amber-50/50 p-4 border border-amber-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-amber-600 uppercase tracking-wider">Izin (I)</span>
+              <span className="text-xl font-black text-amber-700 mt-1 font-mono">{totalRekapIzin}</span>
+              <span className="text-[9px] text-amber-600 font-bold mt-0.5">Izin Keperluan</span>
+            </div>
+
+            <div className="bg-rose-50/50 p-4 border border-rose-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-rose-600 uppercase tracking-wider">Alpha (A)</span>
+              <span className="text-xl font-black text-rose-700 mt-1 font-mono">{totalRekapAlpha}</span>
+              <span className="text-[9px] text-rose-600 font-bold mt-0.5">Tanpa Keterangan</span>
+            </div>
+
+            <div className="bg-purple-50/50 p-4 border border-purple-100 rounded-3xl flex flex-col justify-center shadow-xs">
+              <span className="text-[9px] font-black text-purple-600 uppercase tracking-wider">Rata-rata Kehadiran</span>
+              <span className="text-xl font-black text-purple-700 mt-1 font-mono">{avgPctKehadiran}%</span>
+              <span className="text-[9px] text-purple-600 font-bold mt-0.5">Tingkat Kehadiran</span>
+            </div>
+          </div>
+
+          {/* Class Breakdown Overview */}
+          {rekapClassFilter === 'all' && rekapPerKelasSummary.length > 0 && (
+            <div className="bg-white p-5 border border-slate-200 rounded-3xl shadow-xs flex flex-col gap-3">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div>
+                  <h3 className="font-extrabold text-sm text-slate-900">📊 Ringkasan Kehadiran per Kelas</h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">Klik salah satu kelas untuk memfilter detail siswa di bawah ini.</p>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
+                {rekapPerKelasSummary.map(c => {
+                  const classHariTotal = c.hadir + c.sakit + c.izin + c.alpha + c.terlambat;
+                  const classPct = classHariTotal > 0 ? Math.round(((c.hadir + c.terlambat) / classHariTotal) * 100) : 100;
+                  return (
+                    <div
+                      key={c.className}
+                      onClick={() => setRekapClassFilter(c.className)}
+                      className="p-3.5 border border-slate-200 hover:border-indigo-400 rounded-2xl bg-slate-50/50 hover:bg-indigo-50/30 transition-all cursor-pointer flex flex-col justify-between"
+                    >
+                      <div className="flex items-center justify-between">
+                        <span className="font-black text-xs text-slate-900">Kelas {c.className}</span>
+                        <span className={`px-2 py-0.5 rounded-full text-[9px] font-black font-mono ${
+                          classPct >= 90 ? 'bg-emerald-100 text-emerald-800' : classPct >= 75 ? 'bg-amber-100 text-amber-800' : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {classPct}%
+                        </span>
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1 font-medium">Wali: <span className="font-bold text-slate-700">{c.waliKelas}</span></p>
+                      <div className="grid grid-cols-5 gap-1 mt-3 text-center text-[9px] font-mono font-black pt-2 border-t border-slate-200/60">
+                        <div className="text-emerald-700">H: {c.hadir}</div>
+                        <div className="text-blue-700">S: {c.sakit}</div>
+                        <div className="text-amber-700">I: {c.izin}</div>
+                        <div className="text-rose-700">A: {c.alpha}</div>
+                        <div className="text-purple-700">T: {c.terlambat}</div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Rincian Table per Siswa */}
+          <div className="bg-white border border-slate-200 rounded-3xl shadow-xs overflow-hidden flex flex-col">
+            <div className="p-5 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-slate-50/50">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900">📋 Detail Rekap Presensi Siswa</h3>
+                <p className="text-[10px] text-slate-400 mt-0.5">
+                  Menampilkan {rekapSiswaPrincipalList.length} siswa berdasarkan filter terpilih.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-600">
+                <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Urutkan:</span>
+                <select
+                  value={rekapSortBy}
+                  onChange={(e) => setRekapSortBy(e.target.value as any)}
+                  className="px-2.5 py-1 border border-slate-200 rounded-xl text-xs font-bold text-slate-800 bg-white"
+                >
+                  <option value="class">Kelas</option>
+                  <option value="name">Nama Siswa</option>
+                  <option value="hadir">Hadir (H)</option>
+                  <option value="sakit">Sakit (S)</option>
+                  <option value="izin">Izin (I)</option>
+                  <option value="alpha">Alpha (A)</option>
+                  <option value="terlambat">Terlambat (T)</option>
+                  <option value="pct">% Kehadiran</option>
+                </select>
+                <button
+                  type="button"
+                  onClick={() => setRekapSortOrder(prev => prev === 'asc' ? 'desc' : 'asc')}
+                  className="p-1.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-100 text-slate-700 cursor-pointer"
+                  title="Balik Urutan"
+                >
+                  <ArrowUpDown size={14} />
+                </button>
+              </div>
+            </div>
+
+            {rekapSiswaPrincipalList.length === 0 ? (
+              <div className="py-16 text-center flex flex-col items-center justify-center p-4">
+                <Calendar size={32} className="text-slate-300 mb-2" />
+                <span className="text-xs font-extrabold text-slate-600">Tidak ada data rekap presensi ditemukan</span>
+                <p className="text-[10px] text-slate-400 max-w-xs mt-1">Ubah rentang tanggal, filter kelas, atau kata kunci pencarian Anda.</p>
+              </div>
+            ) : (
+              <div className="overflow-x-auto">
+                <table className="w-full text-left border-collapse text-[11px]">
+                  <thead>
+                    <tr className="bg-slate-100/80 text-slate-600 font-extrabold uppercase text-[9px] tracking-wider border-b border-slate-200">
+                      <th className="py-3 px-3 text-center w-10">No</th>
+                      <th className="py-3 px-3">NIS</th>
+                      <th className="py-3 px-3">Nama Lengkap Siswa</th>
+                      <th className="py-3 px-3 text-center">Kelas</th>
+                      <th className="py-3 px-3 text-center text-emerald-700">Hadir (H)</th>
+                      <th className="py-3 px-3 text-center text-blue-700">Sakit (S)</th>
+                      <th className="py-3 px-3 text-center text-amber-700">Izin (I)</th>
+                      <th className="py-3 px-3 text-center text-rose-700">Alpha (A)</th>
+                      <th className="py-3 px-3 text-center text-purple-700">Terlambat (T)</th>
+                      <th className="py-3 px-3 text-center">Total Hari</th>
+                      <th className="py-3 px-3 text-center">% Kehadiran</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {rekapSiswaPrincipalList.map((item, idx) => (
+                      <tr key={item.student.id} className="hover:bg-slate-50/80 transition-colors">
+                        <td className="py-2.5 px-3 text-center font-bold text-slate-400">{idx + 1}</td>
+                        <td className="py-2.5 px-3 font-mono text-slate-500">{item.student.nis || '-'}</td>
+                        <td className="py-2.5 px-3">
+                          <span className="font-extrabold text-slate-900 block">{item.student.name}</span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className="px-2 py-0.5 bg-slate-100 text-slate-800 rounded-md font-bold text-[10px]">
+                            {item.student.class || '-'}
+                          </span>
+                        </td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-emerald-700">{item.hadir}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-blue-700">{item.sakit}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-amber-700">{item.izin}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-rose-700">{item.alpha}</td>
+                        <td className="py-2.5 px-3 text-center font-black font-mono text-purple-700">{item.terlambat}</td>
+                        <td className="py-2.5 px-3 text-center font-bold font-mono text-slate-700">{item.totalHari}</td>
+                        <td className="py-2.5 px-3 text-center">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black font-mono inline-block ${
+                            item.pct >= 90
+                              ? 'bg-emerald-100 text-emerald-800'
+                              : item.pct >= 75
+                              ? 'bg-amber-100 text-amber-800'
+                              : 'bg-rose-100 text-rose-800 animate-pulse'
+                          }`}>
+                            {item.pct}%
+                          </span>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* 5.5 FINANCE MONITORING TAB */}
       {activeTab === 'finance_monitoring' && (
         <div className="flex flex-col gap-6">
@@ -3695,6 +4377,25 @@ export default function PrincipalPanel({
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Jurnal KBM Guru</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pantau seluruh catatan KBM &amp; ketidakhadiran</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('attendance_recap');
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeTab === 'attendance_recap'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">📅</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Rekap Presensi Siswa</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Rekapitulasi tingkat kehadiran harian per kelas &amp; siswa</p>
                   </div>
                 </button>
 

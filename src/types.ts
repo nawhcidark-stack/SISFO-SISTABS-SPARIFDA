@@ -6,6 +6,7 @@ export interface Student {
   email: string;
   phone: string;
   savingsBalance: number;
+  status?: string; // e.g. "Aktif" | "Lulus" | "Keluar" | "Mutasi"
   password?: string;
   gender?: string;
   mutationDate?: string;

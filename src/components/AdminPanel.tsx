@@ -2267,6 +2267,7 @@ export default function AdminPanel({
   const [txType, setTxType] = useState<"deposit" | "withdrawal">("deposit");
   const [txAmount, setTxAmount] = useState<string>("");
   const [txNotes, setTxNotes] = useState<string>("");
+  const [showTxNotes, setShowTxNotes] = useState<boolean>(false);
   const [txProcessing, setTxProcessing] = useState(false);
 
   // Broadcast States
@@ -2296,6 +2297,7 @@ export default function AdminPanel({
     if (resultTx) {
       setTxAmount("");
       setTxNotes("");
+      setShowTxNotes(false);
       // Update selectedStudent balance locally for instantaneous visual update
       const updatedS = { ...selectedStudent };
       if (txType === "deposit") {
@@ -4854,18 +4856,34 @@ export default function AdminPanel({
                                 </div>
                               </div>
 
-                              <div>
-                                <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">
-                                  Memo / Keterangan
+                              <div className="flex flex-col gap-1.5">
+                                <label className="inline-flex items-center gap-2 cursor-pointer text-[10px] font-bold text-slate-600 hover:text-slate-900 select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={showTxNotes}
+                                    onChange={(e) => {
+                                      setShowTxNotes(e.target.checked);
+                                      if (!e.target.checked) setTxNotes("");
+                                    }}
+                                    className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                                  />
+                                  <span>Tambah Memo / Catatan</span>
                                 </label>
-                                <input
-                                  type="text"
-                                  required
-                                  placeholder="cth: Tabungan harian saku"
-                                  value={txNotes}
-                                  onChange={(e) => setTxNotes(e.target.value)}
-                                  className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
-                                />
+
+                                {showTxNotes && (
+                                  <div className="animate-fade-in">
+                                    <label className="block text-[9px] uppercase font-bold text-slate-400 tracking-wider mb-1">
+                                      Memo / Keterangan
+                                    </label>
+                                    <input
+                                      type="text"
+                                      placeholder="cth: Tabungan harian saku"
+                                      value={txNotes}
+                                      onChange={(e) => setTxNotes(e.target.value)}
+                                      className="w-full px-3 py-1.5 border border-slate-200 bg-white rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs font-semibold text-slate-800"
+                                    />
+                                  </div>
+                                )}
                               </div>
 
                               {txType === "deposit" ? (
@@ -4890,6 +4908,7 @@ export default function AdminPanel({
                                         setTxProcessing(false);
                                         setTxAmount("");
                                         setTxNotes("");
+                                        setShowTxNotes(false);
                                       }
                                     }}
                                     className="w-full py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-[10px] uppercase tracking-wider transition-all shadow-md cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5"
@@ -4917,11 +4936,12 @@ export default function AdminPanel({
                                     onClick={() => {
                                       addToCartSavings(
                                         Number(txAmount),
-                                        txNotes,
+                                        showTxNotes ? txNotes : "",
                                         selectedStudent,
                                       );
                                       setTxAmount("");
                                       setTxNotes("");
+                                      setShowTxNotes(false);
                                     }}
                                     className="w-full py-1.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-white font-extrabold rounded-lg text-[9px] uppercase tracking-wider transition-all cursor-pointer disabled:opacity-50 flex items-center justify-center gap-1.5 shadow-sm mt-1.5"
                                   >
@@ -10720,17 +10740,34 @@ export default function AdminPanel({
                               />
                             </div>
 
-                            <div className="flex flex-col gap-1">
-                              <label className="text-[10px] font-black text-slate-400 uppercase">
-                                Memo / Keterangan Tambahan
+                            <div className="flex flex-col gap-1.5">
+                              <label className="inline-flex items-center gap-2 cursor-pointer text-[10px] font-bold text-slate-600 hover:text-slate-900 select-none">
+                                <input
+                                  type="checkbox"
+                                  checked={showTxNotes}
+                                  onChange={(e) => {
+                                    setShowTxNotes(e.target.checked);
+                                    if (!e.target.checked) setTxNotes("");
+                                  }}
+                                  className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5 cursor-pointer"
+                                />
+                                <span>Tambah Memo / Catatan</span>
                               </label>
-                              <input
-                                type="text"
-                                placeholder="Tulis alasan, contoh: Pengembalian sisa tabungan kelulusan..."
-                                value={txNotes}
-                                onChange={(e) => setTxNotes(e.target.value)}
-                                className="p-2 bg-white text-xs border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
-                              />
+
+                              {showTxNotes && (
+                                <div className="flex flex-col gap-1 animate-fade-in">
+                                  <label className="text-[10px] font-black text-slate-400 uppercase">
+                                    Memo / Keterangan Tambahan
+                                  </label>
+                                  <input
+                                    type="text"
+                                    placeholder="Tulis alasan, contoh: Pengembalian sisa tabungan kelulusan..."
+                                    value={txNotes}
+                                    onChange={(e) => setTxNotes(e.target.value)}
+                                    className="p-2 bg-white text-xs border border-slate-250 rounded-xl focus:border-slate-800 focus:outline-none font-bold text-slate-800"
+                                  />
+                                </div>
+                              )}
                             </div>
 
                             <button

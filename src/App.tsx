@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill, MerdekaAssessment } from './types';
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill, MerdekaAssessment, ClassSchedule } from './types';
 import StudentPanel from './components/StudentPanel';
 import AdminPanel from './components/AdminPanel';
 import HomeroomPanel from './components/HomeroomPanel';
@@ -10,6 +10,7 @@ import PrincipalPanel from './components/PrincipalPanel';
 import WakaSarprasPanel from './components/WakaSarprasPanel';
 import CounselorPanel from './components/CounselorPanel';
 import WakaKurikulumPanel from './components/WakaKurikulumPanel';
+import ScheduleView from './components/ScheduleView';
 import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
@@ -113,6 +114,7 @@ export default function App() {
   const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>([]);
   const [subjectTeachersList, setSubjectTeachersList] = useState<SubjectTeacher[]>([]);
   const [merdekaAssessmentsList, setMerdekaAssessmentsList] = useState<MerdekaAssessment[]>([]);
+  const [schedulesList, setSchedulesList] = useState<ClassSchedule[]>([]);
   
   // School Identity state
   const [schoolIdentity, setSchoolIdentity] = useState<SchoolIdentity>({
@@ -550,11 +552,24 @@ export default function App() {
         console.error("Gagal memuat penilaian merdeka", e);
       }
 
+      await fetchSchedules();
       await fetchMiscBills();
       setIsLoading(false);
     } catch (err) {
       console.error('Failed to boot initial data', err);
       setIsLoading(false);
+    }
+  };
+
+  const fetchSchedules = async () => {
+    try {
+      const res = await fetchNoCache('/api/curriculum/schedules');
+      if (res.ok) {
+        const data = await res.json();
+        setSchedulesList(data);
+      }
+    } catch (err) {
+      console.error("Gagal memuat jadwal pelajaran:", err);
     }
   };
 
@@ -2298,6 +2313,9 @@ export default function App() {
             miscBills={miscBillsList}
             onPayMiscSnap={handlePayMiscSnap}
             onPayCartSnap={handlePayCartSnap}
+            classSchedules={schedulesList}
+            subjectTeachers={subjectTeachersList}
+            homerooms={homeroomsList}
           />
         ) : role === 'homeroom' ? (
           <HomeroomPanel
@@ -2314,6 +2332,9 @@ export default function App() {
             scannedStudentNis={scannedStudentNis}
             scannedStudentAt={scannedStudentAt}
             miscBills={miscBillsList}
+            classSchedules={schedulesList}
+            subjectTeachers={subjectTeachersList}
+            homerooms={homeroomsList}
           />
         ) : role === 'subject_teacher' ? (
           <SubjectTeacherPanel
@@ -2324,6 +2345,9 @@ export default function App() {
             onLogout={handleLogout}
             onRefresh={handleReload}
             isLoading={isLoading}
+            classSchedules={schedulesList}
+            subjectTeachers={subjectTeachersList}
+            homerooms={homeroomsList}
           />
         ) : role === 'treasurer' ? (
           <TreasurerPanel
@@ -2344,6 +2368,7 @@ export default function App() {
             onLogout={handleLogout}
             onRefresh={handleReload}
             isLoading={isLoading}
+            classSchedules={schedulesList}
           />
         ) : role === 'waka_sarpras' ? (
           <WakaSarprasPanel
@@ -2358,6 +2383,10 @@ export default function App() {
             onLogout={handleLogout}
             onRefresh={handleReload}
             onUpdateStudent={handleUpdateStudent}
+            classSchedules={schedulesList}
+            subjectTeachers={subjectTeachersList}
+            homerooms={homeroomsList}
+            students={studentsList}
           />
         ) : role === 'waka_kurikulum' ? (
           <WakaKurikulumPanel
@@ -2365,6 +2394,7 @@ export default function App() {
             subjectTeachers={subjectTeachersList}
             homerooms={homeroomsList}
             merdekaAssessments={merdekaAssessmentsList}
+            classSchedules={schedulesList}
             schoolIdentity={schoolIdentity}
             onRefreshData={handleReload}
           />
@@ -2409,6 +2439,7 @@ export default function App() {
             onLogout={handleLogout}
             attendanceLogs={attendanceList}
             miscBills={miscBillsList}
+            classSchedules={schedulesList}
           />
         )}
       </main>

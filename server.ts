@@ -9,7 +9,7 @@ import multer from "multer";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule } from "./src/types";
 
 // Setup serverport
 const PORT = process.env.PORT || 3000;
@@ -88,6 +88,20 @@ const classAnnouncements: ClassAnnouncement[] = [];
 const classMeetingLogs: ClassMeetingLog[] = [];
 
 const merdekaAssessments: MerdekaAssessment[] = [];
+
+const classSchedules: ClassSchedule[] = [
+  { id: "sch-1", day: "Senin", className: "7-A", subject: "Matematika", teacherId: "st-1", teacherName: "Drs. Heru Setyawan, M.Pd", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-2", day: "Senin", className: "7-A", subject: "Bahasa Indonesia", teacherId: "st-5", teacherName: "Ahmad Fauzan, S.S", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-3", day: "Senin", className: "7-A", subject: "Pendidikan Agama Islam", teacherId: "st-6", teacherName: "KH. M. Syukron, S.Pd.I", jamKe: "5-6", startTime: "10:00", endTime: "11:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-4", day: "Senin", className: "7-B", subject: "Ilmu Pengetahuan Alam", teacherId: "st-3", teacherName: "Budi Wijaya, S.Si", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-5", day: "Senin", className: "7-B", subject: "Bahasa Inggris", teacherId: "st-2", teacherName: "Ibu Lindawati, S.Pd", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-6", day: "Selasa", className: "7-A", subject: "Bahasa Inggris", teacherId: "st-2", teacherName: "Ibu Lindawati, S.Pd", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-7", day: "Selasa", className: "7-A", subject: "Ilmu Pengetahuan Alam", teacherId: "st-3", teacherName: "Budi Wijaya, S.Si", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-8", day: "Rabu", className: "7-A", subject: "Ilmu Pengetahuan Sosial", teacherId: "st-4", teacherName: "Dra. Siti Rahma", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-9", day: "Rabu", className: "7-A", subject: "Pendidikan Jasmani & OR", teacherId: "st-7", teacherName: "Eko Prasetyo, S.Pd", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-10", day: "Kamis", className: "7-A", subject: "Matematika", teacherId: "st-1", teacherName: "Drs. Heru Setyawan, M.Pd", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
+  { id: "sch-11", day: "Jumat", className: "7-A", subject: "Pendidikan Agama Islam", teacherId: "st-6", teacherName: "KH. M. Syukron, S.Pd.I", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" }
+];
 
 const principalWorkPrograms: any[] = [
   {
@@ -627,6 +641,7 @@ async function saveStateToFirestore() {
     await saveList("classAnnouncements", classAnnouncements);
     await saveList("classMeetingLogs", classMeetingLogs);
     await saveList("merdekaAssessments", merdekaAssessments);
+    await saveList("classSchedules", classSchedules);
     await saveList("principalWorkPrograms", principalWorkPrograms);
     await saveList("teacherEvaluations", teacherEvaluations);
     await saveList("infractionRules", infractionRules);
@@ -1212,6 +1227,7 @@ function saveState() {
       classAnnouncements,
       classMeetingLogs,
       merdekaAssessments,
+      classSchedules,
       principalWorkPrograms,
       teacherEvaluations,
       infractionRules,
@@ -1331,6 +1347,10 @@ function loadState() {
       if (Array.isArray(data.merdekaAssessments)) {
         merdekaAssessments.length = 0;
         merdekaAssessments.push(...data.merdekaAssessments);
+      }
+      if (Array.isArray(data.classSchedules)) {
+        classSchedules.length = 0;
+        classSchedules.push(...data.classSchedules);
       }
       if (Array.isArray(data.principalWorkPrograms)) {
         principalWorkPrograms.length = 0;
@@ -2026,6 +2046,7 @@ async function startServer() {
     if (Array.isArray(snapshot.classAnnouncements)) { classAnnouncements.length = 0; classAnnouncements.push(...snapshot.classAnnouncements); }
     if (Array.isArray(snapshot.classMeetingLogs)) { classMeetingLogs.length = 0; classMeetingLogs.push(...snapshot.classMeetingLogs); }
     if (Array.isArray(snapshot.merdekaAssessments)) { merdekaAssessments.length = 0; merdekaAssessments.push(...snapshot.merdekaAssessments); }
+    if (Array.isArray(snapshot.classSchedules)) { classSchedules.length = 0; classSchedules.push(...snapshot.classSchedules); }
     if (Array.isArray(snapshot.principalWorkPrograms)) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...snapshot.principalWorkPrograms); }
     if (Array.isArray(snapshot.teacherEvaluations)) { teacherEvaluations.length = 0; teacherEvaluations.push(...snapshot.teacherEvaluations); }
     if (Array.isArray(snapshot.infractionRules)) { infractionRules.length = 0; infractionRules.push(...snapshot.infractionRules); }
@@ -4262,6 +4283,232 @@ async function startServer() {
     merdekaAssessments.splice(index, 1);
     saveState();
     res.json({ success: true, merdekaAssessments });
+  });
+
+  // --- CLASS SCHEDULES (JADWAL PELAJARAN / MENGAJAR) ENDPOINTS ---
+  function checkJamKeOverlap(jamA: string, jamB: string): boolean {
+    if (!jamA || !jamB) return false;
+    const parseJamRange = (str: string): [number, number] => {
+      const nums = str.match(/\d+/g);
+      if (!nums || nums.length === 0) return [1, 1];
+      if (nums.length === 1) return [parseInt(nums[0]), parseInt(nums[0])];
+      return [parseInt(nums[0]), parseInt(nums[1])];
+    };
+    const [sA, eA] = parseJamRange(jamA);
+    const [sB, eB] = parseJamRange(jamB);
+    return Math.max(sA, sB) <= Math.min(eA, eB);
+  }
+
+  function detectScheduleClash(newSchedule: any, existingSchedules: any[], currentId?: string): { hasClash: boolean; message?: string } {
+    const day = newSchedule.day;
+    const jamKe = newSchedule.jamKe;
+    const className = (newSchedule.className || '').trim().toUpperCase();
+    const teacherId = newSchedule.teacherId;
+    const teacherName = (newSchedule.teacherName || '').trim().toLowerCase();
+
+    for (const item of existingSchedules) {
+      if (currentId && item.id === currentId) continue;
+      if (item.day !== day) continue;
+
+      const isOverlap = checkJamKeOverlap(jamKe, item.jamKe);
+      if (!isOverlap) continue;
+
+      // 1. Teacher Clash: Same teacher in another class at same time
+      const sameTeacher = (teacherId && item.teacherId === teacherId) || 
+        (teacherName && item.teacherName && item.teacherName.trim().toLowerCase() === teacherName);
+      
+      if (sameTeacher && item.className.trim().toUpperCase() !== className) {
+        return {
+          hasClash: true,
+          message: `Benturan Guru! Guru ${item.teacherName} sudah dijadwalkan mengajar di Kelas ${item.className} pada hari ${day} Jam Ke-${item.jamKe}.`
+        };
+      }
+
+      // 2. Class Clash: Same class for another subject/teacher at same time
+      if (item.className.trim().toUpperCase() === className) {
+        return {
+          hasClash: true,
+          message: `Benturan Kelas! Kelas ${className} sudah memiliki jadwal mata pelajaran ${item.subject} (${item.teacherName}) pada hari ${day} Jam Ke-${item.jamKe}.`
+        };
+      }
+    }
+
+    return { hasClash: false };
+  }
+
+  function autoGenerateAbsentJournals() {
+    if (classSchedules.length === 0) return;
+    const todayStr = new Date().toISOString().substring(0, 10);
+    const daysOfWeek = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const pastDatesToCheck: { dateStr: string; dayName: string }[] = [];
+    const now = new Date();
+    
+    for (let i = 1; i <= 7; i++) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      const dStr = d.toISOString().substring(0, 10);
+      const dayName = daysOfWeek[d.getDay()];
+      if (dayName !== 'Minggu') {
+        pastDatesToCheck.push({ dateStr: dStr, dayName });
+      }
+    }
+
+    let newlyCreated = 0;
+
+    for (const { dateStr, dayName } of pastDatesToCheck) {
+      const daySchedules = classSchedules.filter(s => s.day === dayName);
+
+      for (const sch of daySchedules) {
+        const journalExists = teachingJournals.some(j => {
+          const sameClass = j.className && j.className.trim().toUpperCase() === sch.className.trim().toUpperCase();
+          const sameSubj = j.subject && j.subject.trim().toLowerCase() === sch.subject.trim().toLowerCase();
+          const sameDate = j.date && j.date.substring(0, 10) === dateStr;
+          return sameClass && sameSubj && sameDate;
+        });
+
+        if (!journalExists) {
+          const autoAbsentJournal: TeachingJournal = {
+            id: `tj-absent-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            teacherId: sch.teacherId || 'auto-system',
+            teacherName: sch.teacherName || 'Guru Mapel',
+            subject: sch.subject,
+            className: sch.className,
+            date: dateStr,
+            topic: 'Tidak Hadir (Guru tidak mengisi jurnal KBM sesuai jadwal)',
+            attendance: [],
+            notes: 'Tidak Hadir',
+            jamKe: sch.jamKe,
+            alokasiWaktu: sch.alokasiWaktu || '2 JP',
+            createdAt: new Date().toISOString()
+          };
+          teachingJournals.push(autoAbsentJournal);
+          newlyCreated++;
+        }
+      }
+    }
+
+    if (newlyCreated > 0) {
+      saveState();
+    }
+  }
+
+  app.get("/api/curriculum/schedules", (req, res) => {
+    autoGenerateAbsentJournals();
+    res.json(classSchedules);
+  });
+
+  app.post("/api/curriculum/schedules", (req, res) => {
+    const { day, className, subject, teacherId, teacherName, jamKe, startTime, endTime, alokasiWaktu, academicYear, semester, force } = req.body;
+    if (!day || !className || !subject || !teacherName || !jamKe) {
+      return res.status(400).json({ error: "Data jadwal tidak lengkap. Mohon isi Hari, Kelas, Mapel, Guru, dan Jam Ke." });
+    }
+
+    const newSchedule: ClassSchedule = {
+      id: `sch-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+      day,
+      className: className.trim().toUpperCase(),
+      subject,
+      teacherId: teacherId || '',
+      teacherName,
+      jamKe,
+      startTime: startTime || '',
+      endTime: endTime || '',
+      alokasiWaktu: alokasiWaktu || '2 JP',
+      academicYear: academicYear || '2025/2026',
+      semester: semester || 'Genap',
+      createdAt: new Date().toISOString()
+    };
+
+    if (!force) {
+      const clashCheck = detectScheduleClash(newSchedule, classSchedules);
+      if (clashCheck.hasClash) {
+        return res.status(409).json({ error: clashCheck.message, isClash: true });
+      }
+    }
+
+    classSchedules.push(newSchedule);
+    saveState();
+    res.json({ success: true, newSchedule, classSchedules });
+  });
+
+  app.put("/api/curriculum/schedules/:id", (req, res) => {
+    const { id } = req.params;
+    const index = classSchedules.findIndex(s => s.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Jadwal tidak ditemukan." });
+    }
+
+    const { day, className, subject, teacherId, teacherName, jamKe, startTime, endTime, alokasiWaktu, academicYear, semester, force } = req.body;
+    
+    const updatedSchedule: ClassSchedule = {
+      ...classSchedules[index],
+      day: day || classSchedules[index].day,
+      className: className ? className.trim().toUpperCase() : classSchedules[index].className,
+      subject: subject || classSchedules[index].subject,
+      teacherId: teacherId !== undefined ? teacherId : classSchedules[index].teacherId,
+      teacherName: teacherName || classSchedules[index].teacherName,
+      jamKe: jamKe || classSchedules[index].jamKe,
+      startTime: startTime !== undefined ? startTime : classSchedules[index].startTime,
+      endTime: endTime !== undefined ? endTime : classSchedules[index].endTime,
+      alokasiWaktu: alokasiWaktu || classSchedules[index].alokasiWaktu,
+      academicYear: academicYear || classSchedules[index].academicYear,
+      semester: semester || classSchedules[index].semester,
+    };
+
+    if (!force) {
+      const clashCheck = detectScheduleClash(updatedSchedule, classSchedules, id);
+      if (clashCheck.hasClash) {
+        return res.status(409).json({ error: clashCheck.message, isClash: true });
+      }
+    }
+
+    classSchedules[index] = updatedSchedule;
+    saveState();
+    res.json({ success: true, updatedSchedule, classSchedules });
+  });
+
+  app.post("/api/curriculum/schedules/bulk", (req, res) => {
+    const { items, mode } = req.body;
+    if (!Array.isArray(items) || items.length === 0) {
+      return res.status(400).json({ error: "Daftar jadwal yang diimport kosong atau tidak valid." });
+    }
+
+    const formattedSchedules: ClassSchedule[] = items.map((item: any, idx: number) => ({
+      id: `sch-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+      day: item.day || 'Senin',
+      className: (item.className || '').toString().trim().toUpperCase(),
+      subject: (item.subject || 'Mapel').toString().trim(),
+      teacherId: item.teacherId || '',
+      teacherName: (item.teacherName || 'Guru').toString().trim(),
+      jamKe: (item.jamKe || '1-2').toString().trim(),
+      startTime: item.startTime || '',
+      endTime: item.endTime || '',
+      alokasiWaktu: item.alokasiWaktu || '2 JP',
+      academicYear: item.academicYear || '2025/2026',
+      semester: item.semester || 'Genap',
+      createdAt: new Date().toISOString()
+    }));
+
+    if (mode === 'replace') {
+      classSchedules.length = 0;
+      classSchedules.push(...formattedSchedules);
+    } else {
+      classSchedules.push(...formattedSchedules);
+    }
+
+    saveState();
+    res.json({ success: true, count: formattedSchedules.length, classSchedules });
+  });
+
+  app.delete("/api/curriculum/schedules/:id", (req, res) => {
+    const { id } = req.params;
+    const index = classSchedules.findIndex(s => s.id === id);
+    if (index === -1) {
+      return res.status(404).json({ error: "Jadwal tidak ditemukan." });
+    }
+    classSchedules.splice(index, 1);
+    saveState();
+    res.json({ success: true, classSchedules });
   });
 
   // --- KEPALA SEKOLAH (PRINCIPAL) ENDPOINTS ---

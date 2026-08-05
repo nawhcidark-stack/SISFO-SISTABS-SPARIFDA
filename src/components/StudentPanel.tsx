@@ -1,9 +1,10 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill, ClassSchedule, HomeroomTeacher, SubjectTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink, Calendar } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
+import ScheduleView from './ScheduleView';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
 function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
@@ -82,6 +83,9 @@ interface StudentPanelProps {
   miscBills?: MiscBill[];
   onPayMiscSnap?: (bill: MiscBill) => void;
   onPayCartSnap?: (billIds: string[]) => void;
+  classSchedules?: ClassSchedule[];
+  subjectTeachers?: SubjectTeacher[];
+  homerooms?: HomeroomTeacher[];
 }
 
 export default function StudentPanel({
@@ -105,9 +109,12 @@ export default function StudentPanel({
   onUpdateStudent,
   miscBills = [],
   onPayMiscSnap,
-  onPayCartSnap
+  onPayCartSnap,
+  classSchedules = [],
+  subjectTeachers = [],
+  homerooms = []
 }: StudentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
+  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -1287,6 +1294,25 @@ export default function StudentPanel({
                     <CalendarRange className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
                   </div>
                   <span className="hidden md:inline">Sistem Absensi Kehadiran</span>
+                </button>
+                <button
+                  id="tab-jadwal"
+                  onClick={() => setActiveTab('jadwal')}
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none shrink-0 whitespace-nowrap ${
+                    activeTab === 'jadwal'
+                      ? 'border-indigo-600 text-indigo-705 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-indigo-600'
+                  }`}
+                  title="Jadwal Pelajaran Siswa"
+                >
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center ${
+                    activeTab === 'jadwal'
+                      ? 'bg-indigo-100 text-indigo-600 shadow-xs ring-1 ring-indigo-200/50'
+                      : 'bg-indigo-50/50 text-indigo-400/80 hover:bg-indigo-100/50 hover:text-indigo-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <Calendar className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                  </div>
+                  <span className="hidden md:inline">Jadwal Pelajaran</span>
                 </button>
                 <button
                   id="tab-kartu-qr"
@@ -2519,6 +2545,20 @@ export default function StudentPanel({
                       )}
                     </div>
                   )}
+                </div>
+              )}
+
+              {activeTab === 'jadwal' && (
+                <div className="flex flex-col gap-6 animate-fade-in text-left">
+                  <ScheduleView
+                    role="student"
+                    userClass={currentStudent?.class}
+                    schedules={classSchedules}
+                    onRefreshSchedule={onRefresh}
+                    availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+                    subjectTeachers={subjectTeachers}
+                    homerooms={homerooms}
+                  />
                 </div>
               )}
 
@@ -4224,6 +4264,22 @@ export default function StudentPanel({
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileTab('beranda');
+                    setActiveTab('jadwal');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-indigo-100 rounded-xl text-indigo-700 text-lg">🗓️</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-indigo-950">Jadwal Pelajaran</h5>
+                    <p className="text-[10px] text-indigo-700/80 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran resmi kelas Anda</p>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

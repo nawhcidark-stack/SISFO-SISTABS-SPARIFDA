@@ -40,17 +40,22 @@ import {
   RotateCcw
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
-import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student } from "../types";
+import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student, ClassSchedule, SubjectTeacher, HomeroomTeacher } from "../types";
 import BukuIndukManagement from "./BukuIndukManagement";
+import ScheduleView from "./ScheduleView";
 
 interface CounselorPanelProps {
   schoolIdentity?: SchoolIdentity;
   onLogout: () => void;
   onRefresh: () => void;
   onUpdateStudent: (id: string, data: any) => Promise<boolean>;
+  classSchedules?: ClassSchedule[];
+  subjectTeachers?: SubjectTeacher[];
+  homerooms?: HomeroomTeacher[];
+  students?: Student[];
 }
 
-export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, onUpdateStudent }: CounselorPanelProps) {
+export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, onUpdateStudent, classSchedules = [], subjectTeachers = [], homerooms = [], students = [] }: CounselorPanelProps) {
   const [logs, setLogs] = useState<StudentCounselingLog[]>([]);
   const [attendance, setAttendance] = useState<AttendanceLog[]>([]);
   const [infractions, setInfractions] = useState<StudentInfractionLog[]>([]);
@@ -59,7 +64,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
   
   // Tab State
-  const [activeTab, setActiveTab] = useState<'home' | 'counseling' | 'attendance' | 'infractions' | 'buku_induk' | 'journals'>('home');
+  const [activeTab, setActiveTab] = useState<'home' | 'counseling' | 'attendance' | 'infractions' | 'buku_induk' | 'journals' | 'jadwal'>('home');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   // Teaching Journals State & Filters (Monitoring Jurnal Walas & KBM)
@@ -1709,6 +1714,15 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         >
           <BookOpen size={14} />
           <span>Jurnal Walas & KBM</span>
+        </button>
+        <button
+          onClick={() => { setActiveTab('jadwal'); setShowPasswordTab(false); }}
+          className={`py-2 px-3.5 rounded-xl text-xs font-black transition-all flex items-center justify-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            activeTab === 'jadwal' && !showPasswordTab ? "bg-white text-indigo-700 shadow-3xs" : "text-slate-500 hover:text-slate-800"
+          }`}
+        >
+          <Calendar size={14} />
+          <span>Jadwal Pelajaran</span>
         </button>
         <button
           onClick={() => { setActiveTab('attendance'); setShowPasswordTab(false); }}
@@ -3902,6 +3916,24 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
             </motion.div>
           )}
 
+          {/* TAB JADWAL PELAJARAN */}
+          {activeTab === 'jadwal' && (
+            <motion.div
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              className="w-full text-left"
+            >
+              <ScheduleView
+                role="bk"
+                schedules={classSchedules}
+                onRefreshSchedule={onRefresh}
+                availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+                subjectTeachers={subjectTeachers}
+                homerooms={homerooms}
+              />
+            </motion.div>
+          )}
+
           {/* 6. TAB BUKU INDUK SISWA INTEGRATED */}
           {activeTab === 'buku_induk' && (
             <motion.div
@@ -3990,10 +4022,10 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(showPasswordTab || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(showPasswordTab || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(activeTab === 'jadwal' || showPasswordTab || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(activeTab === 'jadwal' || showPasswordTab || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(showPasswordTab || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(activeTab === 'jadwal' || showPasswordTab || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -4029,6 +4061,17 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
               </div>
 
               <div className="flex flex-col gap-2">
+                <button
+                  onClick={() => {
+                    setActiveTab('jadwal');
+                    setShowPasswordTab(false);
+                    setShowMoreMenu(false);
+                  }}
+                  className="w-full text-left py-3 px-4 rounded-xl border border-indigo-100 bg-indigo-50/60 hover:bg-indigo-100/60 flex items-center gap-3 text-indigo-950 font-extrabold text-xs"
+                >
+                  <Calendar size={16} className="text-indigo-600 shrink-0" />
+                  <span>🗓️ Matriks Jadwal Pelajaran</span>
+                </button>
                 <button
                   onClick={() => {
                     setActiveTab('journals');

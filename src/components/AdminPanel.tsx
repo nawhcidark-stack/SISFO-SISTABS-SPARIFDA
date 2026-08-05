@@ -10,7 +10,9 @@ import {
   StudentInfractionLog,
   isSppBillOverdue,
   MiscBill,
+  ClassSchedule,
 } from "../types";
+import ScheduleView from "./ScheduleView";
 import { motion, AnimatePresence } from "motion/react";
 import {
   exportDailyReportToExcel,
@@ -303,6 +305,7 @@ interface AdminPanelProps {
   scannedStudentNis?: string | null;
   scannedStudentAt?: number | null;
   miscBills?: MiscBill[];
+  classSchedules?: ClassSchedule[];
 }
 
 export default function AdminPanel({
@@ -345,7 +348,8 @@ export default function AdminPanel({
   attendanceLogs = [],
   scannedStudentNis,
   scannedStudentAt,
-  miscBills = []
+  miscBills = [],
+  classSchedules = []
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
   const [adminTab, setAdminTab] = useState<
@@ -361,6 +365,7 @@ export default function AdminPanel({
     | "mutasi"
     | "buku_induk"
     | "pembayaran_lain"
+    | "jadwal"
   >("roster");
 
   useEffect(() => {
@@ -1821,6 +1826,7 @@ export default function AdminPanel({
 
     return priorBills.every((b) => 
       b.status === "paid" || 
+      b.status === "waived" ||
       paymentCart.some(item => item.type === "spp" && item.billId === b.id) ||
       tempCartIds.includes(b.id)
     );
@@ -3622,6 +3628,19 @@ export default function AdminPanel({
           </button>
 
           <button
+            id="admin-menu-jadwal"
+            onClick={() => setAdminTab("jadwal")}
+            className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === "jadwal"
+                ? "bg-slate-900 text-white shadow-md shadow-slate-900/10"
+                : "text-indigo-600 bg-indigo-50/50 hover:bg-indigo-100/50"
+            }`}
+          >
+            <Calendar size={15} className="text-indigo-600" />
+            Matriks Jadwal Pelajaran
+          </button>
+
+          <button
             id="admin-menu-subject-teacher-mgmt"
             onClick={() => setAdminTab("subject_teacher_mgmt")}
             className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
@@ -3889,6 +3908,20 @@ export default function AdminPanel({
 
       {/* Main Action Stage */}
       <div className="md:col-span-9 flex flex-col gap-6">
+        {/* Tab Jadwal Pelajaran */}
+        {adminTab === "jadwal" && (
+          <div className="flex flex-col gap-6 animate-fade-in text-left">
+            <ScheduleView
+              role="admin"
+              schedules={classSchedules}
+              onRefreshSchedule={onRefresh}
+              availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+              subjectTeachers={subjectTeachers}
+              homerooms={homerooms}
+            />
+          </div>
+        )}
+
         {/* Tab 1: Student Roster and Payments */}
         {adminTab === "roster" && (
           <div className="flex flex-col gap-6">
@@ -17920,6 +17953,27 @@ export default function AdminPanel({
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setAdminTab("jadwal");
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-indigo-100 rounded-xl text-indigo-700 text-lg">
+                    🗓️
+                  </span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-indigo-950">
+                      Matriks Jadwal
+                    </h5>
+                    <p className="text-[10px] text-indigo-700/80 mt-0.5 leading-tight">
+                      Lihat matriks jadwal pelajaran seluruh kelas & guru
+                    </p>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

@@ -13,8 +13,10 @@ import {
   StudentCounselingLog,
   StudentInfractionLog,
   isSppBillOverdue,
-  sortSppBills
+  sortSppBills,
+  ClassSchedule
 } from '../types';
+import ScheduleView from './ScheduleView';
 import { 
   BarChart, 
   Bar, 
@@ -75,6 +77,7 @@ interface PrincipalPanelProps {
   onLogout: () => void;
   onRefresh: () => void;
   isLoading?: boolean;
+  classSchedules?: ClassSchedule[];
 }
 
 export default function PrincipalPanel({
@@ -87,10 +90,11 @@ export default function PrincipalPanel({
   onUpdateSchoolIdentity,
   onLogout,
   onRefresh,
-  isLoading
+  isLoading,
+  classSchedules = []
 }: PrincipalPanelProps) {
   // Navigation State
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'attendance_recap' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'work_programs' | 'evaluations' | 'journals' | 'bk_monitoring' | 'attendance_recap' | 'finance_monitoring' | 'school_profile' | 'sarpras_monitoring' | 'jadwal'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
 
   // Local state for Principal endpoints
@@ -1277,6 +1281,16 @@ export default function PrincipalPanel({
             }`}
           >
             📚 Jurnal KBM Guru
+          </button>
+          <button
+            onClick={() => setActiveTab('jadwal')}
+            className={`px-4 py-2 rounded-2xl text-xs font-black transition-all cursor-pointer ${
+              activeTab === 'jadwal' 
+                ? 'bg-indigo-600 text-white shadow-sm' 
+                : 'text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/60'
+            }`}
+          >
+            🗓️ Matriks Jadwal
           </button>
           <button
             onClick={() => setActiveTab('bk_monitoring')}
@@ -2968,6 +2982,19 @@ export default function PrincipalPanel({
         </div>
       )}
 
+      {activeTab === 'jadwal' && (
+        <div className="w-full text-left">
+          <ScheduleView
+            role="principal"
+            schedules={classSchedules}
+            onRefreshSchedule={onRefresh}
+            availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+            subjectTeachers={subjectTeachers}
+            homerooms={homerooms}
+          />
+        </div>
+      )}
+
       {/* 5.5 ATTENDANCE RECAP VIEW */}
       {activeTab === 'attendance_recap' && (
         <div className="flex flex-col gap-6">
@@ -4361,6 +4388,25 @@ export default function PrincipalPanel({
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('jadwal');
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeTab === 'jadwal'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓️</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Matriks Jadwal</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran seluruh kelas &amp; guru</p>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification } from '../types';
+import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import ScheduleView from './ScheduleView';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
-  Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer,
+  Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer, Lock,
   User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2
 } from 'lucide-react';
 
@@ -37,6 +38,9 @@ interface SubjectTeacherPanelProps {
   onLogout: () => void;
   onRefresh: () => void;
   isLoading?: boolean;
+  classSchedules?: ClassSchedule[];
+  subjectTeachers?: SubjectTeacher[];
+  homerooms?: HomeroomTeacher[];
 }
 
 export default function SubjectTeacherPanel({
@@ -46,9 +50,12 @@ export default function SubjectTeacherPanel({
   schoolIdentity,
   onLogout,
   onRefresh,
-  isLoading = false
+  isLoading = false,
+  classSchedules = [],
+  subjectTeachers = [],
+  homerooms = []
 }: SubjectTeacherPanelProps) {
-  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg'>('create');
+  const [activeSubTab, setActiveSubTab] = useState<'create' | 'history' | 'notifications' | 'profile' | 'penilaian' | 'pkg' | 'jadwal'>('create');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [selectedClass, setSelectedClass] = useState<string>('');
   const [selectedDate, setSelectedDate] = useState<string>(getWIBDateStr());
@@ -379,10 +386,70 @@ export default function SubjectTeacherPanel({
 
   // If no class is selected yet, default to the first available class
   useEffect(() => {
-    if (!selectedClass && availableClasses.length > 0) {
+    if (!selectedClass && availableClasses.length > 0 && teacherSchedules.length === 0) {
       setSelectedClass(availableClasses[0]);
     }
   }, [availableClasses, selectedClass]);
+
+  // Filter class schedules created in Waka Kurikulum for this current teacher
+  const teacherSchedules = useMemo(() => {
+    if (!classSchedules || classSchedules.length === 0) return [];
+    const cId = currentTeacher?.id ? String(currentTeacher.id).trim().toLowerCase() : '';
+    const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+    return classSchedules.filter(s => {
+      const tId = s.teacherId ? String(s.teacherId).trim().toLowerCase() : '';
+      const tName = s.teacherName ? s.teacherName.trim().toLowerCase() : '';
+      return (cId && tId === cId) || (cName && tName === cName);
+    });
+  }, [classSchedules, currentTeacher]);
+
+  const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
+
+  const getIndonesianDay = (dateStr: string) => {
+    if (!dateStr) return 'Senin';
+    const d = new Date(dateStr);
+    const days: Array<'Minggu' | 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu'> = [
+      'Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'
+    ];
+    return days[d.getDay()] || 'Senin';
+  };
+
+  // Sync class, jamKe, and alokasiWaktu automatically based on schedule from Waka Kurikulum
+  useEffect(() => {
+    if (teacherSchedules.length > 0) {
+      const dayOfWeek = getIndonesianDay(selectedDate);
+      const match = teacherSchedules.find(s => s.day === dayOfWeek) || teacherSchedules[0];
+      if (match) {
+        setSelectedScheduleId(match.id);
+        setSelectedClass(match.className);
+        setJamKe(match.jamKe || '1 - 2');
+        setAlokasiWaktu(match.alokasiWaktu ? match.alokasiWaktu.replace(/[^0-9]/g, '') || '2' : '2');
+      }
+    }
+  }, [teacherSchedules, selectedDate]);
+
+  // Auto calculate Pertemuan Ke based on existing journals count for this teacher & selected class
+  useEffect(() => {
+    if (selectedClass) {
+      const prevJournals = journals.filter(j => 
+        j.className?.trim().toUpperCase() === selectedClass.trim().toUpperCase() &&
+        (j.teacherId === currentTeacher?.id || (j.teacherName && j.teacherName === currentTeacher?.name))
+      );
+      setPertemuanKe(String(prevJournals.length + 1));
+    } else {
+      setPertemuanKe('1');
+    }
+  }, [selectedClass, journals, currentTeacher]);
+
+  const handleScheduleSelect = (schedId: string) => {
+    setSelectedScheduleId(schedId);
+    const found = teacherSchedules.find(s => s.id === schedId);
+    if (found) {
+      setSelectedClass(found.className);
+      setJamKe(found.jamKe || '1 - 2');
+      setAlokasiWaktu(found.alokasiWaktu ? found.alokasiWaktu.replace(/[^0-9]/g, '') || '2' : '2');
+    }
+  };
 
   const filteredJournals = useMemo(() => {
     let list = journals;
@@ -1192,6 +1259,17 @@ export default function SubjectTeacherPanel({
           <span>Isi Jurnal & Absensi</span>
         </button>
         <button
+          onClick={() => { setActiveSubTab('jadwal'); setFeedback(null); }}
+          className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
+            activeSubTab === 'jadwal'
+              ? 'bg-indigo-600 text-white border border-indigo-600 shadow-sm font-black'
+              : 'text-indigo-600 bg-indigo-50/60 hover:bg-indigo-100/60'
+          }`}
+        >
+          <Calendar size={13} />
+          <span>Jadwal Mengajar</span>
+        </button>
+        <button
           onClick={() => { setActiveSubTab('history'); setFeedback(null); }}
           className={`px-4 py-2 rounded-xl text-xs font-extrabold uppercase tracking-wider cursor-pointer transition-all flex items-center gap-2 ${
             activeSubTab === 'history'
@@ -1277,120 +1355,145 @@ export default function SubjectTeacherPanel({
           {/* Left Column: Journal form details */}
           <div className="lg:col-span-4 flex flex-col gap-6 text-left">
             <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-xs flex flex-col gap-4">
-              <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-1.5 border-b border-slate-100 pb-3">
-                <FileText size={16} className="text-indigo-600" />
-                Jurnal Pembelajaran (KBM)
+              <h3 className="font-extrabold text-slate-900 text-sm flex items-center justify-between border-b border-slate-100 pb-3">
+                <span className="flex items-center gap-1.5">
+                  <FileText size={16} className="text-indigo-600" />
+                  <span>Jurnal Pembelajaran (KBM)</span>
+                </span>
+                {teacherSchedules.length > 0 && (
+                  <span className="text-[10px] font-black text-indigo-700 bg-indigo-50 border border-indigo-150 px-2 py-0.5 rounded-full flex items-center gap-1">
+                    <Sparkles size={11} className="text-indigo-600" /> Waka Kurikulum
+                  </span>
+                )}
               </h3>
 
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-black text-slate-650 flex items-center gap-1">
-                  <span>Pilih Kelas</span>
-                  <span className="text-red-500 font-bold">*</span>
-                </label>
-                <select
-                  value={selectedClass}
-                  onChange={(e) => setSelectedClass(e.target.value)}
-                  className="px-3.5 py-2.5 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-slate-800 text-xs bg-white shadow-xs cursor-pointer"
-                >
-                  {availableClasses.length === 0 ? (
-                    <option value="">Tidak ada kelas</option>
-                  ) : (
-                    availableClasses.map(c => (
-                      <option key={c} value={c}>Kelas {c}</option>
-                    ))
-                  )}
-                </select>
-              </div>
-
-              <div className="flex flex-col gap-1.5">
-                <label className="text-xs font-black text-slate-650 flex items-center gap-1">
-                  <span>Tanggal Pembelajaran</span>
-                  <span className="text-red-500 font-bold">*</span>
-                </label>
-                <input
-                  type="date"
-                  value={selectedDate}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    setSelectedDate(val);
-                    setSemester(getSemesterFromDate(val));
-                  }}
-                  className="px-3.5 py-2.5 border border-slate-200 rounded-xl font-bold text-slate-800 focus:outline-none focus:border-slate-800 text-xs bg-white shadow-xs"
-                />
-              </div>
-
-              <div className="grid grid-cols-2 gap-3">
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-black text-slate-650 flex items-center gap-1">
-                    <span>Fase</span>
+              {/* Sesi Jadwal dari Waka Kurikulum (jika tersedia) */}
+              {teacherSchedules.length > 0 && (
+                <div className="flex flex-col gap-1.5 bg-indigo-50/60 p-3 rounded-2xl border border-indigo-100">
+                  <label className="text-xs font-black text-indigo-950 flex items-center gap-1.5">
+                    <Calendar size={13} className="text-indigo-600" />
+                    <span>Jadwal Mengajar (Waka Kurikulum)</span>
                   </label>
                   <select
-                    value={fase}
-                    onChange={(e) => setFase(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
+                    value={selectedScheduleId}
+                    onChange={(e) => handleScheduleSelect(e.target.value)}
+                    className="px-3 py-2 border border-indigo-200 rounded-xl font-extrabold text-indigo-950 text-xs bg-white focus:outline-none focus:border-indigo-600 cursor-pointer shadow-2xs"
                   >
-                    <option value="A">A</option>
-                    <option value="B">B</option>
-                    <option value="C">C</option>
-                    <option value="D">D (SMP)</option>
-                    <option value="E">E</option>
-                    <option value="F">F</option>
-                  </select>
-                </div>
-
-                <div className="flex flex-col gap-1.5">
-                  <label className="text-xs font-black text-slate-650 flex items-center gap-1">
-                    <span>Semester</span>
-                  </label>
-                  <select
-                    value={semester}
-                    onChange={(e) => setSemester(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
-                  >
-                    <option value="Ganjil">Ganjil</option>
-                    <option value="Genap">Genap</option>
-                  </select>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-3 gap-2">
-                <div className="flex flex-col gap-1.5 col-span-1">
-                  <label className="text-[10px] font-black text-slate-650">Pertemuan Ke</label>
-                  <select
-                    value={pertemuanKe}
-                    onChange={(e) => setPertemuanKe(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
-                  >
-                    <option value="">Pilih</option>
-                    {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
-                      <option key={num} value={String(num)}>{num}</option>
+                    {teacherSchedules.map(s => (
+                      <option key={s.id} value={s.id}>
+                        [{s.day}] Kelas {s.className} - Jam {s.jamKe} ({s.subject})
+                      </option>
                     ))}
                   </select>
                 </div>
+              )}
 
-                <div className="flex flex-col gap-1.5 col-span-1">
-                  <label className="text-[10px] font-black text-slate-650">Jam Ke</label>
+              {/* 1. KELAS */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <span>Kelas</span>
+                    <span className="text-red-500 font-bold">*</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Lock size={10} /> Terkunci (Sesuai Jadwal Waka Kurikulum)
+                  </span>
+                </label>
+                <input
+                  type="text"
+                  readOnly
+                  value={selectedClass ? `Kelas ${selectedClass}` : 'Belum Ada Jadwal Kelas'}
+                  className="px-3.5 py-2.5 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
+                />
+              </div>
+
+              {/* Tanggal Pembelajaran */}
+              <div className="flex flex-col gap-1.5">
+                <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                  <span className="flex items-center gap-1">
+                    <span>Tanggal Pembelajaran</span>
+                    <span className="text-red-500 font-bold">*</span>
+                  </span>
+                  <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <Lock size={10} /> Terkunci (Hari Ini)
+                  </span>
+                </label>
+                <input
+                  type="date"
+                  readOnly
+                  value={selectedDate}
+                  className="px-3.5 py-2.5 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
+                />
+              </div>
+
+              {/* Fase & Semester */}
+              <div className="grid grid-cols-2 gap-3">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                    <span>Fase</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                  </label>
                   <input
                     type="text"
-                    placeholder="misal: 1 - 2"
-                    value={jamKe}
-                    onChange={(e) => setJamKe(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800"
+                    readOnly
+                    value={`Fase ${fase}`}
+                    className="px-3 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-xs font-black text-slate-650 flex items-center justify-between">
+                    <span>Semester</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`Semester ${semester}`}
+                    className="px-3 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
+                  />
+                </div>
+              </div>
+
+              {/* 2. PERTEMUAN KE, 3. JAM KE, 4. ALOKASI JP */}
+              <div className="grid grid-cols-3 gap-2">
+                <div className="flex flex-col gap-1.5 col-span-1">
+                  <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                    <span>Pertemuan</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`Ke-${pertemuanKe || '1'}`}
+                    className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5 col-span-1">
-                  <label className="text-[10px] font-black text-slate-650">Alokasi (JP)</label>
-                  <select
-                    value={alokasiWaktu}
-                    onChange={(e) => setAlokasiWaktu(e.target.value)}
-                    className="px-3 py-2 border border-slate-200 rounded-xl font-bold text-slate-800 text-xs bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
-                  >
-                    <option value="">Pilih</option>
-                    {Array.from({ length: 100 }, (_, i) => i + 1).map((num) => (
-                      <option key={num} value={String(num)}>{num} JP</option>
-                    ))}
-                  </select>
+                  <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                    <span>Jam Ke</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={jamKe ? (jamKe.toLowerCase().includes('jam') ? jamKe : `Jam ${jamKe}`) : 'Jam 1 - 2'}
+                    className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5 col-span-1">
+                  <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
+                    <span>Alokasi</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                  </label>
+                  <input
+                    type="text"
+                    readOnly
+                    value={`${alokasiWaktu ? alokasiWaktu.replace(/[^0-9]/g, '') : '2'} JP`}
+                    className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                  />
                 </div>
               </div>
 
@@ -1706,6 +1809,22 @@ export default function SubjectTeacherPanel({
               </div>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* View: Jadwal Mengajar */}
+      {activeSubTab === 'jadwal' && (
+        <div className="w-full text-left">
+          <ScheduleView
+            role="subject_teacher"
+            userTeacherId={currentTeacher.id}
+            userTeacherName={currentTeacher.name}
+            schedules={classSchedules}
+            onRefreshSchedule={onRefresh}
+            availableClasses={Array.from(new Set(students.map(s => s.class))).filter(Boolean).sort()}
+            subjectTeachers={subjectTeachers}
+            homerooms={homerooms}
+          />
         </div>
       )}
 
@@ -4116,10 +4235,10 @@ export default function SubjectTeacherPanel({
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(activeSubTab === 'profile' || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(activeSubTab === 'profile' || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(activeSubTab === 'profile' || activeSubTab === 'jadwal' || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(activeSubTab === 'profile' || activeSubTab === 'jadwal' || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(activeSubTab === 'profile' || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(activeSubTab === 'profile' || activeSubTab === 'jadwal' || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -4155,6 +4274,25 @@ export default function SubjectTeacherPanel({
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveSubTab('jadwal');
+                    setFeedback(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeSubTab === 'jadwal'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓️</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Jadwal Pelajaran</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran &amp; mengajar</p>
+                  </div>
+                </button>
                 <button
                   type="button"
                   onClick={() => {

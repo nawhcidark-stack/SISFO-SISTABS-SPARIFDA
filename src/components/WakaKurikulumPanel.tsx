@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { motion } from 'motion/react';
-import { Student, SubjectTeacher, HomeroomTeacher, MerdekaAssessment, SchoolIdentity } from '../types';
+import { Student, SubjectTeacher, HomeroomTeacher, MerdekaAssessment, SchoolIdentity, ClassSchedule } from '../types';
+import ScheduleView from './ScheduleView';
 import { 
   BookOpen, 
   FileSpreadsheet, 
@@ -17,6 +18,7 @@ import {
   RefreshCw,
   Sparkles,
   ArrowRight,
+  Calendar,
   ShieldCheck,
   Check,
   FileText
@@ -28,6 +30,7 @@ interface WakaKurikulumPanelProps {
   subjectTeachers: SubjectTeacher[];
   homerooms: HomeroomTeacher[];
   merdekaAssessments: MerdekaAssessment[];
+  classSchedules?: ClassSchedule[];
   schoolIdentity?: SchoolIdentity;
   onRefreshData?: () => void;
 }
@@ -37,10 +40,11 @@ export default function WakaKurikulumPanel({
   subjectTeachers,
   homerooms,
   merdekaAssessments,
+  classSchedules = [],
   schoolIdentity,
   onRefreshData
 }: WakaKurikulumPanelProps) {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'import_pts_pas' | 'rekap_nilai' | 'password'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'import_pts_pas' | 'rekap_nilai' | 'password'>('monitoring');
 
   // Filter States
   const [selectedSemester, setSelectedSemester] = useState<string>(
@@ -520,6 +524,18 @@ export default function WakaKurikulumPanel({
         </button>
 
         <button
+          onClick={() => setActiveTab('schedules')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'schedules'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Calendar size={15} />
+          <span>Atur Jadwal Mengajar</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('import_pts_pas')}
           className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'import_pts_pas'
@@ -555,6 +571,18 @@ export default function WakaKurikulumPanel({
           <span>Keamanan Sandi</span>
         </button>
       </div>
+
+      {/* TAB: JADWAL PELAJARAN */}
+      {activeTab === 'schedules' && (
+        <ScheduleView
+          role="waka_kurikulum"
+          schedules={classSchedules}
+          onRefreshSchedule={() => onRefreshData && onRefreshData()}
+          availableClasses={availableClasses}
+          subjectTeachers={subjectTeachers}
+          homerooms={homerooms}
+        />
+      )}
 
       {/* TAB 1: MONITORING PROGRESS */}
       {activeTab === 'monitoring' && (

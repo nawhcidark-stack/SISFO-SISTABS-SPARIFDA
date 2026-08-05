@@ -227,6 +227,22 @@ export interface TreasurerTransaction {
 }
 
 
+export interface ClassSchedule {
+  id: string;
+  day: 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu';
+  className: string;
+  subject: string;
+  teacherId: string;
+  teacherName: string;
+  jamKe: string; // e.g. "1-2", "3-4", "5"
+  startTime?: string; // e.g. "07:00"
+  endTime?: string; // e.g. "08:20"
+  alokasiWaktu?: string; // e.g. "2 JP"
+  academicYear?: string;
+  semester?: string;
+  createdAt?: string;
+}
+
 export interface TeachingJournal {
   id: string;
   teacherId: string;

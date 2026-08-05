@@ -4473,21 +4473,49 @@ async function startServer() {
       return res.status(400).json({ error: "Daftar jadwal yang diimport kosong atau tidak valid." });
     }
 
-    const formattedSchedules: ClassSchedule[] = items.map((item: any, idx: number) => ({
-      id: `sch-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
-      day: item.day || 'Senin',
-      className: (item.className || '').toString().trim().toUpperCase(),
-      subject: (item.subject || 'Mapel').toString().trim(),
-      teacherId: item.teacherId || '',
-      teacherName: (item.teacherName || 'Guru').toString().trim(),
-      jamKe: (item.jamKe || '1-2').toString().trim(),
-      startTime: item.startTime || '',
-      endTime: item.endTime || '',
-      alokasiWaktu: item.alokasiWaktu || '2 JP',
-      academicYear: item.academicYear || '2025/2026',
-      semester: item.semester || 'Genap',
-      createdAt: new Date().toISOString()
-    }));
+    const formattedSchedules: ClassSchedule[] = items.map((item: any, idx: number) => {
+      let resolvedTeacherId = (item.teacherId || item.teacherUsername || '').toString().trim();
+      let resolvedTeacherName = (item.teacherName || 'Guru').toString().trim();
+
+      // If teacherId is empty or doesn't directly match, resolve against server's teacher lists
+      if (!resolvedTeacherId && resolvedTeacherName) {
+        const foundSubjectTeacher = subjectTeachers.find(st =>
+          st.name.trim().toLowerCase() === resolvedTeacherName.toLowerCase() ||
+          st.username?.toLowerCase() === resolvedTeacherName.toLowerCase() ||
+          st.id?.toLowerCase() === resolvedTeacherName.toLowerCase()
+        );
+        if (foundSubjectTeacher) {
+          resolvedTeacherId = foundSubjectTeacher.id || foundSubjectTeacher.username;
+          resolvedTeacherName = foundSubjectTeacher.name;
+        } else {
+          const foundHomeroom = homeroomTeachers.find(hr =>
+            hr.name.trim().toLowerCase() === resolvedTeacherName.toLowerCase() ||
+            hr.username?.toLowerCase() === resolvedTeacherName.toLowerCase() ||
+            hr.id?.toLowerCase() === resolvedTeacherName.toLowerCase()
+          );
+          if (foundHomeroom) {
+            resolvedTeacherId = foundHomeroom.id || foundHomeroom.username;
+            resolvedTeacherName = foundHomeroom.name;
+          }
+        }
+      }
+
+      return {
+        id: `sch-${Date.now()}-${idx}-${Math.random().toString(36).substr(2, 4)}`,
+        day: item.day || 'Senin',
+        className: (item.className || '').toString().trim().toUpperCase(),
+        subject: (item.subject || 'Mapel').toString().trim(),
+        teacherId: resolvedTeacherId,
+        teacherName: resolvedTeacherName,
+        jamKe: (item.jamKe || '1-2').toString().trim(),
+        startTime: item.startTime || '',
+        endTime: item.endTime || '',
+        alokasiWaktu: item.alokasiWaktu || '2 JP',
+        academicYear: item.academicYear || '2025/2026',
+        semester: item.semester || 'Genap',
+        createdAt: new Date().toISOString()
+      };
+    });
 
     if (mode === 'replace') {
       classSchedules.length = 0;

@@ -105,20 +105,34 @@ export default function ScheduleView({
 
   // Combined teacher list (Subject Teachers + Homerooms)
   const allTeachersList = useMemo(() => {
-    const list: { id: string; name: string; roleStr: string; mainSubject: string }[] = [];
-    const seenNames = new Set<string>();
+    const list: { id: string; username: string; name: string; roleStr: string; mainSubject: string }[] = [];
+    const seenKeys = new Set<string>();
 
     subjectTeachers.forEach(st => {
-      if (!seenNames.has(st.name.trim().toLowerCase())) {
-        seenNames.add(st.name.trim().toLowerCase());
-        list.push({ id: st.id, name: st.name, roleStr: 'Guru Mapel', mainSubject: st.subject || 'Mapel' });
+      const key = (st.id || st.username || st.name).trim().toLowerCase();
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        list.push({
+          id: st.id || st.username || `st-${Date.now()}`,
+          username: st.username || st.id || '',
+          name: st.name,
+          roleStr: 'Guru Mapel',
+          mainSubject: st.subject || 'Mapel'
+        });
       }
     });
 
     homerooms.forEach(hr => {
-      if (!seenNames.has(hr.name.trim().toLowerCase())) {
-        seenNames.add(hr.name.trim().toLowerCase());
-        list.push({ id: hr.id, name: hr.name, roleStr: `Wali Kelas ${hr.className}`, mainSubject: 'Tematik/Mapel' });
+      const key = (hr.id || hr.username || hr.name).trim().toLowerCase();
+      if (!seenKeys.has(key)) {
+        seenKeys.add(key);
+        list.push({
+          id: hr.id || hr.username || `hr-${Date.now()}`,
+          username: hr.username || hr.id || '',
+          name: hr.name,
+          roleStr: `Wali Kelas ${hr.className}`,
+          mainSubject: 'Tematik/Mapel'
+        });
       }
     });
 
@@ -126,35 +140,73 @@ export default function ScheduleView({
   }, [subjectTeachers, homerooms]);
 
   // --- TEMPLATE EXCEL / CSV DOWNLOAD & IMPORT HANDLERS ---
-  const SAMPLE_SCHEDULE_ROWS = [
-    ['Hari', 'Kelas', 'Mata Pelajaran', 'Nama Guru', 'Jam Ke', 'Waktu Mulai', 'Waktu Selesai', 'Alokasi JP'],
-    ['Senin', '7-A', 'Matematika', 'Budi Santoso, S.Pd.', '1-2', '07:00', '08:20', '2 JP'],
-    ['Senin', '7-A', 'IPA', 'Siti Aminah, M.Pd.', '3-4', '08:20', '09:40', '2 JP'],
-    ['Selasa', '8-B', 'Bahasa Indonesia', 'Ahmad Dahlan, S.Pd.', '1-2', '07:00', '08:20', '2 JP'],
-    ['Rabu', '9-C', 'Informatika', 'Dedi Kurniawan, S.Kom.', '5-6', '10:00', '11:20', '2 JP'],
-    ['Kamis', '7-B', 'Pendidikan Agama', 'Drs. H. Abdullah', '1-2', '07:00', '08:20', '2 JP'],
-    ['Jumat', '8-A', 'Pendidikan Pancasila', 'NUR AINI, S.Pd.', '1-2', '07:00', '08:20', '2 JP']
-  ];
+  const SAMPLE_SCHEDULE_ROWS = useMemo(() => {
+    const t0 = allTeachersList[0] || { name: 'Budi Santoso, S.Pd.', username: 'budi_santoso', id: 'budi_santoso' };
+    const t1 = allTeachersList[1] || { name: 'Siti Aminah, M.Pd.', username: 'siti_aminah', id: 'siti_aminah' };
+    const t2 = allTeachersList[2] || { name: 'Ahmad Dahlan, S.Pd.', username: 'ahmad_dahlan', id: 'ahmad_dahlan' };
+    const t3 = allTeachersList[3] || { name: 'Dedi Kurniawan, S.Kom.', username: 'dedi_kurniawan', id: 'dedi_kurniawan' };
+    const t4 = allTeachersList[4] || { name: 'Drs. H. Abdullah', username: 'abdullah', id: 'abdullah' };
+    const t5 = allTeachersList[5] || { name: 'NUR AINI, S.Pd.', username: 'nur_aini', id: 'nur_aini' };
+
+    return [
+      ['Hari', 'Kelas', 'Mata Pelajaran', 'Nama Guru', 'ID / Username Guru', 'Jam Ke', 'Waktu Mulai', 'Waktu Selesai', 'Alokasi JP'],
+      ['Senin', '7-A', 'Matematika', t0.name, t0.username || t0.id, '1-2', '07:00', '08:20', '2 JP'],
+      ['Senin', '7-A', 'IPA', t1.name, t1.username || t1.id, '3-4', '08:20', '09:40', '2 JP'],
+      ['Selasa', '8-B', 'Bahasa Indonesia', t2.name, t2.username || t2.id, '1-2', '07:00', '08:20', '2 JP'],
+      ['Rabu', '9-C', 'Informatika', t3.name, t3.username || t3.id, '5-6', '10:00', '11:20', '2 JP'],
+      ['Kamis', '7-B', 'Pendidikan Agama', t4.name, t4.username || t4.id, '1-2', '07:00', '08:20', '2 JP'],
+      ['Jumat', '8-A', 'Pendidikan Pancasila', t5.name, t5.username || t5.id, '1-2', '07:00', '08:20', '2 JP']
+    ];
+  }, [allTeachersList]);
 
   const downloadTemplateExcel = () => {
-    const ws = XLSX.utils.aoa_to_sheet(SAMPLE_SCHEDULE_ROWS);
-    const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+    const wb = XLSX.utils.book_new();
+
+    // Sheet 1: Template Jadwal Pelajaran
+    const wsJadwal = XLSX.utils.aoa_to_sheet(SAMPLE_SCHEDULE_ROWS);
+    const range = XLSX.utils.decode_range(wsJadwal['!ref'] || 'A1:A1');
     for (let R = range.s.r; R <= range.e.r; ++R) {
       for (let C = range.s.c; C <= range.e.c; ++C) {
         const cell_address = XLSX.utils.encode_cell({ r: R, c: C });
-        if (ws[cell_address]) {
-          ws[cell_address].t = 's';
-          ws[cell_address].z = '@';
+        if (wsJadwal[cell_address]) {
+          wsJadwal[cell_address].t = 's';
+          wsJadwal[cell_address].z = '@';
         }
       }
     }
-    const wb = XLSX.utils.book_new();
-    XLSX.utils.book_append_sheet(wb, ws, "Template Jadwal");
+    XLSX.utils.book_append_sheet(wb, wsJadwal, "Template Jadwal");
+
+    // Sheet 2: Reference List of Teachers (Guru & Wali Kelas)
+    const teacherRefRows = [
+      ['No', 'Nama Guru / Wali Kelas', 'ID / Username Guru', 'Peran / Jabatan', 'Mata Pelajaran / Kelas Utama'],
+      ...allTeachersList.map((t, idx) => [
+        idx + 1,
+        t.name,
+        t.username || t.id,
+        t.roleStr,
+        t.mainSubject
+      ])
+    ];
+
+    const wsGuru = XLSX.utils.aoa_to_sheet(teacherRefRows);
+    XLSX.utils.book_append_sheet(wb, wsGuru, "Daftar ID Guru (Referensi)");
+
     XLSX.writeFile(wb, "template_import_jadwal_pelajaran.xlsx");
   };
 
   const downloadTemplateCSV = () => {
-    const csvContent = SAMPLE_SCHEDULE_ROWS.map(e => e.map(cell => `"${(cell || '').replace(/"/g, '""')}"`).join(",")).join("\n");
+    let csvRows = SAMPLE_SCHEDULE_ROWS.map(e => e.map(cell => `"${(cell || '').toString().replace(/"/g, '""')}"`).join(","));
+
+    // Add reference section in CSV
+    csvRows.push("");
+    csvRows.push('"--- DAFTAR REFERENSI ID / USERNAME GURU TERDAFTAR ---"');
+    csvRows.push('"No","Nama Guru / Wali Kelas","ID / Username Guru","Peran","Mapel / Kelas"');
+
+    allTeachersList.forEach((t, idx) => {
+      csvRows.push(`"${idx + 1}","${t.name.replace(/"/g, '""')}","${(t.username || t.id).replace(/"/g, '""')}","${t.roleStr.replace(/"/g, '""')}","${t.mainSubject.replace(/"/g, '""')}"`);
+    });
+
+    const csvContent = csvRows.join("\n");
     const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
@@ -193,7 +245,8 @@ export default function ScheduleView({
         const dayIdx = headers.findIndex((h: string) => h.includes('hari') || h.includes('day'));
         const classIdx = headers.findIndex((h: string) => h.includes('kelas') || h.includes('class'));
         const subjectIdx = headers.findIndex((h: string) => h.includes('mapel') || h.includes('mata pelajaran') || h.includes('subject'));
-        const teacherIdx = headers.findIndex((h: string) => h.includes('guru') || h.includes('teacher'));
+        const teacherNameIdx = headers.findIndex((h: string) => (h.includes('nama guru') || h.includes('guru') || h.includes('teacher')) && !h.includes('id') && !h.includes('username'));
+        const teacherIdIdx = headers.findIndex((h: string) => h.includes('id') || h.includes('username') || h.includes('nip'));
         const jamIdx = headers.findIndex((h: string) => h.includes('jam') || h.includes('slot'));
         const startIdx = headers.findIndex((h: string) => h.includes('mulai') || h.includes('start'));
         const endIdx = headers.findIndex((h: string) => h.includes('selesai') || h.includes('end'));
@@ -207,33 +260,60 @@ export default function ScheduleView({
           const dayVal = (dayIdx !== -1 && row[dayIdx] !== undefined) ? row[dayIdx].toString().trim() : '';
           const classVal = (classIdx !== -1 && row[classIdx] !== undefined) ? row[classIdx].toString().trim().toUpperCase() : '';
           const subjectVal = (subjectIdx !== -1 && row[subjectIdx] !== undefined) ? row[subjectIdx].toString().trim() : '';
-          const teacherVal = (teacherIdx !== -1 && row[teacherIdx] !== undefined) ? row[teacherIdx].toString().trim() : '';
+          
+          let teacherVal = (teacherNameIdx !== -1 && row[teacherNameIdx] !== undefined) ? row[teacherNameIdx].toString().trim() : '';
+          let teacherIdVal = (teacherIdIdx !== -1 && row[teacherIdIdx] !== undefined) ? row[teacherIdIdx].toString().trim() : '';
+
+          // Fallback if header search didn't differentiate
+          if (!teacherVal && teacherNameIdx === -1) {
+            const fallbackTeacherIdx = headers.findIndex((h: string) => h.includes('guru') || h.includes('teacher'));
+            if (fallbackTeacherIdx !== -1 && row[fallbackTeacherIdx] !== undefined) {
+              teacherVal = row[fallbackTeacherIdx].toString().trim();
+            }
+          }
+
           const jamVal = (jamIdx !== -1 && row[jamIdx] !== undefined) ? row[jamIdx].toString().trim() : '1-2';
           const startVal = (startIdx !== -1 && row[startIdx] !== undefined) ? row[startIdx].toString().trim() : '07:00';
           const endVal = (endIdx !== -1 && row[endIdx] !== undefined) ? row[endIdx].toString().trim() : '08:20';
           const alokasiVal = (alokasiIdx !== -1 && row[alokasiIdx] !== undefined) ? row[alokasiIdx].toString().trim() : '2 JP';
 
-          if (!dayVal && !classVal && !subjectVal && !teacherVal) continue;
+          if (!dayVal && !classVal && !subjectVal && !teacherVal && !teacherIdVal) continue;
 
-          const matchedTeacher = allTeachersList.find(
-            t => t.name.trim().toLowerCase() === teacherVal.toLowerCase()
+          // Match teacher by ID / Username or Name
+          let matchedTeacher = allTeachersList.find(t =>
+            teacherIdVal && (
+              t.id.toLowerCase() === teacherIdVal.toLowerCase() ||
+              t.username.toLowerCase() === teacherIdVal.toLowerCase()
+            )
           );
 
-          const isValid = Boolean(dayVal && classVal && subjectVal && teacherVal);
+          if (!matchedTeacher && teacherVal) {
+            matchedTeacher = allTeachersList.find(t =>
+              t.name.trim().toLowerCase() === teacherVal.toLowerCase() ||
+              t.username.toLowerCase() === teacherVal.toLowerCase() ||
+              t.id.toLowerCase() === teacherVal.toLowerCase()
+            );
+          }
+
+          const finalTeacherName = matchedTeacher ? matchedTeacher.name : (teacherVal || 'Guru Pengampu');
+          const finalTeacherId = matchedTeacher ? matchedTeacher.id : (teacherIdVal || teacherVal || '');
+
+          const isValid = Boolean(dayVal && classVal && subjectVal && (teacherVal || teacherIdVal));
 
           parsedRows.push({
             rowNum: i + 1,
             day: dayVal || 'Senin',
             className: classVal || '7-A',
             subject: subjectVal || 'Mapel',
-            teacherName: teacherVal || 'Guru Pengampu',
-            teacherId: matchedTeacher ? matchedTeacher.id : '',
+            teacherName: finalTeacherName,
+            teacherId: finalTeacherId,
+            teacherUsername: matchedTeacher ? matchedTeacher.username : (teacherIdVal || ''),
             jamKe: jamVal,
             startTime: startVal,
             endTime: endVal,
             alokasiWaktu: alokasiVal,
             isValid,
-            validationMsg: isValid ? 'Valid' : 'Hari, Kelas, Mapel, atau Guru wajib diisi'
+            validationMsg: isValid ? 'Valid' : 'Hari, Kelas, Mapel, atau Guru/ID Guru wajib diisi'
           });
         }
 
@@ -1328,16 +1408,20 @@ export default function ScheduleView({
                   <Info size={13} className="text-emerald-600" />
                   Struktur Kolom Wajib pada File Template:
                 </p>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 font-mono text-[10px] text-slate-700 pt-1">
+                <div className="grid grid-cols-2 sm:grid-cols-5 gap-1.5 font-mono text-[10px] text-slate-700 pt-1">
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">1. Hari (Senin-Sabtu)</div>
-                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">2. Kelas (7-A, 8-B, dll)</div>
+                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">2. Kelas (7-A, 8-B)</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">3. Mata Pelajaran</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">4. Nama Guru</div>
-                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">5. Jam Ke (1-2, 3-4, dll)</div>
-                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">6. Waktu Mulai (07:00)</div>
-                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">7. Waktu Selesai (08:20)</div>
-                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">8. Alokasi JP (2 JP)</div>
+                  <div className="bg-emerald-100 text-emerald-900 font-extrabold p-1.5 rounded border border-emerald-300">5. ID / Username Guru ★</div>
+                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">6. Jam Ke (1-2)</div>
+                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">7. Waktu Mulai (07:00)</div>
+                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">8. Waktu Selesai (08:20)</div>
+                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">9. Alokasi JP (2 JP)</div>
                 </div>
+                <p className="text-[10px] text-emerald-800 font-bold italic pt-1">
+                  * Petunjuk: Sheet ke-2 file Excel berisikan daftar seluruh ID / Username Guru & Wali Kelas terdaftar agar form jurnal mengajar otomatis terisi.
+                </p>
               </div>
             </div>
 
@@ -1427,6 +1511,7 @@ export default function ScheduleView({
                         <th className="py-2 px-3">Kelas</th>
                         <th className="py-2 px-3">Mata Pelajaran</th>
                         <th className="py-2 px-3">Nama Guru</th>
+                        <th className="py-2 px-3">ID / Username</th>
                         <th className="py-2 px-3">Jam Ke</th>
                         <th className="py-2 px-3">Waktu</th>
                         <th className="py-2 px-3 text-center">Status</th>
@@ -1440,6 +1525,15 @@ export default function ScheduleView({
                           <td className="py-2 px-3 font-extrabold text-indigo-700">{row.className}</td>
                           <td className="py-2 px-3 font-bold text-slate-800">{row.subject}</td>
                           <td className="py-2 px-3 text-slate-700">{row.teacherName}</td>
+                          <td className="py-2 px-3 font-mono text-[10px]">
+                            {row.teacherUsername || row.teacherId ? (
+                              <span className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 rounded border border-emerald-200 font-bold">
+                                {row.teacherUsername || row.teacherId}
+                              </span>
+                            ) : (
+                              <span className="text-slate-400 italic">Auto-match</span>
+                            )}
+                          </td>
                           <td className="py-2 px-3 font-black text-indigo-600">Jam {row.jamKe}</td>
                           <td className="py-2 px-3 text-slate-500 font-mono text-[10px]">
                             {row.startTime && row.endTime ? `${row.startTime}-${row.endTime}` : row.alokasiWaktu}

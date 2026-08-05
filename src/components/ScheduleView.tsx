@@ -41,7 +41,27 @@ interface ScheduleViewProps {
 }
 
 const DAYS = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'] as const;
-const JAM_SLOTS = ['1-2', '3-4', '5-6', '7-8'];
+
+export function parseJamRange(jamStr: string): [number, number] {
+  if (!jamStr) return [1, 1];
+  const cleaned = String(jamStr).replace(/[^0-9-]/g, '');
+  if (cleaned.includes('-')) {
+    const parts = cleaned.split('-').map(p => parseInt(p, 10)).filter(n => !isNaN(n));
+    if (parts.length >= 2) return [Math.min(parts[0], parts[1]), Math.max(parts[0], parts[1])];
+    if (parts.length === 1) return [parts[0], parts[0]];
+  }
+  const num = parseInt(cleaned, 10);
+  if (!isNaN(num)) return [num, num];
+  return [1, 1];
+}
+
+export function doesJamOverlap(jamA: string, jamB: string): boolean {
+  if (!jamA || !jamB) return false;
+  if (jamA.trim() === jamB.trim()) return true;
+  const [aStart, aEnd] = parseJamRange(jamA);
+  const [bStart, bEnd] = parseJamRange(jamB);
+  return Math.max(aStart, bStart) <= Math.min(aEnd, bEnd);
+}
 
 export default function ScheduleView({
   role,
@@ -75,6 +95,19 @@ export default function ScheduleView({
   const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
+  // Matrix View Column Slot Mode: 'blok' (1-2, 3-4, 5-6, 7-8, 9-10) | 'all_pairs' (1-2, 2-3, 3-4 ... 9-10) | 'single' (1, 2, 3 ... 10)
+  const [matrixJamMode, setMatrixJamMode] = useState<'blok' | 'all_pairs' | 'single'>('blok');
+
+  const activeJamSlots = useMemo(() => {
+    if (matrixJamMode === 'single') {
+      return ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+    }
+    if (matrixJamMode === 'all_pairs') {
+      return ['1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9', '9-10'];
+    }
+    return ['1-2', '3-4', '5-6', '7-8', '9-10'];
+  }, [matrixJamMode]);
+
   // Form Modal States for Waka Kurikulum
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -84,6 +117,7 @@ export default function ScheduleView({
   const [formSubject, setFormSubject] = useState<string>('Matematika');
   const [formTeacher, setFormTeacher] = useState<{ id: string; name: string }>({ id: '', name: '' });
   const [formJamKe, setFormJamKe] = useState<string>('1-2');
+  const [customJamInput, setCustomJamInput] = useState<string>('');
   const [formStartTime, setFormStartTime] = useState<string>('07:00');
   const [formEndTime, setFormEndTime] = useState<string>('08:20');
   const [formAlokasi, setFormAlokasi] = useState<string>('2 JP');
@@ -533,12 +567,60 @@ export default function ScheduleView({
     return schedules;
   }, [schedules, role, userClass, userTeacherId, userTeacherName]);
 
+  const STANDARD_JAM_OPTIONS = [
+    '1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9', '9-10',
+    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
+    '1-3', '2-4', '3-5', '4-6', '5-7', '6-8', '7-9', '8-10', '1-4', '5-8'
+  ];
+
+  const handleJamKePresetChange = (val: string) => {
+    setFormJamKe(val);
+    if (val !== 'custom') {
+      setCustomJamInput('');
+      const [start, end] = parseJamRange(val);
+      const jpCount = Math.max(1, end - start + 1);
+      setFormAlokasi(`${jpCount} JP`);
+
+      const timeMap: Record<string, { start: string; end: string }> = {
+        '1': { start: '07:00', end: '07:40' },
+        '2': { start: '07:40', end: '08:20' },
+        '3': { start: '08:20', end: '09:00' },
+        '4': { start: '09:00', end: '09:40' },
+        '5': { start: '10:00', end: '10:40' },
+        '6': { start: '10:40', end: '11:20' },
+        '7': { start: '11:20', end: '12:00' },
+        '8': { start: '12:40', end: '13:20' },
+        '9': { start: '13:20', end: '14:00' },
+        '10': { start: '14:00', end: '14:40' },
+        '1-2': { start: '07:00', end: '08:20' },
+        '2-3': { start: '07:40', end: '09:00' },
+        '3-4': { start: '08:20', end: '09:40' },
+        '4-5': { start: '09:00', end: '10:40' },
+        '5-6': { start: '10:00', end: '11:20' },
+        '6-7': { start: '10:40', end: '12:00' },
+        '7-8': { start: '11:20', end: '13:20' },
+        '8-9': { start: '12:40', end: '14:00' },
+        '9-10': { start: '13:20', end: '14:40' },
+        '1-3': { start: '07:00', end: '09:00' },
+        '2-4': { start: '07:40', end: '09:40' },
+        '3-5': { start: '08:20', end: '10:40' },
+        '1-4': { start: '07:00', end: '09:40' },
+      };
+
+      if (timeMap[val]) {
+        setFormStartTime(timeMap[val].start);
+        setFormEndTime(timeMap[val].end);
+      }
+    }
+  };
+
   // Open Form modal
   const handleOpenAddModal = (prefillTeacher?: { id: string; name: string; mainSubject?: string }) => {
     setEditingId(null);
     setFormDay('Senin');
     setFormClassName(selectedClass || availableClasses[0] || '7-A');
     setFormJamKe('1-2');
+    setCustomJamInput('');
     setFormStartTime('07:00');
     setFormEndTime('08:20');
     setFormAlokasi('2 JP');
@@ -564,7 +646,15 @@ export default function ScheduleView({
     setFormClassName(sch.className);
     setFormSubject(sch.subject);
     setFormTeacher({ id: sch.teacherId || '', name: sch.teacherName });
-    setFormJamKe(sch.jamKe);
+    
+    if (STANDARD_JAM_OPTIONS.includes(sch.jamKe)) {
+      setFormJamKe(sch.jamKe);
+      setCustomJamInput('');
+    } else {
+      setFormJamKe('custom');
+      setCustomJamInput(sch.jamKe);
+    }
+
     setFormStartTime(sch.startTime || '07:00');
     setFormEndTime(sch.endTime || '08:20');
     setFormAlokasi(sch.alokasiWaktu || '2 JP');
@@ -579,13 +669,15 @@ export default function ScheduleView({
     setFeedback(null);
     setClashError(null);
 
+    const finalJamKe = formJamKe === 'custom' ? (customJamInput.trim() || '1') : formJamKe;
+
     const payload = {
       day: formDay,
       className: formClassName,
       subject: formSubject,
       teacherId: formTeacher.id,
       teacherName: formTeacher.name,
-      jamKe: formJamKe,
+      jamKe: finalJamKe,
       startTime: formStartTime,
       endTime: formEndTime,
       alokasiWaktu: formAlokasi,
@@ -850,27 +942,53 @@ export default function ScheduleView({
                 </p>
               </div>
 
-              {role === 'student' ? (
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-bold text-slate-600">Kelas:</span>
-                  <span className="px-3.5 py-1.5 bg-indigo-100/90 text-indigo-900 border border-indigo-200/90 font-black rounded-xl text-xs">
-                    Kelas {activeClass}
-                  </span>
-                </div>
-              ) : (
-                <div className="flex items-center gap-2">
-                  <label className="text-xs font-bold text-slate-600">Pilih Kelas:</label>
-                  <select
-                    value={selectedClass}
-                    onChange={(e) => setSelectedClass(e.target.value)}
-                    className="bg-indigo-50 border border-indigo-200 text-indigo-900 font-extrabold rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+              <div className="flex flex-wrap items-center gap-2">
+                {role !== 'student' && (
+                  <div className="flex items-center gap-2 mr-2">
+                    <label className="text-xs font-bold text-slate-600">Pilih Kelas:</label>
+                    <select
+                      value={selectedClass}
+                      onChange={(e) => setSelectedClass(e.target.value)}
+                      className="bg-indigo-50 border border-indigo-200 text-indigo-900 font-extrabold rounded-xl px-3.5 py-2 text-xs focus:outline-none focus:ring-2 focus:ring-indigo-400 cursor-pointer"
+                    >
+                      {availableClasses.map(cls => (
+                        <option key={cls} value={cls}>Kelas {cls}</option>
+                      ))}
+                    </select>
+                  </div>
+                )}
+
+                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-[11px] font-bold">
+                  <span className="text-slate-500 px-2 font-semibold">Tampilan Jam:</span>
+                  <button
+                    type="button"
+                    onClick={() => setMatrixJamMode('blok')}
+                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                      matrixJamMode === 'blok' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
                   >
-                    {availableClasses.map(cls => (
-                      <option key={cls} value={cls}>Kelas {cls}</option>
-                    ))}
-                  </select>
+                    Blok (1-2, 3-4...)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatrixJamMode('all_pairs')}
+                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                      matrixJamMode === 'all_pairs' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Pasangan (1-2, 2-3...)
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMatrixJamMode('single')}
+                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
+                      matrixJamMode === 'single' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
+                    }`}
+                  >
+                    Per Jam (1 s.d 10)
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
 
             {/* Matrix Table */}
@@ -878,10 +996,10 @@ export default function ScheduleView({
               <table className="w-full text-xs text-left border-collapse">
                 <thead>
                   <tr className="bg-slate-900 text-white font-extrabold text-center">
-                    <th className="py-3 px-3 border-r border-slate-800 w-28">Hari</th>
-                    {JAM_SLOTS.map(jam => (
-                      <th key={jam} className="py-3 px-3 border-r border-slate-800 min-w-[160px]">
-                        Jam Ke-{jam}
+                    <th className="py-3 px-3 border-r border-slate-800 w-28 shrink-0">Hari</th>
+                    {activeJamSlots.map(jam => (
+                      <th key={jam} className="py-3 px-3 border-r border-slate-800 min-w-[150px]">
+                        Jam {jam.includes('-') ? jam : `Ke-${jam}`}
                       </th>
                     ))}
                   </tr>
@@ -901,52 +1019,55 @@ export default function ScheduleView({
                           </div>
                         </td>
 
-                        {JAM_SLOTS.map(jamSlot => {
-                          // Find matching item for this jamSlot
-                          const matched = dayItems.find(s => s.jamKe === jamSlot || s.jamKe.startsWith(jamSlot.split('-')[0]));
+                        {activeJamSlots.map(jamSlot => {
+                          const matchedList = dayItems.filter(s => doesJamOverlap(s.jamKe, jamSlot));
 
-                        return (
-                          <td key={jamSlot} className="py-3 px-3 border-r border-slate-200 align-top">
-                            {matched ? (
-                              <div className="bg-indigo-50/80 border border-indigo-200/90 rounded-xl p-2.5 space-y-1 relative group hover:shadow-sm transition-all">
-                                <div className="flex items-center justify-between text-[10px]">
-                                  <span className="font-extrabold text-indigo-700 uppercase">
-                                    Jam {matched.jamKe}
-                                  </span>
-                                  {matched.startTime && (
-                                    <span className="text-slate-500 font-bold">{matched.startTime}</span>
-                                  )}
-                                </div>
-                                
-                                <div className="font-black text-xs text-slate-900 leading-tight">
-                                  {matched.subject}
-                                </div>
+                          return (
+                            <td key={jamSlot} className="py-3 px-3 border-r border-slate-200 align-top">
+                              {matchedList.length > 0 ? (
+                                <div className="space-y-2">
+                                  {matchedList.map(matched => (
+                                    <div key={matched.id} className="bg-indigo-50/80 border border-indigo-200/90 rounded-xl p-2.5 space-y-1 relative group hover:shadow-sm transition-all">
+                                      <div className="flex items-center justify-between text-[10px]">
+                                        <span className="font-extrabold text-indigo-700 uppercase">
+                                          Jam {matched.jamKe}
+                                        </span>
+                                        {matched.startTime && (
+                                          <span className="text-slate-500 font-bold">{matched.startTime}</span>
+                                        )}
+                                      </div>
+                                      
+                                      <div className="font-black text-xs text-slate-900 leading-tight">
+                                        {matched.subject}
+                                      </div>
 
-                                <div className="text-[11px] font-semibold text-slate-600 truncate flex items-center gap-1 pt-0.5" title={matched.teacherName}>
-                                  <User size={10} className="text-indigo-500 shrink-0" />
-                                  <span className="truncate">{matched.teacherName}</span>
-                                </div>
+                                      <div className="text-[11px] font-semibold text-slate-600 truncate flex items-center gap-1 pt-0.5" title={matched.teacherName}>
+                                        <User size={10} className="text-indigo-500 shrink-0" />
+                                        <span className="truncate">{matched.teacherName}</span>
+                                      </div>
 
-                                {isEditable && (
-                                  <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 bg-white/90 p-1 rounded-lg border border-slate-200 shadow-sm">
-                                    <button
-                                      onClick={() => handleOpenEditModal(matched)}
-                                      className="p-1 hover:bg-slate-100 rounded text-indigo-600 cursor-pointer"
-                                      title="Edit"
-                                    >
-                                      <Edit3 size={11} />
-                                    </button>
-                                    <button
-                                      onClick={() => handleDeleteSchedule(matched.id)}
-                                      className="p-1 hover:bg-rose-50 rounded text-rose-600 cursor-pointer"
-                                      title="Hapus"
-                                    >
-                                      <Trash2 size={11} />
-                                    </button>
-                                  </div>
-                                )}
-                              </div>
-                            ) : (
+                                      {isEditable && (
+                                        <div className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-all flex items-center gap-1 bg-white/90 p-1 rounded-lg border border-slate-200 shadow-sm">
+                                          <button
+                                            onClick={() => handleOpenEditModal(matched)}
+                                            className="p-1 hover:bg-slate-100 rounded text-indigo-600 cursor-pointer"
+                                            title="Edit"
+                                          >
+                                            <Edit3 size={11} />
+                                          </button>
+                                          <button
+                                            onClick={() => handleDeleteSchedule(matched.id)}
+                                            className="p-1 hover:bg-rose-50 rounded text-rose-600 cursor-pointer"
+                                            title="Hapus"
+                                          >
+                                            <Trash2 size={11} />
+                                          </button>
+                                        </div>
+                                      )}
+                                    </div>
+                                  ))}
+                                </div>
+                              ) : (
                               <div className="h-16 rounded-xl border border-dashed border-slate-200 flex items-center justify-center text-[10px] text-slate-300 font-bold">
                                 kosong
                               </div>
@@ -1396,19 +1517,58 @@ export default function ScheduleView({
                   <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">Jam Ke</label>
                   <select
                     value={formJamKe}
-                    onChange={(e) => setFormJamKe(e.target.value)}
+                    onChange={(e) => handleJamKePresetChange(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-250 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   >
-                    <option value="1-2">Jam 1-2</option>
-                    <option value="3-4">Jam 3-4</option>
-                    <option value="5-6">Jam 5-6</option>
-                    <option value="7-8">Jam 7-8</option>
-                    <option value="1">Jam 1</option>
-                    <option value="2">Jam 2</option>
-                    <option value="3">Jam 3</option>
-                    <option value="4">Jam 4</option>
-                    <option value="5">Jam 5</option>
+                    <optgroup label="-- Pasangan Jam (2 JP) --">
+                      <option value="1-2">Jam 1 - 2</option>
+                      <option value="2-3">Jam 2 - 3</option>
+                      <option value="3-4">Jam 3 - 4</option>
+                      <option value="4-5">Jam 4 - 5</option>
+                      <option value="5-6">Jam 5 - 6</option>
+                      <option value="6-7">Jam 6 - 7</option>
+                      <option value="7-8">Jam 7 - 8</option>
+                      <option value="8-9">Jam 8 - 9</option>
+                      <option value="9-10">Jam 9 - 10</option>
+                    </optgroup>
+                    <optgroup label="-- Jam Satuan (1 JP) --">
+                      <option value="1">Jam Ke-1</option>
+                      <option value="2">Jam Ke-2</option>
+                      <option value="3">Jam Ke-3</option>
+                      <option value="4">Jam Ke-4</option>
+                      <option value="5">Jam Ke-5</option>
+                      <option value="6">Jam Ke-6</option>
+                      <option value="7">Jam Ke-7</option>
+                      <option value="8">Jam Ke-8</option>
+                      <option value="9">Jam Ke-9</option>
+                      <option value="10">Jam Ke-10</option>
+                    </optgroup>
+                    <optgroup label="-- Blok 3 - 4 JP --">
+                      <option value="1-3">Jam 1 - 3 (3 JP)</option>
+                      <option value="2-4">Jam 2 - 4 (3 JP)</option>
+                      <option value="3-5">Jam 3 - 5 (3 JP)</option>
+                      <option value="4-6">Jam 4 - 6 (3 JP)</option>
+                      <option value="5-7">Jam 5 - 7 (3 JP)</option>
+                      <option value="6-8">Jam 6 - 8 (3 JP)</option>
+                      <option value="7-9">Jam 7 - 9 (3 JP)</option>
+                      <option value="8-10">Jam 8 - 10 (3 JP)</option>
+                      <option value="1-4">Jam 1 - 4 (4 JP)</option>
+                      <option value="5-8">Jam 5 - 8 (4 JP)</option>
+                    </optgroup>
+                    <optgroup label="-- Lainnya --">
+                      <option value="custom">Input Manual / Kustom...</option>
+                    </optgroup>
                   </select>
+
+                  {formJamKe === 'custom' && (
+                    <input
+                      type="text"
+                      value={customJamInput}
+                      onChange={(e) => setCustomJamInput(e.target.value)}
+                      placeholder="Contoh: 1-5 atau 2-6..."
+                      className="w-full mt-2 bg-amber-50 border border-amber-300 rounded-xl p-2 text-xs font-bold text-amber-900 focus:outline-none focus:ring-2 focus:ring-amber-400"
+                    />
+                  )}
                 </div>
 
                 <div>

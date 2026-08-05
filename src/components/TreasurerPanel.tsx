@@ -145,6 +145,34 @@ export default function TreasurerPanel({
   const [filterEndDate, setFilterEndDate] = useState('');
   const [isReconciling, setIsReconciling] = useState(false);
   const [reconcileStatus, setReconcileStatus] = useState<{ type: 'success' | 'error', text: string } | null>(null);
+
+  // Auto-Poller Engine stats
+  const [autopollerStats, setAutopollerStats] = useState<{
+    lastRunTime: string;
+    scannedCount: number;
+    reconciledCount: number;
+    expiredCount: number;
+    totalAutoReconciledLifetime: number;
+    lastLog: string[];
+  } | null>(null);
+
+  const fetchAutopollerStats = async () => {
+    try {
+      const res = await fetch('/api/midtrans-autopoller-status');
+      const data = await res.json();
+      if (data.success && data.stats) {
+        setAutopollerStats(data.stats);
+      }
+    } catch (e) {
+      console.error('Failed to fetch autopoller stats:', e);
+    }
+  };
+
+  useEffect(() => {
+    fetchAutopollerStats();
+    const interval = setInterval(fetchAutopollerStats, 15000);
+    return () => clearInterval(interval);
+  }, []);
   
   // Invoice state to print
   const [activePrintTransaction, setActivePrintTransaction] = useState<TreasurerTransaction | null>(null);
@@ -2211,86 +2239,101 @@ export default function TreasurerPanel({
           {/* ================= TAB 2: INLINE BUKU KAS LEDGER ================= */}
           {activeTab === 'kas_ledger' && (
             <>
-              {/* Bulk Reconciliation / Recovery Section */}
-              <div className="bg-gradient-to-r from-indigo-50 to-amber-50/40 p-5 rounded-2xl border border-indigo-150/80 shadow-3xs flex flex-col gap-4">
-                <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+              {/* Auto-Sync Midtrans Status Banner */}
+              <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl border border-indigo-800/50 shadow-md flex flex-col gap-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-indigo-800/40 pb-4">
                   <div className="flex items-start gap-3.5">
-                    <div className="p-2.5 bg-indigo-100 text-indigo-700 rounded-xl border border-indigo-200 shrink-0">
-                      <RefreshCw className={`w-5 h-5 ${isReconciling ? 'animate-spin' : ''}`} />
+                    <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30 shrink-0 mt-0.5">
+                      <RefreshCw className={`w-5 h-5 ${isReconciling ? 'animate-spin text-amber-400' : 'text-emerald-400'}`} />
                     </div>
                     <div>
-                      <h4 className="font-extrabold text-xs text-indigo-950 uppercase tracking-wide">
-                        Lacak &amp; Rekonsiliasi Transaksi Massal (Sejak 15 Juni 2026)
-                      </h4>
-                      <p className="text-slate-600 text-[11px] mt-1 leading-relaxed font-semibold">
-                        Gunakan tombol ini untuk memindai status rill pembayaran iuran SPP dan setoran Tabungan di Midtrans secara otomatis. Berguna untuk mendeteksi dan memulihkan transaksi yang terlewat atau belum lunas di sistem internal sekolah.
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <h4 className="font-black text-xs uppercase tracking-wider text-emerald-400">
+                          Sistem Rekonsiliasi Otomatis Midtrans (Auto-Poller Active)
+                        </h4>
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                          Otomatis Setiap 2 Menit
+                        </span>
+                      </div>
+                      <p className="text-slate-300 text-[11px] mt-1 leading-relaxed font-medium max-w-2xl">
+                        Sistem secara aktif memantau seluruh tagihan (SPP, Tagihan Lain, Tabungan) berstatus pending/unpaid di background. Transaksi terlewat atau webhook yang tertunda akan terverifikasi secara otomatis tanpa perlu tindakan manual.
                       </p>
                     </div>
                   </div>
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 w-full sm:w-auto shrink-0 justify-end">
-                    <form onSubmit={handleVerifySingleOrderId} className="flex items-center gap-1.5 w-full sm:w-auto">
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => handleBulkReconcile(false)}
+                      disabled={isReconciling}
+                      className={`px-4 py-2.5 rounded-xl font-extrabold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-2 shadow-sm ${
+                        isReconciling ? 'bg-indigo-800 text-slate-300 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 shadow-emerald-900/40'
+                      }`}
+                    >
+                      <RefreshCw size={14} className={isReconciling ? 'animate-spin' : ''} />
+                      <span>{isReconciling ? 'Memindai Midtrans...' : 'Jalankan Auto-Rekonsiliasi Sekarang'}</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setIsBulkReportModalOpen(true)}
+                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700 flex items-center gap-1.5"
+                      title="Upload file report CSV/Excel dari Midtrans MAP"
+                    >
+                      <UploadCloud size={14} />
+                      <span>Upload Report CSV</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Engine Live Metrics & Search Box */}
+                <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-center">
+                  <div className="md:col-span-7 grid grid-cols-3 gap-2">
+                    <div className="bg-slate-800/70 border border-slate-700/60 p-2.5 rounded-xl flex flex-col">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Pemindaian Terakhir</span>
+                      <span className="text-xs font-mono font-black text-slate-200 mt-0.5">
+                        {autopollerStats?.lastRunTime 
+                          ? new Date(autopollerStats.lastRunTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB'
+                          : 'Baru saja'}
+                      </span>
+                    </div>
+                    <div className="bg-slate-800/70 border border-slate-700/60 p-2.5 rounded-xl flex flex-col">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Pending Dipindai</span>
+                      <span className="text-xs font-mono font-black text-amber-300 mt-0.5">
+                        {autopollerStats?.scannedCount || 0} Order
+                      </span>
+                    </div>
+                    <div className="bg-slate-800/70 border border-slate-700/60 p-2.5 rounded-xl flex flex-col">
+                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Otomatis Pulih</span>
+                      <span className="text-xs font-mono font-black text-emerald-400 mt-0.5">
+                        {autopollerStats?.totalAutoReconciledLifetime || 0} Transaksi
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="md:col-span-5">
+                    <form onSubmit={handleVerifySingleOrderId} className="flex items-center gap-1.5 w-full">
                       <input
                         type="text"
                         value={manualOrderIdInput}
                         onChange={(e) => setManualOrderIdInput(e.target.value)}
-                        placeholder="Cek Order ID / Ref Midtrans..."
-                        className="px-3 py-2 bg-white border border-indigo-200 rounded-xl text-xs font-semibold text-slate-800 placeholder:text-slate-400 focus:outline-none focus:border-indigo-600 focus:ring-1 focus:ring-indigo-600 w-full sm:w-56"
+                        placeholder="Cari & verifikasi Order ID spesifik..."
+                        className="px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 w-full"
                       />
                       <button
                         type="submit"
                         disabled={isReconciling || !manualOrderIdInput.trim()}
-                        className={`px-3 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1 shrink-0 ${
-                          isReconciling || !manualOrderIdInput.trim() ? 'bg-slate-300 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-xs'
+                        className={`px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1 shrink-0 ${
+                          isReconciling || !manualOrderIdInput.trim() ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'
                         }`}
-                        title="Verifikasi Order ID atau Nomor Referensi secara langsung ke Midtrans API"
                       >
-                        <Search size={12} />
-                        <span>Verifikasi Ref</span>
+                        <Search size={13} />
+                        <span>Cek Ref</span>
                       </button>
                     </form>
-
-                    <div className="flex flex-wrap items-center gap-2">
-                      <button
-                        type="button"
-                        onClick={() => setIsBulkReportModalOpen(true)}
-                        className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-extrabold text-[10px] uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-xs flex items-center justify-center gap-1.5 border border-emerald-500/30"
-                        title="Upload file report CSV/Excel dari Midtrans MAP untuk verifikasi status transaksi massal secara otomatis"
-                      >
-                        <UploadCloud size={13} />
-                        <span>Upload Report Midtrans (Bulk Cek)</span>
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleBulkReconcile(false)}
-                        disabled={isReconciling}
-                        className={`px-3.5 py-2 rounded-xl font-bold text-[10px] uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1.5 ${
-                          isReconciling ? 'bg-slate-400 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-750 shadow-sm shadow-indigo-100'
-                        }`}
-                      >
-                        {isReconciling ? (
-                          <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Mencari...</span>
-                          </>
-                        ) : (
-                          <>
-                            <Search size={12} />
-                            <span>Pindai Massal</span>
-                          </>
-                        )}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => handleBulkReconcile(true)}
-                        disabled={isReconciling}
-                        className="px-3 py-2 bg-slate-850 hover:bg-slate-900 text-white font-black text-[10px] uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700"
-                        title="Paksa verifikasi & pulihkan transaksi simulasi sandbox"
-                      >
-                        Pulihkan
-                      </button>
-                    </div>
                   </div>
                 </div>
+              </div>
 
                 {reconcileStatus && (
                   <div className={`p-3.5 rounded-xl border text-xs flex items-start gap-2.5 shadow-3xs animate-fade-in ${
@@ -2313,7 +2356,6 @@ export default function TreasurerPanel({
                     </div>
                   </div>
                 )}
-              </div>
 
               {/* Ledger Management Spreadsheet / Table list */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-xs mt-6 flex flex-col">

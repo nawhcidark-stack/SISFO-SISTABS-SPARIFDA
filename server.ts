@@ -5063,142 +5063,76 @@ async function startServer() {
     res.json(merged);
   });
 
+  // Auto-Poller Engine Status Endpoint
+  app.get("/api/midtrans-autopoller-status", (req, res) => {
+    res.json({
+      success: true,
+      stats: midtransAutoPollerStats,
+      config: {
+        hasServerKey: !!(midtransConfig.serverKey || "").trim(),
+        isProduction: midtransConfig.isProduction,
+        isDisabled: !!midtransConfig.isDisabled
+      }
+    });
+  });
+
+  // Force Manual Run of Auto-Poller Engine Endpoint
+  app.post("/api/midtrans-autopoller-run", async (req, res) => {
+    try {
+      const result = await runAutomatedMidtransReconciliation();
+      res.json({
+        success: true,
+        ...result,
+        message: result.reconciledCount > 0 
+          ? `Sistem berhasil memverifikasi & merekonsiliasi ${result.reconciledCount} transaksi Midtrans terlewat!` 
+          : `Pindai selesai. Dipindai ${result.scannedCount} order pending. Semua status di database sudah selaras dengan Midtrans.`
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message || String(e) });
+    }
+  });
+
+  // Verify pending orders for a specific student or system-wide
+  app.post("/api/verify-midtrans-pending", async (req, res) => {
+    try {
+      const { studentId } = req.body;
+      const pendingOrdersToVerify: string[] = [];
+
+      if (studentId) {
+        sppBills.filter(b => b.studentId === studentId && (b.status === "pending" || b.status === "unpaid") && b.orderId)
+          .forEach(b => pendingOrdersToVerify.push(b.orderId!));
+        miscBills.filter(b => b.studentId === studentId && b.status !== "paid" && b.orderId)
+          .forEach(b => pendingOrdersToVerify.push(b.orderId!));
+        savingsTransactions.filter(t => t.studentId === studentId && t.status === "pending" && t.orderId)
+          .forEach(t => pendingOrdersToVerify.push(t.orderId!));
+      }
+
+      let updatedCount = 0;
+      for (const orderId of pendingOrdersToVerify) {
+        const result = await processMidtransOrderStatus(orderId);
+        if (result.actionTaken) updatedCount++;
+      }
+
+      res.json({ success: true, updatedCount });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message || String(e) });
+    }
+  });
+
   // Bulk reconciliation for pending/unpaid transactions since June 15, 2026
   app.post("/api/treasurer/reconcile-all", async (req, res) => {
     try {
-      console.log("Starting bulk reconciliation for pending/unpaid transactions since June 15, 2026...");
-      const cutoff = new Date("2026-06-15");
-      let reconciledCount = 0;
-      let scannedCount = 0;
-      const details: string[] = [];
-
-      // 1. Scan pending savings transactions
-      const pendingSavings = savingsTransactions.filter(t => t.status === "pending" && t.orderId && t.orderId.trim() !== "");
-      for (const t of pendingSavings) {
-        scannedCount++;
-        let paidOnMidtrans = false;
-        let pMethod = t.paymentMethod || "Midtrans Snap";
-        let midtransTime = "";
-
-        if (t.orderId) {
-          const status = await getMidtransStatus(t.orderId);
-          if (status && (status.transaction_status === "settlement" || status.transaction_status === "capture")) {
-            paidOnMidtrans = true;
-            if (status.payment_type) {
-              pMethod = `Midtrans (${status.payment_type})`;
-            }
-            midtransTime = status.settlement_time || status.transaction_time || "";
-          }
-        }
-
-        if (paidOnMidtrans || req.body.forceReconcileSimulated) {
-          t.status = "success";
-          t.paymentMethod = pMethod;
-          if (midtransTime) {
-            t.createdAt = parseMidtransTime(midtransTime);
-          }
-          const student = students.find(s => s.id === t.studentId);
-          if (student) {
-            student.savingsBalance += t.amount;
-            details.push(`Tabungan: Rekonsiliasi Sukses untuk ${student.name} sebesar Rp ${t.amount.toLocaleString("id-ID")}`);
-            reconciledCount++;
-          }
-        }
-      }
-
-      // 2. Scan unpaid SPP bills that have a registered orderId
-      const unpaidSppWithOrder = sppBills.filter(b => b.status === "unpaid" && b.orderId && b.orderId.trim() !== "");
-      for (const b of unpaidSppWithOrder) {
-        scannedCount++;
-        let paidOnMidtrans = false;
-        let pMethod = b.paymentMethod || "Midtrans";
-        let midtransTime = "";
-
-        if (b.orderId) {
-          const status = await getMidtransStatus(b.orderId);
-          if (status && (status.transaction_status === "settlement" || status.transaction_status === "capture")) {
-            paidOnMidtrans = true;
-            if (status.payment_type) {
-              pMethod = `Midtrans (${status.payment_type})`;
-            }
-            midtransTime = status.settlement_time || status.transaction_time || "";
-          }
-        }
-
-        if (paidOnMidtrans || req.body.forceReconcileSimulated) {
-          b.status = "paid";
-          b.paidAt = midtransTime ? parseMidtransTime(midtransTime) : (b.paidAt || new Date().toISOString());
-          b.paymentMethod = pMethod;
-          const student = students.find(s => s.id === b.studentId);
-          details.push(`SPP: Rekonsiliasi Sukses untuk ${student?.name || "Siswa"} (Bulan ${b.month} ${b.year})`);
-          reconciledCount++;
-        }
-      }
-
-      // 3. Scan unpaid/pending miscellaneous bills that have a registered orderId
-      const unpaidMiscWithOrder = miscBills.filter(b => b.status !== "paid" && b.orderId && b.orderId.trim() !== "");
-      for (const b of unpaidMiscWithOrder) {
-        scannedCount++;
-        let paidOnMidtrans = false;
-        let pMethod = b.paymentMethod || "Midtrans";
-        let midtransTime = "";
-
-        if (b.orderId) {
-          const status = await getMidtransStatus(b.orderId);
-          if (status && (status.transaction_status === "settlement" || status.transaction_status === "capture")) {
-            paidOnMidtrans = true;
-            if (status.payment_type) {
-              pMethod = `Midtrans (${status.payment_type})`;
-            }
-            midtransTime = status.settlement_time || status.transaction_time || "";
-          }
-        }
-
-        if (paidOnMidtrans || req.body.forceReconcileSimulated) {
-          b.status = "paid";
-          b.paidAt = midtransTime ? parseMidtransTime(midtransTime) : (b.paidAt || new Date().toISOString());
-          b.paymentMethod = pMethod;
-          const student = students.find(s => s.id === b.studentId);
-
-          // Log to Treasurer transaction if not exists to ensure ledger alignment
-          const txExists = treasurerTransactions.some(t => 
-            (t.description && t.description.includes(b.orderId!)) || 
-            (t.createdBy === "Midtrans Webhook" && t.description && t.description.includes(b.title) && t.nis === student?.nis)
-          );
-
-          if (!txExists) {
-            const newTx: TreasurerTransaction = {
-              id: `tx-misc-${Date.now()}-${b.id}`,
-              type: "incoming",
-              category: "Operasional",
-              amount: b.amount,
-              description: `Pembayaran ${b.title} (Midtrans Reconciled) - ${student?.name || ""} (${student?.nis || ""})`,
-              date: midtransTime ? parseMidtransTime(midtransTime).split("T")[0] : new Date().toISOString().split("T")[0],
-              source: "custom",
-              studentName: student?.name,
-              nis: student?.nis,
-              createdBy: "Midtrans Webhook"
-            };
-            // Do not push to treasurerTransactions to avoid double counting under Operasional
-            // treasurerTransactions.push(newTx);
-          }
-
-          details.push(`Lain-lain: Rekonsiliasi Sukses untuk ${student?.name || "Siswa"} (${b.title}) sebesar Rp ${b.amount.toLocaleString("id-ID")}`);
-          reconciledCount++;
-        }
-      }
-
-      if (reconciledCount > 0) {
-        saveState();
-      }
+      console.log("Starting bulk reconciliation for pending/unpaid transactions via Master Engine...");
+      const result = await runAutomatedMidtransReconciliation();
 
       res.json({
         success: true,
-        scannedCount,
-        reconciledCount,
-        details,
-        message: reconciledCount > 0 
-          ? `Berhasil melacak & merekonsiliasi ${reconciledCount} transaksi.` 
+        scannedCount: result.scannedCount,
+        reconciledCount: result.reconciledCount,
+        expiredCount: result.expiredCount,
+        details: result.details,
+        message: result.reconciledCount > 0 
+          ? `Berhasil melacak & merekonsiliasi ${result.reconciledCount} transaksi terlewat.` 
           : "Pindai selesai. Semua transaksi di database sudah sesuai dengan status pembayaran rill di Midtrans."
       });
     } catch (err: any) {
@@ -8115,6 +8049,371 @@ async function startServer() {
     }
     return new Date().toISOString();
   }
+
+  // Midtrans Auto-Poller Engine Statistics State
+  const midtransAutoPollerStats = {
+    lastRunTime: "",
+    scannedCount: 0,
+    reconciledCount: 0,
+    expiredCount: 0,
+    totalAutoReconciledLifetime: 0,
+    lastLog: [] as string[]
+  };
+
+  // Master Midtrans Processor for single order ID
+  async function processMidtransOrderStatus(orderId: string, customMidtransStatus?: any): Promise<{
+    status: "settled" | "expired" | "pending" | "not_found" | "no_change";
+    actionTaken: boolean;
+    detailMessage: string;
+    midtransStatus: any;
+  }> {
+    const cleanOrderId = (orderId || "").trim();
+    if (!cleanOrderId) {
+      return { status: "not_found", actionTaken: false, detailMessage: "Order ID kosong", midtransStatus: null };
+    }
+
+    // 1. Fetch real Midtrans status if not passed
+    let statusData = customMidtransStatus;
+    if (!statusData) {
+      statusData = await getMidtransStatus(cleanOrderId);
+    }
+
+    if (!statusData) {
+      return { status: "not_found", actionTaken: false, detailMessage: `Order ID ${cleanOrderId} tidak ditemukan di Gateway Midtrans`, midtransStatus: null };
+    }
+
+    const ts = statusData.transaction_status || "";
+    const isSettled = ts === "settlement" || ts === "capture";
+    const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
+    const paymentType = statusData.payment_type || "Online Gateway";
+    const actualPaymentType = `Midtrans (${paymentType})`;
+    const midtransTime = statusData.settlement_time || statusData.transaction_time || "";
+    const resolvedPaidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
+
+    let actionTaken = false;
+    let statusResult: "settled" | "expired" | "pending" | "no_change" = isSettled ? "settled" : isExpired ? "expired" : "pending";
+    let detailMessage = "";
+
+    // A. SPP BILLS
+    if (cleanOrderId.startsWith("SPP-")) {
+      const middle = cleanOrderId.slice(4);
+      const lastHyphenIndex = middle.lastIndexOf("-");
+      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+      const cleanBillId = decompressBillIdForMidtrans(billId);
+
+      let bill = sppBills.find(b => b.orderId === cleanOrderId || b.id === cleanBillId || b.id === billId);
+
+      if (!bill) {
+        const monthMap: { [key: string]: string } = {
+          "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
+          "mei": "Mei", "jun": "Juni", "jul": "Juli", "agu": "Agustus",
+          "sep": "September", "okt": "Oktober", "nov": "November", "des": "Desember"
+        };
+        for (const [short, full] of Object.entries(monthMap)) {
+          const searchPattern = `-${short}-`;
+          if (cleanBillId.toLowerCase().includes(searchPattern)) {
+            const index = cleanBillId.toLowerCase().indexOf(searchPattern);
+            const originalPart = cleanBillId.substring(index + 1, index + 1 + short.length);
+            const expandedBillId = cleanBillId.replace(`-${originalPart}-`, `-${full}-`);
+            bill = sppBills.find(b => b.id === expandedBillId);
+            if (bill) break;
+          }
+        }
+      }
+
+      if (bill) {
+        if (isSettled) {
+          if (bill.status !== "paid") {
+            bill.status = "paid";
+            bill.paidAt = resolvedPaidAt;
+            bill.paymentMethod = actualPaymentType;
+            bill.orderId = cleanOrderId;
+            actionTaken = true;
+
+            const student = students.find(s => s.id === bill.studentId);
+            detailMessage = `SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}`;
+
+            const notification: RealtimeNotification = {
+              id: `notif-spp-auto-${Date.now()}`,
+              studentId: bill.studentId,
+              title: "Pembayaran SPP Terverifikasi (Auto-Sync)",
+              message: `Pembayaran SPP ${student?.name || ""} (${bill.month} ${bill.year}) sebesar Rp ${bill.amount.toLocaleString("id-ID")} via ${paymentType} telah LUNAS terverifikasi.`,
+              type: "payment",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+
+            if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
+              const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+                `📢 *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
+                `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${paymentType} telah BERHASIL divalidasi.\n\n` +
+                `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
+                `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+                `• Status: *LUNAS (PAID)*\n\n` +
+                `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+              sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
+            }
+          }
+        } else if (isExpired) {
+          if (bill.status === "pending") {
+            bill.status = "unpaid";
+            actionTaken = true;
+            detailMessage = `SPP ${bill.month} ${bill.year} kedaluwarsa/batal, dikembalikan ke status Belum Bayar.`;
+          }
+        }
+      }
+    }
+
+    // B. MISC BILLS
+    else if (cleanOrderId.startsWith("MISC-")) {
+      const middle = cleanOrderId.slice(5);
+      const lastHyphenIndex = middle.lastIndexOf("-");
+      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+      const cleanBillId = billId.startsWith("M-") ? decompressMiscBillIdForMidtrans(billId) : billId;
+
+      let bill = miscBills.find(b => b.orderId === cleanOrderId || b.id === cleanBillId || b.id === billId);
+      if (bill) {
+        if (isSettled) {
+          if (bill.status !== "paid") {
+            bill.status = "paid";
+            bill.paidAt = resolvedPaidAt;
+            bill.paymentMethod = actualPaymentType;
+            bill.orderId = cleanOrderId;
+            actionTaken = true;
+
+            const student = students.find(s => s.id === bill.studentId);
+            detailMessage = `Tagihan ${bill.title} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}`;
+
+            const notification: RealtimeNotification = {
+              id: `notif-misc-auto-${Date.now()}`,
+              studentId: bill.studentId,
+              title: `Pembayaran ${bill.title} Terverifikasi (Auto-Sync)`,
+              message: `Pembayaran ${bill.title} ${student?.name || ""} sebesar Rp ${bill.amount.toLocaleString("id-ID")} via ${paymentType} telah LUNAS terverifikasi.`,
+              type: "payment",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+
+            if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
+              const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+                `📢 *KUITANSI PEMBAYARAN ONLINE*\n` +
+                `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${paymentType} telah BERHASIL divalidasi.\n\n` +
+                `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
+                `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+                `• Status: *LUNAS (PAID)*\n\n` +
+                `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+              sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
+            }
+          }
+        } else if (isExpired) {
+          if (bill.status === "pending") {
+            bill.status = "unpaid";
+            actionTaken = true;
+            detailMessage = `Tagihan ${bill.title} kedaluwarsa/batal, dikembalikan ke status Belum Bayar.`;
+          }
+        }
+      }
+    }
+
+    // C. CART ORDERS
+    else if (cleanOrderId.startsWith("CART-")) {
+      const matchedSpp = sppBills.filter(b => b.orderId === cleanOrderId);
+      const matchedMisc = miscBills.filter(b => b.orderId === cleanOrderId);
+
+      if (matchedSpp.length > 0 || matchedMisc.length > 0) {
+        if (isSettled) {
+          let countSettled = 0;
+          matchedSpp.forEach(b => {
+            if (b.status !== "paid") {
+              b.status = "paid";
+              b.paidAt = resolvedPaidAt;
+              b.paymentMethod = actualPaymentType;
+              countSettled++;
+            }
+          });
+          matchedMisc.forEach(b => {
+            if (b.status !== "paid") {
+              b.status = "paid";
+              b.paidAt = resolvedPaidAt;
+              b.paymentMethod = actualPaymentType;
+              countSettled++;
+            }
+          });
+
+          if (countSettled > 0) {
+            actionTaken = true;
+            const firstBill = matchedSpp[0] || matchedMisc[0];
+            const student = students.find(s => s.id === firstBill.studentId);
+            detailMessage = `Keranjang ${countSettled} Item (${student?.name || "Siswa"})`;
+
+            const notification: RealtimeNotification = {
+              id: `notif-cart-auto-${Date.now()}`,
+              studentId: firstBill.studentId,
+              title: "Pembayaran Keranjang Terverifikasi (Auto-Sync)",
+              message: `Pembayaran keranjang multi-tagihan (${countSettled} item) ${student?.name || ""} via ${paymentType} telah LUNAS terverifikasi.`,
+              type: "payment",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+          }
+        } else if (isExpired) {
+          matchedSpp.forEach(b => { if (b.status === "pending") b.status = "unpaid"; });
+          matchedMisc.forEach(b => { if (b.status === "pending") b.status = "unpaid"; });
+          actionTaken = true;
+          detailMessage = `Keranjang ${cleanOrderId} kedaluwarsa/batal, item dikembalikan ke status Belum Bayar.`;
+        }
+      }
+    }
+
+    // D. SAVINGS TRANSACTIONS
+    else if (cleanOrderId.startsWith("SAV-")) {
+      let transaction = savingsTransactions.find(t => t.orderId === cleanOrderId);
+      if (!transaction && isSettled) {
+        const parts = cleanOrderId.split("-");
+        if (parts.length >= 2) {
+          const studentId = parts[1];
+          const student = students.find(s => s.id === studentId);
+          if (student) {
+            const recoveredAmount = Number(statusData.gross_amount) || 0;
+            if (recoveredAmount > 0) {
+              transaction = {
+                id: `sav-pay-auto-${Date.now()}`,
+                studentId,
+                type: "deposit",
+                amount: recoveredAmount,
+                status: "pending",
+                createdAt: resolvedPaidAt,
+                orderId: cleanOrderId,
+                paymentMethod: actualPaymentType,
+                notes: "Setoran via Payment Gateway (Auto Recovery)"
+              };
+              savingsTransactions.push(transaction);
+            }
+          }
+        }
+      }
+
+      if (transaction) {
+        if (isSettled && transaction.status === "pending") {
+          transaction.status = "success";
+          transaction.paymentMethod = actualPaymentType;
+          if (midtransTime) transaction.createdAt = resolvedPaidAt;
+
+          const student = students.find(s => s.id === transaction.studentId);
+          if (student) {
+            student.savingsBalance += transaction.amount;
+          }
+          actionTaken = true;
+          detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} - Rp ${transaction.amount.toLocaleString("id-ID")}`;
+
+          const notification: RealtimeNotification = {
+            id: `notif-sav-auto-${Date.now()}`,
+            studentId: transaction.studentId,
+            title: "Setoran Tabungan Lunas (Auto-Sync)",
+            message: `Setoran tabungan e-money sebesar Rp ${transaction.amount.toLocaleString("id-ID")} via ${paymentType} terverifikasi LUNAS. Saldo baru: Rp ${student?.savingsBalance.toLocaleString("id-ID")}.`,
+            type: "success",
+            createdAt: new Date().toISOString()
+          };
+          broadcastNotification(notification);
+        } else if (isExpired && transaction.status === "pending") {
+          transaction.status = "failed";
+          actionTaken = true;
+          detailMessage = `Setoran Tabungan ${cleanOrderId} kedaluwarsa/batal.`;
+        }
+      }
+    }
+
+    if (actionTaken) {
+      saveState();
+    }
+
+    return {
+      status: statusResult,
+      actionTaken,
+      detailMessage,
+      midtransStatus: statusData
+    };
+  }
+
+  // Master Automated Midtrans Reconciliation Scanner
+  async function runAutomatedMidtransReconciliation() {
+    const serverKey = (midtransConfig.serverKey || "").trim();
+    if (!serverKey || midtransConfig.isDisabled) {
+      return { scannedCount: 0, reconciledCount: 0, expiredCount: 0, details: [] };
+    }
+
+    const pendingOrders = new Set<string>();
+
+    // Collect all pending or unpaid orders that have orderIds attached
+    sppBills.forEach(b => {
+      if ((b.status === "pending" || b.status === "unpaid") && b.orderId && b.orderId.trim()) {
+        pendingOrders.add(b.orderId.trim());
+      }
+    });
+
+    miscBills.forEach(b => {
+      if (b.status !== "paid" && b.orderId && b.orderId.trim()) {
+        pendingOrders.add(b.orderId.trim());
+      }
+    });
+
+    savingsTransactions.forEach(t => {
+      if (t.status === "pending" && t.orderId && t.orderId.trim()) {
+        pendingOrders.add(t.orderId.trim());
+      }
+    });
+
+    let scannedCount = 0;
+    let reconciledCount = 0;
+    let expiredCount = 0;
+    const details: string[] = [];
+
+    for (const orderId of Array.from(pendingOrders)) {
+      scannedCount++;
+      try {
+        const res = await processMidtransOrderStatus(orderId);
+        if (res.actionTaken) {
+          if (res.status === "settled") {
+            reconciledCount++;
+            details.push(`[LUNAS] ${res.detailMessage || orderId}`);
+          } else if (res.status === "expired") {
+            expiredCount++;
+            details.push(`[EXPIRED/RESET] ${res.detailMessage || orderId}`);
+          }
+        }
+      } catch (e: any) {
+        console.error(`[MIDTRANS AUTO-SYNC] Error processing ${orderId}:`, e?.message || e);
+      }
+    }
+
+    midtransAutoPollerStats.lastRunTime = new Date().toISOString();
+    midtransAutoPollerStats.scannedCount = scannedCount;
+    midtransAutoPollerStats.reconciledCount = reconciledCount;
+    midtransAutoPollerStats.expiredCount = expiredCount;
+    midtransAutoPollerStats.totalAutoReconciledLifetime += reconciledCount;
+    if (details.length > 0) {
+      midtransAutoPollerStats.lastLog = details;
+    }
+
+    if (reconciledCount > 0 || expiredCount > 0) {
+      console.log(`[MIDTRANS AUTO-POLLER ENGINE] Dipindai: ${scannedCount} pending orders | Rekonsiliasi Sukses: ${reconciledCount} | Expired/Reset: ${expiredCount}`);
+    }
+
+    return { scannedCount, reconciledCount, expiredCount, details };
+  }
+
+  // Background Auto-Poller Engine running every 2 minutes
+  setInterval(() => {
+    runAutomatedMidtransReconciliation().catch(err => {
+      console.error("[MIDTRANS AUTO-POLLER] Unhandled error during auto-poll cycle:", err);
+    });
+  }, 120 * 1000);
+
+  // Initial trigger 10 seconds after server startup
+  setTimeout(() => {
+    console.log("[MIDTRANS AUTO-POLLER ENGINE] Running initial auto-reconciliation scan...");
+    runAutomatedMidtransReconciliation().catch(() => {});
+  }, 10000);
 
   // Client simulated success trigger (Allows direct browser simulation and instant local sync verification)
   app.post("/api/simulate-payment-success", async (req, res) => {

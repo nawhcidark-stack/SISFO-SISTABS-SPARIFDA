@@ -76,6 +76,7 @@ export interface SppBill {
   paidAt?: string;
   paymentMethod?: string;
   orderId?: string;
+  transactionId?: string;
   achievementType?: 'akademik' | 'non-akademik';
   achievementDetail?: string;
 }
@@ -89,6 +90,7 @@ export interface SavingsTransaction {
   createdAt: string;
   paymentMethod?: string;
   orderId?: string;
+  transactionId?: string;
   notes?: string;
 }
 
@@ -102,6 +104,7 @@ export interface MiscBill {
   paidAt?: string;
   paymentMethod?: string;
   orderId?: string;
+  transactionId?: string;
 }
 
 export interface RealtimeNotification {
@@ -224,6 +227,8 @@ export interface TreasurerTransaction {
   paymentMethod?: string;
   kodeRekening?: string;
   noBukti?: string;
+  orderId?: string;
+  transactionId?: string;
 }
 
 

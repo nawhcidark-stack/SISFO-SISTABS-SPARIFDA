@@ -27,6 +27,7 @@ export interface MidtransBulkReportModalProps {
 
 export interface ReconcileResultItem {
   orderId: string;
+  transactionId?: string;
   studentName: string;
   studentNis: string;
   studentClass?: string;
@@ -81,11 +82,13 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       const headers = (dataArray[0] as any[]).map(h => String(h || '').trim().toLowerCase());
       
       let orderIdIdx = headers.findIndex(h => h.includes("order_id") || h.includes("order id") || h.includes("orderid") || h.includes("no. order") || h.includes("ref") || h.includes("no order"));
+      let txIdIdx = headers.findIndex(h => h.includes("transaction_id") || h.includes("transaction id") || h.includes("trans_id") || h.includes("id transaksi") || h.includes("tx id") || h.includes("tx_id"));
       let statusIdx = headers.findIndex(h => h.includes("status") || h.includes("transaction_status") || h.includes("state"));
       let amountIdx = headers.findIndex(h => h.includes("amount") || h.includes("gross") || h.includes("total") || h.includes("nominal") || h.includes("jumlah"));
       let paymentIdx = headers.findIndex(h => h.includes("payment") || h.includes("channel") || h.includes("metode"));
       let timeIdx = headers.findIndex(h => h.includes("time") || h.includes("date") || h.includes("tanggal") || h.includes("waktu") || h.includes("settlement"));
 
+      if (orderIdIdx === -1 && txIdIdx !== -1) orderIdIdx = txIdIdx;
       if (orderIdIdx === -1) orderIdIdx = 0; // fallback first column
 
       const items: any[] = [];
@@ -93,9 +96,11 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
         const row = dataArray[i];
         if (!row || row.length === 0) continue;
         const orderId = String(row[orderIdIdx] || '').trim();
-        if (orderId && orderId.length >= 2 && !orderId.toLowerCase().includes("order_id")) {
+        const transactionId = txIdIdx !== -1 && row[txIdIdx] ? String(row[txIdIdx]).trim() : undefined;
+        if ((orderId && orderId.length >= 2 && !orderId.toLowerCase().includes("order_id")) || transactionId) {
           items.push({
-            orderId,
+            orderId: orderId || transactionId || "",
+            transactionId,
             status: statusIdx !== -1 && row[statusIdx] ? String(row[statusIdx]).trim() : "settlement",
             grossAmount: amountIdx !== -1 && row[amountIdx] ? Number(String(row[amountIdx]).replace(/[^0-9.]/g, '')) || 0 : 0,
             paymentType: paymentIdx !== -1 && row[paymentIdx] ? String(row[paymentIdx]).trim() : "Midtrans Gateway",
@@ -114,21 +119,24 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
         return matchedKey ? obj[matchedKey] : undefined;
       };
 
-      const orderIdVal = findValue(["order_id", "order id", "orderid", "no. order", "ref", "no order", "transaction_id"]) || obj[keys[0]];
+      const orderIdVal = findValue(["order_id", "order id", "orderid", "no. order", "ref", "no order"]) || obj[keys[0]];
+      const txIdVal = findValue(["transaction_id", "transaction id", "trans_id", "id transaksi", "tx_id", "tx id"]);
       const statusVal = findValue(["status", "transaction_status", "state"]) || "settlement";
       const amountVal = findValue(["gross_amount", "amount", "gross", "total", "nominal", "jumlah"]) || 0;
       const paymentVal = findValue(["payment_type", "payment", "channel", "metode"]) || "Midtrans Gateway";
       const timeVal = findValue(["settlement_time", "transaction_time", "time", "date", "tanggal", "waktu"]) || "";
 
       const cleanOrderId = String(orderIdVal || '').trim();
+      const cleanTxId = txIdVal ? String(txIdVal).trim() : undefined;
       return {
-        orderId: cleanOrderId,
+        orderId: cleanOrderId || cleanTxId || '',
+        transactionId: cleanTxId,
         status: String(statusVal || 'settlement').trim(),
         grossAmount: typeof amountVal === 'number' ? amountVal : Number(String(amountVal).replace(/[^0-9.]/g, '')) || 0,
         paymentType: String(paymentVal || 'Midtrans Gateway').trim(),
         transactionTime: String(timeVal || '').trim()
       };
-    }).filter(item => item.orderId && item.orderId.length >= 2 && !item.orderId.toLowerCase().includes("order_id"));
+    }).filter(item => (item.orderId && item.orderId.length >= 2 && !item.orderId.toLowerCase().includes("order_id")) || item.transactionId);
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -268,6 +276,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
     const matchesSearch =
       !query ||
       item.orderId.toLowerCase().includes(query) ||
+      (item.transactionId && item.transactionId.toLowerCase().includes(query)) ||
       item.studentName.toLowerCase().includes(query) ||
       item.studentNis.toLowerCase().includes(query) ||
       item.category.toLowerCase().includes(query) ||
@@ -283,12 +292,13 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
   const handleDownloadCsvResult = () => {
     if (results.length === 0) return;
     const csvRows = [
-      ["Order ID", "Nama Siswa", "NIS", "Kelas", "Kategori/Tagihan", "Nominal (Rp)", "Status Report", "Hasil Rekonsiliasi", "Keterangan"].join(",")
+      ["Order ID", "Transaction ID", "Nama Siswa", "NIS", "Kelas", "Kategori/Tagihan", "Nominal (Rp)", "Status Report", "Hasil Rekonsiliasi", "Keterangan"].join(",")
     ];
 
     results.forEach(item => {
       const row = [
         `"${item.orderId}"`,
+        `"${item.transactionId || ''}"`,
         `"${item.studentName}"`,
         `"${item.studentNis}"`,
         `"${item.studentClass || '-'}"`,
@@ -492,7 +502,12 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                         {parsedRows.slice(0, 50).map((row, idx) => (
                           <tr key={idx} className="hover:bg-slate-50">
                             <td className="px-3.5 py-2 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                            <td className="px-3.5 py-2 font-mono font-bold text-indigo-900">{row.orderId}</td>
+                            <td className="px-3.5 py-2 font-mono text-[11px]">
+                              <span className="font-bold text-indigo-900 block">{row.orderId}</span>
+                              {row.transactionId && (
+                                <span className="text-[10px] text-slate-500 block">TxID: {row.transactionId}</span>
+                              )}
+                            </td>
                             <td className="px-3.5 py-2">
                               <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
                                 (row.status || '').toLowerCase().includes('settlement') || (row.status || '').toLowerCase().includes('capture') || (row.status || '').toLowerCase().includes('lunas')
@@ -687,8 +702,11 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                     ) : (
                       filteredResults.map((item, idx) => (
                         <tr key={idx} className="hover:bg-slate-50 transition-colors">
-                          <td className="px-3.5 py-2.5 font-mono font-bold text-indigo-900 whitespace-nowrap">
-                            {item.orderId}
+                          <td className="px-3.5 py-2.5 font-mono whitespace-nowrap">
+                            <span className="font-bold text-indigo-900 block">{item.orderId}</span>
+                            {item.transactionId && (
+                              <span className="text-[10px] text-slate-500 block">TxID: {item.transactionId}</span>
+                            )}
                           </td>
                           <td className="px-3.5 py-2.5 whitespace-nowrap">
                             <span className="font-extrabold text-slate-900 block">{item.studentName}</span>

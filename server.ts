@@ -8079,7 +8079,7 @@ async function startServer() {
     }
 
     if (!statusData) {
-      return { status: "not_found", actionTaken: false, detailMessage: `Order ID ${cleanOrderId} tidak ditemukan di Gateway Midtrans`, midtransStatus: null };
+      return { status: "not_found", actionTaken: false, detailMessage: `Order ID / Ref ${cleanOrderId} tidak ditemukan di Gateway Midtrans`, midtransStatus: null };
     }
 
     const ts = statusData.transaction_status || "";
@@ -8090,18 +8090,28 @@ async function startServer() {
     const midtransTime = statusData.settlement_time || statusData.transaction_time || "";
     const resolvedPaidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
 
+    const targetOrderId = statusData.order_id || cleanOrderId;
+    const targetTransactionId = statusData.transaction_id || (cleanOrderId !== targetOrderId ? cleanOrderId : "");
+
     let actionTaken = false;
     let statusResult: "settled" | "expired" | "pending" | "no_change" = isSettled ? "settled" : isExpired ? "expired" : "pending";
     let detailMessage = "";
 
     // A. SPP BILLS
-    if (cleanOrderId.startsWith("SPP-")) {
-      const middle = cleanOrderId.slice(4);
+    if (targetOrderId.startsWith("SPP-") || cleanOrderId.startsWith("SPP-")) {
+      const activeOrderId = targetOrderId.startsWith("SPP-") ? targetOrderId : cleanOrderId;
+      const middle = activeOrderId.slice(4);
       const lastHyphenIndex = middle.lastIndexOf("-");
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
       const cleanBillId = decompressBillIdForMidtrans(billId);
 
-      let bill = sppBills.find(b => b.orderId === cleanOrderId || b.id === cleanBillId || b.id === billId);
+      let bill = sppBills.find(b => 
+        b.orderId === activeOrderId || 
+        b.orderId === cleanOrderId || 
+        (targetTransactionId && b.transactionId === targetTransactionId) || 
+        b.id === cleanBillId || 
+        b.id === billId
+      );
 
       if (!bill) {
         const monthMap: { [key: string]: string } = {
@@ -8127,11 +8137,12 @@ async function startServer() {
             bill.status = "paid";
             bill.paidAt = resolvedPaidAt;
             bill.paymentMethod = actualPaymentType;
-            bill.orderId = cleanOrderId;
+            bill.orderId = targetOrderId;
+            if (targetTransactionId) bill.transactionId = targetTransactionId;
             actionTaken = true;
 
             const student = students.find(s => s.id === bill.studentId);
-            detailMessage = `SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}`;
+            detailMessage = `SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
 
             const notification: RealtimeNotification = {
               id: `notif-spp-auto-${Date.now()}`,
@@ -8148,7 +8159,8 @@ async function startServer() {
                 `📢 *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
                 `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${paymentType} telah BERHASIL divalidasi.\n\n` +
                 `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
-                `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+                `• No. Order ID: *${bill.orderId}*\n` +
+                (targetTransactionId ? `• Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
                 `• Status: *LUNAS (PAID)*\n\n` +
                 `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
               sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
@@ -8165,24 +8177,33 @@ async function startServer() {
     }
 
     // B. MISC BILLS
-    else if (cleanOrderId.startsWith("MISC-")) {
-      const middle = cleanOrderId.slice(5);
+    else if (targetOrderId.startsWith("MISC-") || cleanOrderId.startsWith("MISC-")) {
+      const activeOrderId = targetOrderId.startsWith("MISC-") ? targetOrderId : cleanOrderId;
+      const middle = activeOrderId.slice(5);
       const lastHyphenIndex = middle.lastIndexOf("-");
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
       const cleanBillId = billId.startsWith("M-") ? decompressMiscBillIdForMidtrans(billId) : billId;
 
-      let bill = miscBills.find(b => b.orderId === cleanOrderId || b.id === cleanBillId || b.id === billId);
+      let bill = miscBills.find(b => 
+        b.orderId === activeOrderId || 
+        b.orderId === cleanOrderId || 
+        (targetTransactionId && b.transactionId === targetTransactionId) || 
+        b.id === cleanBillId || 
+        b.id === billId
+      );
+
       if (bill) {
         if (isSettled) {
           if (bill.status !== "paid") {
             bill.status = "paid";
             bill.paidAt = resolvedPaidAt;
             bill.paymentMethod = actualPaymentType;
-            bill.orderId = cleanOrderId;
+            bill.orderId = targetOrderId;
+            if (targetTransactionId) bill.transactionId = targetTransactionId;
             actionTaken = true;
 
             const student = students.find(s => s.id === bill.studentId);
-            detailMessage = `Tagihan ${bill.title} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}`;
+            detailMessage = `Tagihan ${bill.title} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
 
             const notification: RealtimeNotification = {
               id: `notif-misc-auto-${Date.now()}`,
@@ -8199,7 +8220,8 @@ async function startServer() {
                 `📢 *KUITANSI PEMBAYARAN ONLINE*\n` +
                 `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${paymentType} telah BERHASIL divalidasi.\n\n` +
                 `• Metode Pembayaran: *${bill.paymentMethod}*\n` +
-                `• No. Transaksi (OrderId): *${bill.orderId}*\n` +
+                `• No. Order ID: *${bill.orderId}*\n` +
+                (targetTransactionId ? `• Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
                 `• Status: *LUNAS (PAID)*\n\n` +
                 `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
               sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
@@ -8216,9 +8238,10 @@ async function startServer() {
     }
 
     // C. CART ORDERS
-    else if (cleanOrderId.startsWith("CART-")) {
-      const matchedSpp = sppBills.filter(b => b.orderId === cleanOrderId);
-      const matchedMisc = miscBills.filter(b => b.orderId === cleanOrderId);
+    else if (targetOrderId.startsWith("CART-") || cleanOrderId.startsWith("CART-")) {
+      const activeOrderId = targetOrderId.startsWith("CART-") ? targetOrderId : cleanOrderId;
+      const matchedSpp = sppBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId || (targetTransactionId && b.transactionId === targetTransactionId));
+      const matchedMisc = miscBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId || (targetTransactionId && b.transactionId === targetTransactionId));
 
       if (matchedSpp.length > 0 || matchedMisc.length > 0) {
         if (isSettled) {
@@ -8228,6 +8251,8 @@ async function startServer() {
               b.status = "paid";
               b.paidAt = resolvedPaidAt;
               b.paymentMethod = actualPaymentType;
+              b.orderId = targetOrderId;
+              if (targetTransactionId) b.transactionId = targetTransactionId;
               countSettled++;
             }
           });
@@ -8236,6 +8261,8 @@ async function startServer() {
               b.status = "paid";
               b.paidAt = resolvedPaidAt;
               b.paymentMethod = actualPaymentType;
+              b.orderId = targetOrderId;
+              if (targetTransactionId) b.transactionId = targetTransactionId;
               countSettled++;
             }
           });
@@ -8244,7 +8271,7 @@ async function startServer() {
             actionTaken = true;
             const firstBill = matchedSpp[0] || matchedMisc[0];
             const student = students.find(s => s.id === firstBill.studentId);
-            detailMessage = `Keranjang ${countSettled} Item (${student?.name || "Siswa"})`;
+            detailMessage = `Keranjang ${countSettled} Item (${student?.name || "Siswa"})` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
 
             const notification: RealtimeNotification = {
               id: `notif-cart-auto-${Date.now()}`,
@@ -8260,16 +8287,17 @@ async function startServer() {
           matchedSpp.forEach(b => { if (b.status === "pending") b.status = "unpaid"; });
           matchedMisc.forEach(b => { if (b.status === "pending") b.status = "unpaid"; });
           actionTaken = true;
-          detailMessage = `Keranjang ${cleanOrderId} kedaluwarsa/batal, item dikembalikan ke status Belum Bayar.`;
+          detailMessage = `Keranjang ${activeOrderId} kedaluwarsa/batal, item dikembalikan ke status Belum Bayar.`;
         }
       }
     }
 
     // D. SAVINGS TRANSACTIONS
-    else if (cleanOrderId.startsWith("SAV-")) {
-      let transaction = savingsTransactions.find(t => t.orderId === cleanOrderId);
+    else if (targetOrderId.startsWith("SAV-") || cleanOrderId.startsWith("SAV-")) {
+      const activeOrderId = targetOrderId.startsWith("SAV-") ? targetOrderId : cleanOrderId;
+      let transaction = savingsTransactions.find(t => t.orderId === activeOrderId || t.orderId === cleanOrderId || (targetTransactionId && t.transactionId === targetTransactionId));
       if (!transaction && isSettled) {
-        const parts = cleanOrderId.split("-");
+        const parts = activeOrderId.split("-");
         if (parts.length >= 2) {
           const studentId = parts[1];
           const student = students.find(s => s.id === studentId);
@@ -8283,7 +8311,8 @@ async function startServer() {
                 amount: recoveredAmount,
                 status: "pending",
                 createdAt: resolvedPaidAt,
-                orderId: cleanOrderId,
+                orderId: targetOrderId,
+                transactionId: targetTransactionId || undefined,
                 paymentMethod: actualPaymentType,
                 notes: "Setoran via Payment Gateway (Auto Recovery)"
               };
@@ -8297,6 +8326,8 @@ async function startServer() {
         if (isSettled && transaction.status === "pending") {
           transaction.status = "success";
           transaction.paymentMethod = actualPaymentType;
+          transaction.orderId = targetOrderId;
+          if (targetTransactionId) transaction.transactionId = targetTransactionId;
           if (midtransTime) transaction.createdAt = resolvedPaidAt;
 
           const student = students.find(s => s.id === transaction.studentId);
@@ -8304,7 +8335,7 @@ async function startServer() {
             student.savingsBalance += transaction.amount;
           }
           actionTaken = true;
-          detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} - Rp ${transaction.amount.toLocaleString("id-ID")}`;
+          detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} - Rp ${transaction.amount.toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
 
           const notification: RealtimeNotification = {
             id: `notif-sav-auto-${Date.now()}`,
@@ -8318,7 +8349,7 @@ async function startServer() {
         } else if (isExpired && transaction.status === "pending") {
           transaction.status = "failed";
           actionTaken = true;
-          detailMessage = `Setoran Tabungan ${cleanOrderId} kedaluwarsa/batal.`;
+          detailMessage = `Setoran Tabungan ${activeOrderId} kedaluwarsa/batal.`;
         }
       }
     }
@@ -9299,6 +9330,7 @@ async function startServer() {
       const { items, rawContent } = req.body;
       let parsedItems: Array<{
         orderId: string;
+        transactionId?: string;
         status?: string;
         grossAmount?: number | string;
         paymentType?: string;
@@ -9306,7 +9338,14 @@ async function startServer() {
       }> = [];
 
       if (Array.isArray(items) && items.length > 0) {
-        parsedItems = items;
+        parsedItems = items.map(it => ({
+          orderId: it.orderId || it.order_id || it["Order ID"] || "",
+          transactionId: it.transactionId || it.transaction_id || it["Transaction ID"] || it.txId || undefined,
+          status: it.status || it.transaction_status || "settlement",
+          grossAmount: it.grossAmount || it.gross_amount || it.amount || 0,
+          paymentType: it.paymentType || it.payment_type || "Midtrans Gateway",
+          transactionTime: it.transactionTime || it.transaction_time || ""
+        }));
       } else if (rawContent && typeof rawContent === "string" && rawContent.trim()) {
         const lines = rawContent.split(/\r?\n/).filter(line => line.trim().length > 0);
         if (lines.length > 0) {
@@ -9314,11 +9353,13 @@ async function startServer() {
           const headers = lines[0].split(delimiter).map(h => h.trim().toLowerCase().replace(/['"]/g, ''));
           
           let orderIdIdx = headers.findIndex(h => h.includes("order_id") || h.includes("order id") || h.includes("orderid") || h.includes("no. order") || h.includes("ref"));
+          let txIdIdx = headers.findIndex(h => h.includes("transaction_id") || h.includes("transaction id") || h.includes("trans_id") || h.includes("id transaksi") || h.includes("tx id") || h.includes("tx_id"));
           let statusIdx = headers.findIndex(h => h.includes("status") || h.includes("transaction_status") || h.includes("state"));
           let amountIdx = headers.findIndex(h => h.includes("amount") || h.includes("gross") || h.includes("total") || h.includes("nominal") || h.includes("jumlah"));
           let paymentIdx = headers.findIndex(h => h.includes("payment") || h.includes("channel") || h.includes("metode"));
           let timeIdx = headers.findIndex(h => h.includes("time") || h.includes("date") || h.includes("tanggal") || h.includes("waktu") || h.includes("settlement"));
 
+          if (orderIdIdx === -1 && txIdIdx !== -1) orderIdIdx = txIdIdx;
           if (orderIdIdx === -1) orderIdIdx = 0;
 
           const startRow = (statusIdx !== -1 || headers.some(h => h.includes("order") || h.includes("status"))) ? 1 : 0;
@@ -9326,9 +9367,11 @@ async function startServer() {
           for (let i = startRow; i < lines.length; i++) {
             const cols = lines[i].split(delimiter).map(c => c.trim().replace(/^['"]|['"]$/g, ''));
             const orderId = cols[orderIdIdx];
+            const transactionId = txIdIdx !== -1 && cols[txIdIdx] ? cols[txIdIdx] : undefined;
             if (orderId && orderId.length > 2 && !orderId.toLowerCase().includes("order_id")) {
               parsedItems.push({
                 orderId,
+                transactionId,
                 status: statusIdx !== -1 && cols[statusIdx] ? cols[statusIdx] : "settlement",
                 grossAmount: amountIdx !== -1 && cols[amountIdx] ? cols[amountIdx] : 0,
                 paymentType: paymentIdx !== -1 && cols[paymentIdx] ? cols[paymentIdx] : "Midtrans Gateway",
@@ -9356,7 +9399,8 @@ async function startServer() {
       for (const item of parsedItems) {
         if (!item.orderId || typeof item.orderId !== "string") continue;
         const cleanOrderId = item.orderId.trim();
-        if (!cleanOrderId) continue;
+        const cleanTxId = (item.transactionId || "").trim();
+        if (!cleanOrderId && !cleanTxId) continue;
 
         const rawStatus = (item.status || "settlement").toString().toLowerCase().trim();
         const isSettled = rawStatus.includes("settlement") || rawStatus.includes("capture") || rawStatus.includes("success") || rawStatus.includes("lunas") || rawStatus.includes("paid") || rawStatus.includes("settled");
@@ -9369,6 +9413,7 @@ async function startServer() {
             pendingCount++;
             results.push({
               orderId: cleanOrderId,
+              transactionId: cleanTxId,
               studentName: "-",
               studentNis: "-",
               category: "Transaksi Online",
@@ -9383,6 +9428,7 @@ async function startServer() {
             failedCount++;
             results.push({
               orderId: cleanOrderId,
+              transactionId: cleanTxId,
               studentName: "-",
               studentNis: "-",
               category: "Transaksi Online",
@@ -9398,7 +9444,7 @@ async function startServer() {
         }
 
         // Search SPP Bill
-        let sppBill = sppBills.find(b => b.orderId === cleanOrderId);
+        let sppBill = sppBills.find(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId) || b.transactionId === cleanOrderId);
         if (!sppBill && cleanOrderId.startsWith("SPP-")) {
           const middle = cleanOrderId.slice(4);
           const lastHyphenIndex = middle.lastIndexOf("-");
@@ -9412,7 +9458,8 @@ async function startServer() {
           if (sppBill.status === "paid") {
             alreadyPaidCount++;
             results.push({
-              orderId: cleanOrderId,
+              orderId: sppBill.orderId || cleanOrderId,
+              transactionId: cleanTxId || sppBill.transactionId,
               studentName: student?.name || "Siswa",
               studentNis: student?.nis || "-",
               studentClass: student?.class || "-",
@@ -9429,6 +9476,7 @@ async function startServer() {
             sppBill.paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
             sppBill.paymentMethod = actualPaymentType;
             sppBill.orderId = cleanOrderId;
+            if (cleanTxId) sppBill.transactionId = cleanTxId;
             reconciledCount++;
             totalAmountReconciled += sppBill.amount;
             stateChanged = true;
@@ -9445,11 +9493,14 @@ async function startServer() {
               paymentMethod: "bank",
               nis: student?.nis,
               studentId: student?.id,
+              orderId: cleanOrderId,
+              transactionId: cleanTxId || sppBill.transactionId,
               createdBy: "Midtrans Bulk Report"
             });
 
             results.push({
-              orderId: cleanOrderId,
+              orderId: sppBill.orderId,
+              transactionId: sppBill.transactionId,
               studentName: student?.name || "Siswa",
               studentNis: student?.nis || "-",
               studentClass: student?.class || "-",
@@ -9466,7 +9517,7 @@ async function startServer() {
         }
 
         // Search Misc Bill
-        let miscBill = miscBills.find(b => b.orderId === cleanOrderId);
+        let miscBill = miscBills.find(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId) || b.transactionId === cleanOrderId);
         if (!miscBill && cleanOrderId.startsWith("MISC-")) {
           const middle = cleanOrderId.slice(5);
           const lastHyphenIndex = middle.lastIndexOf("-");
@@ -9480,7 +9531,8 @@ async function startServer() {
           if (miscBill.status === "paid") {
             alreadyPaidCount++;
             results.push({
-              orderId: cleanOrderId,
+              orderId: miscBill.orderId || cleanOrderId,
+              transactionId: cleanTxId || miscBill.transactionId,
               studentName: student?.name || "Siswa",
               studentNis: student?.nis || "-",
               studentClass: student?.class || "-",
@@ -9497,6 +9549,7 @@ async function startServer() {
             miscBill.paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
             miscBill.paymentMethod = actualPaymentType;
             miscBill.orderId = cleanOrderId;
+            if (cleanTxId) miscBill.transactionId = cleanTxId;
             reconciledCount++;
             totalAmountReconciled += miscBill.amount;
             stateChanged = true;
@@ -9513,11 +9566,14 @@ async function startServer() {
               paymentMethod: "bank",
               nis: student?.nis,
               studentId: student?.id,
+              orderId: cleanOrderId,
+              transactionId: cleanTxId || miscBill.transactionId,
               createdBy: "Midtrans Bulk Report"
             });
 
             results.push({
-              orderId: cleanOrderId,
+              orderId: miscBill.orderId,
+              transactionId: miscBill.transactionId,
               studentName: student?.name || "Siswa",
               studentNis: student?.nis || "-",
               studentClass: student?.class || "-",
@@ -9534,7 +9590,7 @@ async function startServer() {
         }
 
         // Search Savings Transaction
-        let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId);
+        let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId || (cleanTxId && t.transactionId === cleanTxId) || t.transactionId === cleanOrderId);
         if (!savingsTx && cleanOrderId.startsWith("SAV-")) {
           const parts = cleanOrderId.split("-");
           if (parts.length >= 2) {
@@ -9548,7 +9604,8 @@ async function startServer() {
           if (savingsTx.status === "success") {
             alreadyPaidCount++;
             results.push({
-              orderId: cleanOrderId,
+              orderId: savingsTx.orderId || cleanOrderId,
+              transactionId: cleanTxId || savingsTx.transactionId,
               studentName: student?.name || "Siswa",
               studentNis: student?.nis || "-",
               studentClass: student?.class || "-",
@@ -9563,6 +9620,8 @@ async function startServer() {
           } else {
             savingsTx.status = "success";
             savingsTx.paymentMethod = actualPaymentType;
+            savingsTx.orderId = cleanOrderId;
+            if (cleanTxId) savingsTx.transactionId = cleanTxId;
             if (student) {
               student.savingsBalance += savingsTx.amount;
             }
@@ -9571,7 +9630,8 @@ async function startServer() {
             stateChanged = true;
 
             results.push({
-              orderId: cleanOrderId,
+              orderId: savingsTx.orderId,
+              transactionId: savingsTx.transactionId,
               studentName: student?.name || "Siswa",
               studentNis: student?.nis || "-",
               studentClass: student?.class || "-",
@@ -9590,6 +9650,7 @@ async function startServer() {
         notFoundCount++;
         results.push({
           orderId: cleanOrderId,
+          transactionId: cleanTxId,
           studentName: "-",
           studentNis: "-",
           studentClass: "-",
@@ -9599,7 +9660,7 @@ async function startServer() {
           reportPaymentType: actualPaymentType,
           reportTime: item.transactionTime || "-",
           reconciliationStatus: "not_found",
-          message: `REF TIDAK DITEMUKAN: Order ID '${cleanOrderId}' tertera SETTLEMENT di report, tetapi tidak cocok dengan ID/Ref tagihan internal di database.`
+          message: `REF TIDAK DITEMUKAN: Order ID '${cleanOrderId}' ${cleanTxId ? `(TxID: ${cleanTxId})` : ''} tertera SETTLEMENT di report, tetapi tidak cocok dengan ID/Ref tagihan internal di database.`
         });
       }
 

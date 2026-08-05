@@ -217,6 +217,90 @@ export default function ScheduleView({
     document.body.removeChild(link);
   };
 
+  const exportActiveSchedulesExcel = () => {
+    const wb = XLSX.utils.book_new();
+
+    const dataRows = [
+      ['Hari', 'Kelas', 'Mata Pelajaran', 'Nama Guru', 'ID / Username Guru', 'Jam Ke', 'Waktu Mulai', 'Waktu Selesai', 'Alokasi JP'],
+      ...schedules.map(sch => {
+        const teacherObj = allTeachersList.find(t =>
+          (t.id && sch.teacherId && t.id.toLowerCase() === sch.teacherId.toLowerCase()) ||
+          (t.username && sch.teacherId && t.username.toLowerCase() === sch.teacherId.toLowerCase()) ||
+          (t.name && sch.teacherName && t.name.trim().toLowerCase() === sch.teacherName.trim().toLowerCase())
+        );
+        const username = teacherObj?.username || teacherObj?.id || sch.teacherId || '-';
+        return [
+          sch.day,
+          sch.className,
+          sch.subject,
+          sch.teacherName,
+          username,
+          sch.jamKe,
+          sch.startTime || '07:00',
+          sch.endTime || '08:20',
+          sch.alokasiWaktu || '2 JP'
+        ];
+      })
+    ];
+
+    const wsJadwal = XLSX.utils.aoa_to_sheet(dataRows);
+    XLSX.utils.book_append_sheet(wb, wsJadwal, "Data Jadwal Pelajaran");
+
+    const teacherRefRows = [
+      ['No', 'Nama Guru / Wali Kelas', 'ID / Username Guru', 'Peran / Jabatan', 'Mata Pelajaran / Kelas Utama'],
+      ...allTeachersList.map((t, idx) => [
+        idx + 1,
+        t.name,
+        t.username || t.id,
+        t.roleStr,
+        t.mainSubject
+      ])
+    ];
+
+    const wsGuru = XLSX.utils.aoa_to_sheet(teacherRefRows);
+    XLSX.utils.book_append_sheet(wb, wsGuru, "Daftar ID Guru (Referensi)");
+
+    XLSX.writeFile(wb, `export_jadwal_pelajaran_${new Date().toISOString().substring(0, 10)}.xlsx`);
+  };
+
+  const exportActiveSchedulesCSV = () => {
+    let csvRows = [
+      ['Hari', 'Kelas', 'Mata Pelajaran', 'Nama Guru', 'ID / Username Guru', 'Jam Ke', 'Waktu Mulai', 'Waktu Selesai', 'Alokasi JP'].join(",")
+    ];
+
+    schedules.forEach(sch => {
+      const teacherObj = allTeachersList.find(t =>
+        (t.id && sch.teacherId && t.id.toLowerCase() === sch.teacherId.toLowerCase()) ||
+        (t.username && sch.teacherId && t.username.toLowerCase() === sch.teacherId.toLowerCase()) ||
+        (t.name && sch.teacherName && t.name.trim().toLowerCase() === sch.teacherName.trim().toLowerCase())
+      );
+      const username = teacherObj?.username || teacherObj?.id || sch.teacherId || '-';
+
+      const row = [
+        `"${sch.day}"`,
+        `"${sch.className}"`,
+        `"${sch.subject}"`,
+        `"${sch.teacherName.replace(/"/g, '""')}"`,
+        `"${username.replace(/"/g, '""')}"`,
+        `"${sch.jamKe}"`,
+        `"${sch.startTime || '07:00'}"`,
+        `"${sch.endTime || '08:20'}"`,
+        `"${sch.alokasiWaktu || '2 JP'}"`
+      ];
+      csvRows.push(row.join(","));
+    });
+
+    const csvContent = csvRows.join("\n");
+    const blob = new Blob(["\ufeff" + csvContent], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `export_jadwal_pelajaran_${new Date().toISOString().substring(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -1072,6 +1156,24 @@ export default function ScheduleView({
 
             <div className="flex items-center gap-2 flex-wrap self-start sm:self-center">
               <button
+                onClick={exportActiveSchedulesExcel}
+                className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Export Jadwal ke File Excel (.xlsx)"
+              >
+                <Download size={14} />
+                <span>Export Excel</span>
+              </button>
+
+              <button
+                onClick={exportActiveSchedulesCSV}
+                className="px-3.5 py-2 bg-slate-700 hover:bg-slate-600 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                title="Export Jadwal ke File CSV (.csv)"
+              >
+                <FileText size={14} />
+                <span>Export CSV</span>
+              </button>
+
+              <button
                 onClick={() => {
                   setIsImportModalOpen(true);
                   setImportError(null);
@@ -1101,6 +1203,7 @@ export default function ScheduleView({
                   <th className="py-3 px-4">Kelas</th>
                   <th className="py-3 px-4">Mata Pelajaran</th>
                   <th className="py-3 px-4">Guru Pengampu</th>
+                  <th className="py-3 px-4">ID / Username Guru</th>
                   <th className="py-3 px-4">Jam Ke</th>
                   <th className="py-3 px-4">Waktu / JP</th>
                   <th className="py-3 px-4 text-center">Aksi</th>
@@ -1109,39 +1212,55 @@ export default function ScheduleView({
               <tbody className="divide-y divide-slate-200 font-medium">
                 {schedules.length === 0 ? (
                   <tr>
-                    <td colSpan={7} className="text-center py-8 text-slate-400 italic">Belum ada data jadwal pelajaran yang tersimpan.</td>
+                    <td colSpan={8} className="text-center py-8 text-slate-400 italic">Belum ada data jadwal pelajaran yang tersimpan.</td>
                   </tr>
                 ) : (
-                  schedules.map((sch, idx) => (
-                    <tr key={sch.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
-                      <td className="py-3 px-4 font-bold text-slate-900">{sch.day}</td>
-                      <td className="py-3 px-4 font-extrabold text-indigo-700 bg-indigo-50/40">{sch.className}</td>
-                      <td className="py-3 px-4 font-extrabold text-slate-800">{sch.subject}</td>
-                      <td className="py-3 px-4 text-slate-700">{sch.teacherName}</td>
-                      <td className="py-3 px-4 font-black text-indigo-600">Jam {sch.jamKe}</td>
-                      <td className="py-3 px-4 text-slate-500">
-                        {sch.startTime && sch.endTime ? `${sch.startTime} - ${sch.endTime}` : sch.alokasiWaktu || '2 JP'}
-                      </td>
-                      <td className="py-3 px-4 text-center">
-                        <div className="flex items-center justify-center gap-1">
-                          <button
-                            onClick={() => handleOpenEditModal(sch)}
-                            className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-all cursor-pointer"
-                            title="Edit"
-                          >
-                            <Edit3 size={13} />
-                          </button>
-                          <button
-                            onClick={() => handleDeleteSchedule(sch.id)}
-                            className="p-1.5 bg-slate-100 hover:bg-rose-50 text-rose-600 rounded-lg transition-all cursor-pointer"
-                            title="Hapus"
-                          >
-                            <Trash2 size={13} />
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))
+                  schedules.map((sch, idx) => {
+                    const teacherObj = allTeachersList.find(t =>
+                      (t.id && sch.teacherId && t.id.toLowerCase() === sch.teacherId.toLowerCase()) ||
+                      (t.username && sch.teacherId && t.username.toLowerCase() === sch.teacherId.toLowerCase()) ||
+                      (t.name && sch.teacherName && t.name.trim().toLowerCase() === sch.teacherName.trim().toLowerCase())
+                    );
+                    const teacherUsername = teacherObj?.username || teacherObj?.id || sch.teacherId || '-';
+
+                    return (
+                      <tr key={sch.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                        <td className="py-3 px-4 font-bold text-slate-900">{sch.day}</td>
+                        <td className="py-3 px-4 font-extrabold text-indigo-700 bg-indigo-50/40">{sch.className}</td>
+                        <td className="py-3 px-4 font-extrabold text-slate-800">{sch.subject}</td>
+                        <td className="py-3 px-4 text-slate-700">
+                          <span className="font-bold text-slate-900">{sch.teacherName}</span>
+                        </td>
+                        <td className="py-3 px-4 font-mono text-[11px]">
+                          <span className="bg-emerald-50 text-emerald-800 border border-emerald-200 px-2 py-0.5 rounded font-extrabold inline-block">
+                            {teacherUsername}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-black text-indigo-600">Jam {sch.jamKe}</td>
+                        <td className="py-3 px-4 text-slate-500">
+                          {sch.startTime && sch.endTime ? `${sch.startTime} - ${sch.endTime}` : sch.alokasiWaktu || '2 JP'}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1">
+                            <button
+                              onClick={() => handleOpenEditModal(sch)}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 text-indigo-600 rounded-lg transition-all cursor-pointer"
+                              title="Edit"
+                            >
+                              <Edit3 size={13} />
+                            </button>
+                            <button
+                              onClick={() => handleDeleteSchedule(sch.id)}
+                              className="p-1.5 bg-slate-100 hover:bg-rose-50 text-rose-600 rounded-lg transition-all cursor-pointer"
+                              title="Hapus"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })
                 )}
               </tbody>
             </table>

@@ -941,14 +941,14 @@ async function syncWithFirestore(forcePush: boolean = false) {
       const loadedSav = await mongoDb.collection("savingsTransactions").find({}).toArray();
       const savMap = new Map<string, SavingsTransaction>();
       savingsTransactions.forEach(t => {
-        if (t.studentId !== "std-1780505669251-82-27gx" && String(t.studentNis || "").trim() !== "13139") {
+        if (t.studentId !== "std-1780505669251-82-27gx" && String((t as any).studentNis || "").trim() !== "13139") {
           savMap.set(t.id, t);
         }
       });
       loadedSav.forEach((d: any) => {
         const { _id, ...rest } = d;
         const t = rest as SavingsTransaction;
-        if (t.studentId !== "std-1780505669251-82-27gx" && String(t.studentNis || "").trim() !== "13139") {
+        if (t.studentId !== "std-1780505669251-82-27gx" && String((t as any).studentNis || "").trim() !== "13139") {
           savMap.set(t.id, t);
         } else {
           mongoDb.collection("savingsTransactions").deleteOne({ _id: d._id }).catch(() => {});
@@ -1134,23 +1134,9 @@ async function syncWithFirestore(forcePush: boolean = false) {
       dbSyncError = null;
       isInitialSyncCompleted = true;
       console.log("Connected successfully. State has been loaded from MongoDB.");
-
-      // Sync all existing SPP bills with current class configurations to fix historical discrepancies
-      let syncedCount = 0;
-      sppBills.forEach(bill => {
-        const student = students.find(s => s.id === bill.studentId);
-        if (student) {
-          const expected = getSppAmountForClass(student.class);
-          if (bill.amount !== expected) {
-            bill.amount = expected;
-            syncedCount++;
-          }
-        }
-      });
-      if (syncedCount > 0) {
-        console.log(`[BOOT] Automatically synchronized ${syncedCount} SPP bills to correct configured rate.`);
-        saveState();
-      }
+      
+      // Save loaded MongoDB state to local data_store.json file as well
+      saveState();
     } else {
       console.log("No remote database documents. Performing initial MongoDB seeding...");
       dbSyncStatus = "Syncing (Uploading Seed)";
@@ -6815,7 +6801,7 @@ async function startServer() {
     let removedCount = 0;
     for (let i = savingsTransactions.length - 1; i >= 0; i--) {
       const tx = savingsTransactions[i];
-      if (tx.studentId === sId || (tx.studentNis && String(tx.studentNis).trim() === sNis)) {
+      if (tx.studentId === sId || ((tx as any).studentNis && String((tx as any).studentNis).trim() === sNis)) {
         savingsTransactions.splice(i, 1);
         removedCount++;
       }
@@ -8298,6 +8284,64 @@ async function startServer() {
       const matchedSpp = sppBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId || (targetTransactionId && b.transactionId === targetTransactionId));
       const matchedMisc = miscBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId || (targetTransactionId && b.transactionId === targetTransactionId));
 
+      if (matchedSpp.length === 0 && matchedMisc.length === 0) {
+        // CART Recovery Mechanism: Parse student short ID from order ID and match candidate bills
+        const parts = activeOrderId.split("-");
+        const shortStudentId = parts.slice(1, -1).join("-");
+        const candidateStudents = students.filter(s => s.id.includes(shortStudentId) || s.id.replace("student-", "S").substring(0, 10) === shortStudentId);
+        
+        let student = candidateStudents[0];
+
+        // Refine student selection using Midtrans customer details
+        const custDetails = statusData.customer_details || {};
+        const custEmail = (custDetails.email || "").toLowerCase();
+        const custPhone = (custDetails.phone || custDetails.mobile_number || "").replace(/\D/g, "");
+        const custName = (custDetails.first_name || custDetails.name || "").toLowerCase();
+
+        if (custEmail && custEmail.includes("@")) {
+          const emailNis = custEmail.split("@")[0].trim();
+          const matchByNis = students.find(s => String(s.nis).trim() === emailNis);
+          if (matchByNis) student = matchByNis;
+        }
+        if (custPhone) {
+          const matchByPhone = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(custPhone));
+          if (matchByPhone) student = matchByPhone;
+        }
+        if (custName) {
+          const matchByName = students.find(s => s.name.toLowerCase().includes(custName) || custName.includes(s.name.toLowerCase()));
+          if (matchByName) student = matchByName;
+        }
+
+        if (student) {
+          let candidateBills = [
+            ...sppBills.filter(b => b.studentId === student.id && b.status === "pending"),
+            ...miscBills.filter(b => b.studentId === student.id && b.status === "pending")
+          ];
+          
+          if (candidateBills.length === 0) {
+            candidateBills = [
+              ...sppBills.filter(b => b.studentId === student.id && b.status === "unpaid"),
+              ...miscBills.filter(b => b.studentId === student.id && b.status === "unpaid")
+            ];
+          }
+
+          const targetAmount = Number(statusData.gross_amount) || 0;
+          let currentSum = 0;
+          for (const b of candidateBills) {
+            if (currentSum + b.amount <= targetAmount) {
+              currentSum += b.amount;
+              if ('month' in b) {
+                matchedSpp.push(b as any);
+              } else {
+                matchedMisc.push(b as any);
+              }
+            }
+            if (currentSum === targetAmount) break;
+          }
+          console.log(`[MASTER RECONCIL CART RECOVERY] Recovered student: ${student.name}, matched ${matchedSpp.length} SPP and ${matchedMisc.length} Misc bills for total Rp ${currentSum} / Rp ${targetAmount}`);
+        }
+      }
+
       if (matchedSpp.length > 0 || matchedMisc.length > 0) {
         if (isSettled) {
           let countSettled = 0;
@@ -9270,108 +9314,17 @@ async function startServer() {
     const midtransTime = midtransStatus.settlement_time || midtransStatus.transaction_time || "";
 
     try {
-      // Search SPP
-      let sppBill = sppBills.find(b => b.orderId === cleanOrderId);
-      if (!sppBill && cleanOrderId.startsWith("SPP-")) {
-        const middle = cleanOrderId.slice(4);
-        const lastHyphenIndex = middle.lastIndexOf("-");
-        const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-        const cleanBillId = decompressBillIdForMidtrans(billId);
-        sppBill = sppBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
-      }
-
-      if (sppBill) {
-        sppBill.status = "paid";
-        sppBill.paidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
-        sppBill.paymentMethod = actualPaymentType;
-        sppBill.orderId = cleanOrderId;
+      const reconResult = await processMidtransOrderStatus(cleanOrderId, midtransStatus);
+      if (reconResult.actionTaken) {
         saveState();
-
-        const student = students.find(s => s.id === sppBill.studentId);
-        return res.json({
-          success: true,
-          type: "spp",
-          message: `BERHASIL! Pembayaran SPP Bulan ${sppBill.month} ${sppBill.year} a.n. ${student?.name || 'Siswa'} sebesar Rp ${sppBill.amount.toLocaleString("id-ID")} terverifikasi LUNAS via ${actualPaymentType}.`,
-          bill: sppBill,
-          student,
-          midtransStatus
-        });
       }
 
-      // Search Misc
-      let miscBill = miscBills.find(b => b.orderId === cleanOrderId);
-      if (!miscBill && cleanOrderId.startsWith("MISC-")) {
-        const middle = cleanOrderId.slice(5);
-        const lastHyphenIndex = middle.lastIndexOf("-");
-        const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-        const cleanBillId = decompressMiscBillIdForMidtrans(billId);
-        miscBill = miscBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
-      }
-
-      if (miscBill) {
-        miscBill.status = "paid";
-        miscBill.paidAt = midtransTime ? parseMidtransTime(midtransTime) : new Date().toISOString();
-        miscBill.paymentMethod = actualPaymentType;
-        miscBill.orderId = cleanOrderId;
-        saveState();
-
-        const student = students.find(s => s.id === miscBill.studentId);
-        return res.json({
-          success: true,
-          type: "misc",
-          message: `BERHASIL! Pembayaran ${miscBill.title} a.n. ${student?.name || 'Siswa'} sebesar Rp ${miscBill.amount.toLocaleString("id-ID")} terverifikasi LUNAS via ${actualPaymentType}.`,
-          bill: miscBill,
-          student,
-          midtransStatus
-        });
-      }
-
-      // Search Savings
-      let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId);
-      if (!savingsTx && cleanOrderId.startsWith("SAV-")) {
-        const parts = cleanOrderId.split("-");
-        if (parts.length >= 2) {
-          const studentId = parts[1];
-          savingsTx = savingsTransactions.find(t => t.studentId === studentId && t.status === "pending");
-        }
-      }
-
-      if (savingsTx) {
-        if (savingsTx.status === "pending") {
-          savingsTx.status = "success";
-          savingsTx.paymentMethod = actualPaymentType;
-          if (midtransTime) savingsTx.createdAt = parseMidtransTime(midtransTime);
-          const student = students.find(s => s.id === savingsTx.studentId);
-          if (student) {
-            student.savingsBalance += savingsTx.amount;
-          }
-          saveState();
-          return res.json({
-            success: true,
-            type: "savings",
-            message: `BERHASIL! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n. ${student?.name || 'Siswa'} terverifikasi LUNAS dan ditambahkan ke saldo!`,
-            transaction: savingsTx,
-            student,
-            midtransStatus
-          });
-        } else {
-          const student = students.find(s => s.id === savingsTx.studentId);
-          return res.json({
-            success: true,
-            type: "savings",
-            message: `Transaksi tabungan ini sudah tercatat sebelumnya sebagai LUNAS.`,
-            transaction: savingsTx,
-            student,
-            midtransStatus
-          });
-        }
-      }
-
-      res.json({
+      return res.json({
         success: true,
-        type: "midtrans_only",
-        message: `Transaksi LUNAS di Midtrans (${actualPaymentType}) sebesar Rp ${grossAmount.toLocaleString("id-ID")}. Status: ${ts.toUpperCase()}.`,
-        midtransStatus
+        type: reconResult.actionTaken ? "reconciled" : "midtrans_only",
+        message: `BERHASIL! ${reconResult.detailMessage || `Transaksi LUNAS di Midtrans (${actualPaymentType}) sebesar Rp ${grossAmount.toLocaleString("id-ID")}.`}`,
+        midtransStatus,
+        reconResult
       });
     } catch (e: any) {
       console.error("Error verifying midtrans order:", e);

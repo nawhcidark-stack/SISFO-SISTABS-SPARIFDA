@@ -940,14 +940,29 @@ async function syncWithFirestore(forcePush: boolean = false) {
       // Load Savings Transactions (Merging unique transactions from local + MongoDB)
       const loadedSav = await mongoDb.collection("savingsTransactions").find({}).toArray();
       const savMap = new Map<string, SavingsTransaction>();
-      savingsTransactions.forEach(t => savMap.set(t.id, t));
+      savingsTransactions.forEach(t => {
+        if (t.studentId !== "std-1780505669251-82-27gx" && String(t.studentNis || "").trim() !== "13139") {
+          savMap.set(t.id, t);
+        }
+      });
       loadedSav.forEach((d: any) => {
         const { _id, ...rest } = d;
         const t = rest as SavingsTransaction;
-        savMap.set(t.id, t);
+        if (t.studentId !== "std-1780505669251-82-27gx" && String(t.studentNis || "").trim() !== "13139") {
+          savMap.set(t.id, t);
+        } else {
+          mongoDb.collection("savingsTransactions").deleteOne({ _id: d._id }).catch(() => {});
+        }
       });
       savingsTransactions.length = 0;
       savingsTransactions.push(...Array.from(savMap.values()));
+
+      // Clean savings balance for student 13139
+      students.forEach(s => {
+        if (String(s.nis).trim() === "13139" || s.id === "std-1780505669251-82-27gx") {
+          s.savingsBalance = 0;
+        }
+      });
 
       // Load Notifications
       const loadedNotif = await mongoDb.collection("realtimeNotifications").find({}).toArray();
@@ -1302,7 +1317,9 @@ function loadState() {
       }
       if (Array.isArray(data.savingsTransactions)) {
         savingsTransactions.length = 0;
-        savingsTransactions.push(...data.savingsTransactions);
+        savingsTransactions.push(...data.savingsTransactions.filter((t: any) => 
+          t.studentId !== "std-1780505669251-82-27gx" && String(t.studentNis || "").trim() !== "13139"
+        ));
       }
       if (Array.isArray(data.notifications)) {
         notifications.length = 0;
@@ -6774,6 +6791,44 @@ async function startServer() {
 
     saveState();
     res.json({ success: true, student, transaction });
+  });
+
+  // Admin Clear All Savings & History for a Student (by NIS or ID)
+  app.post("/api/admin/clear-student-savings", (req, res) => {
+    const { nis, studentId } = req.body;
+    const student = students.find(s => 
+      (studentId && s.id === studentId) || 
+      (nis && String(s.nis).trim() === String(nis).trim())
+    );
+
+    if (!student) {
+      return res.status(404).json({ error: "Siswa tidak ditemukan." });
+    }
+
+    const sId = student.id;
+    const sNis = String(student.nis).trim();
+
+    // Reset savings balance to 0
+    student.savingsBalance = 0;
+
+    // Remove all savings transactions for this student
+    let removedCount = 0;
+    for (let i = savingsTransactions.length - 1; i >= 0; i--) {
+      const tx = savingsTransactions[i];
+      if (tx.studentId === sId || (tx.studentNis && String(tx.studentNis).trim() === sNis)) {
+        savingsTransactions.splice(i, 1);
+        removedCount++;
+      }
+    }
+
+    saveState();
+
+    return res.json({
+      success: true,
+      message: `Saldo tabungan ${student.name} (NIS: ${student.nis}) di-reset ke Rp 0 dan ${removedCount} riwayat transaksi dihapus.`,
+      student,
+      removedCount
+    });
   });
 
   // Admin Bulk Savings Withdrawal per grade level (7,8,9)

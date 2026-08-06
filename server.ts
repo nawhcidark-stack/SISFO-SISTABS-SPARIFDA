@@ -894,7 +894,32 @@ async function syncWithFirestore(forcePush: boolean = false) {
       sppBills.length = 0;
       loadedBills.forEach((d: any) => {
         const { _id, ...rest } = d;
-        sppBills.push(rest as SppBill);
+        const bill = rest as SppBill;
+        // Clean up errant Midtrans payments for Nuzulia (NIS: 12926) caused by past truncation bug
+        if (bill.studentId === "std-1780505669270-200-vw6t" && bill.paymentMethod === "Midtrans (qris)") {
+          bill.status = "unpaid";
+          delete bill.paidAt;
+          delete bill.paymentMethod;
+          delete bill.orderId;
+          delete bill.transactionId;
+          mongoDb.collection("sppBills").updateOne(
+            { id: bill.id },
+            { $set: { status: "unpaid" }, $unset: { paidAt: "", paymentMethod: "", orderId: "", transactionId: "" } }
+          ).catch(() => {});
+        }
+        // Ensure Dwiyanti (NIS: 13040 / ID: std-1780505669248-40-i7sq) Agustus 2026 bill is credited for her Midtrans QRIS payment
+        if (bill.studentId === "std-1780505669248-40-i7sq" && bill.month === "Agustus" && bill.year === 2026 && bill.status !== "paid") {
+          bill.status = "paid";
+          bill.paidAt = "2026-08-06T00:13:59.000Z";
+          bill.paymentMethod = "Midtrans (qris)";
+          bill.orderId = "CART-13040-8402";
+          bill.transactionId = "2e4797b8-90e4-4ce6-97f8-f75f3dc95e7d";
+          mongoDb.collection("sppBills").updateOne(
+            { id: bill.id },
+            { $set: { status: "paid", paidAt: bill.paidAt, paymentMethod: bill.paymentMethod, orderId: bill.orderId, transactionId: bill.transactionId } }
+          ).catch(() => {});
+        }
+        sppBills.push(bill);
       });
 
       // Load Misc Bills (100% Authoritative from MongoDB)
@@ -1259,6 +1284,24 @@ function loadState() {
         });
         sppBills.length = 0;
         sppBills.push(...Array.from(seen.values()));
+
+        // Clean up errant Midtrans payments for Nuzulia (NIS: 12926) caused by past truncation bug
+        sppBills.forEach(b => {
+          if (b.studentId === "std-1780505669270-200-vw6t" && b.paymentMethod === "Midtrans (qris)") {
+            b.status = "unpaid";
+            delete b.paidAt;
+            delete b.paymentMethod;
+            delete b.orderId;
+            delete b.transactionId;
+          }
+          if (b.studentId === "std-1780505669248-40-i7sq" && b.month === "Agustus" && b.year === 2026 && b.status !== "paid") {
+            b.status = "paid";
+            b.paidAt = "2026-08-06T00:13:59.000Z";
+            b.paymentMethod = "Midtrans (qris)";
+            b.orderId = "CART-13040-8402";
+            b.transactionId = "2e4797b8-90e4-4ce6-97f8-f75f3dc95e7d";
+          }
+        });
       }
       if (Array.isArray(data.miscBills)) {
         miscBills.length = 0;

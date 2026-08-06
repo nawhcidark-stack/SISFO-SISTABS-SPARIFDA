@@ -1396,15 +1396,21 @@ export default function SubjectTeacherPanel({
                     <span className="text-red-500 font-bold">*</span>
                   </span>
                   <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <Lock size={10} /> Terkunci (Sesuai Jadwal Waka Kurikulum)
+                    <Sparkles size={10} /> Otomatis (Dapat Diubah)
                   </span>
                 </label>
-                <input
-                  type="text"
-                  readOnly
-                  value={selectedClass ? `Kelas ${selectedClass}` : 'Belum Ada Jadwal Kelas'}
-                  className="px-3.5 py-2.5 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
-                />
+                <select
+                  value={selectedClass}
+                  onChange={(e) => setSelectedClass(e.target.value)}
+                  className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
+                >
+                  {availableClasses.map(c => (
+                    <option key={c} value={c}>Kelas {c}</option>
+                  ))}
+                  {!availableClasses.includes(selectedClass) && selectedClass && (
+                    <option value={selectedClass}>Kelas {selectedClass}</option>
+                  )}
+                </select>
               </div>
 
               {/* Tanggal Pembelajaran */}
@@ -1415,14 +1421,14 @@ export default function SubjectTeacherPanel({
                     <span className="text-red-500 font-bold">*</span>
                   </span>
                   <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                    <Lock size={10} /> Terkunci (Hari Ini)
+                    <Sparkles size={10} /> Otomatis (Dapat Diubah)
                   </span>
                 </label>
                 <input
                   type="date"
-                  readOnly
                   value={selectedDate}
-                  className="px-3.5 py-2.5 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
+                  onChange={(e) => setSelectedDate(e.target.value)}
+                  className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
                 />
               </div>
 
@@ -1431,27 +1437,37 @@ export default function SubjectTeacherPanel({
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-black text-slate-650 flex items-center justify-between">
                     <span>Fase</span>
-                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
                   </label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={`Fase ${fase}`}
-                    className="px-3 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
-                  />
+                  <select
+                    value={fase}
+                    onChange={(e) => setFase(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
+                  >
+                    <option value="A">Fase A</option>
+                    <option value="B">Fase B</option>
+                    <option value="C">Fase C</option>
+                    <option value="D">Fase D</option>
+                    <option value="E">Fase E</option>
+                    <option value="F">Fase F</option>
+                  </select>
                 </div>
 
                 <div className="flex flex-col gap-1.5">
                   <label className="text-xs font-black text-slate-650 flex items-center justify-between">
                     <span>Semester</span>
-                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
                   </label>
-                  <input
-                    type="text"
-                    readOnly
-                    value={`Semester ${semester}`}
-                    className="px-3 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
-                  />
+                  <select
+                    value={semester}
+                    onChange={(e) => setSemester(e.target.value)}
+                    className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-indigo-600 shadow-2xs cursor-pointer"
+                  >
+                    <option value="1">Semester 1 (Ganjil)</option>
+                    <option value="2">Semester 2 (Genap)</option>
+                    <option value="Ganjil">Semester Ganjil</option>
+                    <option value="Genap">Semester Genap</option>
+                  </select>
                 </div>
               </div>
 
@@ -1460,39 +1476,42 @@ export default function SubjectTeacherPanel({
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
                     <span>Pertemuan</span>
-                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
                   </label>
                   <input
                     type="text"
-                    readOnly
-                    value={`Ke-${pertemuanKe || '1'}`}
-                    className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                    value={pertemuanKe}
+                    onChange={(e) => setPertemuanKe(e.target.value)}
+                    placeholder="1"
+                    className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-indigo-600 shadow-2xs"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
                     <span>Jam Ke</span>
-                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
                   </label>
                   <input
                     type="text"
-                    readOnly
-                    value={jamKe ? (jamKe.toLowerCase().includes('jam') ? jamKe : `Jam ${jamKe}`) : 'Jam 1 - 2'}
-                    className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                    value={jamKe}
+                    onChange={(e) => setJamKe(e.target.value)}
+                    placeholder="Jam 1 - 2"
+                    className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-indigo-600 shadow-2xs"
                   />
                 </div>
 
                 <div className="flex flex-col gap-1.5 col-span-1">
                   <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
                     <span>Alokasi</span>
-                    <span className="text-[9px] text-indigo-600 font-bold">Auto</span>
+                    <span className="text-[9px] text-indigo-600 font-bold">Otomatis</span>
                   </label>
                   <input
                     type="text"
-                    readOnly
-                    value={`${alokasiWaktu ? alokasiWaktu.replace(/[^0-9]/g, '') : '2'} JP`}
-                    className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                    value={alokasiWaktu}
+                    onChange={(e) => setAlokasiWaktu(e.target.value)}
+                    placeholder="2"
+                    className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-indigo-600 shadow-2xs"
                   />
                 </div>
               </div>

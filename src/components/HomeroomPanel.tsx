@@ -8508,15 +8508,21 @@ Wassalamualaikum Wr. Wb.
                           <span className="text-red-500 font-bold">*</span>
                         </span>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                          <Lock size={10} /> Terkunci (Sesuai Jadwal Waka Kurikulum)
+                          <Sparkles size={10} /> Otomatis (Dapat Diubah)
                         </span>
                       </label>
-                      <input
-                        type="text"
-                        readOnly
-                        value={journalClassName ? `Kelas ${journalClassName}` : 'Belum Ada Kelas'}
-                        className="px-3.5 py-2.5 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
-                      />
+                      <select
+                        value={journalClassName}
+                        onChange={(e) => setJournalClassName(e.target.value)}
+                        className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
+                      >
+                        {allClassNames.map(c => (
+                          <option key={c} value={c}>Kelas {c}</option>
+                        ))}
+                        {!allClassNames.includes(journalClassName) && journalClassName && (
+                          <option value={journalClassName}>Kelas {journalClassName}</option>
+                        )}
+                      </select>
                     </div>
 
                     {/* Mata Pelajaran / Kegiatan */}
@@ -8527,14 +8533,15 @@ Wassalamualaikum Wr. Wb.
                           <span className="text-red-500 font-bold">*</span>
                         </span>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                          <Lock size={10} /> Terkunci (Sesuai Jadwal Waka Kurikulum)
+                          <Sparkles size={10} /> Otomatis (Dapat Diubah)
                         </span>
                       </label>
                       <input
                         type="text"
-                        readOnly
-                        value={journalSubject || 'Bimbingan Wali Kelas'}
-                        className="px-3.5 py-2.5 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
+                        value={journalSubject}
+                        onChange={(e) => setJournalSubject(e.target.value)}
+                        placeholder="Bimbingan Wali Kelas / Mapel..."
+                        className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs"
                       />
                     </div>
 
@@ -8546,14 +8553,14 @@ Wassalamualaikum Wr. Wb.
                           <span className="text-red-500 font-bold">*</span>
                         </span>
                         <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded-md flex items-center gap-1">
-                          <Lock size={10} /> Terkunci (Hari Ini)
+                          <Sparkles size={10} /> Otomatis (Dapat Diubah)
                         </span>
                       </label>
                       <input
                         type="date"
-                        readOnly
                         value={journalDate}
-                        className="px-3.5 py-2.5 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
+                        onChange={(e) => setJournalDate(e.target.value)}
+                        className="px-3.5 py-2.5 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
                       />
                     </div>
 
@@ -8562,27 +8569,37 @@ Wassalamualaikum Wr. Wb.
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-black text-slate-650 flex items-center justify-between">
                           <span>Fase</span>
-                          <span className="text-[9px] text-emerald-700 font-bold">Auto</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
                         </label>
-                        <input
-                          type="text"
-                          readOnly
-                          value={`Fase ${journalFase}`}
-                          className="px-3 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
-                        />
+                        <select
+                          value={journalFase}
+                          onChange={(e) => setJournalFase(e.target.value)}
+                          className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
+                        >
+                          <option value="A">Fase A</option>
+                          <option value="B">Fase B</option>
+                          <option value="C">Fase C</option>
+                          <option value="D">Fase D</option>
+                          <option value="E">Fase E</option>
+                          <option value="F">Fase F</option>
+                        </select>
                       </div>
 
                       <div className="flex flex-col gap-1.5">
                         <label className="text-xs font-black text-slate-650 flex items-center justify-between">
                           <span>Semester</span>
-                          <span className="text-[9px] text-emerald-700 font-bold">Auto</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
                         </label>
-                        <input
-                          type="text"
-                          readOnly
-                          value={`Semester ${journalSemester}`}
-                          className="px-3 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-extrabold rounded-xl text-xs cursor-not-allowed select-none shadow-2xs"
-                        />
+                        <select
+                          value={journalSemester}
+                          onChange={(e) => setJournalSemester(e.target.value)}
+                          className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
+                        >
+                          <option value="1">Semester 1 (Ganjil)</option>
+                          <option value="2">Semester 2 (Genap)</option>
+                          <option value="Ganjil">Semester Ganjil</option>
+                          <option value="Genap">Semester Genap</option>
+                        </select>
                       </div>
                     </div>
 
@@ -8591,39 +8608,42 @@ Wassalamualaikum Wr. Wb.
                       <div className="flex flex-col gap-1.5 col-span-1">
                         <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
                           <span>Pertemuan</span>
-                          <span className="text-[9px] text-emerald-700 font-bold">Auto</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
                         </label>
                         <input
                           type="text"
-                          readOnly
-                          value={`Ke-${journalPertemuanKe || '1'}`}
-                          className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                          value={journalPertemuanKe}
+                          onChange={(e) => setJournalPertemuanKe(e.target.value)}
+                          placeholder="1"
+                          className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-emerald-600 shadow-2xs"
                         />
                       </div>
 
                       <div className="flex flex-col gap-1.5 col-span-1">
                         <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
                           <span>Jam Ke</span>
-                          <span className="text-[9px] text-emerald-700 font-bold">Auto</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
                         </label>
                         <input
                           type="text"
-                          readOnly
-                          value={journalJamKe ? (journalJamKe.toLowerCase().includes('jam') ? journalJamKe : `Jam ${journalJamKe}`) : 'Jam 1 - 2'}
-                          className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                          value={journalJamKe}
+                          onChange={(e) => setJournalJamKe(e.target.value)}
+                          placeholder="Jam 1 - 2"
+                          className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-emerald-600 shadow-2xs"
                         />
                       </div>
 
                       <div className="flex flex-col gap-1.5 col-span-1">
                         <label className="text-[10px] font-black text-slate-650 flex items-center justify-between">
                           <span>Alokasi</span>
-                          <span className="text-[9px] text-emerald-700 font-bold">Auto</span>
+                          <span className="text-[9px] text-emerald-700 font-bold">Otomatis</span>
                         </label>
                         <input
                           type="text"
-                          readOnly
-                          value={`${journalAlokasiWaktu ? journalAlokasiWaktu.replace(/[^0-9]/g, '') : '2'} JP`}
-                          className="px-2.5 py-2 border border-slate-200 bg-slate-100/90 text-slate-800 font-black rounded-xl text-xs text-center cursor-not-allowed select-none shadow-2xs"
+                          value={journalAlokasiWaktu}
+                          onChange={(e) => setJournalAlokasiWaktu(e.target.value)}
+                          placeholder="2"
+                          className="px-2.5 py-2 border border-slate-200 bg-white text-slate-800 font-black rounded-xl text-xs text-center focus:outline-none focus:border-emerald-600 shadow-2xs"
                         />
                       </div>
                     </div>

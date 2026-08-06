@@ -319,14 +319,16 @@ export default function App() {
       .then(data => {
         if (data.success) {
           let targetStudentId = '';
-          if (orderId.startsWith('SAV-')) {
+          if (data.student && data.student.id) {
+            targetStudentId = data.student.id;
+          } else if (data.bill && data.bill.studentId) {
+            targetStudentId = data.bill.studentId;
+          } else if (data.transaction && data.transaction.studentId) {
+            targetStudentId = data.transaction.studentId;
+          } else if (orderId.startsWith('SAV-')) {
             const middle = orderId.slice(4);
             const lastHyphenIndex = middle.lastIndexOf("-");
             targetStudentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          } else if (orderId.startsWith('SPP-')) {
-            if (data.bill && data.bill.studentId) {
-              targetStudentId = data.bill.studentId;
-            }
           }
 
           if (targetStudentId) {

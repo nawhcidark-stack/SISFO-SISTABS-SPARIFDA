@@ -435,6 +435,11 @@ function shortenBillIdForMidtrans(id: string): string {
 // Reconstruct the original bill ID from the compressed/shortened version
 function decompressBillIdForMidtrans(id: string): string {
   let result = id;
+  if (result.includes("-B-")) {
+    result = "B-" + result.split("-B-")[1];
+  } else if (result.includes("B-") && !result.startsWith("B-")) {
+    result = "B-" + result.split("B-")[1];
+  }
   if (result.startsWith("B-S-")) {
     result = "bill-std-std-" + result.slice(4);
   } else if (result.startsWith("B-")) {
@@ -486,6 +491,11 @@ function compressMiscBillIdForMidtrans(id: string): string {
 // Reconstruct the original miscellaneous bill ID from the compressed/shortened version
 function decompressMiscBillIdForMidtrans(id: string): string {
   let result = id;
+  if (result.includes("-M-")) {
+    result = "M-" + result.split("-M-")[1];
+  } else if (result.includes("M-") && !result.startsWith("M-")) {
+    result = "M-" + result.split("M-")[1];
+  }
   
   // Convert 8-character base-36 strings back to 13-digit base-10 timestamps
   result = result.replace(/([a-z0-9]{8})/g, (match) => {
@@ -5971,8 +5981,11 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
-    const studentIdentifier = student.nis ? String(student.nis).trim() : studentId;
-    const orderId = `CART-${studentIdentifier}-${Date.now().toString().slice(-4)}`;
+    const studentNis = (student.nis ? String(student.nis).trim() : studentId.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
+    let orderId = `CART-${studentNis}-${Date.now().toString().slice(-6)}`;
+    if (orderId.length > 48) {
+      orderId = `CART-${studentNis}-${Date.now().toString().slice(-4)}`;
+    }
 
     selectedSpp.forEach(b => {
       b.orderId = orderId;
@@ -6099,8 +6112,14 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
+    const studentNis = (student.nis ? String(student.nis).trim() : student.id.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
     const shortBillId = compressMiscBillIdForMidtrans(bill.id);
-    const orderId = `MISC-${shortBillId}-${Date.now().toString().slice(-4)}`;
+    let orderId = `MISC-${studentNis}-${shortBillId}-${Date.now().toString().slice(-4)}`;
+    if (orderId.length > 48) {
+      const maxShortBillLen = 48 - 5 - studentNis.length - 1 - 1 - 4;
+      const trimmedBillId = maxShortBillLen > 4 ? shortBillId.slice(0, maxShortBillLen) : shortBillId;
+      orderId = `MISC-${studentNis}-${trimmedBillId}-${Date.now().toString().slice(-4)}`;
+    }
     bill.orderId = orderId;
     bill.status = "pending";
     saveState();
@@ -7673,7 +7692,13 @@ async function startServer() {
         break;
       }
     }
-    const orderId = `SPP-${shortBillId}-${Date.now().toString().slice(-4)}`;
+    const studentNis = (student.nis ? String(student.nis).trim() : student.id.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
+    let orderId = `SPP-${studentNis}-${shortBillId}-${Date.now().toString().slice(-4)}`;
+    if (orderId.length > 48) {
+      const maxShortBillLen = 48 - 4 - studentNis.length - 1 - 1 - 4;
+      const trimmedBillId = maxShortBillLen > 4 ? shortBillId.slice(0, maxShortBillLen) : shortBillId;
+      orderId = `SPP-${studentNis}-${trimmedBillId}-${Date.now().toString().slice(-4)}`;
+    }
     bill.orderId = orderId;
     bill.status = "pending";
     saveState();
@@ -7797,7 +7822,11 @@ async function startServer() {
       return res.status(400).json({ error: "Jumlah deposit harus positif." });
     }
 
-    const orderId = `SAV-${studentId}-${Date.now()}`;
+    const studentNis = (student.nis ? String(student.nis).trim() : studentId.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
+    let orderId = `SAV-${studentNis}-${Date.now()}`;
+    if (orderId.length > 48) {
+      orderId = `SAV-${studentNis}-${Date.now().toString().slice(-6)}`;
+    }
     
     // Create pre-transaction ledger
     const trans: SavingsTransaction = {

@@ -869,93 +869,58 @@ async function syncWithFirestore(forcePush: boolean = false) {
       console.log("MongoDB is previously seeded. Pulling state from MongoDB...");
       dbSyncStatus = "Syncing (Loading state)...";
       
-      // Load Students (Merging local in-memory with MongoDB to ensure zero loss)
+      // Load Students (100% Authoritative from MongoDB)
       const loadedStudents = await studentCol.find({}).toArray();
-      const existingStudentMap = new Map<string, Student>();
-      
       const sampleIds = new Set(["std-1", "std-2", "std-3", "std-4"]);
       const sampleNis = new Set(["20241001", "20241002", "20230905", "20220812"]);
       const isSampleStudent = (s: any) => s && (sampleIds.has(s.id) || sampleNis.has(String(s.nis || '').trim()));
 
-      students.forEach(s => {
-        if (!isSampleStudent(s)) {
-          existingStudentMap.set(s.id, s);
-        }
-      });
+      students.length = 0;
       loadedStudents.forEach((d: any) => {
         const { _id, ...rest } = d;
         const s = rest as Student;
         if (!isSampleStudent(s)) {
-          if (!s.password) {
+          if (!s.password && s.nis) {
             s.password = s.nis.toString().trim();
           }
-          existingStudentMap.set(s.id, s);
+          students.push(s);
         } else {
           studentCol.deleteOne({ $or: [{ id: s.id }, { nis: s.nis }] }).catch(() => {});
         }
       });
-      students.length = 0;
-      students.push(...Array.from(existingStudentMap.values()));
 
-      // Load SPP Bills (Merging local in-memory with MongoDB, prioritizing paid status)
+      // Load SPP Bills (100% Authoritative from MongoDB)
       const loadedBills = await mongoDb.collection("sppBills").find({}).toArray();
-      const billMap = new Map<string, SppBill>();
-      sppBills.forEach(b => billMap.set(b.id, b));
+      sppBills.length = 0;
       loadedBills.forEach((d: any) => {
         const { _id, ...rest } = d;
-        const remoteBill = rest as SppBill;
-        const localBill = billMap.get(remoteBill.id);
-        if (!localBill) {
-          billMap.set(remoteBill.id, remoteBill);
-        } else {
-          if (remoteBill.status === "paid" && localBill.status !== "paid") {
-            billMap.set(remoteBill.id, remoteBill);
-          } else if (remoteBill.status === "pending" && localBill.status === "unpaid") {
-            billMap.set(remoteBill.id, remoteBill);
-          }
-        }
+        sppBills.push(rest as SppBill);
       });
-      sppBills.length = 0;
-      sppBills.push(...Array.from(billMap.values()));
 
-      // Load Misc Bills
+      // Load Misc Bills (100% Authoritative from MongoDB)
       try {
         const loadedMiscBills = await mongoDb.collection("miscBills").find({}).toArray();
-        const miscMap = new Map<string, MiscBill>();
-        miscBills.forEach(b => miscMap.set(b.id, b));
+        miscBills.length = 0;
         loadedMiscBills.forEach((d: any) => {
           const { _id, ...rest } = d;
-          const remoteMisc = rest as MiscBill;
-          const localMisc = miscMap.get(remoteMisc.id);
-          if (!localMisc || remoteMisc.status === "paid") {
-            miscMap.set(remoteMisc.id, remoteMisc);
-          }
+          miscBills.push(rest as MiscBill);
         });
-        miscBills.length = 0;
-        miscBills.push(...Array.from(miscMap.values()));
       } catch (err) {
         console.warn("Failed loading miscBills collection:", err);
       }
 
-      // Load Savings Transactions (Merging unique transactions from local + MongoDB)
+      // Load Savings Transactions (100% Authoritative from MongoDB)
       const loadedSav = await mongoDb.collection("savingsTransactions").find({}).toArray();
-      const savMap = new Map<string, SavingsTransaction>();
-      savingsTransactions.forEach(t => {
-        if (t.studentId !== "std-1780505669251-82-27gx" && String((t as any).studentNis || "").trim() !== "13139") {
-          savMap.set(t.id, t);
-        }
-      });
+      savingsTransactions.length = 0;
       loadedSav.forEach((d: any) => {
         const { _id, ...rest } = d;
         const t = rest as SavingsTransaction;
         if (t.studentId !== "std-1780505669251-82-27gx" && String((t as any).studentNis || "").trim() !== "13139") {
-          savMap.set(t.id, t);
+          savingsTransactions.push(t);
         } else {
           mongoDb.collection("savingsTransactions").deleteOne({ _id: d._id }).catch(() => {});
         }
       });
-      savingsTransactions.length = 0;
-      savingsTransactions.push(...Array.from(savMap.values()));
 
       // Clean savings balance for student 13139
       students.forEach(s => {
@@ -1005,17 +970,13 @@ async function syncWithFirestore(forcePush: boolean = false) {
         teachingJournals.push(rest as TeachingJournal);
       });
 
-      // Load Treasurer Transactions (Merging unique transactions from local + MongoDB)
+      // Load Treasurer Transactions (100% Authoritative from MongoDB)
       const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
-      const bndMap = new Map<string, TreasurerTransaction>();
-      treasurerTransactions.forEach(t => bndMap.set(t.id, t));
+      treasurerTransactions.length = 0;
       loadedBnd.forEach((d: any) => {
         const { _id, ...rest } = d;
-        const t = rest as TreasurerTransaction;
-        bndMap.set(t.id, t);
+        treasurerTransactions.push(rest as TreasurerTransaction);
       });
-      treasurerTransactions.length = 0;
-      treasurerTransactions.push(...Array.from(bndMap.values()));
 
       // Load other logs
       const loadedDev = await mongoDb.collection("studentDevelopmentLogs").find({}).toArray();
@@ -1136,7 +1097,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
       console.log("Connected successfully. State has been loaded from MongoDB.");
       
       // Save loaded MongoDB state to local data_store.json file as well
-      saveState();
+      saveState(true);
     } else {
       console.log("No remote database documents. Performing initial MongoDB seeding...");
       dbSyncStatus = "Syncing (Uploading Seed)";
@@ -1200,7 +1161,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
   }
 }
 
-function saveState() {
+function saveState(skipRemoteSync: boolean = false) {
   try {
     const data = {
       students,
@@ -1245,7 +1206,9 @@ function saveState() {
     fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
     fs.renameSync(tempPath, DATA_FILE);
     // Asynchronously update to MongoDB Cluster via serialized queue
-    triggerFirestoreSync();
+    if (!skipRemoteSync) {
+      triggerFirestoreSync();
+    }
   } catch (error) {
     console.error("Failed to save state:", error);
   }
@@ -1463,7 +1426,7 @@ const isLoaded = loadState();
 
 if (isLoaded) {
   // Save state immediately to persist the cleaned deduplicated bills
-  saveState();
+  saveState(true);
 } else {
   students.forEach((student, sIdx) => {
     months.forEach((month, mIdx) => {
@@ -1825,8 +1788,14 @@ async function startServer() {
   // Force database synchronization with MongoDB
   app.post("/api/admin/force-firestore-sync", async (req, res) => {
     try {
-      console.log("Admin triggered manual MongoDB synchronization (Force Push)...");
-      await syncWithFirestore(true);
+      const direction = req.body?.direction || "pull";
+      if (direction === "push") {
+        console.log("Admin triggered manual MongoDB synchronization (Force Push Local -> Remote)...");
+        await syncWithFirestore(true);
+      } else {
+        console.log("Admin triggered manual MongoDB synchronization (Force Pull Remote -> Local)...");
+        await syncWithFirestore(false);
+      }
       res.json({
         success: true,
         status: dbSyncStatus,
@@ -6073,8 +6042,8 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
-    const shortStudentId = studentId.replace("student-", "S").substring(0, 10);
-    const orderId = `CART-${shortStudentId}-${Date.now().toString().slice(-4)}`;
+    const studentIdentifier = student.nis ? String(student.nis).trim() : studentId;
+    const orderId = `CART-${studentIdentifier}-${Date.now().toString().slice(-4)}`;
 
     selectedSpp.forEach(b => {
       b.orderId = orderId;
@@ -8287,8 +8256,8 @@ async function startServer() {
       if (matchedSpp.length === 0 && matchedMisc.length === 0) {
         // CART Recovery Mechanism: Parse student short ID from order ID and match candidate bills
         const parts = activeOrderId.split("-");
-        const shortStudentId = parts.slice(1, -1).join("-");
-        const candidateStudents = students.filter(s => s.id.includes(shortStudentId) || s.id.replace("student-", "S").substring(0, 10) === shortStudentId);
+        const studentIdentifier = parts.slice(1, -1).join("-");
+        const candidateStudents = students.filter(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier || s.id.includes(studentIdentifier));
         
         let student = candidateStudents[0];
 
@@ -8672,8 +8641,8 @@ async function startServer() {
       // CART Recovery Mechanism: If no bills match the order_id, find the student by parsing order_id
       if (!affectedStudent) {
         const parts = resolvedOrderId.split("-");
-        const shortStudentId = parts.slice(1, -1).join("-");
-        affectedStudent = students.find(s => s.id.replace("student-", "S").substring(0, 10) === shortStudentId) || null;
+        const studentIdentifier = parts.slice(1, -1).join("-");
+        affectedStudent = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier || s.id.includes(studentIdentifier)) || null;
         
         if (affectedStudent) {
           targetStudentId = affectedStudent.id;
@@ -9025,8 +8994,8 @@ async function startServer() {
       // CART Recovery Mechanism: If no bills match the order_id, find the student by parsing order_id
       if (!student) {
         const parts = order_id.split("-");
-        const shortStudentId = parts.slice(1, -1).join("-");
-        student = students.find(s => s.id.replace("student-", "S").substring(0, 10) === shortStudentId);
+        const studentIdentifier = parts.slice(1, -1).join("-");
+        student = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier || s.id.includes(studentIdentifier));
         
         if (student) {
           targetStudentId = student.id;

@@ -929,6 +929,42 @@ async function syncWithFirestore(forcePush: boolean = false) {
             { $set: { status: "paid", paidAt: bill.paidAt, paymentMethod: bill.paymentMethod, orderId: bill.orderId, transactionId: bill.transactionId } }
           ).catch(() => {});
         }
+        // Clean up errant Midtrans payment for Adam Levine (NIS: 13158) caused by past CART prefix matching bug
+        if (bill.studentId === "std-1784166464669-7-ves1" && bill.id === "bill-std-1784166464669-7-ves1-2026-6" && bill.paidAt === "2026-08-05T15:59:35.000Z") {
+          bill.status = "unpaid";
+          delete bill.paidAt;
+          delete bill.paymentMethod;
+          delete bill.orderId;
+          delete bill.transactionId;
+          mongoDb.collection("sppBills").updateOne(
+            { id: bill.id },
+            { $set: { status: "unpaid" }, $unset: { paidAt: "", paymentMethod: "", orderId: "", transactionId: "" } }
+          ).catch(() => {});
+        }
+        // Reset Riska Devi Anggraini (NIS: 13321 / ID: std-1784166464763-170-uqz3) SPP Desember 2026 to unpaid, and set SPP Agustus 2026 as paid for CART-std-178416-2884
+        if (bill.studentId === "std-1784166464763-170-uqz3") {
+          if (bill.month === "Desember" && bill.year === 2026) {
+            bill.status = "unpaid";
+            delete bill.paidAt;
+            delete bill.paymentMethod;
+            delete bill.orderId;
+            delete bill.transactionId;
+            mongoDb.collection("sppBills").updateOne(
+              { id: bill.id },
+              { $set: { status: "unpaid" }, $unset: { paidAt: "", paymentMethod: "", orderId: "", transactionId: "" } }
+            ).catch(() => {});
+          } else if (bill.month === "Agustus" && bill.year === 2026) {
+            bill.status = "paid";
+            bill.paidAt = "2026-08-05T15:56:57.000Z";
+            bill.paymentMethod = "Midtrans (QRIS)";
+            bill.orderId = "CART-std-178416-2884";
+            bill.transactionId = "9c0742a7-3161-418f-a24a-e1b256543868";
+            mongoDb.collection("sppBills").updateOne(
+              { id: bill.id },
+              { $set: { status: "paid", paidAt: bill.paidAt, paymentMethod: bill.paymentMethod, orderId: bill.orderId, transactionId: bill.transactionId } }
+            ).catch(() => {});
+          }
+        }
         sppBills.push(bill);
       });
 
@@ -8215,39 +8251,54 @@ async function startServer() {
         // CART Recovery Mechanism: Parse student short ID from order ID and match candidate bills
         const parts = activeOrderId.split("-");
         const studentIdentifier = parts.slice(1, -1).join("-");
-        const candidateStudents = students.filter(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier || s.id.includes(studentIdentifier));
         
-        let student = candidateStudents[0];
+        let student: any = undefined;
 
-        // Refine student selection using Midtrans customer details
+        // 1. Refine student selection using Midtrans customer details
         const custDetails = statusData.customer_details || {};
-        const custEmail = (custDetails.email || "").toLowerCase();
+        const custEmail = (custDetails.email || "").toLowerCase().trim();
         const custPhone = (custDetails.phone || custDetails.mobile_number || "").replace(/\D/g, "");
-        const custName = (custDetails.first_name || custDetails.name || "").toLowerCase();
+        const custName = (custDetails.first_name || custDetails.name || "").toLowerCase().trim();
 
         if (custEmail && custEmail.includes("@")) {
-          const emailNis = custEmail.split("@")[0].trim();
-          const matchByNis = students.find(s => String(s.nis).trim() === emailNis);
-          if (matchByNis) student = matchByNis;
+          const emailNis = custEmail.split("@")[0].replace(/\D/g, "").trim();
+          if (emailNis) {
+            student = students.find(s => String(s.nis).trim() === emailNis);
+          }
+          if (!student) {
+            student = students.find(s => s.email && s.email.toLowerCase().trim() === custEmail);
+          }
         }
-        if (custPhone) {
-          const matchByPhone = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(custPhone));
-          if (matchByPhone) student = matchByPhone;
+        if (!student && custPhone && custPhone.length >= 8) {
+          student = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(custPhone));
         }
-        if (custName) {
-          const matchByName = students.find(s => s.name.toLowerCase().includes(custName) || custName.includes(s.name.toLowerCase()));
-          if (matchByName) student = matchByName;
+        if (!student && custName && custName.length >= 3) {
+          student = students.find(s => s.name.toLowerCase().trim() === custName || s.name.toLowerCase().includes(custName) || custName.includes(s.name.toLowerCase()));
+        }
+
+        // 2. Strict matching by studentIdentifier
+        if (!student && studentIdentifier) {
+          student = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier);
+          if (!student && studentIdentifier.length >= 12) {
+            student = students.find(s => s.id === studentIdentifier || s.id.includes(studentIdentifier));
+          }
         }
 
         if (student) {
+          const monthMap: Record<string, number> = {
+            "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+            "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+          };
+          const sortSpp = (bills: any[]) => [...bills].sort((a, b) => ((a.year || 2026) * 12 + (monthMap[a.month] ?? 0)) - ((b.year || 2026) * 12 + (monthMap[b.month] ?? 0)));
+
           let candidateBills = [
-            ...sppBills.filter(b => b.studentId === student.id && b.status === "pending"),
+            ...sortSpp(sppBills.filter(b => b.studentId === student.id && b.status === "pending")),
             ...miscBills.filter(b => b.studentId === student.id && b.status === "pending")
           ];
           
           if (candidateBills.length === 0) {
             candidateBills = [
-              ...sppBills.filter(b => b.studentId === student.id && b.status === "unpaid"),
+              ...sortSpp(sppBills.filter(b => b.studentId === student.id && b.status === "unpaid")),
               ...miscBills.filter(b => b.studentId === student.id && b.status === "unpaid")
             ];
           }
@@ -8600,7 +8651,35 @@ async function startServer() {
       if (!affectedStudent) {
         const parts = resolvedOrderId.split("-");
         const studentIdentifier = parts.slice(1, -1).join("-");
-        affectedStudent = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier || s.id.includes(studentIdentifier)) || null;
+
+        // Try customer_details from midtransStatus or req.body if available
+        const custDetails = (typeof midtransStatus === 'object' && midtransStatus ? midtransStatus.customer_details : req.body?.customer_details) || {};
+        const custEmail = (custDetails.email || "").toLowerCase().trim();
+        const custPhone = (custDetails.phone || custDetails.mobile_number || "").replace(/\D/g, "");
+        const custName = (custDetails.first_name || custDetails.name || "").toLowerCase().trim();
+
+        if (custEmail && custEmail.includes("@")) {
+          const emailNis = custEmail.split("@")[0].replace(/\D/g, "").trim();
+          if (emailNis) {
+            affectedStudent = students.find(s => String(s.nis).trim() === emailNis) || null;
+          }
+          if (!affectedStudent) {
+            affectedStudent = students.find(s => s.email && s.email.toLowerCase().trim() === custEmail) || null;
+          }
+        }
+        if (!affectedStudent && custPhone && custPhone.length >= 8) {
+          affectedStudent = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(custPhone)) || null;
+        }
+        if (!affectedStudent && custName && custName.length >= 3) {
+          affectedStudent = students.find(s => s.name.toLowerCase().trim() === custName || s.name.toLowerCase().includes(custName) || custName.includes(s.name.toLowerCase())) || null;
+        }
+
+        if (!affectedStudent && studentIdentifier) {
+          affectedStudent = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier) || null;
+          if (!affectedStudent && studentIdentifier.length >= 12) {
+            affectedStudent = students.find(s => s.id === studentIdentifier || s.id.includes(studentIdentifier)) || null;
+          }
+        }
         
         if (affectedStudent) {
           targetStudentId = affectedStudent.id;
@@ -8953,7 +9032,24 @@ async function startServer() {
       if (!student) {
         const parts = order_id.split("-");
         const studentIdentifier = parts.slice(1, -1).join("-");
-        student = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier || s.id.includes(studentIdentifier));
+
+        const custEmail = (req.body?.customer_details?.email || "").toLowerCase().trim();
+        if (custEmail && custEmail.includes("@")) {
+          const emailNis = custEmail.split("@")[0].replace(/\D/g, "").trim();
+          if (emailNis) {
+            student = students.find(s => String(s.nis).trim() === emailNis);
+          }
+          if (!student) {
+            student = students.find(s => s.email && s.email.toLowerCase().trim() === custEmail);
+          }
+        }
+
+        if (!student && studentIdentifier) {
+          student = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier);
+          if (!student && studentIdentifier.length >= 12) {
+            student = students.find(s => s.id === studentIdentifier || s.id.includes(studentIdentifier));
+          }
+        }
         
         if (student) {
           targetStudentId = student.id;
@@ -9270,6 +9366,7 @@ async function startServer() {
         grossAmount?: number | string;
         paymentType?: string;
         transactionTime?: string;
+        customerEmail?: string;
       }> = [];
 
       if (Array.isArray(items) && items.length > 0) {
@@ -9279,7 +9376,8 @@ async function startServer() {
           status: it.status || it.transaction_status || "settlement",
           grossAmount: it.grossAmount || it.gross_amount || it.amount || 0,
           paymentType: it.paymentType || it.payment_type || "Midtrans Gateway",
-          transactionTime: it.transactionTime || it.transaction_time || ""
+          transactionTime: it.transactionTime || it.transaction_time || "",
+          customerEmail: it.customerEmail || it.customer_email || it["Customer e-mail"] || it["Customer Email"] || ""
         }));
       } else if (rawContent && typeof rawContent === "string" && rawContent.trim()) {
         const lines = rawContent.split(/\r?\n/).filter(line => line.trim().length > 0);
@@ -9293,6 +9391,7 @@ async function startServer() {
           let amountIdx = headers.findIndex(h => h.includes("amount") || h.includes("gross") || h.includes("total") || h.includes("nominal") || h.includes("jumlah"));
           let paymentIdx = headers.findIndex(h => h.includes("payment") || h.includes("channel") || h.includes("metode"));
           let timeIdx = headers.findIndex(h => h.includes("time") || h.includes("date") || h.includes("tanggal") || h.includes("waktu") || h.includes("settlement"));
+          let emailIdx = headers.findIndex(h => h.includes("email") || h.includes("e-mail") || h.includes("mail") || h.includes("customer"));
 
           if (orderIdIdx === -1 && txIdIdx !== -1) orderIdIdx = txIdIdx;
           if (orderIdIdx === -1) orderIdIdx = 0;
@@ -9310,7 +9409,8 @@ async function startServer() {
                 status: statusIdx !== -1 && cols[statusIdx] ? cols[statusIdx] : "settlement",
                 grossAmount: amountIdx !== -1 && cols[amountIdx] ? cols[amountIdx] : 0,
                 paymentType: paymentIdx !== -1 && cols[paymentIdx] ? cols[paymentIdx] : "Midtrans Gateway",
-                transactionTime: timeIdx !== -1 && cols[timeIdx] ? cols[timeIdx] : ""
+                transactionTime: timeIdx !== -1 && cols[timeIdx] ? cols[timeIdx] : "",
+                customerEmail: emailIdx !== -1 && cols[emailIdx] ? cols[emailIdx] : ""
               });
             }
           }
@@ -9337,6 +9437,10 @@ async function startServer() {
         const cleanTxId = (item.transactionId || "").trim();
         if (!cleanOrderId && !cleanTxId) continue;
 
+        const customerEmail = (item.customerEmail || "").trim().toLowerCase();
+        const emailNis = customerEmail.includes("@") ? customerEmail.split("@")[0].replace(/\D/g, "") : "";
+        const studentByEmail = emailNis ? students.find(s => String(s.nis).trim() === emailNis) : undefined;
+
         const rawStatus = (item.status || "settlement").toString().toLowerCase().trim();
         const isSettled = rawStatus.includes("settlement") || rawStatus.includes("capture") || rawStatus.includes("success") || rawStatus.includes("lunas") || rawStatus.includes("paid") || rawStatus.includes("settled");
         const isPending = rawStatus.includes("pending");
@@ -9349,8 +9453,8 @@ async function startServer() {
             results.push({
               orderId: cleanOrderId,
               transactionId: cleanTxId,
-              studentName: "-",
-              studentNis: "-",
+              studentName: studentByEmail?.name || "-",
+              studentNis: studentByEmail?.nis || "-",
               category: "Transaksi Online",
               amount: Number(item.grossAmount) || 0,
               reportStatus: rawStatus || "pending",
@@ -9364,8 +9468,8 @@ async function startServer() {
             results.push({
               orderId: cleanOrderId,
               transactionId: cleanTxId,
-              studentName: "-",
-              studentNis: "-",
+              studentName: studentByEmail?.name || "-",
+              studentNis: studentByEmail?.nis || "-",
               category: "Transaksi Online",
               amount: Number(item.grossAmount) || 0,
               reportStatus: rawStatus || "failed",
@@ -9378,18 +9482,32 @@ async function startServer() {
           continue;
         }
 
-        // Search SPP Bill
+        // 1. Search SPP Bill
         let sppBill = sppBills.find(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId) || b.transactionId === cleanOrderId);
-        if (!sppBill && cleanOrderId.startsWith("SPP-")) {
-          const middle = cleanOrderId.slice(4);
+        if (!sppBill && (cleanOrderId.startsWith("SPP-") || cleanOrderId.includes("SPP-"))) {
+          const middle = cleanOrderId.includes("SPP-") ? cleanOrderId.split("SPP-")[1] : cleanOrderId;
           const lastHyphenIndex = middle.lastIndexOf("-");
-          const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          const cleanBillId = decompressBillIdForMidtrans(billId);
-          sppBill = sppBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
+          const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+          const cleanBillId = decompressBillIdForMidtrans(billIdPart);
+          sppBill = sppBills.find(b => b.id === cleanBillId || b.id === billIdPart || b.orderId === cleanOrderId);
+
+          if (!sppBill) {
+            let targetStudent = studentByEmail;
+            if (!targetStudent) {
+              const nisFromOrder = cleanOrderId.split("-")[1];
+              if (nisFromOrder && /^\d+$/.test(nisFromOrder)) {
+                targetStudent = students.find(s => String(s.nis).trim() === nisFromOrder);
+              }
+            }
+            if (targetStudent) {
+              sppBill = sppBills.find(b => b.studentId === targetStudent.id && b.status === "pending") ||
+                        sppBills.find(b => b.studentId === targetStudent.id && b.status === "unpaid" && b.amount === Number(item.grossAmount));
+            }
+          }
         }
 
         if (sppBill) {
-          const student = students.find(s => s.id === sppBill.studentId);
+          const student = students.find(s => s.id === sppBill.studentId) || studentByEmail;
           if (sppBill.status === "paid") {
             alreadyPaidCount++;
             results.push({
@@ -9451,18 +9569,32 @@ async function startServer() {
           continue;
         }
 
-        // Search Misc Bill
+        // 2. Search Misc Bill
         let miscBill = miscBills.find(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId) || b.transactionId === cleanOrderId);
-        if (!miscBill && cleanOrderId.startsWith("MISC-")) {
-          const middle = cleanOrderId.slice(5);
+        if (!miscBill && (cleanOrderId.startsWith("MISC-") || cleanOrderId.includes("MISC-"))) {
+          const middle = cleanOrderId.includes("MISC-") ? cleanOrderId.split("MISC-")[1] : cleanOrderId;
           const lastHyphenIndex = middle.lastIndexOf("-");
-          const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          const cleanBillId = decompressMiscBillIdForMidtrans(billId);
-          miscBill = miscBills.find(b => b.id === cleanBillId || b.id === billId || b.orderId === cleanOrderId);
+          const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+          const cleanBillId = decompressMiscBillIdForMidtrans(billIdPart);
+          miscBill = miscBills.find(b => b.id === cleanBillId || b.id === billIdPart || b.orderId === cleanOrderId);
+
+          if (!miscBill) {
+            let targetStudent = studentByEmail;
+            if (!targetStudent) {
+              const nisFromOrder = cleanOrderId.split("-")[1];
+              if (nisFromOrder && /^\d+$/.test(nisFromOrder)) {
+                targetStudent = students.find(s => String(s.nis).trim() === nisFromOrder);
+              }
+            }
+            if (targetStudent) {
+              miscBill = miscBills.find(b => b.studentId === targetStudent.id && b.status === "pending") ||
+                         miscBills.find(b => b.studentId === targetStudent.id && b.status === "unpaid" && b.amount === Number(item.grossAmount));
+            }
+          }
         }
 
         if (miscBill) {
-          const student = students.find(s => s.id === miscBill.studentId);
+          const student = students.find(s => s.id === miscBill.studentId) || studentByEmail;
           if (miscBill.status === "paid") {
             alreadyPaidCount++;
             results.push({
@@ -9524,18 +9656,181 @@ async function startServer() {
           continue;
         }
 
-        // Search Savings Transaction
+        // 3. Search CART Order
+        if (cleanOrderId.startsWith("CART-") || cleanOrderId.includes("CART-")) {
+          let matchedSpp = sppBills.filter(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId));
+          let matchedMisc = miscBills.filter(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId));
+
+          if (matchedSpp.length === 0 && matchedMisc.length === 0) {
+            let targetStudent = studentByEmail;
+            if (!targetStudent) {
+              const parts = cleanOrderId.split("-");
+              const studentIdentifier = parts.slice(1, -1).join("-");
+              if (studentIdentifier) {
+                targetStudent = students.find(s => String(s.nis).trim() === studentIdentifier || s.id === studentIdentifier);
+                if (!targetStudent && studentIdentifier.length >= 12) {
+                  targetStudent = students.find(s => s.id === studentIdentifier || s.id.includes(studentIdentifier));
+                }
+              }
+            }
+
+            if (targetStudent) {
+              const targetAmount = Number(item.grossAmount) || 0;
+              const monthMap: Record<string, number> = {
+                "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+                "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+              };
+              const sortSpp = (bills: any[]) => [...bills].sort((a, b) => ((a.year || 2026) * 12 + (monthMap[a.month] ?? 0)) - ((b.year || 2026) * 12 + (monthMap[b.month] ?? 0)));
+
+              let candidateBills = [
+                ...sortSpp(sppBills.filter(b => b.studentId === targetStudent.id && b.status === "pending")),
+                ...miscBills.filter(b => b.studentId === targetStudent.id && b.status === "pending")
+              ];
+              if (candidateBills.length === 0) {
+                candidateBills = [
+                  ...sortSpp(sppBills.filter(b => b.studentId === targetStudent.id && b.status === "unpaid")),
+                  ...miscBills.filter(b => b.studentId === targetStudent.id && b.status === "unpaid")
+                ];
+              }
+
+              let currentSum = 0;
+              for (const b of candidateBills) {
+                if (currentSum + b.amount <= targetAmount) {
+                  currentSum += b.amount;
+                  if ('month' in b) {
+                    matchedSpp.push(b as any);
+                  } else {
+                    matchedMisc.push(b as any);
+                  }
+                }
+                if (currentSum === targetAmount) break;
+              }
+            }
+          }
+
+          if (matchedSpp.length > 0 || matchedMisc.length > 0) {
+            let newlyPaid = 0;
+            const paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
+            const firstBill = matchedSpp[0] || matchedMisc[0];
+            const student = students.find(s => s.id === firstBill.studentId) || studentByEmail;
+
+            matchedSpp.forEach(b => {
+              if (b.status !== "paid") {
+                b.status = "paid";
+                b.paidAt = paidAt;
+                b.paymentMethod = actualPaymentType;
+                b.orderId = cleanOrderId;
+                if (cleanTxId) b.transactionId = cleanTxId;
+                newlyPaid++;
+                totalAmountReconciled += b.amount;
+
+                treasurerTransactions.push({
+                  id: `tr-midtrans-cart-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                  type: "incoming",
+                  category: "SPP",
+                  amount: b.amount,
+                  description: `Pembayaran SPP ${b.month} ${b.year} (Keranjang Midtrans Report) - ${student?.name || ""} (${student?.nis || ""})`,
+                  recipientName: student?.name || "Siswa",
+                  fundingSource: "Kas Bank/Midtrans",
+                  date: paidAt.substring(0, 10),
+                  paymentMethod: "bank",
+                  nis: student?.nis,
+                  studentId: student?.id,
+                  orderId: cleanOrderId,
+                  transactionId: cleanTxId,
+                  createdBy: "Midtrans Bulk Report"
+                });
+              }
+            });
+
+            matchedMisc.forEach(b => {
+              if (b.status !== "paid") {
+                b.status = "paid";
+                b.paidAt = paidAt;
+                b.paymentMethod = actualPaymentType;
+                b.orderId = cleanOrderId;
+                if (cleanTxId) b.transactionId = cleanTxId;
+                newlyPaid++;
+                totalAmountReconciled += b.amount;
+
+                treasurerTransactions.push({
+                  id: `tr-midtrans-cartm-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+                  type: "incoming",
+                  category: b.title || "Lain-lain",
+                  amount: b.amount,
+                  description: `Pembayaran ${b.title} (Keranjang Midtrans Report) - ${student?.name || ""} (${student?.nis || ""})`,
+                  recipientName: student?.name || "Siswa",
+                  fundingSource: "Kas Bank/Midtrans",
+                  date: paidAt.substring(0, 10),
+                  paymentMethod: "bank",
+                  nis: student?.nis,
+                  studentId: student?.id,
+                  orderId: cleanOrderId,
+                  transactionId: cleanTxId,
+                  createdBy: "Midtrans Bulk Report"
+                });
+              }
+            });
+
+            if (newlyPaid > 0) {
+              reconciledCount++;
+              stateChanged = true;
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: `Keranjang (${matchedSpp.length + matchedMisc.length} Item)`,
+                amount: Number(item.grossAmount) || 0,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: paidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Keranjang Multi-tagihan (${newlyPaid} item) a.n ${student?.name || 'Siswa'} berhasil diset LUNAS.`
+              });
+            } else {
+              alreadyPaidCount++;
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: `Keranjang (${matchedSpp.length + matchedMisc.length} Item)`,
+                amount: Number(item.grossAmount) || 0,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: paidAt,
+                reconciliationStatus: "already_paid",
+                message: `SUDAH LUNAS: Item keranjang a.n ${student?.name || 'Siswa'} sudah berstatus LUNAS sebelumnya.`
+              });
+            }
+            continue;
+          }
+        }
+
+        // 4. Search Savings Transaction
         let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId || (cleanTxId && t.transactionId === cleanTxId) || t.transactionId === cleanOrderId);
-        if (!savingsTx && cleanOrderId.startsWith("SAV-")) {
-          const parts = cleanOrderId.split("-");
-          if (parts.length >= 2) {
-            const studentId = parts[1];
-            savingsTx = savingsTransactions.find(t => t.studentId === studentId && t.status === "pending");
+        if (!savingsTx && (cleanOrderId.startsWith("SAV-") || cleanOrderId.includes("SAV-"))) {
+          let targetStudent = studentByEmail;
+          if (!targetStudent) {
+            const rawRest = cleanOrderId.replace(/^SAV-/, "").replace(/-\d{10,13}$/, "").trim();
+            if (rawRest) {
+              targetStudent = students.find(s => s.id === rawRest || String(s.nis).trim() === rawRest);
+              if (!targetStudent && rawRest.length >= 12) {
+                targetStudent = students.find(s => s.id === rawRest || s.id.includes(rawRest) || rawRest.includes(s.id));
+              }
+            }
+          }
+
+          if (targetStudent) {
+            savingsTx = savingsTransactions.find(t => t.studentId === targetStudent.id && t.status === "pending");
           }
         }
 
         if (savingsTx) {
-          const student = students.find(s => s.id === savingsTx.studentId);
+          const student = students.find(s => s.id === savingsTx.studentId) || studentByEmail;
           if (savingsTx.status === "success") {
             alreadyPaidCount++;
             results.push({
@@ -9582,13 +9877,125 @@ async function startServer() {
           continue;
         }
 
+        // 4b. Auto-confirm Savings if orderId is SAV- and student exists
+        if (cleanOrderId.startsWith("SAV-") || cleanOrderId.includes("SAV-")) {
+          let targetStudent = studentByEmail;
+          if (!targetStudent) {
+            const rawRest = cleanOrderId.replace(/^SAV-/, "").replace(/-\d{10,13}$/, "").trim();
+            if (rawRest) {
+              targetStudent = students.find(s => s.id === rawRest || String(s.nis).trim() === rawRest);
+              if (!targetStudent && rawRest.length >= 12) {
+                targetStudent = students.find(s => s.id === rawRest || s.id.includes(rawRest) || rawRest.includes(s.id));
+              }
+            }
+          }
+          if (targetStudent) {
+            const amountVal = Number(item.grossAmount) || 0;
+            if (amountVal > 0) {
+              const newSavingsTx: SavingsTransaction = {
+                id: `sav-pay-report-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+                studentId: targetStudent.id,
+                type: "deposit",
+                amount: amountVal,
+                status: "success",
+                createdAt: item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString(),
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                paymentMethod: actualPaymentType,
+                notes: "Setoran Tabungan (Verified via Midtrans Report)"
+              };
+              savingsTransactions.push(newSavingsTx);
+              targetStudent.savingsBalance += amountVal;
+              reconciledCount++;
+              totalAmountReconciled += amountVal;
+              stateChanged = true;
+
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: targetStudent.name,
+                studentNis: targetStudent.nis || "-",
+                studentClass: targetStudent.class || "-",
+                category: "Setoran Tabungan",
+                amount: amountVal,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: newSavingsTx.createdAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${amountVal.toLocaleString("id-ID")} a.n ${targetStudent.name} (NIS: ${targetStudent.nis}) berhasil diverifikasi & ditambahkan ke saldo.`
+              });
+              continue;
+            }
+          }
+        }
+
+        // 5. Fallback matching by Student & Amount
+        if (studentByEmail) {
+          const amt = Number(item.grossAmount) || 0;
+          const fallbackSpp = sppBills.find(b => b.studentId === studentByEmail.id && (b.status === "pending" || b.status === "unpaid") && b.amount === amt);
+          if (fallbackSpp) {
+            fallbackSpp.status = "paid";
+            fallbackSpp.paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
+            fallbackSpp.paymentMethod = actualPaymentType;
+            fallbackSpp.orderId = cleanOrderId;
+            if (cleanTxId) fallbackSpp.transactionId = cleanTxId;
+            reconciledCount++;
+            totalAmountReconciled += amt;
+            stateChanged = true;
+
+            results.push({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              studentName: studentByEmail.name,
+              studentNis: studentByEmail.nis,
+              studentClass: studentByEmail.class,
+              category: `SPP ${fallbackSpp.month} ${fallbackSpp.year}`,
+              amount: amt,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: fallbackSpp.paidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan SPP ${fallbackSpp.month} ${fallbackSpp.year} a.n ${studentByEmail.name} terverifikasi via email NIS.`
+            });
+            continue;
+          }
+
+          const fallbackMisc = miscBills.find(b => b.studentId === studentByEmail.id && (b.status === "pending" || b.status === "unpaid") && b.amount === amt);
+          if (fallbackMisc) {
+            fallbackMisc.status = "paid";
+            fallbackMisc.paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
+            fallbackMisc.paymentMethod = actualPaymentType;
+            fallbackMisc.orderId = cleanOrderId;
+            if (cleanTxId) fallbackMisc.transactionId = cleanTxId;
+            reconciledCount++;
+            totalAmountReconciled += amt;
+            stateChanged = true;
+
+            results.push({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              studentName: studentByEmail.name,
+              studentNis: studentByEmail.nis,
+              studentClass: studentByEmail.class,
+              category: fallbackMisc.title,
+              amount: amt,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: fallbackMisc.paidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan ${fallbackMisc.title} a.n ${studentByEmail.name} terverifikasi via email NIS.`
+            });
+            continue;
+          }
+        }
+
         notFoundCount++;
         results.push({
           orderId: cleanOrderId,
           transactionId: cleanTxId,
-          studentName: "-",
-          studentNis: "-",
-          studentClass: "-",
+          studentName: studentByEmail?.name || "-",
+          studentNis: studentByEmail?.nis || "-",
+          studentClass: studentByEmail?.class || "-",
           category: "Order Midtrans",
           amount: Number(item.grossAmount) || 0,
           reportStatus: rawStatus,

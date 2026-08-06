@@ -13,6 +13,7 @@ import {
   ClassSchedule,
 } from "../types";
 import ScheduleView from "./ScheduleView";
+import { SavingsPassbookModal } from "./SavingsPassbookModal";
 import { motion, AnimatePresence } from "motion/react";
 import {
   exportDailyReportToExcel,
@@ -352,6 +353,7 @@ export default function AdminPanel({
   classSchedules = []
 }: AdminPanelProps) {
   const [selectedStudent, setSelectedStudent] = useState<Student | null>(null);
+  const [passbookModalStudent, setPassbookModalStudent] = useState<Student | null>(null);
   const [adminTab, setAdminTab] = useState<
     | "roster"
     | "broadcast"
@@ -5014,16 +5016,26 @@ export default function AdminPanel({
                               />{" "}
                               Histori Arus Rekening Tabungan
                             </span>
-                            <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
-                              {
-                                transactions.filter(
-                                  (t) =>
-                                    t.studentId === selectedStudent.id &&
-                                    t.status === "success",
-                                ).length
-                              }{" "}
-                              Transaksi
-                            </span>
+                            <div className="flex items-center gap-2">
+                              <button
+                                type="button"
+                                onClick={() => setPassbookModalStudent(selectedStudent)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                                title="Cetak Buku Tabungan & Mutasi Rekening (NIS)"
+                              >
+                                <Printer size={11} /> Cetak Buku Tabungan / Mutasi
+                              </button>
+                              <span className="text-[10px] font-bold text-slate-600 bg-slate-200 px-2 py-0.5 rounded font-mono">
+                                {
+                                  transactions.filter(
+                                    (t) =>
+                                      t.studentId === selectedStudent.id &&
+                                      t.status === "success",
+                                  ).length
+                                }{" "}
+                                Transaksi
+                              </span>
+                            </div>
                           </div>
 
                           <div className="p-3 max-h-[350px] overflow-y-auto">
@@ -10825,9 +10837,18 @@ export default function AdminPanel({
 
                         {/* Right: Tabungan History List */}
                         <div className="lg:col-span-7 bg-slate-50/50 p-4 border border-slate-200 rounded-xl text-left">
-                          <h4 className="font-black text-slate-900 uppercase text-[10px] tracking-widest mb-3">
-                            Histori Tabungan Alumni
-                          </h4>
+                          <div className="flex justify-between items-center mb-3">
+                            <h4 className="font-black text-slate-900 uppercase text-[10px] tracking-widest">
+                              Histori Tabungan
+                            </h4>
+                            <button
+                              type="button"
+                              onClick={() => setPassbookModalStudent(selectedStudent)}
+                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                            >
+                              <Printer size={11} /> Cetak Buku Tabungan
+                            </button>
+                          </div>
 
                           <div className="overflow-y-auto max-h-[300px] border border-slate-150 rounded-lg">
                             <table className="w-full text-left bg-white text-xs">
@@ -18412,6 +18433,13 @@ export default function AdminPanel({
       <MidtransBulkReportModal
         isOpen={isMidtransBulkReportModalOpen}
         onClose={() => setIsMidtransBulkReportModalOpen(false)}
+      />
+      <SavingsPassbookModal
+        isOpen={!!passbookModalStudent}
+        onClose={() => setPassbookModalStudent(null)}
+        student={passbookModalStudent}
+        transactions={transactions}
+        schoolIdentity={schoolIdentity}
       />
     </div>
   );

@@ -5,6 +5,7 @@ import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowD
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
+import { SavingsPassbookModal } from './SavingsPassbookModal';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
 function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
@@ -116,6 +117,7 @@ export default function StudentPanel({
 }: StudentPanelProps) {
   const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
+  const [showPassbookModal, setShowPassbookModal] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
@@ -1969,9 +1971,18 @@ export default function StudentPanel({
 
               {/* History Section (Under content) */}
               <div className="mt-8 hidden md:block">
-                <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider mb-3">
-                  Log Transaksi Tabungan Siswa
-                </h4>
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-3">
+                  <h4 className="font-bold text-slate-800 text-xs uppercase tracking-wider">
+                    Log Transaksi Tabungan Siswa
+                  </h4>
+                  <button
+                    type="button"
+                    onClick={() => setShowPassbookModal(true)}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-xs transition-all cursor-pointer flex items-center gap-1.5 shadow-emerald-100"
+                  >
+                    <Printer size={13} /> Cetak Buku Tabungan / Mutasi
+                  </button>
+                </div>
                 
                 {transactions.length === 0 ? (
                   <p className="text-[11px] text-slate-400 italic bg-slate-50 p-4 rounded-xl text-center border border-slate-200">
@@ -4862,6 +4873,15 @@ export default function StudentPanel({
           </div>
         </div>
       )}
+
+      {/* PASSBOOK MUTATION PRINT MODAL */}
+      <SavingsPassbookModal
+        isOpen={showPassbookModal}
+        onClose={() => setShowPassbookModal(false)}
+        student={currentStudent}
+        transactions={transactions}
+        schoolIdentity={schoolIdentity}
+      />
     </div>
   );
 }

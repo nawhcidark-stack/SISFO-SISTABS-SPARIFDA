@@ -2337,6 +2337,7 @@ export default function App() {
             classSchedules={schedulesList}
             subjectTeachers={subjectTeachersList}
             homerooms={homeroomsList}
+            transactions={studentTransactions}
           />
         ) : role === 'subject_teacher' ? (
           <SubjectTeacherPanel

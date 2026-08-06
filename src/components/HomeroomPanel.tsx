@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher } from '../types';
+import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import BukuIndukManagement from './BukuIndukManagement';
 import ScheduleView from './ScheduleView';
+import { SavingsPassbookModal } from './SavingsPassbookModal';
 import { 
   exportSppRecapToExcel, 
   exportMiscRecapToExcel, 
@@ -669,6 +670,7 @@ interface HomeroomPanelProps {
   classSchedules?: ClassSchedule[];
   subjectTeachers?: SubjectTeacher[];
   homerooms?: HomeroomTeacher[];
+  transactions?: SavingsTransaction[];
 }
 
 export default function HomeroomPanel({
@@ -687,7 +689,8 @@ export default function HomeroomPanel({
   miscBills = [],
   classSchedules = [],
   subjectTeachers = [],
-  homerooms = []
+  homerooms = [],
+  transactions = []
 }: HomeroomPanelProps) {
   const todayStr = getWIBDateStr();
 
@@ -697,6 +700,7 @@ export default function HomeroomPanel({
   };
 
   const [selectedDate, setSelectedDate] = useState(todayStr);
+  const [passbookStudent, setPassbookStudent] = useState<Student | null>(null);
   const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'rapor_merdeka' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal'>('record');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
@@ -4699,31 +4703,39 @@ Wassalamualaikum Wr. Wb.
                                   )}
                                 </td>
                                 <td className="py-3 px-3 text-right">
-                                  {(overdueBills.length > 0 || unpaidMisc.length > 0) ? (
+                                  <div className="flex items-center justify-end gap-1.5">
                                     <button
                                       type="button"
-                                      onClick={() => copyWaReminder(student, overdueBills, unpaidMisc)}
-                                      className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer ${
-                                        copiedStudentId === student.id
-                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
-                                          : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
-                                      }`}
+                                      onClick={() => setPassbookStudent(student)}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[10.5px] font-extrabold bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 shadow-2xs transition-all cursor-pointer shrink-0"
+                                      title="Cetak Mutasi Buku Tabungan Siswa"
                                     >
-                                      {copiedStudentId === student.id ? (
-                                        <>
-                                          <Check size={12} className="text-emerald-600 font-black" />
-                                          Reminder Tersalin!
-                                        </>
-                                      ) : (
-                                        <>
-                                          <Copy size={12} />
-                                          Salin WA Reminder
-                                        </>
-                                      )}
+                                      <Printer size={12} /> Cetak Mutasi
                                     </button>
-                                  ) : (
-                                    <span className="text-[10px] text-slate-400 font-medium italic">Tidak ada tunggakan</span>
-                                  )}
+                                    {(overdueBills.length > 0 || unpaidMisc.length > 0) ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => copyWaReminder(student, overdueBills, unpaidMisc)}
+                                        className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10.5px] font-extrabold shadow-xs transition-all cursor-pointer shrink-0 ${
+                                          copiedStudentId === student.id
+                                            ? 'bg-emerald-50 text-emerald-700 border border-emerald-250 animate-pulse'
+                                            : 'bg-indigo-50 border border-indigo-100 hover:bg-indigo-150 text-indigo-700 hover:text-indigo-850'
+                                        }`}
+                                      >
+                                        {copiedStudentId === student.id ? (
+                                          <>
+                                            <Check size={12} className="text-emerald-600 font-black" />
+                                            Reminder Tersalin!
+                                          </>
+                                        ) : (
+                                          <>
+                                            <Copy size={12} />
+                                            Salin WA Reminder
+                                          </>
+                                        )}
+                                      </button>
+                                    ) : null}
+                                  </div>
                                 </td>
                               </tr>
                             );
@@ -8857,6 +8869,14 @@ Wassalamualaikum Wr. Wb.
           </div>
         )}
       </AnimatePresence>
+
+      <SavingsPassbookModal
+        isOpen={!!passbookStudent}
+        onClose={() => setPassbookStudent(null)}
+        student={passbookStudent}
+        transactions={transactions}
+        schoolIdentity={schoolIdentity}
+      />
     </div>
   );
 }

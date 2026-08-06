@@ -1417,7 +1417,7 @@ export default function AdminPanel({
   };
 
   const handleRestoreBackup = async (id: string) => {
-    if (!window.confirm("⚠️ PERINGATAN: Restorasi data akan menimpa seluruh data sistem saat ini dengan data dari file backup. Tindakan ini tidak dapat dibatalkan.\n\nApakah Anda yakin ingin melanjutkan?")) {
+    if (!window.confirm("⚠️ PERINGATAN RESTORASI DATABASE:\n\nRestorasi ini HANYA akan memulihkan data database (Siswa, Tagihan, Transaksi, Absensi, Jurnal, Kesiswaan, Sarpras, dsb) dari file backup. Konfigurasi dan file sistem tidak akan diubah atau ditimpa.\n\nData database saat ini akan ditimpa dengan data dari backup ini. Apakah Anda yakin ingin melanjutkan?")) {
       return;
     }
     setIsRestoringBackupId(id);
@@ -1431,7 +1431,7 @@ export default function AdminPanel({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setBackupSuccessMessage("🎉 Sukses! Restorasi data berhasil diselesaikan. Halaman akan dimuat ulang...");
+        setBackupSuccessMessage("🎉 Sukses! Restorasi data database berhasil diselesaikan. Halaman akan dimuat ulang...");
         setTimeout(() => {
           window.location.reload();
         }, 2000);
@@ -1450,7 +1450,7 @@ export default function AdminPanel({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (!window.confirm("⚠️ PERINGATAN: Restorasi dari file lokal akan menghapus dan menimpa seluruh data sistem saat ini dengan data yang ada di dalam file backup ini. Tindakan ini tidak dapat dibatalkan.\n\nApakah Anda yakin ingin melanjutkan untuk memulihkan data?")) {
+    if (!window.confirm("⚠️ PERINGATAN RESTORASI DATABASE LOKAL:\n\nRestorasi ini HANYA akan memulihkan data database dari file JSON lokal. Konfigurasi sistem dan file sistem tidak akan disentuh.\n\nApakah Anda yakin ingin melanjutkan memulihkan data database?")) {
       e.target.value = "";
       return;
     }
@@ -1466,8 +1466,8 @@ export default function AdminPanel({
         const snapshot = JSON.parse(text);
 
         // Simple validation to check for a valid snapshot shape
-        if (!snapshot || typeof snapshot !== "object" || (!snapshot.students && !snapshot.sppBills && !snapshot.schoolIdentity)) {
-          throw new Error("Format file JSON tidak valid. Pastikan file tersebut adalah file backup resmi sistem (SIS).");
+        if (!snapshot || typeof snapshot !== "object" || (!snapshot.students && !snapshot.sppBills && !snapshot.homeroomTeachers)) {
+          throw new Error("Format file JSON tidak valid. Pastikan file tersebut adalah file backup database resmi (SIS).");
         }
 
         const res = await fetch("/api/admin/backups/restore-upload", {
@@ -1477,7 +1477,7 @@ export default function AdminPanel({
         });
         const data = await res.json();
         if (res.ok && data.success) {
-          setBackupSuccessMessage("🎉 Sukses! Restorasi data dari komputer lokal berhasil diselesaikan. Halaman akan dimuat ulang...");
+          setBackupSuccessMessage("🎉 Sukses! Restorasi data database dari komputer lokal berhasil diselesaikan. Halaman akan dimuat ulang...");
           setTimeout(() => {
             window.location.reload();
           }, 2000);
@@ -9647,7 +9647,7 @@ export default function AdminPanel({
               </form>
             </motion.div>
 
-            {/* Sistem Backup & Pemulihan Data Otomatis Card */}
+            {/* Sistem Backup & Pemulihan Data Database Card */}
             <motion.div
               initial={{ opacity: 0, y: 15 }}
               animate={{ opacity: 1, y: 0 }}
@@ -9659,10 +9659,10 @@ export default function AdminPanel({
                 </div>
                 <div>
                   <h3 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
-                    Sistem Backup &amp; Pemulihan Data Otomatis
+                    Sistem Backup &amp; Pemulihan Data Database
                   </h3>
                   <p className="text-[11.5px] text-slate-500 mt-1 leading-relaxed font-semibold">
-                    Kelola pencadangan data periodik untuk mengamankan seluruh informasi sekolah secara otomatis ke database cloud, atau unduh dan pulihkan snapshot data secara instan.
+                    Kelola pencadangan data database periodik (Siswa, Tagihan, Tabungan, Absensi, Jurnal, Kesiswaan, Sarpras, dsb) untuk mengamankan seluruh informasi sekolah tanpa mencadangkan atau mengubah sistem/konfigurasi aplikasi.
                   </p>
                 </div>
               </div>
@@ -9688,13 +9688,13 @@ export default function AdminPanel({
                 {/* Left side: Config / Auto-backup settings */}
                 <div className="lg:col-span-5 flex flex-col gap-4 p-4.5 bg-slate-50 border border-slate-200 rounded-2xl">
                   <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
-                    ⚙️ Konfigurasi Backup Otomatis
+                    ⚙️ Konfigurasi Backup Database Otomatis
                   </span>
 
                   <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
                     <div className="flex flex-col gap-0.5">
-                      <span className="font-bold text-slate-800">Status Backup Otomatis</span>
-                      <span className="text-[10px] text-slate-500 font-medium">Cadangkan database secara berkala</span>
+                      <span className="font-bold text-slate-800">Status Backup Database Otomatis</span>
+                      <span className="text-[10px] text-slate-500 font-medium">Cadangkan data database secara berkala</span>
                     </div>
                     <button
                       type="button"
@@ -9744,7 +9744,7 @@ export default function AdminPanel({
                   <div className="flex items-center justify-between p-3 bg-white border border-slate-200 rounded-xl">
                     <div className="flex flex-col gap-0.5">
                       <span className="font-bold text-slate-800">Unduh Otomatis Ke Komputer</span>
-                      <span className="text-[10px] text-slate-500 font-medium">Simpan file backup otomatis baru ke PC lokal</span>
+                      <span className="text-[10px] text-slate-500 font-medium font-medium">Simpan file backup database otomatis baru ke PC lokal</span>
                     </div>
                     <button
                       type="button"
@@ -9774,16 +9774,16 @@ export default function AdminPanel({
                   {/* Restore from Local File Section */}
                   <div className="mt-3 pt-4 border-t border-slate-200/80 flex flex-col gap-2">
                     <span className="text-[10px] font-bold text-indigo-700 uppercase tracking-wider block">
-                      📥 Pemulihan Data (Restore) Lokal
+                      📥 Pemulihan Data Database (Restore) Lokal
                     </span>
                     <p className="text-[10px] text-slate-550 font-semibold leading-relaxed">
-                      Punya file backup di komputer Anda? Pilih file backup JSON untuk memulihkan seluruh basis data sistem sekolah secara instan.
+                      Punya file backup database di komputer Anda? Pilih file backup JSON untuk memulihkan seluruh data database sekolah secara instan tanpa mempengaruhi konfigurasi sistem.
                     </p>
                     <label className="relative mt-1 flex flex-col items-center justify-center border-2 border-dashed border-slate-200 hover:border-indigo-450 bg-white hover:bg-indigo-50/10 py-4 px-3 rounded-xl cursor-pointer transition-all">
                       <div className="flex flex-col items-center gap-1.5 text-center">
                         <UploadCloud size={18} className={isRestoringLocalBackup ? "animate-bounce text-indigo-500" : "text-slate-400"} />
                         <span className="text-[10px] font-bold text-slate-750">
-                          {isRestoringLocalBackup ? "Sedang memulihkan data..." : "Pilih File Backup (.json)"}
+                          {isRestoringLocalBackup ? "Sedang memulihkan data database..." : "Pilih File Backup Database (.json)"}
                         </span>
                         <span className="text-[8.5px] text-slate-400 font-bold font-mono">
                           Format: SIS_Backup_*.json
@@ -9804,11 +9804,11 @@ export default function AdminPanel({
                 <div className="lg:col-span-7 flex flex-col gap-5">
                   <div className="p-4 bg-slate-50 border border-slate-200 rounded-2xl">
                     <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider block mb-3.5">
-                      📸 Pencadangan Manual Instan
+                      📸 Pencadangan Database Manual Instan
                     </span>
                     <form onSubmit={handleCreateBackup} className="flex gap-2.5 items-end">
                       <div className="flex-1 flex flex-col gap-1.5 text-left">
-                        <label className="text-[10px] uppercase font-bold text-slate-400">Deskripsi / Catatan Backup</label>
+                        <label className="text-[10px] uppercase font-bold text-slate-400">Deskripsi / Catatan Backup Database</label>
                         <input
                           type="text"
                           required
@@ -9831,7 +9831,7 @@ export default function AdminPanel({
                         ) : (
                           <>
                             <PlusCircle size={14} className="text-white" />
-                            <span>Backup Sekarang</span>
+                            <span>Backup Database Sekarang</span>
                           </>
                         )}
                       </button>
@@ -9841,7 +9841,7 @@ export default function AdminPanel({
                   {/* List of snapshots */}
                   <div className="flex flex-col gap-2.5">
                     <div className="flex justify-between items-center px-1">
-                      <span className="font-bold text-slate-800 text-xs">Riwayat &amp; Daftar Snapshot Backup ({backups.length})</span>
+                      <span className="font-bold text-slate-800 text-xs">Riwayat &amp; Daftar Snapshot Backup Database ({backups.length})</span>
                       <button
                         type="button"
                         onClick={fetchBackups}
@@ -9856,12 +9856,12 @@ export default function AdminPanel({
                     {isLoadingBackups ? (
                       <div className="py-12 flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 rounded-xl bg-slate-50">
                         <RefreshCw size={24} className="animate-spin text-indigo-600 animate-normal" />
-                        <span className="text-slate-500 font-semibold font-mono text-[11px]">Mengambil snapshot backup dari database...</span>
+                        <span className="text-slate-500 font-semibold font-mono text-[11px]">Mengambil snapshot backup database...</span>
                       </div>
                     ) : backups.length === 0 ? (
                       <div className="py-12 flex flex-col items-center justify-center gap-2 border border-dashed border-slate-200 rounded-xl bg-slate-50 text-slate-400">
                         <HardDrive size={32} className="stroke-[1.5]" />
-                        <span className="font-semibold text-[11px]">Belum ada snapshot backup yang tersimpan di cloud database.</span>
+                        <span className="font-semibold text-[11px]">Belum ada snapshot backup database yang tersimpan di cloud.</span>
                       </div>
                     ) : (
                       <div className="max-h-[340px] overflow-y-auto border border-slate-200 rounded-xl divide-y divide-slate-100 bg-white">
@@ -9894,7 +9894,7 @@ export default function AdminPanel({
                                 <button
                                   type="button"
                                   onClick={() => window.location.href = `/api/admin/backups/${bkp.id}/download`}
-                                  title="Unduh File Backup (JSON)"
+                                  title="Unduh File Backup Database (JSON)"
                                   className="p-2 text-slate-600 hover:text-indigo-600 hover:bg-indigo-50 rounded-xl transition-all cursor-pointer border border-slate-200 hover:border-indigo-100"
                                 >
                                   <Download size={14} />
@@ -9904,7 +9904,7 @@ export default function AdminPanel({
                                   type="button"
                                   disabled={isRestoringBackupId !== null}
                                   onClick={() => handleRestoreBackup(bkp.id)}
-                                  title="Pulihkan Sistem ke Snapshot Ini"
+                                  title="Pulihkan Data Database ke Snapshot Ini"
                                   className="p-2 text-amber-600 hover:text-white hover:bg-amber-600 rounded-xl transition-all cursor-pointer border border-slate-200 hover:border-amber-500 disabled:opacity-50"
                                 >
                                   {isRestoringBackupId === bkp.id ? (
@@ -9933,7 +9933,7 @@ export default function AdminPanel({
                             {/* Collections contents count preview badge style */}
                             {bkp.collections && Object.keys(bkp.collections).length > 0 && (
                               <div className="flex flex-wrap gap-x-2 gap-y-1 mt-0.5 border-t border-slate-100 pt-2 font-mono text-[9.5px] text-slate-500">
-                                <span className="font-sans font-bold text-slate-400 shrink-0">Isi Snapshot (Lengkap):</span>
+                                <span className="font-sans font-bold text-slate-400 shrink-0">Isi Database Snapshot:</span>
                                 <span>Siswa: <strong className="text-slate-700">{bkp.collections.students || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
                                 <span>SPP: <strong className="text-slate-700">{bkp.collections.sppBills || 0}</strong></span>
@@ -9953,10 +9953,6 @@ export default function AdminPanel({
                                 <span>Sarpras: <strong className="text-slate-700">{(bkp.collections.sarprasItems || 0) + (bkp.collections.sarprasProposals || 0) + (bkp.collections.sarprasLoans || 0)}</strong></span>
                                 <span className="text-slate-300">•</span>
                                 <span>Gaji Guru: <strong className="text-slate-700">{bkp.collections.teacherSalaries || 0}</strong></span>
-                                <span className="text-slate-300">•</span>
-                                <span>File/Dokumen: <strong className="text-slate-700">{bkp.collections.uploadedFiles || 0}</strong></span>
-                                <span className="text-slate-300">•</span>
-                                <span>Midtrans: <strong className="text-emerald-600">{bkp.collections.midtransConfig ? "Tersimpan" : "Kosong"}</strong></span>
                               </div>
                             )}
                           </div>

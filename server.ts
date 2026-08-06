@@ -1912,9 +1912,8 @@ async function startServer() {
     return bytes;
   }
 
-  // Helper function to build a complete application backup snapshot
+  // Helper function to build a pure database backup snapshot (Database data collections only, excluding system code/configs/files)
   async function buildFullBackupSnapshot() {
-    const uploadedFiles = await getUploadedFilesSnapshot();
     const snapshot = {
       students,
       sppBills,
@@ -1932,6 +1931,7 @@ async function startServer() {
       classAnnouncements,
       classMeetingLogs,
       merdekaAssessments,
+      classSchedules,
       principalWorkPrograms,
       teacherEvaluations,
       infractionRules,
@@ -1939,17 +1939,7 @@ async function startServer() {
       sarprasProposals,
       sarprasLoans,
       teacherSalaries,
-      sppRates,
-      schoolIdentity,
-      midtransConfig,
-      whatsappConfig,
-      treasurerConfig,
-      principalConfig,
-      sarprasConfig,
-      bkConfig,
-      adminConfig,
-      salaryConfig,
-      uploadedFiles
+      sppRates
     };
 
     const counts = {
@@ -1968,78 +1958,20 @@ async function startServer() {
       classAnnouncements: classAnnouncements.length,
       classMeetingLogs: classMeetingLogs.length,
       merdekaAssessments: merdekaAssessments.length,
+      classSchedules: classSchedules ? classSchedules.length : 0,
       principalWorkPrograms: principalWorkPrograms.length,
       teacherEvaluations: teacherEvaluations.length,
       infractionRules: infractionRules.length,
       sarprasItems: sarprasItems.length,
       sarprasProposals: sarprasProposals.length,
       sarprasLoans: sarprasLoans.length,
-      teacherSalaries: teacherSalaries.length,
-      uploadedFiles: uploadedFiles.length,
-      midtransConfig: (midtransConfig && midtransConfig.clientKey) ? 1 : 0
+      teacherSalaries: teacherSalaries.length
     };
 
     return { snapshot, counts };
   }
 
-  // Helper function to query uploaded files metadata & base64 (safely capped for large binary files)
-  async function getUploadedFilesSnapshot() {
-    const uploadDir = path.join(process.cwd(), "uploads");
-    const filesList: any[] = [];
-    try {
-      if (mongoDb) {
-        await executeMongoOperationWithRetry(async () => {
-          const filesCol = mongoDb.collection("uploadedFiles");
-          const storedFiles = await filesCol.find({}).toArray();
-          storedFiles.forEach((f: any) => {
-            const { _id, ...rest } = f;
-            // Keep base64 for small/medium files (up to ~750KB) to ensure single snapshot stays safely within MongoDB 16MB document limit
-            if (rest.base64Data && typeof rest.base64Data === "string" && rest.base64Data.length > 1000000) {
-              const { base64Data, ...metaOnly } = rest;
-              filesList.push({ ...metaOnly, hasExternalBinary: true });
-            } else {
-              filesList.push(rest);
-            }
-          });
-        });
-      } else if (fs.existsSync(uploadDir)) {
-        const diskFiles = fs.readdirSync(uploadDir);
-        diskFiles.forEach(filename => {
-          const filePath = path.join(uploadDir, filename);
-          if (fs.statSync(filePath).isFile()) {
-            const stats = fs.statSync(filePath);
-            if (stats.size <= 750000) {
-              const buf = fs.readFileSync(filePath);
-              filesList.push({
-                id: filename,
-                filename,
-                originalName: filename,
-                size: stats.size,
-                mimetype: filename.endsWith(".png") ? "image/png" : filename.endsWith(".jpg") || filename.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream",
-                base64Data: buf.toString("base64"),
-                createdAt: new Date().toISOString()
-              });
-            } else {
-              filesList.push({
-                id: filename,
-                filename,
-                originalName: filename,
-                size: stats.size,
-                mimetype: filename.endsWith(".png") ? "image/png" : filename.endsWith(".jpg") || filename.endsWith(".jpeg") ? "image/jpeg" : "application/octet-stream",
-                hasExternalBinary: true,
-                createdAt: new Date().toISOString()
-              });
-            }
-          }
-        });
-      }
-    } catch (e) {
-      console.warn("Error getting uploaded files for snapshot:", e);
-    }
-    return filesList;
-  }
-
-  // Helper function to restore a full application backup snapshot
+  // Helper function to restore a database backup snapshot (Restores database data only; does NOT touch system settings/configs or system files)
   async function restoreFullBackupSnapshot(snapshot: any) {
     if (!snapshot || typeof snapshot !== "object") {
       throw new Error("Format file JSON snapshot tidak valid.");
@@ -2069,53 +2001,7 @@ async function startServer() {
     if (Array.isArray(snapshot.sarprasProposals)) { sarprasProposals.length = 0; sarprasProposals.push(...snapshot.sarprasProposals); }
     if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
     if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
-
     if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
-    if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
-    if (snapshot.midtransConfig) Object.assign(midtransConfig, snapshot.midtransConfig);
-    if (snapshot.whatsappConfig) Object.assign(whatsappConfig, snapshot.whatsappConfig);
-    if (snapshot.treasurerConfig) Object.assign(treasurerConfig, snapshot.treasurerConfig);
-    if (snapshot.principalConfig) Object.assign(principalConfig, snapshot.principalConfig);
-    if (snapshot.sarprasConfig) Object.assign(sarprasConfig, snapshot.sarprasConfig);
-    if (snapshot.bkConfig) Object.assign(bkConfig, snapshot.bkConfig);
-    if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
-    if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
-
-    // Restore uploaded files to disk and MongoDB if present
-    if (Array.isArray(snapshot.uploadedFiles) && snapshot.uploadedFiles.length > 0) {
-      const uploadDir = path.join(process.cwd(), "uploads");
-      if (!fs.existsSync(uploadDir)) {
-        fs.mkdirSync(uploadDir, { recursive: true });
-      }
-      for (const fileDoc of snapshot.uploadedFiles) {
-        if (fileDoc.filename && fileDoc.base64Data) {
-          try {
-            const destPath = path.join(uploadDir, fileDoc.filename);
-            fs.writeFileSync(destPath, Buffer.from(fileDoc.base64Data, "base64"));
-            if (mongoDb) {
-              await executeMongoOperationWithRetry(async () => {
-                const filesCol = mongoDb.collection("uploadedFiles");
-                await filesCol.replaceOne(
-                  { id: fileDoc.filename },
-                  {
-                    id: fileDoc.filename,
-                    filename: fileDoc.filename,
-                    originalName: fileDoc.originalName || fileDoc.filename,
-                    size: fileDoc.size || 0,
-                    mimetype: fileDoc.mimetype || "application/octet-stream",
-                    base64Data: fileDoc.base64Data,
-                    createdAt: fileDoc.createdAt || new Date().toISOString()
-                  },
-                  { upsert: true }
-                );
-              });
-            }
-          } catch (errFile) {
-            console.warn(`Failed to restore uploaded file ${fileDoc.filename}:`, errFile);
-          }
-        }
-      }
-    }
 
     saveState();
     await saveStateToFirestore();
@@ -2136,7 +2022,7 @@ async function startServer() {
         id: backupId,
         createdAt,
         type: type || "manual",
-        description: description || (type === "auto" ? "Backup Otomatis Sistem" : "Backup Manual Admin"),
+        description: description || (type === "auto" ? "Backup Otomatis Database" : "Backup Manual Admin"),
         sizeBytes,
         collections: counts,
         data: snapshotStr
@@ -2216,7 +2102,7 @@ async function startServer() {
       const snapshot = JSON.parse(backup.data);
       await restoreFullBackupSnapshot(snapshot);
 
-      res.json({ success: true, message: "Restorasi data seluruh aplikasi dari backup berhasil diselesaikan." });
+      res.json({ success: true, message: "Restorasi data database berhasil diselesaikan." });
     } catch (err: any) {
       console.error("Error restoring backup:", err);
       res.status(500).json({ error: "Gagal merestorasi backup data: " + err.message });
@@ -2233,7 +2119,7 @@ async function startServer() {
 
       await restoreFullBackupSnapshot(snapshot);
 
-      res.json({ success: true, message: "Restorasi data seluruh aplikasi dari file backup lokal berhasil diselesaikan." });
+      res.json({ success: true, message: "Restorasi data database dari file backup lokal berhasil diselesaikan." });
     } catch (err: any) {
       console.error("Error restoring uploaded backup:", err);
       res.status(500).json({ error: "Gagal merestorasi backup lokal: " + err.message });
@@ -9812,7 +9698,7 @@ async function startServer() {
           id: backupId,
           createdAt,
           type: "auto",
-          description: "Backup Otomatis Sistem (Siklus Periodik)",
+          description: "Backup Otomatis Database (Siklus Periodik)",
           sizeBytes,
           collections: counts,
           data: snapshotStr

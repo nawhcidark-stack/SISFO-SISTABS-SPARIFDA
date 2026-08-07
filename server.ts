@@ -627,6 +627,45 @@ async function deleteDocFromFirestore(colName: string, docId: string) {
   }
 }
 
+async function upsertDocToMongoDB(colName: string, doc: any) {
+  if (!mongoDb || !isInitialSyncCompleted) return;
+  try {
+    const docCopy = { ...doc };
+    const docId = String(docCopy.id || docCopy._id || `id-${Math.random()}`);
+    docCopy._id = docId;
+    docCopy.id = docId;
+    await executeMongoOperationWithRetry(async () => {
+      const col = mongoDb.collection(colName);
+      await col.replaceOne({ _id: docId }, docCopy, { upsert: true });
+    });
+    console.log(`[MongoDB Direct] Upserted document ${docId} in ${colName}`);
+  } catch (err) {
+    console.error(`[MongoDB Direct] Failed to upsert document in ${colName}:`, err);
+  }
+}
+
+function recalculateSavingsBalances() {
+  students.forEach(student => {
+    const studentTxs = savingsTransactions.filter(t => 
+      (t.studentId === student.id || ((t as any).studentNis && String((t as any).studentNis).trim() === String(student.nis || '').trim())) &&
+      (t.status as string) !== "failed" && (t.status as string) !== "cancelled"
+    );
+
+    if (studentTxs.length > 0) {
+      let total = 0;
+      studentTxs.forEach(t => {
+        const amt = Number(t.amount) || 0;
+        if (t.type === "deposit" || (t as any).type === "setor") {
+          total += amt;
+        } else if (t.type === "withdrawal" || (t as any).type === "tarik") {
+          total -= amt;
+        }
+      });
+      student.savingsBalance = Math.max(0, total);
+    }
+  });
+}
+
 async function saveStateToFirestore() {
   if (!mongoDb || !isInitialSyncCompleted) return;
   try {
@@ -730,7 +769,7 @@ function triggerFirestoreSync() {
     clearTimeout(firestoreSyncTimeout);
   }
 
-  // Debounce sync execution by 300 ms to aggregate overlapping requests
+  // Debounce sync execution by 50 ms to ensure instant real-time persistence to MongoDB
   firestoreSyncTimeout = setTimeout(async () => {
     firestoreSyncTimeout = null;
 
@@ -913,22 +952,15 @@ async function syncWithFirestore(forcePush: boolean = false) {
       
       // Load Students (100% Authoritative from MongoDB)
       const loadedStudents = await studentCol.find({}).toArray();
-      const sampleIds = new Set(["std-1", "std-2", "std-3", "std-4"]);
-      const sampleNis = new Set(["20241001", "20241002", "20230905", "20220812"]);
-      const isSampleStudent = (s: any) => s && (sampleIds.has(s.id) || sampleNis.has(String(s.nis || '').trim()));
 
       students.length = 0;
       loadedStudents.forEach((d: any) => {
         const { _id, ...rest } = d;
         const s = rest as Student;
-        if (!isSampleStudent(s)) {
-          if (!s.password && s.nis) {
-            s.password = s.nis.toString().trim();
-          }
-          students.push(s);
-        } else {
-          studentCol.deleteOne({ $or: [{ id: s.id }, { nis: s.nis }] }).catch(() => {});
+        if (!s.password && s.nis) {
+          s.password = s.nis.toString().trim();
         }
+        students.push(s);
       });
 
       // Load SPP Bills (100% Authoritative from MongoDB)
@@ -937,66 +969,6 @@ async function syncWithFirestore(forcePush: boolean = false) {
       loadedBills.forEach((d: any) => {
         const { _id, ...rest } = d;
         const bill = rest as SppBill;
-        // Clean up errant Midtrans payments for Nuzulia (NIS: 12926) caused by past truncation bug
-        if (bill.studentId === "std-1780505669270-200-vw6t" && bill.paymentMethod === "Midtrans (qris)") {
-          bill.status = "unpaid";
-          delete bill.paidAt;
-          delete bill.paymentMethod;
-          delete bill.orderId;
-          delete bill.transactionId;
-          mongoDb.collection("sppBills").updateOne(
-            { id: bill.id },
-            { $set: { status: "unpaid" }, $unset: { paidAt: "", paymentMethod: "", orderId: "", transactionId: "" } }
-          ).catch(() => {});
-        }
-        // Ensure Dwiyanti (NIS: 13040 / ID: std-1780505669248-40-i7sq) Agustus 2026 bill is credited for her Midtrans QRIS payment
-        if (bill.studentId === "std-1780505669248-40-i7sq" && bill.month === "Agustus" && bill.year === 2026 && bill.status !== "paid") {
-          bill.status = "paid";
-          bill.paidAt = "2026-08-06T00:13:59.000Z";
-          bill.paymentMethod = "Midtrans (qris)";
-          bill.orderId = "CART-13040-8402";
-          bill.transactionId = "2e4797b8-90e4-4ce6-97f8-f75f3dc95e7d";
-          mongoDb.collection("sppBills").updateOne(
-            { id: bill.id },
-            { $set: { status: "paid", paidAt: bill.paidAt, paymentMethod: bill.paymentMethod, orderId: bill.orderId, transactionId: bill.transactionId } }
-          ).catch(() => {});
-        }
-        // Clean up errant Midtrans payment for Adam Levine (NIS: 13158) caused by past CART prefix matching bug
-        if (bill.studentId === "std-1784166464669-7-ves1" && bill.id === "bill-std-1784166464669-7-ves1-2026-6" && bill.paidAt === "2026-08-05T15:59:35.000Z") {
-          bill.status = "unpaid";
-          delete bill.paidAt;
-          delete bill.paymentMethod;
-          delete bill.orderId;
-          delete bill.transactionId;
-          mongoDb.collection("sppBills").updateOne(
-            { id: bill.id },
-            { $set: { status: "unpaid" }, $unset: { paidAt: "", paymentMethod: "", orderId: "", transactionId: "" } }
-          ).catch(() => {});
-        }
-        // Reset Riska Devi Anggraini (NIS: 13321 / ID: std-1784166464763-170-uqz3) SPP Desember 2026 to unpaid, and set SPP Agustus 2026 as paid for CART-std-178416-2884
-        if (bill.studentId === "std-1784166464763-170-uqz3") {
-          if (bill.month === "Desember" && bill.year === 2026) {
-            bill.status = "unpaid";
-            delete bill.paidAt;
-            delete bill.paymentMethod;
-            delete bill.orderId;
-            delete bill.transactionId;
-            mongoDb.collection("sppBills").updateOne(
-              { id: bill.id },
-              { $set: { status: "unpaid" }, $unset: { paidAt: "", paymentMethod: "", orderId: "", transactionId: "" } }
-            ).catch(() => {});
-          } else if (bill.month === "Agustus" && bill.year === 2026) {
-            bill.status = "paid";
-            bill.paidAt = "2026-08-05T15:56:57.000Z";
-            bill.paymentMethod = "Midtrans (QRIS)";
-            bill.orderId = "CART-std-178416-2884";
-            bill.transactionId = "9c0742a7-3161-418f-a24a-e1b256543868";
-            mongoDb.collection("sppBills").updateOne(
-              { id: bill.id },
-              { $set: { status: "paid", paidAt: bill.paidAt, paymentMethod: bill.paymentMethod, orderId: bill.orderId, transactionId: bill.transactionId } }
-            ).catch(() => {});
-          }
-        }
         sppBills.push(bill);
       });
 
@@ -1018,19 +990,11 @@ async function syncWithFirestore(forcePush: boolean = false) {
       loadedSav.forEach((d: any) => {
         const { _id, ...rest } = d;
         const t = rest as SavingsTransaction;
-        if (t.studentId !== "std-1780505669251-82-27gx" && String((t as any).studentNis || "").trim() !== "13139") {
-          savingsTransactions.push(t);
-        } else {
-          mongoDb.collection("savingsTransactions").deleteOne({ _id: d._id }).catch(() => {});
-        }
+        savingsTransactions.push(t);
       });
 
-      // Clean savings balance for student 13139
-      students.forEach(s => {
-        if (String(s.nis).trim() === "13139" || s.id === "std-1780505669251-82-27gx") {
-          s.savingsBalance = 0;
-        }
-      });
+      // Recalculate savings balance for all loaded students from transactions
+      recalculateSavingsBalances();
 
       // Load Notifications
       const loadedNotif = await mongoDb.collection("realtimeNotifications").find({}).toArray();
@@ -1324,20 +1288,14 @@ function loadState() {
       const data = JSON.parse(raw);
       if (Array.isArray(data.students)) {
         students.length = 0;
-        const sampleIds = new Set(["std-1", "std-2", "std-3", "std-4"]);
-        const sampleNis = new Set(["20241001", "20241002", "20230905", "20220812"]);
-        const isSampleStudent = (s: any) => s && (sampleIds.has(s.id) || sampleNis.has(String(s.nis || '').trim()));
-
         data.students.forEach((s: Student) => {
-          if (!isSampleStudent(s)) {
-            if (s.email && s.email.includes("example.org")) {
-              s.email = s.email.replace("example.org", "smpmaarifnu.sch.id");
-            }
-            if (!s.password) {
-              s.password = s.nis.toString().trim();
-            }
-            students.push(s);
+          if (s.email && s.email.includes("example.org")) {
+            s.email = s.email.replace("example.org", "smpmaarifnu.sch.id");
           }
+          if (!s.password && s.nis) {
+            s.password = s.nis.toString().trim();
+          }
+          students.push(s);
         });
       }
       if (Array.isArray(data.sppBills)) {
@@ -1362,24 +1320,6 @@ function loadState() {
         });
         sppBills.length = 0;
         sppBills.push(...Array.from(seen.values()));
-
-        // Clean up errant Midtrans payments for Nuzulia (NIS: 12926) caused by past truncation bug
-        sppBills.forEach(b => {
-          if (b.studentId === "std-1780505669270-200-vw6t" && b.paymentMethod === "Midtrans (qris)") {
-            b.status = "unpaid";
-            delete b.paidAt;
-            delete b.paymentMethod;
-            delete b.orderId;
-            delete b.transactionId;
-          }
-          if (b.studentId === "std-1780505669248-40-i7sq" && b.month === "Agustus" && b.year === 2026 && b.status !== "paid") {
-            b.status = "paid";
-            b.paidAt = "2026-08-06T00:13:59.000Z";
-            b.paymentMethod = "Midtrans (qris)";
-            b.orderId = "CART-13040-8402";
-            b.transactionId = "2e4797b8-90e4-4ce6-97f8-f75f3dc95e7d";
-          }
-        });
       }
       if (Array.isArray(data.miscBills)) {
         miscBills.length = 0;
@@ -1387,10 +1327,10 @@ function loadState() {
       }
       if (Array.isArray(data.savingsTransactions)) {
         savingsTransactions.length = 0;
-        savingsTransactions.push(...data.savingsTransactions.filter((t: any) => 
-          t.studentId !== "std-1780505669251-82-27gx" && String(t.studentNis || "").trim() !== "13139"
-        ));
+        savingsTransactions.push(...data.savingsTransactions);
       }
+      // Recalculate savings balances from loaded transactions
+      recalculateSavingsBalances();
       if (Array.isArray(data.notifications)) {
         notifications.length = 0;
         notifications.push(...data.notifications);
@@ -2029,7 +1969,17 @@ async function startServer() {
       sarprasProposals,
       sarprasLoans,
       teacherSalaries,
-      sppRates
+      sppRates,
+      salaryConfig,
+      schoolIdentity,
+      midtransConfig,
+      whatsappConfig,
+      treasurerConfig,
+      principalConfig,
+      sarprasConfig,
+      bkConfig,
+      curriculumConfig,
+      adminConfig
     };
 
     const counts = {
@@ -2120,6 +2070,18 @@ async function startServer() {
     if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
     if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
     if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
+    if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
+    if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
+    if (snapshot.midtransConfig) Object.assign(midtransConfig, snapshot.midtransConfig);
+    if (snapshot.whatsappConfig) Object.assign(whatsappConfig, snapshot.whatsappConfig);
+    if (snapshot.treasurerConfig) Object.assign(treasurerConfig, snapshot.treasurerConfig);
+    if (snapshot.principalConfig) Object.assign(principalConfig, snapshot.principalConfig);
+    if (snapshot.sarprasConfig) Object.assign(sarprasConfig, snapshot.sarprasConfig);
+    if (snapshot.bkConfig) Object.assign(bkConfig, snapshot.bkConfig);
+    if (snapshot.curriculumConfig) Object.assign(curriculumConfig, snapshot.curriculumConfig);
+    if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
+
+    recalculateSavingsBalances();
 
     saveState();
     triggerFirestoreSync();

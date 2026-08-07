@@ -952,10 +952,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   // Counseling list filters mapping
   const filteredLogs = useMemo(() => {
     return logs.filter(log => {
+      if (!log || typeof log !== 'object' || !log.studentName) return false;
+      const sName = log.studentName || '';
+      const sTopic = log.topic || '';
+      const sClass = log.className || '';
       const searchMatch = 
-        log.studentName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-        log.topic.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        log.className.toLowerCase().includes(searchQuery.toLowerCase());
+        sName.toLowerCase().includes(searchQuery.toLowerCase()) || 
+        sTopic.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        sClass.toLowerCase().includes(searchQuery.toLowerCase());
 
       const statusMatch = 
         statusFilter === 'all' ? true :
@@ -1134,7 +1138,12 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
       if (response.ok) {
         const data = await response.json();
-        setLogs(prev => [data, ...prev]);
+        const createdLog = data.newLog || (data.studentName ? data : null);
+        if (createdLog) {
+          setLogs(prev => [createdLog, ...prev.filter(l => l && l.id !== createdLog.id)]);
+        } else if (Array.isArray(data.studentCounselingLogs)) {
+          setLogs(data.studentCounselingLogs);
+        }
         setSelectedLogId(null);
         setSuccessMsg(`Berhasil menjadwalkan dan mencatat bimbingan BK untuk ${draftStudentName}!`);
         setTimeout(() => setSuccessMsg(null), 5000);

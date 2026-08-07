@@ -1431,6 +1431,9 @@ export default function AdminPanel({
     if (res.status === 413 || text.includes("413") || text.toLowerCase().includes("payload too large")) {
       return { error: "Ukuran file backup atau payload terlalu besar melebihi batas server (413 Payload Too Large)." };
     }
+    if (res.status === 504 || text.includes("504") || text.toLowerCase().includes("gateway time-out") || text.toLowerCase().includes("gateway timeout")) {
+      return { error: "Proses restorasi memerlukan waktu lebih lama karena ukuran data. Silakan tunggu beberapa saat lalu muat ulang (refresh) halaman untuk melihat data yang telah dipulihkan." };
+    }
     if (text.trim().startsWith("<") || text.includes("<html>")) {
       return { error: `Server mengembalikan respon HTML (${res.status} ${res.statusText}). Pastikan endpoint API '/api/admin/backups' diproses dengan benar.` };
     }

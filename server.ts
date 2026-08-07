@@ -2122,7 +2122,7 @@ async function startServer() {
     if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
 
     saveState();
-    await saveStateToFirestore();
+    triggerFirestoreSync();
   }
 
   // Database Backups - Create a Backup Snapshot

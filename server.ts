@@ -10,6 +10,7 @@ import multer from "multer";
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule } from "./src/types";
+import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 
 // Setup serverport
 const PORT = process.env.PORT || 3000;
@@ -644,24 +645,11 @@ async function upsertDocToMongoDB(colName: string, doc: any) {
   }
 }
 
-function recalculateSavingsBalances() {
-  students.forEach(student => {
-    const studentTxs = savingsTransactions.filter(t => 
-      (t.studentId === student.id || ((t as any).studentNis && String((t as any).studentNis).trim() === String(student.nis || '').trim())) &&
-      (t.status as string) !== "failed" && (t.status as string) !== "cancelled"
-    );
-
-    if (studentTxs.length > 0) {
-      let total = 0;
-      studentTxs.forEach(t => {
-        const amt = Number(t.amount) || 0;
-        if (t.type === "deposit" || (t as any).type === "setor") {
-          total += amt;
-        } else if (t.type === "withdrawal" || (t as any).type === "tarik") {
-          total -= amt;
-        }
-      });
-      student.savingsBalance = Math.max(0, total);
+function applyAuthoritativeSavingsBalances(studentList: Student[]) {
+  studentList.forEach(s => {
+    const nisStr = String(s.nis || "").trim();
+    if (AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr)) {
+      s.savingsBalance = AUTHORITATIVE_SAVINGS_MAP[nisStr];
     }
   });
 }
@@ -993,8 +981,8 @@ async function syncWithFirestore(forcePush: boolean = false) {
         savingsTransactions.push(t);
       });
 
-      // Recalculate savings balance for all loaded students from transactions
-      recalculateSavingsBalances();
+      // Apply authoritative savings balances for all loaded students
+      applyAuthoritativeSavingsBalances(students);
 
       // Load Notifications
       const loadedNotif = await mongoDb.collection("realtimeNotifications").find({}).toArray();
@@ -1329,8 +1317,8 @@ function loadState() {
         savingsTransactions.length = 0;
         savingsTransactions.push(...data.savingsTransactions);
       }
-      // Recalculate savings balances from loaded transactions
-      recalculateSavingsBalances();
+      // Apply authoritative savings balances for all loaded students
+      applyAuthoritativeSavingsBalances(students);
       if (Array.isArray(data.notifications)) {
         notifications.length = 0;
         notifications.push(...data.notifications);
@@ -2081,7 +2069,7 @@ async function startServer() {
     if (snapshot.curriculumConfig) Object.assign(curriculumConfig, snapshot.curriculumConfig);
     if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
 
-    recalculateSavingsBalances();
+    applyAuthoritativeSavingsBalances(students);
 
     saveState();
     triggerFirestoreSync();

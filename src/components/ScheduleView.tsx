@@ -25,7 +25,8 @@ import {
   FileText,
   AlertCircle,
   CheckCircle,
-  Info
+  Info,
+  CheckSquare
 } from 'lucide-react';
 
 interface ScheduleViewProps {
@@ -100,12 +101,12 @@ export default function ScheduleView({
 
   const activeJamSlots = useMemo(() => {
     if (matrixJamMode === 'single') {
-      return ['1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+      return ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
     }
     if (matrixJamMode === 'all_pairs') {
-      return ['1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9', '9-10'];
+      return ['0', '1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9', '9-10'];
     }
-    return ['1-2', '3-4', '5-6', '7-8', '9-10'];
+    return ['0', '1-2', '3-4', '5-6', '7-8', '9-10'];
   }, [matrixJamMode]);
 
   // Form Modal States for Waka Kurikulum
@@ -132,10 +133,14 @@ export default function ScheduleView({
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
   const [importFile, setImportFile] = useState<File | null>(null);
   const [importData, setImportData] = useState<any[]>([]);
-  const [importMode, setImportMode] = useState<'append' | 'replace'>('append');
+  const [importMode, setImportMode] = useState<'update' | 'replace' | 'append'>('update');
   const [isImporting, setIsImporting] = useState<boolean>(false);
   const [importError, setImportError] = useState<string | null>(null);
   const [importSuccess, setImportSuccess] = useState<string | null>(null);
+
+  // Multi-select & Search States for Manage All Schedules
+  const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
+  const [manageSearchQuery, setManageSearchQuery] = useState<string>('');
 
   // Combined teacher list (Subject Teachers + Homerooms)
   const allTeachersList = useMemo(() => {
@@ -172,6 +177,62 @@ export default function ScheduleView({
 
     return list.sort((a, b) => a.name.localeCompare(b.name));
   }, [subjectTeachers, homerooms]);
+
+  // Filtered schedules for Manage view
+  const filteredManageSchedules = useMemo(() => {
+    if (!manageSearchQuery.trim()) return schedules;
+    const q = manageSearchQuery.toLowerCase().trim();
+    return schedules.filter(s =>
+      s.day.toLowerCase().includes(q) ||
+      s.className.toLowerCase().includes(q) ||
+      s.subject.toLowerCase().includes(q) ||
+      s.teacherName.toLowerCase().includes(q) ||
+      (s.teacherId && s.teacherId.toLowerCase().includes(q)) ||
+      s.jamKe.toLowerCase().includes(q)
+    );
+  }, [schedules, manageSearchQuery]);
+
+  const isAllSelected = useMemo(() => {
+    if (filteredManageSchedules.length === 0) return false;
+    return filteredManageSchedules.every(s => selectedScheduleIds.includes(s.id));
+  }, [filteredManageSchedules, selectedScheduleIds]);
+
+  const handleToggleSelectAll = () => {
+    if (isAllSelected) {
+      setSelectedScheduleIds(prev => prev.filter(id => !filteredManageSchedules.some(s => s.id === id)));
+    } else {
+      const newIds = new Set([...selectedScheduleIds, ...filteredManageSchedules.map(s => s.id)]);
+      setSelectedScheduleIds(Array.from(newIds));
+    }
+  };
+
+  const handleToggleSelectRow = (id: string) => {
+    setSelectedScheduleIds(prev =>
+      prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+    );
+  };
+
+  const handleBulkDeleteSchedules = async () => {
+    if (selectedScheduleIds.length === 0) return;
+    if (!window.confirm(`Apakah Anda yakin ingin menghapus ${selectedScheduleIds.length} jadwal pelajaran yang dipilih?`)) return;
+
+    try {
+      const res = await fetch('/api/curriculum/schedules/bulk-delete', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ids: selectedScheduleIds })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menghapus jadwal terpilih.');
+      }
+      setSelectedScheduleIds([]);
+      onRefreshSchedule();
+      setFeedback({ type: 'success', text: `Berhasil menghapus ${data.deletedCount || selectedScheduleIds.length} jadwal pelajaran.` });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Gagal menghapus jadwal.' });
+    }
+  };
 
   // --- TEMPLATE EXCEL / CSV DOWNLOAD & IMPORT HANDLERS ---
   const SAMPLE_SCHEDULE_ROWS = useMemo(() => {
@@ -470,7 +531,11 @@ export default function ScheduleView({
         throw new Error(resData.error || 'Gagal menyimpan data import jadwal.');
       }
 
-      setImportSuccess(`Berhasil mengimport ${resData.count} data jadwal pelajaran!`);
+      if (resData.updatedCount > 0 || resData.addedCount > 0) {
+        setImportSuccess(`Berhasil memproses import! ${resData.updatedCount ? `${resData.updatedCount} jadwal diperbarui (cegah ganda), ` : ''}${resData.addedCount || 0} jadwal baru ditambahkan.`);
+      } else {
+        setImportSuccess(`Berhasil mengimport ${resData.count} data jadwal pelajaran!`);
+      }
       onRefreshSchedule();
       setTimeout(() => {
         setIsImportModalOpen(false);
@@ -568,43 +633,27 @@ export default function ScheduleView({
   }, [schedules, role, userClass, userTeacherId, userTeacherName]);
 
   const STANDARD_JAM_OPTIONS = [
-    '1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9', '9-10',
-    '1', '2', '3', '4', '5', '6', '7', '8', '9', '10',
-    '1-3', '2-4', '3-5', '4-6', '5-7', '6-8', '7-9', '8-10', '1-4', '5-8'
+    '0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'
   ];
 
   const handleJamKePresetChange = (val: string) => {
     setFormJamKe(val);
     if (val !== 'custom') {
       setCustomJamInput('');
-      const [start, end] = parseJamRange(val);
-      const jpCount = Math.max(1, end - start + 1);
-      setFormAlokasi(`${jpCount} JP`);
+      setFormAlokasi('1 JP');
 
       const timeMap: Record<string, { start: string; end: string }> = {
-        '1': { start: '07:00', end: '07:40' },
-        '2': { start: '07:40', end: '08:20' },
-        '3': { start: '08:20', end: '09:00' },
-        '4': { start: '09:00', end: '09:40' },
-        '5': { start: '10:00', end: '10:40' },
-        '6': { start: '10:40', end: '11:20' },
-        '7': { start: '11:20', end: '12:00' },
-        '8': { start: '12:40', end: '13:20' },
-        '9': { start: '13:20', end: '14:00' },
-        '10': { start: '14:00', end: '14:40' },
-        '1-2': { start: '07:00', end: '08:20' },
-        '2-3': { start: '07:40', end: '09:00' },
-        '3-4': { start: '08:20', end: '09:40' },
-        '4-5': { start: '09:00', end: '10:40' },
-        '5-6': { start: '10:00', end: '11:20' },
-        '6-7': { start: '10:40', end: '12:00' },
-        '7-8': { start: '11:20', end: '13:20' },
-        '8-9': { start: '12:40', end: '14:00' },
-        '9-10': { start: '13:20', end: '14:40' },
-        '1-3': { start: '07:00', end: '09:00' },
-        '2-4': { start: '07:40', end: '09:40' },
-        '3-5': { start: '08:20', end: '10:40' },
-        '1-4': { start: '07:00', end: '09:40' },
+        '0': { start: '06:45', end: '07:15' },
+        '1': { start: '07:15', end: '07:55' },
+        '2': { start: '07:55', end: '08:35' },
+        '3': { start: '08:35', end: '09:15' },
+        '4': { start: '09:15', end: '09:55' },
+        '5': { start: '10:30', end: '11:10' },
+        '6': { start: '11:10', end: '11:50' },
+        '7': { start: '11:50', end: '12:30' },
+        '8': { start: '12:30', end: '13:10' },
+        '9': { start: '13:10', end: '13:50' },
+        '10': { start: '13:50', end: '14:30' },
       };
 
       if (timeMap[val]) {
@@ -619,11 +668,11 @@ export default function ScheduleView({
     setEditingId(null);
     setFormDay('Senin');
     setFormClassName(selectedClass || availableClasses[0] || '7-A');
-    setFormJamKe('1-2');
+    setFormJamKe('1');
     setCustomJamInput('');
-    setFormStartTime('07:00');
-    setFormEndTime('08:20');
-    setFormAlokasi('2 JP');
+    setFormStartTime('07:15');
+    setFormEndTime('07:55');
+    setFormAlokasi('1 JP');
     setClashError(null);
     setPendingClashPayload(null);
 
@@ -985,7 +1034,7 @@ export default function ScheduleView({
                       matrixJamMode === 'single' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                     }`}
                   >
-                    Per Jam (1 s.d 10)
+                    Per Jam (0 s.d 10)
                   </button>
                 </div>
               </div>
@@ -1316,10 +1365,65 @@ export default function ScheduleView({
             </div>
           </div>
 
+          {/* FILTER SEARCH & BULK ACTION BAR */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+            <div className="relative flex-1 max-w-md">
+              <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+              <input
+                type="text"
+                placeholder="Cari berdasarkan kelas, mapel, guru, ID guru, atau hari..."
+                value={manageSearchQuery}
+                onChange={(e) => setManageSearchQuery(e.target.value)}
+                className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-400"
+              />
+              {manageSearchQuery && (
+                <button
+                  onClick={() => setManageSearchQuery('')}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-0.5 rounded-full"
+                >
+                  <X size={14} />
+                </button>
+              )}
+            </div>
+
+            {selectedScheduleIds.length > 0 ? (
+              <div className="flex items-center gap-3 bg-rose-50 border border-rose-200 px-3.5 py-1.5 rounded-xl text-xs font-bold text-rose-900 animate-fade-in shadow-xs">
+                <CheckSquare size={16} className="text-rose-600 shrink-0" />
+                <span>Terpilih {selectedScheduleIds.length} jadwal</span>
+                <button
+                  onClick={handleBulkDeleteSchedules}
+                  className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
+                >
+                  <Trash2 size={13} />
+                  <span>Hapus ({selectedScheduleIds.length}) Terpilih</span>
+                </button>
+                <button
+                  onClick={() => setSelectedScheduleIds([])}
+                  className="px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-lg text-xs font-semibold cursor-pointer"
+                >
+                  Batal
+                </button>
+              </div>
+            ) : (
+              <div className="text-xs text-slate-500 font-semibold flex items-center gap-2">
+                <span>Menampilkan <strong className="text-slate-800">{filteredManageSchedules.length}</strong> dari <strong className="text-slate-800">{schedules.length}</strong> entri jadwal</span>
+              </div>
+            )}
+          </div>
+
           <div className="overflow-x-auto rounded-2xl border border-slate-200">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
                 <tr className="bg-slate-900 text-white font-extrabold">
+                  <th className="py-3 px-3 text-center w-10">
+                    <input
+                      type="checkbox"
+                      checked={isAllSelected}
+                      onChange={handleToggleSelectAll}
+                      className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
+                      title="Pilih / Batal Semua Baris Terlihat"
+                    />
+                  </th>
                   <th className="py-3 px-4">Hari</th>
                   <th className="py-3 px-4">Kelas</th>
                   <th className="py-3 px-4">Mata Pelajaran</th>
@@ -1331,21 +1435,32 @@ export default function ScheduleView({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-200 font-medium">
-                {schedules.length === 0 ? (
+                {filteredManageSchedules.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="text-center py-8 text-slate-400 italic">Belum ada data jadwal pelajaran yang tersimpan.</td>
+                    <td colSpan={9} className="text-center py-8 text-slate-400 italic">
+                      {manageSearchQuery ? 'Tidak ditemukan jadwal yang cocok dengan kata kunci pencarian.' : 'Belum ada data jadwal pelajaran yang tersimpan.'}
+                    </td>
                   </tr>
                 ) : (
-                  schedules.map((sch, idx) => {
+                  filteredManageSchedules.map((sch, idx) => {
                     const teacherObj = allTeachersList.find(t =>
                       (t.id && sch.teacherId && t.id.toLowerCase() === sch.teacherId.toLowerCase()) ||
                       (t.username && sch.teacherId && t.username.toLowerCase() === sch.teacherId.toLowerCase()) ||
                       (t.name && sch.teacherName && t.name.trim().toLowerCase() === sch.teacherName.trim().toLowerCase())
                     );
                     const teacherUsername = teacherObj?.username || teacherObj?.id || sch.teacherId || '-';
+                    const isRowSelected = selectedScheduleIds.includes(sch.id);
 
                     return (
-                      <tr key={sch.id} className={idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                      <tr key={sch.id} className={isRowSelected ? 'bg-indigo-50/70 border-l-4 border-l-indigo-600' : idx % 2 === 0 ? 'bg-white' : 'bg-slate-50/50'}>
+                        <td className="py-3 px-3 text-center">
+                          <input
+                            type="checkbox"
+                            checked={isRowSelected}
+                            onChange={() => handleToggleSelectRow(sch.id)}
+                            className="w-4 h-4 rounded text-indigo-600 focus:ring-indigo-500 cursor-pointer accent-indigo-600"
+                          />
+                        </td>
                         <td className="py-3 px-4 font-bold text-slate-900">{sch.day}</td>
                         <td className="py-3 px-4 font-extrabold text-indigo-700 bg-indigo-50/40">{sch.className}</td>
                         <td className="py-3 px-4 font-extrabold text-slate-800">{sch.subject}</td>
@@ -1520,44 +1635,18 @@ export default function ScheduleView({
                     onChange={(e) => handleJamKePresetChange(e.target.value)}
                     className="w-full bg-slate-50 border border-slate-250 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                   >
-                    <optgroup label="-- Pasangan Jam (2 JP) --">
-                      <option value="1-2">Jam 1 - 2</option>
-                      <option value="2-3">Jam 2 - 3</option>
-                      <option value="3-4">Jam 3 - 4</option>
-                      <option value="4-5">Jam 4 - 5</option>
-                      <option value="5-6">Jam 5 - 6</option>
-                      <option value="6-7">Jam 6 - 7</option>
-                      <option value="7-8">Jam 7 - 8</option>
-                      <option value="8-9">Jam 8 - 9</option>
-                      <option value="9-10">Jam 9 - 10</option>
-                    </optgroup>
-                    <optgroup label="-- Jam Satuan (1 JP) --">
-                      <option value="1">Jam Ke-1</option>
-                      <option value="2">Jam Ke-2</option>
-                      <option value="3">Jam Ke-3</option>
-                      <option value="4">Jam Ke-4</option>
-                      <option value="5">Jam Ke-5</option>
-                      <option value="6">Jam Ke-6</option>
-                      <option value="7">Jam Ke-7</option>
-                      <option value="8">Jam Ke-8</option>
-                      <option value="9">Jam Ke-9</option>
-                      <option value="10">Jam Ke-10</option>
-                    </optgroup>
-                    <optgroup label="-- Blok 3 - 4 JP --">
-                      <option value="1-3">Jam 1 - 3 (3 JP)</option>
-                      <option value="2-4">Jam 2 - 4 (3 JP)</option>
-                      <option value="3-5">Jam 3 - 5 (3 JP)</option>
-                      <option value="4-6">Jam 4 - 6 (3 JP)</option>
-                      <option value="5-7">Jam 5 - 7 (3 JP)</option>
-                      <option value="6-8">Jam 6 - 8 (3 JP)</option>
-                      <option value="7-9">Jam 7 - 9 (3 JP)</option>
-                      <option value="8-10">Jam 8 - 10 (3 JP)</option>
-                      <option value="1-4">Jam 1 - 4 (4 JP)</option>
-                      <option value="5-8">Jam 5 - 8 (4 JP)</option>
-                    </optgroup>
-                    <optgroup label="-- Lainnya --">
-                      <option value="custom">Input Manual / Kustom...</option>
-                    </optgroup>
+                    <option value="0">Jam Ke-0 (Jam Wali Kelas)</option>
+                    <option value="1">Jam Ke-1</option>
+                    <option value="2">Jam Ke-2</option>
+                    <option value="3">Jam Ke-3</option>
+                    <option value="4">Jam Ke-4</option>
+                    <option value="5">Jam Ke-5</option>
+                    <option value="6">Jam Ke-6</option>
+                    <option value="7">Jam Ke-7</option>
+                    <option value="8">Jam Ke-8</option>
+                    <option value="9">Jam Ke-9</option>
+                    <option value="10">Jam Ke-10</option>
+                    <option value="custom">Input Manual / Kustom...</option>
                   </select>
 
                   {formJamKe === 'custom' && (
@@ -1693,7 +1782,7 @@ export default function ScheduleView({
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">3. Mata Pelajaran</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">4. Nama Guru</div>
                   <div className="bg-emerald-100 text-emerald-900 font-extrabold p-1.5 rounded border border-emerald-300">5. ID / Username Guru ★</div>
-                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">6. Jam Ke (1-2)</div>
+                  <div className="bg-slate-100 p-1.5 rounded border border-slate-200">6. Jam Ke (0, 1, 2, dst)</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">7. Waktu Mulai (07:00)</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">8. Waktu Selesai (08:20)</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">9. Alokasi JP (2 JP)</div>
@@ -1754,30 +1843,43 @@ export default function ScheduleView({
                     <span>Terdeteksi {importData.length} Baris Jadwal ({importData.filter(d => d.isValid).length} Valid)</span>
                   </div>
 
-                  <div className="flex items-center gap-3 text-xs font-bold text-slate-700">
-                    <span className="text-[11px] text-slate-500 font-semibold">Mode Import:</span>
-                    <label className="flex items-center gap-1 cursor-pointer">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        value="append"
-                        checked={importMode === 'append'}
-                        onChange={() => setImportMode('append')}
-                        className="text-indigo-600 cursor-pointer"
-                      />
-                      <span>Tambahkan</span>
-                    </label>
-                    <label className="flex items-center gap-1 cursor-pointer text-rose-700">
-                      <input
-                        type="radio"
-                        name="importMode"
-                        value="replace"
-                        checked={importMode === 'replace'}
-                        onChange={() => setImportMode('replace')}
-                        className="text-rose-600 cursor-pointer"
-                      />
-                      <span>Timpa Semua</span>
-                    </label>
+                  <div className="flex flex-col sm:flex-row sm:items-center gap-2.5 text-xs font-bold text-slate-700">
+                    <span className="text-[11px] text-slate-500 font-semibold shrink-0">Mode Import:</span>
+                    <div className="flex flex-wrap items-center gap-3">
+                      <label className="flex items-center gap-1.5 cursor-pointer text-indigo-700 bg-indigo-50/80 px-2.5 py-1 rounded-lg border border-indigo-200">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          value="update"
+                          checked={importMode === 'update'}
+                          onChange={() => setImportMode('update')}
+                          className="text-indigo-600 cursor-pointer accent-indigo-600"
+                        />
+                        <span>Update / Timpa Slot Sama (Cegah Ganda) ★</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          value="append"
+                          checked={importMode === 'append'}
+                          onChange={() => setImportMode('append')}
+                          className="text-slate-600 cursor-pointer accent-slate-600"
+                        />
+                        <span>Tambahkan</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 cursor-pointer text-rose-700">
+                        <input
+                          type="radio"
+                          name="importMode"
+                          value="replace"
+                          checked={importMode === 'replace'}
+                          onChange={() => setImportMode('replace')}
+                          className="text-rose-600 cursor-pointer accent-rose-600"
+                        />
+                        <span>Timpa Semua Data</span>
+                      </label>
+                    </div>
                   </div>
                 </div>
 

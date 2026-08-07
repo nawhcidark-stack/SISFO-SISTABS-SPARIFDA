@@ -87,21 +87,53 @@ const classAnnouncements: ClassAnnouncement[] = [];
 
 const classMeetingLogs: ClassMeetingLog[] = [];
 
+import { INITIAL_SCHEDULES_CSV } from "./src/data/schedulesCsv";
+
+function parseCsvSchedules(csvStr: string): ClassSchedule[] {
+  const lines = csvStr.trim().split('\n');
+  const result: ClassSchedule[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i].trim();
+    if (!line) continue;
+    const cols: string[] = [];
+    let cur = '';
+    let inQuotes = false;
+    for (let c = 0; c < line.length; c++) {
+      const char = line[c];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        cols.push(cur.trim());
+        cur = '';
+      } else {
+        cur += char;
+      }
+    }
+    cols.push(cur.trim());
+
+    if (cols.length >= 8) {
+      result.push({
+        id: `sch-csv-${i}`,
+        day: cols[0],
+        className: cols[1],
+        subject: cols[2],
+        teacherName: cols[3],
+        teacherId: cols[4] || 'st-general',
+        jamKe: cols[5],
+        startTime: cols[6],
+        endTime: cols[7],
+        alokasiWaktu: cols[8] || '1 JP',
+        academicYear: '2025/2026',
+        semester: 'Genap'
+      });
+    }
+  }
+  return result;
+}
+
 const merdekaAssessments: MerdekaAssessment[] = [];
 
-const classSchedules: ClassSchedule[] = [
-  { id: "sch-1", day: "Senin", className: "7-A", subject: "Matematika", teacherId: "st-1", teacherName: "Drs. Heru Setyawan, M.Pd", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-2", day: "Senin", className: "7-A", subject: "Bahasa Indonesia", teacherId: "st-5", teacherName: "Ahmad Fauzan, S.S", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-3", day: "Senin", className: "7-A", subject: "Pendidikan Agama Islam", teacherId: "st-6", teacherName: "KH. M. Syukron, S.Pd.I", jamKe: "5-6", startTime: "10:00", endTime: "11:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-4", day: "Senin", className: "7-B", subject: "Ilmu Pengetahuan Alam", teacherId: "st-3", teacherName: "Budi Wijaya, S.Si", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-5", day: "Senin", className: "7-B", subject: "Bahasa Inggris", teacherId: "st-2", teacherName: "Ibu Lindawati, S.Pd", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-6", day: "Selasa", className: "7-A", subject: "Bahasa Inggris", teacherId: "st-2", teacherName: "Ibu Lindawati, S.Pd", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-7", day: "Selasa", className: "7-A", subject: "Ilmu Pengetahuan Alam", teacherId: "st-3", teacherName: "Budi Wijaya, S.Si", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-8", day: "Rabu", className: "7-A", subject: "Ilmu Pengetahuan Sosial", teacherId: "st-4", teacherName: "Dra. Siti Rahma", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-9", day: "Rabu", className: "7-A", subject: "Pendidikan Jasmani & OR", teacherId: "st-7", teacherName: "Eko Prasetyo, S.Pd", jamKe: "3-4", startTime: "08:20", endTime: "09:40", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-10", day: "Kamis", className: "7-A", subject: "Matematika", teacherId: "st-1", teacherName: "Drs. Heru Setyawan, M.Pd", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" },
-  { id: "sch-11", day: "Jumat", className: "7-A", subject: "Pendidikan Agama Islam", teacherId: "st-6", teacherName: "KH. M. Syukron, S.Pd.I", jamKe: "1-2", startTime: "07:00", endTime: "08:20", alokasiWaktu: "2 JP", academicYear: "2025/2026", semester: "Genap" }
-];
+const classSchedules: ClassSchedule[] = parseCsvSchedules(INITIAL_SCHEDULES_CSV);
 
 const principalWorkPrograms: any[] = [
   {
@@ -4464,15 +4496,90 @@ async function startServer() {
       };
     });
 
+    let updatedCount = 0;
+    let addedCount = 0;
+
     if (mode === 'replace') {
       classSchedules.length = 0;
       classSchedules.push(...formattedSchedules);
+      addedCount = formattedSchedules.length;
+    } else if (mode === 'update' || !mode) {
+      // Upsert / Update mode: update if day, className, and jamKe match to prevent duplicates
+      for (const newItem of formattedSchedules) {
+        const existingIdx = classSchedules.findIndex(s =>
+          s.day.trim().toLowerCase() === newItem.day.trim().toLowerCase() &&
+          s.className.trim().toLowerCase() === newItem.className.trim().toLowerCase() &&
+          s.jamKe.trim().toLowerCase() === newItem.jamKe.trim().toLowerCase()
+        );
+
+        if (existingIdx !== -1) {
+          classSchedules[existingIdx] = {
+            ...classSchedules[existingIdx],
+            subject: newItem.subject,
+            teacherId: newItem.teacherId,
+            teacherName: newItem.teacherName,
+            startTime: newItem.startTime || classSchedules[existingIdx].startTime,
+            endTime: newItem.endTime || classSchedules[existingIdx].endTime,
+            alokasiWaktu: newItem.alokasiWaktu || classSchedules[existingIdx].alokasiWaktu,
+            academicYear: newItem.academicYear || classSchedules[existingIdx].academicYear,
+            semester: newItem.semester || classSchedules[existingIdx].semester
+          };
+          updatedCount++;
+        } else {
+          classSchedules.push(newItem);
+          addedCount++;
+        }
+      }
     } else {
-      classSchedules.push(...formattedSchedules);
+      // mode === 'append': add, but update if exact day+class+jam slot exists to prevent duplicates
+      for (const newItem of formattedSchedules) {
+        const existingIdx = classSchedules.findIndex(s =>
+          s.day.trim().toLowerCase() === newItem.day.trim().toLowerCase() &&
+          s.className.trim().toLowerCase() === newItem.className.trim().toLowerCase() &&
+          s.jamKe.trim().toLowerCase() === newItem.jamKe.trim().toLowerCase()
+        );
+
+        if (existingIdx !== -1) {
+          classSchedules[existingIdx] = {
+            ...classSchedules[existingIdx],
+            subject: newItem.subject,
+            teacherId: newItem.teacherId,
+            teacherName: newItem.teacherName,
+            startTime: newItem.startTime || classSchedules[existingIdx].startTime,
+            endTime: newItem.endTime || classSchedules[existingIdx].endTime,
+            alokasiWaktu: newItem.alokasiWaktu || classSchedules[existingIdx].alokasiWaktu,
+          };
+          updatedCount++;
+        } else {
+          classSchedules.push(newItem);
+          addedCount++;
+        }
+      }
     }
 
     saveState();
-    res.json({ success: true, count: formattedSchedules.length, classSchedules });
+    res.json({
+      success: true,
+      count: formattedSchedules.length,
+      updatedCount,
+      addedCount,
+      classSchedules
+    });
+  });
+
+  app.post("/api/curriculum/schedules/bulk-delete", (req, res) => {
+    const { ids } = req.body;
+    if (!Array.isArray(ids) || ids.length === 0) {
+      return res.status(400).json({ error: "Daftar ID jadwal yang akan dihapus tidak valid." });
+    }
+    const idSet = new Set(ids);
+    const initialCount = classSchedules.length;
+    const remaining = classSchedules.filter(s => !idSet.has(s.id));
+    classSchedules.length = 0;
+    classSchedules.push(...remaining);
+    saveState();
+    const deletedCount = initialCount - classSchedules.length;
+    res.json({ success: true, deletedCount, classSchedules });
   });
 
   app.delete("/api/curriculum/schedules/:id", (req, res) => {

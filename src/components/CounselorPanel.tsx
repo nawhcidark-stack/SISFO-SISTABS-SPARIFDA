@@ -121,6 +121,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [draftClassName, setDraftClassName] = useState("");
   const [draftReason, setDraftReason] = useState("");
   const [draftSuccess, setDraftSuccess] = useState(false);
+  const [initiatedStudentIds, setInitiatedStudentIds] = useState<string[]>([]);
 
   // Point Reduction State
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -908,46 +909,103 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   }, [infractions, infractionStartDate, infractionEndDate]);
 
   // Warn Interventions: Students with high infractions (>10 pts) or High Alpa (>= 2 alpa)
+  // Smart Radar Filtering:
+  // - Automatically hidden from Radar once BK creates a counseling log or initiates a session (moved to Jurnal Bimbingan).
+  // - Re-enters Radar if student accumulates 2 or more NEW Alpas after the latest counseling session date.
   const interventionStudents = useMemo(() => {
-    const list: { id: string; name: string; className: string; alpaCount: number; infractionPoints: number; reason: string }[] = [];
+    const candidateMap: { [key: string]: { id: string; name: string; className: string; alpaCount: number; infractionPoints: number; reason: string } } = {};
 
     // Check high infractions
     aggregatedInfractions.forEach(st => {
       if (st.points >= 15) {
-        list.push({
+        candidateMap[st.id] = {
           id: st.id,
           name: st.name,
           className: st.className,
           alpaCount: 0,
           infractionPoints: st.points,
           reason: `Poin pelanggaran kumulatif sangat tinggi (${st.points} poin). Butuh konseling moral bimbingan.`
-        });
+        };
       }
     });
 
     // Check high alpa
     aggregatedAttendance.forEach(att => {
       if (att.alpa >= 2) {
-        // Prevent duplicate
-        const exist = list.find(l => l.id === att.id);
-        if (!exist) {
-          list.push({
+        if (!candidateMap[att.id]) {
+          candidateMap[att.id] = {
             id: att.id,
             name: att.name,
             className: att.className,
             alpaCount: att.alpa,
             infractionPoints: 0,
             reason: `Sering absen tanpa keterangan (${att.alpa} hari Alpa). Indikasi putus sekolah atau problem keluarga.`
-          });
+          };
         } else {
-          exist.alpaCount = att.alpa;
-          exist.reason = `Memiliki catatan ${att.alpa} hari Alpa & ${exist.infractionPoints} poin pelanggaran disiplin. Urgen pembinaan keluarga!`;
+          candidateMap[att.id].alpaCount = att.alpa;
+          candidateMap[att.id].reason = `Memiliki catatan ${att.alpa} hari Alpa & ${candidateMap[att.id].infractionPoints} poin pelanggaran disiplin. Urgen pembinaan keluarga!`;
         }
       }
     });
 
-    return list;
-  }, [aggregatedAttendance, aggregatedInfractions]);
+    const candidates = Object.values(candidateMap);
+    const resultList: typeof candidates = [];
+
+    candidates.forEach(st => {
+      const sId = st.id;
+      const sName = st.name;
+
+      // Find counseling logs for this student in logs (Jurnal Bimbingan)
+      const studentCounselingLogs = logs.filter(l => {
+        if (!l) return false;
+        const matchId = l.studentId && l.studentId === sId;
+        const matchName = l.studentName && sName && l.studentName.trim().toLowerCase() === sName.trim().toLowerCase();
+        return matchId || matchName;
+      });
+
+      if (studentCounselingLogs.length > 0) {
+        // Find date of the latest counseling log
+        const sortedLogs = [...studentCounselingLogs].sort((a, b) => {
+          const dA = a.date || a.createdAt || "";
+          const dB = b.date || b.createdAt || "";
+          return dB.localeCompare(dA);
+        });
+
+        const latestCounselingDate = (sortedLogs[0].date || sortedLogs[0].createdAt || "").substring(0, 10);
+
+        // Count new Alpa attendance records strictly after latestCounselingDate
+        const newAlpasAfterCounseling = allAttendance.filter(attLog => {
+          if (attLog.status !== 'Alpa') return false;
+          const matchId = attLog.studentId && attLog.studentId === sId;
+          const matchName = attLog.studentName && sName && attLog.studentName.trim().toLowerCase() === sName.trim().toLowerCase();
+          if (!matchId && !matchName) return false;
+
+          const attDate = (attLog.date || "").substring(0, 10);
+          return attDate > latestCounselingDate;
+        });
+
+        const newAlpaCount = newAlpasAfterCounseling.length;
+
+        // If student gets >= 2 new Alpas after counseling date, show on Radar again
+        if (newAlpaCount >= 2) {
+          resultList.push({
+            ...st,
+            alpaCount: newAlpaCount,
+            reason: `⚠️ Siswa kembali ALPA ${newAlpaCount} kali setelah Sesi Bimbingan BK terakhir (${latestCounselingDate}). Urgen dilakukan bimbingan ulang!`
+          });
+        }
+        // Otherwise (< 2 new Alpa): Hidden from Radar because already handled in Jurnal Bimbingan!
+      } else {
+        // No counseling log yet. Check if BK initiated counseling in this active session
+        const isInitiated = initiatedStudentIds.includes(sId) || (sName && initiatedStudentIds.includes(sName));
+        if (!isInitiated) {
+          resultList.push(st);
+        }
+      }
+    });
+
+    return resultList;
+  }, [aggregatedAttendance, aggregatedInfractions, logs, allAttendance, initiatedStudentIds]);
 
   // Counseling list filters mapping
   const filteredLogs = useMemo(() => {
@@ -1091,6 +1149,12 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   // Trigger quick counseling creation (to draft and save a new counseling log)
   const handleInitiateCounseling = (studentName: string, className: string, problemReason: string) => {
     const match = allStudents.find(s => s.name.trim().toLowerCase() === studentName.trim().toLowerCase());
+    const targetId = match ? match.id : studentName;
+
+    if (targetId) {
+      setInitiatedStudentIds(prev => prev.includes(targetId) ? prev : [...prev, targetId]);
+    }
+
     if (match) {
       setDraftStudentId(match.id);
       setDraftStudentNisn(match.nisn || match.nis || '');
@@ -1954,7 +2018,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                 {interventionStudents.length === 0 ? (
                   <div className="py-6 text-center text-slate-400 font-semibold text-xs italic">
-                    Belum ditemukan kondisi darurat ketidakhadiran alpa (&gt;=2 hari) atau poin pelanggaran ekstrem (&gt;=15). Keadaan lingkungan sekolah aman & tertib.
+                    Belum ada siswa urgen di radar intervensi, atau semua siswa terdeteksi telah dibuatkan sesi bimbingan & dipindahkan ke Jurnal Bimbingan BK.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">

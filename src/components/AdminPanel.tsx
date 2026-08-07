@@ -1418,6 +1418,25 @@ export default function AdminPanel({
     }
   };
 
+  const safeParseResponse = async (res: Response) => {
+    const contentType = res.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      try {
+        return await res.json();
+      } catch (e) {
+        return { error: "Respon dari server bukan JSON yang valid." };
+      }
+    }
+    const text = await res.text();
+    if (res.status === 413 || text.includes("413") || text.toLowerCase().includes("payload too large")) {
+      return { error: "Ukuran file backup atau payload terlalu besar melebihi batas server (413 Payload Too Large)." };
+    }
+    if (text.trim().startsWith("<") || text.includes("<html>")) {
+      return { error: `Server mengembalikan respon HTML (${res.status} ${res.statusText}). Pastikan endpoint API '/api/admin/backups' diproses dengan benar.` };
+    }
+    return { error: text || `Terjadi kesalahan pada server (${res.status}).` };
+  };
+
   const handleRestoreBackup = async (id: string) => {
     if (!window.confirm("⚠️ PERINGATAN RESTORASI DATABASE:\n\nRestorasi ini HANYA akan memulihkan data database (Siswa, Tagihan, Transaksi, Absensi, Jurnal, Kesiswaan, Sarpras, dsb) dari file backup. Konfigurasi dan file sistem tidak akan diubah atau ditimpa.\n\nData database saat ini akan ditimpa dengan data dari backup ini. Apakah Anda yakin ingin melanjutkan?")) {
       return;
@@ -1431,7 +1450,7 @@ export default function AdminPanel({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ id })
       });
-      const data = await res.json();
+      const data = await safeParseResponse(res);
       if (res.ok && data.success) {
         setBackupSuccessMessage("🎉 Sukses! Restorasi data database berhasil diselesaikan. Halaman akan dimuat ulang...");
         setTimeout(() => {
@@ -1440,9 +1459,9 @@ export default function AdminPanel({
       } else {
         setBackupErrorMessage(data.error || "Gagal melakukan restorasi.");
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error restoring backup:", err);
-      setBackupErrorMessage("Koneksi gagal saat merestorasi backup.");
+      setBackupErrorMessage(err?.message || "Koneksi gagal saat merestorasi backup.");
     } finally {
       setIsRestoringBackupId(null);
     }
@@ -1465,19 +1484,50 @@ export default function AdminPanel({
     reader.onload = async (event) => {
       try {
         const text = event.target?.result as string;
-        const snapshot = JSON.parse(text);
+        if (!text || !text.trim()) {
+          throw new Error("File backup yang dipilih kosong.");
+        }
 
-        // Simple validation to check for a valid snapshot shape
-        if (!snapshot || typeof snapshot !== "object" || (!snapshot.students && !snapshot.sppBills && !snapshot.homeroomTeachers)) {
-          throw new Error("Format file JSON tidak valid. Pastikan file tersebut adalah file backup database resmi (SIS).");
+        const trimmedText = text.trim();
+        if (trimmedText.startsWith("<") || trimmedText.toLowerCase().includes("<html")) {
+          throw new Error("File yang dipilih adalah dokumen HTML/Web, bukan file backup JSON database. Silakan pilih file backup resmi ber-ekstensi .json.");
+        }
+
+        let snapshot: any;
+        try {
+          snapshot = JSON.parse(trimmedText);
+        } catch (parseErr) {
+          throw new Error("File yang dipilih bukan format JSON yang valid. Pastikan file tersebut adalah file backup .json database SIS.");
+        }
+
+        // Unwrap nested snapshot if file contains full backup record object
+        let actualSnapshot = snapshot;
+        if (actualSnapshot && typeof actualSnapshot === "object") {
+          if (actualSnapshot.snapshot) {
+            if (typeof actualSnapshot.snapshot === "string") {
+              try { actualSnapshot = JSON.parse(actualSnapshot.snapshot); } catch (e) {}
+            } else if (typeof actualSnapshot.snapshot === "object") {
+              actualSnapshot = actualSnapshot.snapshot;
+            }
+          } else if (actualSnapshot.data) {
+            if (typeof actualSnapshot.data === "string") {
+              try { actualSnapshot = JSON.parse(actualSnapshot.data); } catch (e) {}
+            } else if (typeof actualSnapshot.data === "object") {
+              actualSnapshot = actualSnapshot.data;
+            }
+          }
+        }
+
+        if (!actualSnapshot || typeof actualSnapshot !== "object") {
+          throw new Error("Format file JSON snapshot tidak valid.");
         }
 
         const res = await fetch("/api/admin/backups/restore-upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ snapshot })
+          body: JSON.stringify({ snapshot: actualSnapshot })
         });
-        const data = await res.json();
+        const data = await safeParseResponse(res);
         if (res.ok && data.success) {
           setBackupSuccessMessage("🎉 Sukses! Restorasi data database dari komputer lokal berhasil diselesaikan. Halaman akan dimuat ulang...");
           setTimeout(() => {

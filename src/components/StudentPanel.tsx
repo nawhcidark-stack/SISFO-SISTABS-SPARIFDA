@@ -240,14 +240,27 @@ export default function StudentPanel({
         fetch('/api/student-counseling-logs?_t=' + Date.now()).then(res => res.ok ? res.json() : [])
       ])
         .then(([devData, infData, counData]) => {
+          const normCurrentName = currentStudent.name ? currentStudent.name.trim().toLowerCase() : '';
+          const normCurrentNisn = currentStudent.nisn ? String(currentStudent.nisn).trim() : '';
+          const normCurrentNis = currentStudent.nis ? String(currentStudent.nis).trim() : '';
+          const currentId = currentStudent.id;
+
+          const isLogMatch = (log: any) => {
+            if (log.studentId && log.studentId === currentId) return true;
+            if (normCurrentNisn && log.studentNisn && String(log.studentNisn).trim() === normCurrentNisn) return true;
+            if (normCurrentNis && log.nis && String(log.nis).trim() === normCurrentNis) return true;
+            if (normCurrentName && log.studentName && log.studentName.trim().toLowerCase() === normCurrentName) return true;
+            return false;
+          };
+
           if (Array.isArray(devData)) {
-            setDevLogs(devData.filter(log => log.studentId === currentStudent.id));
+            setDevLogs(devData.filter(isLogMatch));
           }
           if (Array.isArray(infData)) {
-            setInfractionLogs(infData.filter(log => log.studentId === currentStudent.id));
+            setInfractionLogs(infData.filter(isLogMatch));
           }
           if (Array.isArray(counData)) {
-            setCounselingLogs(counData.filter(log => log.studentId === currentStudent.id));
+            setCounselingLogs(counData.filter(isLogMatch));
           }
         })
         .catch((err) => console.error("Error fetching personal student logs inside student panel:", err))
@@ -2868,10 +2881,21 @@ export default function StudentPanel({
                             <div className="space-y-4">
                               {counselingLogs.map((log) => (
                                 <div key={log.id} className="bg-white border border-slate-150 rounded-2xl p-5 shadow-2xs hover:shadow-xs transition-shadow text-left flex flex-col gap-3">
-                                  <div className="flex items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
-                                    <span className="text-xs font-black text-emerald-950 bg-emerald-50 border border-emerald-150 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
-                                      🤝 Konseling BK
-                                    </span>
+                                  <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-xs font-black text-indigo-950 bg-indigo-50 border border-indigo-150 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
+                                        🤝 Bimbingan BK
+                                      </span>
+                                      {log.bkFeedback || log.result ? (
+                                        <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                          <CheckCircle2 size={10} /> Ditindaklanjuti BK
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] font-extrabold text-amber-800 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                                          <Clock size={10} /> Dalam Proses BK
+                                        </span>
+                                      )}
+                                    </div>
                                     <span className="text-[10px] font-bold text-slate-400 font-mono flex items-center gap-1">
                                       <Clock size={10} />
                                       {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
@@ -2880,7 +2904,7 @@ export default function StudentPanel({
 
                                   <div className="text-left font-medium space-y-2">
                                     <div>
-                                      <span className="text-[9px] uppercase font-bold text-indigo-500 tracking-wider">Topik Pembahasan:</span>
+                                      <span className="text-[9px] uppercase font-bold text-indigo-500 tracking-wider">Topik Pembahasan Bimbingan:</span>
                                       <p className="text-xs font-bold text-slate-800 whitespace-pre-wrap">{log.topic}</p>
                                     </div>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mt-1 pt-1 border-t border-slate-50">
@@ -2889,10 +2913,26 @@ export default function StudentPanel({
                                         <p className="text-xs text-slate-650 mt-0.5 whitespace-pre-wrap">{log.actionPlan}</p>
                                       </div>
                                       <div>
-                                        <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">Hasil BK / Tindak Lanjut:</span>
-                                        <p className="text-xs text-slate-650 mt-0.5 whitespace-pre-wrap">{log.result}</p>
+                                        <span className="text-[9px] uppercase font-bold text-emerald-600 tracking-wider">Hasil Bimbingan &amp; Tindak Lanjut:</span>
+                                        <p className="text-xs text-slate-650 mt-0.5 whitespace-pre-wrap">{log.result || "Dalam pemantauan Bimbingan Konseling"}</p>
                                       </div>
                                     </div>
+
+                                    {log.bkFeedback && (
+                                      <div className="mt-3 p-3.5 bg-indigo-50/70 border border-indigo-200/90 rounded-xl">
+                                        <div className="flex items-center justify-between mb-1">
+                                          <span className="text-[10px] font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1">
+                                            💡 Solusi &amp; Catatan Tanggapan Guru BK:
+                                          </span>
+                                          {log.bkFeedbackAt && (
+                                            <span className="text-[9px] text-indigo-600 font-mono font-bold">
+                                              {new Date(log.bkFeedbackAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-xs text-indigo-950 font-semibold leading-relaxed whitespace-pre-wrap">{log.bkFeedback}</p>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               ))}

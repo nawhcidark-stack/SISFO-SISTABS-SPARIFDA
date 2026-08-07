@@ -114,7 +114,7 @@ function parseCsvSchedules(csvStr: string): ClassSchedule[] {
     if (cols.length >= 8) {
       result.push({
         id: `sch-csv-${i}`,
-        day: cols[0],
+        day: cols[0] as any,
         className: cols[1],
         subject: cols[2],
         teacherName: cols[3],
@@ -1719,7 +1719,19 @@ async function startServer() {
   }
 
   const app = express();
-  app.use(express.json({ limit: '10mb' }));
+  app.use(express.json({ limit: '100mb' }));
+  app.use(express.urlencoded({ limit: '100mb', extended: true }));
+
+  // Handle body parser errors cleanly as JSON
+  app.use((err: any, req: any, res: any, next: any) => {
+    if (err && (err.status === 413 || err.type === 'entity.too.large')) {
+      return res.status(413).json({ success: false, error: "Ukuran file backup atau payload terlalu besar untuk diproses (Maksimal 100MB)." });
+    }
+    if (err instanceof SyntaxError && 'body' in err) {
+      return res.status(400).json({ success: false, error: "Format JSON request tidak valid." });
+    }
+    next(err);
+  });
 
   // Prevent browser caching on all API routes (especially for student mobile devices)
   app.use("/api", (req, res, next) => {
@@ -2051,6 +2063,34 @@ async function startServer() {
 
   // Helper function to restore a database backup snapshot (Restores database data only; does NOT touch system settings/configs or system files)
   async function restoreFullBackupSnapshot(snapshot: any) {
+    if (!snapshot) {
+      throw new Error("Konten backup (snapshot) kosong atau tidak terdefinisi.");
+    }
+
+    if (typeof snapshot === "string") {
+      try {
+        snapshot = JSON.parse(snapshot);
+      } catch (e) {
+        throw new Error("Format file JSON snapshot tidak valid.");
+      }
+    }
+
+    if (snapshot && typeof snapshot === "object") {
+      if (snapshot.snapshot) {
+        if (typeof snapshot.snapshot === "string") {
+          try { snapshot = JSON.parse(snapshot.snapshot); } catch (e) {}
+        } else if (typeof snapshot.snapshot === "object") {
+          snapshot = snapshot.snapshot;
+        }
+      } else if (snapshot.data) {
+        if (typeof snapshot.data === "string") {
+          try { snapshot = JSON.parse(snapshot.data); } catch (e) {}
+        } else if (typeof snapshot.data === "object") {
+          snapshot = snapshot.data;
+        }
+      }
+    }
+
     if (!snapshot || typeof snapshot !== "object") {
       throw new Error("Format file JSON snapshot tidak valid.");
     }

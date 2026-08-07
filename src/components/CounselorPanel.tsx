@@ -37,7 +37,8 @@ import {
   Check,
   Filter,
   ArrowUpDown,
-  RotateCcw
+  RotateCcw,
+  Plus
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student, ClassSchedule, SubjectTeacher, HomeroomTeacher } from "../types";
@@ -114,6 +115,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [changingPassword, setChangingPassword] = useState(false);
 
   // Custom Quick Counseling draft state (auto-connect from infractions or absences)
+  const [draftStudentId, setDraftStudentId] = useState("");
+  const [draftStudentNisn, setDraftStudentNisn] = useState("");
   const [draftStudentName, setDraftStudentName] = useState("");
   const [draftClassName, setDraftClassName] = useState("");
   const [draftReason, setDraftReason] = useState("");
@@ -1083,6 +1086,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
   // Trigger quick counseling creation (to draft and save a new counseling log)
   const handleInitiateCounseling = (studentName: string, className: string, problemReason: string) => {
+    const match = allStudents.find(s => s.name.trim().toLowerCase() === studentName.trim().toLowerCase());
+    if (match) {
+      setDraftStudentId(match.id);
+      setDraftStudentNisn(match.nisn || match.nis || '');
+    } else {
+      setDraftStudentId('');
+      setDraftStudentNisn('');
+    }
     setDraftStudentName(studentName);
     setDraftClassName(className);
     setDraftReason(`Hasil pantauan BK: Siswa mengalami ${problemReason}`);
@@ -1095,19 +1106,29 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
     e.preventDefault();
     setSubmittingFeedback(true);
     try {
-      // Find or generate synthetic details
+      let targetId = draftStudentId;
+      let targetNisn = draftStudentNisn;
+      if (!targetId && draftStudentName) {
+        const match = allStudents.find(s => s.name.trim().toLowerCase() === draftStudentName.trim().toLowerCase());
+        if (match) {
+          targetId = match.id;
+          targetNisn = match.nisn || match.nis || '';
+        }
+      }
+
       const response = await fetch("/api/student-counseling-logs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          studentId: `ST-${Math.floor(Math.random() * 90000) + 10000}`,
+          studentId: targetId || `ST-${Math.floor(Math.random() * 90000) + 10000}`,
           studentName: draftStudentName,
+          studentNisn: targetNisn,
           className: draftClassName,
           date: new Date().toISOString().split('T')[0],
           topic: draftReason,
           actionPlan: "Dipanggil langsung ke ruang BK oleh Guru Bimbingan Konseling.",
-          result: "Diberikan arahan pembinaan khusus dan motivasi konseling terintegrasi.",
-          bkFeedback: "Telah diberikan motivasi pengembangan diri terpadu."
+          result: "Siswa telah diberikan layanan bimbingan konseling solutif.",
+          bkFeedback: "Telah diberikan motivasi dan penanganan konseling terpadu oleh Guru BK."
         })
       });
 
@@ -1115,7 +1136,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         const data = await response.json();
         setLogs(prev => [data, ...prev]);
         setSelectedLogId(null);
-        setSuccessMsg(`Berhasil menjadwalkan kasus bimbingan mandiri untuk ${draftStudentName}!`);
+        setSuccessMsg(`Berhasil menjadwalkan dan mencatat bimbingan BK untuk ${draftStudentName}!`);
         setTimeout(() => setSuccessMsg(null), 5000);
       } else {
         alert("Gagal menyimpan rekam bimbingan mandiri.");
@@ -2082,14 +2103,32 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   </h2>
                   <p className="text-slate-450 text-[11px]">Gunakan form masukan solusi untuk secara instan menyinkronkan masukan bimbingan ke tabel portal Wali Kelas.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={downloadExcelCounseling}
-                  className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>Ekspor Excel Bimbingan Rapi</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setDraftStudentId('');
+                      setDraftStudentNisn('');
+                      setDraftStudentName('');
+                      setDraftClassName('');
+                      setDraftReason('');
+                      setDraftSuccess(false);
+                      setSelectedLogId('draft_new');
+                    }}
+                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all"
+                  >
+                    <Plus size={14} />
+                    <span>Form Bimbingan BK Baru</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadExcelCounseling}
+                    className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
+                  >
+                    <FileSpreadsheet size={13} />
+                    <span>Ekspor Excel Bimbingan Rapi</span>
+                  </button>
+                </div>
               </div>
 
               {/* SEARCH & FILTERS FOR COUNSELING LIST */}
@@ -2226,8 +2265,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     </div>
                     <div className="flex justify-end gap-2 md:col-span-2">
                       <button type="button" onClick={() => setSelectedLogId(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs">Tutup</button>
-                      <button type="submit" disabled={submittingFeedback} className="px-5 py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5">
-                        {submittingFeedback ? <Loader2 size={12} className="animate-spin" /> : null}
+                      <button type="submit" disabled={submittingFeedback} className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs flex items-center gap-2 shadow-md cursor-pointer transition-all active:scale-95">
+                        {submittingFeedback ? <Loader2 size={13} className="animate-spin" /> : <CheckCircle2 size={14} />}
                         <span>Jadwalkan Penanganan BK</span>
                       </button>
                     </div>

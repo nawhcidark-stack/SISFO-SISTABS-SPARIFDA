@@ -87,6 +87,9 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       let amountIdx = headers.findIndex(h => h.includes("amount") || h.includes("gross") || h.includes("total") || h.includes("nominal") || h.includes("jumlah"));
       let paymentIdx = headers.findIndex(h => h.includes("payment") || h.includes("channel") || h.includes("metode"));
       let timeIdx = headers.findIndex(h => h.includes("time") || h.includes("date") || h.includes("tanggal") || h.includes("waktu") || h.includes("settlement"));
+      let emailIdx = headers.findIndex(h => h.includes("email") || h.includes("e-mail") || h.includes("mail") || h.includes("customer"));
+      let nameIdx = headers.findIndex(h => h.includes("customer_name") || h.includes("customer name") || h.includes("nama") || h.includes("siswa") || h.includes("pembayar"));
+      let nisIdx = headers.findIndex(h => h.includes("nis") || h.includes("nisn") || h.includes("no_induk") || h.includes("no induk"));
 
       if (orderIdIdx === -1 && txIdIdx !== -1) orderIdIdx = txIdIdx;
       if (orderIdIdx === -1) orderIdIdx = 0; // fallback first column
@@ -104,7 +107,10 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
             status: statusIdx !== -1 && row[statusIdx] ? String(row[statusIdx]).trim() : "settlement",
             grossAmount: amountIdx !== -1 && row[amountIdx] ? Number(String(row[amountIdx]).replace(/[^0-9.]/g, '')) || 0 : 0,
             paymentType: paymentIdx !== -1 && row[paymentIdx] ? String(row[paymentIdx]).trim() : "Midtrans Gateway",
-            transactionTime: timeIdx !== -1 && row[timeIdx] ? String(row[timeIdx]).trim() : ""
+            transactionTime: timeIdx !== -1 && row[timeIdx] ? String(row[timeIdx]).trim() : "",
+            customerEmail: emailIdx !== -1 && row[emailIdx] ? String(row[emailIdx]).trim() : "",
+            customerName: nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : "",
+            studentNis: nisIdx !== -1 && row[nisIdx] ? String(row[nisIdx]).trim() : ""
           });
         }
       }
@@ -125,6 +131,9 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       const amountVal = findValue(["gross_amount", "amount", "gross", "total", "nominal", "jumlah"]) || 0;
       const paymentVal = findValue(["payment_type", "payment", "channel", "metode"]) || "Midtrans Gateway";
       const timeVal = findValue(["settlement_time", "transaction_time", "time", "date", "tanggal", "waktu"]) || "";
+      const emailVal = findValue(["email", "e-mail", "mail", "customer_email", "customer email"]);
+      const nameVal = findValue(["customer_name", "customer name", "nama", "siswa", "pembayar", "name"]);
+      const nisVal = findValue(["nis", "nisn", "no_induk", "no induk"]);
 
       const cleanOrderId = String(orderIdVal || '').trim();
       const cleanTxId = txIdVal ? String(txIdVal).trim() : undefined;
@@ -134,7 +143,10 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
         status: String(statusVal || 'settlement').trim(),
         grossAmount: typeof amountVal === 'number' ? amountVal : Number(String(amountVal).replace(/[^0-9.]/g, '')) || 0,
         paymentType: String(paymentVal || 'Midtrans Gateway').trim(),
-        transactionTime: String(timeVal || '').trim()
+        transactionTime: String(timeVal || '').trim(),
+        customerEmail: emailVal ? String(emailVal).trim() : "",
+        customerName: nameVal ? String(nameVal).trim() : "",
+        studentNis: nisVal ? String(nisVal).trim() : ""
       };
     }).filter(item => (item.orderId && item.orderId.length >= 2 && !item.orderId.toLowerCase().includes("order_id")) || item.transactionId);
   };

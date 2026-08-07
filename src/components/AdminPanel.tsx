@@ -18486,6 +18486,9 @@ export default function AdminPanel({
       <MidtransBulkReportModal
         isOpen={isMidtransBulkReportModalOpen}
         onClose={() => setIsMidtransBulkReportModalOpen(false)}
+        onSuccessReconciliation={() => {
+          if (onRefresh) onRefresh();
+        }}
       />
       <SavingsPassbookModal
         isOpen={!!passbookModalStudent}

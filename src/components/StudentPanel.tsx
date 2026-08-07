@@ -247,7 +247,24 @@ export default function StudentPanel({
             setInfractionLogs(infData.filter(log => log.studentId === currentStudent.id));
           }
           if (Array.isArray(counData)) {
-            setCounselingLogs(counData.filter(log => log.studentId === currentStudent.id));
+            const sId = (currentStudent.id || '').toString().trim().toLowerCase();
+            const sNis = (currentStudent.nis || '').toString().trim().toLowerCase();
+            const sNisn = (currentStudent.nisn || '').toString().trim().toLowerCase();
+            const sName = (currentStudent.name || '').toString().trim().toLowerCase();
+
+            setCounselingLogs(counData.filter(log => {
+              if (!log) return false;
+              const logStudentId = (log.studentId || '').toString().trim().toLowerCase();
+              const logStudentName = (log.studentName || '').toString().trim().toLowerCase();
+
+              if (logStudentId && (logStudentId === sId || (sNis && logStudentId === sNis) || (sNisn && logStudentId === sNisn))) {
+                return true;
+              }
+              if (logStudentName && sName && logStudentName === sName) {
+                return true;
+              }
+              return false;
+            }));
           }
         })
         .catch((err) => console.error("Error fetching personal student logs inside student panel:", err))
@@ -2893,6 +2910,24 @@ export default function StudentPanel({
                                         <p className="text-xs text-slate-650 mt-0.5 whitespace-pre-wrap">{log.result}</p>
                                       </div>
                                     </div>
+
+                                    {log.bkFeedback && (
+                                      <div className="mt-2 p-3.5 bg-indigo-50/80 border border-indigo-200 rounded-xl space-y-1">
+                                        <div className="flex items-center justify-between gap-2">
+                                          <span className="text-[10px] font-black text-indigo-900 uppercase tracking-wider flex items-center gap-1.5">
+                                            🧠 Rekomendasi & Tindak Lanjut Guru BK
+                                          </span>
+                                          {log.bkFeedbackAt && (
+                                            <span className="text-[9px] text-indigo-500 font-mono">
+                                              {new Date(log.bkFeedbackAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <p className="text-xs font-semibold text-indigo-950 italic whitespace-pre-wrap">
+                                          "{log.bkFeedback}"
+                                        </p>
+                                      </div>
+                                    )}
                                   </div>
                                 </div>
                               ))}

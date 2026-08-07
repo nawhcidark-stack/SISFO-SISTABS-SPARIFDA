@@ -114,9 +114,14 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [changingPassword, setChangingPassword] = useState(false);
 
   // Custom Quick Counseling draft state (auto-connect from infractions or absences)
+  const [draftStudentId, setDraftStudentId] = useState("");
   const [draftStudentName, setDraftStudentName] = useState("");
   const [draftClassName, setDraftClassName] = useState("");
   const [draftReason, setDraftReason] = useState("");
+  const [draftDate, setDraftDate] = useState(() => new Date().toISOString().split('T')[0]);
+  const [draftActionPlan, setDraftActionPlan] = useState("");
+  const [draftResult, setDraftResult] = useState("");
+  const [draftBkFeedback, setDraftBkFeedback] = useState("");
   const [draftSuccess, setDraftSuccess] = useState(false);
 
   // Point Reduction State
@@ -1082,10 +1087,15 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   }, [aggregatedInfractions, searchQuery, classFilter]);
 
   // Trigger quick counseling creation (to draft and save a new counseling log)
-  const handleInitiateCounseling = (studentName: string, className: string, problemReason: string) => {
+  const handleInitiateCounseling = (studentName: string, className: string, problemReason: string, studentId?: string) => {
+    setDraftStudentId(studentId || "");
     setDraftStudentName(studentName);
     setDraftClassName(className);
     setDraftReason(`Hasil pantauan BK: Siswa mengalami ${problemReason}`);
+    setDraftDate(new Date().toISOString().split('T')[0]);
+    setDraftActionPlan("Dipanggil langsung ke ruang BK oleh Guru Bimbingan Konseling.");
+    setDraftResult("Diberikan arahan pembinaan khusus dan motivasi konseling terintegrasi.");
+    setDraftBkFeedback("Telah diberikan motivasi pengembangan diri dan intervensi terpadu.");
     setDraftSuccess(false);
     setActiveTab('counseling');
     setSelectedLogId("draft_new");
@@ -1093,32 +1103,55 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
   const submitDraftCounseling = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!draftStudentName.trim() || !draftClassName.trim() || !draftReason.trim()) {
+      alert("Mohon isi Nama Siswa, Kelas, dan Topik Bimbingan.");
+      return;
+    }
     setSubmittingFeedback(true);
+
+    let realStudentId = draftStudentId;
+    if (!realStudentId) {
+      const matched = allStudents.find(s => 
+        s.name.trim().toLowerCase() === draftStudentName.trim().toLowerCase()
+      );
+      if (matched) {
+        realStudentId = matched.id;
+      } else {
+        realStudentId = `ST-${Math.floor(Math.random() * 90000) + 10000}`;
+      }
+    }
+
     try {
-      // Find or generate synthetic details
       const response = await fetch("/api/student-counseling-logs", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          studentId: `ST-${Math.floor(Math.random() * 90000) + 10000}`,
-          studentName: draftStudentName,
-          className: draftClassName,
-          date: new Date().toISOString().split('T')[0],
-          topic: draftReason,
-          actionPlan: "Dipanggil langsung ke ruang BK oleh Guru Bimbingan Konseling.",
-          result: "Diberikan arahan pembinaan khusus dan motivasi konseling terintegrasi.",
-          bkFeedback: "Telah diberikan motivasi pengembangan diri terpadu."
+          studentId: realStudentId,
+          studentName: draftStudentName.trim(),
+          className: draftClassName.trim(),
+          date: draftDate || new Date().toISOString().split('T')[0],
+          topic: draftReason.trim(),
+          actionPlan: draftActionPlan.trim() || "Sesi konseling tatap muka & pendampingan di ruang BK.",
+          result: draftResult.trim() || "Siswa memahami permasalahan dan berkomitmen memperbaikinya.",
+          bkFeedback: draftBkFeedback.trim() || "Diberikan konseling individual dan arahan intervensi BK.",
+          bkFeedbackAt: new Date().toISOString()
         })
       });
 
       if (response.ok) {
         const data = await response.json();
-        setLogs(prev => [data, ...prev]);
+        if (data.newLog) {
+          setLogs(prev => [data.newLog, ...prev]);
+        } else if (Array.isArray(data.studentCounselingLogs)) {
+          setLogs(data.studentCounselingLogs);
+        }
         setSelectedLogId(null);
-        setSuccessMsg(`Berhasil menjadwalkan kasus bimbingan mandiri untuk ${draftStudentName}!`);
+        setSuccessMsg(`🎉 Berhasil mencatat & menyinkronkan Bimbingan BK untuk ${draftStudentName}!`);
         setTimeout(() => setSuccessMsg(null), 5000);
+        fetchAllData();
       } else {
-        alert("Gagal menyimpan rekam bimbingan mandiri.");
+        const errData = await response.json();
+        alert(errData.error || "Gagal menyimpan Bimbingan BK.");
       }
     } catch (e) {
       console.error(e);
@@ -2082,14 +2115,35 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   </h2>
                   <p className="text-slate-450 text-[11px]">Gunakan form masukan solusi untuk secara instan menyinkronkan masukan bimbingan ke tabel portal Wali Kelas.</p>
                 </div>
-                <button
-                  type="button"
-                  onClick={downloadExcelCounseling}
-                  className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
-                >
-                  <FileSpreadsheet size={13} />
-                  <span>Ekspor Excel Bimbingan Rapi</span>
-                </button>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSelectedLogId("draft_new");
+                      setDraftStudentId("");
+                      setDraftStudentName("");
+                      setDraftClassName("");
+                      setDraftReason("");
+                      setDraftDate(new Date().toISOString().split('T')[0]);
+                      setDraftActionPlan("Sesi konseling tatap muka & pendampingan di ruang BK.");
+                      setDraftResult("Siswa memahami permasalahan dan berkomitmen memperbaikinya.");
+                      setDraftBkFeedback("Diberikan konseling individual dan arahan intervensi BK.");
+                      setDraftStudentSearch("");
+                    }}
+                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all"
+                  >
+                    <PlusCircle size={15} />
+                    <span>+ Form Bimbingan BK Baru</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={downloadExcelCounseling}
+                    className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
+                  >
+                    <FileSpreadsheet size={13} />
+                    <span>Ekspor Excel Bimbingan Rapi</span>
+                  </button>
+                </div>
               </div>
 
               {/* SEARCH & FILTERS FOR COUNSELING LIST */}
@@ -2135,18 +2189,18 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
               {/* INTEGRATED DRAFT CUSTOM/MANDATORY BIMBINGAN BK FORM */}
               {selectedLogId === "draft_new" && (
-                <div className="mb-6 p-5 border border-indigo-200 bg-indigo-50/20 rounded-2xl">
-                  <div className="flex justify-between items-center pb-2 mb-4 border-b border-indigo-100">
-                    <span className="font-extrabold text-indigo-950 text-xs flex items-center gap-1">
-                      <Brain size={14} /> INISIASI MANDIRI KASUS BIMBINGAN BK BARU
+                <div className="mb-6 p-5 border-2 border-indigo-300 bg-indigo-50/40 rounded-2xl shadow-xs animate-fade-in">
+                  <div className="flex justify-between items-center pb-2.5 mb-4 border-b border-indigo-200">
+                    <span className="font-extrabold text-indigo-950 text-xs flex items-center gap-2">
+                      <Brain size={16} className="text-indigo-600" /> FORM INPUT BIMBINGAN & KONSELING BK BARU
                     </span>
-                    <button onClick={() => setSelectedLogId(null)} className="text-[10px] font-extrabold text-rose-600 hover:underline">Batal</button>
+                    <button type="button" onClick={() => setSelectedLogId(null)} className="text-[11px] font-extrabold text-rose-600 hover:underline cursor-pointer">Batal</button>
                   </div>
                   <form onSubmit={submitDraftCounseling} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="md:col-span-2 flex flex-col gap-1.5 p-3 rounded-xl bg-slate-50 border border-slate-150">
+                    <div className="md:col-span-2 flex flex-col gap-1.5 p-3 rounded-xl bg-white border border-indigo-200 shadow-2xs">
                       <div className="flex justify-between items-center">
                         <label className="text-[10px] font-black uppercase text-indigo-950 flex items-center gap-1">
-                          👤 Cari &amp; Pilih Siswa Cepat (Dari Database Sekolah)
+                          👤 Cari & Pilih Siswa (Dari Database Sekolah)
                         </label>
                         {draftStudentSearch && (
                           <button
@@ -2163,11 +2217,13 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         placeholder="🔍 Tulis nama siswa atau NIS untuk memfilter list..."
                         value={draftStudentSearch}
                         onChange={(e) => setDraftStudentSearch(e.target.value)}
-                        className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold placeholder-slate-400 focus:outline-none mb-1 shadow-2xs"
+                        className="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-semibold placeholder-slate-400 focus:outline-none mb-1 shadow-2xs"
                       />
                       <select
+                        value={draftStudentId}
                         onChange={(e) => {
                           const val = e.target.value;
+                          setDraftStudentId(val);
                           if (val) {
                             const stud = allStudents.find(s => s.id === val);
                             if (stud) {
@@ -2176,9 +2232,9 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                             }
                           }
                         }}
-                        className="w-full bg-white border border-slate-205 bg-white rounded-xl text-xs font-semibold text-slate-800 focus:outline-none py-1.5 px-2"
+                        className="w-full bg-white border border-indigo-200 rounded-xl text-xs font-bold text-slate-800 focus:outline-none py-2 px-2.5"
                       >
-                        <option value="">-- Pilih Siswa (atau isi/ubah kolom manual di bawah) --</option>
+                        <option value="">-- Pilih Siswa (atau isi manual di bawah) --</option>
                         {allStudents
                           .filter(s => {
                             if (!draftStudentSearch) return true;
@@ -2187,48 +2243,98 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                           })
                           .map(s => (
                             <option key={s.id} value={s.id}>
-                              {s.name} (Kelas {s.class}) - NIS: {s.nis}
+                              {s.name} (Kelas {s.class}) - NIS: {s.nis || '-'}
                             </option>
                           ))}
                       </select>
                     </div>
 
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-black uppercase text-slate-500">Nama Siswa Terkait</label>
+                      <label className="text-[10px] font-black uppercase text-slate-600">Nama Siswa Terkait</label>
                       <input
                         type="text"
                         value={draftStudentName}
                         onChange={(e) => setDraftStudentName(e.target.value)}
-                        className="p-2 border border-slate-250 rounded-xl bg-white focus:outline-none text-xs font-semibold text-slate-800"
+                        className="p-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none text-xs font-bold text-slate-800"
                         required
+                        placeholder="Contoh: Ahmad Rizki"
                       />
                     </div>
                     <div className="flex flex-col gap-1">
-                      <label className="text-[10px] font-black uppercase text-slate-500">Tingkat Kelas</label>
+                      <label className="text-[10px] font-black uppercase text-slate-600">Tingkat / Nama Kelas</label>
                       <input
                         type="text"
                         placeholder="Contoh: 7-A"
                         value={draftClassName}
                         onChange={(e) => setDraftClassName(e.target.value)}
-                        className="p-2 border border-slate-250 rounded-xl bg-white focus:outline-none text-xs font-semibold text-slate-800"
+                        className="p-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none text-xs font-bold text-slate-800"
                         required
                       />
                     </div>
-                    <div className="flex flex-col gap-1 md:col-span-2">
-                      <label className="text-[10px] font-black uppercase text-slate-500">Uraian Alasan Hubungan Intervensi BK</label>
-                      <textarea
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black uppercase text-slate-600">Tanggal Pelaksanaan Bimbingan</label>
+                      <input
+                        type="date"
+                        value={draftDate}
+                        onChange={(e) => setDraftDate(e.target.value)}
+                        className="p-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none text-xs font-bold text-slate-800"
+                        required
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1">
+                      <label className="text-[10px] font-black uppercase text-slate-600">Topik / Masalah Bimbingan</label>
+                      <input
+                        type="text"
                         value={draftReason}
                         onChange={(e) => setDraftReason(e.target.value)}
-                        className="p-2.5 border border-slate-250 rounded-xl bg-white focus:outline-none text-xs font-semibold text-slate-800"
-                        rows={2}
+                        placeholder="Contoh: Kesulitan konsentrasi belajar & penyesuaian sosial"
+                        className="p-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none text-xs font-bold text-slate-800"
                         required
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1 md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600">Rencana Pemecahan Solusi / Tindakan</label>
+                      <textarea
+                        value={draftActionPlan}
+                        onChange={(e) => setDraftActionPlan(e.target.value)}
+                        className="p-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none text-xs font-semibold text-slate-800"
+                        rows={2}
+                        placeholder="Contoh: Sesi konseling tatap muka di ruang BK, penyusunan jadwal belajar mandiri..."
                       ></textarea>
                     </div>
-                    <div className="flex justify-end gap-2 md:col-span-2">
-                      <button type="button" onClick={() => setSelectedLogId(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs">Tutup</button>
-                      <button type="submit" disabled={submittingFeedback} className="px-5 py-2 bg-indigo-650 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5">
+
+                    <div className="flex flex-col gap-1 md:col-span-2">
+                      <label className="text-[10px] font-black uppercase text-slate-600">Hasil BK / Komitmen Siswa</label>
+                      <textarea
+                        value={draftResult}
+                        onChange={(e) => setDraftResult(e.target.value)}
+                        className="p-2.5 border border-slate-300 rounded-xl bg-white focus:outline-none text-xs font-semibold text-slate-800"
+                        rows={2}
+                        placeholder="Contoh: Siswa memahami permasalahan, menandatangani lembar komitmen..."
+                      ></textarea>
+                    </div>
+
+                    <div className="flex flex-col gap-1 md:col-span-2 bg-indigo-50/70 p-3 rounded-xl border border-indigo-200">
+                      <label className="text-[10px] font-black uppercase text-indigo-900 flex items-center gap-1">
+                        🧠 Rekomendasi & Intervensi Guru BK (Langsung Terhubung ke Wali Kelas & Siswa)
+                      </label>
+                      <textarea
+                        value={draftBkFeedback}
+                        onChange={(e) => setDraftBkFeedback(e.target.value)}
+                        className="p-2.5 border border-indigo-200 rounded-xl bg-white focus:outline-none text-xs font-semibold text-slate-800"
+                        rows={2}
+                        placeholder="Contoh: Disarankan motivasi berkala oleh Wali Kelas dan evaluasi mingguan..."
+                      ></textarea>
+                    </div>
+
+                    <div className="flex justify-end gap-2 md:col-span-2 pt-2 border-t border-indigo-100">
+                      <button type="button" onClick={() => setSelectedLogId(null)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs cursor-pointer">Tutup</button>
+                      <button type="submit" disabled={submittingFeedback} className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold rounded-xl text-xs flex items-center gap-1.5 cursor-pointer shadow-xs">
                         {submittingFeedback ? <Loader2 size={12} className="animate-spin" /> : null}
-                        <span>Jadwalkan Penanganan BK</span>
+                        <span>Simpan & Sinkronkan Bimbingan BK</span>
                       </button>
                     </div>
                   </form>

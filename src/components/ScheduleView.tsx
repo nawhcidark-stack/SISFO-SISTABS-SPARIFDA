@@ -96,18 +96,10 @@ export default function ScheduleView({
   const [selectedDayFilter, setSelectedDayFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
 
-  // Matrix View Column Slot Mode: 'blok' (1-2, 3-4, 5-6, 7-8, 9-10) | 'all_pairs' (1-2, 2-3, 3-4 ... 9-10) | 'single' (1, 2, 3 ... 10)
-  const [matrixJamMode, setMatrixJamMode] = useState<'blok' | 'all_pairs' | 'single'>('blok');
-
+  // Matrix View Column Slot Mode: 'single' (Per Jam 0, 1, 2 ... 10)
   const activeJamSlots = useMemo(() => {
-    if (matrixJamMode === 'single') {
-      return ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
-    }
-    if (matrixJamMode === 'all_pairs') {
-      return ['0', '1-2', '2-3', '3-4', '4-5', '5-6', '6-7', '7-8', '8-9', '9-10'];
-    }
-    return ['0', '1-2', '3-4', '5-6', '7-8', '9-10'];
-  }, [matrixJamMode]);
+    return ['0', '1', '2', '3', '4', '5', '6', '7', '8', '9', '10'];
+  }, []);
 
   // Form Modal States for Waka Kurikulum
   const [isModalOpen, setIsModalOpen] = useState<boolean>(false);
@@ -1007,35 +999,8 @@ export default function ScheduleView({
                   </div>
                 )}
 
-                <div className="flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200 text-[11px] font-bold">
-                  <span className="text-slate-500 px-2 font-semibold">Tampilan Jam:</span>
-                  <button
-                    type="button"
-                    onClick={() => setMatrixJamMode('blok')}
-                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                      matrixJamMode === 'blok' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Blok (1-2, 3-4...)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMatrixJamMode('all_pairs')}
-                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                      matrixJamMode === 'all_pairs' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Pasangan (1-2, 2-3...)
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setMatrixJamMode('single')}
-                    className={`px-2.5 py-1 rounded-lg transition-all cursor-pointer ${
-                      matrixJamMode === 'single' ? 'bg-indigo-600 text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
-                    }`}
-                  >
-                    Per Jam (0 s.d 10)
-                  </button>
+                <div className="flex items-center bg-indigo-50 px-3 py-1.5 rounded-xl border border-indigo-200 text-[11px] font-extrabold text-indigo-900">
+                  <span>Format Tampilan: Per Jam (Jam 0 s.d 10)</span>
                 </div>
               </div>
             </div>

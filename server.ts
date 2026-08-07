@@ -3770,6 +3770,8 @@ async function startServer() {
       topic,
       actionPlan,
       result,
+      bkFeedback: req.body.bkFeedback || undefined,
+      bkFeedbackAt: req.body.bkFeedback ? (req.body.bkFeedbackAt || new Date().toISOString()) : undefined,
       createdAt: new Date().toISOString()
     };
 

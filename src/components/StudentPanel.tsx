@@ -824,6 +824,34 @@ export default function StudentPanel({
     const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
     const billScore = bill.year * 12 + billMonthIdx;
 
+    const isMut = currentStudent && (!!currentStudent.mutationDate || (currentStudent.class && (currentStudent.class.toLowerCase() === 'mutasi' || currentStudent.class.toLowerCase() === 'mutasi keluar')));
+    if (isMut && currentStudent) {
+      let mutYear: number;
+      let mutMonthIdx: number;
+
+      if (currentStudent.mutationDate && currentStudent.mutationDate.trim()) {
+        const d = new Date(currentStudent.mutationDate.trim());
+        if (!isNaN(d.getTime())) {
+          mutYear = d.getFullYear();
+          mutMonthIdx = d.getMonth();
+        } else {
+          const parts = currentStudent.mutationDate.trim().split("-");
+          mutYear = parseInt(parts[0], 10) || new Date().getFullYear();
+          mutMonthIdx = (parseInt(parts[1], 10) || 1) - 1;
+        }
+      } else {
+        const now = new Date();
+        mutYear = now.getFullYear();
+        mutMonthIdx = now.getMonth();
+      }
+
+      const mutationScore = mutYear * 12 + mutMonthIdx;
+
+      if (billScore >= mutationScore && (bill.status === "unpaid" || bill.status === "pending")) {
+        return false;
+      }
+    }
+
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonthIdx = now.getMonth();

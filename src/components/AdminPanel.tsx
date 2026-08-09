@@ -1881,7 +1881,7 @@ export default function AdminPanel({
 
   // Helper to determine active / inactive state of an SPP bill (for Admin/Cashier)
   const checkIsBillActive = (bill: SppBill, studentId: string, tempCartIds: string[] = []) => {
-    const studentBills = bills.filter((b) => b.studentId === studentId);
+    const student = students.find((s) => s.id === studentId);
     const MONTH_MAP: Record<string, number> = {
       Januari: 0,
       Februari: 1,
@@ -1901,6 +1901,35 @@ export default function AdminPanel({
       MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
     const billScore = bill.year * 12 + billMonthIdx;
 
+    // Mutated student check: hapus/abaikan tunggakan bulan berjalan dan setelahnya semenjak siswa mutasi keluar
+    if (student && isMutationStudent(student)) {
+      let mutYear: number;
+      let mutMonthIdx: number;
+
+      if (student.mutationDate && student.mutationDate.trim()) {
+        const d = new Date(student.mutationDate.trim());
+        if (!isNaN(d.getTime())) {
+          mutYear = d.getFullYear();
+          mutMonthIdx = d.getMonth();
+        } else {
+          const parts = student.mutationDate.trim().split("-");
+          mutYear = parseInt(parts[0], 10) || new Date().getFullYear();
+          mutMonthIdx = (parseInt(parts[1], 10) || 1) - 1;
+        }
+      } else {
+        const now = new Date();
+        mutYear = now.getFullYear();
+        mutMonthIdx = now.getMonth();
+      }
+
+      const mutationScore = mutYear * 12 + mutMonthIdx;
+
+      if (billScore >= mutationScore && (bill.status === "unpaid" || bill.status === "pending")) {
+        return false;
+      }
+    }
+
+    const studentBills = bills.filter((b) => b.studentId === studentId);
     const now = new Date();
     const currentYear = now.getFullYear();
     const currentMonthIdx = now.getMonth();
@@ -18485,15 +18514,15 @@ export default function AdminPanel({
                     mutationDestination: mutateDestination,
                   });
 
-                  if (success) {
-                    setIsMutateModalOpen(false);
-                    setMutateStudentId("");
-                    setMutateReason("");
-                    setMutateDestination("");
-                    alert(
-                      `Prosedur mutasi keluar untuk siswa ${stdToMutate.name} berhasil dibukukan.`,
-                    );
-                  } else {
+                    if (success) {
+                      setIsMutateModalOpen(false);
+                      setMutateStudentId("");
+                      setMutateReason("");
+                      setMutateDestination("");
+                      alert(
+                        `Prosedur mutasi keluar untuk siswa ${stdToMutate.name} berhasil dibukukan. Seluruh tunggakan SPP bulan berjalan dan setelahnya telah otomatis dihapus.`,
+                      );
+                    } else {
                     setMutateError(
                       "Gagal mengirimkan pembaruan status ke server.",
                     );

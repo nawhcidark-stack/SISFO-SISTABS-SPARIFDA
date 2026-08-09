@@ -665,8 +665,8 @@ const isMutationStudent = (student: Student | null | undefined) => {
   return !!student.mutationDate || (student.class && (student.class.toLowerCase() === 'mutasi' || student.class.toLowerCase() === 'mutasi keluar'));
 };
 
-const checkIsBillActiveInHomeroom = (bill: SppBill, studentId: string, allBills: SppBill[]) => {
-  const studentBills = allBills.filter((b) => b.studentId === studentId);
+const checkIsBillActiveInHomeroom = (bill: SppBill, studentId: string, allBills: SppBill[], allStudents: Student[] = []) => {
+  const student = allStudents.find(s => s.id === studentId);
   const MONTH_MAP: Record<string, number> = {
     Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
     Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11,
@@ -675,6 +675,34 @@ const checkIsBillActiveInHomeroom = (bill: SppBill, studentId: string, allBills:
   const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
   const billScore = bill.year * 12 + billMonthIdx;
 
+  if (student && isMutationStudent(student)) {
+    let mutYear: number;
+    let mutMonthIdx: number;
+
+    if (student.mutationDate && student.mutationDate.trim()) {
+      const d = new Date(student.mutationDate.trim());
+      if (!isNaN(d.getTime())) {
+        mutYear = d.getFullYear();
+        mutMonthIdx = d.getMonth();
+      } else {
+        const parts = student.mutationDate.trim().split("-");
+        mutYear = parseInt(parts[0], 10) || new Date().getFullYear();
+        mutMonthIdx = (parseInt(parts[1], 10) || 1) - 1;
+      }
+    } else {
+      const now = new Date();
+      mutYear = now.getFullYear();
+      mutMonthIdx = now.getMonth();
+    }
+
+    const mutationScore = mutYear * 12 + mutMonthIdx;
+
+    if (billScore >= mutationScore && (bill.status === "unpaid" || bill.status === "pending")) {
+      return false;
+    }
+  }
+
+  const studentBills = allBills.filter((b) => b.studentId === studentId);
   const now = new Date();
   const currentYear = now.getFullYear();
   const currentMonthIdx = now.getMonth();

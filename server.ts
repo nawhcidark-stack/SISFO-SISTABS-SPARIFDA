@@ -570,6 +570,62 @@ function getSppAmountForStudent(student: any, className?: string): number {
   return getSppAmountForClass(className || student?.class || "");
 }
 
+// Helper to purge unpaid/pending SPP bills for mutated students starting from mutation month and subsequent months
+function purgeMutatedStudentUnpaidBills(): number {
+  let purgedCount = 0;
+  const MONTH_MAP: Record<string, number> = {
+    "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+    "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+  };
+
+  const mutatedStudents = students.filter(s => 
+    (s.mutationDate && s.mutationDate.trim() !== '') || 
+    (s.class && (s.class.toLowerCase() === 'mutasi' || s.class.toLowerCase() === 'mutasi keluar'))
+  );
+
+  mutatedStudents.forEach(student => {
+    let mutYear: number;
+    let mutMonthIdx: number;
+
+    if (student.mutationDate && student.mutationDate.trim()) {
+      const d = new Date(student.mutationDate.trim());
+      if (!isNaN(d.getTime())) {
+        mutYear = d.getFullYear();
+        mutMonthIdx = d.getMonth();
+      } else {
+        const parts = student.mutationDate.trim().split("-");
+        mutYear = parseInt(parts[0], 10) || new Date().getFullYear();
+        mutMonthIdx = (parseInt(parts[1], 10) || 1) - 1;
+      }
+    } else {
+      const now = new Date();
+      mutYear = now.getFullYear();
+      mutMonthIdx = now.getMonth();
+    }
+
+    const mutationScore = mutYear * 12 + mutMonthIdx;
+
+    for (let i = sppBills.length - 1; i >= 0; i--) {
+      const bill = sppBills[i];
+      if (bill.studentId === student.id && (bill.status === "unpaid" || bill.status === "pending")) {
+        const billMonthIdx = MONTH_MAP[bill.month] !== undefined ? MONTH_MAP[bill.month] : 0;
+        const billScore = bill.year * 12 + billMonthIdx;
+
+        if (billScore >= mutationScore) {
+          const [removedBill] = sppBills.splice(i, 1);
+          purgedCount++;
+          deleteDocFromFirestore("sppBills", removedBill.id).catch(err => console.error(err));
+          if (mongoDb) {
+            mongoDb.collection("sppBills").deleteOne({ id: removedBill.id }).catch(err => console.error(err));
+          }
+        }
+      }
+    }
+  });
+
+  return purgedCount;
+}
+
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
 
 // MongoDB Database connection initialization
@@ -970,6 +1026,12 @@ async function syncWithFirestore(forcePush: boolean = false) {
         const bill = rest as SppBill;
         sppBills.push(bill);
       });
+
+      // Purge unpaid/pending bills for mutated students on/after mutation month
+      const initialPurged = purgeMutatedStudentUnpaidBills();
+      if (initialPurged > 0) {
+        console.log(`[MUTATION PURGE] Cleared ${initialPurged} unpaid SPP bills for mutated students on/after mutation date.`);
+      }
 
       // Load Misc Bills (100% Authoritative from MongoDB)
       try {
@@ -7376,6 +7438,9 @@ async function startServer() {
         }
       });
     }
+
+    // Automatically purge unpaid/pending bills for mutated students starting from the month of mutation and subsequent months
+    const purgedCount = purgeMutatedStudentUnpaidBills();
 
     saveState();
 

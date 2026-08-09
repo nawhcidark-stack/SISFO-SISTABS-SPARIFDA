@@ -6679,6 +6679,79 @@ async function startServer() {
     res.json({ success: true, bill });
   });
 
+  // Admin Bulk Manual SPP Payment (Batch Teller mode for 12 months or multiple bills)
+  app.post("/api/admin/pay-spp-bulk-manual", (req, res) => {
+    const { billIds } = req.body;
+    if (!Array.isArray(billIds) || billIds.length === 0) {
+      return res.status(400).json({ error: "Daftar ID tagihan SPP tidak valid." });
+    }
+
+    const MONTH_MAP: Record<string, number> = {
+      Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
+      Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11
+    };
+
+    const targetBills = sppBills.filter(b => billIds.includes(b.id));
+    if (targetBills.length === 0) {
+      return res.status(404).json({ error: "Tagihan SPP tidak ditemukan." });
+    }
+
+    targetBills.sort((a, b) => {
+      const aScore = a.year * 12 + (MONTH_MAP[a.month] || 0);
+      const bScore = b.year * 12 + (MONTH_MAP[b.month] || 0);
+      return aScore - bScore;
+    });
+
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const batchOrderId = `ORD-MANUAL-BULK-${Date.now()}`;
+    const paidBills: SppBill[] = [];
+
+    for (const bill of targetBills) {
+      if (bill.status === "paid" || bill.status === "waived") continue;
+      bill.status = "paid";
+      bill.paidAt = nowIso;
+      bill.paymentMethod = "Manual Teller (Sekolah)";
+      bill.orderId = batchOrderId;
+      paidBills.push(bill);
+    }
+
+    if (paidBills.length > 0) {
+      const firstBill = paidBills[0];
+      const student = students.find(s => s.id === firstBill.studentId);
+      const totalAmount = paidBills.reduce((sum, b) => sum + b.amount, 0);
+      const monthList = paidBills.map(b => `${b.month} ${b.year}`).join(", ");
+
+      // Broadcast single consolidated SSE notification
+      const notification: RealtimeNotification = {
+        id: `notif-spp-bulk-${Date.now()}`,
+        studentId: firstBill.studentId,
+        title: "Pembayaran Paket SPP Lunas (Kolektif)",
+        message: `Pembayaran ${paidBills.length} bulan SPP (${monthList}) a.n. ${student?.name || ""} total Rp ${totalAmount.toLocaleString("id-ID")} telah DIVERIFIKASI oleh Teller Sekolah.`,
+        type: "success",
+        createdAt: nowIso
+      };
+      broadcastNotification(notification);
+
+      // Send automated WhatsApp confirmation
+      if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
+        const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+          `📢 *KUITANSI PEMBAYARAN SPP DIGITAL (KOLEKTIF)*\n` +
+          `Pembayaran SPP *${paidBills.length} Bulan* (${monthList}) sebesar *Rp ${totalAmount.toLocaleString("id-ID")}* telah BERHASIL diterima & diverifikasi oleh teller sekolah pada ${now.toLocaleDateString('id-ID')} pukul ${now.toLocaleTimeString('id-ID')}.\n\n` +
+          `Metode Pembayaran: *Manual Teller (Kolektif)*\n` +
+          `No. Transaksi: *${batchOrderId}*\n` +
+          `Status: *LUNAS (PAID)*\n\n` +
+          `Terima kasih atas partisipasi aktif Anda dalam memenuhi iuran pendidikan putra/putri Anda.\n` +
+          `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+        sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending bulk SPP WA:", err));
+      }
+
+      saveState();
+    }
+
+    res.json({ success: true, paidBills, count: paidBills.length });
+  });
+
   // Admin Cancel/Void Manual SPP
   app.post("/api/admin/cancel-spp-manual", (req, res) => {
     const { billId } = req.body;

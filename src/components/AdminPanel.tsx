@@ -2090,44 +2090,70 @@ export default function AdminPanel({
         desc: string;
       }> = [];
 
-      for (const item of paymentCart) {
-        if (item.type === "spp" && item.billId) {
-          const resBill = await onPaySppManual(item.billId);
-          if (resBill) {
-            executedItems.push({
-              name: `SPP Bulanan - ${item.month} ${item.year}`,
-              amount: item.amount,
-              desc: `Siswa: ${item.student.name} (Kelas ${item.student.class})`,
-            });
+      const sppItems = paymentCart.filter((item) => item.type === "spp" && item.billId);
+      const miscItems = paymentCart.filter((item) => item.type === "misc" && item.billId);
+      const savingsItems = paymentCart.filter((item) => item.type === "savings_deposit");
+
+      // Batch process SPP bills in a single bulk API call
+      if (sppItems.length > 0) {
+        const sppBillIds = sppItems.map((item) => item.billId!);
+        const res = await fetch("/api/admin/pay-spp-bulk-manual", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ billIds: sppBillIds }),
+        });
+        const data = await res.json();
+        if (res.ok && data.paidBills) {
+          for (const bill of data.paidBills) {
+            const matchedItem = sppItems.find((item) => item.billId === bill.id);
+            if (matchedItem) {
+              executedItems.push({
+                name: `SPP Bulanan - ${bill.month} ${bill.year}`,
+                amount: bill.amount,
+                desc: `Siswa: ${matchedItem.student.name} (Kelas ${matchedItem.student.class})`,
+              });
+            }
           }
-        } else if (item.type === "savings_deposit") {
-          const resTx = await onSavingsManual(
-            item.student.id,
-            "deposit",
-            item.amount,
-            item.notes || "Setoran Tabungan",
-          );
-          if (resTx) {
-            executedItems.push({
-              name: `Setoran Tabungan Manual`,
-              amount: item.amount,
-              desc: `Siswa: ${item.student.name} • Memo: "${item.notes || "Setoran"}"`,
-            });
+        }
+      }
+
+      // Batch process Misc bills in a single bulk API call
+      if (miscItems.length > 0) {
+        const miscBillIds = miscItems.map((item) => item.billId!);
+        const res = await fetch("/api/admin/pay-misc-manual-bulk", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ billIds: miscBillIds }),
+        });
+        const data = await res.json();
+        if (res.ok && data.updatedBills) {
+          for (const bill of data.updatedBills) {
+            const matchedItem = miscItems.find((item) => item.billId === bill.id);
+            if (matchedItem) {
+              executedItems.push({
+                name: `Lain-lain: ${bill.title}`,
+                amount: bill.amount,
+                desc: `Siswa: ${matchedItem.student.name} (Kelas ${matchedItem.student.class})`,
+              });
+            }
           }
-        } else if (item.type === "misc" && item.billId) {
-          const res = await fetch("/api/admin/pay-misc-manual", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ billId: item.billId })
+        }
+      }
+
+      // Process Savings Deposit items
+      for (const item of savingsItems) {
+        const resTx = await onSavingsManual(
+          item.student.id,
+          "deposit",
+          item.amount,
+          item.notes || "Setoran Tabungan",
+        );
+        if (resTx) {
+          executedItems.push({
+            name: `Setoran Tabungan Manual`,
+            amount: item.amount,
+            desc: `Siswa: ${item.student.name} • Memo: "${item.notes || "Setoran"}"`,
           });
-          const data = await res.json();
-          if (res.ok && data.bill) {
-            executedItems.push({
-              name: `Lain-lain: ${data.bill.title}`,
-              amount: item.amount,
-              desc: `Siswa: ${item.student.name} (Kelas ${item.student.class})`,
-            });
-          }
         }
       }
 

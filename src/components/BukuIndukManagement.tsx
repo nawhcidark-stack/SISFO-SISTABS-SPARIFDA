@@ -1,4 +1,4 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
@@ -7,6 +7,7 @@ import {
   Users, CheckSquare, Square, AlertCircle, RefreshCw, UserCheck, 
   Trash2, ShieldAlert, ExternalLink, Eye, Info
 } from 'lucide-react';
+import { Pagination } from './Pagination';
 
 interface BukuIndukManagementProps {
   students: Student[];
@@ -123,6 +124,18 @@ export default function BukuIndukManagement({
       return matchSearch && matchGrade && matchClass;
     }).sort((a, b) => a.name.localeCompare(b.name));
   }, [students, searchTerm, selectedGrade, selectedClass]);
+
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, selectedGrade, selectedClass]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
 
   // Handle changes in edit fields
   const handleInputChange = (field: keyof Student, value: any) => {
@@ -911,12 +924,12 @@ export default function BukuIndukManagement({
                       </td>
                     </tr>
                   ) : (
-                    filteredStudents.map((student, index) => {
+                    paginatedStudents.map((student, index) => {
                       const { filled, total, pct } = calculateCompleteness(student);
                       
                       return (
                         <tr key={student.id} className="hover:bg-slate-50/50 transition duration-100">
-                          <td className="pl-6 font-mono text-slate-400 text-[11px]">{index + 1}</td>
+                          <td className="pl-6 font-mono text-slate-400 text-[11px]">{(currentPage - 1) * pageSize + index + 1}</td>
                           <td className="py-3">
                             <div>
                               <p className="font-extrabold text-slate-800 leading-snug">{student.name}</p>
@@ -1016,10 +1029,15 @@ export default function BukuIndukManagement({
               </table>
             </div>
 
-            {/* List footer stats */}
-            <div className="p-3 bg-slate-50 border-t border-slate-150 text-[10.5px] text-slate-400 font-bold uppercase tracking-wider px-6 flex justify-between">
-              <span>Menunjukkan {filteredStudents.length} siswa terfilter</span>
-              <span>Total DB: {students.length} record siswa</span>
+            {/* List footer stats & Pagination */}
+            <div className="p-3 bg-slate-50 border-t border-slate-150 flex flex-col sm:flex-row items-center justify-between gap-3 px-6">
+              <Pagination
+                currentPage={currentPage}
+                totalItems={filteredStudents.length}
+                pageSize={pageSize}
+                onPageChange={setCurrentPage}
+                onPageSizeChange={setPageSize}
+              />
             </div>
 
           </div>

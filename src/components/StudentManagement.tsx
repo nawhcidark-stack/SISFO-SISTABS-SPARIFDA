@@ -1,7 +1,8 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers } from 'lucide-react';
+import { Pagination } from './Pagination';
 
 interface StudentManagementProps {
   students: Student[];
@@ -492,6 +493,19 @@ export default function StudentManagement({
     return matchesSearch && matchesClass;
   }).sort((a, b) => a.name.localeCompare(b.name));
 
+  // Pagination states
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(10);
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchQuery, classFilter]);
+
+  const paginatedStudents = useMemo(() => {
+    const start = (currentPage - 1) * pageSize;
+    return filteredStudents.slice(start, start + pageSize);
+  }, [filteredStudents, currentPage, pageSize]);
+
   // Statistics Calculations
   const activeStudentsList = students.filter(student => {
     return !student.mutationDate && student.class && !(
@@ -829,7 +843,7 @@ export default function StudentManagement({
             </thead>
             <tbody className="divide-y divide-slate-150">
               {filteredStudents.length > 0 ? (
-                filteredStudents.map((std) => (
+                paginatedStudents.map((std) => (
                   <tr key={std.id} className="hover:bg-slate-50/50 transition-colors">
                     <td className="px-5 py-3.5 font-mono font-bold text-slate-800">{std.nis}</td>
                     <td className="px-5 py-3.5 font-semibold text-slate-900">{std.name}</td>
@@ -890,11 +904,15 @@ export default function StudentManagement({
           </table>
         </div>
         
-        {/* Footnote count */}
-        <div className="p-3 bg-slate-50 border-t border-slate-150 flex justify-between items-center text-[10px] text-slate-400 font-bold">
-          <span>MENAMPILKAN {filteredStudents.length} DARI {students.length} SISWA AKTIF</span>
-          <span className="uppercase tracking-wider">Sistem Akademik Terintegrasi 🇮🇩</span>
-        </div>
+        {/* Pagination Bar */}
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredStudents.length}
+          pageSize={pageSize}
+          onPageChange={setCurrentPage}
+          onPageSizeChange={setPageSize}
+          pageSizeOptions={[10, 20, 50, 100]}
+        />
       </div>
 
       {/* CREATE STUDENT FORM DIALOG MODAL */}

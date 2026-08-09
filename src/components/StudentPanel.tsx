@@ -6,6 +6,7 @@ import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
 import { SavingsPassbookModal } from './SavingsPassbookModal';
+import { Pagination } from './Pagination';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
 function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
@@ -892,6 +893,28 @@ export default function StudentPanel({
     });
   }, [bills, selectedAcademicYear, monthOrder, currentStudent]);
 
+  // SPP Bills Pagination state
+  const [sppPage, setSppPage] = useState(1);
+  const [sppPageSize, setSppPageSize] = useState(10);
+
+  useEffect(() => {
+    setSppPage(1);
+  }, [selectedAcademicYear]);
+
+  const paginatedBills = useMemo(() => {
+    const start = (sppPage - 1) * sppPageSize;
+    return filteredBills.slice(start, start + sppPageSize);
+  }, [filteredBills, sppPage, sppPageSize]);
+
+  // Savings Transactions Pagination state
+  const [savingsPage, setSavingsPage] = useState(1);
+  const [savingsPageSize, setSavingsPageSize] = useState(10);
+
+  const paginatedSavingsTransactions = useMemo(() => {
+    const start = (savingsPage - 1) * savingsPageSize;
+    return transactions.slice(start, start + savingsPageSize);
+  }, [transactions, savingsPage, savingsPageSize]);
+
   const handleSelectMultipleMonths = (count: number) => {
     const isMut = currentStudent && (!!currentStudent.mutationDate || (currentStudent.class && (currentStudent.class.toLowerCase() === 'mutasi' || currentStudent.class.toLowerCase() === 'mutasi keluar')));
     const unpaidSorted = [...bills]
@@ -1540,7 +1563,7 @@ export default function StudentPanel({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {filteredBills.map((bill) => {
+                        {paginatedBills.map((bill) => {
                           const isPaid = bill.status === 'paid';
                           const isWaived = bill.status === 'waived';
                           const isPending = bill.status === 'pending';
@@ -1670,7 +1693,7 @@ export default function StudentPanel({
 
                   {/* Mobile Mobile-Friendly Card List View */}
                   <div className="block md:hidden flex flex-col gap-3">
-                    {filteredBills.map((bill) => {
+                    {paginatedBills.map((bill) => {
                       const isPaid = bill.status === 'paid';
                       const isWaived = bill.status === 'waived';
                       const isPending = bill.status === 'pending';
@@ -1779,6 +1802,15 @@ export default function StudentPanel({
                       );
                     })}
                   </div>
+
+                  <Pagination
+                    currentPage={sppPage}
+                    totalItems={filteredBills.length}
+                    pageSize={sppPageSize}
+                    onPageChange={setSppPage}
+                    onPageSizeChange={setSppPageSize}
+                    pageSizeOptions={[10, 20, 50]}
+                  />
 
                   {/* Manual Midtrans Verification Component */}
                   <div className="mt-8 p-5 bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-205 shadow-3xs text-left animate-fade-in">
@@ -2091,7 +2123,7 @@ export default function StudentPanel({
                           </tr>
                         </thead>
                         <tbody className="divide-y divide-slate-100">
-                          {transactions.map((tx) => {
+                          {paginatedSavingsTransactions.map((tx) => {
                             const isDeposit = tx.type === 'deposit';
 
                             return (
@@ -2153,7 +2185,7 @@ export default function StudentPanel({
 
                     {/* Mobile Transaction Log View (Touch-Optimized Cards with quick Action) */}
                     <div className="block md:hidden flex flex-col gap-3 max-h-[350px] overflow-y-auto">
-                      {transactions.map((tx) => {
+                      {paginatedSavingsTransactions.map((tx) => {
                         const isDeposit = tx.type === 'deposit';
 
                         return (
@@ -2212,6 +2244,15 @@ export default function StudentPanel({
                         );
                       })}
                     </div>
+
+                    <Pagination
+                      currentPage={savingsPage}
+                      totalItems={transactions.length}
+                      pageSize={savingsPageSize}
+                      onPageChange={setSavingsPage}
+                      onPageSizeChange={setSavingsPageSize}
+                      pageSizeOptions={[10, 20, 50]}
+                    />
                   </>
                 )}
               </div>

@@ -79,6 +79,7 @@ import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
 import QRScannerModal from "./QRScannerModal";
 import StudentPaymentCard from "./StudentPaymentCard";
+import Pagination from "./Pagination";
 import QRCode from "qrcode";
 import JSZip from "jszip";
 
@@ -1736,6 +1737,43 @@ export default function AdminPanel({
         );
     return [...result].sort((a, b) => a.name.localeCompare(b.name));
   }, [students, mutatedSearch]);
+
+  // Pagination states
+  const [rosterPage, setRosterPage] = useState(1);
+  const [rosterPageSize, setRosterPageSize] = useState(10);
+  useEffect(() => {
+    setRosterPage(1);
+  }, [studentSearch, rosterClassFilter]);
+  const paginatedStudents = useMemo(() => {
+    const start = (rosterPage - 1) * rosterPageSize;
+    return filteredStudents.slice(start, start + rosterPageSize);
+  }, [filteredStudents, rosterPage, rosterPageSize]);
+
+  const [alumniPage, setAlumniPage] = useState(1);
+  const [alumniPageSize, setAlumniPageSize] = useState(10);
+  useEffect(() => {
+    setAlumniPage(1);
+  }, [alumniSearch]);
+  const paginatedAlumni = useMemo(() => {
+    const start = (alumniPage - 1) * alumniPageSize;
+    return filteredAlumni.slice(start, start + alumniPageSize);
+  }, [filteredAlumni, alumniPage, alumniPageSize]);
+
+  const [mutatedPage, setMutatedPage] = useState(1);
+  const [mutatedPageSize, setMutatedPageSize] = useState(10);
+  useEffect(() => {
+    setMutatedPage(1);
+  }, [mutatedSearch]);
+  const paginatedMutatedStudents = useMemo(() => {
+    const start = (mutatedPage - 1) * mutatedPageSize;
+    return filteredMutatedStudents.slice(start, start + mutatedPageSize);
+  }, [filteredMutatedStudents, mutatedPage, mutatedPageSize]);
+
+  const [miscPage, setMiscPage] = useState(1);
+  const [miscPageSize, setMiscPageSize] = useState(10);
+  useEffect(() => {
+    setMiscPage(1);
+  }, [miscSearch, miscGradeFilter, miscClassFilter, miscStatusFilter]);
 
   const [confirmingTxId, setConfirmingTxId] = useState<string | null>(null);
 
@@ -5855,7 +5893,7 @@ export default function AdminPanel({
                         </td>
                       </tr>
                     ) : (
-                      filteredStudents.map((student) => {
+                      paginatedStudents.map((student) => {
                         const sBills = bills
                           .filter((b) => b.studentId === student.id)
                           .sort((a, b) => {
@@ -5987,6 +6025,15 @@ export default function AdminPanel({
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div className="p-3 border-t border-slate-100 bg-slate-50/50">
+                <Pagination
+                  currentPage={rosterPage}
+                  totalItems={filteredStudents.length}
+                  pageSize={rosterPageSize}
+                  onPageChange={setRosterPage}
+                  onPageSizeChange={setRosterPageSize}
+                />
               </div>
             </div>
           </div>
@@ -6341,7 +6388,9 @@ export default function AdminPanel({
                         );
                       }
 
-                      return filtered.map(bill => {
+                      const start = (miscPage - 1) * miscPageSize;
+                      const paginatedMisc = filtered.slice(start, start + miscPageSize);
+                      return paginatedMisc.map(bill => {
                         const s = students.find(st => st.id === bill.studentId);
                         const isSelected = selectedMiscBillIds.includes(bill.id);
                         return (
@@ -6466,6 +6515,35 @@ export default function AdminPanel({
                     })()}
                   </tbody>
                 </table>
+              </div>
+              <div className="p-3 border-t border-slate-100 bg-slate-50/50">
+                {(() => {
+                  const filteredCount = miscBills.filter(bill => {
+                    const s = students.find(st => st.id === bill.studentId);
+                    if (miscGradeFilter !== "all" && (!s || !s.class || !s.class.startsWith(miscGradeFilter))) return false;
+                    if (miscClassFilter !== "all" && (!s || s.class !== miscClassFilter)) return false;
+                    const matchText = (
+                      bill.title.toLowerCase().includes(miscSearch.toLowerCase()) ||
+                      bill.id.toLowerCase().includes(miscSearch.toLowerCase()) ||
+                      (s?.name || "").toLowerCase().includes(miscSearch.toLowerCase()) ||
+                      (s?.nis || "").toLowerCase().includes(miscSearch.toLowerCase()) ||
+                      (s?.class || "").toLowerCase().includes(miscSearch.toLowerCase())
+                    );
+                    if (!matchText) return false;
+                    if (miscStatusFilter === "unpaid") return bill.status === "unpaid" || bill.status === "pending";
+                    if (miscStatusFilter === "paid") return bill.status === "paid";
+                    return true;
+                  }).length;
+                  return (
+                    <Pagination
+                      currentPage={miscPage}
+                      totalItems={filteredCount}
+                      pageSize={miscPageSize}
+                      onPageChange={setMiscPage}
+                      onPageSizeChange={setMiscPageSize}
+                    />
+                  );
+                })()}
               </div>
             </div>
 
@@ -10456,7 +10534,7 @@ export default function AdminPanel({
                         </td>
                       </tr>
                     ) : (
-                      filteredAlumni.map((alumnus) => {
+                      paginatedAlumni.map((alumnus) => {
                         const sBills = bills.filter(
                           (b) => b.studentId === alumnus.id,
                         );
@@ -10525,6 +10603,15 @@ export default function AdminPanel({
                     )}
                   </tbody>
                 </table>
+              </div>
+              <div className="p-3 border-t border-slate-100 bg-slate-50/50">
+                <Pagination
+                  currentPage={alumniPage}
+                  totalItems={filteredAlumni.length}
+                  pageSize={alumniPageSize}
+                  onPageChange={setAlumniPage}
+                  onPageSizeChange={setAlumniPageSize}
+                />
               </div>
             </div>
 
@@ -11263,7 +11350,7 @@ export default function AdminPanel({
                           </td>
                         </tr>
                       ) : (
-                        filteredMutatedStudents.map((student) => {
+                        paginatedMutatedStudents.map((student) => {
                           const sUnpaid = bills.filter(
                             (b) =>
                               b.studentId === student.id &&
@@ -11384,6 +11471,15 @@ export default function AdminPanel({
                       )}
                     </tbody>
                   </table>
+                </div>
+                <div className="p-3 border-t border-slate-100 bg-slate-50/50">
+                  <Pagination
+                    currentPage={mutatedPage}
+                    totalItems={filteredMutatedStudents.length}
+                    pageSize={mutatedPageSize}
+                    onPageChange={setMutatedPage}
+                    onPageSizeChange={setMutatedPageSize}
+                  />
                 </div>
               </div>
 

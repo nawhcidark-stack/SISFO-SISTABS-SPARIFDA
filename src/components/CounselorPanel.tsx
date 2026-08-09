@@ -38,7 +38,8 @@ import {
   Filter,
   ArrowUpDown,
   RotateCcw,
-  Plus
+  Plus,
+  X
 } from "lucide-react";
 import { motion, AnimatePresence } from "motion/react";
 import { StudentCounselingLog, SchoolIdentity, AttendanceLog, StudentInfractionLog, Student, ClassSchedule, SubjectTeacher, HomeroomTeacher } from "../types";
@@ -122,6 +123,11 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
   const [draftReason, setDraftReason] = useState("");
   const [draftSuccess, setDraftSuccess] = useState(false);
   const [initiatedStudentIds, setInitiatedStudentIds] = useState<string[]>([]);
+
+  // Print Student Modal state
+  const [showPrintStudentModal, setShowPrintStudentModal] = useState(false);
+  const [printStudentSearch, setPrintStudentSearch] = useState("");
+  const [selectedStudentForPrint, setSelectedStudentForPrint] = useState("");
 
   // Point Reduction State
   const [allStudents, setAllStudents] = useState<Student[]>([]);
@@ -479,8 +485,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         </head>
         <body>
           ${schoolIdentity?.letterhead ? `
-            <div style="text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
-              <img src="${schoolIdentity.letterhead}" style="max-width: 100%; max-height: 140px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" />
+            <div style="width: 100%; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
             </div>
           ` : `
             <table class="header-table">
@@ -582,6 +588,302 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
           <div class="footer-line">
             Kerahasiaan dokumen bimbingan ini dilindungi di bawah kode etik Guru BK dilarang dibagikan ke pihak luar lembaga yang tidak berkepentingan resmi.
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Print Global Counseling Journal
+  const handlePrintGlobalLogs = () => {
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Harap izinkan popup di browser Anda untuk mencetak dokumen.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const subHeader = schoolIdentity?.subheading || "Penilaian Karakter, Bimbingan & Kebiasaan Positif";
+    const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+    const address = schoolIdentity?.address || "Jl. Pandaan, Jawa Timur";
+    const logoSrc = schoolIdentity?.logo || "";
+
+    const logsToPrint = filteredLogs.length > 0 ? filteredLogs : logs;
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Jurnal Global Bimbingan & Konseling BK</title>
+          <style>
+            @page { size: A4 landscape; margin: 12mm; }
+            body { font-family: 'Inter', system-ui, sans-serif; padding: 20px; color: #1e293b; background: white; line-height: 1.4; }
+            .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 18px; padding-bottom: 10px; }
+            .logo-cell { width: 70px; text-align: center; vertical-align: middle; }
+            .info-cell { text-align: center; vertical-align: middle; }
+            .school-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: 0.5px; }
+            .school-sub { font-size: 11px; margin: 3px 0 0 0; color: #475569; font-weight: 600; }
+            .school-meta { font-size: 9px; margin: 3px 0 0 0; color: #64748b; font-style: italic; }
+            .title-doc { text-align: center; font-size: 14px; font-weight: 800; text-transform: uppercase; margin: 15px 0 5px 0; letter-spacing: 0.5px; text-decoration: underline; }
+            .sub-doc { text-align: center; font-size: 10px; color: #64748b; font-weight: 600; margin-bottom: 20px; }
+            .main-table { width: 100%; border-collapse: collapse; margin-bottom: 25px; font-size: 10px; }
+            .main-table th { background-color: #f1f5f9; color: #0f172a; font-weight: 800; border: 1px solid #cbd5e1; padding: 8px 6px; text-align: center; text-transform: uppercase; }
+            .main-table td { border: 1px solid #cbd5e1; padding: 6px 8px; vertical-align: top; }
+            .badge { display: inline-block; padding: 2px 6px; border-radius: 4px; font-size: 8px; font-weight: bold; text-transform: uppercase; }
+            .badge-resolved { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+            .badge-pending { background: #fef3c7; color: #b45309; border: 1px solid #fde68a; }
+            .signatures { display: grid; grid-template-cols: 1fr 1fr; gap: 40px; margin-top: 35px; text-align: center; font-size: 11px; page-break-inside: avoid; }
+            .sig-space { height: 60px; }
+            .sig-title { font-weight: bold; margin-bottom: 5px; }
+            .footer-line { border-top: 1px solid #cbd5e1; font-size: 8px; font-style: italic; text-align: center; color: #94a3b8; margin-top: 25px; padding-top: 8px; }
+          </style>
+        </head>
+        <body>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
+
+          <div class="title-doc">JURNAL REKAPITULASI GLOBAL BIMBINGAN & KONSELING (BK)</div>
+          <div class="sub-doc">Total Kasus / Bimbingan Terdata: ${logsToPrint.length} Rekaman Session | Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</div>
+
+          <table class="main-table">
+            <thead>
+              <tr>
+                <th style="width: 25px;">No</th>
+                <th style="width: 75px;">Tanggal</th>
+                <th style="width: 120px;">Nama Siswa</th>
+                <th style="width: 45px;">Kelas</th>
+                <th>Topik & Kronologi Permasalahan</th>
+                <th>Upaya Advokasi Wali Kelas</th>
+                <th>Rekomendasi & Solusi Guru BK</th>
+                <th style="width: 65px;">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              ${logsToPrint.length === 0 ? `
+                <tr><td colspan="8" style="text-align:center; padding: 20px; color: #94a3b8;">Belum ada data rekaman jurnal bimbingan konseling.</td></tr>
+              ` : logsToPrint.map((l, idx) => `
+                <tr>
+                  <td style="text-align: center; font-weight: bold;">${idx + 1}</td>
+                  <td style="white-space: nowrap;">${l.date || "-"}</td>
+                  <td style="font-weight: bold; color: #0f172a;">${l.studentName || "Siswa"}</td>
+                  <td style="text-align: center; font-weight: bold;">${l.className || "-"}</td>
+                  <td>${l.topic || "-"}</td>
+                  <td>${l.actionPlan || "-"}</td>
+                  <td>${l.bkFeedback ? `<b>[Solusi BK]:</b> ${l.bkFeedback}` : `<i>(Belum ada tanggapan BK)</i>`}</td>
+                  <td style="text-align: center;">
+                    ${l.bkFeedback ? `<span class="badge badge-resolved">Disaran BK</span>` : `<span class="badge badge-pending">Pending</span>`}
+                  </td>
+                </tr>
+              `).join('')}
+            </tbody>
+          </table>
+
+          <div class="signatures">
+            <div>
+              <div class="sig-title">Guru Bimbingan Konseling (BK)</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( Guru Konselor BK )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Konselor Terdaftar</div>
+            </div>
+            <div>
+              <div class="sig-title">Kepala Sekolah / Yayasan</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( ${schoolIdentity?.principal || "Kepala Sekolah"} )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Penanggung Jawab</div>
+            </div>
+          </div>
+
+          <div class="footer-line">
+            Dokumen resmi UPT Bimbingan & Konseling Sekolah. Dicetak otomatis oleh Sistem Manajemen Sekolah Integratif.
+          </div>
+
+          <script>
+            window.onload = function() { window.print(); }
+          </script>
+        </body>
+      </html>
+    `);
+    printWindow.document.close();
+  };
+
+  // Print Student Individual Counseling Journal
+  const handlePrintStudentLogs = (targetStudentIdentifier: string) => {
+    if (!targetStudentIdentifier) {
+      alert("Silakan pilih siswa terlebih dahulu.");
+      return;
+    }
+
+    const cleanTerm = targetStudentIdentifier.trim().toLowerCase();
+    
+    const matchedStudent = allStudents.find(s => 
+      s.id === targetStudentIdentifier || 
+      (s.name && s.name.trim().toLowerCase() === cleanTerm) || 
+      (s.nis && s.nis.trim().toLowerCase() === cleanTerm)
+    );
+
+    const studentName = matchedStudent ? matchedStudent.name : targetStudentIdentifier;
+    const className = matchedStudent ? matchedStudent.class : "";
+    const nisn = matchedStudent ? (matchedStudent.nisn || matchedStudent.nis || "-") : "-";
+
+    const studentLogs = logs.filter(l => {
+      if (!l) return false;
+      const matchId = l.studentId && l.studentId === targetStudentIdentifier;
+      const matchName = l.studentName && l.studentName.trim().toLowerCase() === cleanTerm;
+      return matchId || matchName;
+    });
+
+    if (studentLogs.length === 0) {
+      alert(`Tidak ditemukan catatan bimbingan konseling untuk siswa: ${studentName}`);
+      return;
+    }
+
+    const printWindow = window.open("", "_blank");
+    if (!printWindow) {
+      alert("Harap izinkan popup di browser Anda untuk mencetak dokumen.");
+      return;
+    }
+
+    const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
+    const subHeader = schoolIdentity?.subheading || "Penilaian Karakter, Bimbingan & Kebiasaan Positif";
+    const accreditation = schoolIdentity?.accreditation || "Terakreditasi A";
+    const address = schoolIdentity?.address || "Jl. Pandaan, Jawa Timur";
+    const logoSrc = schoolIdentity?.logo || "";
+
+    printWindow.document.write(`
+      <html>
+        <head>
+          <title>Rekap Bimbingan BK - ${studentName}</title>
+          <style>
+            @page { size: A4 portrait; margin: 15mm; }
+            body { font-family: 'Inter', system-ui, sans-serif; padding: 25px; color: #1e293b; background: white; line-height: 1.5; }
+            .header-table { width: 100%; border-collapse: collapse; border-bottom: 3px double #0f172a; margin-bottom: 20px; padding-bottom: 10px; }
+            .logo-cell { width: 70px; text-align: center; vertical-align: middle; }
+            .info-cell { text-align: center; vertical-align: middle; }
+            .school-name { font-size: 16px; font-weight: 800; text-transform: uppercase; margin: 0; color: #0f172a; letter-spacing: 0.5px; }
+            .school-sub { font-size: 11px; margin: 3px 0 0 0; color: #475569; font-weight: 600; }
+            .school-meta { font-size: 9px; margin: 3px 0 0 0; color: #64748b; font-style: italic; }
+            .title-doc { text-align: center; font-size: 14px; font-weight: 800; text-transform: uppercase; margin: 20px 0 15px 0; letter-spacing: 0.5px; text-decoration: underline; }
+            
+            .student-card { width: 100%; border: 1px solid #cbd5e1; border-collapse: collapse; margin-bottom: 20px; font-size: 11px; }
+            .student-card th { background: #f8fafc; padding: 8px 12px; text-align: left; border: 1px solid #cbd5e1; width: 25%; font-weight: bold; }
+            .student-card td { padding: 8px 12px; border: 1px solid #cbd5e1; }
+
+            .log-box { border: 1px solid #e2e8f0; border-radius: 8px; margin-bottom: 15px; overflow: hidden; page-break-inside: avoid; }
+            .log-header { background: #f1f5f9; padding: 8px 12px; border-bottom: 1px solid #e2e8f0; font-size: 11px; font-weight: bold; display: flex; justify-content: space-between; }
+            .log-body { padding: 12px; font-size: 11px; }
+            .log-row { margin-bottom: 8px; }
+            .log-label { font-size: 10px; font-weight: bold; color: #64748b; text-transform: uppercase; display: block; margin-bottom: 2px; }
+            .log-val { margin: 0; color: #334155; line-height: 1.5; white-space: pre-wrap; }
+            .bk-box { background: #f0fdf4; border: 1px solid #bbf7d0; padding: 10px; border-radius: 6px; margin-top: 8px; }
+
+            .signatures { display: grid; grid-template-cols: 1fr 1fr; gap: 40px; margin-top: 40px; text-align: center; font-size: 11px; page-break-inside: avoid; }
+            .sig-space { height: 65px; }
+            .sig-title { font-weight: bold; margin-bottom: 5px; }
+            .footer-line { border-top: 1px solid #cbd5e1; font-size: 8px; font-style: italic; text-align: center; color: #94a3b8; margin-top: 30px; padding-top: 8px; }
+          </style>
+        </head>
+        <body>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 8px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <table class="header-table">
+              <tr>
+                ${logoSrc ? `<td class="logo-cell"><img src="${logoSrc}" style="max-height: 55px; max-width: 55px;" /></td>` : ''}
+                <td class="info-cell">
+                  <div class="school-name">${schoolName}</div>
+                  <div class="school-sub">${subHeader} - Akreditasi: ${accreditation}</div>
+                  <div class="school-meta">Alamat: ${address}</div>
+                </td>
+              </tr>
+            </table>
+          `}
+
+          <div class="title-doc">REKAPITULASI DOKUMEN BIMBINGAN & KONSELING INDIVIDUAL SISWA</div>
+
+          <table class="student-card">
+            <tr>
+              <th>Nama Lengkap Siswa</th>
+              <td style="font-weight: bold; font-size: 12px; color: #0f172a;">${studentName}</td>
+              <th>Tingkat / Kelas</th>
+              <td>Kelas ${className || (studentLogs[0] ? studentLogs[0].className : "-")}</td>
+            </tr>
+            <tr>
+              <th>NIS / NISN</th>
+              <td>${nisn}</td>
+              <th>Total Sesi Bimbingan</th>
+              <td style="font-weight: bold;">${studentLogs.length} Sesi Terdata</td>
+            </tr>
+          </table>
+
+          <div style="font-size: 11px; font-weight: 800; color: #0f172a; margin-bottom: 12px; text-transform: uppercase;">RIWAYAT PERTEMUAN & INTERVENSI BIMBINGAN BK:</div>
+
+          ${studentLogs.map((l, idx) => `
+            <div class="log-box">
+              <div class="log-header">
+                <span>Sesi ${idx + 1} - Tanggal: ${l.date || "-"} (Diinput Wali Kelas ${l.className})</span>
+                <span>Status: ${l.bkFeedback ? "✓ Disaran BK" : "⏳ Menunggu Solusi"}</span>
+              </div>
+              <div class="log-body">
+                <div class="log-row">
+                  <span class="log-label">I. Topik / Kronologi Permasalahan:</span>
+                  <p class="log-val">"${l.topic || "-"}"</p>
+                </div>
+                <div class="log-row">
+                  <span class="log-label">II. Upaya Advokasi & Mediasi Wali Kelas:</span>
+                  <p class="log-val">"${l.actionPlan || "-"}"</p>
+                </div>
+                <div class="log-row">
+                  <span class="log-label">III. Komitmen Perubahan Perilaku Siswa:</span>
+                  <p class="log-val">"${l.result || "-"}"</p>
+                </div>
+                ${l.bkFeedback ? `
+                  <div class="bk-box">
+                    <span class="log-label" style="color: #166534;">IV. Solusi, Catatan Profesional & Intervensi Guru BK:</span>
+                    <p class="log-val" style="color: #14532d; font-weight: bold;">"${l.bkFeedback}"</p>
+                    ${l.bkFeedbackAt ? `<span style="font-size: 8px; color: #166534; display: block; margin-top: 4px;">Waktu Respon: ${new Date(l.bkFeedbackAt).toLocaleString('id-ID')}</span>` : ''}
+                  </div>
+                ` : ''}
+              </div>
+            </div>
+          `).join('')}
+
+          <div class="signatures">
+            <div>
+              <div class="sig-title">Guru Bimbingan Konseling (BK)</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( Guru Konselor BK )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Konselor Terdaftar</div>
+            </div>
+            <div>
+              <div class="sig-title">Wali Kelas ${className || (studentLogs[0] ? studentLogs[0].className : "")}</div>
+              <div class="sig-space"></div>
+              <div style="text-decoration: underline; font-weight: bold;">( Wali Kelas )</div>
+              <div style="font-size: 9px; color: #64748b;">NIP. Wali Kelas</div>
+            </div>
+          </div>
+
+          <div class="footer-line">
+            Dokumen Bimbingan Konseling bersifat rahasia dan terlindungi di bawah kode etik Guru BK. Dilarang menyebarluaskan tanpa persetujuan resmi.
           </div>
 
           <script>
@@ -1543,8 +1845,8 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
         </head>
         <body>
           ${schoolIdentity?.letterhead ? `
-            <div style="text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
-              <img src="${schoolIdentity.letterhead}" style="max-width: 100%; max-height: 140px; width: auto; height: auto; object-fit: contain; display: block; margin: 0 auto;" />
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
             </div>
           ` : `
             <table class="header-table">
@@ -2188,18 +2490,36 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       setDraftSuccess(false);
                       setSelectedLogId('draft_new');
                     }}
-                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2 shadow-xs transition-all"
+                    className="cursor-pointer bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs transition-all"
                   >
                     <Plus size={14} />
                     <span>Form Bimbingan BK Baru</span>
                   </button>
                   <button
                     type="button"
+                    onClick={handlePrintGlobalLogs}
+                    className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs transition-all"
+                    title="Cetak Jurnal Bimbingan BK Seluruh Siswa / Sesuai Filter"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak Jurnal Global</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintStudentModal(true)}
+                    className="cursor-pointer bg-slate-800 hover:bg-slate-900 text-white font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5 shadow-xs transition-all"
+                    title="Pilih Siswa & Cetak Rekap Bimbingan Individual"
+                  >
+                    <Printer size={13} />
+                    <span>Cetak Per Siswa</span>
+                  </button>
+                  <button
+                    type="button"
                     onClick={downloadExcelCounseling}
-                    className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-4 py-2 rounded-xl flex items-center gap-2"
+                    className="cursor-pointer bg-indigo-50 border border-indigo-250 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs px-3.5 py-2 rounded-xl flex items-center gap-1.5"
                   >
                     <FileSpreadsheet size={13} />
-                    <span>Ekspor Excel Bimbingan Rapi</span>
+                    <span>Ekspor Excel</span>
                   </button>
                 </div>
               </div>
@@ -2413,10 +2733,20 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                             <button
                               onClick={() => handlePrintLog(log)}
-                              className="cursor-pointer p-1.5 hover:bg-slate-100 text-slate-600 rounded-xl border border-slate-200 shadow-2xs transition-colors flex items-center justify-center bg-white"
-                              title="Cetak Log Bimbingan Integrasi"
+                              className="cursor-pointer px-2 py-1 hover:bg-slate-100 text-slate-700 rounded-lg border border-slate-200 shadow-2xs transition-colors flex items-center gap-1 bg-white text-[10.5px] font-bold"
+                              title="Cetak Dokumentasi Sesi Ini"
                             >
-                              <Printer size={13} />
+                              <Printer size={12} />
+                              <span>Cetak Sesi Ini</span>
+                            </button>
+
+                            <button
+                              onClick={() => handlePrintStudentLogs(log.studentId || log.studentName)}
+                              className="cursor-pointer px-2 py-1 hover:bg-indigo-50 text-indigo-700 rounded-lg border border-indigo-200 shadow-2xs transition-colors flex items-center gap-1 bg-white text-[10.5px] font-bold"
+                              title={`Cetak Rekap Seluruh Bimbingan Siswa (${log.studentName})`}
+                            >
+                              <Printer size={12} className="text-indigo-600" />
+                              <span>Cetak Rekap Siswa</span>
                             </button>
                           </div>
                         </div>
@@ -4288,6 +4618,110 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
               </div>
             </motion.div>
           </>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL CETAK REKAP BIMBINGAN PER SISWA */}
+      <AnimatePresence>
+        {showPrintStudentModal && (
+          <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white border border-slate-200 rounded-3xl p-6 shadow-2xl max-w-lg w-full text-left"
+            >
+              <div className="flex justify-between items-center pb-4 mb-4 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <span className="p-2 bg-indigo-50 text-indigo-700 rounded-xl border border-indigo-100">
+                    <Printer size={18} />
+                  </span>
+                  <div>
+                    <h3 className="font-extrabold text-sm text-slate-900">Cetak Rekap Bimbingan Per Siswa</h3>
+                    <p className="text-[11px] text-slate-500">Pilih siswa untuk mengunduh/mencetak dokumen riwayat bimbingan BK individual.</p>
+                  </div>
+                </div>
+                <button
+                  onClick={() => setShowPrintStudentModal(false)}
+                  className="p-1 hover:bg-slate-100 text-slate-400 hover:text-slate-700 rounded-lg transition-colors cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              <div className="flex flex-col gap-4">
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-500">🔍 Cari Nama Siswa / NIS</label>
+                  <input
+                    type="text"
+                    placeholder="Tulis nama siswa atau NIS..."
+                    value={printStudentSearch}
+                    onChange={(e) => setPrintStudentSearch(e.target.value)}
+                    className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:bg-white focus:outline-none focus:ring-1 focus:ring-indigo-500"
+                  />
+                </div>
+
+                <div className="flex flex-col gap-1.5">
+                  <label className="text-[10px] font-black uppercase text-slate-500">👤 Pilih Siswa Terdaftar</label>
+                  <select
+                    value={selectedStudentForPrint}
+                    onChange={(e) => setSelectedStudentForPrint(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-800 focus:outline-none"
+                  >
+                    <option value="">-- Pilih Siswa --</option>
+                    {allStudents
+                      .filter(s => {
+                        if (!printStudentSearch) return true;
+                        const term = printStudentSearch.toLowerCase();
+                        return s.name.toLowerCase().includes(term) || (s.nis && s.nis.toLowerCase().includes(term));
+                      })
+                      .map(s => {
+                        // Count counseling logs for this student
+                        const sLogCount = logs.filter(l => 
+                          (l.studentId && l.studentId === s.id) || 
+                          (l.studentName && s.name && l.studentName.trim().toLowerCase() === s.name.trim().toLowerCase())
+                        ).length;
+                        return (
+                          <option key={s.id} value={s.id}>
+                            {s.name} (Kelas {s.class}) — {sLogCount} Sesi Bimbingan
+                          </option>
+                        );
+                      })}
+                  </select>
+                </div>
+
+                <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-3 text-[11px] text-indigo-900 leading-relaxed font-semibold">
+                  ℹ️ Dokumen cetak per siswa mencakup identitas siswa lengkap, daftar kronologi permasalahan, upaya advokasi wali kelas, komitmen siswa, dan masukan solusi resmi dari Guru BK.
+                </div>
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">
+                  <button
+                    type="button"
+                    onClick={() => setShowPrintStudentModal(false)}
+                    className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold rounded-xl text-xs cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      if (!selectedStudentForPrint) {
+                        alert("Harap pilih siswa terlebih dahulu.");
+                        return;
+                      }
+                      handlePrintStudentLogs(selectedStudentForPrint);
+                      setShowPrintStudentModal(false);
+                    }}
+                    disabled={!selectedStudentForPrint}
+                    className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold rounded-xl text-xs flex items-center gap-2 shadow-xs cursor-pointer transition-all"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak Rekap Bimbingan</span>
+                  </button>
+                </div>
+              </div>
+            </motion.div>
+          </div>
         )}
       </AnimatePresence>
 

@@ -123,6 +123,16 @@ export default function StudentPanel({
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
 
+  const isNotificationForThisStudent = (n: RealtimeNotification, studentId?: string) => {
+    const isBK = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
+                 n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
+                 (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
+    if (isBK) {
+      return Boolean(studentId && n.studentId === studentId);
+    }
+    return !n.studentId || n.studentId === studentId;
+  };
+
   // Shopping Cart State
   const [cartBillIds, setCartBillIds] = useState<string[]>([]);
 
@@ -3902,7 +3912,7 @@ export default function StudentPanel({
                   <h3 className="font-extrabold text-slate-900 text-sm uppercase tracking-wider flex items-center gap-2">
                     <span className="relative inline-block">
                       <Bell size={16} className="text-slate-800" />
-                      {notifications.filter(n => !readNotifIds.includes(n.id)).length > 0 && (
+                      {notifications.filter(n => isNotificationForThisStudent(n, currentStudent?.id) && !readNotifIds.includes(n.id)).length > 0 && (
                         <span className="absolute -top-1 -right-1 w-2.5 h-2.5 bg-rose-500 rounded-full ring-2 ring-white animate-pulse" />
                       )}
                     </span>
@@ -3931,8 +3941,7 @@ export default function StudentPanel({
                     const filtered = notifications.filter(n => {
                       const matchesQuery = n.title.toLowerCase().includes(mobileNotifSearch.toLowerCase()) || 
                                            (n.message || "").toLowerCase().includes(mobileNotifSearch.toLowerCase());
-                      const isForThisStudent = !n.studentId || n.studentId === currentStudent.id;
-                      return matchesQuery && isForThisStudent;
+                      return matchesQuery && isNotificationForThisStudent(n, currentStudent?.id);
                     });
 
                     if (filtered.length === 0) {
@@ -4245,9 +4254,9 @@ export default function StudentPanel({
           >
             <div className={`p-1.5 rounded-xl transition-colors relative ${mobileTab === 'lonceng' ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
               <Bell size={20} className={mobileTab === 'lonceng' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
-              {notifications.filter(n => (!n.studentId || n.studentId === currentStudent?.id) && !readNotifIds.includes(n.id)).length > 0 && (
+              {notifications.filter(n => isNotificationForThisStudent(n, currentStudent?.id) && !readNotifIds.includes(n.id)).length > 0 && (
                 <span className="absolute -top-1 -right-1 flex h-4 min-w-4 items-center justify-center rounded-full bg-rose-600 text-[8px] font-black text-white px-1 leading-none shadow-sm border border-white">
-                  {notifications.filter(n => (!n.studentId || n.studentId === currentStudent?.id) && !readNotifIds.includes(n.id)).length}
+                  {notifications.filter(n => isNotificationForThisStudent(n, currentStudent?.id) && !readNotifIds.includes(n.id)).length}
                 </span>
               )}
             </div>

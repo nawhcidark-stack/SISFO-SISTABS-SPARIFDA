@@ -648,8 +648,12 @@ async function upsertDocToMongoDB(colName: string, doc: any) {
 function applyAuthoritativeSavingsBalances(studentList: Student[]) {
   studentList.forEach(s => {
     const nisStr = String(s.nis || "").trim();
-    if (AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr)) {
-      s.savingsBalance = AUTHORITATIVE_SAVINGS_MAP[nisStr];
+    if (s.savingsBalance === undefined || s.savingsBalance === null) {
+      if (AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr)) {
+        s.savingsBalance = AUTHORITATIVE_SAVINGS_MAP[nisStr];
+      } else {
+        s.savingsBalance = 0;
+      }
     }
   });
 }
@@ -2033,30 +2037,139 @@ async function startServer() {
       throw new Error("Format file JSON snapshot tidak valid.");
     }
 
-    if (Array.isArray(snapshot.students)) { students.length = 0; students.push(...snapshot.students); }
-    if (Array.isArray(snapshot.sppBills)) { sppBills.length = 0; sppBills.push(...snapshot.sppBills); }
-    if (Array.isArray(snapshot.miscBills)) { miscBills.length = 0; miscBills.push(...snapshot.miscBills); }
-    if (Array.isArray(snapshot.savingsTransactions)) { savingsTransactions.length = 0; savingsTransactions.push(...snapshot.savingsTransactions); }
-    if (Array.isArray(snapshot.notifications)) { notifications.length = 0; notifications.push(...snapshot.notifications); }
-    if (Array.isArray(snapshot.attendanceLogs)) { attendanceLogs.length = 0; attendanceLogs.push(...snapshot.attendanceLogs); }
-    if (Array.isArray(snapshot.homeroomTeachers)) { homeroomTeachers.length = 0; homeroomTeachers.push(...snapshot.homeroomTeachers); }
-    if (Array.isArray(snapshot.subjectTeachers)) { subjectTeachers.length = 0; subjectTeachers.push(...snapshot.subjectTeachers); }
-    if (Array.isArray(snapshot.teachingJournals)) { teachingJournals.length = 0; teachingJournals.push(...snapshot.teachingJournals); }
-    if (Array.isArray(snapshot.treasurerTransactions)) { treasurerTransactions.length = 0; treasurerTransactions.push(...snapshot.treasurerTransactions); }
-    if (Array.isArray(snapshot.studentDevelopmentLogs)) { studentDevelopmentLogs.length = 0; studentDevelopmentLogs.push(...snapshot.studentDevelopmentLogs); }
-    if (Array.isArray(snapshot.studentInfractionLogs)) { studentInfractionLogs.length = 0; studentInfractionLogs.push(...snapshot.studentInfractionLogs); }
-    if (Array.isArray(snapshot.studentCounselingLogs)) { studentCounselingLogs.length = 0; studentCounselingLogs.push(...snapshot.studentCounselingLogs); }
-    if (Array.isArray(snapshot.classAnnouncements)) { classAnnouncements.length = 0; classAnnouncements.push(...snapshot.classAnnouncements); }
-    if (Array.isArray(snapshot.classMeetingLogs)) { classMeetingLogs.length = 0; classMeetingLogs.push(...snapshot.classMeetingLogs); }
-    if (Array.isArray(snapshot.merdekaAssessments)) { merdekaAssessments.length = 0; merdekaAssessments.push(...snapshot.merdekaAssessments); }
-    if (Array.isArray(snapshot.classSchedules)) { classSchedules.length = 0; classSchedules.push(...snapshot.classSchedules); }
-    if (Array.isArray(snapshot.principalWorkPrograms)) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...snapshot.principalWorkPrograms); }
-    if (Array.isArray(snapshot.teacherEvaluations)) { teacherEvaluations.length = 0; teacherEvaluations.push(...snapshot.teacherEvaluations); }
-    if (Array.isArray(snapshot.infractionRules)) { infractionRules.length = 0; infractionRules.push(...snapshot.infractionRules); }
-    if (Array.isArray(snapshot.sarprasItems)) { sarprasItems.length = 0; sarprasItems.push(...snapshot.sarprasItems); }
-    if (Array.isArray(snapshot.sarprasProposals)) { sarprasProposals.length = 0; sarprasProposals.push(...snapshot.sarprasProposals); }
-    if (Array.isArray(snapshot.sarprasLoans)) { sarprasLoans.length = 0; sarprasLoans.push(...snapshot.sarprasLoans); }
-    if (Array.isArray(snapshot.teacherSalaries)) { teacherSalaries.length = 0; teacherSalaries.push(...snapshot.teacherSalaries); }
+    // Helper to find collection array from multiple potential object locations and key aliases
+    const getArray = (possibleKeys: string[]): any[] | null => {
+      const candidates = [
+        snapshot,
+        snapshot.collections,
+        snapshot.data,
+        snapshot.snapshot,
+        snapshot.db,
+        snapshot.backup
+      ];
+      for (const cand of candidates) {
+        if (!cand || typeof cand !== "object") continue;
+        for (const key of possibleKeys) {
+          if (Array.isArray(cand[key])) return cand[key];
+        }
+      }
+      return null;
+    };
+
+    const studentArr = getArray(["students", "studentList", "daftar_siswa", "siswa"]);
+    if (studentArr) { students.length = 0; students.push(...studentArr); }
+
+    const sppArr = getArray(["sppBills", "spp_bills", "spp", "tagihan_spp"]);
+    if (sppArr) { sppBills.length = 0; sppBills.push(...sppArr); }
+
+    const miscArr = getArray(["miscBills", "misc_bills", "misc", "tagihan_lain"]);
+    if (miscArr) { miscBills.length = 0; miscBills.push(...miscArr); }
+
+    const savingsArr = getArray([
+      "savingsTransactions",
+      "savings_transactions",
+      "savings",
+      "tabungan",
+      "savingsData",
+      "savingsLogs",
+      "tabungan_transaksi",
+      "transaksi_tabungan",
+      "savings_list"
+    ]);
+
+    if (savingsArr) {
+      savingsTransactions.length = 0;
+      // Sanitize and reconcile savings transactions with restored students
+      savingsArr.forEach((tx: any, idx: number) => {
+        if (!tx || typeof tx !== "object") return;
+        
+        let matchedStudent = students.find(s => s.id === tx.studentId || (tx.studentNis && s.nis === String(tx.studentNis)) || (tx.nis && s.nis === String(tx.nis)));
+        if (!matchedStudent && tx.studentId) {
+          matchedStudent = students.find(s => String(s.nis).trim() === String(tx.studentId).trim());
+        }
+
+        const studentId = matchedStudent ? matchedStudent.id : (tx.studentId || `unknown-std-${idx}`);
+        const studentNis = matchedStudent ? matchedStudent.nis : (tx.studentNis || tx.nis);
+
+        const cleanTx: SavingsTransaction = {
+          id: String(tx.id || tx._id || `sav-restored-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`),
+          studentId,
+          type: (tx.type === "deposit" || tx.type === "setor" || tx.type === "kredit") ? "deposit" : "withdrawal",
+          amount: Math.abs(Number(tx.amount) || 0),
+          status: (tx.status === "pending" || tx.status === "failed") ? tx.status : "success",
+          createdAt: tx.createdAt || tx.date || tx.timestamp || new Date().toISOString(),
+          paymentMethod: tx.paymentMethod || tx.method || "Manual Teller",
+          orderId: tx.orderId,
+          transactionId: tx.transactionId,
+          notes: tx.notes || tx.description || (tx.type === "deposit" ? "Setoran Tabungan" : "Penarikan Tabungan")
+        };
+        if (studentNis) {
+          (cleanTx as any).studentNis = String(studentNis);
+        }
+        savingsTransactions.push(cleanTx);
+      });
+    }
+
+    const notifArr = getArray(["notifications", "realtimeNotifications"]);
+    if (notifArr) { notifications.length = 0; notifications.push(...notifArr); }
+
+    const attArr = getArray(["attendanceLogs", "attendance"]);
+    if (attArr) { attendanceLogs.length = 0; attendanceLogs.push(...attArr); }
+
+    const hrArr = getArray(["homeroomTeachers", "homeroom_teachers"]);
+    if (hrArr) { homeroomTeachers.length = 0; homeroomTeachers.push(...hrArr); }
+
+    const sjArr = getArray(["subjectTeachers", "subject_teachers"]);
+    if (sjArr) { subjectTeachers.length = 0; subjectTeachers.push(...sjArr); }
+
+    const tjArr = getArray(["teachingJournals", "teaching_journals"]);
+    if (tjArr) { teachingJournals.length = 0; teachingJournals.push(...tjArr); }
+
+    const trArr = getArray(["treasurerTransactions", "treasurer_transactions", "kas_admin"]);
+    if (trArr) { treasurerTransactions.length = 0; treasurerTransactions.push(...trArr); }
+
+    const devArr = getArray(["studentDevelopmentLogs"]);
+    if (devArr) { studentDevelopmentLogs.length = 0; studentDevelopmentLogs.push(...devArr); }
+
+    const infArr = getArray(["studentInfractionLogs"]);
+    if (infArr) { studentInfractionLogs.length = 0; studentInfractionLogs.push(...infArr); }
+
+    const counsArr = getArray(["studentCounselingLogs"]);
+    if (counsArr) { studentCounselingLogs.length = 0; studentCounselingLogs.push(...counsArr); }
+
+    const annArr = getArray(["classAnnouncements"]);
+    if (annArr) { classAnnouncements.length = 0; classAnnouncements.push(...annArr); }
+
+    const meetArr = getArray(["classMeetingLogs"]);
+    if (meetArr) { classMeetingLogs.length = 0; classMeetingLogs.push(...meetArr); }
+
+    const merdArr = getArray(["merdekaAssessments"]);
+    if (merdArr) { merdekaAssessments.length = 0; merdekaAssessments.push(...merdArr); }
+
+    const schedArr = getArray(["classSchedules"]);
+    if (schedArr) { classSchedules.length = 0; classSchedules.push(...schedArr); }
+
+    const pwpArr = getArray(["principalWorkPrograms"]);
+    if (pwpArr) { principalWorkPrograms.length = 0; principalWorkPrograms.push(...pwpArr); }
+
+    const teEvalArr = getArray(["teacherEvaluations"]);
+    if (teEvalArr) { teacherEvaluations.length = 0; teacherEvaluations.push(...teEvalArr); }
+
+    const infRuleArr = getArray(["infractionRules"]);
+    if (infRuleArr) { infractionRules.length = 0; infractionRules.push(...infRuleArr); }
+
+    const sItems = getArray(["sarprasItems"]);
+    if (sItems) { sarprasItems.length = 0; sarprasItems.push(...sItems); }
+
+    const sProps = getArray(["sarprasProposals"]);
+    if (sProps) { sarprasProposals.length = 0; sarprasProposals.push(...sProps); }
+
+    const sLoans = getArray(["sarprasLoans"]);
+    if (sLoans) { sarprasLoans.length = 0; sarprasLoans.push(...sLoans); }
+
+    const tSalaries = getArray(["teacherSalaries"]);
+    if (tSalaries) { teacherSalaries.length = 0; teacherSalaries.push(...tSalaries); }
+
     if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
     if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
     if (snapshot.schoolIdentity) Object.assign(schoolIdentity, snapshot.schoolIdentity);
@@ -2069,6 +2182,7 @@ async function startServer() {
     if (snapshot.curriculumConfig) Object.assign(curriculumConfig, snapshot.curriculumConfig);
     if (snapshot.adminConfig) Object.assign(adminConfig, snapshot.adminConfig);
 
+    // Apply default initial authoritative map ONLY for students who have no savingsBalance defined
     applyAuthoritativeSavingsBalances(students);
 
     saveState();
@@ -3619,6 +3733,7 @@ async function startServer() {
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-sdl-${newLog.id}`,
+      studentId: studentId,
       title: `Catatan Perkembangan Siswa: ${category}`,
       message: `Catatan perkembangan baru ditambahkan untuk ${studentName} (Kelas ${className}).`,
       type: "info",
@@ -3672,6 +3787,7 @@ async function startServer() {
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-sil-${newLog.id}`,
+      studentId: studentId,
       title: `Laporan Pelanggaran: Kelas ${className}`,
       message: `Pencatatan pelanggaran baru untuk ${studentName} (${infractionType}) dengan status: ${resolutionStatus}.`,
       type: "warning",
@@ -3769,6 +3885,7 @@ async function startServer() {
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-scl-${newLog.id}`,
+      studentId: studentId,
       title: `Catatan Bimbingan: ${studentName}`,
       message: `Wali Kelas ${className} memperbarui sesi bimbingan dengan topik: "${topic}".`,
       type: "success",
@@ -3806,6 +3923,7 @@ async function startServer() {
     // Broadcast SSE notification for counselor feedback
     const notification: RealtimeNotification = {
       id: `notif-bk-feedback-${id}-${Date.now()}`,
+      studentId: studentCounselingLogs[index].studentId,
       title: `Saran Guru BK Masuk 🧠`,
       message: `Guru BK memberikan saran & solusi untuk bimbingan konseling siswa ${studentCounselingLogs[index].studentName}.`,
       type: "info",
@@ -6347,7 +6465,10 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
     const studentBills = sppBills.filter(b => b.studentId === student.id);
-    const studentTx = savingsTransactions.filter(t => t.studentId === student.id);
+    const studentTx = savingsTransactions.filter(t => 
+      t.studentId === student.id || 
+      (student.nis && (t.studentId === String(student.nis) || (t as any).studentNis === String(student.nis)))
+    );
     res.json({ student, bills: studentBills, transactions: studentTx });
   });
 
@@ -6358,7 +6479,10 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
     const studentBills = sppBills.filter(b => b.studentId === student.id);
-    const studentTx = savingsTransactions.filter(t => t.studentId === student.id);
+    const studentTx = savingsTransactions.filter(t => 
+      t.studentId === student.id || 
+      (student.nis && (t.studentId === String(student.nis) || (t as any).studentNis === String(student.nis)))
+    );
     res.json({ student, bills: studentBills, transactions: studentTx });
   });
 

@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { motion } from 'motion/react';
+import { motion, AnimatePresence } from 'motion/react';
 import { Student, SubjectTeacher, HomeroomTeacher, MerdekaAssessment, SchoolIdentity, ClassSchedule } from '../types';
 import ScheduleView from './ScheduleView';
 import { 
@@ -21,7 +21,9 @@ import {
   Calendar,
   ShieldCheck,
   Check,
-  FileText
+  FileText,
+  Home,
+  LayoutGrid
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -45,6 +47,7 @@ export default function WakaKurikulumPanel({
   onRefreshData
 }: WakaKurikulumPanelProps) {
   const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'import_pts_pas' | 'rekap_nilai' | 'password'>('monitoring');
+  const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
 
   // Filter States
   const [selectedSemester, setSelectedSemester] = useState<string>(
@@ -437,7 +440,7 @@ export default function WakaKurikulumPanel({
   };
 
   return (
-    <div className="max-w-7xl mx-auto px-4 py-8 space-y-6 text-left">
+    <div className="max-w-7xl mx-auto px-4 pt-8 pb-24 md:pb-8 space-y-6 text-left">
       {/* Header Banner */}
       <div className="bg-slate-900 border border-slate-800 rounded-3xl p-6 sm:p-8 text-white shadow-xl relative overflow-hidden">
         <div className="absolute -right-10 -bottom-10 w-64 h-64 bg-indigo-600/20 rounded-full blur-3xl pointer-events-none" />
@@ -1111,6 +1114,153 @@ export default function WakaKurikulumPanel({
           </form>
         </div>
       )}
+
+      {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) ================= */}
+      <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-slate-200 shadow-[0_-4px_12px_rgba(0,0,0,0.05)] px-4 py-2 flex md:hidden justify-around items-center h-16 no-print select-none">
+        {/* Menu 1 (Home - paling kiri) */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('monitoring');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'monitoring' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+            <Home size={20} className={activeTab === 'monitoring' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeTab === 'monitoring' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Home</span>
+        </button>
+
+        {/* Menu 2 (Jadwal Mengajar) */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('schedules');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'schedules' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+            <Calendar size={20} className={activeTab === 'schedules' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeTab === 'schedules' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Jadwal</span>
+        </button>
+
+        {/* Menu 3 (Import PTS/PAS) */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('import_pts_pas');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'import_pts_pas' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+            <FileSpreadsheet size={20} className={activeTab === 'import_pts_pas' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeTab === 'import_pts_pas' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Import</span>
+        </button>
+
+        {/* Menu 4 (Rekap Nilai) */}
+        <button
+          type="button"
+          onClick={() => {
+            setActiveTab('rekap_nilai');
+            setShowMoreMenu(false);
+          }}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'rekap_nilai' ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+            <BookOpen size={20} className={activeTab === 'rekap_nilai' ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeTab === 'rekap_nilai' ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Rekap</span>
+        </button>
+
+        {/* Menu 5 (Lainnya - Kotak Empat, Paling Kanan) */}
+        <button
+          type="button"
+          onClick={() => setShowMoreMenu(prev => !prev)}
+          className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
+        >
+          <div className={`p-1.5 rounded-xl transition-colors ${activeTab === 'password' || showMoreMenu ? 'bg-indigo-50 text-indigo-650' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={activeTab === 'password' || showMoreMenu ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          </div>
+          <span className={`text-[9.5px] leading-none ${activeTab === 'password' || showMoreMenu ? 'text-indigo-650 font-bold' : 'text-slate-400 font-bold'}`}>Lainnya</span>
+        </button>
+      </div>
+
+      {/* Slide-over menu bottom sheet overlay for "Lainnya" */}
+      <AnimatePresence>
+        {showMoreMenu && (
+          <>
+            <motion.div
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 0.3 }}
+              exit={{ opacity: 0 }}
+              onClick={() => setShowMoreMenu(false)}
+              className="fixed inset-0 z-40 bg-black md:hidden"
+            />
+            <motion.div
+              initial={{ y: '100%' }}
+              animate={{ y: 0 }}
+              exit={{ y: '100%' }}
+              transition={{ type: 'spring', damping: 25, stiffness: 200 }}
+              className="fixed bottom-16 left-0 right-0 z-40 bg-white border-t border-slate-200 rounded-t-3xl p-6 shadow-xl text-left flex flex-col gap-4 max-h-[80vh] overflow-y-auto pb-10 no-print md:hidden"
+            >
+              <div className="flex items-center justify-between border-b border-indigo-50 pb-3">
+                <div className="flex flex-col">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Menu Pendukung</span>
+                  <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">Akses Tambahan Waka Kurikulum</h4>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowMoreMenu(false)}
+                  className="p-1 px-3 bg-slate-50 hover:bg-slate-100 rounded-lg text-[10px] font-black uppercase text-slate-500 cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('password');
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeTab === 'password'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🔑</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Keamanan Sandi</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ubah kata sandi akun Kurikulum</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (onRefreshData) onRefreshData();
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🔄</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Muat Ulang Data</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Sinkronkan ulang data dari server</p>
+                  </div>
+                </button>
+              </div>
+            </motion.div>
+          </>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

@@ -37,10 +37,16 @@ function printSingleAnnouncement(log: ClassAnnouncement, schoolIdentity?: School
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan | Telp: ${schoolPhone}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan | Telp: ${schoolPhone}</p>
+          </div>
+        `}
         <div class="title">SURAT EDARAN &amp; MAKLUMAT KELAS ${currentClassName}</div>
         <div class="date">Pandaan, ${log.date}</div>
         <div style="font-size:12px; margin-bottom:15px">Kepada Yth.<br/><b>Bapak/Ibu Orang Tua Wali / Siswa Kelas ${currentClassName}</b><br/>Di Tempat</div>
@@ -82,10 +88,16 @@ function printSingleMeetingLog(log: ClassMeetingLog, schoolIdentity?: SchoolIden
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>JURNAL RAPAT, KOORDINASI, DAN NOTULENSI FASILITATOR</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>JURNAL RAPAT, KOORDINASI, DAN NOTULENSI FASILITATOR</p>
+          </div>
+        `}
         <div class="title">NOTULENSI JURNAL KOORDINASI WALI KELAS</div>
         <table class="meta">
           <tr><td class="label">Jenis Pertemuan / Rapat</td><td>${log.meetingType}</td><td class="label">Hari / Tanggal Rapat</td><td>${log.date}</td></tr>
@@ -137,11 +149,17 @@ function printSingleDevelopmentLog(log: StudentDevelopmentLog, schoolIdentity?: 
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
-          <p>${schoolAddress}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
+            <p>${schoolAddress}</p>
+          </div>
+        `}
         <div class="title">JURNAL CATATAN PERKEMBANGAN SISWA</div>
         <table class="meta">
           <tr><td class="label">Siswa</td><td>${log.studentName}</td><td class="label">Tanggal</td><td>${log.date}</td></tr>
@@ -184,10 +202,16 @@ function printSingleInfractionLog(log: StudentInfractionLog, schoolIdentity?: Sc
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>LEMBAR PENANGANAN KEDISIPLINAN DAN KETERTIBAN SISWA</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>LEMBAR PENANGANAN KEDISIPLINAN DAN KETERTIBAN SISWA</p>
+          </div>
+        `}
         <div class="title">BAP PERILAKU DAN KETERTIBAN SISWA</div>
         <table class="meta">
           <tr><td class="label">Nama Siswa / NIS</td><td>${log.studentName}</td><td class="label">Hari / Tanggal</td><td>${log.date}</td></tr>
@@ -238,10 +262,16 @@ function printSingleCounselingLog(log: StudentCounselingLog, schoolIdentity?: Sc
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>JURNAL LAYANAN KONSELING &amp; KELUARGA</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>JURNAL LAYANAN KONSELING &amp; KELUARGA</p>
+          </div>
+        `}
         <div class="title">BERKAS BIMBINGAN SISWA WALI KELAS</div>
         <table class="meta">
           <tr><td class="label">Nama Siswa / NIS</td><td>${log.studentName}</td><td class="label">Tanggal Konseling</td><td>${log.date}</td></tr>
@@ -327,11 +357,17 @@ function printStudentDevelopmentRecap(student: any, logs: StudentDevelopmentLog[
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
-          <p>${schoolAddress}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
+            <p>${schoolAddress}</p>
+          </div>
+        `}
         
         <div class="title">REKAPITULASI CATATAN PERKEMBANGAN PER SISWA</div>
 
@@ -482,11 +518,17 @@ function printStudentCombinedRecap(
         </style>
       </head>
       <body>
-        <div class="header">
-          <h2>${schoolName}</h2>
-          <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
-          <p>${schoolAddress}</p>
-        </div>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 25px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
+          <div class="header">
+            <h2>${schoolName}</h2>
+            <p>${schoolSubheading} | Telp: ${schoolPhone}</p>
+            <p>${schoolAddress}</p>
+          </div>
+        `}
         
         <div class="title">REKAPITULASI JURNAL GABUNGAN SISWA WALI KELAS</div>
 
@@ -1071,10 +1113,16 @@ export default function HomeroomPanel({
           </style>
         </head>
         <body>
+        ${schoolIdentity?.letterhead ? `
+          <div style="width: 100%; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+          </div>
+        ` : `
           <div class="head-school">
             ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}<br/>
             <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity?.address || ""} | Phone: ${schoolIdentity?.phone || ""}</span>
           </div>
+        `}
           
           <h3 style="text-align:center; text-transform:uppercase; text-decoration:underline;">LEMBAR HASIL PENILAIAN KINERJA GURU (PKG)</h3>
           <p style="text-align:center; font-weight:bold; font-size:10px; margin-top:-10px;">TAHUN AJARAN / AKADEMIK: ${ev.academicYear}</p>
@@ -2705,10 +2753,16 @@ Wassalamualaikum Wr. Wb.
           </style>
         </head>
         <body>
-          <div class="header-school">
-            <div class="school-title">${schoolNameUpper}</div>
-            <div class="school-meta">Alamat: ${schoolAddress} | Telepon: ${schoolPhone}</div>
-          </div>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <div class="header-school">
+              <div class="school-title">${schoolNameUpper}</div>
+              <div class="school-meta">Alamat: ${schoolAddress} | Telepon: ${schoolPhone}</div>
+            </div>
+          `}
 
           <div class="doc-title">REKAPITULASI PRESENSI KEHADIRAN SISWA</div>
 

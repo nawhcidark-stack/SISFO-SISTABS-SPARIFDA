@@ -85,6 +85,11 @@ export default function App() {
     currentStudentRef.current = currentStudent;
   }, [currentStudent]);
 
+  const roleRef = useRef(role);
+  useEffect(() => {
+    roleRef.current = role;
+  }, [role]);
+
   const [studentBills, setStudentBills] = useState<SppBill[]>([]);
   const [studentTransactions, setStudentTransactions] = useState<SavingsTransaction[]>([]);
   const [globalNotifications, setGlobalNotifications] = useState<RealtimeNotification[]>([]);
@@ -721,6 +726,24 @@ export default function App() {
         // Parse notification
         const rawNotification: RealtimeNotification = data;
         
+        const currentRole = roleRef.current;
+        const activeStud = currentStudentRef.current;
+
+        const isBKNotif = rawNotification.id.includes('-scl-') || rawNotification.id.includes('-bk-') || rawNotification.id.includes('-sil-') || rawNotification.id.includes('-sdl-') ||
+                          rawNotification.title.toLowerCase().includes('bimbingan') || rawNotification.title.toLowerCase().includes('konseling') ||
+                          (rawNotification.message || '').toLowerCase().includes('bimbingan') || (rawNotification.message || '').toLowerCase().includes('konseling');
+
+        // Target audience check for student role
+        if (currentRole === 'student') {
+          if (isBKNotif && (!activeStud || rawNotification.studentId !== activeStud.id)) {
+            // Do NOT notify or pop up toast to a student who is NOT the target of this BK counseling session
+            return;
+          }
+          if (rawNotification.studentId && activeStud && rawNotification.studentId !== activeStud.id) {
+            return;
+          }
+        }
+
         // Push to top of notifications array
         setGlobalNotifications(prev => [rawNotification, ...prev]);
         
@@ -737,7 +760,6 @@ export default function App() {
 
         // If Midtrans payment modal is open and we receive a success notification, auto-close it after a short delay
         if (isPayModalOpenRef.current && rawNotification.type === 'payment') {
-          const activeStud = currentStudentRef.current;
           if (!activeStud || rawNotification.studentId === activeStud.id) {
             console.log('Detected real-time payment success notification via SSE! Auto-closing Midtrans modal...');
             setTimeout(() => {
@@ -750,7 +772,6 @@ export default function App() {
 
         // Bidirectional reactive sync: If the transaction belongs to our currently selected student profile,
         // we automatically trigger an API query to sync the screen with the new funds or paid bills!
-        const activeStud = currentStudentRef.current;
         const relatedToActiveStud = activeStud && (rawNotification.studentId === undefined || rawNotification.studentId === activeStud.id);
         
         // Update general catalog (student balances/bills might have shifted)
@@ -1648,7 +1669,19 @@ export default function App() {
                 ) : (
                   globalNotifications.filter(n => {
                     const q = notifSearchQuery.toLowerCase();
-                    return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
+                    const matchesQuery = n.title.toLowerCase().includes(q) || (n.message || '').toLowerCase().includes(q);
+                    if (!matchesQuery) return false;
+
+                    if (role === 'student') {
+                      const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
+                                        n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
+                                        (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
+                      if (isBKNotif) {
+                        return Boolean(currentStudent && n.studentId === currentStudent.id);
+                      }
+                      return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
+                    }
+                    return true;
                   }).map((notif) => {
                     let IconComp = Info;
                     let badgeColor = 'bg-blue-50 text-blue-700 border-blue-100';

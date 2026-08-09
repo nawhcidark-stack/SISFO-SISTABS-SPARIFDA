@@ -1029,12 +1029,18 @@ export default function PrincipalPanel({
           </style>
         </head>
         <body>
-          <div class="header">
-            <h2>${schoolName}</h2>
-            <p>${schoolAddress}</p>
-            <h3 style="margin-top: 8px; font-size: 13px; font-weight: bold; text-transform: uppercase;">REKAPITULASI PRESENSI & KEHADIRAN SISWA</h3>
-            <p>Periode: ${rekapStartDate} s.d. ${rekapEndDate} ${rekapClassFilter !== 'all' ? `| Kelas: ${rekapClassFilter}` : '| Semua Kelas'}</p>
-          </div>
+          ${schoolIdentity?.letterhead ? `
+            <div style="width: 100%; text-align: center; margin-bottom: 15px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+              <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+            </div>
+          ` : `
+            <div class="header">
+              <h2>${schoolName}</h2>
+              <p>${schoolAddress}</p>
+            </div>
+          `}
+          <h3 style="text-align: center; margin-top: 8px; font-size: 13px; font-weight: bold; text-transform: uppercase;">REKAPITULASI PRESENSI & KEHADIRAN SISWA</h3>
+          <p style="text-align: center;">Periode: ${rekapStartDate} s.d. ${rekapEndDate} ${rekapClassFilter !== 'all' ? `| Kelas: ${rekapClassFilter}` : '| Semua Kelas'}</p>
 
           <div style="margin-bottom: 10px; font-weight: bold; font-size: 11px;">
             Ringkasan: Total Siswa (${rekapSiswaPrincipalList.length}) | Total Hadir (${totalRekapHadir}) | Sakit (${totalRekapSakit}) | Izin (${totalRekapIzin}) | Alpha (${totalRekapAlpha}) | Terlambat (${totalRekapTerlambat}) | Rata-rata Kehadiran (${avgPctKehadiran}%)
@@ -2384,10 +2390,16 @@ export default function PrincipalPanel({
                                         </style>
                                       </head>
                                       <body>
-                                        <div class="head-school">
-                                          ${schoolIdentity.name}<br/>
-                                          <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity.address} | Phone: ${schoolIdentity.phone}</span>
-                                        </div>
+                                        ${schoolIdentity?.letterhead ? `
+                                          <div style="width: 100%; text-align: center; margin-bottom: 20px; border-bottom: 2px solid #0f172a; padding-bottom: 6px;">
+                                            <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block;" />
+                                          </div>
+                                        ` : `
+                                          <div class="head-school">
+                                            ${schoolIdentity.name}<br/>
+                                            <span style="font-size:10px; font-weight:normal;">Address: ${schoolIdentity.address} | Phone: ${schoolIdentity.phone}</span>
+                                          </div>
+                                        `}
                                         
                                         <h3 style="text-align:center; text-transform:uppercase; text-decoration:underline;">LEMBAR HASIL PENILAIAN KINERJA GURU (PKG)</h3>
                                         <p style="text-align:center; font-weight:bold; font-size:10px; margin-top:-10px;">TAHUN AJARAN / AKADEMIK: ${ev.academicYear}</p>

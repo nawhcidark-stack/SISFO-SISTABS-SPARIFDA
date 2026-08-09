@@ -1563,7 +1563,7 @@ export default function StudentPanel({
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
-                        {paginatedBills.map((bill) => {
+                        {filteredBills.map((bill) => {
                           const isPaid = bill.status === 'paid';
                           const isWaived = bill.status === 'waived';
                           const isPending = bill.status === 'pending';
@@ -1693,7 +1693,7 @@ export default function StudentPanel({
 
                   {/* Mobile Mobile-Friendly Card List View */}
                   <div className="block md:hidden flex flex-col gap-3">
-                    {paginatedBills.map((bill) => {
+                    {filteredBills.map((bill) => {
                       const isPaid = bill.status === 'paid';
                       const isWaived = bill.status === 'waived';
                       const isPending = bill.status === 'pending';
@@ -1802,15 +1802,6 @@ export default function StudentPanel({
                       );
                     })}
                   </div>
-
-                  <Pagination
-                    currentPage={sppPage}
-                    totalItems={filteredBills.length}
-                    pageSize={sppPageSize}
-                    onPageChange={setSppPage}
-                    onPageSizeChange={setSppPageSize}
-                    pageSizeOptions={[10, 20, 50]}
-                  />
 
                   {/* Manual Midtrans Verification Component */}
                   <div className="mt-8 p-5 bg-gradient-to-br from-slate-50 to-slate-100 rounded-2xl border border-slate-205 shadow-3xs text-left animate-fade-in">

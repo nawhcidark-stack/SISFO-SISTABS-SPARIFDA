@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill, ClassSchedule, HomeroomTeacher, SubjectTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink, Calendar } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink, Calendar, ShoppingCart } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
@@ -1904,20 +1904,73 @@ export default function StudentPanel({
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 font-semibold text-[10px]">Rp</span>
                           </div>
 
-                          <button
-                            id="btn-deposit-savings"
-                            onClick={() => {
-                              const amt = customTopUp ? Number(customTopUp) : Number(topUpAmount);
-                              if (isNaN(amt) || amt < 10000) {
-                                alert('Minimum setoran tabungan online adalah Rp 10.000');
-                                return;
-                              }
-                              onDepositSavings(amt);
-                            }}
-                            className="w-full mt-2 py-2.5 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs rounded-lg transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-1.5"
-                          >
-                            <Wallet size={13} /> Setor Rp {(customTopUp ? Number(customTopUp) : Number(topUpAmount)).toLocaleString('id-ID')}
-                          </button>
+                          <div className="grid grid-cols-2 gap-2 mt-2">
+                            <button
+                              id="btn-add-savings-cart"
+                              type="button"
+                              onClick={() => {
+                                const amt = customTopUp ? Number(customTopUp) : Number(topUpAmount);
+                                if (isNaN(amt) || amt < 10000) {
+                                  alert('Minimum setoran tabungan online adalah Rp 10.000');
+                                  return;
+                                }
+                                const depositId = `savings-deposit-${Date.now()}-${amt}`;
+                                setCartBillIds(prev => [...prev, depositId]);
+                              }}
+                              className="py-2.5 px-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-lg transition-all shadow-sm cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <ShoppingCart size={13} /> + Keranjang
+                            </button>
+                            <button
+                              id="btn-deposit-savings"
+                              type="button"
+                              onClick={() => {
+                                const amt = customTopUp ? Number(customTopUp) : Number(topUpAmount);
+                                if (isNaN(amt) || amt < 10000) {
+                                  alert('Minimum setoran tabungan online adalah Rp 10.000');
+                                  return;
+                                }
+                                onDepositSavings(amt);
+                              }}
+                              className="py-2.5 px-2 bg-indigo-600 hover:bg-indigo-750 text-white font-bold text-xs rounded-lg transition-all shadow-md shadow-indigo-100 cursor-pointer flex items-center justify-center gap-1.5"
+                            >
+                              <Wallet size={13} /> Setor Langsung
+                            </button>
+                          </div>
+
+                          {cartBillIds.filter(id => typeof id === 'string' && id.startsWith('savings-deposit-')).length > 0 && (
+                            <div className="mt-3 p-3 bg-indigo-50/80 border border-indigo-100 rounded-xl flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <span className="text-[10px] font-bold text-indigo-950 uppercase tracking-wider flex items-center gap-1">
+                                  <ShoppingCart size={12} className="text-indigo-600" /> Tabungan Di Keranjang
+                                </span>
+                                <span className="text-[10px] font-extrabold bg-indigo-200 text-indigo-800 px-1.5 py-0.5 rounded-md">
+                                  {cartBillIds.filter(id => typeof id === 'string' && id.startsWith('savings-deposit-')).length} Item
+                                </span>
+                              </div>
+                              <div className="flex flex-col gap-1.5 max-h-36 overflow-y-auto">
+                                {cartBillIds.filter(id => typeof id === 'string' && id.startsWith('savings-deposit-')).map(id => {
+                                  const parts = id.split('-');
+                                  const amt = Number(parts[parts.length - 1]);
+                                  return (
+                                    <div key={id} className="flex items-center justify-between bg-white px-3 py-2 rounded-lg border border-indigo-100 text-xs shadow-3xs">
+                                      <div className="flex items-center gap-1.5">
+                                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-500"></span>
+                                        <span className="font-bold text-slate-800">Setor Tabungan Rp {amt.toLocaleString('id-ID')}</span>
+                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setCartBillIds(prev => prev.filter(item => item !== id))}
+                                        className="text-rose-600 hover:text-rose-800 font-extrabold text-[10px] uppercase tracking-wider px-2 py-0.5 rounded hover:bg-rose-50 transition-all cursor-pointer"
+                                      >
+                                        Hapus
+                                      </button>
+                                    </div>
+                                  );
+                                })}
+                              </div>
+                            </div>
+                          )}
                         </>
                       )}
                     </div>
@@ -4495,7 +4548,14 @@ export default function StudentPanel({
                   <p className="text-slate-400 text-[10px] font-medium leading-none mt-1">
                     Total: <strong className="text-indigo-400 font-mono text-xs">Rp {(
                       bills.filter(b => cartBillIds.includes(b.id)).reduce((sum, b) => sum + b.amount, 0) +
-                      (miscBills || []).filter(b => cartBillIds.includes(b.id)).reduce((sum, b) => sum + b.amount, 0)
+                      (miscBills || []).filter(b => cartBillIds.includes(b.id)).reduce((sum, b) => sum + b.amount, 0) +
+                      cartBillIds
+                        .filter(id => typeof id === "string" && id.startsWith("savings-deposit-"))
+                        .reduce((sum, id) => {
+                          const parts = id.split("-");
+                          const amt = Number(parts[parts.length - 1]);
+                          return sum + (isNaN(amt) ? 0 : amt);
+                        }, 0)
                     ).toLocaleString('id-ID')}</strong>
                   </p>
                 </div>

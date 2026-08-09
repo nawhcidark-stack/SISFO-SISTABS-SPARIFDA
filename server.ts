@@ -6199,7 +6199,7 @@ async function startServer() {
     if (midtransConfig.isDisabled) {
       return res.status(400).json({ error: "Pembayaran online mandiri via Midtrans sedang dinonaktifkan sementara oleh Administrator sekolah." });
     }
-    const { billIds, origin } = req.body;
+    const { billIds, studentId: reqStudentId, origin } = req.body;
     if (!Array.isArray(billIds) || billIds.length === 0) {
       return res.status(400).json({ error: "Keranjang belanja kosong atau format data tidak valid." });
     }
@@ -6207,9 +6207,20 @@ async function startServer() {
     const selectedSpp = sppBills.filter(b => billIds.includes(b.id));
     const selectedMisc = miscBills.filter(b => billIds.includes(b.id));
 
-    const totalBills = selectedSpp.length + selectedMisc.length;
+    // Extract savings deposit items from cart IDs (e.g. savings-deposit-TIMESTAMP-AMOUNT or savings-deposit-AMOUNT)
+    const savingsCartIds = billIds.filter(id => typeof id === "string" && id.startsWith("savings-deposit-"));
+    const selectedSavings: { id: string; amount: number }[] = [];
+    savingsCartIds.forEach(id => {
+      const parts = id.split("-");
+      const amt = Number(parts[parts.length - 1]);
+      if (!isNaN(amt) && amt >= 10000) {
+        selectedSavings.push({ id, amount: amt });
+      }
+    });
+
+    const totalBills = selectedSpp.length + selectedMisc.length + selectedSavings.length;
     if (totalBills === 0) {
-      return res.status(404).json({ error: "Tagihan-tagihan tidak ditemukan." });
+      return res.status(404).json({ error: "Item atau tagihan dalam keranjang tidak ditemukan." });
     }
 
     const anyPaidSpp = selectedSpp.some(b => b.status === "paid" || b.status === "waived");
@@ -6226,7 +6237,11 @@ async function startServer() {
       return res.status(400).json({ error: "Tagihan dalam keranjang harus berasal dari siswa yang sama." });
     }
 
-    const studentId = Array.from(studentIds)[0];
+    let studentId = Array.from(studentIds)[0];
+    if (!studentId && reqStudentId) {
+      studentId = reqStudentId;
+    }
+    
     const student = students.find(s => s.id === studentId);
     if (!student) {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
@@ -6247,9 +6262,29 @@ async function startServer() {
       b.status = "pending";
     });
 
+    // Create pending savings deposit transactions for each deposit item in cart
+    selectedSavings.forEach((savItem, idx) => {
+      const newSavingsTx: SavingsTransaction = {
+        id: `sav-cart-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
+        studentId: student.id,
+        type: "deposit",
+        amount: savItem.amount,
+        status: "pending",
+        createdAt: new Date().toISOString(),
+        paymentMethod: "Midtrans (Keranjang)",
+        orderId: orderId,
+        notes: "Setoran Tabungan via Keranjang Pembayaran"
+      };
+      (newSavingsTx as any).studentNis = student.nis;
+      savingsTransactions.push(newSavingsTx);
+    });
+
     saveState();
 
-    const grossAmountVal = selectedSpp.reduce((sum, b) => sum + b.amount, 0) + selectedMisc.reduce((sum, b) => sum + b.amount, 0);
+    const grossAmountVal = 
+      selectedSpp.reduce((sum, b) => sum + b.amount, 0) + 
+      selectedMisc.reduce((sum, b) => sum + b.amount, 0) +
+      selectedSavings.reduce((sum, s) => sum + s.amount, 0);
 
     const hasMidtrans = midtransConfig.serverKey && midtransConfig.clientKey;
     if (!hasMidtrans) {
@@ -6281,6 +6316,14 @@ async function startServer() {
           price: b.amount,
           quantity: 1,
           name: b.title.substring(0, 50)
+        });
+      });
+      selectedSavings.forEach((s, idx) => {
+        itemDetails.push({
+          id: shortenBillIdForMidtrans(`SAV-${idx}-${s.amount}`),
+          price: s.amount,
+          quantity: 1,
+          name: `Setor Tabungan Rp ${s.amount.toLocaleString('id-ID')}`.substring(0, 50)
         });
       });
 
@@ -8467,8 +8510,9 @@ async function startServer() {
       const activeOrderId = targetOrderId.startsWith("CART-") ? targetOrderId : cleanOrderId;
       const matchedSpp = sppBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId || (targetTransactionId && b.transactionId === targetTransactionId));
       const matchedMisc = miscBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId || (targetTransactionId && b.transactionId === targetTransactionId));
+      const matchedSavings = savingsTransactions.filter(t => t.orderId === activeOrderId || t.orderId === cleanOrderId || (targetTransactionId && t.transactionId === targetTransactionId));
 
-      if (matchedSpp.length === 0 && matchedMisc.length === 0) {
+      if (matchedSpp.length === 0 && matchedMisc.length === 0 && matchedSavings.length === 0) {
         // CART Recovery Mechanism: Parse student short ID from order ID and match candidate bills
         const parts = activeOrderId.split("-");
         const studentIdentifier = parts.slice(1, -1).join("-");
@@ -8541,7 +8585,7 @@ async function startServer() {
         }
       }
 
-      if (matchedSpp.length > 0 || matchedMisc.length > 0) {
+      if (matchedSpp.length > 0 || matchedMisc.length > 0 || matchedSavings.length > 0) {
         if (isSettled) {
           let countSettled = 0;
           matchedSpp.forEach(b => {
@@ -8564,16 +8608,29 @@ async function startServer() {
               countSettled++;
             }
           });
+          matchedSavings.forEach(t => {
+            if (t.status !== "success") {
+              t.status = "success";
+              t.paymentMethod = actualPaymentType;
+              t.orderId = targetOrderId;
+              if (targetTransactionId) t.transactionId = targetTransactionId;
+              const std = students.find(s => s.id === t.studentId);
+              if (std) {
+                std.savingsBalance = (std.savingsBalance || 0) + t.amount;
+              }
+              countSettled++;
+            }
+          });
 
           if (countSettled > 0) {
             actionTaken = true;
-            const firstBill = matchedSpp[0] || matchedMisc[0];
-            const student = students.find(s => s.id === firstBill.studentId);
+            const targetStudentId = matchedSpp[0]?.studentId || matchedMisc[0]?.studentId || matchedSavings[0]?.studentId;
+            const student = students.find(s => s.id === targetStudentId);
             detailMessage = `Keranjang ${countSettled} Item (${student?.name || "Siswa"})` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
 
             const notification: RealtimeNotification = {
               id: `notif-cart-auto-${Date.now()}`,
-              studentId: firstBill.studentId,
+              studentId: targetStudentId || "",
               title: "Pembayaran Keranjang Terverifikasi (Auto-Sync)",
               message: `Pembayaran keranjang multi-tagihan (${countSettled} item) ${student?.name || ""} via ${paymentType} telah LUNAS terverifikasi.`,
               type: "payment",
@@ -8584,6 +8641,7 @@ async function startServer() {
         } else if (isExpired) {
           matchedSpp.forEach(b => { if (b.status === "pending") b.status = "unpaid"; });
           matchedMisc.forEach(b => { if (b.status === "pending") b.status = "unpaid"; });
+          matchedSavings.forEach(t => { if (t.status === "pending") t.status = "failed"; });
           actionTaken = true;
           detailMessage = `Keranjang ${activeOrderId} kedaluwarsa/batal, item dikembalikan ke status Belum Bayar.`;
         }
@@ -8864,8 +8922,9 @@ async function startServer() {
     } else if (resolvedOrderId.startsWith("CART-")) {
       const selectedSpp = sppBills.filter(b => b.orderId === resolvedOrderId);
       const selectedMisc = miscBills.filter(b => b.orderId === resolvedOrderId);
+      const selectedSavings = savingsTransactions.filter(t => t.orderId === resolvedOrderId);
 
-      let targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
+      let targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId || selectedSavings[0]?.studentId;
       affectedStudent = students.find(s => s.id === targetStudentId) || null;
 
       // CART Recovery Mechanism: If no bills match the order_id, find the student by parsing order_id
@@ -8934,8 +8993,8 @@ async function startServer() {
         }
       }
 
-      if (selectedSpp.length === 0 && selectedMisc.length === 0) {
-        return res.status(404).json({ error: "Tagihan dalam keranjang tidak ditemukan atau tidak dapat dipulihkan." });
+      if (selectedSpp.length === 0 && selectedMisc.length === 0 && selectedSavings.length === 0) {
+        return res.status(404).json({ error: "Tagihan/setoran dalam keranjang tidak ditemukan atau tidak dapat dipulihkan." });
       }
 
       selectedSpp.forEach(bill => {
@@ -8948,29 +9007,30 @@ async function startServer() {
         bill.status = "paid";
         bill.paidAt = resolvedPaidAt;
         bill.paymentMethod = actualPaymentType;
+      });
 
-        const txExists = treasurerTransactions.some(t => t.description.includes(resolvedOrderId) || (t.createdBy === "Midtrans Webhook" && t.description.includes(bill.title) && t.nis === affectedStudent?.nis));
-        if (!txExists) {
-          const newTx: TreasurerTransaction = {
-            id: `tx-misc-${Date.now()}-${bill.id}`,
-            type: "incoming",
-            category: "Operasional",
-            amount: bill.amount,
-            description: `Pembayaran ${bill.title} (Midtrans Sim Cart) - ${affectedStudent?.name || ""} (${affectedStudent?.nis || ""})`,
-            date: resolvedPaidAt.split("T")[0],
-            source: "custom",
-            studentName: affectedStudent?.name,
-            nis: affectedStudent?.nis,
-            createdBy: "Midtrans Simulator"
-          };
-          // Do not push to treasurerTransactions to avoid double counting under Operasional
-          // treasurerTransactions.push(newTx);
+      selectedSavings.forEach(tx => {
+        if (tx.status !== "success") {
+          tx.status = "success";
+          tx.paymentMethod = actualPaymentType;
+          if (affectedStudent) {
+            affectedStudent.savingsBalance = (affectedStudent.savingsBalance || 0) + tx.amount;
+          }
         }
       });
 
       title = "Pembayaran Keranjang Lunas Terverifikasi";
-      const totalAmount = selectedSpp.reduce((sum, b) => sum + b.amount, 0) + selectedMisc.reduce((sum, b) => sum + b.amount, 0);
-      message = `Pembayaran Keranjang ${affectedStudent?.name || ""} sebesar Rp ${totalAmount.toLocaleString("id-ID")} (${selectedSpp.length} SPP, ${selectedMisc.length} Lain-lain) BERHASIL divalidasi secara instan!`;
+      const totalAmount = 
+        selectedSpp.reduce((sum, b) => sum + b.amount, 0) + 
+        selectedMisc.reduce((sum, b) => sum + b.amount, 0) +
+        selectedSavings.reduce((sum, t) => sum + t.amount, 0);
+      
+      const itemParts: string[] = [];
+      if (selectedSpp.length > 0) itemParts.push(`${selectedSpp.length} SPP`);
+      if (selectedMisc.length > 0) itemParts.push(`${selectedMisc.length} Lain-lain`);
+      if (selectedSavings.length > 0) itemParts.push(`${selectedSavings.length} Setoran Tabungan`);
+
+      message = `Pembayaran Keranjang ${affectedStudent?.name || ""} sebesar Rp ${totalAmount.toLocaleString("id-ID")} (${itemParts.join(', ')}) BERHASIL divalidasi secara instan!`;
 
       const notification: RealtimeNotification = {
         id: `notif-cart-sim-${Date.now()}`,
@@ -9245,8 +9305,9 @@ async function startServer() {
     } else if (order_id.startsWith("CART-")) {
       const selectedSpp = sppBills.filter(b => b.orderId === order_id);
       const selectedMisc = miscBills.filter(b => b.orderId === order_id);
+      const selectedSavings = savingsTransactions.filter(t => t.orderId === order_id);
 
-      let targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId;
+      let targetStudentId = selectedSpp[0]?.studentId || selectedMisc[0]?.studentId || selectedSavings[0]?.studentId;
       let student = students.find(s => s.id === targetStudentId);
 
       // CART Recovery Mechanism: If no bills match the order_id, find the student by parsing order_id
@@ -9315,24 +9376,22 @@ async function startServer() {
           bill.status = "paid";
           bill.paidAt = resolvedPaidAt;
           bill.paymentMethod = `Midtrans (${payment_type})`;
-
-          const newTx: TreasurerTransaction = {
-            id: `tx-misc-${Date.now()}-${bill.id}`,
-            type: "incoming",
-            category: "Operasional",
-            amount: bill.amount,
-            description: `Pembayaran ${bill.title} (Midtrans Cart) - ${student?.name || ""} (${student?.nis || ""})`,
-            date: resolvedPaidAt.split("T")[0],
-            source: "custom",
-            studentName: student?.name,
-            nis: student?.nis,
-            createdBy: "Midtrans Webhook"
-          };
-          // Do not push to treasurerTransactions to avoid double counting under Operasional
-          // treasurerTransactions.push(newTx);
         });
 
-        const totalAmount = selectedSpp.reduce((sum, b) => sum + b.amount, 0) + selectedMisc.reduce((sum, b) => sum + b.amount, 0);
+        selectedSavings.forEach(tx => {
+          if (tx.status !== "success") {
+            tx.status = "success";
+            tx.paymentMethod = `Midtrans (${payment_type})`;
+            if (student) {
+              student.savingsBalance = (student.savingsBalance || 0) + tx.amount;
+            }
+          }
+        });
+
+        const totalAmount = 
+          selectedSpp.reduce((sum, b) => sum + b.amount, 0) + 
+          selectedMisc.reduce((sum, b) => sum + b.amount, 0) +
+          selectedSavings.reduce((sum, t) => sum + t.amount, 0);
         
         const notification: RealtimeNotification = {
           id: `notif-cart-midtrans-${Date.now()}`,
@@ -9347,7 +9406,8 @@ async function startServer() {
         if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
           const itemNames = [
             ...selectedSpp.map(b => `SPP ${b.month} ${b.year}`),
-            ...selectedMisc.map(b => b.title)
+            ...selectedMisc.map(b => b.title),
+            ...selectedSavings.map(t => `Setor Tabungan Rp ${t.amount.toLocaleString('id-ID')}`)
           ].join(", ");
 
           const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
@@ -9364,10 +9424,12 @@ async function startServer() {
       } else if (transaction_status === "pending") {
         selectedSpp.forEach(b => { b.status = "pending"; });
         selectedMisc.forEach(b => { b.status = "pending"; });
+        selectedSavings.forEach(t => { t.status = "pending"; });
         isHandled = true;
       } else if (transaction_status === "expire" || transaction_status === "deny" || transaction_status === "cancel") {
         selectedSpp.forEach(b => { b.status = "unpaid"; });
         selectedMisc.forEach(b => { b.status = "unpaid"; });
+        selectedSavings.forEach(t => { if (t.status === "pending") t.status = "failed"; });
         isHandled = true;
       }
     } else if (order_id.startsWith("MISC-")) {
@@ -9904,8 +9966,9 @@ async function startServer() {
         if (cleanOrderId.startsWith("CART-") || cleanOrderId.includes("CART-")) {
           let matchedSpp = sppBills.filter(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId));
           let matchedMisc = miscBills.filter(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId));
+          let matchedSavings = savingsTransactions.filter(t => t.orderId === cleanOrderId || (cleanTxId && t.transactionId === cleanTxId));
 
-          if (matchedSpp.length === 0 && matchedMisc.length === 0) {
+          if (matchedSpp.length === 0 && matchedMisc.length === 0 && matchedSavings.length === 0) {
             let targetStudent = studentByEmail;
             if (!targetStudent) {
               const parts = cleanOrderId.split("-");
@@ -9952,11 +10015,11 @@ async function startServer() {
             }
           }
 
-          if (matchedSpp.length > 0 || matchedMisc.length > 0) {
+          if (matchedSpp.length > 0 || matchedMisc.length > 0 || matchedSavings.length > 0) {
             let newlyPaid = 0;
             const paidAt = item.transactionTime ? parseMidtransTime(item.transactionTime) : new Date().toISOString();
-            const firstBill = matchedSpp[0] || matchedMisc[0];
-            const student = students.find(s => s.id === firstBill.studentId) || studentByEmail;
+            const targetStudentId = matchedSpp[0]?.studentId || matchedMisc[0]?.studentId || matchedSavings[0]?.studentId;
+            const student = students.find(s => s.id === targetStudentId) || studentByEmail;
 
             matchedSpp.forEach(b => {
               ensureLedgerEntry("SPP", b.amount, `Pembayaran SPP ${b.month} ${b.year} (Keranjang Midtrans Report) - ${student?.name || ""} (${student?.nis || ""})`, student?.name, student?.nis, student?.id);
@@ -9984,6 +10047,20 @@ async function startServer() {
               }
             });
 
+            matchedSavings.forEach(t => {
+              if (t.status !== "success") {
+                t.status = "success";
+                t.paymentMethod = actualPaymentType;
+                t.orderId = cleanOrderId;
+                if (cleanTxId) t.transactionId = cleanTxId;
+                if (student) {
+                  student.savingsBalance = (student.savingsBalance || 0) + t.amount;
+                }
+                newlyPaid++;
+                totalAmountReconciled += t.amount;
+              }
+            });
+
             if (newlyPaid > 0) {
               reconciledCount++;
               stateChanged = true;
@@ -9993,13 +10070,13 @@ async function startServer() {
                 studentName: student?.name || "Siswa",
                 studentNis: student?.nis || "-",
                 studentClass: student?.class || "-",
-                category: `Keranjang (${matchedSpp.length + matchedMisc.length} Item)`,
+                category: `Keranjang (${matchedSpp.length + matchedMisc.length + matchedSavings.length} Item)`,
                 amount: Number(item.grossAmount) || 0,
                 reportStatus: rawStatus,
                 reportPaymentType: actualPaymentType,
                 reportTime: paidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DILUNASI! Keranjang Multi-tagihan (${newlyPaid} item) a.n ${student?.name || 'Siswa'} berhasil diset LUNAS & dicatat ke Buku Kas.`
+                message: `BERHASIL DILUNASI! Keranjang Multi-item (${newlyPaid} item) a.n ${student?.name || 'Siswa'} berhasil diset LUNAS & dicatat ke Buku Kas/Tabungan.`
               });
             } else {
               alreadyPaidCount++;

@@ -936,7 +936,7 @@ export default function App() {
       const res = await fetch('/api/pay-cart-snap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ billIds, origin: window.location.origin })
+        body: JSON.stringify({ billIds, studentId: currentStudent?.id, origin: window.location.origin })
       });
 
       if (!res.ok) {

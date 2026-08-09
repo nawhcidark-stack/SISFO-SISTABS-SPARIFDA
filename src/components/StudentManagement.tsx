@@ -5,8 +5,8 @@ import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRig
 
 interface StudentManagementProps {
   students: Student[];
-  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }) => Promise<boolean>;
-  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string; gender?: string; mutationDate?: string; mutationReason?: string; mutationDestination?: string }) => Promise<boolean>;
+  onCreateStudent: (data: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string; customSppRate?: number }) => Promise<boolean>;
+  onUpdateStudent: (id: string, data: { nis: string; name: string; class: string; email: string; phone: string; password?: string; gender?: string; mutationDate?: string; mutationReason?: string; mutationDestination?: string; customSppRate?: number | null }) => Promise<boolean>;
   onDeleteStudent: (id: string) => Promise<boolean>;
   onImportStudents: (
     list: Array<{
@@ -49,7 +49,8 @@ export default function StudentManagement({
     phone: '',
     initialSavings: '0',
     password: '',
-    gender: 'Laki-laki'
+    gender: 'Laki-laki',
+    customSppRate: ''
   });
 
   const [saving, setSaving] = useState(false);
@@ -329,7 +330,8 @@ export default function StudentManagement({
       phone: '',
       initialSavings: '0',
       password: '',
-      gender: 'Laki-laki'
+      gender: 'Laki-laki',
+      customSppRate: ''
     });
     setErrorMsg('');
   };
@@ -373,7 +375,8 @@ export default function StudentManagement({
         email: formData.email.trim(),
         phone: formData.phone.trim(),
         initialSavings: Number(formData.initialSavings) || 0,
-        gender: formData.gender
+        gender: formData.gender,
+        customSppRate: formData.customSppRate && !isNaN(Number(formData.customSppRate)) && Number(formData.customSppRate) > 0 ? Number(formData.customSppRate) : undefined
       });
 
       if (success) {
@@ -415,7 +418,8 @@ export default function StudentManagement({
         email: formData.email.trim(),
         phone: formData.phone.trim(),
         gender: formData.gender,
-        password: formData.password && formData.password.trim().length >= 6 ? formData.password.trim() : undefined
+        password: formData.password && formData.password.trim().length >= 6 ? formData.password.trim() : undefined,
+        customSppRate: formData.customSppRate !== undefined && formData.customSppRate !== '' ? (Number(formData.customSppRate) > 0 ? Number(formData.customSppRate) : null) : null
       });
 
       if (success) {
@@ -461,7 +465,8 @@ export default function StudentManagement({
       phone: student.phone || '',
       initialSavings: '0', // Not editable
       password: '',
-      gender: student.gender || 'Laki-laki'
+      gender: student.gender || 'Laki-laki',
+      customSppRate: student.customSppRate ? String(student.customSppRate) : ''
     });
   };
 
@@ -817,6 +822,7 @@ export default function StudentManagement({
                 <th className="px-5 py-3">Kelas</th>
                 <th className="px-5 py-3">Email Wali</th>
                 <th className="px-5 py-3">Telepon</th>
+                <th className="px-5 py-3 text-right">Tarif SPP</th>
                 <th className="px-5 py-3 text-right">Saldo Tabungan</th>
                 <th className="px-5 py-3 text-center">Tindakan</th>
               </tr>
@@ -839,6 +845,17 @@ export default function StudentManagement({
                     </td>
                     <td className="px-5 py-3.5 text-slate-600 font-medium">{std.email || '-'}</td>
                     <td className="px-5 py-3.5 font-mono text-slate-500">{std.phone || '-'}</td>
+                    <td className="px-5 py-3.5 text-right font-mono text-xs font-semibold">
+                      {std.customSppRate ? (
+                        <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/80 text-[10px]">
+                          ⭐ Rp {std.customSppRate.toLocaleString('id-ID')}
+                        </span>
+                      ) : (
+                        <span className="text-slate-400 text-[10px] italic">
+                          Standar Tingkat
+                        </span>
+                      )}
+                    </td>
                     <td className={`px-5 py-3.5 text-right font-mono font-bold ${std.savingsBalance < 0 ? 'text-rose-700' : 'text-emerald-800'}`}>
                       {std.savingsBalance < 0 ? `-Rp ${Math.abs(std.savingsBalance).toLocaleString('id-ID')}` : `Rp ${std.savingsBalance.toLocaleString('id-ID')}`}
                     </td>
@@ -864,7 +881,7 @@ export default function StudentManagement({
                 ))
               ) : (
                 <tr>
-                  <td colSpan={7} className="px-5 py-10 text-center text-slate-400 font-medium">
+                  <td colSpan={9} className="px-5 py-10 text-center text-slate-400 font-medium">
                     Tidak ada siswa yang sesuai dengan filter pencarian.
                   </td>
                 </tr>
@@ -1005,6 +1022,26 @@ export default function StudentManagement({
                   </p>
                 </div>
 
+                <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 flex flex-col gap-1.5">
+                  <label className="font-bold text-amber-900 uppercase text-[9px] tracking-wide flex items-center justify-between">
+                    <span>Nominal Khusus SPP (Rp) — Opsional</span>
+                    <span className="text-[9px] text-amber-700 font-normal">Kosongkan jika tarif standar</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-amber-800 text-xs">Rp</span>
+                    <input
+                      type="number"
+                      placeholder="Misal: 100000"
+                      value={formData.customSppRate}
+                      onChange={(e) => setFormData({ ...formData, customSppRate: e.target.value })}
+                      className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-amber-900 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-amber-700/90 italic leading-snug">
+                    *Diisi jika siswa mempunyai besaran SPP khusus (keringanan/kebijakan/beasiswa parsial). Tagihan SPP otomatis menggunakan nominal ini.
+                  </p>
+                </div>
+
                 <div className="flex justify-between items-center gap-2 pt-2 border-t border-slate-150 mt-2">
                   <span className="text-[10px] text-slate-400 italic">
                     *Murid otomatis dibebani tagihan SPP bulanan.
@@ -1138,6 +1175,26 @@ export default function StudentManagement({
                       className="p-2.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-mono outline-none focus:border-slate-800 focus:bg-white"
                     />
                   </div>
+                </div>
+
+                <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 flex flex-col gap-1.5 mt-1">
+                  <label className="font-bold text-amber-900 uppercase text-[9px] tracking-wide flex items-center justify-between">
+                    <span>Nominal Khusus SPP (Rp) — Opsional</span>
+                    <span className="text-[9px] text-amber-700 font-normal">Kosongkan jika menggunakan tarif standar</span>
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 font-bold text-amber-800 text-xs">Rp</span>
+                    <input
+                      type="number"
+                      placeholder="Misal: 100000 (kosongkan untuk tarif standar)"
+                      value={formData.customSppRate}
+                      onChange={(e) => setFormData({ ...formData, customSppRate: e.target.value })}
+                      className="w-full pl-9 pr-4 py-2 bg-white border border-slate-200 rounded-lg text-xs font-mono font-bold text-amber-900 outline-none focus:border-amber-500"
+                    />
+                  </div>
+                  <p className="text-[10px] text-amber-700/90 italic leading-snug">
+                    *Mengubah nominal khusus akan otomatis menyesuaikan nominal seluruh tagihan SPP yang <strong>Belum Lunas</strong> milik siswa ini.
+                  </p>
                 </div>
 
                 <div className="flex flex-col gap-1 bg-amber-50/60 p-3 rounded-lg border border-amber-200/80 mt-1">

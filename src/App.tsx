@@ -1198,7 +1198,7 @@ export default function App() {
   };
 
   // Create Student
-  const handleCreateStudent = async (studentData: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string }): Promise<boolean> => {
+  const handleCreateStudent = async (studentData: { nis: string; name: string; class: string; email: string; phone: string; initialSavings: number; gender?: string; customSppRate?: number }): Promise<boolean> => {
     try {
       const res = await fetch('/api/admin/students', {
         method: 'POST',
@@ -1230,6 +1230,7 @@ export default function App() {
       mutationDate?: string;
       mutationReason?: string;
       mutationDestination?: string;
+      customSppRate?: number | null;
     }
   ): Promise<boolean> => {
     try {

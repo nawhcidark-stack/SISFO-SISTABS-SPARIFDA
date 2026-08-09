@@ -210,6 +210,7 @@ interface AdminPanelProps {
     phone: string;
     initialSavings: number;
     gender?: string;
+    customSppRate?: number;
   }) => Promise<boolean>;
   onUpdateStudent: (
     id: string,
@@ -223,6 +224,7 @@ interface AdminPanelProps {
       mutationDate?: string;
       mutationReason?: string;
       mutationDestination?: string;
+      customSppRate?: number | null;
     },
   ) => Promise<boolean>;
   onDeleteStudent: (id: string) => Promise<boolean>;
@@ -797,9 +799,9 @@ export default function AdminPanel({
   const [isMutatingSubmit, setIsMutatingSubmit] = useState(false);
   const [mutateError, setMutateError] = useState("");
 
-  // States for SPP Prestasi Waiver
+  // States for SPP Waiver (Prestasi & Diluar Prestasi)
   const [waiveBillIds, setWaiveBillIds] = useState<string[]>([]);
-  const [waiveType, setWaiveType] = useState<'akademik' | 'non-akademik'>('akademik');
+  const [waiveType, setWaiveType] = useState<'akademik' | 'non-akademik' | 'non-prestasi' | 'kebijakan'>('akademik');
   const [waiveDetail, setWaiveDetail] = useState('');
   const [isSubmittingWaiver, setIsSubmittingWaiver] = useState(false);
   const [waiverError, setWaiverError] = useState('');
@@ -4590,7 +4592,11 @@ export default function AdminPanel({
                                                 </span>
                                               ) : b.status === "waived" ? (
                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-indigo-50 text-indigo-705 border border-indigo-100 uppercase flex items-center gap-0.5 justify-center">
-                                                  🏆 BEBAS PRESTASI
+                                                  {b.achievementType === 'non-prestasi'
+                                                    ? "🤝 BEBAS (DILUAR PRESTASI)"
+                                                    : b.achievementType === 'kebijakan'
+                                                    ? "📜 BEBAS (KEBIJAKAN)"
+                                                    : "🏆 BEBAS PRESTASI"}
                                                 </span>
                                               ) : b.status === "pending" ? (
                                                 <span className="inline-flex px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-50 text-amber-600 border border-amber-100 animate-pulse">
@@ -4764,9 +4770,9 @@ export default function AdminPanel({
                                     <Award size={18} strokeWidth={2.5} />
                                   </div>
                                   <div>
-                                    <h5 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">🏆 Apresiasi Beasiswa Prestasi</h5>
+                                    <h5 className="font-extrabold text-slate-900 text-xs uppercase tracking-wider">🏆 / 🤝 Pembebasan SPP (Beasiswa Prestasi & Bebas SPP Diluar Prestasi)</h5>
                                     <p className="text-[10px] text-slate-500 mt-1 leading-relaxed">
-                                      Bebaskan tagihan SPP bulanan bagi siswa berprestasi (akademik maupun non-akademik). Notifikasi apresiasi akan terkirim secara otomatis kepada wali murid.
+                                      Bebaskan tagihan SPP bulanan siswa karena Prestasi (Akademik/Non-Akademik) maupun Pertimbangan Diluar Prestasi (Keringanan Khusus, Yatim/Piatu, Beasiswa Sosial, Subsidi Sekolah, atau Kebijakan Yayasan).
                                     </p>
                                   </div>
                                 </div>
@@ -4812,7 +4818,7 @@ export default function AdminPanel({
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                                       <div>
-                                        <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1.5">2. Kategori Prestasi:</label>
+                                        <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1.5">2. Kategori Pembebasan SPP:</label>
                                         <select
                                           value={waiveType}
                                           onChange={(e) => setWaiveType(e.target.value as any)}
@@ -4820,16 +4826,30 @@ export default function AdminPanel({
                                         >
                                           <option value="akademik">🏆 Prestasi Akademik</option>
                                           <option value="non-akademik">🎨 Prestasi Non-Akademik</option>
+                                          <option value="non-prestasi">🤝 Bebas SPP Diluar Prestasi (Keringanan / Yatim / Beasiswa Sosial / Subsidi Khusus)</option>
+                                          <option value="kebijakan">📜 Kebijakan Yayasan / Sekolah (Keterangan Khusus)</option>
                                         </select>
                                       </div>
 
                                       <div>
-                                        <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1.5">3. Piagam / Detail Pencapaian:</label>
+                                        <label className="block text-[10px] font-black text-slate-700 uppercase tracking-wider mb-1.5">
+                                          {waiveType === 'non-prestasi'
+                                            ? "3. Alasan / Detail Bebas SPP Diluar Prestasi:"
+                                            : waiveType === 'kebijakan'
+                                            ? "3. Alasan / Detail Kebijakan Yayasan:"
+                                            : "3. Piagam / Detail Pencapaian Prestasi:"}
+                                        </label>
                                         <input
                                           type="text"
                                           value={waiveDetail}
                                           onChange={(e) => setWaiveDetail(e.target.value)}
-                                          placeholder="Contoh: Juara 1 Olimpiade Robotik Provinsi"
+                                          placeholder={
+                                            waiveType === 'non-prestasi'
+                                              ? "Contoh: Yatim Piatu / Beasiswa Kurang Mampu / Keringanan Ekonomi Wali"
+                                              : waiveType === 'kebijakan'
+                                              ? "Contoh: Kebijakan Khusus Yayasan / Subsidi Pengurus"
+                                              : "Contoh: Juara 1 Olimpiade Robotik Provinsi"
+                                          }
                                           className="w-full p-2 bg-white border border-slate-205 rounded-xl text-[11px] text-slate-705 outline-none focus:border-indigo-500 shadow-3xs"
                                         />
                                       </div>
@@ -4848,9 +4868,11 @@ export default function AdminPanel({
                                       className="w-full py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:bg-indigo-200 text-white font-extrabold rounded-xl text-[10px] uppercase tracking-wider transition-all cursor-pointer shadow-sm shadow-indigo-100/50 flex items-center justify-center gap-1.5 mt-1"
                                     >
                                       {isSubmittingWaiver ? (
-                                        "Sedang menyimpan data beasiswa..."
+                                        "Sedang menyimpan data pembebasan SPP..."
                                       ) : (
-                                        <span>Simpan Pembebasan {waiveBillIds.length} Bulan SPP 🏆</span>
+                                        <span>
+                                          Simpan Pembebasan {waiveBillIds.length} Bulan SPP {waiveType === 'non-prestasi' ? '🤝' : waiveType === 'kebijakan' ? '📜' : '🏆'}
+                                        </span>
                                       )}
                                     </button>
                                   </div>
@@ -11569,7 +11591,7 @@ export default function AdminPanel({
                                           {b.status === "paid"
                                             ? "Lunas"
                                             : b.status === "waived"
-                                              ? "Beasiswa 🏆"
+                                              ? (b.achievementType === 'non-prestasi' ? "Bebas SPP 🤝" : b.achievementType === 'kebijakan' ? "Kebijakan 📜" : "Beasiswa 🏆")
                                               : "Belum Lunas"}
                                         </span>
                                       </td>

@@ -563,6 +563,13 @@ function getSppAmountForClass(className: string): number {
   return sppRates.grade7 || 150000; // fallback default
 }
 
+function getSppAmountForStudent(student: any, className?: string): number {
+  if (student && student.customSppRate !== undefined && student.customSppRate !== null && !isNaN(Number(student.customSppRate)) && Number(student.customSppRate) > 0) {
+    return Number(student.customSppRate);
+  }
+  return getSppAmountForClass(className || student?.class || "");
+}
+
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
 
 // MongoDB Database connection initialization
@@ -1485,7 +1492,7 @@ if (isLoaded) {
     months.forEach((month, mIdx) => {
       // All fallback initialization bills should start as unpaid
       const isPaid = false;
-      const mappedAmount = getSppAmountForClass(student.class);
+      const mappedAmount = getSppAmountForStudent(student);
       const isGrade7 = (student.class || "").trim().startsWith("7") || (student.class || "").trim().toUpperCase().startsWith("VII");
       const isJuly = month === "Juli";
       const isRegPaid = isGrade7 && isJuly;
@@ -2386,7 +2393,7 @@ async function startServer() {
       sppBills.forEach(bill => {
         const student = students.find(s => s.id === bill.studentId);
         if (student) {
-          const currentExpectedAmount = getSppAmountForClass(student.class);
+          const currentExpectedAmount = getSppAmountForStudent(student);
           if (bill.amount !== currentExpectedAmount) {
             bill.amount = currentExpectedAmount;
             updatedBillsCount++;
@@ -6676,8 +6683,17 @@ async function startServer() {
       if (bill && bill.status === "unpaid") {
         bill.status = "waived";
         bill.paidAt = new Date().toISOString();
-        bill.paymentMethod = `Bebas SPP Prestasi (${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'})`;
-        bill.orderId = `ORD-WAIVED-${achievementType === 'akademik' ? 'ACAD' : 'NON'}-${Date.now()}-${billId.slice(-4)}`;
+        let methodStr = `Bebas SPP Prestasi (${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'})`;
+        let codeTag = achievementType === 'akademik' ? 'ACAD' : 'NONACAD';
+        if (achievementType === 'non-prestasi' || achievementType === 'keringanan') {
+          methodStr = `Bebas SPP Diluar Prestasi (${achievementDetail || 'Keringanan Khusus'})`;
+          codeTag = 'NONPRESTASI';
+        } else if (achievementType === 'kebijakan') {
+          methodStr = `Bebas SPP (Kebijakan Yayasan / ${achievementDetail || 'Khusus'})`;
+          codeTag = 'KEBIJAKAN';
+        }
+        bill.paymentMethod = methodStr;
+        bill.orderId = `ORD-WAIVED-${codeTag}-${Date.now()}-${billId.slice(-4)}`;
         (bill as any).achievementType = achievementType;
         (bill as any).achievementDetail = achievementDetail || "";
         waivedBills.push(bill);
@@ -6690,11 +6706,37 @@ async function startServer() {
 
     // Broadcast SSE notification
     const monthsText = waivedBills.map(b => `${b.month} ${b.year}`).join(", ");
+    let notifTitle = `Bebas SPP Prestasi 🏆`;
+    let notifMsg = `Selamat kepada ${student.name}! Tagihan SPP bulan (${monthsText}) dibebaskan karena prestasi ${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}: ${achievementDetail || ""}.`;
+    let waHeader = `🏆 *APRESIASI BEBAS SPP BEASISWA PRESTASI*\n` +
+      `Selamat! Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)* dari kewajiban iuran bulanan.\n\n` +
+      `Jenis Prestasi: *${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}*\n` +
+      `Detail Piagam/Apresiasi: *${achievementDetail || "Apresiasi Prestasi Siswa Utama"}*\n\n` +
+      `Sekolah sangat bangga atas pencapaian luar biasa yang diukir oleh putra/putri Anda. Terus asah potensi dan raih masa depan gemilang.`;
+
+    if (achievementType === 'non-prestasi' || achievementType === 'keringanan') {
+      notifTitle = `Bebas SPP (Diluar Prestasi) 🤝`;
+      notifMsg = `Informasi untuk ${student.name}: Tagihan SPP bulan (${monthsText}) telah DIBEBASKAN (Bebas SPP Diluar Prestasi/Keringanan Khusus): ${achievementDetail || "Beasiswa Sosial / Keringanan"}.`;
+      waHeader = `🤝 *PEMBEBASAN SPP (DILUAR PRESTASI / BEASISWA SOSIAL)*\n` +
+        `Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)* dari kewajiban iuran bulanan.\n\n` +
+        `Kategori: *Bebas SPP Diluar Prestasi (Keringanan / Beasiswa Sosial)*\n` +
+        `Keterangan / Alasan: *${achievementDetail || "Keringanan Khusus Sekolahan"}*\n\n` +
+        `Semoga bantuan ini membawa keberkahan dan kelancaran dalam menuntut ilmu di sekolah.`;
+    } else if (achievementType === 'kebijakan') {
+      notifTitle = `Bebas SPP (Kebijakan Yayasan) 📜`;
+      notifMsg = `Informasi untuk ${student.name}: Tagihan SPP bulan (${monthsText}) telah DIBEBASKAN berdasarkan Kebijakan Yayasan/Sekolah: ${achievementDetail || "Kebijakan Khusus"}.`;
+      waHeader = `📜 *PEMBEBASAN SPP (KEBIJAKAN YAYASAN / SEKOLAH)*\n` +
+        `Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)*.\n\n` +
+        `Kategori: *Kebijakan Yayasan / Subsidi Khusus*\n` +
+        `Keterangan / Alasan: *${achievementDetail || "Kebijakan Pengurus Yayasan / Sekolah"}*\n\n` +
+        `Semoga bermanfaat dan memberi kemudahan bagi kelangsungan pendidikan putra/putri Anda.`;
+    }
+
     const notification: RealtimeNotification = {
       id: `notif-spp-waived-bulk-${Date.now()}`,
       studentId,
-      title: `Bebas SPP Prestasi 🏆`,
-      message: `Selamat kepada ${student.name}! Tagihan SPP bulan (${monthsText}) dibebaskan karena prestasi ${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}: ${achievementDetail || ""}.`,
+      title: notifTitle,
+      message: notifMsg,
       type: "success",
       createdAt: new Date().toISOString()
     };
@@ -6703,12 +6745,7 @@ async function startServer() {
     // Send automated WhatsApp confirmation if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `🏆 *APRESIASI BEBAS SPP BEASISWA PRESTASI*\n` +
-        `Selamat! Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)* dari kewajiban iuran bulanan.\n\n` +
-        `Jenis Prestasi: *${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}*\n` +
-        `Detail Piagam/Apresiasi: *${achievementDetail || "Apresiasi Prestasi Siswa Utama"}*\n\n` +
-        `Sekolah sangat bangga atas pencapaian luar biasa yang diukir oleh putra/putri Anda. Terus asah potensi dan raih masa depan gemilang.\n` +
-        `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+        waHeader + `\n\n-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending bulk waive SPP WA:", err));
     }
 
@@ -7135,7 +7172,7 @@ async function startServer() {
 
   // 1. Create Student (with initial savings & automatic SPP bills)
   app.post("/api/admin/students", (req, res) => {
-    const { nis, name, class: className, email, phone, initialSavings, gender, password } = req.body;
+    const { nis, name, class: className, email, phone, initialSavings, gender, password, customSppRate } = req.body;
     
     if (!nis || !name || !className) {
       return res.status(400).json({ error: "Siswa baru harus memiliki NIS, Nama, dan Kelas." });
@@ -7149,6 +7186,9 @@ async function startServer() {
 
     const newStudentId = `std-${Date.now()}`;
     const parsedSavings = Number(initialSavings) || 0;
+    const parsedCustomSpp = (customSppRate !== undefined && customSppRate !== null && customSppRate !== "" && !isNaN(Number(customSppRate)) && Number(customSppRate) > 0)
+      ? Number(customSppRate)
+      : undefined;
 
     const newStudent: Student = {
       id: newStudentId,
@@ -7159,7 +7199,8 @@ async function startServer() {
       phone: phone || "",
       savingsBalance: parsedSavings,
       gender: gender || "",
-      password: password ? String(password).trim() : nis.toString().trim()
+      password: password ? String(password).trim() : nis.toString().trim(),
+      customSppRate: parsedCustomSpp
     };
 
     students.push(newStudent);
@@ -7187,7 +7228,7 @@ async function startServer() {
           studentId: newStudentId,
           month: month,
           year: billYear,
-          amount: getSppAmountForClass(className),
+          amount: getSppAmountForStudent(newStudent, className),
           status: isPaid ? "paid" : "unpaid",
           paidAt: isPaid ? new Date().toISOString() : undefined,
           paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
@@ -7244,6 +7285,8 @@ async function startServer() {
     }
 
     const previousClass = student.class;
+    const previousCustomSppRate = student.customSppRate;
+
     student.nis = nis;
     student.name = name;
     student.class = className;
@@ -7253,6 +7296,16 @@ async function startServer() {
     student.mutationDate = mutationDate;
     student.mutationReason = mutationReason;
     student.mutationDestination = mutationDestination;
+
+    if (req.body.customSppRate !== undefined) {
+      const parsedVal = req.body.customSppRate;
+      if (parsedVal === null || parsedVal === "" || parsedVal === 0 || parsedVal === "0") {
+        student.customSppRate = undefined;
+      } else {
+        const numVal = Number(parsedVal);
+        student.customSppRate = (!isNaN(numVal) && numVal > 0) ? numVal : undefined;
+      }
+    }
 
     // Buku Induk Fields
     student.nisn = req.body.nisn;
@@ -7310,14 +7363,16 @@ async function startServer() {
       student.password = String(password).trim();
     }
 
-    // Sync student unpaid bills with the SPP rate corresponding to their new class grade
+    // Sync student unpaid bills with the SPP rate corresponding to their new class grade or custom rate
     let updatedBillsCount = 0;
-    if (previousClass !== className) {
-      const newRate = getSppAmountForClass(className);
+    if (previousClass !== className || previousCustomSppRate !== student.customSppRate) {
+      const newRate = getSppAmountForStudent(student, className);
       sppBills.forEach(bill => {
         if (bill.studentId === student.id && bill.status === "unpaid") {
-          bill.amount = newRate;
-          updatedBillsCount++;
+          if (bill.amount !== newRate) {
+            bill.amount = newRate;
+            updatedBillsCount++;
+          }
         }
       });
     }
@@ -7415,7 +7470,7 @@ async function startServer() {
 
       // If class changed, update their unpaid bills to the rate of the new class
       if (previousClass !== student.class) {
-        const newRate = getSppAmountForClass(student.class);
+        const newRate = getSppAmountForStudent(student);
         sppBills.forEach(bill => {
           if (bill.studentId === student.id && bill.status === "unpaid") {
             bill.amount = newRate;
@@ -7485,7 +7540,7 @@ async function startServer() {
               studentId: student.id,
               month: m.name,
               year: billYear,
-              amount: getSppAmountForClass(student.class),
+              amount: getSppAmountForStudent(student),
               status: "unpaid"
             });
             autoBillsGenerated++;
@@ -7903,7 +7958,7 @@ async function startServer() {
               studentId: newStudentId,
               month: month,
               year: billYear,
-              amount: getSppAmountForClass(className),
+              amount: getSppAmountForStudent(newStudent, className),
               status: isPaid ? "paid" : "unpaid",
               paidAt: isPaid ? new Date().toISOString() : undefined,
               paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,

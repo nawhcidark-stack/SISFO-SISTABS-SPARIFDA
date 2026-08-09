@@ -64,6 +64,14 @@ export interface Student {
   guardianPhone?: string;
   guardianStatus?: string; // Hidup / Meninggal
   guardianIsSameAsFather?: boolean;
+  
+  // Status Bebas SPP Diluar Prestasi / Beasiswa
+  isSppExempt?: boolean;
+  sppExemptionReason?: string;
+  sppExemptionType?: 'akademik' | 'non-akademik' | 'non-prestasi' | 'kebijakan';
+
+  // Nominal Khusus SPP Siswa (jika ada besaran khusus diluar tarif standar tingkat)
+  customSppRate?: number;
 }
 
 export interface SppBill {
@@ -77,7 +85,7 @@ export interface SppBill {
   paymentMethod?: string;
   orderId?: string;
   transactionId?: string;
-  achievementType?: 'akademik' | 'non-akademik';
+  achievementType?: 'akademik' | 'non-akademik' | 'non-prestasi' | 'kebijakan';
   achievementDetail?: string;
 }
 

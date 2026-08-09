@@ -380,7 +380,9 @@ export default function StudentPanel({
 
   // Calculate dynamic SPP nominal
   let sppRateAmount = 150000;
-  if (schoolIdentity?.sppRates && currentStudent) {
+  if (currentStudent?.customSppRate && currentStudent.customSppRate > 0) {
+    sppRateAmount = currentStudent.customSppRate;
+  } else if (schoolIdentity?.sppRates && currentStudent) {
     const cls = currentStudent.class.trim().toUpperCase();
     if (cls.startsWith('7') || cls.startsWith('VII')) {
       sppRateAmount = schoolIdentity.sppRates.grade7;
@@ -1582,7 +1584,11 @@ export default function StudentPanel({
                                   </span>
                                 ) : isWaived ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-indigo-50 text-indigo-705 border border-indigo-100 uppercase">
-                                    🏆 BEBAS SPP (PRESTASI)
+                                    {bill.achievementType === 'non-prestasi'
+                                      ? "🤝 BEBAS SPP (DILUAR PRESTASI)"
+                                      : bill.achievementType === 'kebijakan'
+                                      ? "📜 BEBAS SPP (KEBIJAKAN)"
+                                      : "🏆 BEBAS SPP (PRESTASI)"}
                                   </span>
                                 ) : isPending ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
@@ -1622,9 +1628,15 @@ export default function StudentPanel({
                                   </div>
                                 ) : isWaived ? (
                                   <div className="flex flex-col text-right leading-tight">
-                                    <span className="text-[10px] font-bold text-indigo-650 uppercase">Prestasi Dibebaskan</span>
-                                    <span className="text-[9px] text-slate-400 italic max-w-[150px] truncate block" title={bill.achievementDetail || "Apresiasi Prestasi"}>
-                                      {bill.achievementDetail || "Apresiasi Prestasi"}
+                                    <span className="text-[10px] font-bold text-indigo-650 uppercase">
+                                      {bill.achievementType === 'non-prestasi'
+                                        ? "Bebas SPP (Keringanan)"
+                                        : bill.achievementType === 'kebijakan'
+                                        ? "Bebas SPP (Kebijakan)"
+                                        : "Prestasi Dibebaskan"}
+                                    </span>
+                                    <span className="text-[9px] text-slate-400 italic max-w-[150px] truncate block" title={bill.achievementDetail || "Pembebasan SPP"}>
+                                      {bill.achievementDetail || (bill.achievementType === 'non-prestasi' ? "Keringanan Khusus" : "Apresiasi Prestasi")}
                                     </span>
                                   </div>
                                 ) : !isCurrentlyActive ? (

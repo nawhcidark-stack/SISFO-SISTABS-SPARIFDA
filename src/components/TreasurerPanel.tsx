@@ -147,34 +147,6 @@ export default function TreasurerPanel({
   const [isReconciling, setIsReconciling] = useState(false);
   const [reconcileStatus, setReconcileStatus] = useState<{ type: 'success' | 'error', text: string } | null>(null);
 
-  // Auto-Poller Engine stats
-  const [autopollerStats, setAutopollerStats] = useState<{
-    lastRunTime: string;
-    scannedCount: number;
-    reconciledCount: number;
-    expiredCount: number;
-    totalAutoReconciledLifetime: number;
-    lastLog: string[];
-  } | null>(null);
-
-  const fetchAutopollerStats = async () => {
-    try {
-      const res = await fetch('/api/midtrans-autopoller-status');
-      const data = await res.json();
-      if (data.success && data.stats) {
-        setAutopollerStats(data.stats);
-      }
-    } catch (e) {
-      console.error('Failed to fetch autopoller stats:', e);
-    }
-  };
-
-  useEffect(() => {
-    fetchAutopollerStats();
-    const interval = setInterval(fetchAutopollerStats, 15000);
-    return () => clearInterval(interval);
-  }, []);
-  
   // Invoice state to print
   const [activePrintTransaction, setActivePrintTransaction] = useState<TreasurerTransaction | null>(null);
   const [receiptPrintFormat, setReceiptPrintFormat] = useState<'standard' | 'thermal'>('standard');
@@ -2253,7 +2225,7 @@ export default function TreasurerPanel({
           {/* ================= TAB 2: INLINE BUKU KAS LEDGER ================= */}
           {activeTab === 'kas_ledger' && (
             <>
-              {/* Auto-Sync Midtrans Status Banner */}
+              {/* Midtrans Status & Reconciliation Banner */}
               <div className="bg-gradient-to-br from-slate-900 via-indigo-950 to-slate-900 text-white p-5 rounded-2xl border border-indigo-800/50 shadow-md flex flex-col gap-4">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-indigo-800/40 pb-4">
                   <div className="flex items-start gap-3.5">
@@ -2263,15 +2235,14 @@ export default function TreasurerPanel({
                     <div>
                       <div className="flex items-center gap-2 flex-wrap">
                         <h4 className="font-black text-xs uppercase tracking-wider text-emerald-400">
-                          Sistem Rekonsiliasi Otomatis Midtrans (Auto-Poller Active)
+                          Sistem Rekonsiliasi Midtrans
                         </h4>
-                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                          <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
-                          Otomatis Setiap 2 Menit
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[9px] font-black uppercase tracking-wider bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                          Mode Manual Terkendali
                         </span>
                       </div>
                       <p className="text-slate-300 text-[11px] mt-1 leading-relaxed font-medium max-w-2xl">
-                        Sistem secara aktif memantau seluruh tagihan (SPP, Tagihan Lain, Tabungan) berstatus pending/unpaid di background. Transaksi terlewat atau webhook yang tertunda akan terverifikasi secara otomatis tanpa perlu tindakan manual.
+                        Fitur verifikasi transaksi Midtrans (SPP, Tagihan Lain, Tabungan). Anda dapat memicu pemindaian rekonsiliasi manual kapan saja atau memasukkan Order ID spesifik untuk memverifikasi pembayaran.
                       </p>
                     </div>
                   </div>
@@ -2286,7 +2257,7 @@ export default function TreasurerPanel({
                       }`}
                     >
                       <RefreshCw size={14} className={isReconciling ? 'animate-spin' : ''} />
-                      <span>{isReconciling ? 'Memindai Midtrans...' : 'Jalankan Auto-Rekonsiliasi Sekarang'}</span>
+                      <span>{isReconciling ? 'Memindai Midtrans...' : 'Jalankan Rekonsiliasi Manual'}</span>
                     </button>
                     <button
                       type="button"
@@ -2300,52 +2271,27 @@ export default function TreasurerPanel({
                   </div>
                 </div>
 
-                {/* Engine Live Metrics & Search Box */}
-                <div className="grid grid-cols-1 md:grid-cols-12 gap-3.5 items-center">
-                  <div className="md:col-span-7 grid grid-cols-3 gap-2">
-                    <div className="bg-slate-800/70 border border-slate-700/60 p-2.5 rounded-xl flex flex-col">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Pemindaian Terakhir</span>
-                      <span className="text-xs font-mono font-black text-slate-200 mt-0.5">
-                        {autopollerStats?.lastRunTime 
-                          ? new Date(autopollerStats.lastRunTime).toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB'
-                          : 'Baru saja'}
-                      </span>
-                    </div>
-                    <div className="bg-slate-800/70 border border-slate-700/60 p-2.5 rounded-xl flex flex-col">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Pending Dipindai</span>
-                      <span className="text-xs font-mono font-black text-amber-300 mt-0.5">
-                        {autopollerStats?.scannedCount || 0} Order
-                      </span>
-                    </div>
-                    <div className="bg-slate-800/70 border border-slate-700/60 p-2.5 rounded-xl flex flex-col">
-                      <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">Total Otomatis Pulih</span>
-                      <span className="text-xs font-mono font-black text-emerald-400 mt-0.5">
-                        {autopollerStats?.totalAutoReconciledLifetime || 0} Transaksi
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="md:col-span-5">
-                    <form onSubmit={handleVerifySingleOrderId} className="flex items-center gap-1.5 w-full">
-                      <input
-                        type="text"
-                        value={manualOrderIdInput}
-                        onChange={(e) => setManualOrderIdInput(e.target.value)}
-                        placeholder="Cari & verifikasi Order ID spesifik..."
-                        className="px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 w-full"
-                      />
-                      <button
-                        type="submit"
-                        disabled={isReconciling || !manualOrderIdInput.trim()}
-                        className={`px-3.5 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1 shrink-0 ${
-                          isReconciling || !manualOrderIdInput.trim() ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'
-                        }`}
-                      >
-                        <Search size={13} />
-                        <span>Cek Ref</span>
-                      </button>
-                    </form>
-                  </div>
+                {/* Search / Verify Single Order ID Box */}
+                <div className="w-full">
+                  <form onSubmit={handleVerifySingleOrderId} className="flex flex-col sm:flex-row items-center gap-2 w-full">
+                    <input
+                      type="text"
+                      value={manualOrderIdInput}
+                      onChange={(e) => setManualOrderIdInput(e.target.value)}
+                      placeholder="Cari & verifikasi Order ID spesifik (misal: SPP-12345)..."
+                      className="px-3.5 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs font-mono font-semibold text-white placeholder:text-slate-500 focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 w-full"
+                    />
+                    <button
+                      type="submit"
+                      disabled={isReconciling || !manualOrderIdInput.trim()}
+                      className={`px-4 py-2 rounded-xl font-bold text-xs uppercase tracking-wider text-white cursor-pointer transition-all flex items-center justify-center gap-1.5 shrink-0 w-full sm:w-auto ${
+                        isReconciling || !manualOrderIdInput.trim() ? 'bg-slate-800 text-slate-600 cursor-not-allowed' : 'bg-indigo-600 hover:bg-indigo-500'
+                      }`}
+                    >
+                      <Search size={13} />
+                      <span>Verifikasi Ref</span>
+                    </button>
+                  </form>
                 </div>
               </div>
 

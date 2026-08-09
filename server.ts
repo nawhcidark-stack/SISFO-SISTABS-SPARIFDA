@@ -8844,18 +8844,8 @@ async function startServer() {
     return { scannedCount, reconciledCount, expiredCount, details };
   }
 
-  // Background Auto-Poller Engine running every 2 minutes
-  setInterval(() => {
-    runAutomatedMidtransReconciliation().catch(err => {
-      console.error("[MIDTRANS AUTO-POLLER] Unhandled error during auto-poll cycle:", err);
-    });
-  }, 120 * 1000);
-
-  // Initial trigger 10 seconds after server startup
-  setTimeout(() => {
-    console.log("[MIDTRANS AUTO-POLLER ENGINE] Running initial auto-reconciliation scan...");
-    runAutomatedMidtransReconciliation().catch(() => {});
-  }, 10000);
+  // Background Auto-Poller Engine disabled to prevent MongoDB usage spikes
+  // Manual reconciliation can be executed on-demand via /api/midtrans-autopoller-run button
 
   // Client simulated success trigger (Allows direct browser simulation and instant local sync verification)
   app.post("/api/simulate-payment-success", async (req, res) => {

@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
 import { MidtransBulkReportModal } from './MidtransBulkReportModal';
+import { Pagination } from './Pagination';
 
 interface TreasurerPanelProps {
   schoolIdentity: SchoolIdentity;
@@ -1095,6 +1096,19 @@ export default function TreasurerPanel({
       };
     });
   }, [filteredTransactions]);
+
+  // Pagination for Buku Kas Terpadu
+  const [ledgerPage, setLedgerPage] = useState(1);
+  const [ledgerPageSize, setLedgerPageSize] = useState(10);
+
+  useEffect(() => {
+    setLedgerPage(1);
+  }, [term, filterType, filterSource, filterCategory, filterRecipient, filterStartDate, filterEndDate, selectedBook]);
+
+  const paginatedTransactions = useMemo(() => {
+    const start = (ledgerPage - 1) * ledgerPageSize;
+    return transactionsWithRunningBalance.slice(start, start + ledgerPageSize);
+  }, [transactionsWithRunningBalance, ledgerPage, ledgerPageSize]);
 
   // Chart data formatting: Category distribution
   const chartCategoryData = useMemo(() => {
@@ -2661,7 +2675,7 @@ export default function TreasurerPanel({
                       </td>
                     </tr>
                   ) : (
-                    transactionsWithRunningBalance.map((tx, idx) => {
+                    paginatedTransactions.map((tx, idx) => {
                       const isIncoming = tx.type === 'incoming';
                       const kodeRekening = getKodeRekening(tx);
                       const noBukti = getNoBukti(tx);
@@ -2670,7 +2684,7 @@ export default function TreasurerPanel({
                         <tr key={tx.id} className="hover:bg-slate-100/50 transition-colors text-slate-800">
                           {/* 1. NO */}
                           <td className="py-3 px-3 text-center border border-slate-150 font-bold text-slate-600">
-                            {idx + 1}
+                            {(ledgerPage - 1) * ledgerPageSize + idx + 1}
                           </td>
                           
                           {/* 2. TANGGAL */}
@@ -2810,6 +2824,15 @@ export default function TreasurerPanel({
                   </tfoot>
                 )}
               </table>
+              <div className="p-3 border-t border-slate-150 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 px-6">
+                <Pagination
+                  currentPage={ledgerPage}
+                  totalItems={filteredTransactions.length}
+                  pageSize={ledgerPageSize}
+                  onPageChange={setLedgerPage}
+                  onPageSizeChange={setLedgerPageSize}
+                />
+              </div>
             </div>
 
           </div>

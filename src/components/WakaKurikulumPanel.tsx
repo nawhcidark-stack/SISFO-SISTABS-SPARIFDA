@@ -23,7 +23,15 @@ import {
   Check,
   FileText,
   Home,
-  LayoutGrid
+  LayoutGrid,
+  Eye,
+  Printer,
+  X,
+  ChevronDown,
+  ChevronUp,
+  Award,
+  Filter,
+  ClipboardCheck
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -46,8 +54,20 @@ export default function WakaKurikulumPanel({
   schoolIdentity,
   onRefreshData
 }: WakaKurikulumPanelProps) {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'import_pts_pas' | 'rekap_nilai' | 'password'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'password'>('monitoring');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
+
+  // Detail Nilai Guru & Wali Kelas States
+  const [detailRoleFilter, setDetailRoleFilter] = useState<'all' | 'subject_teacher' | 'homeroom'>('all');
+  const [detailTeacherFilter, setDetailTeacherFilter] = useState<string>('all');
+  const [detailSubjectFilter, setDetailSubjectFilter] = useState<string>('all');
+  const [detailClassFilter, setDetailClassFilter] = useState<string>('all');
+  const [detailSearchQuery, setDetailSearchQuery] = useState<string>('');
+  const [detailStatusFilter, setDetailStatusFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
+
+  // Selected Student for Modal View
+  const [selectedStudentDetail, setSelectedStudentDetail] = useState<Student | null>(null);
+  const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
   // Filter States
   const [selectedSemester, setSelectedSemester] = useState<string>(
@@ -129,6 +149,66 @@ export default function WakaKurikulumPanel({
       a => a.semester === selectedSemester && a.academicYear === selectedAcademicYear
     );
   }, [merdekaAssessments, selectedSemester, selectedAcademicYear]);
+
+  // List of all distinct teacher names
+  const allTeacherNames = useMemo(() => {
+    const list: string[] = [];
+    subjectTeachers.forEach(t => { if (t.name) list.push(t.name.trim()); });
+    homerooms.forEach(h => { if (h.name) list.push(h.name.trim()); });
+    merdekaAssessments.forEach(a => { if (a.teacherName) list.push(a.teacherName.trim()); });
+    return Array.from(new Set(list)).sort();
+  }, [subjectTeachers, homerooms, merdekaAssessments]);
+
+  // Detailed Filtered Assessments for Waka Kurikulum Inspection
+  const detailedAssessmentsList = useMemo(() => {
+    return filteredAssessments.filter(a => {
+      // Role filter
+      if (detailRoleFilter === 'subject_teacher') {
+        const hasTp = (a.nilaiRataTp && a.nilaiRataTp > 0) || a.tp1Uh || a.tp1Tugas1;
+        if (!hasTp) return false;
+      } else if (detailRoleFilter === 'homeroom') {
+        const hasKoku = a.nilaiKokurikuler && a.nilaiKokurikuler > 0;
+        if (!hasKoku) return false;
+      }
+
+      // Teacher filter
+      if (detailTeacherFilter !== 'all') {
+        const isMatchTeacher = a.teacherName?.toLowerCase() === detailTeacherFilter.toLowerCase();
+        const studentCls = a.className?.trim().toUpperCase();
+        const hrTeacher = homerooms.find(h => h.className && h.className.trim().toUpperCase() === studentCls);
+        const isMatchHomeroom = hrTeacher && hrTeacher.name.toLowerCase() === detailTeacherFilter.toLowerCase();
+        if (!isMatchTeacher && !isMatchHomeroom) return false;
+      }
+
+      // Subject filter
+      if (detailSubjectFilter !== 'all') {
+        if (a.subject?.toLowerCase() !== detailSubjectFilter.toLowerCase()) return false;
+      }
+
+      // Class filter
+      if (detailClassFilter !== 'all') {
+        if (a.className?.trim().toUpperCase() !== detailClassFilter.trim().toUpperCase()) return false;
+      }
+
+      // Status filter
+      const isComplete = (a.nilaiRataTp && a.nilaiRataTp > 0) && (a.nilaiKokurikuler && a.nilaiKokurikuler > 0);
+      if (detailStatusFilter === 'complete' && !isComplete) return false;
+      if (detailStatusFilter === 'incomplete' && isComplete) return false;
+
+      // Text Search
+      if (detailSearchQuery.trim()) {
+        const q = detailSearchQuery.toLowerCase();
+        const nameMatch = a.studentName?.toLowerCase().includes(q);
+        const idMatch = a.studentId?.toLowerCase().includes(q);
+        const subjMatch = a.subject?.toLowerCase().includes(q);
+        const teacherMatch = a.teacherName?.toLowerCase().includes(q);
+        const classMatch = a.className?.toLowerCase().includes(q);
+        if (!nameMatch && !idMatch && !subjMatch && !teacherMatch && !classMatch) return false;
+      }
+
+      return true;
+    });
+  }, [filteredAssessments, detailRoleFilter, detailTeacherFilter, detailSubjectFilter, detailClassFilter, detailStatusFilter, detailSearchQuery, homerooms]);
 
   // Monitoring Stats for Subject Teachers
   const teacherProgressList = useMemo(() => {
@@ -563,6 +643,18 @@ export default function WakaKurikulumPanel({
         </button>
 
         <button
+          onClick={() => setActiveTab('detail_nilai')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'detail_nilai'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <ClipboardCheck size={15} />
+          <span>Detail Nilai Guru & Wali</span>
+        </button>
+
+        <button
           onClick={() => setActiveTab('password')}
           className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'password'
@@ -672,6 +764,7 @@ export default function WakaKurikulumPanel({
                     <th className="py-3 px-4 text-center">Siswa Terdokumentasi</th>
                     <th className="py-3 px-4">Progres Keterisian</th>
                     <th className="py-3 px-4 text-center">Status</th>
+                    <th className="py-3 px-4 text-center">Aksi</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
@@ -719,6 +812,22 @@ export default function WakaKurikulumPanel({
                               <AlertCircle size={11} /> Belum Input
                             </span>
                           )}
+                        </td>
+                        <td className="py-3 px-4 text-center">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailTeacherFilter(t.teacherName);
+                              setDetailSubjectFilter(t.subject);
+                              if (t.className !== 'SEMUA KELAS') setDetailClassFilter(t.className);
+                              setDetailRoleFilter('subject_teacher');
+                              setActiveTab('detail_nilai');
+                            }}
+                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 mx-auto cursor-pointer"
+                          >
+                            <Eye size={12} />
+                            <span>Detail Nilai</span>
+                          </button>
                         </td>
                       </tr>
                     ))}
@@ -828,6 +937,24 @@ export default function WakaKurikulumPanel({
                       <span>Progres Penilaian Siswa:</span>
                       <strong className="text-indigo-700">{hr.totalAssessedPercentage}% Terisi</strong>
                     </div>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setDetailClassFilter(hr.className);
+                        if (hr.teacherName && hr.teacherName !== 'Wali Kelas Lintas Kelas / Pengampu') {
+                          setDetailTeacherFilter(hr.teacherName);
+                        } else {
+                          setDetailTeacherFilter('all');
+                        }
+                        setDetailRoleFilter('all');
+                        setActiveTab('detail_nilai');
+                      }}
+                      className="w-full mt-2 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200/60 rounded-xl text-[10.5px] font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
+                    >
+                      <Eye size={13} />
+                      <span>Lihat Detail Nilai Kelas {hr.className}</span>
+                    </button>
                   </div>
                 ))}
             </div>
@@ -1038,6 +1165,561 @@ export default function WakaKurikulumPanel({
         </div>
       )}
 
+      {/* TAB: DETAIL NILAI GURU & WALI KELAS */}
+      {activeTab === 'detail_nilai' && (
+        <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 animate-fade-in">
+          {/* Header */}
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-3 py-0.5 rounded-full bg-indigo-50 border border-indigo-200 text-indigo-700 font-extrabold text-[10px] uppercase mb-1">
+                <ClipboardCheck size={12} />
+                <span>Inspeksi Rinci Kurikulum</span>
+              </div>
+              <h3 className="font-black text-xl text-slate-900 flex items-center gap-2">
+                <span>Rincian Input Nilai Guru Mapel & Wali Kelas</span>
+              </h3>
+              <p className="text-xs text-slate-500 mt-0.5 max-w-2xl">
+                Pantau secara langsung seluruh butir komponen nilai yang diinput oleh Guru Mata Pelajaran (TP1-4, Tugas 1-2, UH, Rata-rata TP, Deskripsi) dan Wali Kelas (Kokurikuler P5) per siswa.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={() => {
+                  setDetailRoleFilter('all');
+                  setDetailTeacherFilter('all');
+                  setDetailSubjectFilter('all');
+                  setDetailClassFilter('all');
+                  setDetailSearchQuery('');
+                  setDetailStatusFilter('all');
+                }}
+                className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+              >
+                <RefreshCw size={13} />
+                <span>Reset Filter</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleExportFinalGradesExcel}
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 shadow-sm cursor-pointer"
+              >
+                <FileSpreadsheet size={14} />
+                <span>Export Excel</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Filter Bar */}
+          <div className="p-4 bg-slate-50/80 border border-slate-200 rounded-2xl space-y-3">
+            <div className="flex items-center justify-between text-xs font-bold text-slate-700 pb-2 border-b border-slate-200/60">
+              <span className="flex items-center gap-1.5 text-indigo-700 font-extrabold uppercase text-[10px] tracking-wider">
+                <Filter size={13} />
+                Filter Inspeksi Penilaian
+              </span>
+              <span className="text-slate-500 text-[11px] font-semibold">
+                Menampilkan <strong className="text-slate-900">{detailedAssessmentsList.length}</strong> data penilaian
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {/* Filter Tipe Penilai */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Tipe Pendidik</label>
+                <select
+                  value={detailRoleFilter}
+                  onChange={(e: any) => setDetailRoleFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Pendidik</option>
+                  <option value="subject_teacher">Guru Mapel (TP & UH)</option>
+                  <option value="homeroom">Wali Kelas (Kokurikuler)</option>
+                </select>
+              </div>
+
+              {/* Filter Nama Guru */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Guru / Wali</label>
+                <select
+                  value={detailTeacherFilter}
+                  onChange={(e) => setDetailTeacherFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Guru / Wali</option>
+                  {allTeacherNames.map(name => (
+                    <option key={name} value={name}>{name}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Kelas */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Kelas</label>
+                <select
+                  value={detailClassFilter}
+                  onChange={(e) => setDetailClassFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Kelas</option>
+                  {availableClasses.map(cls => (
+                    <option key={cls} value={cls}>Kelas {cls}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Mapel */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Mata Pelajaran</label>
+                <select
+                  value={detailSubjectFilter}
+                  onChange={(e) => setDetailSubjectFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Mapel</option>
+                  {availableSubjects.map(subj => (
+                    <option key={subj} value={subj}>{subj}</option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Filter Status */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Status Nilai</label>
+                <select
+                  value={detailStatusFilter}
+                  onChange={(e: any) => setDetailStatusFilter(e.target.value)}
+                  className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                >
+                  <option value="all">Semua Status</option>
+                  <option value="complete">Lengkap (Guru & Wali)</option>
+                  <option value="incomplete">Belum Lengkap</option>
+                </select>
+              </div>
+
+              {/* Search Box */}
+              <div>
+                <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Pencarian</label>
+                <div className="relative">
+                  <input
+                    type="text"
+                    placeholder="Nama / NIS..."
+                    value={detailSearchQuery}
+                    onChange={(e) => setDetailSearchQuery(e.target.value)}
+                    className="w-full bg-white border border-slate-200 rounded-xl pl-7 pr-2 py-1.5 text-xs font-semibold focus:outline-none focus:border-indigo-600"
+                  />
+                  <Search size={13} className="absolute left-2 top-2 text-slate-400" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Quick Stat Cards */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+            <div className="bg-indigo-50/50 border border-indigo-100 rounded-2xl p-3.5 space-y-0.5">
+              <span className="text-[10px] font-extrabold text-indigo-600 uppercase tracking-wider">Rekam Penilaian</span>
+              <p className="text-xl font-black text-indigo-950">{detailedAssessmentsList.length}</p>
+              <p className="text-[9.5px] font-bold text-slate-500">Tersaring Sesuai Filter</p>
+            </div>
+
+            <div className="bg-emerald-50/50 border border-emerald-100 rounded-2xl p-3.5 space-y-0.5">
+              <span className="text-[10px] font-extrabold text-emerald-600 uppercase tracking-wider">Terisi Guru Mapel</span>
+              <p className="text-xl font-black text-emerald-950">
+                {detailedAssessmentsList.filter(a => (a.nilaiRataTp && a.nilaiRataTp > 0) || a.tp1Uh || a.tp1Tugas1).length}
+              </p>
+              <p className="text-[9.5px] font-bold text-slate-500">Memiliki Nilai TP & UH</p>
+            </div>
+
+            <div className="bg-violet-50/50 border border-violet-100 rounded-2xl p-3.5 space-y-0.5">
+              <span className="text-[10px] font-extrabold text-violet-600 uppercase tracking-wider">Terisi Wali Kelas</span>
+              <p className="text-xl font-black text-violet-950">
+                {detailedAssessmentsList.filter(a => a.nilaiKokurikuler && a.nilaiKokurikuler > 0).length}
+              </p>
+              <p className="text-[9.5px] font-bold text-slate-500">Memiliki Nilai Kokurikuler P5</p>
+            </div>
+
+            <div className="bg-blue-50/50 border border-blue-100 rounded-2xl p-3.5 space-y-0.5">
+              <span className="text-[10px] font-extrabold text-blue-600 uppercase tracking-wider">Rata-rata Akhir</span>
+              <p className="text-xl font-black text-blue-950">
+                {detailedAssessmentsList.length > 0
+                  ? (detailedAssessmentsList.reduce((acc, curr) => acc + (curr.nilaiAkhirMapel || curr.nilaiRapor || 0), 0) / detailedAssessmentsList.length).toFixed(1)
+                  : '0.0'}
+              </p>
+              <p className="text-[9.5px] font-bold text-slate-500">Skala 0 - 100</p>
+            </div>
+          </div>
+
+          {/* Main Inspection Table */}
+          <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-900 text-white font-black uppercase text-[10px] tracking-wider">
+                  <th className="py-3 px-3">Siswa (NIS & Nama)</th>
+                  <th className="py-3 px-3">Kelas & Mapel</th>
+                  <th className="py-3 px-3">Guru Mapel (Penginput)</th>
+                  <th className="py-3 px-3 text-center bg-slate-800">Rata2 TP (Guru)</th>
+                  <th className="py-3 px-3 text-center bg-violet-900">Kokurikuler (Wali)</th>
+                  <th className="py-3 px-3 text-center">PTS & PAS</th>
+                  <th className="py-3 px-3 text-center bg-indigo-900">Nilai Akhir</th>
+                  <th className="py-3 px-3 text-center">Detail / Aksi</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                {detailedAssessmentsList.length === 0 ? (
+                  <tr>
+                    <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
+                      Tidak ada data penilaian yang cocok dengan kriteria filter Anda.
+                    </td>
+                  </tr>
+                ) : (
+                  detailedAssessmentsList.map((a, idx) => {
+                    const finalVal = a.nilaiAkhirMapel ?? a.nilaiRapor ?? 0;
+                    const isExpanded = expandedRowId === a.id;
+                    const matchedStudent = students.find(s => s.id === a.studentId || s.nis === a.studentId);
+                    const hrTeacher = homerooms.find(h => h.className && h.className.trim().toUpperCase() === a.className?.trim().toUpperCase());
+
+                    return (
+                      <React.Fragment key={a.id || idx}>
+                        <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-indigo-50/30' : ''}`}>
+                          <td className="py-3 px-3">
+                            <div className="flex flex-col">
+                              <span className="font-mono font-bold text-slate-500 text-[10px]">#{a.studentId}</span>
+                              <span className="font-extrabold text-slate-900 text-xs">{a.studentName}</span>
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-extrabold text-indigo-600 text-xs">{a.className}</span>
+                              <span className="text-[11px] text-slate-700 font-bold">{a.subject}</span>
+                            </div>
+                          </td>
+
+                          <td className="py-3 px-3">
+                            <div className="flex flex-col">
+                              <span className="font-bold text-slate-900">{a.teacherName || 'Guru Mapel'}</span>
+                              {hrTeacher && (
+                                <span className="text-[9.5px] font-semibold text-violet-600">
+                                  Wali: {hrTeacher.name}
+                                </span>
+                              )}
+                            </div>
+                          </td>
+
+                          {/* Rata2 TP */}
+                          <td className="py-3 px-3 text-center bg-slate-50/80">
+                            {a.nilaiRataTp && a.nilaiRataTp > 0 ? (
+                              <span className="font-black text-emerald-700 text-xs px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200">
+                                {a.nilaiRataTp}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-rose-500 font-bold bg-rose-50 px-1.5 py-0.5 rounded">Belum Input</span>
+                            )}
+                          </td>
+
+                          {/* Kokurikuler */}
+                          <td className="py-3 px-3 text-center bg-violet-50/30">
+                            {a.nilaiKokurikuler && a.nilaiKokurikuler > 0 ? (
+                              <span className="font-black text-violet-700 text-xs px-2 py-0.5 rounded bg-violet-100 border border-violet-200">
+                                {a.nilaiKokurikuler}
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-amber-600 font-bold bg-amber-50 px-1.5 py-0.5 rounded">Belum Input</span>
+                            )}
+                          </td>
+
+                          {/* PTS & PAS */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5 text-[11px]">
+                              <span className="px-1.5 py-0.5 bg-indigo-50 text-indigo-700 font-bold rounded">
+                                PTS: {a.nilaiPts ?? '-'}
+                              </span>
+                              <span className="px-1.5 py-0.5 bg-blue-50 text-blue-700 font-bold rounded">
+                                PAS: {a.nilaiPas ?? '-'}
+                              </span>
+                            </div>
+                          </td>
+
+                          {/* Nilai Akhir */}
+                          <td className="py-3 px-3 text-center bg-indigo-50/50">
+                            <span className="font-black text-indigo-900 text-sm">
+                              {finalVal}
+                            </span>
+                          </td>
+
+                          {/* Aksi */}
+                          <td className="py-3 px-3 text-center">
+                            <div className="flex items-center justify-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => setExpandedRowId(isExpanded ? null : a.id)}
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1"
+                                title="Lihat Rincian Butir TP & Tugas"
+                              >
+                                {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+                                <span>{isExpanded ? 'Tutup' : 'Rincian TP'}</span>
+                              </button>
+
+                              {matchedStudent && (
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedStudentDetail(matchedStudent)}
+                                  className="p-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-extrabold transition-all cursor-pointer flex items-center gap-1 shadow-2xs"
+                                  title="Pratinjau Kartu Rapor Lengkap Siswa"
+                                >
+                                  <Eye size={12} />
+                                  <span>Kartu Nilai</span>
+                                </button>
+                              )}
+                            </div>
+                          </td>
+                        </tr>
+
+                        {/* Accordion Expanded Details */}
+                        {isExpanded && (
+                          <tr className="bg-slate-50 border-b border-indigo-100">
+                            <td colSpan={8} className="p-4 sm:p-5">
+                              <div className="p-4 bg-white border border-indigo-150 rounded-2xl space-y-4 shadow-xs">
+                                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                                  <h5 className="font-extrabold text-xs text-indigo-900 flex items-center gap-1.5">
+                                    <BookOpen size={14} className="text-indigo-600" />
+                                    <span>Rincian Komponen Nilai {a.subject} — {a.studentName} ({a.className})</span>
+                                  </h5>
+                                  <span className="text-[10px] font-bold text-slate-400">
+                                    Penginput Guru: <strong>{a.teacherName || '-'}</strong>
+                                  </span>
+                                </div>
+
+                                {/* Component Grid */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                                  {/* TP 1 */}
+                                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                                    <div className="flex justify-between items-center">
+                                      <span className="font-black text-indigo-700 text-[10px] uppercase">{a.tp1Name || 'TP 1'}</span>
+                                      <span className="font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                                        Nilai TP: {a.nilaiTp1 ?? '-'}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
+                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp1Tugas1 ?? '-'}</strong></p>
+                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp1Tugas2 ?? '-'}</strong></p>
+                                      <p>UH / Sumatif: <strong className="text-slate-900">{a.tp1Uh ?? '-'}</strong></p>
+                                    </div>
+                                  </div>
+
+                                  {/* TP 2 */}
+                                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                                    <div className="flex justify-between items-center">
+                                      <span className="font-black text-indigo-700 text-[10px] uppercase">{a.tp2Name || 'TP 2'}</span>
+                                      <span className="font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                                        Nilai TP: {a.nilaiTp2 ?? '-'}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
+                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp2Tugas1 ?? '-'}</strong></p>
+                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp2Tugas2 ?? '-'}</strong></p>
+                                      <p>UH / Sumatif: <strong className="text-slate-900">{a.tp2Uh ?? '-'}</strong></p>
+                                    </div>
+                                  </div>
+
+                                  {/* TP 3 */}
+                                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                                    <div className="flex justify-between items-center">
+                                      <span className="font-black text-indigo-700 text-[10px] uppercase">{a.tp3Name || 'TP 3'}</span>
+                                      <span className="font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                                        Nilai TP: {a.nilaiTp3 ?? '-'}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
+                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp3Tugas1 ?? '-'}</strong></p>
+                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp3Tugas2 ?? '-'}</strong></p>
+                                      <p>UH / Sumatif: <strong className="text-slate-900">{a.tp3Uh ?? '-'}</strong></p>
+                                    </div>
+                                  </div>
+
+                                  {/* TP 4 */}
+                                  <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-1">
+                                    <div className="flex justify-between items-center">
+                                      <span className="font-black text-indigo-700 text-[10px] uppercase">{a.tp4Name || 'TP 4'}</span>
+                                      <span className="font-extrabold text-emerald-700 bg-emerald-50 px-1.5 py-0.5 rounded text-[10px]">
+                                        Nilai TP: {a.nilaiTp4 ?? '-'}
+                                      </span>
+                                    </div>
+                                    <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
+                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp4Tugas1 ?? '-'}</strong></p>
+                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp4Tugas2 ?? '-'}</strong></p>
+                                      <p>UH / Sumatif: <strong className="text-slate-900">{a.tp4Uh ?? '-'}</strong></p>
+                                    </div>
+                                  </div>
+                                </div>
+
+                                {/* Additional Details: Deskripsi Capaian & Final Grade Formula */}
+                                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs pt-1">
+                                  <div className="p-3 bg-indigo-50/50 border border-indigo-100 rounded-xl space-y-1">
+                                    <span className="font-black text-indigo-800 text-[10px] uppercase tracking-wider">
+                                      Deskripsi Capaian Pembelajaran (Guru Mapel)
+                                    </span>
+                                    <p className="text-slate-700 italic text-[11px]">
+                                      {a.deskripsiCapaian || 'Belum ada catatan deskripsi capaian pembelajaran dari guru mapel.'}
+                                    </p>
+                                  </div>
+
+                                  <div className="p-3 bg-violet-50/50 border border-violet-100 rounded-xl space-y-1">
+                                    <span className="font-black text-violet-800 text-[10px] uppercase tracking-wider">
+                                      Perhitungan Nilai Akhir Kurikulum
+                                    </span>
+                                    <p className="text-slate-800 font-mono text-[10.5px]">
+                                      ((Rata2 TP: {a.nilaiRataTp || 0} × 2) + Kokurikuler: {a.nilaiKokurikuler || 0} + PTS: {a.nilaiPts || 0} + PAS: {a.nilaiPas || 0}) / 5
+                                    </p>
+                                    <p className="text-indigo-900 font-black text-xs">
+                                      = NILAI AKHIR MAPEL: {finalVal}
+                                    </p>
+                                  </div>
+                                </div>
+                              </div>
+                            </td>
+                          </tr>
+                        )}
+                      </React.Fragment>
+                    );
+                  })
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL: KARTU NILAI DETAIL SISWA (SAMPEL WAKA KURIKULUM) */}
+      <AnimatePresence>
+        {selectedStudentDetail && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+            <motion.div
+              initial={{ opacity: 0, scale: 0.95 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="bg-white rounded-3xl border border-slate-200 shadow-2xl w-full max-w-4xl overflow-hidden flex flex-col max-h-[90vh]"
+            >
+              {/* Modal Header */}
+              <div className="p-6 bg-slate-900 text-white flex items-center justify-between shrink-0">
+                <div className="space-y-1">
+                  <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold text-[10px] uppercase tracking-wider">
+                    <GraduationCap size={12} />
+                    <span>Transkrip Nilai Siswa — Waka Kurikulum</span>
+                  </div>
+                  <h3 className="text-xl font-black">{selectedStudentDetail.name}</h3>
+                  <p className="text-xs text-slate-300">
+                    NIS: <strong>{selectedStudentDetail.nis}</strong> &bull; Kelas: <strong>{selectedStudentDetail.class}</strong> &bull; Semester: <strong>{selectedSemester} ({selectedAcademicYear})</strong>
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => window.print()}
+                    className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                  >
+                    <Printer size={14} />
+                    <span>Cetak</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedStudentDetail(null)}
+                    className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl transition-all cursor-pointer"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              </div>
+
+              {/* Modal Body */}
+              <div className="p-6 overflow-y-auto space-y-5 text-xs text-slate-700">
+                {/* Student Info Box */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-4 bg-slate-50 border border-slate-200 rounded-2xl">
+                  <div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Wali Kelas</span>
+                    <strong className="text-slate-900 font-extrabold text-xs">
+                      {homerooms.find(h => h.className && h.className.trim().toUpperCase() === selectedStudentDetail.class?.trim().toUpperCase())?.name || 'Wali Kelas Lintas Kelas'}
+                    </strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Status Siswa</span>
+                    <strong className="text-emerald-700 font-extrabold text-xs">Siswa Aktif</strong>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black text-slate-400 uppercase tracking-wider block">Jumlah Mapel Terdata</span>
+                    <strong className="text-indigo-700 font-extrabold text-xs">
+                      {filteredAssessments.filter(a => a.studentId === selectedStudentDetail.id || a.studentId === selectedStudentDetail.nis).length} Mata Pelajaran
+                    </strong>
+                  </div>
+                </div>
+
+                {/* Table of all subjects for this student */}
+                <div className="overflow-x-auto border border-slate-200 rounded-2xl">
+                  <table className="w-full text-left text-xs border-collapse">
+                    <thead>
+                      <tr className="bg-slate-900 text-white font-black uppercase text-[10px]">
+                        <th className="py-2.5 px-3">Mata Pelajaran</th>
+                        <th className="py-2.5 px-3">Guru Mapel</th>
+                        <th className="py-2.5 px-3 text-center">Rata2 TP</th>
+                        <th className="py-2.5 px-3 text-center">Kokurikuler</th>
+                        <th className="py-2.5 px-3 text-center">PTS</th>
+                        <th className="py-2.5 px-3 text-center">PAS</th>
+                        <th className="py-2.5 px-3 text-center bg-indigo-900">Nilai Akhir</th>
+                        <th className="py-2.5 px-3 text-center">Predikat</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-slate-100 font-semibold text-slate-800">
+                      {filteredAssessments.filter(a => a.studentId === selectedStudentDetail.id || a.studentId === selectedStudentDetail.nis).length === 0 ? (
+                        <tr>
+                          <td colSpan={8} className="py-8 text-center text-slate-400 font-bold">
+                            Belum ada rekam nilai mapel yang tersimpan untuk siswa ini.
+                          </td>
+                        </tr>
+                      ) : (
+                        filteredAssessments
+                          .filter(a => a.studentId === selectedStudentDetail.id || a.studentId === selectedStudentDetail.nis)
+                          .map((a, i) => {
+                            const finalScore = a.nilaiAkhirMapel ?? a.nilaiRapor ?? 0;
+                            let predikat = 'D';
+                            if (finalScore >= 90) predikat = 'A (Sangat Baik)';
+                            else if (finalScore >= 80) predikat = 'B (Baik)';
+                            else if (finalScore >= 70) predikat = 'C (Cukup)';
+
+                            return (
+                              <tr key={a.id || i} className="hover:bg-slate-50">
+                                <td className="py-2.5 px-3 font-bold text-slate-900">{a.subject}</td>
+                                <td className="py-2.5 px-3 text-slate-600">{a.teacherName || '-'}</td>
+                                <td className="py-2.5 px-3 text-center font-bold text-slate-700">{a.nilaiRataTp ?? 0}</td>
+                                <td className="py-2.5 px-3 text-center font-bold text-violet-600">{a.nilaiKokurikuler ?? 0}</td>
+                                <td className="py-2.5 px-3 text-center font-bold text-indigo-600">{a.nilaiPts ?? 0}</td>
+                                <td className="py-2.5 px-3 text-center font-bold text-blue-600">{a.nilaiPas ?? 0}</td>
+                                <td className="py-2.5 px-3 text-center font-black text-indigo-800 bg-indigo-50/50">{finalScore}</td>
+                                <td className="py-2.5 px-3 text-center font-bold text-emerald-700">{predikat}</td>
+                              </tr>
+                            );
+                          })
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+
+              {/* Modal Footer */}
+              <div className="p-4 bg-slate-50 border-t border-slate-200 flex justify-end shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setSelectedStudentDetail(null)}
+                  className="px-5 py-2 bg-slate-900 hover:bg-slate-800 text-white rounded-xl text-xs font-bold transition-all cursor-pointer"
+                >
+                  Tutup
+                </button>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
       {/* TAB 4: KEAMANAN SANDI */}
       {activeTab === 'password' && (
         <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 shadow-sm space-y-6 animate-fade-in">
@@ -1223,6 +1905,25 @@ export default function WakaKurikulumPanel({
               </div>
 
               <div className="grid grid-cols-2 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('detail_nilai');
+                    setShowMoreMenu(false);
+                  }}
+                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
+                    activeTab === 'detail_nilai'
+                      ? 'border-indigo-600 bg-indigo-50/50'
+                      : 'border-slate-150 hover:bg-slate-50'
+                  }`}
+                >
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">📋</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Detail Nilai Guru & Wali</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Inspeksi butir TP & Kokurikuler</p>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

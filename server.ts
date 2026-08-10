@@ -626,6 +626,110 @@ function purgeMutatedStudentUnpaidBills(): number {
   return purgedCount;
 }
 
+// Helper to purge all auto-reconciled Midtrans ledger entries and generated categories
+function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPurged: number; categoriesPurged: number } {
+  let treasurerPurged = 0;
+  let savingsPurged = 0;
+  let categoriesPurged = 0;
+
+  // 1. Purge auto-recon entries from treasurerTransactions
+  for (let i = treasurerTransactions.length - 1; i >= 0; i--) {
+    const t = treasurerTransactions[i];
+    const catLower = (t.category || "").toLowerCase();
+    const descLower = (t.description || "").toLowerCase();
+    const orderId = (t.orderId || "").toUpperCase();
+    const noBukti = (t.noBukti || "").toUpperCase();
+    const createdByLower = (t.createdBy || "").toLowerCase();
+
+    const isAutoRecon = 
+      catLower.includes("pembayaran online midtrans") ||
+      catLower.includes("transaksi online") ||
+      descLower.includes("(report)") ||
+      descLower.includes("midtrans report") ||
+      descLower.includes("verified via midtrans") ||
+      descLower.includes("keranjang midtrans report") ||
+      descLower.includes("pembayaran online midtrans") ||
+      orderId.startsWith("MIDTRANS-REPORT") ||
+      orderId.startsWith("P7") ||
+      orderId.startsWith("P8") ||
+      orderId.startsWith("P6") ||
+      orderId.startsWith("P5") ||
+      noBukti.includes("-MAN--") ||
+      createdByLower.includes("midtrans bulk report") ||
+      t.fundingSource === "Kas Bank/Midtrans";
+
+    if (isAutoRecon) {
+      const [removed] = treasurerTransactions.splice(i, 1);
+      treasurerPurged++;
+      deleteDocFromFirestore("treasurerTransactions", removed.id).catch(err => console.error(err));
+      if (mongoDb) {
+        mongoDb.collection("treasurerTransactions").deleteOne({ id: removed.id }).catch(err => console.error(err));
+      }
+    }
+  }
+
+  // 2. Purge auto-recon entries from savingsTransactions
+  const affectedStudentIds = new Set<string>();
+  for (let i = savingsTransactions.length - 1; i >= 0; i--) {
+    const s = savingsTransactions[i];
+    const notesLower = (s.notes || "").toLowerCase();
+    const idStr = (s.id || "").toLowerCase();
+    const orderId = (s.orderId || "").toUpperCase();
+
+    const isAutoSavings = 
+      idStr.includes("sav-pay-report-") ||
+      notesLower.includes("midtrans report") ||
+      notesLower.includes("verified via midtrans") ||
+      orderId.startsWith("MIDTRANS-REPORT") ||
+      orderId.startsWith("P7") ||
+      orderId.startsWith("P8") ||
+      orderId.startsWith("P6") ||
+      orderId.startsWith("P5");
+
+    if (isAutoSavings) {
+      const [removed] = savingsTransactions.splice(i, 1);
+      savingsPurged++;
+      affectedStudentIds.add(removed.studentId);
+      deleteDocFromFirestore("savingsTransactions", removed.id).catch(err => console.error(err));
+      if (mongoDb) {
+        mongoDb.collection("savingsTransactions").deleteOne({ id: removed.id }).catch(err => console.error(err));
+      }
+    }
+  }
+
+  // Recalculate savings balance for affected students based on remaining manual transactions
+  affectedStudentIds.forEach(studentId => {
+    const student = students.find(s => s.id === studentId);
+    if (student) {
+      const studentSavings = savingsTransactions.filter(st => st.studentId === studentId && st.status === "success");
+      let newBal = 0;
+      studentSavings.forEach(st => {
+        if (st.type === "deposit") newBal += st.amount;
+        else if (st.type === "withdrawal") newBal -= st.amount;
+      });
+      student.savingsBalance = Math.max(0, newBal);
+      upsertDocToMongoDB("students", student).catch(err => console.error(err));
+    }
+  });
+
+  // 3. Clean up treasurerConfig / categories if "Pembayaran Online Midtrans" or "Transaksi Online" exists
+  if ((treasurerConfig as any).categories && Array.isArray((treasurerConfig as any).categories)) {
+    const beforeLen = (treasurerConfig as any).categories.length;
+    (treasurerConfig as any).categories = (treasurerConfig as any).categories.filter((c: any) => {
+      const name = typeof c === 'string' ? c : c.name || '';
+      return !name.toLowerCase().includes("midtrans") && !name.toLowerCase().includes("transaksi online");
+    });
+    categoriesPurged = beforeLen - (treasurerConfig as any).categories.length;
+  }
+
+  if (treasurerPurged > 0 || savingsPurged > 0 || categoriesPurged > 0) {
+    console.log(`[PURGE MIDTRANS AUTO RECON] Cleaned ${treasurerPurged} treasurer entries, ${savingsPurged} savings entries, ${categoriesPurged} categories.`);
+    saveState();
+  }
+
+  return { treasurerPurged, savingsPurged, categoriesPurged };
+}
+
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
 
 // MongoDB Database connection initialization
@@ -1234,11 +1338,13 @@ async function syncWithFirestore(forcePush: boolean = false) {
       
       // Save loaded MongoDB state to local data_store.json file as well
       saveState(true);
+      purgeMidtransAutoReconciliation();
     } else {
       console.log("No remote database documents. Performing initial MongoDB seeding...");
       dbSyncStatus = "Syncing (Uploading Seed)";
       isInitialSyncCompleted = true;
       await saveStateToFirestore();
+      purgeMidtransAutoReconciliation();
       dbSyncStatus = "Synced (Initial Seed Completed)";
       lastSyncTime = new Date().toISOString();
       dbSyncError = null;
@@ -5178,6 +5284,9 @@ async function startServer() {
 
   // Get integrated treasurer ledger list of transactions
   app.get("/api/treasurer/transactions", (req, res) => {
+    // Purge any auto-reconciled items before building integrated list
+    purgeMidtransAutoReconciliation();
+
     // 1. Get all paid SPP bills
     const sppIntegrated = sppBills
       .filter(b => b.status === 'paid')
@@ -5356,6 +5465,20 @@ async function startServer() {
       res.json({ success: true, updatedCount });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e?.message || String(e) });
+    }
+  });
+
+  // Endpoint to purge all auto-reconciliation records & categories
+  app.post("/api/treasurer/purge-auto-reconciliation", (req, res) => {
+    try {
+      const result = purgeMidtransAutoReconciliation();
+      res.json({
+        success: true,
+        message: `Berhasil menghapus ${result.treasurerPurged} entri BKU auto-rekonsiliasi, ${result.savingsPurged} entri tabungan auto-rekonsiliasi, dan ${result.categoriesPurged} kategori pos yang dibuat secara otomatis.`,
+        ...result
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || String(err) });
     }
   });
 
@@ -9327,7 +9450,7 @@ async function startServer() {
             if (targetAmount === 0 || currentSum + b.amount <= targetAmount) {
               currentSum += b.amount;
               if ('month' in b) {
-                selectedSpp.push(b);
+                selectedSpp.push(b as SppBill);
               } else {
                 selectedMisc.push(b);
               }
@@ -9699,7 +9822,7 @@ async function startServer() {
             if (currentSum + b.amount <= targetAmount) {
               currentSum += b.amount;
               if ('month' in b) {
-                selectedSpp.push(b);
+                selectedSpp.push(b as SppBill);
               } else {
                 selectedMisc.push(b);
               }
@@ -10139,28 +10262,9 @@ async function startServer() {
           continue;
         }
 
-        // Helper to ensure transaction is recorded in Treasurer Ledger
+        // Helper to ensure transaction is recorded in Treasurer Ledger (Disabled auto-recon entries per user directive)
         const ensureLedgerEntry = (cat: string, amt: number, desc: string, stdName?: string, stdNis?: string, stdId?: string) => {
-          const existing = treasurerTransactions.find(t => (cleanOrderId && t.orderId === cleanOrderId) || (cleanTxId && t.transactionId === cleanTxId));
-          if (!existing && amt > 0) {
-            treasurerTransactions.push({
-              id: `tr-midtrans-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-              type: "incoming",
-              category: cat || "Pembayaran Online Midtrans",
-              amount: amt,
-              description: desc,
-              recipientName: stdName || "Siswa",
-              fundingSource: "Kas Bank/Midtrans",
-              date: item.transactionTime ? parseMidtransTime(item.transactionTime).substring(0, 10) : new Date().toISOString().substring(0, 10),
-              paymentMethod: "bank",
-              nis: stdNis,
-              studentId: stdId,
-              orderId: cleanOrderId,
-              transactionId: cleanTxId,
-              createdBy: "Midtrans Bulk Report"
-            });
-            stateChanged = true;
-          }
+          // Auto-creation of ledger transactions disabled to prevent duplicate entries (pemasukan ganda) and unrequested pos categories.
         };
 
         // 1. Search SPP Bill

@@ -214,7 +214,7 @@ export default function TreasurerPanel({
       try {
         const parsed = JSON.parse(saved);
         if (Array.isArray(parsed)) {
-          return parsed.map(c => {
+          const mapped = parsed.map(c => {
             if (typeof c === 'string') {
               let type: 'incoming' | 'outgoing' | 'both' = 'both';
               const nameLower = c.toLowerCase();
@@ -237,6 +237,9 @@ export default function TreasurerPanel({
             }
             return { name, type };
           });
+          const cleaned = mapped.filter(c => !c.name.toLowerCase().includes('midtrans') && !c.name.toLowerCase().includes('transaksi online'));
+          localStorage.setItem('treasurer_categories', JSON.stringify(cleaned));
+          return cleaned;
         }
       } catch (e) {
         console.error("Gagal parse kategori disimpan: ", e);
@@ -694,7 +697,8 @@ export default function TreasurerPanel({
           data.forEach((tx: any) => {
             if (tx.category && typeof tx.category === 'string') {
               const trimmed = tx.category.trim();
-              if (trimmed && !['SPP', 'Tabungan'].includes(trimmed)) {
+              const catLower = trimmed.toLowerCase();
+              if (trimmed && !['spp', 'tabungan'].includes(catLower) && !catLower.includes('midtrans') && !catLower.includes('transaksi online')) {
                 fetchedCategories.add(trimmed);
               }
             }

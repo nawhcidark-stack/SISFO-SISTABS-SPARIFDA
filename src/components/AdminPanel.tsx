@@ -201,6 +201,7 @@ interface AdminPanelProps {
     title: string,
     message: string,
     type: "info" | "success" | "warning" | "payment",
+    category?: string,
   ) => Promise<boolean>;
   onRefresh: () => void;
   onCreateStudent: (data: {
@@ -2393,6 +2394,9 @@ export default function AdminPanel({
   const [notifType, setNotifType] = useState<
     "info" | "success" | "warning" | "payment"
   >("info");
+  const [notifCategory, setNotifCategory] = useState<
+    "kbm" | "pembayaran" | "bk" | "admin"
+  >("admin");
   const [broadcastProcessing, setBroadcastProcessing] = useState(false);
   const [broadcastSuccess, setBroadcastSuccess] = useState(false);
 
@@ -2458,6 +2462,7 @@ export default function AdminPanel({
       notifTitle,
       notifMessage,
       notifType,
+      notifCategory,
     );
     setBroadcastProcessing(false);
 
@@ -6081,7 +6086,7 @@ export default function AdminPanel({
               onSubmit={handleBroadcastSubmit}
               className="flex flex-col gap-3 pt-2"
             >
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
                     Topik / Judul Pesan
@@ -6092,14 +6097,29 @@ export default function AdminPanel({
                     placeholder="cth: Batas Akhir Pelunasan SPP Mei"
                     value={notifTitle}
                     onChange={(e) => setNotifTitle(e.target.value)}
-                    className="w-full px-3.5 py-2 border border-slate-200 rounded-lg focus:border-slate-905 focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs text-slate-800 font-semibold"
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs text-slate-800 font-semibold"
                   />
                 </div>
                 <div>
                   <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
-                    Kategori Visual
+                    Kategori Tab (KBM, SPP, BK, Admin)
                   </label>
-                  <div className="grid grid-cols-4 gap-2">
+                  <select
+                    value={notifCategory}
+                    onChange={(e) => setNotifCategory(e.target.value as any)}
+                    className="w-full px-3.5 py-2 border border-slate-200 rounded-lg focus:border-slate-900 focus:ring-1 focus:ring-slate-900 text-xs text-slate-800 font-bold bg-white"
+                  >
+                    <option value="kbm">📖 KBM & Akademik</option>
+                    <option value="pembayaran">💳 Pembayaran & Keuangan</option>
+                    <option value="bk">⚖️ BK & Konseling</option>
+                    <option value="admin">📢 Admin & Pengumuman Sekolah</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-widest mb-1.5">
+                    Tipe Tampilan
+                  </label>
+                  <div className="grid grid-cols-4 gap-1.5">
                     {[
                       { key: "info", label: "Info" },
                       { key: "success", label: "Done" },
@@ -6110,7 +6130,7 @@ export default function AdminPanel({
                         key={t.key}
                         type="button"
                         onClick={() => setNotifType(t.key as any)}
-                        className={`py-2 text-[10px] font-bold rounded-lg border transition-all text-center cursor-pointer uppercase tracking-wider ${
+                        className={`py-2 text-[9.5px] font-extrabold rounded-lg border transition-all text-center cursor-pointer uppercase tracking-wider ${
                           notifType === t.key
                             ? "bg-slate-900 border-slate-900 text-white shadow-sm"
                             : "border-slate-200 bg-white hover:bg-slate-50 text-slate-600"

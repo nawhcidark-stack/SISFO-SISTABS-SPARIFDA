@@ -5139,12 +5139,13 @@ async function startServer() {
 
   // Manual trigger broadcast notification
   app.post("/api/notifications/broadcast", (req, res) => {
-    const { title, message, type } = req.body;
+    const { title, message, type, category } = req.body;
     const notif: RealtimeNotification = {
       id: `notif-${Date.now()}`,
       title: title || "Pemberitahuan Sekolah",
       message: message || "Tidak ada pesan",
       type: type || "info",
+      category: category || "admin",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notif);

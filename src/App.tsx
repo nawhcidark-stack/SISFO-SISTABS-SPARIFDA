@@ -15,7 +15,8 @@ import Login from './components/Login';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
-import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar } from 'lucide-react';
+import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone } from 'lucide-react';
+import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
 export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -115,6 +116,7 @@ export default function App() {
     }
   }, [isNotifHistoryOpen, globalNotifications]);
   const [notifSearchQuery, setNotifSearchQuery] = useState<string>('');
+  const [activeNotifCategory, setActiveNotifCategory] = useState<NotifTabCategory>('semua');
   const [attendanceList, setAttendanceList] = useState<AttendanceLog[]>([]);
   const [homeroomsList, setHomeroomsList] = useState<HomeroomTeacher[]>([]);
   const [subjectTeachersList, setSubjectTeachersList] = useState<SubjectTeacher[]>([]);
@@ -1179,7 +1181,7 @@ export default function App() {
   };
 
   // Admin broadcast trigger
-  const handleBroadcastNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment'): Promise<boolean> => {
+  const handleBroadcastNotification = async (title: string, message: string, type: 'info' | 'success' | 'warning' | 'payment', category?: string): Promise<boolean> => {
     try {
       const res = await fetch('/api/notifications/broadcast', {
         method: 'POST',
@@ -1187,7 +1189,8 @@ export default function App() {
         body: JSON.stringify({
           title,
           message,
-          type
+          type,
+          category
         })
       });
       return res.ok;
@@ -1618,14 +1621,14 @@ export default function App() {
               </div>
 
               {/* Toolbar & Filter */}
-              <div className="p-4 border-b border-slate-100 flex flex-col gap-2 bg-white">
+              <div className="p-4 border-b border-slate-100 flex flex-col gap-2.5 bg-white">
                 <div className="relative">
                   <input
                     type="text"
                     placeholder="Cari notifikasi..."
                     value={notifSearchQuery}
                     onChange={(e) => setNotifSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-505"
+                    className="w-full pl-8 pr-3 py-1.5 border border-slate-200 rounded-lg text-xs focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-505 font-medium"
                   />
                   <div className="absolute left-2.5 top-2.5 text-slate-400">
                     <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1634,12 +1637,71 @@ export default function App() {
                   </div>
                 </div>
 
+                {/* Category Filter Tabs */}
+                {(() => {
+                  const roleFilteredNotifs = globalNotifications.filter(n => {
+                    if (role === 'student') {
+                      const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
+                                        n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
+                                        (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
+                      if (isBKNotif) {
+                        return Boolean(currentStudent && n.studentId === currentStudent.id);
+                      }
+                      return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
+                    }
+                    return true;
+                  });
+
+                  const counts = getCategoryCounts(roleFilteredNotifs, notifSearchQuery);
+
+                  return (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-none select-none">
+                      {CATEGORY_TABS.map((tab) => {
+                        const count = counts[tab.id] || 0;
+                        const isActive = activeNotifCategory === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveNotifCategory(tab.id)}
+                            className={`px-2.5 py-1 rounded-xl border text-[10.5px] font-extrabold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                              isActive ? tab.activeClass : tab.inactiveClass
+                            }`}
+                          >
+                            <span>{tab.shortLabel}</span>
+                            <span
+                              className={`px-1.5 py-0.2 text-[9px] rounded-full font-black ${
+                                isActive ? 'bg-white/20 text-white' : tab.badgeBg
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
                 {globalNotifications.length > 0 && (
-                  <div className="flex items-center justify-between text-[11px] pt-1.5">
-                    <span className="text-slate-500 font-semibold">Total: {globalNotifications.filter(n => {
-                      const q = notifSearchQuery.toLowerCase();
-                      return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
-                    }).length} pesan</span>
+                  <div className="flex items-center justify-between text-[11px] pt-1 border-t border-slate-50">
+                    <span className="text-slate-500 font-semibold">Total: {
+                      (() => {
+                        const roleFilteredNotifs = globalNotifications.filter(n => {
+                          if (role === 'student') {
+                            const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
+                                              n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
+                                              (n.message || '').toLowerCase().includes('bimbingan') || (n.message || '').toLowerCase().includes('konseling');
+                            if (isBKNotif) {
+                              return Boolean(currentStudent && n.studentId === currentStudent.id);
+                            }
+                            return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
+                          }
+                          return true;
+                        });
+                        return filterNotificationsByCategory(roleFilteredNotifs, activeNotifCategory, notifSearchQuery).length;
+                      })()
+                    } pesan</span>
                     <button
                       onClick={handleClearAllHistory}
                       className="inline-flex items-center gap-1 text-rose-600 hover:text-rose-800 font-bold transition-colors cursor-pointer uppercase tracking-wider text-[9px]"
@@ -1652,27 +1714,8 @@ export default function App() {
 
               {/* Message Feed */}
               <div className="flex-grow overflow-y-auto p-4 flex flex-col gap-3 min-h-0">
-                {globalNotifications.filter(n => {
-                  const q = notifSearchQuery.toLowerCase();
-                  return n.title.toLowerCase().includes(q) || n.message.toLowerCase().includes(q);
-                }).length === 0 ? (
-                  <div className="flex flex-col items-center justify-center text-center py-20 px-6 gap-3">
-                    <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 text-slate-350">
-                      <Bell size={20} className="text-slate-400" />
-                    </div>
-                    <div>
-                      <h4 className="font-bold text-slate-700 text-xs">Belum Ada Notifikasi</h4>
-                      <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-[240px] mx-auto">
-                        {notifSearchQuery ? 'Tidak menemukan notifikasi dengan kata kunci tersebut.' : 'Semua kuitansi pelunasan, mutasi pinjaman/tabungan, dan siaran pengumuman akan tercatat di sini.'}
-                      </p>
-                    </div>
-                  </div>
-                ) : (
-                  globalNotifications.filter(n => {
-                    const q = notifSearchQuery.toLowerCase();
-                    const matchesQuery = n.title.toLowerCase().includes(q) || (n.message || '').toLowerCase().includes(q);
-                    if (!matchesQuery) return false;
-
+                {(() => {
+                  const roleFilteredNotifs = globalNotifications.filter(n => {
                     if (role === 'student') {
                       const isBKNotif = n.id.includes('-scl-') || n.id.includes('-bk-') || n.id.includes('-sil-') || n.id.includes('-sdl-') ||
                                         n.title.toLowerCase().includes('bimbingan') || n.title.toLowerCase().includes('konseling') ||
@@ -1683,19 +1726,57 @@ export default function App() {
                       return !n.studentId || (currentStudent && n.studentId === currentStudent.id);
                     }
                     return true;
-                  }).map((notif) => {
+                  });
+
+                  const filtered = filterNotificationsByCategory(roleFilteredNotifs, activeNotifCategory, notifSearchQuery);
+
+                  if (filtered.length === 0) {
+                    return (
+                      <div className="flex flex-col items-center justify-center text-center py-20 px-6 gap-3">
+                        <div className="w-12 h-12 rounded-full bg-slate-50 flex items-center justify-center border border-slate-100 text-slate-350">
+                          <Bell size={20} className="text-slate-400" />
+                        </div>
+                        <div>
+                          <h4 className="font-bold text-slate-700 text-xs">Belum Ada Notifikasi Pada Kategori Ini</h4>
+                          <p className="text-[11px] text-slate-400 mt-1 leading-relaxed max-w-[240px] mx-auto">
+                            {notifSearchQuery ? 'Tidak menemukan notifikasi dengan kata kunci tersebut.' : 'Semua kuitansi pelunasan, mutasi pinjaman/tabungan, KBM, BK, dan siaran pengumuman akan tercatat di sini.'}
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return filtered.map((notif) => {
+                    const category = getNotificationCategory(notif);
+                    let badgePillClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                    let categoryLabel = 'Admin / Lainnya';
+
+                    if (category === 'kbm') {
+                      badgePillClass = 'bg-sky-100 text-sky-800 border-sky-200';
+                      categoryLabel = 'KBM & Akademik';
+                    } else if (category === 'pembayaran') {
+                      badgePillClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                      categoryLabel = 'Pembayaran & Keuangan';
+                    } else if (category === 'bk') {
+                      badgePillClass = 'bg-purple-100 text-purple-800 border-purple-200';
+                      categoryLabel = 'BK & Konseling';
+                    } else {
+                      badgePillClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
+                      categoryLabel = 'Admin & Pengumuman';
+                    }
+
                     let IconComp = Info;
-                    let badgeColor = 'bg-blue-50 text-blue-700 border-blue-100';
+                    let iconColor = 'bg-blue-50 text-blue-700 border-blue-100';
                     
                     if (notif.type === 'success') {
                       IconComp = CheckCircle2;
-                      badgeColor = 'bg-emerald-50 text-emerald-700 border-emerald-100';
+                      iconColor = 'bg-emerald-50 text-emerald-700 border-emerald-100';
                     } else if (notif.type === 'warning') {
                       IconComp = AlertTriangle;
-                      badgeColor = 'bg-amber-50 text-amber-700 border-amber-100';
+                      iconColor = 'bg-amber-50 text-amber-700 border-amber-100';
                     } else if (notif.type === 'payment') {
                       IconComp = CreditCard;
-                      badgeColor = 'bg-teal-50 text-teal-700 border-teal-100';
+                      iconColor = 'bg-teal-50 text-teal-700 border-teal-100';
                     }
 
                     return (
@@ -1704,13 +1785,18 @@ export default function App() {
                         layoutId={`notif-card-${notif.id}`}
                         className="p-3 bg-slate-50 border border-slate-200/60 rounded-xl hover:bg-slate-100/50 transition-all flex gap-3 relative group"
                       >
-                        <div className={`p-1.5 rounded-lg border h-fit self-start shrink-0 ${badgeColor}`}>
+                        <div className={`p-1.5 rounded-lg border h-fit self-start shrink-0 ${iconColor}`}>
                           <IconComp size={15} />
                         </div>
                         <div className="flex-grow min-w-0 pr-4">
-                          <span className="text-[9.5px] font-mono text-slate-550 block mb-0.5 font-bold">
-                            {formatNotifTime(notif.createdAt)}
-                          </span>
+                          <div className="flex items-center gap-1.5 mb-1 flex-wrap">
+                            <span className={`px-2 py-0.2 rounded-md border text-[8.5px] font-black uppercase tracking-wider ${badgePillClass}`}>
+                              {categoryLabel}
+                            </span>
+                            <span className="text-[9.5px] font-mono text-slate-500 font-bold ml-auto">
+                              {formatNotifTime(notif.createdAt)}
+                            </span>
+                          </div>
                           <h4 className="font-extrabold text-xs text-slate-950 leading-tight">
                             {notif.title}
                           </h4>
@@ -1727,8 +1813,8 @@ export default function App() {
                         </button>
                       </motion.div>
                     );
-                  })
-                )}
+                  });
+                })()}
               </div>
 
               {/* Footer */}

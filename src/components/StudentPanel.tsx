@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill, ClassSchedule, HomeroomTeacher, SubjectTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink, Calendar, ShoppingCart } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
 import { SavingsPassbookModal } from './SavingsPassbookModal';
 import { Pagination } from './Pagination';
+import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
 function StudentQrCode({ text, size = 140 }: { text: string; size?: number }) {
@@ -122,6 +123,7 @@ export default function StudentPanel({
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [mobileNotifSearch, setMobileNotifSearch] = useState('');
+  const [activeNotifCategory, setActiveNotifCategory] = useState<NotifTabCategory>('semua');
   const [mobileLogFilter, setMobileLogFilter] = useState<'all' | 'savings' | 'spp'>('all');
 
   const isNotificationForThisStudent = (n: RealtimeNotification, studentId?: string) => {
@@ -4043,14 +4045,14 @@ export default function StudentPanel({
                     </span>
                     Notifikasi Sekolah
                   </h3>
-                  <p className="text-slate-400 text-xs text-left">Pemberitahuan resmi iuran SPP, mutasi tabungan, absensi siswa, dan informasi sekolah.</p>
+                  <p className="text-slate-400 text-xs text-left">Pemberitahuan resmi iuran SPP, mutasi tabungan, KBM, bimbingan konseling (BK), dan informasi sekolah.</p>
                 </div>
 
-                {/* Filter Cari Notifikasi di Ponsel */}
-                <div className="relative mb-4">
+                {/* Filter Cari Notifikasi */}
+                <div className="relative mb-3">
                   <input
                     type="text"
-                    placeholder="Cari pengumuman..."
+                    placeholder="Cari pengumuman atau kata kunci..."
                     value={mobileNotifSearch}
                     onChange={(e) => setMobileNotifSearch(e.target.value)}
                     className="w-full pl-9 pr-4 py-2 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:border-indigo-600 transition-all font-semibold"
@@ -4060,21 +4062,52 @@ export default function StudentPanel({
                   </div>
                 </div>
 
+                {/* Category Filter Tabs */}
+                {(() => {
+                  const studentNotifs = notifications.filter(n => isNotificationForThisStudent(n, currentStudent?.id));
+                  const counts = getCategoryCounts(studentNotifs, mobileNotifSearch);
+
+                  return (
+                    <div className="flex items-center gap-1.5 overflow-x-auto pb-2.5 mb-3 scrollbar-none select-none">
+                      {CATEGORY_TABS.map((tab) => {
+                        const count = counts[tab.id] || 0;
+                        const isActive = activeNotifCategory === tab.id;
+                        return (
+                          <button
+                            key={tab.id}
+                            type="button"
+                            onClick={() => setActiveNotifCategory(tab.id)}
+                            className={`px-3 py-1.5 rounded-xl border text-[11px] font-extrabold transition-all flex items-center gap-1.5 whitespace-nowrap cursor-pointer ${
+                              isActive ? tab.activeClass : tab.inactiveClass
+                            }`}
+                          >
+                            <span>{tab.shortLabel}</span>
+                            <span
+                              className={`px-1.5 py-0.2 text-[9.5px] rounded-full font-black ${
+                                isActive ? 'bg-white/20 text-white' : tab.badgeBg
+                              }`}
+                            >
+                              {count}
+                            </span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  );
+                })()}
+
                 {/* List Notifikasi */}
                 <div className="flex flex-col gap-3.5 pr-1">
                   {(() => {
-                    const filtered = notifications.filter(n => {
-                      const matchesQuery = n.title.toLowerCase().includes(mobileNotifSearch.toLowerCase()) || 
-                                           (n.message || "").toLowerCase().includes(mobileNotifSearch.toLowerCase());
-                      return matchesQuery && isNotificationForThisStudent(n, currentStudent?.id);
-                    });
+                    const studentNotifs = notifications.filter(n => isNotificationForThisStudent(n, currentStudent?.id));
+                    const filtered = filterNotificationsByCategory(studentNotifs, activeNotifCategory, mobileNotifSearch);
 
                     if (filtered.length === 0) {
                       return (
                         <div className="text-center py-10 px-4 bg-slate-50 border border-slate-100 rounded-2xl flex flex-col items-center justify-center text-slate-400 gap-2.5">
                           <Bell size={24} className="text-slate-300 stroke-1" />
                           <div>
-                            <p className="font-bold text-slate-600 text-[11px]">Belum Ada Pengumuman</p>
+                            <p className="font-bold text-slate-600 text-[11px]">Belum Ada Pengumuman Pada Kategori Ini</p>
                             <p className="text-[10px] text-slate-400 mt-0.5">Semua notifikasi penting wali murid akan muncul di sini.</p>
                           </div>
                         </div>
@@ -4082,21 +4115,32 @@ export default function StudentPanel({
                     }
 
                     return filtered.map((notif) => {
-                      let bgClass = 'bg-blue-50/55 border-blue-150';
-                      let barColor = 'bg-blue-650 bg-blue-600';
+                      const category = getNotificationCategory(notif);
+                      let bgClass = 'bg-slate-50/70 border-slate-200';
+                      let barColor = 'bg-slate-600';
                       let labelText = 'Info Sekolah';
-                      if (notif.type === 'success') { 
-                        bgClass = 'bg-emerald-50/50 border-emerald-150'; 
-                        barColor = 'bg-emerald-600'; 
-                        labelText = 'Transaksi Berhasil'; 
-                      } else if (notif.type === 'warning') { 
-                        bgClass = 'bg-amber-50/60 border-amber-150'; 
-                        barColor = 'bg-amber-500'; 
-                        labelText = 'Pemberitahuan Rekening / Sandi'; 
-                      } else if (notif.type === 'payment') { 
-                        bgClass = 'bg-indigo-50/50 border-indigo-150'; 
-                        barColor = 'bg-indigo-600'; 
-                        labelText = 'Pembayaran Terverifikasi'; 
+                      let categoryPillClass = 'bg-slate-100 text-slate-700 border-slate-200';
+
+                      if (category === 'kbm') {
+                        bgClass = 'bg-sky-50/50 border-sky-150';
+                        barColor = 'bg-sky-600';
+                        labelText = 'KBM & Akademik';
+                        categoryPillClass = 'bg-sky-100 text-sky-800 border-sky-200';
+                      } else if (category === 'pembayaran') {
+                        bgClass = 'bg-emerald-50/50 border-emerald-150';
+                        barColor = 'bg-emerald-600';
+                        labelText = 'Pembayaran & Keuangan';
+                        categoryPillClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                      } else if (category === 'bk') {
+                        bgClass = 'bg-purple-50/50 border-purple-150';
+                        barColor = 'bg-purple-600';
+                        labelText = 'BK & Konseling';
+                        categoryPillClass = 'bg-purple-100 text-purple-800 border-purple-200';
+                      } else {
+                        bgClass = 'bg-indigo-50/40 border-indigo-150';
+                        barColor = 'bg-indigo-600';
+                        labelText = 'Admin & Pengumuman';
+                        categoryPillClass = 'bg-indigo-100 text-indigo-800 border-indigo-200';
                       }
 
                       // Robust helper to resolve descriptions from any source or keyword patterns
@@ -4109,7 +4153,6 @@ export default function StudentPanel({
                         if (anyNotif.content && anyNotif.content.trim() !== '') return anyNotif.content;
                         if (anyNotif.messageText && anyNotif.messageText.trim() !== '') return anyNotif.messageText;
 
-                        // Fallbacks built dynamically to ensure clear user-facing descriptions
                         const lowerTitle = (n.title || "").toLowerCase();
                         if (lowerTitle.includes("identitas")) {
                           return "Data administrasi dan identitas resmi SMP MA'ARIF NU PANDAAN berhasil dimutakhirkan oleh Administrator.";
@@ -4143,8 +4186,12 @@ export default function StudentPanel({
                           
                           {/* Title and Badge Metadata Row */}
                           <div className="flex justify-between items-start gap-3 pl-2.5">
-                            <div className="flex flex-col gap-0.5">
-                              <span className="text-[8px] font-black uppercase tracking-widest text-slate-500 block mb-0.5">{labelText}</span>
+                            <div className="flex flex-col gap-1">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className={`px-2 py-0.5 rounded-md border text-[8.5px] font-black uppercase tracking-wider ${categoryPillClass}`}>
+                                  {labelText}
+                                </span>
+                              </div>
                               <h4 className="font-extrabold text-slate-900 text-xs sm:text-sm leading-tight pr-10">{notif.title}</h4>
                             </div>
                             <span className="text-[9px] text-slate-500 font-mono font-bold whitespace-nowrap hidden sm:inline-block">
@@ -4160,7 +4207,7 @@ export default function StudentPanel({
                           {/* High Contrast Detailed Message Grid (Keterangan) */}
                           <div className="pl-2.5 mt-1 pb-0.5">
                             <span className="text-[9px] font-black text-slate-700 uppercase tracking-wider block mb-1">Keterangan:</span>
-                            <p className="text-[12px] sm:text-xs text-slate-900 leading-relaxed font-bold break-words px-2.5 py-1.5 bg-white/70 border border-slate-250/25 rounded-lg">
+                            <p className="text-[12px] sm:text-xs text-slate-900 leading-relaxed font-bold break-words px-2.5 py-1.5 bg-white/80 border border-slate-250/25 rounded-lg">
                               {fullMessage}
                             </p>
                           </div>

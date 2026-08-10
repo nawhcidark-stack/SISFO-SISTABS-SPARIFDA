@@ -6,8 +6,9 @@ import {
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
   Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer, Lock,
-  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2
+  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2, ShieldAlert, Megaphone, CreditCard
 } from 'lucide-react';
+import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';
 
 const getWIBDateStr = (date: Date = new Date()): string => {
   const wibTime = new Date(date.getTime() + 7 * 60 * 60 * 1000);
@@ -91,6 +92,7 @@ export default function SubjectTeacherPanel({
   const [systemNotifications, setSystemNotifications] = useState<RealtimeNotification[]>([]);
   const [loadingNotifications, setLoadingNotifications] = useState<boolean>(false);
   const [notifSearch, setNotifSearch] = useState<string>('');
+  const [activeNotifCategory, setActiveNotifCategory] = useState<NotifTabCategory>('semua');
 
   // Principal Work Programs state
   const [workPrograms, setWorkPrograms] = useState<any[]>([]);
@@ -2089,6 +2091,36 @@ export default function SubjectTeacherPanel({
             </div>
           </div>
 
+          {/* Category Filter Bar */}
+          <div className="px-5 py-3 border-b border-slate-100 bg-slate-50/50 flex items-center gap-2 overflow-x-auto scrollbar-none select-none">
+            {(() => {
+              const counts = getCategoryCounts(systemNotifications, notifSearch);
+              return CATEGORY_TABS.map((tab) => {
+                const count = counts[tab.id] || 0;
+                const isActive = activeNotifCategory === tab.id;
+                return (
+                  <button
+                    key={tab.id}
+                    type="button"
+                    onClick={() => setActiveNotifCategory(tab.id)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap cursor-pointer ${
+                      isActive ? tab.activeClass : tab.inactiveClass
+                    }`}
+                  >
+                    <span>{tab.label}</span>
+                    <span
+                      className={`px-1.5 py-0.2 text-[10px] rounded-full font-black ${
+                        isActive ? 'bg-white/20 text-white' : tab.badgeBg
+                      }`}
+                    >
+                      {count}
+                    </span>
+                  </button>
+                );
+              });
+            })()}
+          </div>
+
           {loadingNotifications ? (
             <div className="py-20 flex flex-col items-center justify-center text-slate-400 font-semibold font-sans">
               <Loader2 className="animate-spin text-slate-500 mb-2" size={24} />
@@ -2101,36 +2133,43 @@ export default function SubjectTeacherPanel({
             </div>
           ) : (
             (() => {
-              const q = notifSearch.toLowerCase().trim();
-              const filtered = systemNotifications.filter(n => 
-                n.title.toLowerCase().includes(q) || 
-                n.message.toLowerCase().includes(q)
-              );
+              const filtered = filterNotificationsByCategory(systemNotifications, activeNotifCategory, notifSearch);
+
               if (filtered.length === 0) {
                 return (
-                  <div className="py-20 text-center text-slate-400 font-semibold text-xs animate-pulse">
-                    Tidak ada pengumuman yang sesuai dengan pencarian Anda.
+                  <div className="py-20 text-center text-slate-400 font-semibold text-xs flex flex-col items-center justify-center gap-2">
+                    <Bell size={24} className="text-slate-300 stroke-[1.5]" />
+                    <span>Tidak ada pengumuman yang sesuai dengan kategori atau pencarian Anda.</span>
                   </div>
                 );
               }
               return (
                 <div className="divide-y divide-slate-150 bg-white leading-relaxed">
                   {filtered.map((notif) => {
-                    let badgeClass = 'bg-slate-50 text-slate-650 border-slate-200';
-                    if (notif.type === 'info') badgeClass = 'bg-sky-50 text-sky-700 border-sky-100';
-                    else if (notif.type === 'success') badgeClass = 'bg-emerald-50 text-emerald-700 border-emerald-100';
-                    else if (notif.type === 'warning') badgeClass = 'bg-amber-50 text-amber-700 border-amber-100';
-                    else if (notif.type === 'payment') badgeClass = 'bg-indigo-50 text-indigo-700 border-indigo-100';
+                    const category = getNotificationCategory(notif);
+                    let badgeClass = 'bg-slate-100 text-slate-700 border-slate-200';
+                    let labelText = 'Admin & Pengumuman';
+
+                    if (category === 'kbm') {
+                      badgeClass = 'bg-sky-100 text-sky-800 border-sky-200';
+                      labelText = 'KBM & Akademik';
+                    } else if (category === 'pembayaran') {
+                      badgeClass = 'bg-emerald-100 text-emerald-800 border-emerald-200';
+                      labelText = 'Pembayaran & Keuangan';
+                    } else if (category === 'bk') {
+                      badgeClass = 'bg-purple-100 text-purple-800 border-purple-200';
+                      labelText = 'BK & Konseling';
+                    }
 
                     return (
-                      <div key={notif.id} className="p-5 hover:bg-slate-50/20 transition-all flex gap-4">
+                      <div key={notif.id} className="p-5 hover:bg-slate-50/50 transition-all flex gap-4">
                         <div className="h-10 w-10 shrink-0 rounded-xl bg-slate-50 border border-slate-150 flex items-center justify-center text-slate-500 shadow-inner">
-                          <Bell size={18} className="text-slate-605" />
+                          <Bell size={18} className="text-indigo-600" />
                         </div>
                         <div className="flex-grow">
                           <div className="flex items-center gap-2 flex-wrap mb-1.5 select-none">
-                            <span className={`px-2 py-0.5 rounded-md border text-[8.5px] font-black uppercase tracking-wider ${badgeClass}`}>
-                              {notif.type}
+                            <span className={`px-2 py-0.5 rounded-md border text-[9px] font-black uppercase tracking-wider ${badgeClass}`}>
+                              {labelText}
                             </span>
                             <span className="text-[10px] text-slate-400 font-semibold font-mono">
                               {new Date(notif.createdAt).toLocaleDateString('id-ID', { hour: 'numeric', minute: 'numeric', weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}

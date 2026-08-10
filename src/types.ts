@@ -121,6 +121,7 @@ export interface RealtimeNotification {
   title: string;
   message: string;
   type: 'info' | 'success' | 'warning' | 'payment';
+  category?: 'kbm' | 'pembayaran' | 'bk' | 'admin' | string;
   createdAt: string;
 }
 

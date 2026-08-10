@@ -113,6 +113,8 @@ export interface MiscBill {
   paymentMethod?: string;
   orderId?: string;
   transactionId?: string;
+  isMonthly?: boolean;
+  month?: string;
 }
 
 export interface RealtimeNotification {

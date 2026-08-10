@@ -5804,9 +5804,9 @@ async function startServer() {
     res.json(miscBills);
   });
 
-  // Create miscellaneous bills (single, class, grade, or all)
+  // Create miscellaneous bills (single, class, grade, or all, optional monthly)
   app.post("/api/admin/create-misc-bill", (req, res) => {
-    const { studentId, targetType, targetClass, targetValue, title, amount } = req.body;
+    const { studentId, targetType, targetClass, targetValue, title, amount, isMonthly, month, months, selectedMonths } = req.body;
     if (!title || !amount || Number(amount) <= 0) {
       return res.status(400).json({ error: "Judul tagihan dan jumlah pembayaran harus diisi dengan benar." });
     }
@@ -5850,31 +5850,74 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa penerima tagihan tidak ditemukan." });
     }
 
+    const monthList: string[] = isMonthly
+      ? (Array.isArray(selectedMonths) && selectedMonths.length > 0
+          ? selectedMonths
+          : Array.isArray(months) && months.length > 0
+          ? months
+          : month ? [month] : [])
+      : [];
+
     const newBills: MiscBill[] = [];
     const timestampStr = Date.now();
-    targets.forEach((s, idx) => {
-      const bill: MiscBill = {
-        id: `misc-std-${s.id}-${timestampStr}-${idx}`,
-        studentId: s.id,
-        title: title.trim(),
-        amount: Number(amount),
-        status: "unpaid",
-        createdAt: new Date().toISOString()
-      };
-      miscBills.push(bill);
-      newBills.push(bill);
 
-      // Create notification
-      const notification: RealtimeNotification = {
-        id: `notif-misc-${timestampStr}-${idx}`,
-        studentId: s.id,
-        title: "Tagihan Pembayaran Baru",
-        message: `Telah terbit tagihan baru "${title.trim()}" sebesar Rp ${Number(amount).toLocaleString("id-ID")}.`,
-        type: "payment",
-        createdAt: new Date().toISOString()
-      };
-      broadcastNotification(notification);
-    });
+    if (isMonthly && monthList.length > 0) {
+      targets.forEach((s, sIdx) => {
+        monthList.forEach((m, mIdx) => {
+          const fullTitle = title.trim().toLowerCase().includes(m.toLowerCase())
+            ? title.trim()
+            : `${title.trim()} (${m})`;
+
+          const bill: MiscBill = {
+            id: `misc-std-${s.id}-${timestampStr}-${sIdx}-${mIdx}`,
+            studentId: s.id,
+            title: fullTitle,
+            amount: Number(amount),
+            status: "unpaid",
+            createdAt: new Date().toISOString(),
+            isMonthly: true,
+            month: m
+          };
+          miscBills.push(bill);
+          newBills.push(bill);
+
+          const notification: RealtimeNotification = {
+            id: `notif-misc-${timestampStr}-${sIdx}-${mIdx}`,
+            studentId: s.id,
+            title: "Tagihan Bulanan Baru",
+            message: `Telah terbit tagihan bulanan baru "${fullTitle}" (${m}) sebesar Rp ${Number(amount).toLocaleString("id-ID")}.`,
+            type: "payment",
+            createdAt: new Date().toISOString()
+          };
+          broadcastNotification(notification);
+        });
+      });
+    } else {
+      targets.forEach((s, idx) => {
+        const bill: MiscBill = {
+          id: `misc-std-${s.id}-${timestampStr}-${idx}`,
+          studentId: s.id,
+          title: title.trim(),
+          amount: Number(amount),
+          status: "unpaid",
+          createdAt: new Date().toISOString(),
+          isMonthly: Boolean(isMonthly),
+          month: month || undefined
+        };
+        miscBills.push(bill);
+        newBills.push(bill);
+
+        const notification: RealtimeNotification = {
+          id: `notif-misc-${timestampStr}-${idx}`,
+          studentId: s.id,
+          title: "Tagihan Pembayaran Baru",
+          message: `Telah terbit tagihan baru "${title.trim()}" sebesar Rp ${Number(amount).toLocaleString("id-ID")}.`,
+          type: "payment",
+          createdAt: new Date().toISOString()
+        };
+        broadcastNotification(notification);
+      });
+    }
 
     saveState();
     res.json({ success: true, count: newBills.length, bills: newBills });
@@ -5956,7 +5999,7 @@ async function startServer() {
 
   // Update/Edit a miscellaneous bill details (Revisi Detail Tagihan)
   app.post("/api/admin/update-misc-bill", (req, res) => {
-    const { billId, title, amount, updateAllWithSameTitle } = req.body;
+    const { billId, title, amount, updateAllWithSameTitle, isMonthly, month } = req.body;
     const bill = miscBills.find(b => b.id === billId);
     if (!bill) {
       return res.status(404).json({ error: "Tagihan tidak ditemukan." });
@@ -5988,10 +6031,14 @@ async function startServer() {
           if (b.status === "unpaid") {
             b.title = newTitleClean;
             b.amount = amountNum;
+            if (isMonthly !== undefined) b.isMonthly = isMonthly;
+            if (month !== undefined) b.month = month;
             unpaidCount++;
           } else if (b.status === "paid") {
             // For paid bills, we ONLY update the title for consistency, never change the amount already paid
             b.title = newTitleClean;
+            if (isMonthly !== undefined) b.isMonthly = isMonthly;
+            if (month !== undefined) b.month = month;
             paidCount++;
           }
         }
@@ -6007,6 +6054,8 @@ async function startServer() {
       // Single update
       bill.title = newTitleClean;
       bill.amount = amountNum;
+      if (isMonthly !== undefined) bill.isMonthly = isMonthly;
+      if (month !== undefined) bill.month = month;
       saveState();
       return res.json({ success: true, bill });
     }

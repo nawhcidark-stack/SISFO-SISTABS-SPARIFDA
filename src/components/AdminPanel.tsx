@@ -399,6 +399,7 @@ export default function AdminPanel({
   }, [students, selectedStudent?.id]);
 
   // States for Pembayaran Lain-lain
+  const ACADEMIC_MONTHS = ["Juli", "Agustus", "September", "Oktober", "November", "Desember", "Januari", "Februari", "Maret", "April", "Mei", "Juni"];
   const [isCreateMiscOpen, setIsCreateMiscOpen] = useState(false);
   const [miscTargetType, setMiscTargetType] = useState<"all" | "grade" | "class" | "single">("all");
   const [miscTargetGrade, setMiscTargetGrade] = useState("");
@@ -410,6 +411,10 @@ export default function AdminPanel({
   const [miscGradeFilter, setMiscGradeFilter] = useState<string>("all");
   const [miscClassFilter, setMiscClassFilter] = useState<string>("all");
   const [miscStatusFilter, setMiscStatusFilter] = useState<"all" | "unpaid" | "paid">("all");
+  const [miscTypeFilter, setMiscTypeFilter] = useState<"all" | "once" | "monthly">("all");
+  const [miscMonthFilter, setMiscMonthFilter] = useState<string>("all");
+  const [miscBillingType, setMiscBillingType] = useState<"once" | "monthly">("once");
+  const [miscSelectedMonths, setMiscSelectedMonths] = useState<string[]>([]);
   const [selectedMiscBillIds, setSelectedMiscBillIds] = useState<string[]>([]);
   const [miscStudentSearchQuery, setMiscStudentSearchQuery] = useState("");
   const [isSubmittingMisc, setIsSubmittingMisc] = useState(false);
@@ -461,6 +466,8 @@ export default function AdminPanel({
   const [editingMiscBill, setEditingMiscBill] = useState<any | null>(null);
   const [editMiscTitle, setEditMiscTitle] = useState("");
   const [editMiscAmount, setEditMiscAmount] = useState("");
+  const [editMiscIsMonthly, setEditMiscIsMonthly] = useState(false);
+  const [editMiscMonth, setEditMiscMonth] = useState("");
   const [isUpdatingMisc, setIsUpdatingMisc] = useState(false);
   const [updateAllWithSameTitle, setUpdateAllWithSameTitle] = useState(false);
 
@@ -492,6 +499,10 @@ export default function AdminPanel({
       alert("Harap pilih siswa terlebih dahulu.");
       return;
     }
+    if (miscBillingType === "monthly" && miscSelectedMonths.length === 0) {
+      alert("Harap pilih minimal satu bulan untuk tagihan bulanan.");
+      return;
+    }
 
     try {
       setIsSubmittingMisc(true);
@@ -506,7 +517,9 @@ export default function AdminPanel({
             ? miscTargetStudentId
             : "all",
         title: miscTitle.trim(),
-        amount: amountNum
+        amount: amountNum,
+        isMonthly: miscBillingType === "monthly",
+        selectedMonths: miscBillingType === "monthly" ? miscSelectedMonths : []
       };
 
       const res = await fetch("/api/admin/create-misc-bill", {
@@ -526,6 +539,8 @@ export default function AdminPanel({
       setMiscTargetClass("");
       setMiscTargetStudentId("");
       setMiscStudentSearchQuery("");
+      setMiscBillingType("once");
+      setMiscSelectedMonths([]);
       onRefresh();
     } catch (err: any) {
       console.error(err);
@@ -731,6 +746,8 @@ export default function AdminPanel({
     setEditingMiscBill(bill);
     setEditMiscTitle(bill.title);
     setEditMiscAmount(String(bill.amount));
+    setEditMiscIsMonthly(Boolean(bill.isMonthly));
+    setEditMiscMonth(bill.month || "");
     setUpdateAllWithSameTitle(false);
     setIsEditMiscOpen(true);
   };
@@ -759,7 +776,9 @@ export default function AdminPanel({
           billId: editingMiscBill.id,
           title: editMiscTitle.trim(),
           amount: amountNum,
-          updateAllWithSameTitle
+          updateAllWithSameTitle,
+          isMonthly: editMiscIsMonthly,
+          month: editMiscIsMonthly ? editMiscMonth : ""
         })
       });
       const data = await res.json();
@@ -6332,6 +6351,39 @@ export default function AdminPanel({
                     </button>
                   </div>
                 </div>
+
+                {/* Filter Tipe Tagihan */}
+                <div className="flex items-center gap-2">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Tipe:</span>
+                  <select
+                    value={miscTypeFilter}
+                    onChange={(e) => setMiscTypeFilter(e.target.value as any)}
+                    className="px-3 py-1.5 text-xs font-bold border border-slate-200 focus:border-slate-400 bg-slate-50 focus:bg-white rounded-xl focus:outline-none transition-all text-slate-700 cursor-pointer shadow-xs"
+                  >
+                    <option value="all">Semua Tipe</option>
+                    <option value="once">Sekali Bayar</option>
+                    <option value="monthly">Tagihan Bulanan</option>
+                  </select>
+                </div>
+
+                {/* Filter Bulan (jika tipe bukan once) */}
+                {miscTypeFilter !== "once" && (
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Bulan:</span>
+                    <select
+                      value={miscMonthFilter}
+                      onChange={(e) => setMiscMonthFilter(e.target.value)}
+                      className="px-3 py-1.5 text-xs font-bold border border-slate-200 focus:border-slate-400 bg-slate-50 focus:bg-white rounded-xl focus:outline-none transition-all text-slate-700 cursor-pointer shadow-xs"
+                    >
+                      <option value="all">Semua Bulan</option>
+                      {ACADEMIC_MONTHS.map((m) => (
+                        <option key={m} value={m}>
+                          {m}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                )}
               </div>
             </div>
 
@@ -6346,6 +6398,9 @@ export default function AdminPanel({
                           const s = students.find(st => st.id === bill.studentId);
                           if (miscGradeFilter !== "all" && (!s || !s.class || !s.class.startsWith(miscGradeFilter))) return false;
                           if (miscClassFilter !== "all" && (!s || s.class !== miscClassFilter)) return false;
+                          if (miscTypeFilter === "once" && bill.isMonthly) return false;
+                          if (miscTypeFilter === "monthly" && !bill.isMonthly) return false;
+                          if (miscMonthFilter !== "all" && bill.month !== miscMonthFilter) return false;
                           const matchText = (
                             bill.title.toLowerCase().includes(miscSearch.toLowerCase()) ||
                             bill.id.toLowerCase().includes(miscSearch.toLowerCase()) ||
@@ -6399,6 +6454,10 @@ export default function AdminPanel({
                         if (miscClassFilter !== "all") {
                           if (!s || s.class !== miscClassFilter) return false;
                         }
+
+                        if (miscTypeFilter === "once" && bill.isMonthly) return false;
+                        if (miscTypeFilter === "monthly" && !bill.isMonthly) return false;
+                        if (miscMonthFilter !== "all" && bill.month !== miscMonthFilter) return false;
 
                         const matchText = (
                           bill.title.toLowerCase().includes(miscSearch.toLowerCase()) ||
@@ -6456,9 +6515,20 @@ export default function AdminPanel({
                               </div>
                             </td>
                             <td className="px-5 py-4">
-                              <div className="flex flex-col">
+                              <div className="flex flex-col gap-0.5">
                                 <span className="font-bold text-slate-800">{bill.title}</span>
-                                <span className="text-[10px] text-slate-400 font-mono mt-0.5">Ref ID: {bill.id.toUpperCase()}</span>
+                                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                  {bill.isMonthly ? (
+                                    <span className="px-1.5 py-0.5 bg-purple-50 text-purple-700 border border-purple-200 rounded font-bold text-[9px] uppercase tracking-wide">
+                                      Bulanan {bill.month ? `• ${bill.month}` : ''}
+                                    </span>
+                                  ) : (
+                                    <span className="px-1.5 py-0.5 bg-slate-100 text-slate-600 border border-slate-200 rounded font-semibold text-[9px] uppercase tracking-wide">
+                                      Sekali Bayar
+                                    </span>
+                                  )}
+                                  <span className="text-[10px] text-slate-400 font-mono">Ref ID: {bill.id.toUpperCase()}</span>
+                                </div>
                               </div>
                             </td>
                             <td className="px-5 py-4">
@@ -6998,11 +7068,118 @@ export default function AdminPanel({
                       </div>
                     )}
 
+                    {/* Tipe Frekuensi Tagihan: Sekali Bayar vs Bulanan */}
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-bold text-slate-700">Tipe Frekuensi Tagihan:</label>
+                      <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl border border-slate-200 text-xs">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setMiscBillingType("once");
+                            setMiscSelectedMonths([]);
+                          }}
+                          className={`py-2 rounded-lg font-bold text-center transition-all cursor-pointer ${
+                            miscBillingType === "once"
+                              ? "bg-white text-slate-900 shadow-2xs"
+                              : "text-slate-500 hover:text-slate-700"
+                          }`}
+                        >
+                          Sekali Bayar (Insidental)
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => setMiscBillingType("monthly")}
+                          className={`py-2 rounded-lg font-bold text-center transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                            miscBillingType === "monthly"
+                              ? "bg-purple-700 text-white shadow-2xs font-extrabold"
+                              : "text-slate-500 hover:text-purple-700"
+                          }`}
+                        >
+                          <Calendar size={13} />
+                          <span>Tagihan Bulanan</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Jika Tagihan Bulanan: Opsi Pilih Bulan */}
+                    {miscBillingType === "monthly" && (
+                      <div className="flex flex-col gap-2 p-3 bg-purple-50/60 border border-purple-200 rounded-xl text-left">
+                        <div className="flex flex-wrap justify-between items-center gap-1">
+                          <label className="font-bold text-purple-900 text-xs flex items-center gap-1.5">
+                            <Calendar size={13} className="text-purple-600" />
+                            <span>Pilih Bulan Tagihan ({miscSelectedMonths.length} bulan):</span>
+                          </label>
+                          <div className="flex items-center gap-1 text-[10px]">
+                            <button
+                              type="button"
+                              onClick={() => setMiscSelectedMonths([...ACADEMIC_MONTHS])}
+                              className="text-purple-700 hover:underline font-bold px-1"
+                            >
+                              Semua
+                            </button>
+                            <span className="text-purple-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setMiscSelectedMonths(["Juli", "Agustus", "September", "Oktober", "November", "Desember"])}
+                              className="text-purple-700 hover:underline font-bold px-1"
+                            >
+                              Sem 1
+                            </button>
+                            <span className="text-purple-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setMiscSelectedMonths(["Januari", "Februari", "Maret", "April", "Mei", "Juni"])}
+                              className="text-purple-700 hover:underline font-bold px-1"
+                            >
+                              Sem 2
+                            </button>
+                            <span className="text-purple-300">|</span>
+                            <button
+                              type="button"
+                              onClick={() => setMiscSelectedMonths([])}
+                              className="text-red-600 hover:underline font-bold px-1"
+                            >
+                              Reset
+                            </button>
+                          </div>
+                        </div>
+
+                        <div className="grid grid-cols-3 sm:grid-cols-4 gap-1.5 mt-1">
+                          {ACADEMIC_MONTHS.map((m) => {
+                            const isSelected = miscSelectedMonths.includes(m);
+                            return (
+                              <button
+                                type="button"
+                                key={m}
+                                onClick={() => {
+                                  if (isSelected) {
+                                    setMiscSelectedMonths(prev => prev.filter(x => x !== m));
+                                  } else {
+                                    setMiscSelectedMonths(prev => [...prev, m]);
+                                  }
+                                }}
+                                className={`py-1.5 px-2 rounded-lg text-[11px] font-bold border transition-all cursor-pointer flex items-center justify-center gap-1 ${
+                                  isSelected
+                                    ? "bg-purple-700 text-white border-purple-700 shadow-2xs"
+                                    : "bg-white text-slate-700 border-purple-150 hover:bg-purple-100/50"
+                                }`}
+                              >
+                                <span>{m}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
+                        <p className="text-[10px] text-purple-700 mt-0.5 leading-snug">
+                          * Setiap bulan yang dicentang akan otomatis menjadi tagihan terpisah dengan label bulan pada judul.
+                        </p>
+                      </div>
+                    )}
+
                     <div className="flex flex-col gap-1.5">
                       <label className="font-bold text-slate-700">Nama / Judul Iuran:</label>
                       <input
                         type="text"
-                        placeholder="Contoh: Dana Kemanusiaan, Iuran Wisuda 2026, Seragam Olahraga"
+                        placeholder={miscBillingType === "monthly" ? "Contoh: Uang Katering, Spp Les, Antar Jemput" : "Contoh: Dana Kemanusiaan, Iuran Wisuda 2026, Seragam Olahraga"}
                         value={miscTitle}
                         onChange={(e) => setMiscTitle(e.target.value)}
                         className="w-full px-3 py-2 border border-slate-200 focus:border-slate-400 focus:outline-none rounded-xl"
@@ -7173,6 +7350,50 @@ export default function AdminPanel({
                         )}
                       </div>
                     </div>
+
+                    <div className="flex flex-col gap-1.5">
+                      <label className="font-bold text-slate-700">Tipe Frekuensi:</label>
+                      <div className="flex items-center gap-4 bg-slate-50 p-2 rounded-xl border border-slate-200">
+                        <label className="flex items-center gap-1.5 cursor-pointer text-xs font-semibold text-slate-700">
+                          <input
+                            type="radio"
+                            name="editIsMonthly"
+                            checked={!editMiscIsMonthly}
+                            onChange={() => setEditMiscIsMonthly(false)}
+                            className="text-indigo-600 focus:ring-indigo-500 cursor-pointer"
+                          />
+                          <span>Sekali Bayar</span>
+                        </label>
+                        <label className="flex items-center gap-1.5 cursor-pointer text-xs font-bold text-purple-700">
+                          <input
+                            type="radio"
+                            name="editIsMonthly"
+                            checked={editMiscIsMonthly}
+                            onChange={() => setEditMiscIsMonthly(true)}
+                            className="text-purple-600 focus:ring-purple-500 cursor-pointer"
+                          />
+                          <span>Tagihan Bulanan</span>
+                        </label>
+                      </div>
+                    </div>
+
+                    {editMiscIsMonthly && (
+                      <div className="flex flex-col gap-1.5">
+                        <label className="font-bold text-slate-700">Bulan Tagihan:</label>
+                        <select
+                          value={editMiscMonth}
+                          onChange={(e) => setEditMiscMonth(e.target.value)}
+                          className="w-full px-3 py-2 border border-slate-200 bg-white focus:border-purple-500 focus:outline-none rounded-xl text-xs font-bold"
+                        >
+                          <option value="">-- Pilih Bulan --</option>
+                          {ACADEMIC_MONTHS.map((m) => (
+                            <option key={m} value={m}>
+                              {m}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
+                    )}
 
                     <div className="flex flex-col gap-1.5">
                       <label className="font-bold text-slate-700">Nama / Judul Iuran:</label>

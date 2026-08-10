@@ -2334,6 +2334,11 @@ export default function StudentPanel({
                                   <span className="text-[9px] font-mono text-slate-400 block tracking-wider uppercase">Ref: {bill.id.substring(0, 10).toUpperCase()}</span>
                                   <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
                                     <h6 className="font-bold text-slate-800 text-xs leading-tight">{bill.title}</h6>
+                                    {bill.isMonthly && (
+                                      <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-purple-50 text-purple-700 border border-purple-200 uppercase">
+                                        Bulanan {bill.month ? `• ${bill.month}` : ''}
+                                      </span>
+                                    )}
                                     {isPending && (
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
                                         <Clock size={8} /> Pending
@@ -2409,7 +2414,14 @@ export default function StudentPanel({
                             <div key={bill.id} className="p-4 rounded-xl border border-slate-250 bg-slate-50/50 hover:border-slate-350 transition-all flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
                               <div className="flex-1">
                                 <span className="text-[9px] font-mono text-slate-400 block tracking-wider uppercase">Ref: {bill.id.substring(0, 10).toUpperCase()}</span>
-                                <h6 className="font-bold text-slate-800 text-xs mt-0.5 leading-tight">{bill.title}</h6>
+                                <div className="flex items-center gap-1.5 flex-wrap mt-0.5">
+                                  <h6 className="font-bold text-slate-800 text-xs leading-tight">{bill.title}</h6>
+                                  {bill.isMonthly && (
+                                    <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-purple-50 text-purple-700 border border-purple-200 uppercase">
+                                      Bulanan {bill.month ? `• ${bill.month}` : ''}
+                                    </span>
+                                  )}
+                                </div>
                                 <p className="text-[9px] text-slate-500 mt-1 flex flex-wrap gap-x-2 gap-y-1">
                                   <span>Lunas: {bill.paidAt ? new Date(bill.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : '-'}</span>
                                   <span>&bull;</span>

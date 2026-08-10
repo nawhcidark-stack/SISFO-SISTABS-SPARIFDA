@@ -4828,7 +4828,26 @@ export default function StudentPanel({
                   <div className="text-center font-mono font-bold uppercase text-[9px] py-1 border-b border-dashed border-slate-900">
                     <span>* BUKTI PEMBAYARAN RESMI *</span>
                     <p className="text-[8px] font-mono normal-case tracking-tight mt-0.5">Ref: #{receiptToPrint.detail.id.substring(0,10).toUpperCase()}</p>
-                    <p className="text-[8.5px] font-normal normal-case mt-0.5">Tgl: {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})} &bull; Jam: {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute:'2-digit'})}</p>
+                    <div className="flex flex-col gap-0.5 text-[8px] font-semibold normal-case mt-1 border-t border-dotted border-slate-300 pt-1 text-left">
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Tgl. Bayar:</span>
+                        <span className="font-bold text-slate-900">
+                          {receiptToPrint.type === 'spp'
+                            ? (receiptToPrint.detail.paidAt
+                                ? new Date(receiptToPrint.detail.paidAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})
+                                : (receiptToPrint.detail.status === 'paid' ? new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}) : 'Belum Lunas'))
+                            : (receiptToPrint.detail.createdAt
+                                ? new Date(receiptToPrint.detail.createdAt).toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})
+                                : new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'}))}
+                        </span>
+                      </div>
+                      <div className="flex justify-between">
+                        <span className="text-slate-600">Tgl. Cetak:</span>
+                        <span className="font-mono text-slate-900">
+                          {new Date().toLocaleDateString('id-ID', {day: 'numeric', month: 'short', year: 'numeric'})} &bull; {new Date().toLocaleTimeString('id-ID', {hour: '2-digit', minute: '2-digit'})}
+                        </span>
+                      </div>
+                    </div>
                   </div>
 
                   {/* Student details */}

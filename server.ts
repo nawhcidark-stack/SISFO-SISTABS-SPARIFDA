@@ -1092,11 +1092,19 @@ async function syncWithFirestore(forcePush: boolean = false) {
 
       // Load Teaching Journals
       const loadedTj = await mongoDb.collection("teachingJournals").find({}).toArray();
-      teachingJournals.length = 0;
+      const loadedTjMap = new Map<string, TeachingJournal>();
+      // Preserve any local journals in memory/data_store.json (e.g. Aug 5, Aug 6, Aug 7 2026 data)
+      teachingJournals.forEach((tj) => {
+        if (tj && tj.id) loadedTjMap.set(tj.id, tj);
+      });
       loadedTj.forEach((d: any) => {
         const { _id, ...rest } = d;
-        teachingJournals.push(rest as TeachingJournal);
+        if (rest && rest.id) loadedTjMap.set(rest.id, rest as TeachingJournal);
       });
+      teachingJournals.length = 0;
+      teachingJournals.push(...Array.from(loadedTjMap.values()));
+      saveState();
+      await saveStateToFirestore();
 
       // Load Treasurer Transactions (100% Authoritative from MongoDB)
       const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
@@ -6750,6 +6758,110 @@ async function startServer() {
     }
 
     res.json({ success: true, paidBills, count: paidBills.length });
+  });
+
+  // Admin Unified Cart Bulk Payment (Instant batch processing for SPP + Savings + Misc)
+  app.post("/api/admin/pay-cart-bulk", (req, res) => {
+    const { sppBillIds = [], miscBillIds = [], savingsDeposits = [] } = req.body;
+    
+    const now = new Date();
+    const nowIso = now.toISOString();
+    const batchOrderId = `CART-BULK-${Date.now()}`;
+    const executedItems: { name: string; amount: number; desc: string }[] = [];
+    const MONTH_MAP: Record<string, number> = {
+      Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
+      Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11
+    };
+
+    // 1. Process SPP Bills
+    if (Array.isArray(sppBillIds) && sppBillIds.length > 0) {
+      const targetSppBills = sppBills.filter(b => sppBillIds.includes(b.id));
+      targetSppBills.sort((a, b) => {
+        const aScore = a.year * 12 + (MONTH_MAP[a.month] || 0);
+        const bScore = b.year * 12 + (MONTH_MAP[b.month] || 0);
+        return aScore - bScore;
+      });
+
+      for (const bill of targetSppBills) {
+        if (bill.status === "paid" || bill.status === "waived") continue;
+        bill.status = "paid";
+        bill.paidAt = nowIso;
+        bill.paymentMethod = "Manual Teller (Kolektif)";
+        bill.orderId = batchOrderId;
+        const student = students.find(s => s.id === bill.studentId);
+        executedItems.push({
+          name: `SPP Bulanan - ${bill.month} ${bill.year}`,
+          amount: bill.amount,
+          desc: `Siswa: ${student?.name || "Siswa"} (Kelas ${student?.class || "-"})`
+        });
+      }
+    }
+
+    // 2. Process Misc Bills
+    if (Array.isArray(miscBillIds) && miscBillIds.length > 0) {
+      const targetMiscBills = miscBills.filter(b => miscBillIds.includes(b.id));
+      for (const bill of targetMiscBills) {
+        if (bill.status === "paid") continue;
+        bill.status = "paid";
+        bill.paidAt = nowIso;
+        bill.paymentMethod = "Manual Teller (Kolektif)";
+        bill.orderId = batchOrderId;
+        const student = students.find(s => s.id === bill.studentId);
+        executedItems.push({
+          name: `Lain-lain: ${bill.title}`,
+          amount: bill.amount,
+          desc: `Siswa: ${student?.name || "Siswa"} (Kelas ${student?.class || "-"})`
+        });
+      }
+    }
+
+    // 3. Process Savings Deposits
+    if (Array.isArray(savingsDeposits) && savingsDeposits.length > 0) {
+      for (const item of savingsDeposits) {
+        const { studentId, amount, notes } = item;
+        const student = students.find(s => s.id === studentId);
+        const valAmount = Number(amount);
+        if (student && !isNaN(valAmount) && valAmount > 0) {
+          student.savingsBalance += valAmount;
+          const transaction: SavingsTransaction = {
+            id: `sav-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
+            studentId,
+            type: "deposit",
+            amount: valAmount,
+            status: "success",
+            createdAt: nowIso,
+            paymentMethod: "Manual Teller (Kolektif)",
+            notes: notes || "Setoran Tabungan (Kolektif)"
+          };
+          savingsTransactions.push(transaction);
+          executedItems.push({
+            name: `Setoran Tabungan Manual`,
+            amount: valAmount,
+            desc: `Siswa: ${student.name} • Memo: "${notes || "Setoran"}"`
+          });
+        }
+      }
+    }
+
+    if (executedItems.length > 0) {
+      const totalAmount = executedItems.reduce((sum, item) => sum + item.amount, 0);
+
+      // Broadcast single consolidated notification
+      const notification: RealtimeNotification = {
+        id: `notif-cart-bulk-${Date.now()}`,
+        studentId: "",
+        title: "Pembayaran Keranjang Transaksi Berhasil",
+        message: `Transaksi kolektif teller (${executedItems.length} item) total Rp ${totalAmount.toLocaleString("id-ID")} telah DIVERIFIKASI LUNAS.`,
+        type: "success",
+        createdAt: nowIso
+      };
+      broadcastNotification(notification);
+
+      saveState();
+      return res.json({ success: true, executedItems, totalAmount, orderId: batchOrderId });
+    }
+
+    return res.status(400).json({ error: "Tidak ada item transaksi valid yang diproses." });
   });
 
   // Admin Cancel/Void Manual SPP

@@ -3920,6 +3920,7 @@ async function startServer() {
       title: `Catatan Perkembangan Siswa: ${category}`,
       message: `Catatan perkembangan baru ditambahkan untuk ${studentName} (Kelas ${className}).`,
       type: "info",
+      category: "bk",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);
@@ -3974,6 +3975,7 @@ async function startServer() {
       title: `Laporan Pelanggaran: Kelas ${className}`,
       message: `Pencatatan pelanggaran baru untuk ${studentName} (${infractionType}) dengan status: ${resolutionStatus}.`,
       type: "warning",
+      category: "bk",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(notification);

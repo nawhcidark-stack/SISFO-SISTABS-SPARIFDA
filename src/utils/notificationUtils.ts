@@ -69,32 +69,60 @@ export const CATEGORY_TABS: CategoryTabConfig[] = [
 export function getNotificationCategory(notif: RealtimeNotification): 'kbm' | 'pembayaran' | 'bk' | 'admin' {
   if (notif.category) {
     const c = notif.category.toLowerCase();
-    if (c === 'kbm') return 'kbm';
-    if (c === 'pembayaran' || c === 'payment') return 'pembayaran';
-    if (c === 'bk' || c === 'counseling') return 'bk';
-    if (c === 'admin' || c === 'system' || c === 'lainnya') return 'admin';
+    if (c === 'kbm' || c === 'akademik' || c === 'jurnal' || c === 'pembelajaran') return 'kbm';
+    if (c === 'pembayaran' || c === 'payment' || c === 'keuangan') return 'pembayaran';
+    if (c === 'bk' || c === 'counseling' || c === 'kedisiplinan') return 'bk';
+    if (c === 'admin' || c === 'system' || c === 'lainnya' || c === 'pengumuman') return 'admin';
   }
 
   if (notif.type === 'payment') return 'pembayaran';
 
-  const text = `${notif.title || ''} ${notif.message || ''}`.toLowerCase();
+  const titleText = (notif.title || '').toLowerCase();
+  const messageText = (notif.message || '').toLowerCase();
+  const idText = (notif.id || '').toLowerCase();
+  const text = `${titleText} ${messageText}`;
 
-  // 1. BK & Kedisiplinan
-  if (/\b(bk|konseling|pelanggaran|poin|prestasi|pembinaan|sanksi|sikap|kedisiplinan|panggilan|kasus|pembimbingan|bimbingan|tatib|tata tertib)\b/i.test(text)) {
+  // 1. Explicit Check for Teaching / Learning Journals -> MUST go to KBM ('kbm'), NEVER to BK ('bk')
+  const isTeachingJournal =
+    idText.startsWith('notif-tj-') ||
+    idText.includes('-tj-') ||
+    /\b(jurnal pembelajaran|jurnal mengajar|jurnal kbm|jurnal guru|jurnal mapel|jurnal kelas|jurnal pengajaran|agenda mengajar|jurnal harian|jurnal materi|jurnal absensi|jurnal presensi|jurnal agenda|jurnal kbm)\b/i.test(text) ||
+    (titleText.includes('jurnal') && (titleText.includes('pembelajaran') || titleText.includes('mengajar') || titleText.includes('kbm') || titleText.includes('guru') || titleText.includes('baru')));
+
+  const isExplicitBKLog =
+    idText.includes('-scl-') ||
+    idText.includes('-bk-') ||
+    idText.includes('-sil-') ||
+    idText.includes('-sdl-') ||
+    /\b(bimbingan konseling|catatan bk|laporan pelanggaran|tanggapan guru bk|penanganan bk|konseling|kasus bk|panggilan bk|tata tertib|tatib)\b/i.test(text);
+
+  if (isTeachingJournal && !isExplicitBKLog) {
+    return 'kbm';
+  }
+
+  // 2. BK & Kedisiplinan (Hanya berisi catatan BK / bimbingan konseling / pelanggaran / perkembangan siswa)
+  if (
+    isExplicitBKLog ||
+    /\b(bk|konseling|pelanggaran|poin pelanggaran|sanksi|pembinaan|panggilan orang tua|kasus|bimbingan konseling|catatan bk|tatib|tata tertib)\b/i.test(text)
+  ) {
+    // If text contains 'jurnal' without explicit BK context, assign to KBM
+    if (text.includes('jurnal') && !/\b(bk|konseling|bimbingan konseling|catatan bk|kasus|sanksi|pelanggaran|poin)\b/i.test(text)) {
+      return 'kbm';
+    }
     return 'bk';
   }
 
-  // 2. Pembayaran & Keuangan
+  // 3. Pembayaran & Keuangan
   if (/\b(spp|bayar|pembayaran|lunas|kuitansi|tagihan|tabungan|setoran|tarik|transaksi|waive|bebas|midtrans|rekening|biaya|iuran|kas|teller|sandi|beasiswa|kantin|deposito)\b/i.test(text)) {
     return 'pembayaran';
   }
 
-  // 3. KBM & Akademik
+  // 4. KBM & Akademik
   if (/\b(kbm|jurnal|absensi|hadir|izin|sakit|alpa|jadwal|pelajaran|mengajar|nilai|rapor|presensi|pertemuan|materi|tugas|akademik|ulangan|ujian|pas|pts|pr|semester|rekap absensi)\b/i.test(text)) {
     return 'kbm';
   }
 
-  // 4. Admin & Pengumuman Sekolah
+  // 5. Admin & Pengumuman Sekolah
   return 'admin';
 }
 

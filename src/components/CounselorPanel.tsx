@@ -1241,7 +1241,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
             className: att.className,
             alpaCount: att.alpa,
             infractionPoints: 0,
-            reason: `Sering absen tanpa keterangan (${att.alpa} hari Alpa). Indikasi putus sekolah atau problem keluarga.`
+            reason: `Sering absen tanpa keterangan (${att.alpa} hari Alpa). Indikasi masalah pribadi.`
           };
         } else {
           candidateMap[att.id].alpaCount = att.alpa;

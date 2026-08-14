@@ -520,6 +520,15 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
   );
   if (matched) return matched;
 
+  // 1b. Direct match by stripping trailing 4-digit timestamp suffix
+  const cleanWithoutSuffix = clean.replace(/-\d{4}$/, "");
+  matched = sppBillsList.find(b =>
+    b.id === cleanWithoutSuffix ||
+    b.id === cleanWithoutSuffix + "-unpaid" ||
+    b.orderId === cleanWithoutSuffix
+  );
+  if (matched) return matched;
+
   // 2. Match by extracted month & year & student
   const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
   const shortMonths = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
@@ -528,18 +537,39 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
   for (let i = 0; i < monthNames.length; i++) {
     const full = monthNames[i];
     const short = shortMonths[i];
-    if (new RegExp(`[-_]${full}[-_]`, "i").test(idOrOrderId) || new RegExp(`[-_]${short}[-_]`, "i").test(idOrOrderId)) {
+    if (new RegExp(`[-_]${full}[-_]`, "i").test(idOrOrderId) || new RegExp(`[-_]${short}[-_]`, "i").test(idOrOrderId) ||
+        new RegExp(`[-_]${full}[-_]`, "i").test(clean) || new RegExp(`[-_]${short}[-_]`, "i").test(clean)) {
       detectedMonth = full;
       break;
     }
   }
 
-  const yearMatch = idOrOrderId.match(/(202[4-9]|203[0-9])/);
+  const yearMatch = idOrOrderId.match(/(202[4-9]|203[0-9])/) || clean.match(/(202[4-9]|203[0-9])/);
   const detectedYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
 
-  if (targetStudentId && detectedMonth) {
+  // Extract student ID/NIS from string if not provided
+  let effectiveStudentId = targetStudentId;
+  if (!effectiveStudentId) {
+    if (clean.includes("bill-std-")) {
+      const parts = clean.split("-");
+      const stdIdx = parts.findIndex((p, idx) => p === "std" && idx < parts.length - 1);
+      if (stdIdx !== -1) {
+        // e.g. std-1780505669264-173-4tcr
+        effectiveStudentId = parts.slice(stdIdx, stdIdx + 4).join("-");
+      }
+    } else if (idOrOrderId.startsWith("SPP-")) {
+      const parts = idOrOrderId.split("-");
+      const nisOrId = parts[1];
+      if (nisOrId) {
+        const found = students.find(s => String(s.nis).trim() === nisOrId || s.id === nisOrId || s.id === `std-${nisOrId}`);
+        if (found) effectiveStudentId = found.id;
+      }
+    }
+  }
+
+  if (effectiveStudentId && detectedMonth) {
     matched = sppBillsList.find(b =>
-      b.studentId === targetStudentId &&
+      b.studentId === effectiveStudentId &&
       b.month.toLowerCase() === detectedMonth.toLowerCase() &&
       (!detectedYear || b.year === detectedYear)
     );
@@ -548,7 +578,11 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
 
   // 3. Fallback partial ID match
   if (clean.startsWith("bill-std-")) {
-    matched = sppBillsList.find(b => b.id.startsWith(clean) || clean.startsWith(b.id));
+    const cleanCore = clean.replace(/-\d{4}$/, "").replace(/-unpaid$/, "");
+    matched = sppBillsList.find(b => {
+      const bCore = b.id.replace(/-unpaid$/, "");
+      return bCore === cleanCore || bCore.startsWith(cleanCore) || cleanCore.startsWith(bCore);
+    });
     if (matched) return matched;
   }
 
@@ -10292,10 +10326,6 @@ async function startServer() {
           const lastHyphenIndex = middle.lastIndexOf("-");
           const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
           sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id);
-
-          if (!sppBill && targetStudent) {
-            sppBill = sppBills.find(b => b.studentId === targetStudent.id && b.status === "pending");
-          }
         }
 
         if (sppBill) {

@@ -503,6 +503,58 @@ function decompressBillIdForMidtrans(id: string): string {
   return result;
 }
 
+// Helper to find SPP bill matching raw ID or decompressed ID or month/year
+function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targetStudentId?: string): SppBill | undefined {
+  if (!idOrOrderId) return undefined;
+  const clean = decompressBillIdForMidtrans(idOrOrderId);
+
+  // 1. Direct match by orderId or id
+  let matched = sppBillsList.find(b =>
+    b.orderId === idOrOrderId ||
+    b.orderId === clean ||
+    b.id === clean ||
+    b.id === clean + "-unpaid" ||
+    b.id === idOrOrderId ||
+    b.id === idOrOrderId + "-unpaid" ||
+    (clean.endsWith("-unpaid") && b.id === clean.slice(0, -7))
+  );
+  if (matched) return matched;
+
+  // 2. Match by extracted month & year & student
+  const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
+  const shortMonths = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
+  
+  let detectedMonth = "";
+  for (let i = 0; i < monthNames.length; i++) {
+    const full = monthNames[i];
+    const short = shortMonths[i];
+    if (new RegExp(`[-_]${full}[-_]`, "i").test(idOrOrderId) || new RegExp(`[-_]${short}[-_]`, "i").test(idOrOrderId)) {
+      detectedMonth = full;
+      break;
+    }
+  }
+
+  const yearMatch = idOrOrderId.match(/(202[4-9]|203[0-9])/);
+  const detectedYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
+
+  if (targetStudentId && detectedMonth) {
+    matched = sppBillsList.find(b =>
+      b.studentId === targetStudentId &&
+      b.month.toLowerCase() === detectedMonth.toLowerCase() &&
+      (!detectedYear || b.year === detectedYear)
+    );
+    if (matched) return matched;
+  }
+
+  // 3. Fallback partial ID match
+  if (clean.startsWith("bill-std-")) {
+    matched = sppBillsList.find(b => b.id.startsWith(clean) || clean.startsWith(b.id));
+    if (matched) return matched;
+  }
+
+  return undefined;
+}
+
 // Compress a miscellaneous bill ID to fit within Midtrans' 50-character limit
 function compressMiscBillIdForMidtrans(id: string): string {
   let result = id;
@@ -8853,31 +8905,10 @@ async function startServer() {
       const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
       const cleanBillId = decompressBillIdForMidtrans(billId);
 
-      let bill = sppBills.find(b => 
-        b.orderId === activeOrderId || 
-        b.orderId === cleanOrderId || 
-        (targetTransactionId && b.transactionId === targetTransactionId) || 
-        b.id === cleanBillId || 
-        b.id === billId
-      );
-
-      if (!bill) {
-        const monthMap: { [key: string]: string } = {
-          "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
-          "mei": "Mei", "jun": "Juni", "jul": "Juli", "agu": "Agustus",
-          "sep": "September", "okt": "Oktober", "nov": "November", "des": "Desember"
-        };
-        for (const [short, full] of Object.entries(monthMap)) {
-          const searchPattern = `-${short}-`;
-          if (cleanBillId.toLowerCase().includes(searchPattern)) {
-            const index = cleanBillId.toLowerCase().indexOf(searchPattern);
-            const originalPart = cleanBillId.substring(index + 1, index + 1 + short.length);
-            const expandedBillId = cleanBillId.replace(`-${originalPart}-`, `-${full}-`);
-            bill = sppBills.find(b => b.id === expandedBillId);
-            if (bill) break;
-          }
-        }
-      }
+      let bill = findSppBillMatching(activeOrderId, sppBills) || 
+                 findSppBillMatching(cleanOrderId, sppBills) || 
+                 findSppBillMatching(billId, sppBills) ||
+                 (targetTransactionId ? sppBills.find(b => b.transactionId === targetTransactionId) : undefined);
 
       if (bill) {
         if (isSettled) {
@@ -9702,33 +9733,8 @@ async function startServer() {
       // Expand shortened 'B-' prefix to match full 'bill-std-' ID format if needed
       let cleanBillId = decompressBillIdForMidtrans(billId);
       
-      let bill = sppBills.find(b => b.orderId === order_id || b.id === cleanBillId || b.id === billId);
-      if (!bill) {
-        const monthMap: { [key: string]: string } = {
-          "jan": "Januari",
-          "feb": "Februari",
-          "mar": "Maret",
-          "apr": "April",
-          "mei": "Mei",
-          "jun": "Juni",
-          "jul": "Juli",
-          "agu": "Agustus",
-          "sep": "September",
-          "okt": "Oktober",
-          "nov": "November",
-          "des": "Desember"
-        };
-        for (const [short, full] of Object.entries(monthMap)) {
-          const searchPattern = `-${short}-`;
-          if (cleanBillId.toLowerCase().includes(searchPattern)) {
-            const index = cleanBillId.toLowerCase().indexOf(searchPattern);
-            const originalPart = cleanBillId.substring(index + 1, index + 1 + short.length);
-            const expandedBillId = cleanBillId.replace(`-${originalPart}-`, `-${full}-`);
-            bill = sppBills.find(b => b.id === expandedBillId);
-            if (bill) break;
-          }
-        }
-      }
+      let bill = findSppBillMatching(order_id, sppBills) || 
+                 findSppBillMatching(billId, sppBills);
       if (bill) {
         if (isSettlement) {
           bill.status = "paid";
@@ -10270,26 +10276,25 @@ async function startServer() {
         };
 
         // 1. Search SPP Bill
-        let sppBill = sppBills.find(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId) || b.transactionId === cleanOrderId);
+        let targetStudent = studentByEmail;
+        if (!targetStudent && cleanOrderId.startsWith("SPP-")) {
+          const nisFromOrder = cleanOrderId.split("-")[1];
+          if (nisFromOrder && /^\d+$/.test(nisFromOrder)) {
+            targetStudent = students.find(s => String(s.nis).trim() === nisFromOrder);
+          }
+        }
+
+        let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id) || 
+                      (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id) : undefined);
+
         if (!sppBill && (cleanOrderId.startsWith("SPP-") || cleanOrderId.includes("SPP-"))) {
           const middle = cleanOrderId.includes("SPP-") ? cleanOrderId.split("SPP-")[1] : cleanOrderId;
           const lastHyphenIndex = middle.lastIndexOf("-");
           const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          const cleanBillId = decompressBillIdForMidtrans(billIdPart);
-          sppBill = sppBills.find(b => b.id === cleanBillId || b.id === billIdPart || b.orderId === cleanOrderId);
+          sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id);
 
-          if (!sppBill) {
-            let targetStudent = studentByEmail;
-            if (!targetStudent) {
-              const nisFromOrder = cleanOrderId.split("-")[1];
-              if (nisFromOrder && /^\d+$/.test(nisFromOrder)) {
-                targetStudent = students.find(s => String(s.nis).trim() === nisFromOrder);
-              }
-            }
-            if (targetStudent) {
-              sppBill = sppBills.find(b => b.studentId === targetStudent.id && b.status === "pending") ||
-                        sppBills.find(b => b.studentId === targetStudent.id && b.status === "unpaid" && b.amount === Number(item.grossAmount));
-            }
+          if (!sppBill && targetStudent) {
+            sppBill = sppBills.find(b => b.studentId === targetStudent.id && b.status === "pending");
           }
         }
 

@@ -549,3 +549,112 @@ export function exportMiscRecapToExcel(params: {
   const fileName = `Rekap_Lain_Lain_${gradeName}_${className}.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
+
+// 5. Export Filtered Misc Bills Detailed List to Excel
+export function exportFilteredMiscBillsToExcel(params: {
+  filterInfo: {
+    grade: string;
+    classStr: string;
+    type: string;
+    month: string;
+    status: string;
+    search: string;
+  };
+  totalTarget: number;
+  totalPaid: number;
+  totalUnpaid: number;
+  groupedList: any[];
+  bills: any[];
+  students: any[];
+}) {
+  const { filterInfo, totalTarget, totalPaid, totalUnpaid, groupedList, bills, students } = params;
+  const wb = XLSX.utils.book_new();
+
+  // Sheet 1: Ringkasan
+  const summaryHeaders = ["No", "Nama Tagihan / Kegiatan", "Tipe", "Target Siswa", "Total Tagihan (IDR)", "Realisasi Setoran (IDR)", "Sisa Tunggakan (IDR)", "Progress %"];
+  const summaryRows = groupedList.map((item, idx) => [
+    idx + 1,
+    item.title,
+    item.isMonthly ? "Bulanan" : "Sekali Bayar",
+    `${item.paidCount} / ${item.targetCount} Siswa`,
+    item.targetNominal,
+    item.paidNominal,
+    item.targetNominal - item.paidNominal,
+    `${item.pct}%`,
+  ]);
+
+  const summarySheetData = [
+    ["LAPORAN REKAPITULASI PEMBAYARAN LAIN-LAIN (NON-SPP)"],
+    ["SMP MAARIF NU PANDAAN"],
+    [`Tingkat: ${filterInfo.grade === "all" ? "Semua" : `Tingkat ${filterInfo.grade}`}`],
+    [`Kelas: ${filterInfo.classStr === "all" ? "Semua" : `Kelas ${filterInfo.classStr}`}`],
+    [`Tipe Tagihan: ${filterInfo.type === "all" ? "Semua" : filterInfo.type === "once" ? "Sekali Bayar" : "Bulanan"}`],
+    [`Status: ${filterInfo.status === "all" ? "Semua" : filterInfo.status === "paid" ? "Lunas" : "Belum Lunas"}`],
+    filterInfo.search ? [`Pencarian: "${filterInfo.search}"`] : [],
+    [],
+    ["Ringkasan Dana"],
+    ["Total Tagihan Lain-lain", totalTarget],
+    ["Realisasi Terbayar (Lunas)", totalPaid],
+    ["Sisa Tunggakan (Belum Lunas)", totalUnpaid],
+    ["Persentase Realisasi", totalTarget > 0 ? `${Math.round((totalPaid / totalTarget) * 100)}%` : "0%"],
+    [],
+    ["RINGKASAN PER JENIS TAGIHAN"],
+    summaryHeaders,
+    ...summaryRows,
+  ];
+
+  const wsSummary = XLSX.utils.aoa_to_sheet(summarySheetData);
+  XLSX.utils.book_append_sheet(wb, wsSummary, "Ringkasan Tagihan");
+
+  // Sheet 2: Rincian Lengkap Data Tagihan Siswa
+  const detailHeaders = [
+    "No",
+    "NIS",
+    "Nama Siswa",
+    "Kelas",
+    "Judul Tagihan",
+    "Deskripsi",
+    "Tipe / Periode",
+    "Nominal Tagihan (IDR)",
+    "Status",
+    "Tanggal Bayar",
+    "Metode Pembayaran",
+    "Order ID / Ref",
+  ];
+
+  const detailRows = bills.map((bill, idx) => {
+    const s = students.find((st) => st.id === bill.studentId);
+    return [
+      idx + 1,
+      s?.nis || "-",
+      s?.name || "-",
+      s?.class ? `Kelas ${s.class}` : "-",
+      bill.title,
+      (bill as any).description || "-",
+      bill.isMonthly ? (bill.month || "Bulanan") : "Sekali Bayar",
+      bill.amount || 0,
+      bill.status === "paid" ? "LUNAS" : "BELUM BAYAR",
+      bill.paidAt ? new Date(bill.paidAt).toLocaleDateString("id-ID") : "-",
+      bill.paymentMethod || "-",
+      bill.orderId || "-",
+    ];
+  });
+
+  const detailSheetData = [
+    ["RINCIAN DATA PEMBAYARAN LAIN-LAIN SISWA"],
+    ["SMP MAARIF NU PANDAAN"],
+    [],
+    detailHeaders,
+    ...detailRows,
+  ];
+
+  const wsDetails = XLSX.utils.aoa_to_sheet(detailSheetData);
+  XLSX.utils.book_append_sheet(wb, wsDetails, "Rincian Tagihan Siswa");
+
+  const gradePart = filterInfo.grade !== "all" ? `Tingkat_${filterInfo.grade}_` : "";
+  const classPart = filterInfo.classStr !== "all" ? `Kelas_${filterInfo.classStr}_` : "";
+  const statusPart = filterInfo.status !== "all" ? `${filterInfo.status}_` : "";
+  const fileName = `Laporan_Pembayaran_Lain_${gradePart}${classPart}${statusPart}${new Date().toISOString().split("T")[0]}.xlsx`;
+  XLSX.writeFile(wb, fileName);
+}
+

@@ -517,56 +517,64 @@ export default function App() {
         console.error("Gagal memuat konfigurasi midtrans", e);
       }
 
-      // Load Attendance Logs
-      try {
-        const attRes = await fetchNoCache('/api/attendance');
-        if (attRes.ok) {
-          const attData = await attRes.json();
-          setAttendanceList(attData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat absensi", e);
-      }
-
-      // Load Homerooms
-      try {
-        const hrRes = await fetchNoCache('/api/homerooms');
-        if (hrRes.ok) {
-          const hrData = await hrRes.json();
-          setHomeroomsList(hrData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat wali kelas", e);
-      }
-
-      // Load Subject Teachers
-      try {
-        const stRes = await fetchNoCache('/api/subject-teachers');
-        if (stRes.ok) {
-          const stData = await stRes.json();
-          setSubjectTeachersList(stData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat guru mapel", e);
-      }
-
-      // Load Merdeka Assessments
-      try {
-        const maRes = await fetchNoCache('/api/merdeka-assessments');
-        if (maRes.ok) {
-          const maData = await maRes.json();
-          setMerdekaAssessmentsList(maData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat penilaian merdeka", e);
-      }
-
+      await fetchAttendance();
+      await fetchHomerooms();
+      await fetchSubjectTeachers();
+      await fetchMerdekaAssessments();
       await fetchSchedules();
       await fetchMiscBills();
       setIsLoading(false);
     } catch (err) {
       console.error('Failed to boot initial data', err);
       setIsLoading(false);
+    }
+  };
+
+  const fetchAttendance = async () => {
+    try {
+      const attRes = await fetchNoCache('/api/attendance');
+      if (attRes.ok) {
+        const attData = await attRes.json();
+        setAttendanceList(attData);
+      }
+    } catch (e) {
+      console.error("Gagal memuat absensi", e);
+    }
+  };
+
+  const fetchHomerooms = async () => {
+    try {
+      const hrRes = await fetchNoCache('/api/homerooms');
+      if (hrRes.ok) {
+        const hrData = await hrRes.json();
+        setHomeroomsList(hrData);
+      }
+    } catch (e) {
+      console.error("Gagal memuat wali kelas", e);
+    }
+  };
+
+  const fetchSubjectTeachers = async () => {
+    try {
+      const stRes = await fetchNoCache('/api/subject-teachers');
+      if (stRes.ok) {
+        const stData = await stRes.json();
+        setSubjectTeachersList(stData);
+      }
+    } catch (e) {
+      console.error("Gagal memuat guru mapel", e);
+    }
+  };
+
+  const fetchMerdekaAssessments = async () => {
+    try {
+      const maRes = await fetchNoCache('/api/merdeka-assessments');
+      if (maRes.ok) {
+        const maData = await maRes.json();
+        setMerdekaAssessmentsList(maData);
+      }
+    } catch (e) {
+      console.error("Gagal memuat penilaian merdeka", e);
     }
   };
 
@@ -791,6 +799,12 @@ export default function App() {
               }
             }
           });
+
+        // Always keep curriculum schedules, assessments, and bills synchronized in real-time across all devices/views
+        fetchSchedules();
+        fetchMerdekaAssessments();
+        fetchMiscBills();
+        fetchAttendance();
 
       } catch (err) {
         console.error('Error handling push SSE message', err);

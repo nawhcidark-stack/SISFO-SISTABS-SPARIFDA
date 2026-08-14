@@ -1329,6 +1329,21 @@ async function syncWithFirestore(forcePush: boolean = false) {
       merdekaAssessments.length = 0;
       loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); });
 
+      // Load Class Schedules (100% Authoritative from MongoDB)
+      try {
+        const loadedSchedules = await mongoDb.collection("classSchedules").find({}).toArray();
+        if (loadedSchedules && loadedSchedules.length > 0) {
+          classSchedules.length = 0;
+          loadedSchedules.forEach((d: any) => {
+            const { _id, ...rest } = d;
+            classSchedules.push(rest as ClassSchedule);
+          });
+          console.log(`[BOOT] Loaded ${classSchedules.length} class schedules from MongoDB.`);
+        }
+      } catch (errSched) {
+        console.warn("Failed loading classSchedules collection:", errSched);
+      }
+
       const loadedProg = await mongoDb.collection("principalWorkPrograms").find({}).toArray();
       principalWorkPrograms.length = 0;
       loadedProg.forEach((d: any) => { const { _id, ...rest } = d; principalWorkPrograms.push(rest as any); });
@@ -4500,6 +4515,17 @@ async function startServer() {
     });
 
     saveState();
+    triggerFirestoreSync();
+
+    broadcastNotification({
+      id: `notif-ass-${Date.now()}`,
+      title: "Pembaruan Nilai Siswa",
+      message: `Penilaian Merdeka Belajar untuk ${results.length} data siswa berhasil diperbarui.`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     return res.json({ success: true, count: results.length, merdekaAssessments, newAssessment: results[0] });
   });
 
@@ -4570,6 +4596,17 @@ async function startServer() {
     });
 
     saveState();
+    triggerFirestoreSync();
+
+    broadcastNotification({
+      id: `notif-curriculum-pts-pas-${Date.now()}`,
+      title: "Sinkronisasi Nilai PTS & PAS",
+      message: `Waka Kurikulum telah mengimpor dan memperbarui nilai PTS/PAS untuk ${updatedCount} siswa (${sem} ${year}).`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     res.json({ success: true, updatedCount, merdekaAssessments });
   });
 
@@ -4629,6 +4666,17 @@ async function startServer() {
     });
 
     saveState();
+    triggerFirestoreSync();
+
+    broadcastNotification({
+      id: `notif-koku-${Date.now()}`,
+      title: "Nilai Kokurikuler Diperbarui",
+      message: `Nilai kokurikuler untuk ${updatedCount} catatan penilaian kelas ${className || ''} telah diperbarui.`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     res.json({ success: true, updatedCount, merdekaAssessments });
   });
 
@@ -4640,6 +4688,7 @@ async function startServer() {
     }
     merdekaAssessments.splice(index, 1);
     saveState();
+    triggerFirestoreSync();
     res.json({ success: true, merdekaAssessments });
   });
 
@@ -4786,6 +4835,17 @@ async function startServer() {
 
     classSchedules.push(newSchedule);
     saveState();
+    triggerFirestoreSync();
+
+    broadcastNotification({
+      id: `notif-curriculum-sched-${Date.now()}`,
+      title: "Jadwal Pelajaran Ditambahkan",
+      message: `Jadwal baru ${newSchedule.subject} kelas ${newSchedule.className} (${newSchedule.day}, Jam ${newSchedule.jamKe}) telah ditambahkan oleh Waka Kurikulum.`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     res.json({ success: true, newSchedule, classSchedules });
   });
 
@@ -4822,6 +4882,17 @@ async function startServer() {
 
     classSchedules[index] = updatedSchedule;
     saveState();
+    triggerFirestoreSync();
+
+    broadcastNotification({
+      id: `notif-curriculum-sched-upd-${Date.now()}`,
+      title: "Jadwal Pelajaran Diperbarui",
+      message: `Jadwal ${updatedSchedule.subject} kelas ${updatedSchedule.className} (${updatedSchedule.day}, Jam ${updatedSchedule.jamKe}) telah diperbarui oleh Waka Kurikulum.`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     res.json({ success: true, updatedSchedule, classSchedules });
   });
 
@@ -4937,6 +5008,17 @@ async function startServer() {
     }
 
     saveState();
+    triggerFirestoreSync();
+
+    broadcastNotification({
+      id: `notif-curriculum-sched-bulk-${Date.now()}`,
+      title: "Sinkronisasi Jadwal Pelajaran Massal",
+      message: `Waka Kurikulum telah memperbarui ${formattedSchedules.length} jadwal pelajaran kelas secara terpusat.`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     res.json({
       success: true,
       count: formattedSchedules.length,
@@ -4957,7 +5039,19 @@ async function startServer() {
     classSchedules.length = 0;
     classSchedules.push(...remaining);
     saveState();
+    triggerFirestoreSync();
+
     const deletedCount = initialCount - classSchedules.length;
+
+    broadcastNotification({
+      id: `notif-curriculum-sched-bdel-${Date.now()}`,
+      title: "Pembersihan Jadwal Pelajaran",
+      message: `Waka Kurikulum telah menghapus ${deletedCount} jadwal pelajaran.`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     res.json({ success: true, deletedCount, classSchedules });
   });
 
@@ -4969,6 +5063,17 @@ async function startServer() {
     }
     classSchedules.splice(index, 1);
     saveState();
+    triggerFirestoreSync();
+
+    broadcastNotification({
+      id: `notif-curriculum-sched-del-${Date.now()}`,
+      title: "Penghapusan Jadwal Pelajaran",
+      message: `Satu jadwal pelajaran telah dihapus oleh Waka Kurikulum.`,
+      type: "info",
+      category: "kbm",
+      createdAt: new Date().toISOString()
+    });
+
     res.json({ success: true, classSchedules });
   });
 

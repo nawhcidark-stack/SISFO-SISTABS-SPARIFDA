@@ -508,7 +508,7 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
   if (!idOrOrderId) return undefined;
   const clean = decompressBillIdForMidtrans(idOrOrderId);
 
-  // 1. Direct match by orderId or id
+  // 1. Direct match by orderId or exact bill id
   let matched = sppBillsList.find(b =>
     b.orderId === idOrOrderId ||
     b.orderId === clean ||
@@ -537,8 +537,8 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
   for (let i = 0; i < monthNames.length; i++) {
     const full = monthNames[i];
     const short = shortMonths[i];
-    if (new RegExp(`[-_]${full}[-_]`, "i").test(idOrOrderId) || new RegExp(`[-_]${short}[-_]`, "i").test(idOrOrderId) ||
-        new RegExp(`[-_]${full}[-_]`, "i").test(clean) || new RegExp(`[-_]${short}[-_]`, "i").test(clean)) {
+    if (new RegExp(`[-_]${full}(?:[-_]|$)`, "i").test(idOrOrderId) || new RegExp(`[-_]${short}(?:[-_]|$)`, "i").test(idOrOrderId) ||
+        new RegExp(`[-_]${full}(?:[-_]|$)`, "i").test(clean) || new RegExp(`[-_]${short}(?:[-_]|$)`, "i").test(clean)) {
       detectedMonth = full;
       break;
     }
@@ -554,7 +554,6 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
       const parts = clean.split("-");
       const stdIdx = parts.findIndex((p, idx) => p === "std" && idx < parts.length - 1);
       if (stdIdx !== -1) {
-        // e.g. std-1780505669264-173-4tcr
         effectiveStudentId = parts.slice(stdIdx, stdIdx + 4).join("-");
       }
     } else if (idOrOrderId.startsWith("SPP-")) {
@@ -576,12 +575,16 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
     if (matched) return matched;
   }
 
-  // 3. Fallback partial ID match
+  // 3. Fallback partial ID match - MUST strictly check month if present in bill ID
   if (clean.startsWith("bill-std-")) {
     const cleanCore = clean.replace(/-\d{4}$/, "").replace(/-unpaid$/, "");
     matched = sppBillsList.find(b => {
       const bCore = b.id.replace(/-unpaid$/, "");
-      return bCore === cleanCore || bCore.startsWith(cleanCore) || cleanCore.startsWith(bCore);
+      if (bCore === cleanCore) return true;
+      // Only match partial if month is strictly matched
+      if (detectedMonth && b.month.toLowerCase() !== detectedMonth.toLowerCase()) return false;
+      if (detectedYear && b.year !== detectedYear) return false;
+      return bCore.startsWith(cleanCore) || cleanCore.startsWith(bCore);
     });
     if (matched) return matched;
   }
@@ -1328,21 +1331,6 @@ async function syncWithFirestore(forcePush: boolean = false) {
       const loadedAss = await mongoDb.collection("merdekaAssessments").find({}).toArray();
       merdekaAssessments.length = 0;
       loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); });
-
-      // Load Class Schedules (100% Authoritative from MongoDB)
-      try {
-        const loadedSchedules = await mongoDb.collection("classSchedules").find({}).toArray();
-        if (loadedSchedules && loadedSchedules.length > 0) {
-          classSchedules.length = 0;
-          loadedSchedules.forEach((d: any) => {
-            const { _id, ...rest } = d;
-            classSchedules.push(rest as ClassSchedule);
-          });
-          console.log(`[BOOT] Loaded ${classSchedules.length} class schedules from MongoDB.`);
-        }
-      } catch (errSched) {
-        console.warn("Failed loading classSchedules collection:", errSched);
-      }
 
       const loadedProg = await mongoDb.collection("principalWorkPrograms").find({}).toArray();
       principalWorkPrograms.length = 0;
@@ -4515,17 +4503,6 @@ async function startServer() {
     });
 
     saveState();
-    triggerFirestoreSync();
-
-    broadcastNotification({
-      id: `notif-ass-${Date.now()}`,
-      title: "Pembaruan Nilai Siswa",
-      message: `Penilaian Merdeka Belajar untuk ${results.length} data siswa berhasil diperbarui.`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     return res.json({ success: true, count: results.length, merdekaAssessments, newAssessment: results[0] });
   });
 
@@ -4596,17 +4573,6 @@ async function startServer() {
     });
 
     saveState();
-    triggerFirestoreSync();
-
-    broadcastNotification({
-      id: `notif-curriculum-pts-pas-${Date.now()}`,
-      title: "Sinkronisasi Nilai PTS & PAS",
-      message: `Waka Kurikulum telah mengimpor dan memperbarui nilai PTS/PAS untuk ${updatedCount} siswa (${sem} ${year}).`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     res.json({ success: true, updatedCount, merdekaAssessments });
   });
 
@@ -4666,17 +4632,6 @@ async function startServer() {
     });
 
     saveState();
-    triggerFirestoreSync();
-
-    broadcastNotification({
-      id: `notif-koku-${Date.now()}`,
-      title: "Nilai Kokurikuler Diperbarui",
-      message: `Nilai kokurikuler untuk ${updatedCount} catatan penilaian kelas ${className || ''} telah diperbarui.`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     res.json({ success: true, updatedCount, merdekaAssessments });
   });
 
@@ -4688,7 +4643,6 @@ async function startServer() {
     }
     merdekaAssessments.splice(index, 1);
     saveState();
-    triggerFirestoreSync();
     res.json({ success: true, merdekaAssessments });
   });
 
@@ -4835,17 +4789,6 @@ async function startServer() {
 
     classSchedules.push(newSchedule);
     saveState();
-    triggerFirestoreSync();
-
-    broadcastNotification({
-      id: `notif-curriculum-sched-${Date.now()}`,
-      title: "Jadwal Pelajaran Ditambahkan",
-      message: `Jadwal baru ${newSchedule.subject} kelas ${newSchedule.className} (${newSchedule.day}, Jam ${newSchedule.jamKe}) telah ditambahkan oleh Waka Kurikulum.`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     res.json({ success: true, newSchedule, classSchedules });
   });
 
@@ -4882,17 +4825,6 @@ async function startServer() {
 
     classSchedules[index] = updatedSchedule;
     saveState();
-    triggerFirestoreSync();
-
-    broadcastNotification({
-      id: `notif-curriculum-sched-upd-${Date.now()}`,
-      title: "Jadwal Pelajaran Diperbarui",
-      message: `Jadwal ${updatedSchedule.subject} kelas ${updatedSchedule.className} (${updatedSchedule.day}, Jam ${updatedSchedule.jamKe}) telah diperbarui oleh Waka Kurikulum.`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     res.json({ success: true, updatedSchedule, classSchedules });
   });
 
@@ -5008,17 +4940,6 @@ async function startServer() {
     }
 
     saveState();
-    triggerFirestoreSync();
-
-    broadcastNotification({
-      id: `notif-curriculum-sched-bulk-${Date.now()}`,
-      title: "Sinkronisasi Jadwal Pelajaran Massal",
-      message: `Waka Kurikulum telah memperbarui ${formattedSchedules.length} jadwal pelajaran kelas secara terpusat.`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     res.json({
       success: true,
       count: formattedSchedules.length,
@@ -5039,19 +4960,7 @@ async function startServer() {
     classSchedules.length = 0;
     classSchedules.push(...remaining);
     saveState();
-    triggerFirestoreSync();
-
     const deletedCount = initialCount - classSchedules.length;
-
-    broadcastNotification({
-      id: `notif-curriculum-sched-bdel-${Date.now()}`,
-      title: "Pembersihan Jadwal Pelajaran",
-      message: `Waka Kurikulum telah menghapus ${deletedCount} jadwal pelajaran.`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     res.json({ success: true, deletedCount, classSchedules });
   });
 
@@ -5063,17 +4972,6 @@ async function startServer() {
     }
     classSchedules.splice(index, 1);
     saveState();
-    triggerFirestoreSync();
-
-    broadcastNotification({
-      id: `notif-curriculum-sched-del-${Date.now()}`,
-      title: "Penghapusan Jadwal Pelajaran",
-      message: `Satu jadwal pelajaran telah dihapus oleh Waka Kurikulum.`,
-      type: "info",
-      category: "kbm",
-      createdAt: new Date().toISOString()
-    });
-
     res.json({ success: true, classSchedules });
   });
 
@@ -8641,8 +8539,7 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
-    // Compress the order ID to stay strictly under Midtrans' 50-character limit
-    let shortBillId = bill.id.replace("bill-std-", "B-");
+    // Create clean, robust order ID for Midtrans (guaranteed well under 50 char limit)
     const monthMapShorten: { [key: string]: string } = {
       "Januari": "Jan",
       "Februari": "Feb",
@@ -8657,19 +8554,11 @@ async function startServer() {
       "November": "Nov",
       "Desember": "Des"
     };
-    for (const [full, short] of Object.entries(monthMapShorten)) {
-      if (shortBillId.includes(`-${full}-`)) {
-        shortBillId = shortBillId.replace(`-${full}-`, `-${short}-`);
-        break;
-      }
-    }
+    const monthShort = monthMapShorten[bill.month] || bill.month.slice(0, 3);
     const studentNis = (student.nis ? String(student.nis).trim() : student.id.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
-    let orderId = `SPP-${studentNis}-${shortBillId}-${Date.now().toString().slice(-4)}`;
-    if (orderId.length > 48) {
-      const maxShortBillLen = 48 - 4 - studentNis.length - 1 - 1 - 4;
-      const trimmedBillId = maxShortBillLen > 4 ? shortBillId.slice(0, maxShortBillLen) : shortBillId;
-      orderId = `SPP-${studentNis}-${trimmedBillId}-${Date.now().toString().slice(-4)}`;
-    }
+    const randSuffix = Date.now().toString().slice(-4);
+    const orderId = `SPP-${studentNis}-${monthShort}-${bill.year}-${randSuffix}`;
+
     bill.orderId = orderId;
     bill.status = "pending";
     saveState();

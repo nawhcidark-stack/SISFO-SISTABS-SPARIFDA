@@ -719,6 +719,38 @@ function findMiscBillMatching(idOrOrderId: string, miscBillsList: MiscBill[], ta
   return undefined;
 }
 
+// Map Indonesian month names to calendar month index (1 = Januari ... 12 = Desember)
+const INDONESIAN_MONTH_MAP: Record<string, number> = {
+  "Januari": 1, "Februari": 2, "Maret": 3, "April": 4, "Mei": 5, "Juni": 6,
+  "Juli": 7, "Agustus": 8, "September": 9, "Oktober": 10, "November": 11, "Desember": 12
+};
+
+// Calculate academic sort score: Academic year starts July (Juli = index 0 ... Juni = index 11)
+function getAcademicSppScore(month: string, year: number): number {
+  const mNum = INDONESIAN_MONTH_MAP[month] || 7;
+  let academicYear: number;
+  let offset: number;
+  if (mNum >= 7) {
+    // Juli (7) -> offset 0, ..., Desember (12) -> offset 5
+    academicYear = year;
+    offset = mNum - 7;
+  } else {
+    // Januari (1) -> offset 6, ..., Juni (6) -> offset 11
+    academicYear = year - 1;
+    offset = mNum + 5;
+  }
+  return academicYear * 12 + offset;
+}
+
+// Sort SPP bills strictly in chronological academic order
+function sortSppChronologically(bills: SppBill[]): SppBill[] {
+  return [...bills].sort((a, b) => {
+    const scoreA = getAcademicSppScore(a.month, a.year || 2026);
+    const scoreB = getAcademicSppScore(b.month, b.year || 2026);
+    return scoreA - scoreB;
+  });
+}
+
 // Helper to determine tuition SPP amount based on student class/level
 function getSppAmountForClass(className: string): number {
   const cleanClass = (className || "").trim().toUpperCase();
@@ -6767,7 +6799,29 @@ async function startServer() {
       orderId = `CART-${studentNis}-${Date.now().toString().slice(-4)}`;
     }
 
-    selectedSpp.forEach(b => {
+    // Sort selected SPP bills strictly chronologically according to the academic calendar
+    const sortedSelectedSpp = sortSppChronologically(selectedSpp);
+
+    // Validate that SPP months are sequential without skipping earlier unpaid months
+    if (sortedSelectedSpp.length > 0) {
+      const studentAllSpp = sortSppChronologically(sppBills.filter(b => b.studentId === student.id));
+      const selectedIds = new Set(sortedSelectedSpp.map(b => b.id));
+      
+      const maxSelectedScore = Math.max(...sortedSelectedSpp.map(b => getAcademicSppScore(b.month, b.year || 2026)));
+      const priorUnpaid = studentAllSpp.filter(b => {
+        const score = getAcademicSppScore(b.month, b.year || 2026);
+        return score < maxSelectedScore && !selectedIds.has(b.id) && b.status !== "paid" && b.status !== "waived";
+      });
+
+      if (priorUnpaid.length > 0) {
+        const earliestUnpaid = priorUnpaid[0];
+        return res.status(400).json({
+          error: `Pembayaran SPP harus urut per bulan. Silakan sertakan bulan ${earliestUnpaid.month} ${earliestUnpaid.year} terlebih dahulu ke dalam keranjang sebelum membayar bulan berikutnya.`
+        });
+      }
+    }
+
+    sortedSelectedSpp.forEach(b => {
       b.orderId = orderId;
       b.status = "pending";
     });
@@ -6816,7 +6870,7 @@ async function startServer() {
       const appReturnUrl = origin || "https://ais-pre-vqyvsdvdikjp7ctz7wouro-539390488845.asia-east1.run.app";
 
       const itemDetails: any[] = [];
-      selectedSpp.forEach(b => {
+      sortedSelectedSpp.forEach(b => {
         itemDetails.push({
           id: shortenBillIdForMidtrans(b.id),
           price: b.amount,
@@ -9656,15 +9710,15 @@ async function startServer() {
         
         if (affectedStudent) {
           targetStudentId = affectedStudent.id;
-          // Find pending or unpaid bills of this student
+          // Find pending or unpaid bills of this student, with SPP strictly sorted chronologically
           let candidateBills = [
-            ...sppBills.filter(b => b.studentId === affectedStudent!.id && b.status === "pending"),
+            ...sortSppChronologically(sppBills.filter(b => b.studentId === affectedStudent!.id && b.status === "pending")),
             ...miscBills.filter(b => b.studentId === affectedStudent!.id && b.status === "pending")
           ];
           
           if (candidateBills.length === 0) {
             candidateBills = [
-              ...sppBills.filter(b => b.studentId === affectedStudent!.id && b.status === "unpaid"),
+              ...sortSppChronologically(sppBills.filter(b => b.studentId === affectedStudent!.id && b.status === "unpaid")),
               ...miscBills.filter(b => b.studentId === affectedStudent!.id && b.status === "unpaid")
             ];
           }
@@ -9994,15 +10048,15 @@ async function startServer() {
         
         if (student) {
           targetStudentId = student.id;
-          // Find pending or unpaid bills of this student
+          // Find pending or unpaid bills of this student, with SPP strictly sorted chronologically
           let candidateBills = [
-            ...sppBills.filter(b => b.studentId === student!.id && b.status === "pending"),
+            ...sortSppChronologically(sppBills.filter(b => b.studentId === student!.id && b.status === "pending")),
             ...miscBills.filter(b => b.studentId === student!.id && b.status === "pending")
           ];
           
           if (candidateBills.length === 0) {
             candidateBills = [
-              ...sppBills.filter(b => b.studentId === student!.id && b.status === "unpaid"),
+              ...sortSppChronologically(sppBills.filter(b => b.studentId === student!.id && b.status === "unpaid")),
               ...miscBills.filter(b => b.studentId === student!.id && b.status === "unpaid")
             ];
           }

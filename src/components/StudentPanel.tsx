@@ -140,6 +140,52 @@ export default function StudentPanel({
   const [cartBillIds, setCartBillIds] = useState<string[]>([]);
 
   const handleToggleCart = (billId: string) => {
+    // Check if toggling an SPP bill
+    const targetSpp = bills.find(b => b.id === billId);
+    if (targetSpp) {
+      const MONTH_MAP: Record<string, number> = {
+        "Januari": 0, "Februari": 1, "Maret": 2, "April": 3, "Mei": 4, "Juni": 5,
+        "Juli": 6, "Agustus": 7, "September": 8, "Oktober": 9, "November": 10, "Desember": 11
+      };
+      const getAcademicScore = (m: string, y: number) => {
+        const mIdx = MONTH_MAP[m] ?? 0;
+        const aYear = mIdx >= 6 ? y : y - 1;
+        const offset = mIdx >= 6 ? mIdx - 6 : mIdx + 6;
+        return aYear * 12 + offset;
+      };
+
+      const targetScore = getAcademicScore(targetSpp.month, targetSpp.year);
+
+      // If user is selecting (checking) this month:
+      if (!cartBillIds.includes(billId)) {
+        // Find any strictly prior unpaid/unwaived SPP bills not already in cart
+        const priorUnpaid = bills.filter(b => {
+          if (b.status === "paid" || b.status === "waived") return false;
+          const bScore = getAcademicScore(b.month, b.year);
+          return bScore < targetScore && !cartBillIds.includes(b.id);
+        });
+
+        if (priorUnpaid.length > 0) {
+          // Auto-include all prior unpaid SPP bills so sequence is maintained
+          const priorIds = priorUnpaid.map(b => b.id);
+          setCartBillIds(prev => Array.from(new Set([...prev, ...priorIds, billId])));
+          return;
+        }
+      } else {
+        // If user is deselecting (unchecking) this month:
+        // Also deselect any future SPP bills in cart that depend on this month
+        const futureInCart = bills.filter(b => {
+          const bScore = getAcademicScore(b.month, b.year);
+          return bScore > targetScore && cartBillIds.includes(b.id);
+        }).map(b => b.id);
+
+        if (futureInCart.length > 0) {
+          setCartBillIds(prev => prev.filter(id => id !== billId && !futureInCart.includes(id)));
+          return;
+        }
+      }
+    }
+
     setCartBillIds(prev =>
       prev.includes(billId) ? prev.filter(id => id !== billId) : [...prev, billId]
     );

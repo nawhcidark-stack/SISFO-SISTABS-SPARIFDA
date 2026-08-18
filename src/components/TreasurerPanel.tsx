@@ -250,9 +250,65 @@ export default function TreasurerPanel({
       { name: 'Gaji Guru', type: 'outgoing' },
       { name: 'Pembangunan', type: 'outgoing' },
       { name: 'Ujian', type: 'outgoing' },
+      { name: 'HUT RI 81 2026', type: 'both' },
+      { name: 'JARIYAH', type: 'incoming' },
+      { name: 'SPARIFDA MART', type: 'both' },
+      { name: 'MPLS 2026', type: 'both' },
+      { name: 'Lain-lain', type: 'outgoing' },
+      { name: 'Mantenance Aplikasi', type: 'outgoing' },
       { name: 'Utama', type: 'both' }
     ];
   });
+
+  const [isCloudSyncing, setIsCloudSyncing] = useState(false);
+  const [lastSyncTime, setLastSyncTime] = useState<string | null>(null);
+
+  const fetchTreasurerCategories = async () => {
+    try {
+      const res = await fetch('/api/treasurer/categories');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success && Array.isArray(data.categories) && data.categories.length > 0) {
+          setCategories(data.categories);
+          localStorage.setItem('treasurer_categories', JSON.stringify(data.categories));
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal sinkron kategori POS dari server:", e);
+    }
+  };
+
+  const syncCategoriesToServer = async (cats: BudgetCategory[]) => {
+    try {
+      await fetch('/api/treasurer/categories', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ categories: cats })
+      });
+    } catch (e) {
+      console.warn("Gagal menyimpan kategori POS ke server:", e);
+    }
+  };
+
+  const handleTriggerCloudSync = async () => {
+    setIsCloudSyncing(true);
+    try {
+      const res = await fetch('/api/treasurer/sync');
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
+        await fetchTransactions();
+        await fetchTreasurerCategories();
+        showBudgetMsg('success', `☁️ ${data.message || 'Sinkronisasi Cloud MongoDB Atlas sukses!'}`);
+      } else {
+        showBudgetMsg('error', data.error || 'Gagal sinkronisasi dengan Cloud.');
+      }
+    } catch (e) {
+      showBudgetMsg('error', 'Gangguan koneksi saat sinkronisasi Cloud.');
+    } finally {
+      setIsCloudSyncing(false);
+    }
+  };
 
   useEffect(() => {
     if (categories.length > 0 && !categories.some(c => c.name === formCategory)) {
@@ -295,6 +351,7 @@ export default function TreasurerPanel({
     const updated: BudgetCategory[] = [...categories, { name: clean, type: newBudgetCatType }];
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
+    syncCategoriesToServer(updated);
     setNewBudgetCatInput('');
     setNewBudgetCatType('both');
     showBudgetMsg('success', `Sukses mendaftarkan POS BUDGET baru: ${clean} (${newBudgetCatType === 'incoming' ? 'Pemasukan' : newBudgetCatType === 'outgoing' ? 'Pengeluaran' : 'Umum/Keduanya'})`);
@@ -320,6 +377,7 @@ export default function TreasurerPanel({
 
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
+    syncCategoriesToServer(updated);
 
     const affectedTxs = transactions.filter(t => t.category === catName && t.source === 'custom');
     if (affectedTxs.length > 0) {
@@ -422,6 +480,7 @@ export default function TreasurerPanel({
     const updated = categories.map(c => c.name === editingCategory ? { name: clean, type: editCategoryType } : c);
     setCategories(updated);
     localStorage.setItem('treasurer_categories', JSON.stringify(updated));
+    syncCategoriesToServer(updated);
 
     const affectedTxs = transactions.filter(t => t.category === editingCategory && t.source === 'custom');
     if (affectedTxs.length > 0) {
@@ -452,6 +511,7 @@ export default function TreasurerPanel({
   useEffect(() => {
     fetchTransactions();
     fetchSalaries();
+    fetchTreasurerCategories();
   }, []);
 
   const fetchSalaries = async () => {
@@ -1558,6 +1618,16 @@ export default function TreasurerPanel({
               )}
               <button
                 type="button"
+                onClick={handleTriggerCloudSync}
+                disabled={isCloudSyncing}
+                className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/80 hover:border-indigo-500 font-bold text-xs rounded-xl cursor-pointer transition-all disabled:opacity-50"
+                title="Sinkronisasi data buku kas & POS dengan MongoDB Atlas"
+              >
+                <span className={isCloudSyncing ? "animate-spin" : ""}>🔄</span>
+                <span>{isCloudSyncing ? 'Sinkron...' : 'Sinkron Cloud'}</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowPasswordModal(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:border-slate-500 font-bold text-xs rounded-xl cursor-pointer transition-all"
               >
@@ -1822,13 +1892,26 @@ export default function TreasurerPanel({
                 </h3>
                 <p className="text-[11px] text-slate-500 font-semibold mt-0.5">Pemantauan otomatis limit kuota dan akumulasi sisa kas di masing-masing pos keuangan.</p>
               </div>
-              <button
-                type="button"
-                onClick={() => setShowManageBudgetPos(!showManageBudgetPos)}
-                className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-slate-250 font-display"
-              >
-                <span>🛠️</span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={handleTriggerCloudSync}
+                  disabled={isCloudSyncing}
+                  className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-indigo-200 disabled:opacity-50"
+                  title="Sinkronkan kategori dan saldo POS ke MongoDB Cloud"
+                >
+                  <span className={isCloudSyncing ? "animate-spin" : ""}>🔄</span>
+                  <span>{isCloudSyncing ? 'Menyinkronkan...' : 'Sinkron Cloud'}</span>
+                  {lastSyncTime && <span className="text-[9px] text-indigo-500 font-normal">({lastSyncTime})</span>}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setShowManageBudgetPos(!showManageBudgetPos)}
+                  className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-slate-250 font-display"
+                >
+                  <span>🛠️</span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
+                </button>
+              </div>
             </div>
 
             {/* Expander: Management of POS BUDGET Categories */}

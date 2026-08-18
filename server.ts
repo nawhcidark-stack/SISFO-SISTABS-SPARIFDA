@@ -364,8 +364,25 @@ let whatsappConfig = {
 };
 
 // Treasurer/Bendahara Credentials Config
-let treasurerConfig = {
-  password: "bendahara123"
+let treasurerConfig: {
+  password: string;
+  categories?: Array<{ name: string; type: 'incoming' | 'outgoing' | 'both' }>;
+  id?: string;
+} = {
+  password: "bendahara123",
+  categories: [
+    { name: 'Operasional', type: 'outgoing' },
+    { name: 'Gaji Guru', type: 'outgoing' },
+    { name: 'Pembangunan', type: 'outgoing' },
+    { name: 'Ujian', type: 'outgoing' },
+    { name: 'HUT RI 81 2026', type: 'both' },
+    { name: 'JARIYAH', type: 'incoming' },
+    { name: 'SPARIFDA MART', type: 'both' },
+    { name: 'MPLS 2026', type: 'both' },
+    { name: 'Lain-lain', type: 'outgoing' },
+    { name: 'Mantenance Aplikasi', type: 'outgoing' },
+    { name: 'Utama', type: 'both' }
+  ]
 };
 
 // Kepala Sekolah Credentials Config
@@ -637,6 +654,69 @@ function decompressMiscBillIdForMidtrans(id: string): string {
   }
   
   return result;
+}
+
+// Helper to find Miscellaneous bill matching raw ID, decompressed ID, prefix, or student
+function findMiscBillMatching(idOrOrderId: string, miscBillsList: MiscBill[], targetStudentId?: string, grossAmount?: number): MiscBill | undefined {
+  if (!idOrOrderId) return undefined;
+  const cleanOrderId = idOrOrderId.trim();
+  const cleanDecomp = decompressMiscBillIdForMidtrans(cleanOrderId);
+
+  // 1. Direct match by exact orderId, id, or decompressed id
+  let matched = miscBillsList.find(b =>
+    b.orderId === cleanOrderId ||
+    b.orderId === cleanDecomp ||
+    b.id === cleanOrderId ||
+    b.id === cleanDecomp
+  );
+  if (matched) return matched;
+
+  // 2. If it is a MISC order id, extract components
+  let middle = cleanOrderId;
+  if (middle.startsWith("MISC-") || middle.includes("MISC-")) {
+    middle = middle.includes("MISC-") ? middle.split("MISC-")[1] : middle;
+  }
+  const lastHyphenIndex = middle.lastIndexOf("-");
+  const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+  const cleanBillId = decompressMiscBillIdForMidtrans(billIdPart);
+
+  matched = miscBillsList.find(b =>
+    b.id === cleanBillId ||
+    b.id === billIdPart ||
+    b.orderId === cleanOrderId ||
+    b.orderId === billIdPart
+  );
+  if (matched) return matched;
+
+  // 3. Match by partial/truncated prefix (when Midtrans 50-char limit trims trailing characters)
+  if (cleanBillId && cleanBillId.length >= 12) {
+    matched = miscBillsList.find(b => b.id.startsWith(cleanBillId));
+    if (matched) return matched;
+  }
+
+  // 4. Match by student NIS extracted from orderId
+  let studentId = targetStudentId;
+  if (!studentId && cleanOrderId.startsWith("MISC-")) {
+    const parts = cleanOrderId.split("-");
+    const nisOrId = parts[1];
+    if (nisOrId) {
+      const student = students.find(s => String(s.nis).trim() === nisOrId || s.id === nisOrId || s.id === `std-${nisOrId}`);
+      if (student) studentId = student.id;
+    }
+  }
+
+  if (studentId) {
+    if (grossAmount && grossAmount > 0) {
+      matched = miscBillsList.find(b => b.studentId === studentId && (b.status === "pending" || b.status === "unpaid") && b.amount === grossAmount) ||
+                miscBillsList.find(b => b.studentId === studentId && b.amount === grossAmount);
+      if (matched) return matched;
+    }
+    // Match any pending bill for this student
+    matched = miscBillsList.find(b => b.studentId === studentId && b.status === "pending");
+    if (matched) return matched;
+  }
+
+  return undefined;
 }
 
 // Helper to determine tuition SPP amount based on student class/level
@@ -1299,13 +1379,19 @@ async function syncWithFirestore(forcePush: boolean = false) {
       saveState();
       await saveStateToFirestore();
 
-      // Load Treasurer Transactions (100% Authoritative from MongoDB)
+      // Load Treasurer Transactions (Safely merge so Dev & Public instances retain all records)
       const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
-      treasurerTransactions.length = 0;
+      const loadedBndMap = new Map<string, TreasurerTransaction>();
+      treasurerTransactions.forEach((tx) => {
+        if (tx && tx.id) loadedBndMap.set(tx.id, tx);
+      });
       loadedBnd.forEach((d: any) => {
         const { _id, ...rest } = d;
-        treasurerTransactions.push(rest as TreasurerTransaction);
+        if (rest && rest.id) loadedBndMap.set(rest.id, rest as TreasurerTransaction);
       });
+      treasurerTransactions.length = 0;
+      treasurerTransactions.push(...Array.from(loadedBndMap.values()));
+      console.log(`[BOOT] Loaded and synchronized ${treasurerTransactions.length} treasurer transactions.`);
 
       // Load other logs
       const loadedDev = await mongoDb.collection("studentDevelopmentLogs").find({}).toArray();
@@ -5595,8 +5681,90 @@ async function startServer() {
     }
   });
 
+  // Categories synchronization endpoints for Treasurer (POS Budget)
+  app.get("/api/treasurer/categories", (req, res) => {
+    const list = Array.isArray(treasurerConfig.categories) && treasurerConfig.categories.length > 0
+      ? treasurerConfig.categories
+      : [
+          { name: 'Operasional', type: 'outgoing' },
+          { name: 'Gaji Guru', type: 'outgoing' },
+          { name: 'Pembangunan', type: 'outgoing' },
+          { name: 'Ujian', type: 'outgoing' },
+          { name: 'HUT RI 81 2026', type: 'both' },
+          { name: 'JARIYAH', type: 'incoming' },
+          { name: 'SPARIFDA MART', type: 'both' },
+          { name: 'MPLS 2026', type: 'both' },
+          { name: 'Lain-lain', type: 'outgoing' },
+          { name: 'Mantenance Aplikasi', type: 'outgoing' },
+          { name: 'Utama', type: 'both' }
+        ];
+    res.json({ success: true, categories: list });
+  });
+
+  app.post("/api/treasurer/categories", async (req, res) => {
+    const { categories } = req.body;
+    if (!Array.isArray(categories)) {
+      return res.status(400).json({ error: "Format daftar kategori POS tidak valid." });
+    }
+    treasurerConfig.categories = categories;
+    saveState();
+    if (mongoDb && isInitialSyncCompleted) {
+      try {
+        await mongoDb.collection("configs").replaceOne(
+          { id: "treasurerConfig" },
+          { id: "treasurerConfig", ...treasurerConfig },
+          { upsert: true }
+        );
+      } catch (e) {
+        console.error("Failed saving treasurer categories to Mongo config:", e);
+      }
+    }
+    res.json({ success: true, categories: treasurerConfig.categories });
+  });
+
+  // Dedicated instant bi-directional sync endpoint for Bendahara
+  app.get("/api/treasurer/sync", async (req, res) => {
+    try {
+      if (mongoDb && isInitialSyncCompleted) {
+        const remoteTxs = await mongoDb.collection("treasurerTransactions").find({}).toArray();
+        const txMap = new Map<string, TreasurerTransaction>();
+        treasurerTransactions.forEach(t => { if (t && t.id) txMap.set(t.id, t); });
+        remoteTxs.forEach((d: any) => {
+          const { _id, ...rest } = d;
+          if (rest && rest.id) txMap.set(rest.id, rest as TreasurerTransaction);
+        });
+        treasurerTransactions.length = 0;
+        treasurerTransactions.push(...Array.from(txMap.values()));
+        saveState();
+
+        // Also sync categories config from MongoDB if present
+        const remoteConfig = await mongoDb.collection("configs").findOne({ id: "treasurerConfig" });
+        if (remoteConfig && Array.isArray(remoteConfig.categories) && remoteConfig.categories.length > 0) {
+          treasurerConfig.categories = remoteConfig.categories;
+        }
+
+        return res.json({
+          success: true,
+          status: "connected",
+          count: treasurerTransactions.length,
+          lastSync: new Date().toISOString(),
+          message: `Berhasil sinkronisasi otomatis dengan MongoDB Atlas (${treasurerTransactions.length} transaksi).`
+        });
+      }
+      res.json({
+        success: true,
+        status: "local",
+        count: treasurerTransactions.length,
+        lastSync: new Date().toISOString(),
+        message: `Tersimpan di local cache (${treasurerTransactions.length} transaksi).`
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
   // Create manual bookkeeping transaction
-  app.post("/api/treasurer/transactions/transfer", (req, res) => {
+  app.post("/api/treasurer/transactions/transfer", async (req, res) => {
     const { sourceCategory, targetCategory, amount, description, date } = req.body;
     if (!sourceCategory || !targetCategory || !amount || !description || !date) {
       return res.status(400).json({ error: "Semua field transfer wajib diisi secara lengkap." });
@@ -5636,11 +5804,13 @@ async function startServer() {
 
     treasurerTransactions.push(sourceTx, targetTx);
     saveState();
+    upsertDocToMongoDB("treasurerTransactions", sourceTx).catch(() => {});
+    upsertDocToMongoDB("treasurerTransactions", targetTx).catch(() => {});
     res.json({ success: true, sourceTransaction: sourceTx, targetTransaction: targetTx });
   });
 
   // Create manual bookkeeping transaction
-  app.post("/api/treasurer/transactions", (req, res) => {
+  app.post("/api/treasurer/transactions", async (req, res) => {
     let { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
     
     // Parse amount robustly by removing all non-digits (e.g., "50.000", "Rp 50,000" -> 50000)
@@ -5683,11 +5853,12 @@ async function startServer() {
 
     treasurerTransactions.push(newTx);
     saveState();
+    upsertDocToMongoDB("treasurerTransactions", newTx).catch(() => {});
     res.json({ success: true, transaction: newTx });
   });
 
   // Update manual bookkeeping transaction
-  app.put("/api/treasurer/transactions/:id", (req, res) => {
+  app.put("/api/treasurer/transactions/:id", async (req, res) => {
     let { type, category, amount, description, date, recipientName, fundingSource, paymentMethod, kodeRekening, noBukti } = req.body;
     const { id } = req.params;
 
@@ -5723,11 +5894,12 @@ async function startServer() {
 
     treasurerTransactions[txIndex] = updatedTx;
     saveState();
+    upsertDocToMongoDB("treasurerTransactions", updatedTx).catch(() => {});
     res.json({ success: true, transaction: updatedTx });
   });
 
   // Delete manual bookkeeping transaction
-  app.delete("/api/treasurer/transactions/:id", (req, res) => {
+  app.delete("/api/treasurer/transactions/:id", async (req, res) => {
     const { id } = req.params;
     const txIndex = treasurerTransactions.findIndex(t => t.id === id);
     if (txIndex === -1) {
@@ -5736,6 +5908,7 @@ async function startServer() {
 
     treasurerTransactions.splice(txIndex, 1);
     saveState();
+    deleteDocFromFirestore("treasurerTransactions", id).catch(() => {});
     res.json({ success: true, message: "Transaksi berhasil dihapus." });
   });
 
@@ -8986,18 +9159,9 @@ async function startServer() {
     // B. MISC BILLS
     else if (targetOrderId.startsWith("MISC-") || cleanOrderId.startsWith("MISC-")) {
       const activeOrderId = targetOrderId.startsWith("MISC-") ? targetOrderId : cleanOrderId;
-      const middle = activeOrderId.slice(5);
-      const lastHyphenIndex = middle.lastIndexOf("-");
-      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-      const cleanBillId = billId.startsWith("M-") ? decompressMiscBillIdForMidtrans(billId) : billId;
-
-      let bill = miscBills.find(b => 
-        b.orderId === activeOrderId || 
-        b.orderId === cleanOrderId || 
-        (targetTransactionId && b.transactionId === targetTransactionId) || 
-        b.id === cleanBillId || 
-        b.id === billId
-      );
+      let bill = findMiscBillMatching(activeOrderId, miscBills) || 
+                 findMiscBillMatching(cleanOrderId, miscBills) ||
+                 (targetTransactionId ? miscBills.find(b => b.transactionId === targetTransactionId) : undefined);
 
       if (bill) {
         if (isSettled) {
@@ -9592,16 +9756,7 @@ async function startServer() {
       saveState();
       return res.json({ success: true, type: "cart", student: affectedStudent });
     } else if (resolvedOrderId.startsWith("MISC-")) {
-      const middle = resolvedOrderId.slice(5);
-      const lastHyphenIndex = middle.lastIndexOf("-");
-      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-      
-      let cleanBillId = billId;
-      if (cleanBillId.startsWith("M-")) {
-        cleanBillId = decompressMiscBillIdForMidtrans(cleanBillId);
-      }
-      
-      let bill = miscBills.find(b => b.orderId === resolvedOrderId || b.id === cleanBillId || b.id === billId);
+      let bill = findMiscBillMatching(resolvedOrderId, miscBills);
       if (bill) {
         bill.status = "paid";
         bill.paidAt = resolvedPaidAt;
@@ -9937,16 +10092,7 @@ async function startServer() {
         isHandled = true;
       }
     } else if (order_id.startsWith("MISC-")) {
-      const middle = order_id.slice(5);
-      const lastHyphenIndex = middle.lastIndexOf("-");
-      const billId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-      
-      let cleanBillId = billId;
-      if (cleanBillId.startsWith("M-")) {
-        cleanBillId = decompressMiscBillIdForMidtrans(cleanBillId);
-      }
-      
-      let bill = miscBills.find(b => b.orderId === order_id || b.id === cleanBillId || b.id === billId);
+      let bill = findMiscBillMatching(order_id, miscBills);
       if (bill) {
         if (isSettlement) {
           bill.status = "paid";
@@ -10371,27 +10517,14 @@ async function startServer() {
         }
 
         // 2. Search Misc Bill
-        let miscBill = miscBills.find(b => b.orderId === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId) || b.transactionId === cleanOrderId);
+        let miscBill = findMiscBillMatching(cleanOrderId, miscBills, studentByEmail?.id, Number(item.grossAmount)) ||
+                       (cleanTxId ? findMiscBillMatching(cleanTxId, miscBills, studentByEmail?.id, Number(item.grossAmount)) : undefined);
+
         if (!miscBill && (cleanOrderId.startsWith("MISC-") || cleanOrderId.includes("MISC-"))) {
           const middle = cleanOrderId.includes("MISC-") ? cleanOrderId.split("MISC-")[1] : cleanOrderId;
           const lastHyphenIndex = middle.lastIndexOf("-");
           const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          const cleanBillId = decompressMiscBillIdForMidtrans(billIdPart);
-          miscBill = miscBills.find(b => b.id === cleanBillId || b.id === billIdPart || b.orderId === cleanOrderId);
-
-          if (!miscBill) {
-            let targetStudent = studentByEmail;
-            if (!targetStudent) {
-              const nisFromOrder = cleanOrderId.split("-")[1];
-              if (nisFromOrder && /^\d+$/.test(nisFromOrder)) {
-                targetStudent = students.find(s => String(s.nis).trim() === nisFromOrder);
-              }
-            }
-            if (targetStudent) {
-              miscBill = miscBills.find(b => b.studentId === targetStudent.id && b.status === "pending") ||
-                         miscBills.find(b => b.studentId === targetStudent.id && b.status === "unpaid" && b.amount === Number(item.grossAmount));
-            }
-          }
+          miscBill = findMiscBillMatching(billIdPart, miscBills, studentByEmail?.id, Number(item.grossAmount));
         }
 
         if (miscBill) {

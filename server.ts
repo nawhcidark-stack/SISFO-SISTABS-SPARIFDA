@@ -983,16 +983,36 @@ async function executeMongoOperationWithRetry<T>(fn: () => Promise<T>, retries =
   throw new Error("Mongo operation failed after retries.");
 }
 
+// Track last synced signatures of individual documents & configs to avoid redundant writes to MongoDB
+const lastSyncedDocSignatures = new Map<string, string>(); // `${colName}:${docId}` -> JSON string
+const lastSyncedConfigSignatures = new Map<string, string>(); // configId -> JSON string
+
+function recordDocumentSignature(colName: string, doc: any) {
+  if (!doc) return;
+  const docId = String(doc.id || doc._id || '');
+  if (!docId) return;
+  const docCopy = { ...doc, _id: docId, id: docId };
+  lastSyncedDocSignatures.set(`${colName}:${docId}`, JSON.stringify(docCopy));
+}
+
+function recordConfigSignature(configId: string, configData: any) {
+  if (!configData) return;
+  const { _id, ...cleaned } = configData;
+  lastSyncedConfigSignatures.set(configId, JSON.stringify({ ...cleaned, id: configId }));
+}
+
 async function deleteDocFromFirestore(colName: string, docId: string) {
   if (!mongoDb) return;
   try {
+    const sigKey = `${colName}:${docId}`;
+    lastSyncedDocSignatures.delete(sigKey);
     await executeMongoOperationWithRetry(async () => {
       const col = mongoDb.collection(colName);
       await col.deleteOne({ $or: [{ _id: docId }, { id: docId }] });
     });
-    console.log(`Deleted document ${docId} from ${colName} in MongoDB`);
+    console.log(`[MongoDB Direct] Deleted document ${docId} from ${colName}`);
   } catch (err) {
-    console.error(`Failed to delete document ${docId} from ${colName} in MongoDB:`, err);
+    console.error(`[MongoDB Direct] Failed to delete document ${docId} from ${colName}:`, err);
   }
 }
 
@@ -1003,10 +1023,19 @@ async function upsertDocToMongoDB(colName: string, doc: any) {
     const docId = String(docCopy.id || docCopy._id || `id-${Math.random()}`);
     docCopy._id = docId;
     docCopy.id = docId;
+    const docSig = JSON.stringify(docCopy);
+    const sigKey = `${colName}:${docId}`;
+
+    // Skip if document signature is identical to what is already stored
+    if (lastSyncedDocSignatures.get(sigKey) === docSig) {
+      return;
+    }
+
     await executeMongoOperationWithRetry(async () => {
       const col = mongoDb.collection(colName);
       await col.replaceOne({ _id: docId }, docCopy, { upsert: true });
     });
+    lastSyncedDocSignatures.set(sigKey, docSig);
     console.log(`[MongoDB Direct] Upserted document ${docId} in ${colName}`);
   } catch (err) {
     console.error(`[MongoDB Direct] Failed to upsert document in ${colName}:`, err);
@@ -1026,95 +1055,139 @@ function applyAuthoritativeSavingsBalances(studentList: Student[]) {
   });
 }
 
-async function saveStateToFirestore() {
+async function saveStateToFirestore(forceAll: boolean = false) {
   if (!mongoDb || !isInitialSyncCompleted) return;
   try {
-    console.log("Syncing database state to MongoDB Cluster...");
-    
-    // Save list helper with non-destructive bulk upsert
-    const saveList = async (collectionName: string, list: any[]) => {
-      if (!Array.isArray(list)) return;
-      await executeMongoOperationWithRetry(async () => {
-        const col = mongoDb.collection(collectionName);
-        if (list.length === 0) {
-          await col.deleteMany({});
-          return;
-        }
-        const currentIds: string[] = [];
-        const operations = list.map(item => {
-          const doc = { ...item };
-          const docId = String(doc.id || doc._id || `id-${Math.random()}`);
-          doc._id = docId;
-          doc.id = docId;
-          currentIds.push(docId);
-          return {
+    let totalWrites = 0;
+    let totalDeletes = 0;
+
+    const collectionsToSync: [string, any[]][] = [
+      ["students", students],
+      ["sppBills", sppBills],
+      ["miscBills", miscBills],
+      ["savingsTransactions", savingsTransactions],
+      ["realtimeNotifications", notifications.slice(0, 100)],
+      ["attendanceLogs", attendanceLogs],
+      ["homeroomTeachers", homeroomTeachers],
+      ["subjectTeachers", subjectTeachers],
+      ["teachingJournals", teachingJournals],
+      ["treasurerTransactions", treasurerTransactions],
+      ["studentDevelopmentLogs", studentDevelopmentLogs],
+      ["studentInfractionLogs", studentInfractionLogs],
+      ["studentCounselingLogs", studentCounselingLogs],
+      ["classAnnouncements", classAnnouncements],
+      ["classMeetingLogs", classMeetingLogs],
+      ["merdekaAssessments", merdekaAssessments],
+      ["classSchedules", classSchedules],
+      ["principalWorkPrograms", principalWorkPrograms],
+      ["teacherEvaluations", teacherEvaluations],
+      ["infractionRules", infractionRules],
+      ["sarprasItems", sarprasItems],
+      ["sarprasProposals", sarprasProposals],
+      ["sarprasLoans", sarprasLoans],
+      ["teacherSalaries", teacherSalaries],
+    ];
+
+    // Differential List Saver: only sends operations for docs that actually changed or were deleted
+    for (const [colName, list] of collectionsToSync) {
+      if (!Array.isArray(list)) continue;
+
+      const currentIds = new Set<string>();
+      const operations: any[] = [];
+      const updatedSigs: [string, string][] = [];
+
+      for (const item of list) {
+        const docCopy = { ...item };
+        const docId = String(docCopy.id || docCopy._id || `id-${Math.random()}`);
+        docCopy._id = docId;
+        docCopy.id = docId;
+        currentIds.add(docId);
+
+        const sigKey = `${colName}:${docId}`;
+        const docSig = JSON.stringify(docCopy);
+        const lastSig = lastSyncedDocSignatures.get(sigKey);
+
+        if (forceAll || lastSig !== docSig) {
+          operations.push({
             replaceOne: {
               filter: { _id: docId },
-              replacement: doc,
+              replacement: docCopy,
               upsert: true
             }
-          };
+          });
+          updatedSigs.push([sigKey, docSig]);
+        }
+      }
+
+      // Check for deleted items (only if we have tracked signatures for this collection)
+      const deletedKeys: string[] = [];
+      for (const [key] of lastSyncedDocSignatures.entries()) {
+        if (key.startsWith(`${colName}:`)) {
+          const docId = key.substring(colName.length + 1);
+          if (!currentIds.has(docId)) {
+            operations.push({
+              deleteOne: {
+                filter: { $or: [{ _id: docId }, { id: docId }] }
+              }
+            });
+            deletedKeys.push(key);
+          }
+        }
+      }
+
+      if (operations.length > 0) {
+        await executeMongoOperationWithRetry(async () => {
+          const col = mongoDb.collection(colName);
+          await col.bulkWrite(operations, { ordered: false });
         });
-        // Write/Upsert all docs first so existing data is never wiped prematurely
-        await col.bulkWrite(operations, { ordered: false });
-        // Prune stale documents no longer present in local memory list
-        await col.deleteMany({ _id: { $nin: currentIds } });
-      });
-    };
 
-    await saveList("students", students);
-    await saveList("sppBills", sppBills);
-    await saveList("miscBills", miscBills);
-    await saveList("savingsTransactions", savingsTransactions);
-    
-    // Notifications (capped at newest 100 for network performance)
-    const newestNotifications = notifications.slice(0, 100);
-    await saveList("realtimeNotifications", newestNotifications);
-    
-    await saveList("attendanceLogs", attendanceLogs);
-    await saveList("homeroomTeachers", homeroomTeachers);
-    await saveList("subjectTeachers", subjectTeachers);
-    await saveList("teachingJournals", teachingJournals);
-    await saveList("treasurerTransactions", treasurerTransactions);
-    await saveList("studentDevelopmentLogs", studentDevelopmentLogs);
-    await saveList("studentInfractionLogs", studentInfractionLogs);
-    await saveList("studentCounselingLogs", studentCounselingLogs);
-    await saveList("classAnnouncements", classAnnouncements);
-    await saveList("classMeetingLogs", classMeetingLogs);
-    await saveList("merdekaAssessments", merdekaAssessments);
-    await saveList("classSchedules", classSchedules);
-    await saveList("principalWorkPrograms", principalWorkPrograms);
-    await saveList("teacherEvaluations", teacherEvaluations);
-    await saveList("infractionRules", infractionRules);
-    await saveList("sarprasItems", sarprasItems);
-    await saveList("sarprasProposals", sarprasProposals);
-    await saveList("sarprasLoans", sarprasLoans);
-    await saveList("teacherSalaries", teacherSalaries);
+        // Update signature cache upon successful write
+        updatedSigs.forEach(([k, s]) => lastSyncedDocSignatures.set(k, s));
+        deletedKeys.forEach(k => lastSyncedDocSignatures.delete(k));
 
-    // Save configurations as individual upserted documents in the configs collection
+        totalWrites += (operations.length - deletedKeys.length);
+        totalDeletes += deletedKeys.length;
+      }
+    }
+
+    // Save configurations only if changed
     const configCol = mongoDb.collection("configs");
-    const saveConfig = async (id: string, configData: any) => {
+    const configsToSync: [string, any][] = [
+      ["sppRates", sppRates],
+      ["schoolIdentity", schoolIdentity],
+      ["midtransConfig", midtransConfig],
+      ["whatsappConfig", whatsappConfig],
+      ["treasurerConfig", treasurerConfig],
+      ["principalConfig", principalConfig],
+      ["sarprasConfig", sarprasConfig],
+      ["bkConfig", bkConfig],
+      ["curriculumConfig", curriculumConfig],
+      ["adminConfig", adminConfig],
+      ["salaryConfig", salaryConfig],
+      ["backupConfig", backupConfig],
+      ["systemMetadata", { seeded: true }],
+    ];
+
+    for (const [configId, configData] of configsToSync) {
       const { _id, ...cleanedData } = configData;
-      await configCol.replaceOne({ id }, { ...cleanedData, id }, { upsert: true });
-    };
+      const fullDoc = { ...cleanedData, id: configId };
+      const configSig = JSON.stringify(fullDoc);
+      const lastSig = lastSyncedConfigSignatures.get(configId);
 
-    await saveConfig("sppRates", sppRates);
-    await saveConfig("schoolIdentity", schoolIdentity);
-    await saveConfig("midtransConfig", midtransConfig);
-    await saveConfig("whatsappConfig", whatsappConfig);
-    await saveConfig("treasurerConfig", treasurerConfig);
-    await saveConfig("principalConfig", principalConfig);
-    await saveConfig("sarprasConfig", sarprasConfig);
-    await saveConfig("bkConfig", bkConfig);
-    await saveConfig("curriculumConfig", curriculumConfig);
-    await saveConfig("adminConfig", adminConfig);
-    await saveConfig("salaryConfig", salaryConfig);
-    await saveConfig("backupConfig", backupConfig);
-    await saveConfig("systemMetadata", { seeded: true });
+      if (forceAll || lastSig !== configSig) {
+        await executeMongoOperationWithRetry(async () => {
+          await configCol.replaceOne({ id: configId }, fullDoc, { upsert: true });
+        });
+        lastSyncedConfigSignatures.set(configId, configSig);
+        totalWrites++;
+      }
+    }
 
-    console.log("All state collections successfully synced to MongoDB.");
+    if (totalWrites > 0 || totalDeletes > 0) {
+      console.log(`[MongoDB Differential Sync] Safely synced ${totalWrites} updated document(s), ${totalDeletes} deleted document(s) to MongoDB Atlas.`);
+    }
   } catch (err) {
-    console.error("Failed executing batch state sync to MongoDB:", err);
+    console.error("Failed executing differential state sync to MongoDB:", err);
   }
 }
 
@@ -1129,7 +1202,7 @@ function triggerFirestoreSync() {
     clearTimeout(firestoreSyncTimeout);
   }
 
-  // Debounce sync execution by 50 ms to ensure instant real-time persistence to MongoDB
+  // Debounce sync execution by 5000ms (5 seconds) to avoid intense MongoDB writes while keeping data completely safe
   firestoreSyncTimeout = setTimeout(async () => {
     firestoreSyncTimeout = null;
 
@@ -1141,9 +1214,8 @@ function triggerFirestoreSync() {
     isSavingToFirestore = true;
     hasPendingFirestoreSave = false;
 
-    console.log("[SYNC ENGINE] Initiating debounced background state sync to MongoDB...");
     try {
-      await saveStateToFirestore();
+      await saveStateToFirestore(false);
     } catch (err) {
       console.error("[SYNC ENGINE] Background state sync failed:", err);
     } finally {
@@ -1153,7 +1225,7 @@ function triggerFirestoreSync() {
         triggerFirestoreSync();
       }
     }
-  }, 300);
+  }, 5000);
 }
 
 function sanitizeMongoUri(uriString: string): string {
@@ -1321,6 +1393,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
           s.password = s.nis.toString().trim();
         }
         students.push(s);
+        recordDocumentSignature("students", s);
       });
 
       // Load SPP Bills (100% Authoritative from MongoDB)
@@ -1330,6 +1403,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
         const { _id, ...rest } = d;
         const bill = rest as SppBill;
         sppBills.push(bill);
+        recordDocumentSignature("sppBills", bill);
       });
 
       // Purge unpaid/pending bills for mutated students on/after mutation month
@@ -1344,7 +1418,9 @@ async function syncWithFirestore(forcePush: boolean = false) {
         miscBills.length = 0;
         loadedMiscBills.forEach((d: any) => {
           const { _id, ...rest } = d;
-          miscBills.push(rest as MiscBill);
+          const b = rest as MiscBill;
+          miscBills.push(b);
+          recordDocumentSignature("miscBills", b);
         });
       } catch (err) {
         console.warn("Failed loading miscBills collection:", err);
@@ -1357,6 +1433,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
         const { _id, ...rest } = d;
         const t = rest as SavingsTransaction;
         savingsTransactions.push(t);
+        recordDocumentSignature("savingsTransactions", t);
       });
 
       // Apply authoritative savings balances for all loaded students
@@ -1367,7 +1444,9 @@ async function syncWithFirestore(forcePush: boolean = false) {
       notifications.length = 0;
       loadedNotif.forEach((d: any) => {
         const { _id, ...rest } = d;
-        notifications.push(rest as RealtimeNotification);
+        const n = rest as RealtimeNotification;
+        notifications.push(n);
+        recordDocumentSignature("realtimeNotifications", n);
       });
       notifications.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
 
@@ -1376,7 +1455,9 @@ async function syncWithFirestore(forcePush: boolean = false) {
       attendanceLogs.length = 0;
       loadedAtt.forEach((d: any) => {
         const { _id, ...rest } = d;
-        attendanceLogs.push(rest as AttendanceLog);
+        const l = rest as AttendanceLog;
+        attendanceLogs.push(l);
+        recordDocumentSignature("attendanceLogs", l);
       });
 
       // Load Homeroom Teachers
@@ -1384,7 +1465,9 @@ async function syncWithFirestore(forcePush: boolean = false) {
       homeroomTeachers.length = 0;
       loadedHt.forEach((d: any) => {
         const { _id, ...rest } = d;
-        homeroomTeachers.push(rest as HomeroomTeacher);
+        const ht = rest as HomeroomTeacher;
+        homeroomTeachers.push(ht);
+        recordDocumentSignature("homeroomTeachers", ht);
       });
 
       // Load Subject Teachers
@@ -1392,7 +1475,9 @@ async function syncWithFirestore(forcePush: boolean = false) {
       subjectTeachers.length = 0;
       loadedSt.forEach((d: any) => {
         const { _id, ...rest } = d;
-        subjectTeachers.push(rest as SubjectTeacher);
+        const st = rest as SubjectTeacher;
+        subjectTeachers.push(st);
+        recordDocumentSignature("subjectTeachers", st);
       });
 
       // Load Teaching Journals
@@ -1408,8 +1493,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
       });
       teachingJournals.length = 0;
       teachingJournals.push(...Array.from(loadedTjMap.values()));
-      saveState();
-      await saveStateToFirestore();
+      teachingJournals.forEach(tj => recordDocumentSignature("teachingJournals", tj));
 
       // Load Treasurer Transactions (Safely merge so Dev & Public instances retain all records)
       const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
@@ -1423,60 +1507,61 @@ async function syncWithFirestore(forcePush: boolean = false) {
       });
       treasurerTransactions.length = 0;
       treasurerTransactions.push(...Array.from(loadedBndMap.values()));
+      treasurerTransactions.forEach(tx => recordDocumentSignature("treasurerTransactions", tx));
       console.log(`[BOOT] Loaded and synchronized ${treasurerTransactions.length} treasurer transactions.`);
 
       // Load other logs
       const loadedDev = await mongoDb.collection("studentDevelopmentLogs").find({}).toArray();
       studentDevelopmentLogs.length = 0;
-      loadedDev.forEach((d: any) => { const { _id, ...rest } = d; studentDevelopmentLogs.push(rest as any); });
+      loadedDev.forEach((d: any) => { const { _id, ...rest } = d; studentDevelopmentLogs.push(rest as any); recordDocumentSignature("studentDevelopmentLogs", rest); });
 
       const loadedInf = await mongoDb.collection("studentInfractionLogs").find({}).toArray();
       studentInfractionLogs.length = 0;
-      loadedInf.forEach((d: any) => { const { _id, ...rest } = d; studentInfractionLogs.push(rest as any); });
+      loadedInf.forEach((d: any) => { const { _id, ...rest } = d; studentInfractionLogs.push(rest as any); recordDocumentSignature("studentInfractionLogs", rest); });
 
       const loadedCouns = await mongoDb.collection("studentCounselingLogs").find({}).toArray();
       studentCounselingLogs.length = 0;
-      loadedCouns.forEach((d: any) => { const { _id, ...rest } = d; studentCounselingLogs.push(rest as any); });
+      loadedCouns.forEach((d: any) => { const { _id, ...rest } = d; studentCounselingLogs.push(rest as any); recordDocumentSignature("studentCounselingLogs", rest); });
 
       const loadedAnn = await mongoDb.collection("classAnnouncements").find({}).toArray();
       classAnnouncements.length = 0;
-      loadedAnn.forEach((d: any) => { const { _id, ...rest } = d; classAnnouncements.push(rest as any); });
+      loadedAnn.forEach((d: any) => { const { _id, ...rest } = d; classAnnouncements.push(rest as any); recordDocumentSignature("classAnnouncements", rest); });
 
       const loadedMtg = await mongoDb.collection("classMeetingLogs").find({}).toArray();
       classMeetingLogs.length = 0;
-      loadedMtg.forEach((d: any) => { const { _id, ...rest } = d; classMeetingLogs.push(rest as any); });
+      loadedMtg.forEach((d: any) => { const { _id, ...rest } = d; classMeetingLogs.push(rest as any); recordDocumentSignature("classMeetingLogs", rest); });
 
       const loadedAss = await mongoDb.collection("merdekaAssessments").find({}).toArray();
       merdekaAssessments.length = 0;
-      loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); });
+      loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); recordDocumentSignature("merdekaAssessments", rest); });
 
       const loadedProg = await mongoDb.collection("principalWorkPrograms").find({}).toArray();
       principalWorkPrograms.length = 0;
-      loadedProg.forEach((d: any) => { const { _id, ...rest } = d; principalWorkPrograms.push(rest as any); });
+      loadedProg.forEach((d: any) => { const { _id, ...rest } = d; principalWorkPrograms.push(rest as any); recordDocumentSignature("principalWorkPrograms", rest); });
 
       const loadedEval = await mongoDb.collection("teacherEvaluations").find({}).toArray();
       teacherEvaluations.length = 0;
-      loadedEval.forEach((d: any) => { const { _id, ...rest } = d; teacherEvaluations.push(rest as any); });
+      loadedEval.forEach((d: any) => { const { _id, ...rest } = d; teacherEvaluations.push(rest as any); recordDocumentSignature("teacherEvaluations", rest); });
 
       const loadedRules = await mongoDb.collection("infractionRules").find({}).toArray();
       infractionRules.length = 0;
-      loadedRules.forEach((d: any) => { const { _id, ...rest } = d; infractionRules.push(rest as any); });
+      loadedRules.forEach((d: any) => { const { _id, ...rest } = d; infractionRules.push(rest as any); recordDocumentSignature("infractionRules", rest); });
 
       const loadedSItems = await mongoDb.collection("sarprasItems").find({}).toArray();
       sarprasItems.length = 0;
-      loadedSItems.forEach((d: any) => { const { _id, ...rest } = d; sarprasItems.push(rest as any); });
+      loadedSItems.forEach((d: any) => { const { _id, ...rest } = d; sarprasItems.push(rest as any); recordDocumentSignature("sarprasItems", rest); });
 
       const loadedSProp = await mongoDb.collection("sarprasProposals").find({}).toArray();
       sarprasProposals.length = 0;
-      loadedSProp.forEach((d: any) => { const { _id, ...rest } = d; sarprasProposals.push(rest as any); });
+      loadedSProp.forEach((d: any) => { const { _id, ...rest } = d; sarprasProposals.push(rest as any); recordDocumentSignature("sarprasProposals", rest); });
 
       const loadedSLoans = await mongoDb.collection("sarprasLoans").find({}).toArray();
       sarprasLoans.length = 0;
-      loadedSLoans.forEach((d: any) => { const { _id, ...rest } = d; sarprasLoans.push(rest as any); });
+      loadedSLoans.forEach((d: any) => { const { _id, ...rest } = d; sarprasLoans.push(rest as any); recordDocumentSignature("sarprasLoans", rest); });
 
       const loadedSalaries = await mongoDb.collection("teacherSalaries").find({}).toArray();
       teacherSalaries.length = 0;
-      loadedSalaries.forEach((d: any) => { const { _id, ...rest } = d; teacherSalaries.push(rest as any); });
+      loadedSalaries.forEach((d: any) => { const { _id, ...rest } = d; teacherSalaries.push(rest as any); recordDocumentSignature("teacherSalaries", rest); });
 
       // Load configurations
       const loadedConfigs = await mongoDb.collection("configs").find({}).toArray();
@@ -1495,6 +1580,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
         else if (id === "adminConfig") Object.assign(adminConfig, cleaned);
         else if (id === "salaryConfig") Object.assign(salaryConfig, cleaned);
         else if (id === "backupConfig") Object.assign(backupConfig, cleaned);
+        recordConfigSignature(id, cleaned);
       });
 
       // Load database backups

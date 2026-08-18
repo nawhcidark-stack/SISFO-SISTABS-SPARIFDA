@@ -7355,7 +7355,7 @@ async function startServer() {
     return res.status(400).json({ error: "Tidak ada item transaksi valid yang diproses." });
   });
 
-  // Admin Cancel/Void Manual SPP
+  // Admin Cancel/Void SPP (Manual Teller or Midtrans correction)
   app.post("/api/admin/cancel-spp-manual", (req, res) => {
     const { billId } = req.body;
     const bill = sppBills.find(b => b.id === billId);
@@ -7365,25 +7365,23 @@ async function startServer() {
     if (bill.status !== "paid") {
       return res.status(400).json({ error: "Hanya tagihan berstatus lunas yang dapat dibatalkan." });
     }
-    const isOnline = bill.paymentMethod && bill.paymentMethod.toLowerCase().includes("midtrans");
-    if (isOnline) {
-      return res.status(400).json({ error: "Hanya pembayaran melalui Manual Teller yang dapat dibatalkan." });
-    }
 
     const student = students.find(s => s.id === bill.studentId);
     const prevOrderId = bill.orderId || "";
+    const prevMethod = bill.paymentMethod || "Pembayaran";
 
     bill.status = "unpaid";
     bill.paidAt = undefined;
     bill.paymentMethod = undefined;
     bill.orderId = undefined;
+    delete (bill as any).transactionId;
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-spp-cancel-${Date.now()}`,
       studentId: bill.studentId,
-      title: "Pembayaran SPP Dibatalkan",
-      message: `Status pembayaran SPP ${student?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIBATALKAN / DIKOREKSI oleh Admin Sekolah.`,
+      title: "Pembayaran SPP Dibatalkan / Dikoreksi",
+      message: `Status pembayaran SPP (${prevMethod}) ${student?.name || ""} bulan ${bill.month} ${bill.year} sebesar Rp ${bill.amount.toLocaleString("id-ID")} telah DIBATALKAN / DIKOREKSI oleh Admin Sekolah.`,
       type: "warning",
       createdAt: new Date().toISOString()
     };
@@ -7393,9 +7391,9 @@ async function startServer() {
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
         `⚠️ *PEMBATALAN / KOREKSI PEMBAYARAN SPP*\n` +
-        `Transaksi pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* (No. Transaksi: ${prevOrderId}) telah *DIBATALKAN / DIKOREKSI* oleh pihak teller sekolah karena kesalahan administrasi.\n\n` +
+        `Transaksi pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* (${prevMethod} - No. Transaksi: ${prevOrderId || "-"}) telah *DIBATALKAN / DIKOREKSI* oleh pihak administrasi sekolah.\n\n` +
         `Status tagihan Anda kembali menjadi: *BELUM LUNAS (UNPAID)*.\n\n` +
-        `Silakan abaikan kuitansi sebelumnya. Hubungi bagian keuangan jika ada pertanyaan.\n` +
+        `Silakan abaikan kuitansi/bukti transaksi sebelumnya. Hubungi bagian keuangan jika ada pertanyaan.\n` +
         `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending void SPP WA:", err));
     }

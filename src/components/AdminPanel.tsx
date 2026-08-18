@@ -5136,24 +5136,22 @@ export default function AdminPanel({
                                                     />{" "}
                                                     Cetak 🖨
                                                   </button>
-                                                  {(!b.paymentMethod ||
-                                                    !b.paymentMethod.toLowerCase().includes("midtrans")) &&
-                                                    onCancelSppManual && (
-                                                      <button
-                                                        type="button"
-                                                        onClick={(e) => {
-                                                          e.stopPropagation();
-                                                          setBillToCancel(b);
-                                                          setCancelFeedback(
-                                                            null,
-                                                          );
-                                                        }}
-                                                        className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all"
-                                                        title="Batalkan pembayaran manual teller ini"
-                                                      >
-                                                        Batal ↩
-                                                      </button>
-                                                    )}
+                                                  {onCancelSppManual && (
+                                                    <button
+                                                      type="button"
+                                                      onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setBillToCancel(b);
+                                                        setCancelFeedback(
+                                                          null,
+                                                        );
+                                                      }}
+                                                      className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-100 text-rose-600 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 cursor-pointer transition-all"
+                                                      title={b.paymentMethod && b.paymentMethod.toLowerCase().includes("midtrans") ? "Batalkan / koreksi pembayaran Midtrans ini" : "Batalkan pembayaran manual teller ini"}
+                                                    >
+                                                      Batal ↩
+                                                    </button>
+                                                  )}
                                                 </div>
                                               ) : b.status === "waived" ? (
                                                 <div className="flex gap-1.5 justify-end items-center">
@@ -18428,11 +18426,20 @@ export default function AdminPanel({
                   </div>
                   <div className="grid grid-cols-[100px_5px_1fr]">
                     <span className="text-slate-500 font-semibold">
+                      Metode
+                    </span>
+                    <span className="text-slate-500">:</span>
+                    <span className="font-semibold text-indigo-700">
+                      {billToCancel.paymentMethod || "Manual Teller / Online"}
+                    </span>
+                  </div>
+                  <div className="grid grid-cols-[100px_5px_1fr]">
+                    <span className="text-slate-500 font-semibold">
                       No. Transaksi
                     </span>
                     <span className="text-slate-500">:</span>
                     <span className="font-mono text-slate-500 break-all">
-                      {billToCancel.orderId}
+                      {billToCancel.orderId || "-"}
                     </span>
                   </div>
                 </div>

@@ -4,6 +4,7 @@ import { motion, AnimatePresence } from 'motion/react';
 import BukuIndukManagement from './BukuIndukManagement';
 import ScheduleView from './ScheduleView';
 import { SavingsPassbookModal } from './SavingsPassbookModal';
+import { TpJournalSelector } from './TpJournalSelector';
 import { 
   exportSppRecapToExcel, 
   exportMiscRecapToExcel, 
@@ -789,6 +790,63 @@ export default function HomeroomPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
   const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
   const [tp4InputName, setTp4InputName] = useState<string>('Evaluasi & pengerjaan proyek');
+
+  const handleAutoFillAllTpsFromJournals = () => {
+    const norm = (s?: string) => (s || '').toLowerCase().trim();
+    const targetClass = selectedGradingClass || currentTeacher.className;
+    const sourceJournals = allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList;
+
+    let relevant = sourceJournals.filter((j: any) => {
+      const matchSubj = selectedSubjectForGrading ? norm(j.subject) === norm(selectedSubjectForGrading) : true;
+      const matchClass = targetClass ? norm(j.className) === norm(targetClass) : true;
+      return matchSubj && matchClass;
+    });
+
+    if (relevant.length === 0) {
+      relevant = sourceJournals.filter((j: any) => {
+        return selectedSubjectForGrading ? norm(j.subject) === norm(selectedSubjectForGrading) : true;
+      });
+    }
+
+    // Sort chronological (oldest to newest meeting)
+    const sorted = [...relevant].sort((a: any, b: any) => {
+      const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return (Number(a.pertemuanKe) || 0) - (Number(b.pertemuanKe) || 0);
+    });
+
+    if (sorted.length === 0) {
+      setNotifMsg({
+        type: 'error',
+        text: `Belum ada Jurnal Pembelajaran yang diisi untuk Mapel ${selectedSubjectForGrading}. Silakan gunakan pilihan dropdown per TP atau ketik secara manual.`
+      });
+      return;
+    }
+
+    let filledCount = 0;
+    if (sorted[0]) {
+      setTp1InputName(sorted[0].tujuanPembelajaran || sorted[0].topic || tp1InputName);
+      filledCount++;
+    }
+    if (sorted[1]) {
+      setTp2InputName(sorted[1].tujuanPembelajaran || sorted[1].topic || '');
+      filledCount++;
+    }
+    if (sorted[2]) {
+      setTp3InputName(sorted[2].tujuanPembelajaran || sorted[2].topic || '');
+      filledCount++;
+    }
+    if (sorted[3]) {
+      setTp4InputName(sorted[3].tujuanPembelajaran || sorted[3].topic || '');
+      filledCount++;
+    }
+
+    setNotifMsg({
+      type: 'success',
+      text: `🎉 Berhasil mengambil ${filledCount} Judul TP otomatis dari Jurnal Pembelajaran ${selectedSubjectForGrading}!`
+    });
+  };
+
   const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
   const [excelPasteContent, setExcelPasteContent] = useState<string>('');
   const [excelParseError, setExcelParseError] = useState<string | null>(null);
@@ -1207,6 +1265,7 @@ export default function HomeroomPanel({
 
   // Teaching Journals state and printing systems
   const [teachingJournalsList, setTeachingJournalsList] = useState<any[]>([]);
+  const [allTeachingJournalsList, setAllTeachingJournalsList] = useState<any[]>([]);
   const [loadingJournals, setLoadingJournals] = useState(false);
   const [journalViewMode, setJournalViewMode] = useState<'presensi' | 'kbm'>('presensi');
   const [kbmJournalSubTab, setKbmJournalSubTab] = useState<'binaan' | 'kelas_lain'>('binaan');
@@ -1546,6 +1605,7 @@ export default function HomeroomPanel({
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
         const data = await res.json();
+        setAllTeachingJournalsList(data);
         // Filter journals that belong to current homeroom teacher's class OR are taught by this teacher
         const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
         const filtered = data.filter((j: any) => 
@@ -7358,42 +7418,80 @@ Wassalamualaikum Wr. Wb.
 
               {/* Uraian TP Accordion */}
               <div className="bg-white border border-slate-200 rounded-3xl p-5 shadow-sm flex flex-col gap-3">
-                <h3 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider">Deskripsi Tujuan Pembelajaran (TP 1 - TP 4) - {selectedSubjectForGrading}</h3>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-2 border-b border-slate-100">
                   <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-1</label>
-                    <input
-                      type="text"
+                    <h3 className="font-extrabold text-xs text-slate-800 uppercase tracking-wider flex items-center gap-1.5">
+                      <span>Deskripsi Tujuan Pembelajaran (TP 1 - TP 4)</span>
+                      <span className="text-purple-600 font-black">({selectedSubjectForGrading})</span>
+                    </h3>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Hubungkan judul TP langsung dengan Jurnal Pembelajaran Guru/Wali Kelas melalui pilihan dropdown & pencarian kata kunci.
+                    </p>
+                  </div>
+
+                  {/* Quick Auto-fill TP Button */}
+                  <button
+                    type="button"
+                    onClick={handleAutoFillAllTpsFromJournals}
+                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shadow-xs whitespace-nowrap"
+                    title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
+                  >
+                    <Sparkles size={13} className="text-amber-300" />
+                    <span>Link Otomatis Semua TP dari Jurnal</span>
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-1"
+                      tpNumber={1}
                       value={tp1InputName}
-                      onChange={(e) => setTp1InputName(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                      onChange={setTp1InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      required={true}
+                      placeholder="Uraian TP-1..."
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-2</label>
-                    <input
-                      type="text"
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-2 (Opsional)"
+                      tpNumber={2}
                       value={tp2InputName}
-                      onChange={(e) => setTp2InputName(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                      onChange={setTp2InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      placeholder="Uraian TP-2 (opsional)..."
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-3</label>
-                    <input
-                      type="text"
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-3 (Opsional)"
+                      tpNumber={3}
                       value={tp3InputName}
-                      onChange={(e) => setTp3InputName(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                      onChange={setTp3InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      placeholder="Uraian TP-3 (opsional)..."
                     />
                   </div>
-                  <div>
-                    <label className="block text-[10px] font-bold text-slate-500 mb-1">Judul TP-4</label>
-                    <input
-                      type="text"
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <TpJournalSelector
+                      label="Judul TP-4 (Opsional)"
+                      tpNumber={4}
                       value={tp4InputName}
-                      onChange={(e) => setTp4InputName(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-purple-600"
+                      onChange={setTp4InputName}
+                      journals={allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList}
+                      selectedSubject={selectedSubjectForGrading}
+                      selectedClass={selectedGradingClass || currentTeacher.className}
+                      placeholder="Uraian TP-4 (opsional)..."
                     />
                   </div>
                 </div>

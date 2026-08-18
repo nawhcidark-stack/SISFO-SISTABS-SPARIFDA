@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import ScheduleView from './ScheduleView';
+import { TpJournalSelector } from './TpJournalSelector';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
@@ -70,6 +71,7 @@ export default function SubjectTeacherPanel({
   const [tujuanPembelajaran, setTujuanPembelajaran] = useState<string>('');
   const [pencapaianKktp, setPencapaianKktp] = useState<string>('Tercapai');
   const [journals, setJournals] = useState<TeachingJournal[]>([]);
+  const [allJournals, setAllJournals] = useState<TeachingJournal[]>([]);
   const [loadingJournals, setLoadingJournals] = useState<boolean>(false);
 
   // Edit journal states for Subject Teacher panel
@@ -328,6 +330,60 @@ export default function SubjectTeacherPanel({
   const [tp3InputName, setTp3InputName] = useState<string>('');
   const [tp4InputName, setTp4InputName] = useState<string>('');
 
+  const handleAutoFillAllTpsFromJournals = () => {
+    const norm = (s?: string) => (s || '').toLowerCase().trim();
+    const sourceJournals = allJournals.length > 0 ? allJournals : journals;
+    let relevant = sourceJournals.filter(j => {
+      const matchSubj = selectedSubject ? norm(j.subject) === norm(selectedSubject) : true;
+      const matchClass = selectedGradeClass ? norm(j.className) === norm(selectedGradeClass) : true;
+      return matchSubj && matchClass;
+    });
+
+    if (relevant.length === 0) {
+      relevant = sourceJournals.filter(j => {
+        return selectedSubject ? norm(j.subject) === norm(selectedSubject) : true;
+      });
+    }
+
+    // Sort chronological: oldest to newest meeting
+    const sorted = [...relevant].sort((a, b) => {
+      const dateDiff = new Date(a.date).getTime() - new Date(b.date).getTime();
+      if (dateDiff !== 0) return dateDiff;
+      return (Number(a.pertemuanKe) || 0) - (Number(b.pertemuanKe) || 0);
+    });
+
+    if (sorted.length === 0) {
+      setFeedback({
+        type: 'error',
+        text: `Belum ada Jurnal Pembelajaran yang diisi untuk Mata Pelajaran ${selectedSubject}. Anda dapat mengisi judul TP secara manual atau memilih lewat tombol "Link Jurnal" di tiap kolom TP.`
+      });
+      return;
+    }
+
+    let filledCount = 0;
+    if (sorted[0]) {
+      setTp1InputName(sorted[0].tujuanPembelajaran || sorted[0].topic || tp1InputName);
+      filledCount++;
+    }
+    if (sorted[1]) {
+      setTp2InputName(sorted[1].tujuanPembelajaran || sorted[1].topic || '');
+      filledCount++;
+    }
+    if (sorted[2]) {
+      setTp3InputName(sorted[2].tujuanPembelajaran || sorted[2].topic || '');
+      filledCount++;
+    }
+    if (sorted[3]) {
+      setTp4InputName(sorted[3].tujuanPembelajaran || sorted[3].topic || '');
+      filledCount++;
+    }
+
+    setFeedback({
+      type: 'success',
+      text: `🎉 Berhasil mengambil ${filledCount} Tujuan Pembelajaran (TP) secara otomatis dari Jurnal Pembelajaran ${selectedSubject}!`
+    });
+  };
+
   useEffect(() => {
     if (currentSubjectDefaultTps) {
       setTp1InputName(currentSubjectDefaultTps[0] || '');
@@ -478,6 +534,7 @@ export default function SubjectTeacherPanel({
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
         const data: TeachingJournal[] = await res.json();
+        setAllJournals(data);
         // Filter journals belonging to current teacher (by teacherId, teacherName, or username)
         const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
         const cUser = currentTeacher.username ? currentTeacher.username.trim().toLowerCase() : '';
@@ -2638,59 +2695,83 @@ export default function SubjectTeacherPanel({
 
           {/* TP Config / Kriteria Ketercapaian Card */}
           <div className="bg-slate-50 border border-slate-200 rounded-3xl p-6 shadow-xs text-left">
-            <div className="flex items-center gap-2 mb-4">
-              <span className="h-2.5 w-2.5 rounded-full bg-indigo-600 animate-pulse" />
-              <h3 className="font-extrabold text-[11px] uppercase tracking-wider text-slate-600">
-                Deskripsi Tujuan Pembelajaran (TP) yang Diujikan
-              </h3>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pb-3 border-b border-slate-200">
+              <div className="flex items-center gap-2">
+                <span className="h-2.5 w-2.5 rounded-full bg-indigo-600 animate-pulse" />
+                <div>
+                  <h3 className="font-extrabold text-xs uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                    <span>Deskripsi Tujuan Pembelajaran (TP) yang Diujikan</span>
+                    <span className="text-indigo-600 font-black">({selectedSubject})</span>
+                  </h3>
+                  <p className="text-[10px] text-slate-400 mt-0.5">
+                    Judul TP terhubung langsung ke Jurnal Pembelajaran yang telah Anda isi. Gunakan dropdown/pencarian atau ketik manual.
+                  </p>
+                </div>
+              </div>
+
+              {/* Quick Auto-fill TP Button from Teaching Journals */}
+              <button
+                type="button"
+                onClick={handleAutoFillAllTpsFromJournals}
+                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shadow-xs whitespace-nowrap"
+                title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
+              >
+                <Sparkles size={13} className="text-amber-300" />
+                <span>Link Otomatis Semua TP dari Jurnal</span>
+              </button>
             </div>
             
-            <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 1 (TP-1)</span>
-                <textarea
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 1 (TP-1)"
+                  tpNumber={1}
                   value={tp1InputName}
-                  onChange={(e) => setTp1InputName(e.target.value)}
-                  rows={2}
-                  maxLength={100}
-                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
-                  placeholder="Isi uraian TP-1..."
+                  onChange={setTp1InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  required={true}
+                  placeholder="Uraian TP-1..."
                 />
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 2 (TP-2) - Opsional</span>
-                <textarea
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 2 (TP-2) - Opsional"
+                  tpNumber={2}
                   value={tp2InputName}
-                  onChange={(e) => setTp2InputName(e.target.value)}
-                  rows={2}
-                  maxLength={100}
-                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
-                  placeholder="Isi uraian TP-2 (kosongkan jika tidak ada)..."
+                  onChange={setTp2InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  placeholder="Uraian TP-2 (opsional)..."
                 />
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 3 (TP-3) - Opsional</span>
-                <textarea
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 3 (TP-3) - Opsional"
+                  tpNumber={3}
                   value={tp3InputName}
-                  onChange={(e) => setTp3InputName(e.target.value)}
-                  rows={2}
-                  maxLength={100}
-                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
-                  placeholder="Isi uraian TP-3 (kosongkan jika tidak ada)..."
+                  onChange={setTp3InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  placeholder="Uraian TP-3 (opsional)..."
                 />
               </div>
 
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-sm">
-                <span className="text-[9px] font-black uppercase text-indigo-500 mb-1.5 block">Tujuan Pembelajaran 4 (TP-4) - Opsional</span>
-                <textarea
+              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
+                <TpJournalSelector
+                  label="Tujuan Pembelajaran 4 (TP-4) - Opsional"
+                  tpNumber={4}
                   value={tp4InputName}
-                  onChange={(e) => setTp4InputName(e.target.value)}
-                  rows={2}
-                  maxLength={100}
-                  className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 text-[11px] leading-relaxed font-bold text-slate-800 bg-slate-50/20"
-                  placeholder="Isi uraian TP-4 (kosongkan jika tidak ada)..."
+                  onChange={setTp4InputName}
+                  journals={allJournals.length > 0 ? allJournals : journals}
+                  selectedSubject={selectedSubject}
+                  selectedClass={selectedGradeClass}
+                  placeholder="Uraian TP-4 (opsional)..."
                 />
               </div>
             </div>

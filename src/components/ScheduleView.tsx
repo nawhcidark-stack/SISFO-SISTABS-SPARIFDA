@@ -396,6 +396,188 @@ export default function ScheduleView({
     document.body.removeChild(link);
   };
 
+  const exportTeacherWorkloadExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const daysOrder = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+    // Sheet 1: Rekap Jam Mengajar Guru (JP/Minggu)
+    const summaryRows: any[][] = [
+      ["LAPORAN MONITORING JUMLAH JAM MENGAJAR GURU"],
+      ["SEKOLAH: SMP MA'ARIF NU PANDAAN"],
+      [`PERIODE: TAHUN AJARAN 2025/2026 - SEMESTER GENAP`],
+      [`TANGGAL CETAK / EXPORT: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`],
+      [],
+      [
+        'No',
+        'Nama Guru / Wali Kelas',
+        'ID / Username Guru',
+        'Status Guru',
+        'Mata Pelajaran yang Diampu',
+        'Kelas / Rombel yang Diajar',
+        'Jumlah Sesi Pertemuan',
+        'Senin (JP)',
+        'Selasa (JP)',
+        'Rabu (JP)',
+        'Kamis (JP)',
+        'Jumat (JP)',
+        'Sabtu (JP)',
+        'Total Jam Mengajar (JP/Minggu)',
+        'Status Beban Mengajar (Standar 24 JP)'
+      ]
+    ];
+
+    teacherWorkloadSummary.forEach((item, idx) => {
+      const teacherObj = allTeachersList.find(t =>
+        (t.id && item.teacherId && t.id.toLowerCase() === item.teacherId.toLowerCase()) ||
+        (t.name && item.teacherName && t.name.trim().toLowerCase() === item.teacherName.trim().toLowerCase())
+      );
+      const username = teacherObj?.username || teacherObj?.id || item.teacherId || '-';
+      const roleStr = teacherObj?.roleStr || (item.teacherName.toLowerCase().includes('wali') ? 'Wali Kelas' : 'Guru Pengampu');
+
+      const dayJp: Record<string, number> = {
+        'Senin': 0,
+        'Selasa': 0,
+        'Rabu': 0,
+        'Kamis': 0,
+        'Jumat': 0,
+        'Sabtu': 0
+      };
+
+      schedules.forEach(sch => {
+        const isMatchTeacher = (sch.teacherName && sch.teacherName.trim().toLowerCase() === item.teacherName.trim().toLowerCase()) ||
+          (sch.teacherId && item.teacherId && sch.teacherId.toLowerCase() === item.teacherId.toLowerCase());
+        if (isMatchTeacher && sch.day) {
+          const d = sch.day.trim();
+          let jp = 2;
+          if (sch.alokasiWaktu) {
+            const num = parseInt(sch.alokasiWaktu);
+            if (!isNaN(num)) jp = num;
+          } else if (sch.jamKe && sch.jamKe.includes('-')) {
+            const parts = sch.jamKe.split('-');
+            jp = Math.abs(parseInt(parts[1]) - parseInt(parts[0])) + 1;
+          }
+          if (dayJp[d] !== undefined) {
+            dayJp[d] += jp;
+          }
+        }
+      });
+
+      let statusBeban = 'Belum Ada Jadwal';
+      if (item.totalJp >= 24) {
+        statusBeban = 'Memenuhi Beban Standar (>= 24 JP)';
+      } else if (item.totalJp > 0) {
+        statusBeban = `Kurang dari 24 JP (${24 - item.totalJp} JP lagi)`;
+      }
+
+      summaryRows.push([
+        idx + 1,
+        item.teacherName,
+        username,
+        roleStr,
+        Array.from(item.subjects).join(', ') || '-',
+        Array.from(item.classes).join(', ') || '-',
+        item.schedulesCount,
+        dayJp['Senin'],
+        dayJp['Selasa'],
+        dayJp['Rabu'],
+        dayJp['Kamis'],
+        dayJp['Jumat'],
+        dayJp['Sabtu'],
+        item.totalJp,
+        statusBeban
+      ]);
+    });
+
+    const totalJpAll = teacherWorkloadSummary.reduce((acc, t) => acc + t.totalJp, 0);
+    const totalSesiAll = teacherWorkloadSummary.reduce((acc, t) => acc + t.schedulesCount, 0);
+    summaryRows.push([]);
+    summaryRows.push([
+      'TOTAL KESELURUHAN',
+      '',
+      '',
+      '',
+      '',
+      '',
+      totalSesiAll,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      totalJpAll,
+      ''
+    ]);
+
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary['!cols'] = [
+      { wch: 5 },
+      { wch: 28 },
+      { wch: 18 },
+      { wch: 18 },
+      { wch: 32 },
+      { wch: 22 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 18 },
+      { wch: 34 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Rekap Jam Mengajar Guru");
+
+    // Sheet 2: Rincian Jadwal Pelajaran
+    const detailRows: any[][] = [
+      ['No', 'Hari', 'Jam Ke', 'Waktu', 'Kelas', 'Mata Pelajaran', 'Nama Guru Pengampu', 'ID / Username Guru', 'Alokasi JP'],
+      ...schedules
+        .slice()
+        .sort((a, b) => {
+          const dayA = daysOrder.indexOf(a.day) >= 0 ? daysOrder.indexOf(a.day) : 99;
+          const dayB = daysOrder.indexOf(b.day) >= 0 ? daysOrder.indexOf(b.day) : 99;
+          if (dayA !== dayB) return dayA - dayB;
+          return a.className.localeCompare(b.className);
+        })
+        .map((sch, idx) => {
+          const teacherObj = allTeachersList.find(t =>
+            (t.id && sch.teacherId && t.id.toLowerCase() === sch.teacherId.toLowerCase()) ||
+            (t.username && sch.teacherId && t.username.toLowerCase() === sch.teacherId.toLowerCase()) ||
+            (t.name && sch.teacherName && t.name.trim().toLowerCase() === sch.teacherName.trim().toLowerCase())
+          );
+          const username = teacherObj?.username || teacherObj?.id || sch.teacherId || '-';
+          return [
+            idx + 1,
+            sch.day,
+            sch.jamKe,
+            `${sch.startTime || '07:00'} - ${sch.endTime || '08:20'}`,
+            sch.className,
+            sch.subject,
+            sch.teacherName,
+            username,
+            sch.alokasiWaktu || '2 JP'
+          ];
+        })
+    ];
+
+    const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+    wsDetail['!cols'] = [
+      { wch: 5 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 25 },
+      { wch: 28 },
+      { wch: 18 },
+      { wch: 12 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsDetail, "Rincian Jadwal Pelajaran");
+
+    XLSX.writeFile(wb, `monitoring_jam_mengajar_guru_${new Date().toISOString().substring(0, 10)}.xlsx`);
+  };
+
   const handleImportFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -1198,7 +1380,7 @@ export default function ScheduleView({
               </p>
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex flex-wrap items-center gap-2">
               <div className="relative">
                 <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
                 <input
@@ -1209,6 +1391,16 @@ export default function ScheduleView({
                   className="pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-250 rounded-xl text-xs font-semibold text-slate-700 focus:outline-none focus:ring-2 focus:ring-indigo-300"
                 />
               </div>
+
+              <button
+                type="button"
+                onClick={exportTeacherWorkloadExcel}
+                className="flex items-center gap-1.5 px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 active:bg-emerald-800 text-white rounded-xl text-xs font-bold shadow-sm transition-all duration-150 cursor-pointer"
+                title="Export Rekapitulasi & Rincian Monitoring Jam Mengajar Guru ke File Excel (.xlsx)"
+              >
+                <FileSpreadsheet size={15} />
+                <span>Export Excel</span>
+              </button>
             </div>
           </div>
 

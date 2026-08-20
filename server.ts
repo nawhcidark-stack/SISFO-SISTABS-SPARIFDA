@@ -1535,6 +1535,21 @@ async function syncWithFirestore(forcePush: boolean = false) {
       merdekaAssessments.length = 0;
       loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); recordDocumentSignature("merdekaAssessments", rest); });
 
+      // Load Class Schedules (Jadwal Pelajaran / Mengajar Waka Kurikulum)
+      const loadedSch = await mongoDb.collection("classSchedules").find({}).toArray();
+      if (loadedSch.length > 0) {
+        classSchedules.length = 0;
+        loadedSch.forEach((d: any) => {
+          const { _id, ...rest } = d;
+          const sch = rest as ClassSchedule;
+          classSchedules.push(sch);
+          recordDocumentSignature("classSchedules", sch);
+        });
+        console.log(`[BOOT] Loaded ${classSchedules.length} class schedules from MongoDB.`);
+      } else {
+        classSchedules.forEach(sch => recordDocumentSignature("classSchedules", sch));
+      }
+
       const loadedProg = await mongoDb.collection("principalWorkPrograms").find({}).toArray();
       principalWorkPrograms.length = 0;
       loadedProg.forEach((d: any) => { const { _id, ...rest } = d; principalWorkPrograms.push(rest as any); recordDocumentSignature("principalWorkPrograms", rest); });

@@ -479,6 +479,246 @@ export default function WakaKurikulumPanel({
     XLSX.writeFile(workbook, fileName);
   };
 
+  // Export Monitoring Jam Mengajar Guru to Excel
+  const handleExportTeacherWorkloadExcel = () => {
+    const wb = XLSX.utils.book_new();
+    const daysOrder = ['Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+
+    const summaryMap: Record<string, {
+      teacherId: string;
+      teacherName: string;
+      roleStr: string;
+      subjects: Set<string>;
+      classes: Set<string>;
+      totalJp: number;
+      schedulesCount: number;
+    }> = {};
+
+    subjectTeachers.forEach(st => {
+      summaryMap[st.name.trim().toLowerCase()] = {
+        teacherId: st.id || st.username || '',
+        teacherName: st.name,
+        roleStr: 'Guru Mata Pelajaran',
+        subjects: new Set(st.subject ? [st.subject] : []),
+        classes: new Set(st.className ? [st.className] : []),
+        totalJp: 0,
+        schedulesCount: 0
+      };
+    });
+
+    homerooms.forEach(hr => {
+      const key = hr.name.trim().toLowerCase();
+      if (!summaryMap[key]) {
+        summaryMap[key] = {
+          teacherId: hr.id || hr.username || '',
+          teacherName: hr.name,
+          roleStr: `Wali Kelas ${hr.className || ''}`,
+          subjects: new Set(),
+          classes: new Set(hr.className ? [hr.className] : []),
+          totalJp: 0,
+          schedulesCount: 0
+        };
+      } else {
+        summaryMap[key].roleStr += ` & Wali Kelas ${hr.className || ''}`;
+        if (hr.className) summaryMap[key].classes.add(hr.className);
+      }
+    });
+
+    classSchedules.forEach(sch => {
+      const key = (sch.teacherName || '').trim().toLowerCase();
+      if (!summaryMap[key]) {
+        summaryMap[key] = {
+          teacherId: sch.teacherId || '',
+          teacherName: sch.teacherName,
+          roleStr: 'Guru Pengampu',
+          subjects: new Set(),
+          classes: new Set(),
+          totalJp: 0,
+          schedulesCount: 0
+        };
+      }
+
+      if (sch.subject) summaryMap[key].subjects.add(sch.subject);
+      if (sch.className) summaryMap[key].classes.add(sch.className);
+
+      let jpVal = 2;
+      if (sch.alokasiWaktu) {
+        const num = parseInt(sch.alokasiWaktu);
+        if (!isNaN(num)) jpVal = num;
+      } else if (sch.jamKe && sch.jamKe.includes('-')) {
+        const parts = sch.jamKe.split('-');
+        jpVal = Math.abs(parseInt(parts[1]) - parseInt(parts[0])) + 1;
+      }
+
+      summaryMap[key].totalJp += jpVal;
+      summaryMap[key].schedulesCount += 1;
+    });
+
+    const workloadList = Object.values(summaryMap).sort((a, b) => b.totalJp - a.totalJp);
+
+    const summaryRows: any[][] = [
+      ["LAPORAN MONITORING JUMLAH JAM MENGAJAR GURU (TOTAL JP/MINGGU)"],
+      ["SEKOLAH: SMP MA'ARIF NU PANDAAN"],
+      [`PERIODE: TAHUN AJARAN ${selectedAcademicYear} - SEMESTER ${selectedSemester}`],
+      [`TANGGAL CETAK / EXPORT: ${new Date().toLocaleDateString('id-ID', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}`],
+      [],
+      [
+        'No',
+        'Nama Guru / Wali Kelas',
+        'ID / Username Guru',
+        'Status Guru',
+        'Mata Pelajaran yang Diampu',
+        'Kelas / Rombel yang Diajar',
+        'Jumlah Sesi Pertemuan',
+        'Senin (JP)',
+        'Selasa (JP)',
+        'Rabu (JP)',
+        'Kamis (JP)',
+        'Jumat (JP)',
+        'Sabtu (JP)',
+        'Total Jam Mengajar (JP/Minggu)',
+        'Status Beban Mengajar (Standar 24 JP)'
+      ]
+    ];
+
+    workloadList.forEach((item, idx) => {
+      const dayJp: Record<string, number> = {
+        'Senin': 0,
+        'Selasa': 0,
+        'Rabu': 0,
+        'Kamis': 0,
+        'Jumat': 0,
+        'Sabtu': 0
+      };
+
+      classSchedules.forEach(sch => {
+        const isMatchTeacher = (sch.teacherName && sch.teacherName.trim().toLowerCase() === item.teacherName.trim().toLowerCase()) ||
+          (sch.teacherId && item.teacherId && sch.teacherId.toLowerCase() === item.teacherId.toLowerCase());
+        if (isMatchTeacher && sch.day) {
+          const d = sch.day.trim();
+          let jp = 2;
+          if (sch.alokasiWaktu) {
+            const num = parseInt(sch.alokasiWaktu);
+            if (!isNaN(num)) jp = num;
+          } else if (sch.jamKe && sch.jamKe.includes('-')) {
+            const parts = sch.jamKe.split('-');
+            jp = Math.abs(parseInt(parts[1]) - parseInt(parts[0])) + 1;
+          }
+          if (dayJp[d] !== undefined) {
+            dayJp[d] += jp;
+          }
+        }
+      });
+
+      let statusBeban = 'Belum Ada Jadwal';
+      if (item.totalJp >= 24) {
+        statusBeban = 'Memenuhi Beban Standar (>= 24 JP)';
+      } else if (item.totalJp > 0) {
+        statusBeban = `Kurang dari 24 JP (${24 - item.totalJp} JP lagi)`;
+      }
+
+      summaryRows.push([
+        idx + 1,
+        item.teacherName,
+        item.teacherId || '-',
+        item.roleStr,
+        Array.from(item.subjects).join(', ') || '-',
+        Array.from(item.classes).join(', ') || '-',
+        item.schedulesCount,
+        dayJp['Senin'],
+        dayJp['Selasa'],
+        dayJp['Rabu'],
+        dayJp['Kamis'],
+        dayJp['Jumat'],
+        dayJp['Sabtu'],
+        item.totalJp,
+        statusBeban
+      ]);
+    });
+
+    const totalJpAll = workloadList.reduce((acc, t) => acc + t.totalJp, 0);
+    const totalSesiAll = workloadList.reduce((acc, t) => acc + t.schedulesCount, 0);
+    summaryRows.push([]);
+    summaryRows.push([
+      'TOTAL KESELURUHAN',
+      '',
+      '',
+      '',
+      '',
+      '',
+      totalSesiAll,
+      '',
+      '',
+      '',
+      '',
+      '',
+      '',
+      totalJpAll,
+      ''
+    ]);
+
+    const wsSummary = XLSX.utils.aoa_to_sheet(summaryRows);
+    wsSummary['!cols'] = [
+      { wch: 5 },
+      { wch: 28 },
+      { wch: 18 },
+      { wch: 24 },
+      { wch: 32 },
+      { wch: 22 },
+      { wch: 14 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 10 },
+      { wch: 18 },
+      { wch: 34 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsSummary, "Rekap Jam Mengajar Guru");
+
+    const detailRows: any[][] = [
+      ['No', 'Hari', 'Jam Ke', 'Waktu', 'Kelas', 'Mata Pelajaran', 'Nama Guru Pengampu', 'ID / Username Guru', 'Alokasi JP'],
+      ...classSchedules
+        .slice()
+        .sort((a, b) => {
+          const dayA = daysOrder.indexOf(a.day) >= 0 ? daysOrder.indexOf(a.day) : 99;
+          const dayB = daysOrder.indexOf(b.day) >= 0 ? daysOrder.indexOf(b.day) : 99;
+          if (dayA !== dayB) return dayA - dayB;
+          return a.className.localeCompare(b.className);
+        })
+        .map((sch, idx) => {
+          return [
+            idx + 1,
+            sch.day,
+            sch.jamKe,
+            `${sch.startTime || '07:00'} - ${sch.endTime || '08:20'}`,
+            sch.className,
+            sch.subject,
+            sch.teacherName,
+            sch.teacherId || '-',
+            sch.alokasiWaktu || '2 JP'
+          ];
+        })
+    ];
+
+    const wsDetail = XLSX.utils.aoa_to_sheet(detailRows);
+    wsDetail['!cols'] = [
+      { wch: 5 },
+      { wch: 12 },
+      { wch: 10 },
+      { wch: 16 },
+      { wch: 12 },
+      { wch: 25 },
+      { wch: 28 },
+      { wch: 18 },
+      { wch: 12 }
+    ];
+    XLSX.utils.book_append_sheet(wb, wsDetail, "Rincian Jadwal Pelajaran");
+
+    XLSX.writeFile(wb, `Monitoring_Jumlah_Jam_Mengajar_Guru_${selectedSemester}_${selectedAcademicYear.replace('/', '-')}.xlsx`);
+  };
+
   // Password Change
   const handleChangePassword = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -1106,13 +1346,24 @@ export default function WakaKurikulumPanel({
               </p>
             </div>
 
-            <button
-              onClick={handleExportFinalGradesExcel}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer shrink-0"
-            >
-              <FileSpreadsheet size={16} />
-              <span>Export Excel Rapi (.xlsx)</span>
-            </button>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                onClick={handleExportTeacherWorkloadExcel}
+                className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer shrink-0"
+                title="Export Monitoring Beban Jam Mengajar Guru (Total JP/Minggu) ke Excel"
+              >
+                <FileSpreadsheet size={16} />
+                <span>Export Jam Mengajar (JP)</span>
+              </button>
+
+              <button
+                onClick={handleExportFinalGradesExcel}
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-sm cursor-pointer shrink-0"
+              >
+                <FileSpreadsheet size={16} />
+                <span>Export Nilai Akhir (.xlsx)</span>
+              </button>
+            </div>
           </div>
 
           <div className="overflow-x-auto border border-slate-200 rounded-2xl">

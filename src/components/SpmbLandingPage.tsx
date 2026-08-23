@@ -7,6 +7,10 @@ import {
   SpmbUniformItem, 
   SchoolIdentity 
 } from '../types';
+import SpmbReceiptModal from './SpmbReceiptModal';
+import BirthDateSplitInput from './BirthDateSplitInput';
+import { printSpmbReceiptDirect } from '../utils/spmbReceiptPrint';
+import { formatCombinedPlaceAndDate, formatIndonesianDate } from '../utils/dateUtils';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -44,7 +48,9 @@ import {
   Receipt,
   Percent,
   Lock,
-  Unlock
+  Unlock,
+  UserPlus,
+  UserCheck
 } from 'lucide-react';
 import QRCode from 'qrcode';
 
@@ -63,6 +69,7 @@ export default function SpmbLandingPage({
   midtransClientKey = '',
   isProduction = false
 }: SpmbLandingPageProps) {
+  const [currentSchoolIdentity, setCurrentSchoolIdentity] = useState<SchoolIdentity | undefined>(schoolIdentity);
   const handleBack = onBackToLogin || onBackToPortal;
   // Navigation tabs in landing page
   const [activeTab, setActiveTab] = useState<'info' | 'register' | 'portal'>('info');
@@ -72,6 +79,17 @@ export default function SpmbLandingPage({
   const [isLoadingConfig, setIsLoadingConfig] = useState<boolean>(true);
   const [selectedGenderPreview, setSelectedGenderPreview] = useState<'male' | 'female'>('female');
   const [selectedSchoolPreview, setSelectedSchoolPreview] = useState<'maarif_jogosari' | 'other'>('maarif_jogosari');
+
+  // SPMB Official Receipt Modal (Token & Daftar Ulang)
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
+  const [receiptModalCandidate, setReceiptModalCandidate] = useState<SpmbCandidate | null>(null);
+  const [receiptModalType, setReceiptModalType] = useState<'token' | 'rereg'>('token');
+
+  useEffect(() => {
+    if (schoolIdentity) {
+      setCurrentSchoolIdentity(schoolIdentity);
+    }
+  }, [schoolIdentity]);
 
   // Candidate Registration State (Step 1)
   const [regForm, setRegForm] = useState({
@@ -99,6 +117,7 @@ export default function SpmbLandingPage({
 
   // Full Data Lengkap Siswa Form State
   const [fullForm, setFullForm] = useState<Partial<SpmbCandidate>>({});
+  const [hasGuardian, setHasGuardian] = useState<boolean>(false);
   const [isSavingFullForm, setIsSavingFullForm] = useState<boolean>(false);
   const [fullFormSuccessMsg, setFullFormSuccessMsg] = useState<string | null>(null);
 
@@ -246,6 +265,18 @@ export default function SpmbLandingPage({
           setRegForm(prev => ({ ...prev, sessionId: activeSession.id }));
         }
       }
+
+      if (!schoolIdentity) {
+        try {
+          const resId = await fetch(`/api/school-identity?_t=${Date.now()}`);
+          if (resId.ok) {
+            const idData = await resId.json();
+            setCurrentSchoolIdentity(idData);
+          }
+        } catch (err) {
+          console.error('Failed to load school identity:', err);
+        }
+      }
     } catch (e) {
       console.error('Failed to load SPMB config:', e);
     } finally {
@@ -376,6 +407,7 @@ export default function SpmbLandingPage({
         const candidate: SpmbCandidate = await res.json();
         setActiveCandidate(candidate);
         setFullForm(candidate);
+        setHasGuardian(Boolean(candidate.hasGuardian || (candidate.guardianName && candidate.guardianName.trim() !== '')));
         setDocUploads(candidate.documents || {});
         setSelectedUniformSize(candidate.selectedUniformSize || 'L');
         setCustomUniformNote(candidate.customUniformNote || '');
@@ -756,7 +788,21 @@ export default function SpmbLandingPage({
     );
     const dataToSave = {
       ...fullForm,
-      address: combinedAddress || fullForm.address
+      hasGuardian,
+      address: combinedAddress || fullForm.address,
+      ...(!hasGuardian ? {
+        guardianName: '',
+        guardianNik: '',
+        guardianBirthPlace: '',
+        guardianBirthDate: '',
+        guardianEducation: '',
+        guardianOccupation: '',
+        guardianIncome: '',
+        guardianPhone: '',
+        guardianRelation: '',
+        guardianAddress: '',
+        guardianStatus: '',
+      } : {})
     };
 
     try {
@@ -1638,37 +1684,25 @@ export default function SpmbLandingPage({
                 </div>
               </div>
 
-              {/* Tempat & Tanggal Lahir */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    Tempat Lahir <span className="text-rose-400">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: Pasuruan"
-                    value={regForm.birthPlace}
-                    onChange={(e) => setRegForm({ ...regForm, birthPlace: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
-
-                <div>
-                  <div className="flex items-center justify-between mb-1.5">
-                    <label className="block text-xs font-bold text-slate-300">
-                      Tanggal Lahir <span className="text-rose-400">*</span>
-                    </label>
-                    <span className="text-[10px] text-emerald-400 font-mono">Format: dd/mm/yyyy ({formatDisplayDate(regForm.birthDate)})</span>
-                  </div>
-                  <input
-                    type="date"
-                    required
-                    value={regForm.birthDate}
-                    onChange={(e) => setRegForm({ ...regForm, birthDate: e.target.value })}
-                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
+              {/* Tempat & Tanggal Lahir (Kolom Tersendiri |tgl| |bln| |Tahun| + Otomatis Gabung) */}
+              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+                <BirthDateSplitInput
+                  idPrefix="reg-student"
+                  birthPlace={regForm.birthPlace}
+                  onBirthPlaceChange={(val) => setRegForm({ ...regForm, birthPlace: val })}
+                  birthDate={regForm.birthDate}
+                  onBirthDateChange={(val) => setRegForm({ ...regForm, birthDate: val })}
+                  placeLabel="Tempat Lahir Calon Murid"
+                  dateLabel="Tanggal Lahir Calon Murid"
+                  combinedLabel="Tempat, Tgl Lahir Siswa"
+                  required
+                  showPlaceInput
+                  theme="dark"
+                  minYear={2000}
+                  maxYear={new Date().getFullYear()}
+                  placeholderPlace="Contoh: Pasuruan"
+                  helperText="Pilih tanggal, bulan, dan masukkan 4 digit tahun (contoh: | 18 | | 05 | | 1989 |)"
+                />
               </div>
 
               {/* Token Fee Summary Box */}
@@ -1991,7 +2025,7 @@ export default function SpmbLandingPage({
                     </h4>
 
                     {isStep1Done ? (
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700/80 space-y-2 text-xs">
+                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700/80 space-y-3 text-xs">
                         <div className="flex justify-between py-1 border-b border-slate-800">
                           <span className="text-slate-400">Status Pembayaran Token:</span>
                           <span className="font-bold text-emerald-400 uppercase">LUNAS (PAID)</span>
@@ -2009,6 +2043,22 @@ export default function SpmbLandingPage({
                         <div className="flex justify-between py-1">
                           <span className="text-slate-400">No Order Transaksi:</span>
                           <span className="font-mono text-slate-300">{activeCandidate.tokenPaymentOrderId || '-'}</span>
+                        </div>
+
+                        {/* Button Cetak Kuitansi Token Resmi */}
+                        <div className="pt-2 border-t border-slate-800 flex justify-end">
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReceiptModalCandidate(activeCandidate);
+                              setReceiptModalType('token');
+                              setIsReceiptModalOpen(true);
+                            }}
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md cursor-pointer transition-all"
+                          >
+                            <Printer size={14} />
+                            <span>Cetak Kuitansi Token Lunas (KOP Resmi)</span>
+                          </button>
                         </div>
                       </div>
                     ) : (
@@ -2143,36 +2193,24 @@ export default function SpmbLandingPage({
                         </div>
                       </div>
 
-                      {/* Tempat & Tanggal Lahir */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                            Tempat Lahir <span className="text-rose-400">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            value={fullForm.birthPlace || activeCandidate.birthPlace || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, birthPlace: e.target.value })}
-                            placeholder="Contoh: Pasuruan"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
-                          />
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="block text-[11px] font-bold text-slate-300">
-                              Tanggal Lahir <span className="text-rose-400">*</span>
-                            </label>
-                            <span className="text-[10px] text-emerald-400 font-mono">
-                              Format: dd/mm/yyyy ({formatDisplayDate(fullForm.birthDate || activeCandidate.birthDate)})
-                            </span>
-                          </div>
-                          <input
-                            type="date"
-                            value={fullForm.birthDate || activeCandidate.birthDate || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, birthDate: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
-                          />
-                        </div>
+                      {/* Tempat & Tanggal Lahir (Kolom Tersendiri |tgl| |bln| |Tahun| + Otomatis Gabung) */}
+                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+                        <BirthDateSplitInput
+                          idPrefix="student"
+                          birthPlace={fullForm.birthPlace || activeCandidate.birthPlace || ''}
+                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, birthPlace: val })}
+                          birthDate={fullForm.birthDate || activeCandidate.birthDate || ''}
+                          onBirthDateChange={(val) => setFullForm({ ...fullForm, birthDate: val })}
+                          placeLabel="Tempat Lahir Siswa"
+                          dateLabel="Tanggal Lahir Siswa"
+                          combinedLabel="Tempat, Tgl Lahir Siswa"
+                          required
+                          showPlaceInput
+                          theme="dark"
+                          minYear={2000}
+                          maxYear={new Date().getFullYear()}
+                          placeholderPlace="Contoh: Pasuruan"
+                        />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -2343,7 +2381,7 @@ export default function SpmbLandingPage({
                     {/* Section 2: Data Ayah Kandung */}
                     <div className="space-y-4 pt-2 border-t border-slate-700/80">
                       <h5 className="text-xs font-black text-emerald-400 uppercase tracking-wider">B. Data Ayah Kandung</h5>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold text-slate-300 mb-1">Nama Ayah</label>
                           <input
@@ -2364,6 +2402,38 @@ export default function SpmbLandingPage({
                             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
                           />
                         </div>
+                      </div>
+
+                      {/* Tempat & Tanggal Lahir Ayah (|tgl| |bln| |Tahun| + Otomatis Gabung) */}
+                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+                        <BirthDateSplitInput
+                          idPrefix="father"
+                          birthPlace={fullForm.fatherBirthPlace || ''}
+                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, fatherBirthPlace: val })}
+                          birthDate={fullForm.fatherBirthDate || ''}
+                          onBirthDateChange={(val) => setFullForm({ ...fullForm, fatherBirthDate: val })}
+                          placeLabel="Tempat Lahir Ayah"
+                          dateLabel="Tanggal Lahir Ayah"
+                          combinedLabel="Tempat, Tgl Lahir Ayah"
+                          showPlaceInput
+                          theme="dark"
+                          minYear={1940}
+                          maxYear={2015}
+                          placeholderPlace="Contoh: Pasuruan"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Pendidikan Terakhir Ayah</label>
+                          <input
+                            type="text"
+                            value={fullForm.fatherEducation || ''}
+                            onChange={(e) => setFullForm({ ...fullForm, fatherEducation: e.target.value })}
+                            placeholder="SD / SMP / SMA / S1 / S2"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                          />
+                        </div>
                         <div>
                           <label className="block text-[11px] font-bold text-slate-300 mb-1">Pekerjaan Ayah</label>
                           <input
@@ -2373,6 +2443,17 @@ export default function SpmbLandingPage({
                             placeholder="Wiraswasta / Karyawan / PNS"
                             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                           />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Status Keberadaan Ayah</label>
+                          <select
+                            value={fullForm.fatherStatus || 'Hidup'}
+                            onChange={(e) => setFullForm({ ...fullForm, fatherStatus: e.target.value })}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                          >
+                            <option value="Hidup">Masih Hidup</option>
+                            <option value="Meninggal">Sudah Meninggal</option>
+                          </select>
                         </div>
                       </div>
 
@@ -2407,7 +2488,7 @@ export default function SpmbLandingPage({
                     {/* Section 3: Data Ibu Kandung */}
                     <div className="space-y-4 pt-2 border-t border-slate-700/80">
                       <h5 className="text-xs font-black text-emerald-400 uppercase tracking-wider">C. Data Ibu Kandung</h5>
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold text-slate-300 mb-1">Nama Ibu</label>
                           <input
@@ -2428,6 +2509,38 @@ export default function SpmbLandingPage({
                             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
                           />
                         </div>
+                      </div>
+
+                      {/* Tempat & Tanggal Lahir Ibu (|tgl| |bln| |Tahun| + Otomatis Gabung) */}
+                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+                        <BirthDateSplitInput
+                          idPrefix="mother"
+                          birthPlace={fullForm.motherBirthPlace || ''}
+                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, motherBirthPlace: val })}
+                          birthDate={fullForm.motherBirthDate || ''}
+                          onBirthDateChange={(val) => setFullForm({ ...fullForm, motherBirthDate: val })}
+                          placeLabel="Tempat Lahir Ibu"
+                          dateLabel="Tanggal Lahir Ibu"
+                          combinedLabel="Tempat, Tgl Lahir Ibu"
+                          showPlaceInput
+                          theme="dark"
+                          minYear={1940}
+                          maxYear={2015}
+                          placeholderPlace="Contoh: Pasuruan"
+                        />
+                      </div>
+
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Pendidikan Terakhir Ibu</label>
+                          <input
+                            type="text"
+                            value={fullForm.motherEducation || ''}
+                            onChange={(e) => setFullForm({ ...fullForm, motherEducation: e.target.value })}
+                            placeholder="SD / SMP / SMA / S1 / S2"
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                          />
+                        </div>
                         <div>
                           <label className="block text-[11px] font-bold text-slate-300 mb-1">Pekerjaan Ibu</label>
                           <input
@@ -2437,6 +2550,17 @@ export default function SpmbLandingPage({
                             placeholder="Ibu Rumah Tangga / Guru / Karyawan"
                             className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
                           />
+                        </div>
+                        <div>
+                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Status Keberadaan Ibu</label>
+                          <select
+                            value={fullForm.motherStatus || 'Hidup'}
+                            onChange={(e) => setFullForm({ ...fullForm, motherStatus: e.target.value })}
+                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                          >
+                            <option value="Hidup">Masih Hidup</option>
+                            <option value="Meninggal">Sudah Meninggal</option>
+                          </select>
                         </div>
                       </div>
 
@@ -2466,6 +2590,206 @@ export default function SpmbLandingPage({
                           />
                         </div>
                       </div>
+                    </div>
+
+                    {/* Section 4: Data Wali Murid (Opsi Ceklist Ada / Tidak) */}
+                    <div className="space-y-4 pt-2 border-t border-slate-700/80">
+                      <div className="flex items-center justify-between">
+                        <div>
+                          <h5 className="text-xs font-black text-emerald-400 uppercase tracking-wider">D. Data Wali Murid (Opsional)</h5>
+                          <p className="text-[11px] text-slate-400">Centang opsi di bawah jika calon siswa memiliki wali selain orang tua kandung.</p>
+                        </div>
+                      </div>
+
+                      {/* Ceklist Wali Ada / Tidak Ada */}
+                      <div className={`p-4 rounded-2xl border transition-all ${
+                        hasGuardian 
+                          ? 'bg-emerald-950/30 border-emerald-500/50 shadow-sm' 
+                          : 'bg-slate-900/90 border-slate-700/80'
+                      }`}>
+                        <label className="flex items-center justify-between cursor-pointer">
+                          <div className="flex items-center gap-3">
+                            <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
+                              hasGuardian ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                            }`}>
+                              <UserCheck size={18} />
+                            </div>
+                            <div>
+                              <span className="text-xs font-bold text-white block">
+                                Apakah Calon Siswa Memiliki Wali Murid?
+                              </span>
+                              <span className="text-[10px] text-slate-400 block">
+                                Centang kotak ini jika ada wali (Paman/Bibi/Kakek/Nenek/Saudara/Lainnya) yang bertanggung jawab atas siswa.
+                              </span>
+                            </div>
+                          </div>
+                          
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="checkbox"
+                              checked={hasGuardian}
+                              onChange={(e) => setHasGuardian(e.target.checked)}
+                              className="w-5 h-5 accent-emerald-500 rounded cursor-pointer"
+                            />
+                            <span className={`text-xs font-bold ${hasGuardian ? 'text-emerald-400' : 'text-slate-400'}`}>
+                              {hasGuardian ? 'Wali Ada' : 'Wali Tidak Ada'}
+                            </span>
+                          </div>
+                        </label>
+                      </div>
+
+                      {/* Jika Ceklist Wali Ada: Form Data Wali Tampil */}
+                      {hasGuardian && (
+                        <div className="space-y-4 p-5 rounded-2xl bg-slate-900/90 border border-emerald-500/40">
+                          <div className="flex items-center justify-between border-b border-slate-700/80 pb-2">
+                            <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                              <UserPlus size={14} />
+                              <span>Formulir Isian Data Lengkap Wali Murid</span>
+                            </span>
+                            <span className="text-[10px] text-slate-400 font-mono bg-slate-800 px-2 py-0.5 rounded-md">
+                              Status: Wali Aktif
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                Nama Lengkap Wali <span className="text-rose-400">*</span>
+                              </label>
+                              <input
+                                type="text"
+                                required={hasGuardian}
+                                value={fullForm.guardianName || ''}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianName: e.target.value })}
+                                placeholder="Nama Lengkap Wali"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                Hubungan dengan Siswa <span className="text-rose-400">*</span>
+                              </label>
+                              <select
+                                value={fullForm.guardianRelation || 'Paman'}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianRelation: e.target.value })}
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              >
+                                <option value="Paman">Paman</option>
+                                <option value="Bibi">Bibi</option>
+                                <option value="Kakek">Kakek</option>
+                                <option value="Nenek">Nenek</option>
+                                <option value="Kakak Kandung">Kakak Kandung</option>
+                                <option value="Saudara">Saudara Lainnya</option>
+                                <option value="Wali Asuh">Wali Asuh</option>
+                                <option value="Lainnya">Lainnya</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                                NIK Wali (16 Digit)
+                              </label>
+                              <input
+                                type="text"
+                                value={fullForm.guardianNik || ''}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianNik: e.target.value.replace(/\D/g, '') })}
+                                placeholder="16 Digit NIK Wali"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                              />
+                            </div>
+                          </div>
+
+                          {/* Tempat & Tanggal Lahir Wali (|tgl| |bln| |Tahun| + Otomatis Gabung) */}
+                          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-700/80">
+                            <BirthDateSplitInput
+                              idPrefix="guardian"
+                              birthPlace={fullForm.guardianBirthPlace || ''}
+                              onBirthPlaceChange={(val) => setFullForm({ ...fullForm, guardianBirthPlace: val })}
+                              birthDate={fullForm.guardianBirthDate || ''}
+                              onBirthDateChange={(val) => setFullForm({ ...fullForm, guardianBirthDate: val })}
+                              placeLabel="Tempat Lahir Wali"
+                              dateLabel="Tanggal Lahir Wali"
+                              combinedLabel="Tempat, Tgl Lahir Wali"
+                              showPlaceInput
+                              theme="dark"
+                              minYear={1940}
+                              maxYear={2015}
+                              placeholderPlace="Contoh: Pasuruan"
+                            />
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Pendidikan Terakhir Wali</label>
+                              <input
+                                type="text"
+                                value={fullForm.guardianEducation || ''}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianEducation: e.target.value })}
+                                placeholder="SD / SMP / SMA / S1 / S2"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Pekerjaan Wali</label>
+                              <input
+                                type="text"
+                                value={fullForm.guardianOccupation || ''}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianOccupation: e.target.value })}
+                                placeholder="Wiraswasta / Karyawan / PNS"
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              />
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Status Keberadaan Wali</label>
+                              <select
+                                value={fullForm.guardianStatus || 'Hidup'}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianStatus: e.target.value })}
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              >
+                                <option value="Hidup">Masih Hidup</option>
+                                <option value="Meninggal">Sudah Meninggal</option>
+                              </select>
+                            </div>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Penghasilan Bulanan Wali</label>
+                              <select
+                                value={fullForm.guardianIncome || ''}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianIncome: e.target.value })}
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              >
+                                <option value="">-- Pilih Range Penghasilan --</option>
+                                <option value="Kurang dari Rp 1.000.000">Kurang dari Rp 1.000.000</option>
+                                <option value="Rp 1.000.000 - Rp 2.500.000">Rp 1.000.000 - Rp 2.500.000</option>
+                                <option value="Rp 2.500.000 - Rp 5.000.000">Rp 2.500.000 - Rp 5.000.000</option>
+                                <option value="Lebih dari Rp 5.000.000">Lebih dari Rp 5.000.000</option>
+                              </select>
+                            </div>
+                            <div>
+                              <label className="block text-[11px] font-bold text-slate-300 mb-1">No. WhatsApp / HP Wali</label>
+                              <input
+                                type="text"
+                                value={fullForm.guardianPhone || ''}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianPhone: e.target.value })}
+                                placeholder="081234..."
+                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              />
+                            </div>
+                          </div>
+
+                          <div>
+                            <label className="block text-[11px] font-bold text-slate-300 mb-1">Alamat Tinggal Wali</label>
+                            <input
+                              type="text"
+                              value={fullForm.guardianAddress || ''}
+                              onChange={(e) => setFullForm({ ...fullForm, guardianAddress: e.target.value })}
+                              placeholder="Kosongkan jika sama dengan alamat tinggal siswa"
+                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                            />
+                          </div>
+                        </div>
+                      )}
                     </div>
 
                     {/* Submit Button */}
@@ -2816,9 +3140,23 @@ export default function SpmbLandingPage({
                     {/* Action Button */}
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
                       {activeCandidate.reRegistrationStatus === 'paid' ? (
-                        <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2">
-                          <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-                          <span>Daftar Ulang telah Lunas pada {activeCandidate.reRegistrationPaidAt ? new Date(activeCandidate.reRegistrationPaidAt).toLocaleDateString('id-ID') : 'sebelumnya'}.</span>
+                        <div className="flex flex-wrap items-center gap-3">
+                          <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                            <span>Daftar Ulang telah Lunas pada {activeCandidate.reRegistrationPaidAt ? new Date(activeCandidate.reRegistrationPaidAt).toLocaleDateString('id-ID') : 'sebelumnya'}.</span>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setReceiptModalCandidate(activeCandidate);
+                              setReceiptModalType('rereg');
+                              setIsReceiptModalOpen(true);
+                            }}
+                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md cursor-pointer transition-all"
+                          >
+                            <Printer size={14} />
+                            <span>Cetak Kuitansi Daftar Ulang (KOP Resmi)</span>
+                          </button>
                         </div>
                       ) : (
                         <button
@@ -2893,7 +3231,34 @@ export default function SpmbLandingPage({
                     </div>
                   ) : (
                   <div className="space-y-6">
-                    <div className="flex justify-end gap-2 print:hidden">
+                    <div className="flex flex-wrap items-center justify-between gap-3 print:hidden">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReceiptModalCandidate(activeCandidate);
+                            setReceiptModalType('token');
+                            setIsReceiptModalOpen(true);
+                          }}
+                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs rounded-xl flex items-center gap-2 border border-emerald-500/30 shadow-md cursor-pointer transition-colors"
+                        >
+                          <Printer size={14} />
+                          <span>Cetak Kuitansi Token Lunas</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReceiptModalCandidate(activeCandidate);
+                            setReceiptModalType('rereg');
+                            setIsReceiptModalOpen(true);
+                          }}
+                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold text-xs rounded-xl flex items-center gap-2 border border-cyan-500/30 shadow-md cursor-pointer transition-colors"
+                        >
+                          <Printer size={14} />
+                          <span>Cetak Kuitansi Daftar Ulang Lunas</span>
+                        </button>
+                      </div>
+
                       <button
                         onClick={handlePrintCard}
                         className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md cursor-pointer"
@@ -2905,30 +3270,40 @@ export default function SpmbLandingPage({
 
                     {/* Official Card for Print & Screen */}
                     <div className="bg-white text-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-2xl space-y-6 print:shadow-none print:border-none print:p-0">
-                      {/* Card Header with Letterhead */}
-                      <div className="flex items-center gap-4 border-b-2 border-slate-900 pb-4">
-                        {schoolIdentity?.logo ? (
-                          <img src={schoolIdentity.logo} alt="Logo" className="w-16 h-16 object-contain" />
-                        ) : (
-                          <div className="w-16 h-16 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-black text-2xl">
-                            NU
-                          </div>
-                        )}
-                        <div className="text-center flex-grow">
-                          <h3 className="text-base sm:text-lg font-black tracking-tight uppercase text-slate-900 m-0">
-                            {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
-                          </h3>
-                          <p className="xs font-bold text-emerald-800 m-0 uppercase">
-                            PANITIA SISTEM PENERIMAAN MURID BARU (SPMB) T.A. {config?.academicYear || '2027/2028'}
-                          </p>
-                          <p className="text-[10px] text-slate-600 m-0">
-                            {schoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} • Telp: {schoolIdentity?.phone || '(0343) 631234'}
-                          </p>
+                      {/* Card Header with Letterhead (Admin Main Settings Letterhead KOP) */}
+                      {currentSchoolIdentity?.letterhead ? (
+                        <div className="border-b-2 border-slate-900 pb-3 mb-2">
+                          <img 
+                            src={currentSchoolIdentity.letterhead} 
+                            alt="KOP Resmi Sekolah" 
+                            className="w-full h-auto max-h-36 object-contain mx-auto" 
+                          />
                         </div>
-                        {qrCodeDataUrl && (
-                          <img src={qrCodeDataUrl} alt="QR Code" className="w-16 h-16 object-contain hidden sm:block" />
-                        )}
-                      </div>
+                      ) : (
+                        <div className="flex items-center gap-4 border-b-2 border-slate-900 pb-4">
+                          {currentSchoolIdentity?.logo ? (
+                            <img src={currentSchoolIdentity.logo} alt="Logo" className="w-16 h-16 object-contain" />
+                          ) : (
+                            <div className="w-16 h-16 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-black text-2xl">
+                              NU
+                            </div>
+                          )}
+                          <div className="text-center flex-grow">
+                            <h3 className="text-base sm:text-lg font-black tracking-tight uppercase text-slate-900 m-0">
+                              {currentSchoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                            </h3>
+                            <p className="text-xs font-bold text-emerald-800 m-0 uppercase">
+                              PANITIA SISTEM PENERIMAAN MURID BARU (SPMB) T.A. {config?.academicYear || '2027/2028'}
+                            </p>
+                            <p className="text-[10px] text-slate-600 m-0">
+                              {currentSchoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} • Telp: {currentSchoolIdentity?.phone || '(0343) 631234'}
+                            </p>
+                          </div>
+                          {qrCodeDataUrl && (
+                            <img src={qrCodeDataUrl} alt="QR Code" className="w-16 h-16 object-contain hidden sm:block" />
+                          )}
+                        </div>
+                      )}
 
                       <div className="text-center py-1 bg-slate-100 rounded-xl">
                         <h4 className="text-xs sm:text-sm font-black uppercase text-slate-800 m-0">
@@ -3098,6 +3473,16 @@ export default function SpmbLandingPage({
           </div>
         </div>
       )}
+
+      {/* Modal Kuitansi Resmi SPMB (KOP Resmi Lembaga) */}
+      <SpmbReceiptModal
+        isOpen={isReceiptModalOpen}
+        onClose={() => setIsReceiptModalOpen(false)}
+        candidate={receiptModalCandidate}
+        config={config}
+        schoolIdentity={currentSchoolIdentity}
+        defaultType={receiptModalType}
+      />
     </div>
   );
 }

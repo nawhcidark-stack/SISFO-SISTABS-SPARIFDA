@@ -6,6 +6,8 @@ import {
   SpmbUniformItem, 
   SchoolIdentity 
 } from '../types';
+import SpmbReceiptModal from './SpmbReceiptModal';
+import { printSpmbReceiptDirect } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -59,6 +61,7 @@ export default function AdminSpmbManagement({
   onOpenPublicLandingPage,
   onRefresh
 }: AdminSpmbManagementProps) {
+  const [currentSchoolIdentity, setCurrentSchoolIdentity] = useState<SchoolIdentity | undefined>(schoolIdentity);
   const [config, setConfig] = useState<SpmbConfig | null>(null);
   const [candidates, setCandidates] = useState<SpmbCandidate[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
@@ -95,11 +98,22 @@ export default function AdminSpmbManagement({
   // Cash Refund Receipt Modal (Kuitansi Resmi Cetak)
   const [receiptCandidate, setReceiptCandidate] = useState<SpmbCandidate | null>(null);
 
+  // SPMB Official Receipt Modal (Token & Daftar Ulang)
+  const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
+  const [receiptModalCandidate, setReceiptModalCandidate] = useState<SpmbCandidate | null>(null);
+  const [receiptModalType, setReceiptModalType] = useState<'token' | 'rereg'>('token');
+
   // Migration / Promotion to Grade 7 State
   const [isMigrating, setIsMigrating] = useState<boolean>(false);
   const [migrationTargetClass, setMigrationTargetClass] = useState<string>('7-A');
   const [migrationSuccessMsg, setMigrationSuccessMsg] = useState<string | null>(null);
   const [copiedLink, setCopiedLink] = useState<boolean>(false);
+
+  useEffect(() => {
+    if (schoolIdentity) {
+      setCurrentSchoolIdentity(schoolIdentity);
+    }
+  }, [schoolIdentity]);
 
   // Load SPMB config & candidates
   const loadData = async () => {
@@ -117,6 +131,18 @@ export default function AdminSpmbManagement({
       if (resCandidates.ok) {
         const candidatesData = await resCandidates.json();
         setCandidates(candidatesData);
+      }
+
+      if (!schoolIdentity) {
+        try {
+          const resId = await fetch(`/api/school-identity?_t=${Date.now()}`);
+          if (resId.ok) {
+            const idData = await resId.json();
+            setCurrentSchoolIdentity(idData);
+          }
+        } catch (err) {
+          console.error('Failed to load school identity:', err);
+        }
       }
     } catch (e) {
       console.error('Failed to load SPMB data:', e);
@@ -884,11 +910,26 @@ export default function AdminSpmbManagement({
                           <td className="py-3.5 px-4">
                             <div className="space-y-1.5">
                               {/* Status Pembayaran Token Online */}
-                              <div>
+                              <div className="flex flex-col items-start gap-1">
                                 {isTokenPaid ? (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                    Online Lunas (Rp 50rb)
-                                  </span>
+                                  <>
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                      Online Lunas (Rp 50rb)
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReceiptModalCandidate(candidate);
+                                        setReceiptModalType('token');
+                                        setIsReceiptModalOpen(true);
+                                      }}
+                                      className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      title="Cetak Kuitansi Resmi Token Pendaftaran"
+                                    >
+                                      <Printer size={11} />
+                                      <span>Cetak Kuitansi</span>
+                                    </button>
+                                  </>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
                                     Belum Bayar Token
@@ -898,7 +939,7 @@ export default function AdminSpmbManagement({
 
                               {/* Status & Aksi Pengembalian Token (Khusus Kolektif) */}
                               {isCollective && isTokenPaid && (
-                                <div>
+                                <div className="pt-1 border-t border-slate-800">
                                   {isRefunded ? (
                                     <div className="space-y-1">
                                       <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
@@ -911,7 +952,7 @@ export default function AdminSpmbManagement({
                                           onClick={() => setReceiptCandidate(candidate)}
                                           className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-bold cursor-pointer"
                                         >
-                                          Cetak Kuitansi
+                                          Kuitansi Refund
                                         </button>
                                         <span className="text-slate-600">•</span>
                                         <button
@@ -941,15 +982,32 @@ export default function AdminSpmbManagement({
 
                           {/* Status Daftar Ulang */}
                           <td className="py-3.5 px-4">
-                            {candidate.reRegistrationStatus === 'paid' ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
-                                LUNAS (Uk. {candidate.selectedUniformSize || 'L'})
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
-                                Belum Lunas
-                              </span>
-                            )}
+                            <div className="space-y-1">
+                              {candidate.reRegistrationStatus === 'paid' ? (
+                                <>
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 block w-fit">
+                                    LUNAS (Uk. {candidate.selectedUniformSize || 'L'})
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReceiptModalCandidate(candidate);
+                                      setReceiptModalType('rereg');
+                                      setIsReceiptModalOpen(true);
+                                    }}
+                                    className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                    title="Cetak Kuitansi Resmi Daftar Ulang & Seragam"
+                                  >
+                                    <Printer size={11} />
+                                    <span>Cetak Kuitansi DU</span>
+                                  </button>
+                                </>
+                              ) : (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  Belum Lunas
+                                </span>
+                              )}
+                            </div>
                           </td>
 
                           {/* Status Penerimaan */}
@@ -2027,6 +2085,42 @@ export default function AdminSpmbManagement({
                     <span className="font-bold text-white">{selectedCandidate.selectedUniformSize || '-'}</span>
                   </div>
 
+                  {/* Kuitansi Resmi SPMB (Kop Resmi Pengaturan Web Utama) */}
+                  <div className="pt-2.5 border-t border-slate-700/80 space-y-2">
+                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">
+                      Cetak Dokumen Resmi:
+                    </label>
+                    <div className="grid grid-cols-1 gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReceiptModalCandidate(selectedCandidate);
+                          setReceiptModalType('token');
+                          setIsReceiptModalOpen(true);
+                        }}
+                        className="w-full py-2 bg-emerald-800/60 hover:bg-emerald-700 border border-emerald-500/40 text-emerald-100 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                      >
+                        <Printer size={13} />
+                        <span>Kuitansi Token Lunas (KOP Resmi)</span>
+                      </button>
+
+                      {selectedCandidate.reRegistrationStatus === 'paid' && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setReceiptModalCandidate(selectedCandidate);
+                            setReceiptModalType('rereg');
+                            setIsReceiptModalOpen(true);
+                          }}
+                          className="w-full py-2 bg-cyan-800/60 hover:bg-cyan-700 border border-cyan-500/40 text-cyan-100 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                        >
+                          <Printer size={13} />
+                          <span>Kuitansi Daftar Ulang & Seragam (KOP Resmi)</span>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
                   {/* Button Action Refund Cash inside Modal */}
                   {selectedCandidate.registrationType === 'school_collective' && (
                     <div className="pt-2 border-t border-slate-700">
@@ -2166,6 +2260,16 @@ export default function AdminSpmbManagement({
           </div>
         </div>
       )}
+
+      {/* Modal Kuitansi Resmi SPMB (KOP Resmi Lembaga) */}
+      <SpmbReceiptModal
+        isOpen={isReceiptModalOpen}
+        onClose={() => setIsReceiptModalOpen(false)}
+        candidate={receiptModalCandidate}
+        config={config}
+        schoolIdentity={currentSchoolIdentity}
+        defaultType={receiptModalType}
+      />
     </div>
   );
 }

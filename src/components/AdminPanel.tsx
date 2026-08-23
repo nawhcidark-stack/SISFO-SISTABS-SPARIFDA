@@ -6654,7 +6654,7 @@ export default function AdminPanel({
 
         {adminTab === "spmb" && (
           <div className="w-full">
-            <AdminSpmbManagement onRefresh={onRefresh} />
+            <AdminSpmbManagement onRefresh={onRefresh} schoolIdentity={schoolIdentity} />
           </div>
         )}
 

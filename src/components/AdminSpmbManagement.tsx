@@ -7,6 +7,7 @@ import {
   SchoolIdentity 
 } from '../types';
 import SpmbReceiptModal from './SpmbReceiptModal';
+import SpmbFinanceReport from './SpmbFinanceReport';
 import { printSpmbReceiptDirect } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
@@ -66,13 +67,14 @@ export default function AdminSpmbManagement({
   const [candidates, setCandidates] = useState<SpmbCandidate[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'candidates' | 'settings' | 'uniforms' | 'sessions'>('candidates');
+  const [activeTab, setActiveTab] = useState<'candidates' | 'finance' | 'settings' | 'uniforms' | 'sessions'>('candidates');
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [filterSession, setFilterSession] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterGender, setFilterGender] = useState<string>('all');
+  const [filterSchoolOrigin, setFilterSchoolOrigin] = useState<'all' | 'maarif' | 'other'>('all');
   const [filterCollective, setFilterCollective] = useState<string>('all');
   const [filterTransfer, setFilterTransfer] = useState<'all' | 'transferred' | 'normal'>('all');
 
@@ -477,6 +479,12 @@ export default function AdminSpmbManagement({
     const matchesStatus = filterStatus === 'all' || c.status === filterStatus;
     const matchesGender = filterGender === 'all' || c.gender === filterGender;
 
+    const isMaarif = c.schoolOriginType === 'maarif_jogosari' || (c.schoolOrigin || '').toLowerCase().includes('maarif');
+    const matchesSchoolOrigin = 
+      filterSchoolOrigin === 'all' ||
+      (filterSchoolOrigin === 'maarif' && isMaarif) ||
+      (filterSchoolOrigin === 'other' && !isMaarif);
+
     let matchesCollective = true;
     if (filterCollective === 'online_individual') {
       matchesCollective = c.registrationType !== 'school_collective';
@@ -495,11 +503,24 @@ export default function AdminSpmbManagement({
       matchesTransfer = !c.isTransferredSession;
     }
 
-    return matchesSearch && matchesSession && matchesStatus && matchesGender && matchesCollective && matchesTransfer;
+    return matchesSearch && matchesSession && matchesStatus && matchesGender && matchesSchoolOrigin && matchesCollective && matchesTransfer;
   });
 
   // Calculate Statistics
   const totalRegistered = candidates.length;
+  
+  // 1. Gender Statistics
+  const maleCount = candidates.filter(c => c.gender === 'L' || (c.gender as string) === 'male' || (c.gender as string) === 'Laki-laki').length;
+  const femaleCount = candidates.filter(c => c.gender === 'P' || (c.gender as string) === 'female' || (c.gender as string) === 'Perempuan').length;
+  const malePercent = totalRegistered > 0 ? Math.round((maleCount / totalRegistered) * 100) : 0;
+  const femalePercent = totalRegistered > 0 ? Math.round((femaleCount / totalRegistered) * 100) : 0;
+
+  // 2. School Origin Statistics (SD Maarif vs SD Umum)
+  const maarifCount = candidates.filter(c => c.schoolOriginType === 'maarif_jogosari' || (c.schoolOrigin || '').toLowerCase().includes('maarif')).length;
+  const umumCount = candidates.filter(c => !(c.schoolOriginType === 'maarif_jogosari' || (c.schoolOrigin || '').toLowerCase().includes('maarif'))).length;
+  const maarifPercent = totalRegistered > 0 ? Math.round((maarifCount / totalRegistered) * 100) : 0;
+  const umumPercent = totalRegistered > 0 ? Math.round((umumCount / totalRegistered) * 100) : 0;
+
   const tokenPaidCount = candidates.filter(c => c.tokenPaymentStatus === 'paid' || c.tokenPaid).length;
   const collectiveCount = candidates.filter(c => c.registrationType === 'school_collective').length;
   const needRefundCount = candidates.filter(c => c.registrationType === 'school_collective' && (c.tokenPaymentStatus === 'paid' || c.tokenPaid) && c.collectiveRefundStatus !== 'refunded').length;
@@ -514,39 +535,39 @@ export default function AdminSpmbManagement({
 
   return (
     <div className="space-y-6">
-      {/* Header Banner & Public Link Share */}
-      <div className="bg-gradient-to-r from-emerald-900/40 via-slate-800 to-indigo-900/40 border border-emerald-500/30 rounded-3xl p-6 shadow-xl space-y-4">
-        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2">
-              <span className="px-3 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold uppercase">
+      {/* Header Banner & Public Link Share - Clean High-Contrast Light / Soft Emerald Theme */}
+      <div className="bg-white border-2 border-emerald-500/30 rounded-3xl p-6 sm:p-7 shadow-md space-y-5">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+          <div className="space-y-1.5">
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-black uppercase tracking-wider">
                 SPMB {currentAcademicYear}
               </span>
-              <span className="px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 text-xs">
-                {candidates.length} Calon Terdaftar
+              <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold">
+                {candidates.length} Calon Siswa
               </span>
               {needRefundCount > 0 && (
-                <span className="px-2.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/40 text-xs font-bold animate-pulse">
+                <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-xs font-black animate-pulse">
                   ⚠️ {needRefundCount} Perlu Refund Token Cash
                 </span>
               )}
             </div>
-            <h2 className="text-xl sm:text-2xl font-black text-white m-0">
+            <h2 className="text-xl sm:text-2xl font-black text-slate-900 m-0">
               Penerimaan Murid Baru (SPMB) {currentAcademicYear}
             </h2>
-            <p className="text-xs text-slate-300 m-0">
-              Kelola sesi pendaftaran, penetapan jalur kolektif & pengembalian token tunai, verifikasi buku induk, hingga migrasi ke rombel kelas 7.
+            <p className="text-xs text-slate-600 font-medium m-0 max-w-3xl">
+              Panel administrasi penerimaan siswa baru, pemantauan statistik pendaftar, laporan keuangan & arus kas, pengembalian uang token, hingga verifikasi buku induk.
             </p>
           </div>
 
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
             <button
               type="button"
               onClick={handleCopyLink}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-slate-700 transition-all cursor-pointer shadow-sm"
+              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center gap-1.5 border border-slate-300 transition-all cursor-pointer shadow-xs"
               title="Salin tautan formulir SPMB"
             >
-              {copiedLink ? <Check size={14} className="text-emerald-400" /> : <Copy size={14} />}
+              {copiedLink ? <Check size={14} className="text-emerald-700 font-bold" /> : <Copy size={14} />}
               <span>{copiedLink ? 'Tautan Disalin!' : 'Salin Link Formulir'}</span>
             </button>
 
@@ -554,7 +575,7 @@ export default function AdminSpmbManagement({
               <button
                 type="button"
                 onClick={onOpenPublicLandingPage}
-                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md transition-all cursor-pointer"
+                className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
               >
                 <ExternalLink size={14} />
                 <span>Buka Portal SPMB</span>
@@ -565,86 +586,230 @@ export default function AdminSpmbManagement({
               type="button"
               onClick={loadData}
               disabled={isLoading}
-              className="p-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl border border-slate-700 cursor-pointer"
+              className="p-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl border border-slate-300 cursor-pointer transition-colors"
               title="Refresh Data"
             >
-              <RefreshCw size={14} className={isLoading ? 'animate-spin' : ''} />
+              <RefreshCw size={15} className={isLoading ? 'animate-spin' : ''} />
             </button>
           </div>
         </div>
 
-        {/* Quick KPI Counters */}
-        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3 pt-2">
-          <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 text-center">
-            <span className="text-[11px] text-slate-400 block">Total Pendaftar</span>
-            <span className="text-xl font-black text-white">{totalRegistered}</span>
+        {/* 1. STATISTIK UTAMA: GENDER & ASAL SEKOLAH (SD MA'ARIF vs SD UMUM) */}
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          {/* Card Statistik Gender: Laki-laki & Perempuan */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-900 font-black text-xs uppercase tracking-wider">
+                <Users size={16} className="text-blue-600" />
+                <span>Statistik Jenis Kelamin Siswa</span>
+              </div>
+              <span className="text-xs font-bold text-slate-600">{totalRegistered} Total Siswa</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* Laki-laki */}
+              <div className="p-3 bg-white rounded-xl border-2 border-blue-200/80 shadow-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-blue-900 flex items-center gap-1">
+                    <User size={13} className="text-blue-600" />
+                    <span>Laki-laki (Putra)</span>
+                  </span>
+                  <span className="text-xs font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-200">
+                    {malePercent}%
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1.5 pt-0.5">
+                  <span className="text-2xl font-black text-slate-900">{maleCount}</span>
+                  <span className="text-xs font-medium text-slate-500">calon siswa</span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
+                  <div 
+                    className="bg-blue-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${malePercent}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* Perempuan */}
+              <div className="p-3 bg-white rounded-xl border-2 border-pink-200/80 shadow-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-pink-900 flex items-center gap-1">
+                    <User size={13} className="text-pink-600" />
+                    <span>Perempuan (Putri)</span>
+                  </span>
+                  <span className="text-xs font-extrabold text-pink-700 bg-pink-50 px-2 py-0.5 rounded-full border border-pink-200">
+                    {femalePercent}%
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1.5 pt-0.5">
+                  <span className="text-2xl font-black text-slate-900">{femaleCount}</span>
+                  <span className="text-xs font-medium text-slate-500">calon siswi</span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
+                  <div 
+                    className="bg-pink-500 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${femalePercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 text-center">
-            <span className="text-[11px] text-emerald-400 block">Token Online Lunas</span>
-            <span className="text-xl font-black text-emerald-400">{tokenPaidCount}</span>
+
+          {/* Card Statistik Asal Sekolah: SD Ma'arif vs SD Umum */}
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2 text-slate-900 font-black text-xs uppercase tracking-wider">
+                <GraduationCap size={16} className="text-emerald-700" />
+                <span>Statistik Asal Sekolah Calon Siswa</span>
+              </div>
+              <span className="text-xs font-bold text-slate-600">{totalRegistered} Total Siswa</span>
+            </div>
+
+            <div className="grid grid-cols-2 gap-3">
+              {/* SD Maarif */}
+              <div className="p-3 bg-white rounded-xl border-2 border-emerald-300 shadow-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-emerald-950 flex items-center gap-1">
+                    <Sparkles size={13} className="text-emerald-600" />
+                    <span>SD Ma'arif (Afiliasi)</span>
+                  </span>
+                  <span className="text-xs font-extrabold text-emerald-800 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+                    {maarifPercent}%
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1.5 pt-0.5">
+                  <span className="text-2xl font-black text-slate-900">{maarifCount}</span>
+                  <span className="text-xs font-medium text-slate-500">calon siswa</span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
+                  <div 
+                    className="bg-emerald-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${maarifPercent}%` }}
+                  />
+                </div>
+              </div>
+
+              {/* SD Umum / Negeri / Luar */}
+              <div className="p-3 bg-white rounded-xl border-2 border-indigo-200/80 shadow-xs space-y-1">
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-bold text-indigo-950 flex items-center gap-1">
+                    <Building2 size={13} className="text-indigo-600" />
+                    <span>SD Umum / Luar</span>
+                  </span>
+                  <span className="text-xs font-extrabold text-indigo-800 bg-indigo-50 px-2 py-0.5 rounded-full border border-indigo-200">
+                    {umumPercent}%
+                  </span>
+                </div>
+                <div className="flex items-baseline gap-1.5 pt-0.5">
+                  <span className="text-2xl font-black text-slate-900">{umumCount}</span>
+                  <span className="text-xs font-medium text-slate-500">calon siswa</span>
+                </div>
+                {/* Progress bar */}
+                <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
+                  <div 
+                    className="bg-indigo-600 h-full rounded-full transition-all duration-500"
+                    style={{ width: `${umumPercent}%` }}
+                  />
+                </div>
+              </div>
+            </div>
           </div>
-          <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 text-center">
-            <span className="text-[11px] text-indigo-400 block">Jalur Kolektif</span>
-            <span className="text-xl font-black text-indigo-400">{collectiveCount}</span>
+        </div>
+
+        {/* 2. Quick KPI Counters Grid (High Contrast & Clear Colors) */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5 pt-1">
+          <div className="p-3 rounded-2xl bg-white border border-slate-200 shadow-xs text-center">
+            <span className="text-[11px] font-bold text-slate-600 block">Total Pendaftar</span>
+            <span className="text-xl font-black text-slate-900 mt-0.5 block">{totalRegistered}</span>
           </div>
-          <div className="p-3 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-center">
-            <span className="text-[11px] text-amber-300 font-bold block">Perlu Refund Cash</span>
-            <span className="text-xl font-black text-amber-400">{needRefundCount}</span>
+
+          <div className="p-3 rounded-2xl bg-emerald-50/70 border border-emerald-200 shadow-xs text-center">
+            <span className="text-[11px] font-bold text-emerald-900 block">Token Online</span>
+            <span className="text-xl font-black text-emerald-700 mt-0.5 block">{tokenPaidCount}</span>
           </div>
-          <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 text-center">
-            <span className="text-[11px] text-blue-400 block">Buku Induk Lengkap</span>
-            <span className="text-xl font-black text-blue-400">{formCompletedCount}</span>
+
+          <div className="p-3 rounded-2xl bg-indigo-50/70 border border-indigo-200 shadow-xs text-center">
+            <span className="text-[11px] font-bold text-indigo-900 block">Jalur Kolektif</span>
+            <span className="text-xl font-black text-indigo-700 mt-0.5 block">{collectiveCount}</span>
           </div>
-          <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 text-center">
-            <span className="text-[11px] text-emerald-300 block">Daftar Ulang Lunas</span>
-            <span className="text-xl font-black text-emerald-300">{reRegPaidCount}</span>
+
+          <div className="p-3 rounded-2xl bg-amber-50 border-2 border-amber-300 shadow-xs text-center">
+            <span className="text-[11px] font-extrabold text-amber-950 block">Perlu Refund Cash</span>
+            <span className="text-xl font-black text-amber-700 mt-0.5 block">{needRefundCount}</span>
           </div>
-          <div className="p-3 rounded-2xl bg-rose-950/30 border border-rose-500/30 text-center" title="Calon siswa yang dialihkan ke jalur berikutnya karena melewati batas akhir daftar ulang">
-            <span className="text-[11px] text-rose-300 font-bold block">Dialihkan Jalur</span>
-            <span className="text-xl font-black text-rose-400">{transferredCount}</span>
+
+          <div className="p-3 rounded-2xl bg-blue-50/70 border border-blue-200 shadow-xs text-center">
+            <span className="text-[11px] font-bold text-blue-900 block">Buku Induk Lengkap</span>
+            <span className="text-xl font-black text-blue-700 mt-0.5 block">{formCompletedCount}</span>
           </div>
-          <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 text-center">
-            <span className="text-[11px] text-cyan-400 block">Migrasi Kelas 7</span>
-            <span className="text-xl font-black text-cyan-400">{promotedCount}</span>
+
+          <div className="p-3 rounded-2xl bg-teal-50/70 border border-teal-200 shadow-xs text-center">
+            <span className="text-[11px] font-bold text-teal-900 block">Daftar Ulang Lunas</span>
+            <span className="text-xl font-black text-teal-700 mt-0.5 block">{reRegPaidCount}</span>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 shadow-xs text-center" title="Calon siswa yang dialihkan ke jalur berikutnya karena melewati batas akhir daftar ulang">
+            <span className="text-[11px] font-bold text-rose-900 block">Dialihkan Jalur</span>
+            <span className="text-xl font-black text-rose-600 mt-0.5 block">{transferredCount}</span>
+          </div>
+
+          <div className="p-3 rounded-2xl bg-purple-50/70 border border-purple-200 shadow-xs text-center">
+            <span className="text-[11px] font-bold text-purple-900 block">Migrasi Kelas 7</span>
+            <span className="text-xl font-black text-purple-700 mt-0.5 block">{promotedCount}</span>
           </div>
         </div>
       </div>
 
-      {/* Sub-Navigation Tabs */}
-      <div className="flex flex-wrap items-center gap-2 border-b border-slate-800 pb-3">
+      {/* Sub-Navigation Tabs - Clean & Crisp */}
+      <div className="flex flex-wrap items-center gap-2 border-b border-slate-200 pb-3">
         <button
           onClick={() => setActiveTab('candidates')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'candidates'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Users size={14} />
+          <Users size={15} />
           <span>Daftar Calon Murid ({candidates.length})</span>
         </button>
 
         <button
-          onClick={() => setActiveTab('sessions')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
-            activeTab === 'sessions'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+          onClick={() => setActiveTab('finance')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'finance'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Calendar size={14} />
+          <CreditCard size={15} className={activeTab === 'finance' ? 'text-white' : 'text-emerald-700'} />
+          <span>Laporan Keuangan SPMB</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('sessions')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'sessions'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
+          }`}
+        >
+          <Calendar size={15} />
           <span>Sesi Pendaftaran & Gelombang</span>
         </button>
 
         <button
           onClick={() => setActiveTab('uniforms')}
-          className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
             activeTab === 'uniforms'
-              ? 'bg-emerald-600 text-white shadow-sm'
-              : 'text-slate-400 hover:text-white hover:bg-slate-800'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'bg-white text-slate-700 hover:bg-slate-100 border border-slate-200'
           }`}
         >
-          <Coins size={14} />
+          <Coins size={15} />
           <span>Setting Biaya & Tahun Ajaran SPMB</span>
         </button>
       </div>
@@ -652,41 +817,63 @@ export default function AdminSpmbManagement({
       {/* ================= TAB 1: DAFTAR CALON MURID ================= */}
       {activeTab === 'candidates' && (
         <div className="space-y-4">
-          {/* Action & Filter Bar */}
-          <div className="p-4 rounded-3xl bg-slate-850 border border-slate-800 flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="flex flex-wrap items-center gap-3 flex-grow">
+          {/* Action & Filter Bar - High Contrast Light Style */}
+          <div className="p-4 rounded-3xl bg-white border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="flex flex-wrap items-center gap-2.5 flex-grow">
               <div className="relative flex-grow max-w-xs">
-                <Search size={15} className="absolute left-3.5 top-3 text-slate-400" />
+                <Search size={15} className="absolute left-3.5 top-3 text-slate-500" />
                 <input
                   type="text"
                   placeholder="Cari Nama, NISN, Asal SD..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full pl-9 pr-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-1 focus:ring-emerald-500"
+                  className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 focus:bg-white"
                 />
               </div>
+
+              {/* Filter Asal Sekolah */}
+              <select
+                value={filterSchoolOrigin}
+                onChange={(e) => setFilterSchoolOrigin(e.target.value as any)}
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="all">Semua Asal SD</option>
+                <option value="maarif">✨ SD Ma'arif ({maarifCount})</option>
+                <option value="other">SD Umum / Luar ({umumCount})</option>
+              </select>
+
+              {/* Filter Jenis Kelamin */}
+              <select
+                value={filterGender}
+                onChange={(e) => setFilterGender(e.target.value)}
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+              >
+                <option value="all">Semua Gender</option>
+                <option value="L">Laki-laki ({maleCount})</option>
+                <option value="P">Perempuan ({femaleCount})</option>
+              </select>
 
               {/* Filter Status Pengalihan Jalur */}
               <select
                 value={filterTransfer}
                 onChange={(e) => setFilterTransfer(e.target.value as any)}
-                className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold"
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="all">Semua Status Pengalihan Jalur</option>
-                <option value="transferred">⚠️ Calon Dialihkan Jalur ({transferredCount})</option>
-                <option value="normal">Jalur Pendaftaran Asli/Normal</option>
+                <option value="all">Semua Status Pengalihan</option>
+                <option value="transferred">⚠️ Dialihkan Jalur ({transferredCount})</option>
+                <option value="normal">Jalur Asli / Normal</option>
               </select>
 
               {/* Filter Jalur Pendaftaran & Status Refund */}
               <select
                 value={filterCollective}
                 onChange={(e) => setFilterCollective(e.target.value)}
-                className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold"
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Semua Jalur (Mandiri & Kolektif)</option>
                 <option value="school_collective">Hanya Jalur Kolektif</option>
-                <option value="needs_refund">⚠️ Kolektif Perlu Refund Cash ({needRefundCount})</option>
-                <option value="refunded">✅ Kolektif Sudah Refund Cash ({refundedCashCount})</option>
+                <option value="needs_refund">⚠️ Perlu Refund Cash ({needRefundCount})</option>
+                <option value="refunded">✅ Sudah Refund Cash ({refundedCashCount})</option>
                 <option value="online_individual">Hanya Jalur Mandiri</option>
               </select>
 
@@ -694,7 +881,7 @@ export default function AdminSpmbManagement({
               <select
                 value={filterSession}
                 onChange={(e) => setFilterSession(e.target.value)}
-                className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-300"
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Semua Sesi</option>
                 <option value="inden">Jalur Inden</option>
@@ -706,7 +893,7 @@ export default function AdminSpmbManagement({
               <select
                 value={filterStatus}
                 onChange={(e) => setFilterStatus(e.target.value)}
-                className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-slate-300"
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Semua Status</option>
                 <option value="accepted">Diterima</option>
@@ -724,31 +911,31 @@ export default function AdminSpmbManagement({
                 type="button"
                 onClick={handleProcessAutoTransfers}
                 disabled={isProcessingAutoTransfer}
-                className="px-3.5 py-2 bg-slate-800 hover:bg-slate-700 text-amber-300 hover:text-amber-200 border border-amber-500/40 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
                 title="Cek calon siswa yang belum melunasi daftar ulang sampai batas akhir dan alihkan ke gelombang berikutnya"
               >
                 <ArrowLeftRight size={14} className={isProcessingAutoTransfer ? 'animate-spin' : ''} />
-                <span>{isProcessingAutoTransfer ? 'Memproses...' : 'Proses Pengalihan Jalur'}</span>
+                <span>{isProcessingAutoTransfer ? 'Memproses...' : 'Proses Pengalihan'}</span>
               </button>
 
               {/* Promote to Grade 7 Button */}
               <select
                 value={migrationTargetClass}
                 onChange={(e) => setMigrationTargetClass(e.target.value)}
-                className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-bold"
+                className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold"
                 title="Pilih Kelas Tujuan untuk Siswa yang Diterima"
               >
-                <option value="7-A">Target Kelas: 7-A</option>
-                <option value="7-B">Target Kelas: 7-B</option>
-                <option value="7-C">Target Kelas: 7-C</option>
-                <option value="7-D">Target Kelas: 7-D</option>
+                <option value="7-A">Target: 7-A</option>
+                <option value="7-B">Target: 7-B</option>
+                <option value="7-C">Target: 7-C</option>
+                <option value="7-D">Target: 7-D</option>
               </select>
 
               <button
                 type="button"
                 onClick={handlePromoteToStudents}
                 disabled={isMigrating}
-                className="px-4 py-2 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-md transition-all cursor-pointer shrink-0"
+                className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0"
               >
                 {isMigrating ? <RefreshCw size={14} className="animate-spin" /> : <UserCheck size={14} />}
                 <span>Migrasi ke Kelas 7</span>
@@ -758,46 +945,33 @@ export default function AdminSpmbManagement({
 
           {/* Auto Transfer Notification Message */}
           {autoTransferMsg && (
-            <div className="p-3.5 rounded-2xl bg-amber-950/60 border border-amber-500/40 text-amber-200 text-xs flex items-center justify-between gap-3">
+            <div className="p-3.5 rounded-2xl bg-amber-50 border border-amber-300 text-amber-950 text-xs flex items-center justify-between gap-3 shadow-xs">
               <div className="flex items-center gap-2.5">
-                <ArrowLeftRight size={16} className="text-amber-400 shrink-0" />
+                <ArrowLeftRight size={16} className="text-amber-700 shrink-0" />
                 <span className="font-bold">{autoTransferMsg}</span>
               </div>
               <button
                 type="button"
                 onClick={() => setAutoTransferMsg(null)}
-                className="text-amber-400 hover:text-white"
+                className="text-amber-700 hover:text-amber-900 cursor-pointer"
               >
                 <X size={14} />
               </button>
             </div>
           )}
 
-          {/* Info Banner Alur Kolektif & Refund */}
-          <div className="p-4 rounded-2xl bg-indigo-950/40 border border-indigo-500/30 text-indigo-200 text-xs flex items-start gap-3">
-            <Banknote size={20} className="text-indigo-400 shrink-0 mt-0.5" />
-            <div>
-              <p className="font-bold text-white m-0">Alur Pendaftaran & Pengembalian Uang Token Jalur Kolektif:</p>
-              <p className="m-0 text-slate-300 text-[11px] mt-0.5">
-                1. Calon murid tetap membayar token formulir (Rp 50.000) via online.<br />
-                2. Admin menandai calon murid dengan status <strong>"Kolektif Sekolah"</strong>.<br />
-                3. Admin mengembalikan uang token pendaftaran secara tunai (Cash Refund) dan mencetak kuitansi tanda terima resmi.
-              </p>
-            </div>
-          </div>
-
           {migrationSuccessMsg && (
-            <div className="p-3 rounded-2xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
-              <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
-              <span>{migrationSuccessMsg}</span>
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex items-center gap-2 shadow-xs">
+              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+              <span className="font-bold">{migrationSuccessMsg}</span>
             </div>
           )}
 
-          {/* Candidates Table */}
-          <div className="bg-slate-850 border border-slate-800 rounded-3xl overflow-hidden shadow-xl">
+          {/* Candidates Table - High Contrast Light Theme */}
+          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
             <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-300">
-                <thead className="bg-slate-900/80 text-slate-400 uppercase text-[10px] font-black tracking-wider border-b border-slate-800">
+              <table className="w-full text-left text-xs text-slate-700">
+                <thead className="bg-slate-50 text-slate-700 uppercase text-[10px] font-black tracking-wider border-b border-slate-200">
                   <tr>
                     <th className="py-3.5 px-4">Calon Siswa</th>
                     <th className="py-3.5 px-4">NISN / Asal Sekolah</th>
@@ -808,10 +982,10 @@ export default function AdminSpmbManagement({
                     <th className="py-3.5 px-4 text-center">Aksi</th>
                   </tr>
                 </thead>
-                <tbody className="divide-y divide-slate-800/60 font-medium">
+                <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
+                      <td colSpan={7} className="py-12 text-center text-slate-500 text-xs">
                         Belum ada calon murid terdaftar yang cocok dengan filter pencarian.
                       </td>
                     </tr>
@@ -820,34 +994,40 @@ export default function AdminSpmbManagement({
                       const isCollective = candidate.registrationType === 'school_collective';
                       const isTokenPaid = candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid;
                       const isRefunded = candidate.collectiveRefundStatus === 'refunded';
-                      const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF JOGOSARI');
+                      const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF');
 
                       return (
-                        <tr key={candidate.id} className="hover:bg-slate-800/40 transition-colors">
+                        <tr key={candidate.id} className="hover:bg-slate-50/80 transition-colors">
                           {/* Nama Calon Siswa */}
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-2.5">
-                              <div className="w-8 h-8 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-black text-xs">
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
+                                candidate.gender === 'P' || (candidate.gender as string) === 'female'
+                                  ? 'bg-pink-100 text-pink-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
                                 {candidate.fullName.charAt(0)}
                               </div>
                               <div>
-                                <p className="font-bold text-white m-0">{candidate.fullName}</p>
-                                <p className="text-[10px] text-slate-400 m-0">{candidate.phone || '-'}</p>
+                                <p className="font-extrabold text-slate-900 m-0">{candidate.fullName}</p>
+                                <p className="text-[10px] text-slate-500 m-0">
+                                  {candidate.gender === 'P' || (candidate.gender as string) === 'female' ? 'Perempuan' : 'Laki-laki'} • {candidate.phone || '-'}
+                                </p>
                               </div>
                             </div>
                           </td>
 
                           {/* NISN & Asal Sekolah */}
                           <td className="py-3.5 px-4">
-                            <span className="font-mono text-white font-bold">{candidate.nisn}</span>
+                            <span className="font-mono text-slate-900 font-bold">{candidate.nisn}</span>
                             <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
                               {isMaarif ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[10px] font-black">
-                                  <Sparkles size={10} />
-                                  <span>SD Maarif Jogosari</span>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black">
+                                  <Sparkles size={10} className="text-emerald-700" />
+                                  <span>SD Ma'arif</span>
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-slate-400">{candidate.schoolOrigin || 'SD Lainnya'}</span>
+                                <span className="text-[11px] text-slate-600 font-medium">{candidate.schoolOrigin || 'SD Lainnya'}</span>
                               )}
                             </div>
                           </td>
@@ -857,17 +1037,17 @@ export default function AdminSpmbManagement({
                             <div className="space-y-1.5">
                               {/* Sesi Gelombang */}
                               <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-200 border border-slate-700 text-[10px] font-bold uppercase">
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-bold uppercase">
                                   {candidate.sessionId === 'inden' ? 'Jalur Inden' : candidate.sessionId === 'gelombang-1' ? 'Gelombang 1' : candidate.sessionId === 'gelombang-2' ? 'Gelombang 2' : candidate.sessionId}
                                 </span>
 
                                 {isCollective ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 border border-indigo-500/40 text-[10px] font-black">
-                                    <GraduationCap size={11} />
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
+                                    <GraduationCap size={11} className="text-indigo-700" />
                                     <span>Kolektif</span>
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 text-[10px]">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 text-[10px]">
                                     <span>Mandiri</span>
                                   </span>
                                 )}
@@ -875,16 +1055,16 @@ export default function AdminSpmbManagement({
 
                               {/* Status Pengalihan Otomatis */}
                               {candidate.isTransferredSession && (
-                                <div className="p-1.5 rounded-lg bg-rose-950/60 border border-rose-500/40 space-y-1">
-                                  <div className="flex items-center gap-1 text-[10px] text-rose-300 font-black">
-                                    <ArrowLeftRight size={11} className="text-rose-400 shrink-0" />
+                                <div className="p-1.5 rounded-lg bg-rose-50 border border-rose-300 space-y-1">
+                                  <div className="flex items-center gap-1 text-[10px] text-rose-900 font-black">
+                                    <ArrowLeftRight size={11} className="text-rose-600 shrink-0" />
                                     <span>Dialihkan dari {candidate.previousSessionId === 'inden' ? 'Jalur Inden' : candidate.previousSessionId === 'gelombang-1' ? 'Gelombang 1' : (candidate.previousSessionId || candidate.originalSessionId || 'Sesi Sebelumnya')}</span>
                                   </div>
                                   <button
                                     type="button"
                                     onClick={() => handleRevertTransfer(candidate)}
                                     disabled={isRevertingTransfer}
-                                    className="w-full px-2 py-0.5 bg-rose-600 hover:bg-rose-500 text-white font-bold text-[9px] rounded flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-all"
+                                    className="w-full px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9px] rounded flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-all"
                                     title="Batalkan pengalihan dan kembalikan ke jalur pendaftaran sebelumnya"
                                   >
                                     <Undo2 size={10} />
@@ -897,7 +1077,7 @@ export default function AdminSpmbManagement({
                                 <button
                                   type="button"
                                   onClick={() => handleToggleCollective(candidate)}
-                                  className="text-[10px] text-slate-400 hover:text-indigo-300 underline cursor-pointer"
+                                  className="text-[10px] text-slate-500 hover:text-indigo-700 underline font-medium cursor-pointer"
                                   title="Klik untuk mengubah jenis jalur"
                                 >
                                   {isCollective ? 'Ubah ke Mandiri' : 'Tandai Kolektif'}
@@ -913,7 +1093,7 @@ export default function AdminSpmbManagement({
                               <div className="flex flex-col items-start gap-1">
                                 {isTokenPaid ? (
                                   <>
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
                                       Online Lunas (Rp 50rb)
                                     </span>
                                     <button
@@ -923,7 +1103,7 @@ export default function AdminSpmbManagement({
                                         setReceiptModalType('token');
                                         setIsReceiptModalOpen(true);
                                       }}
-                                      className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                      className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 cursor-pointer transition-colors"
                                       title="Cetak Kuitansi Resmi Token Pendaftaran"
                                     >
                                       <Printer size={11} />
@@ -931,7 +1111,7 @@ export default function AdminSpmbManagement({
                                     </button>
                                   </>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
                                     Belum Bayar Token
                                   </span>
                                 )}
@@ -939,26 +1119,26 @@ export default function AdminSpmbManagement({
 
                               {/* Status & Aksi Pengembalian Token (Khusus Kolektif) */}
                               {isCollective && isTokenPaid && (
-                                <div className="pt-1 border-t border-slate-800">
+                                <div className="pt-1 border-t border-slate-200">
                                   {isRefunded ? (
                                     <div className="space-y-1">
-                                      <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-400">
-                                        <CheckCircle2 size={12} />
+                                      <div className="flex items-center gap-1 text-[10px] font-bold text-emerald-800">
+                                        <CheckCircle2 size={12} className="text-emerald-600" />
                                         <span>Cash Rp {(candidate.collectiveRefundAmount || 50000).toLocaleString('id-ID')} Dikembalikan</span>
                                       </div>
                                       <div className="flex items-center gap-2">
                                         <button
                                           type="button"
                                           onClick={() => setReceiptCandidate(candidate)}
-                                          className="text-[10px] text-cyan-400 hover:text-cyan-300 underline font-bold cursor-pointer"
+                                          className="text-[10px] text-blue-700 hover:text-blue-900 underline font-bold cursor-pointer"
                                         >
                                           Kuitansi Refund
                                         </button>
-                                        <span className="text-slate-600">•</span>
+                                        <span className="text-slate-300">•</span>
                                         <button
                                           type="button"
                                           onClick={() => handleCancelRefund(candidate)}
-                                          className="text-[10px] text-rose-400 hover:text-rose-300 cursor-pointer"
+                                          className="text-[10px] text-rose-600 hover:text-rose-800 cursor-pointer"
                                         >
                                           Batal
                                         </button>
@@ -968,7 +1148,7 @@ export default function AdminSpmbManagement({
                                     <button
                                       type="button"
                                       onClick={() => handleOpenRefundModal(candidate)}
-                                      className="px-2.5 py-1 bg-gradient-to-r from-amber-600 to-amber-500 hover:from-amber-500 hover:to-amber-400 text-slate-950 font-black text-[10px] rounded-lg shadow-sm flex items-center gap-1 cursor-pointer transition-all"
+                                      className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition-all"
                                       title="Kembalikan uang token pendaftaran Rp 50.000 secara tunai"
                                     >
                                       <Banknote size={12} />
@@ -985,7 +1165,7 @@ export default function AdminSpmbManagement({
                             <div className="space-y-1">
                               {candidate.reRegistrationStatus === 'paid' ? (
                                 <>
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 block w-fit">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300 block w-fit">
                                     LUNAS (Uk. {candidate.selectedUniformSize || 'L'})
                                   </span>
                                   <button
@@ -995,7 +1175,7 @@ export default function AdminSpmbManagement({
                                       setReceiptModalType('rereg');
                                       setIsReceiptModalOpen(true);
                                     }}
-                                    className="text-[10px] text-cyan-400 hover:text-cyan-300 font-bold flex items-center gap-1 cursor-pointer transition-colors"
+                                    className="text-[10px] text-teal-700 hover:text-teal-900 font-bold flex items-center gap-1 cursor-pointer transition-colors"
                                     title="Cetak Kuitansi Resmi Daftar Ulang & Seragam"
                                   >
                                     <Printer size={11} />
@@ -1003,7 +1183,7 @@ export default function AdminSpmbManagement({
                                   </button>
                                 </>
                               ) : (
-                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-500/20 text-amber-300 border border-amber-500/30">
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
                                   Belum Lunas
                                 </span>
                               )}
@@ -1013,19 +1193,19 @@ export default function AdminSpmbManagement({
                           {/* Status Penerimaan */}
                           <td className="py-3.5 px-4">
                             {candidate.isPromotedToStudent ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-purple-100 text-purple-900 border border-purple-300">
                                 Siswa Aktif ({candidate.assignedClass || '7-A'})
                               </span>
                             ) : candidate.status === 'accepted' ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-500 text-slate-950 shadow-xs">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-600 text-white shadow-xs">
                                 DITERIMA
                               </span>
                             ) : candidate.status === 'rejected' ? (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-500/20 text-rose-300 border border-rose-500/30">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-900 border border-rose-300">
                                 DITOLAK
                               </span>
                             ) : (
-                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-800 text-slate-300 border border-slate-700">
+                              <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-300">
                                 Menunggu Verifikasi
                               </span>
                             )}
@@ -1037,7 +1217,7 @@ export default function AdminSpmbManagement({
                               <button
                                 type="button"
                                 onClick={() => setSelectedCandidate(candidate)}
-                                className="p-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg transition-colors cursor-pointer border border-slate-300"
                                 title="Lihat Detail & Buku Induk"
                               >
                                 <Eye size={14} />
@@ -1045,7 +1225,7 @@ export default function AdminSpmbManagement({
                               <button
                                 type="button"
                                 onClick={() => handleDeleteCandidate(candidate.id, candidate.fullName)}
-                                className="p-1.5 bg-rose-950/60 hover:bg-rose-900 text-rose-300 rounded-lg transition-colors cursor-pointer"
+                                className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors cursor-pointer border border-rose-200"
                                 title="Hapus Data Calon Murid"
                               >
                                 <Trash2 size={14} />
@@ -1061,6 +1241,15 @@ export default function AdminSpmbManagement({
             </div>
           </div>
         </div>
+      )}
+
+      {/* ================= TAB 2: LAPORAN KEUANGAN SPMB ================= */}
+      {activeTab === 'finance' && config && (
+        <SpmbFinanceReport
+          candidates={candidates}
+          config={config}
+          schoolIdentity={currentSchoolIdentity}
+        />
       )}
 
       {/* ================= TAB 2: PENGATURAN SESI PENDAFTARAN ================= */}

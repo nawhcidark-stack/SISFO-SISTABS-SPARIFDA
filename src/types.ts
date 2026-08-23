@@ -26,6 +26,8 @@ export interface Student {
   siblingsCount?: string | number;
   stepSiblingsCount?: string | number;
   address?: string;
+  photoUrl?: string;
+  parentName?: string;
   googleDriveLink?: string;
 
   // Data Orang Tua - Ayah
@@ -580,11 +582,195 @@ export function sortSppBills<T extends { month: string; year?: number }>(bills: 
     const scoreB = yB * 12 + mB;
     return scoreA - scoreB;
   });
+}// ==========================================
+// SPMB (SISTEM PENERIMAAN MURID BARU) 2027/2028
+// ==========================================
+
+export interface SpmbSession {
+  id: string; // 'inden' | 'gelombang-1' | 'gelombang-2'
+  name: string;
+  startDate: string; // YYYY-MM-DD
+  endDate: string; // YYYY-MM-DD
+  isActive: boolean;
+  quota: number;
+  description: string;
+  discountPercent?: number; // Diskon Uang Gedung dalam persen (%) misal: 50% untuk Inden, 25% Gelombang 1
+  discountAmount?: number; // Nilai potongan rupiah (opsional / fallback)
 }
 
+export interface SpmbUniformItem {
+  id: string;
+  name: string; // seragam olahraga, bedge, hasduk, jilbab, topi, kaos kaki, baju batik, ikat pinggang
+  price: number;
+  gender: 'male' | 'female' | 'both' | 'L' | 'P' | 'all';
+  required: boolean;
+  description?: string;
+}
 
+export interface SpmbConfig {
+  academicYear: string; // "2027/2028"
+  isOpen: boolean;
+  registrationTokenFee: number; // e.g. 50000 (Biaya Formulir / Token Pendaftaran)
+  buildingFee: number; // Uang Gedung / Infaq Pembangunan e.g. 1500000
+  julySppFee: number; // SPP Bulan Juli 2027 e.g. 200000
+  reRegistrationBaseFee?: number; // Biaya Administrasi Tambahan (opsional)
+  sessions: SpmbSession[];
+  uniformItems: SpmbUniformItem[];
+  contactPhone: string;
+  bankAccountInfo?: string;
+  instructions?: string;
 
+  // Pengaturan Khusus SD MAARIF JOGOSARI
+  maarifSchoolName?: string; // Default: "SD MAARIF JOGOSARI"
+  maarifBuildingDiscountType?: 'percent' | 'amount'; // 'percent' atau 'amount' (nominal rupiah)
+  maarifBuildingDiscount?: number; // Nilai diskon Uang Gedung khusus SD Maarif (misal: Rp 250.000 atau 20%)
+  maarifUniformDiscountType?: 'percent' | 'amount'; // 'percent' atau 'amount' (nominal rupiah)
+  maarifUniformDiscount?: number; // Nilai diskon Perlengkapan / Seragam khusus SD Maarif (misal: Rp 100.000 atau 15%)
 
+  // Pengaturan Pendaftaran Kolektif Langsung di Sekolah
+  collectiveRegistrationEnabled?: boolean; // Aktifkan jalur pendaftaran kolektif / langsung di sekolah
+  collectiveTokenFree?: boolean; // Gratis biaya token formulir pendaftaran (Rp 0) untuk pendaftaran kolektif
+
+  // Pengaturan Otomatisasi Pengalihan Jalur / Gelombang jika Belum Daftar Ulang
+  autoTransferExpiredSessions?: boolean; // Default: true (Otomatis alihkan jika batas akhir gelombang terlampaui dan belum lunas daftar ulang)
+}
+
+export interface SpmbCandidate {
+  id: string;
+  registrationNo: string; // Nomor pendaftaran (biasanya sama dengan NISN)
+  nisn: string;
+  nik: string;
+  fullName: string;
+  gender: 'L' | 'P';
+  birthPlace: string;
+  birthDate: string; // YYYY-MM-DD
+  phone: string; // WhatsApp
+  schoolOriginType?: 'maarif_jogosari' | 'other'; // 'maarif_jogosari' | 'other'
+  schoolOrigin: string; // "SD MAARIF JOGOSARI" atau nama manual
+  registrationType?: 'online_individual' | 'school_collective'; // Jalur pendaftaran mandiri vs kolektif di sekolah
+  sessionId: string; // 'inden' | 'gelombang-1' | 'gelombang-2'
+  createdAt: string;
+
+  // Pengalihan Jalur / Gelombang Otomatis & Pembatalan
+  originalSessionId?: string; // Jalur pertama kali mendaftar
+  previousSessionId?: string; // Jalur sebelum dialihkan
+  isTransferredSession?: boolean; // True jika dialihkan karena melewati batas akhir daftar ulang
+  transferredAt?: string; // Waktu pengalihan
+  transferReason?: string; // Keterangan penyebab pengalihan
+  transferHistory?: Array<{
+    action: 'transfer' | 'revert' | 'manual_change';
+    fromSessionId: string;
+    toSessionId: string;
+    timestamp: string;
+    reason?: string;
+    operator?: string;
+  }>;
+
+  // 1. Pembayaran Token Pendaftaran (Rp. 50.000)
+  tokenPaymentStatus: 'unpaid' | 'paid' | 'waived';
+  tokenPaymentOrderId?: string;
+  tokenPaidAt?: string;
+  tokenPaymentMethod?: string;
+  tokenAmount?: number;
+
+  // 1b. Pengembalian Uang Token Tunai / Cash (Khusus Jalur Kolektif yang membayar via online)
+  collectiveRefundStatus?: 'none' | 'pending' | 'refunded';
+  collectiveRefundAmount?: number; // e.g. 50000
+  collectiveRefundedAt?: string;
+  collectiveRefundedBy?: string; // Nama Admin / Petugas Panitia
+  collectiveRefundRecipient?: string; // Nama Penerima (Wali Murid / Siswa / Koordinator SD)
+  collectiveRefundNote?: string;
+  collectiveRefundReceiptNo?: string;
+
+  // 2. Data Lengkap Format Buku Induk
+  isFormCompleted: boolean;
+  formCompletedAt?: string;
+  nickname?: string;
+  kkNumber?: string;
+  birthCertNumber?: string;
+  religion?: string;
+  address?: string;
+  dusun?: string;
+  rt?: string;
+  rw?: string;
+  village?: string;
+  district?: string;
+  city?: string;
+  postalCode?: string;
+  livingWith?: string;
+  childOrder?: string | number;
+  siblingsCount?: string | number;
+  stepSiblingsCount?: string | number;
+  transportation?: string;
+  specialNeeds?: string;
+  height?: number;
+  weight?: number;
+  distanceToSchool?: string;
+  travelTime?: string;
+
+  // Data Orang Tua / Wali
+  fatherName?: string;
+  fatherNik?: string;
+  fatherBirthPlace?: string;
+  fatherBirthDate?: string;
+  fatherEducation?: string;
+  fatherOccupation?: string;
+  fatherIncome?: string;
+  fatherPhone?: string;
+  fatherStatus?: string;
+  fatherAddress?: string;
+
+  motherName?: string;
+  motherNik?: string;
+  motherBirthPlace?: string;
+  motherBirthDate?: string;
+  motherEducation?: string;
+  motherOccupation?: string;
+  motherIncome?: string;
+  motherPhone?: string;
+  motherStatus?: string;
+  motherAddress?: string;
+
+  guardianName?: string;
+  guardianNik?: string;
+  guardianBirthPlace?: string;
+  guardianBirthDate?: string;
+  guardianEducation?: string;
+  guardianOccupation?: string;
+  guardianIncome?: string;
+  guardianPhone?: string;
+  guardianRelation?: string;
+  guardianAddress?: string;
+
+  // 3. Pembayaran Daftar Ulang & Perlengkapan (Midtrans)
+  reRegistrationStatus: 'unpaid' | 'pending' | 'paid';
+  reRegistrationAmount?: number;
+  reRegistrationOrderId?: string;
+  reRegistrationPaidAt?: string;
+  reRegistrationPaymentMethod?: string;
+  selectedUniformSize?: string; // e.g. "S", "M", "L", "XL", "XXL", "Jumbo"
+  customUniformNote?: string;
+
+  // 4. Berkas Upload (Akte Kelahiran, Kartu Keluarga, KTP Ayah, KTP Ibu, Foto Siswa)
+  documents?: {
+    aktaPhoto?: string;
+    kkPhoto?: string;
+    ktpAyahPhoto?: string;
+    ktpIbuPhoto?: string;
+    pasPhoto?: string;
+    sklPhoto?: string;
+    kipPhoto?: string;
+  };
+  documentsUploadedAt?: string;
+
+  // 5. Status Penerimaan
+  status: 'registered' | 'form_submitted' | 're_registered' | 'documents_verified' | 'accepted' | 'rejected';
+  verificationNotes?: string;
+  isPromotedToStudent?: boolean;
+  promotedAt?: string;
+  assignedClass?: string;
+  [key: string]: any;
+}
 
 
 

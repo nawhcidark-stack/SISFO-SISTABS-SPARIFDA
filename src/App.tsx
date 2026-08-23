@@ -12,6 +12,7 @@ import CounselorPanel from './components/CounselorPanel';
 import WakaKurikulumPanel from './components/WakaKurikulumPanel';
 import ScheduleView from './components/ScheduleView';
 import Login from './components/Login';
+import SpmbLandingPage from './components/SpmbLandingPage';
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
@@ -75,6 +76,29 @@ export default function App() {
       return null;
     }
   });
+
+  const [isSpmbView, setIsSpmbView] = useState<boolean>(() => {
+    if (typeof window === 'undefined') return false;
+    const path = window.location.pathname.toLowerCase();
+    const hash = window.location.hash.toLowerCase();
+    const params = new URLSearchParams(window.location.search);
+    return path.startsWith('/spmb') || path === '/daftar' || hash.startsWith('#spmb') || params.get('page') === 'spmb';
+  });
+
+  useEffect(() => {
+    const handlePopState = () => {
+      const path = window.location.pathname.toLowerCase();
+      const hash = window.location.hash.toLowerCase();
+      const params = new URLSearchParams(window.location.search);
+      setIsSpmbView(path.startsWith('/spmb') || path === '/daftar' || hash.startsWith('#spmb') || params.get('page') === 'spmb');
+    };
+    window.addEventListener('popstate', handlePopState);
+    window.addEventListener('hashchange', handlePopState);
+    return () => {
+      window.removeEventListener('popstate', handlePopState);
+      window.removeEventListener('hashchange', handlePopState);
+    };
+  }, []);
 
   // School data states
   const [studentsList, setStudentsList] = useState<Student[]>([]);
@@ -1585,6 +1609,21 @@ export default function App() {
     }
   };
 
+  if (isSpmbView) {
+    return (
+      <SpmbLandingPage
+        schoolIdentity={schoolIdentity}
+        isProduction={sysStatus?.isProduction || false}
+        midtransClientKey={sysStatus?.clientKey || ""}
+        onBackToLogin={() => {
+          setIsSpmbView(false);
+          const cleanUrl = window.location.origin + '/';
+          window.history.pushState({}, document.title, cleanUrl);
+        }}
+      />
+    );
+  }
+
   return (
     <div id="application-container" className="min-h-screen flex flex-col bg-slate-50 antialiased font-sans">
       
@@ -2425,6 +2464,10 @@ export default function App() {
             students={studentsList}
             onLoginSuccess={handleLoginSuccess}
             schoolIdentity={schoolIdentity}
+            onOpenSpmb={() => {
+              setIsSpmbView(true);
+              window.history.pushState({}, 'SPMB', '/spmb');
+            }}
           />
         ) : role === 'student' ? (
           <StudentPanel

@@ -78,6 +78,7 @@ import {
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
+import AdminSpmbManagement from "./AdminSpmbManagement";
 import QRScannerModal from "./QRScannerModal";
 import StudentPaymentCard from "./StudentPaymentCard";
 import Pagination from "./Pagination";
@@ -373,6 +374,7 @@ export default function AdminPanel({
     | "buku_induk"
     | "pembayaran_lain"
     | "jadwal"
+    | "spmb"
   >("roster");
 
   useEffect(() => {
@@ -4337,6 +4339,27 @@ export default function AdminPanel({
           </button>
 
           <button
+            id="admin-menu-spmb"
+            onClick={() => {
+              setAdminTab("spmb");
+              setSelectedStudent(null);
+            }}
+            className={`flex items-center justify-between px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
+              adminTab === "spmb"
+                ? "bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-md shadow-emerald-900/20"
+                : "text-emerald-700 bg-emerald-50/70 hover:bg-emerald-100/70 border border-emerald-200/60"
+            }`}
+          >
+            <div className="flex items-center gap-2.5">
+              <Users size={15} className={adminTab === "spmb" ? "text-white" : "text-emerald-600"} />
+              <span>SPMB 2027/2028</span>
+            </div>
+            <span className={`px-1.5 py-0.5 rounded text-[9px] font-black uppercase tracking-wider ${adminTab === "spmb" ? "bg-white/20 text-white" : "bg-emerald-200 text-emerald-900"}`}>
+              Baru
+            </span>
+          </button>
+
+          <button
             id="admin-menu-config"
             onClick={() => setAdminTab("config")}
             className={`flex items-center gap-2.5 px-3.5 py-2.5 rounded-lg text-left text-xs font-bold cursor-pointer transition-all ${
@@ -6626,6 +6649,12 @@ export default function AdminPanel({
               onUpdateStudent={onUpdateStudent}
               onRefresh={onRefresh}
             />
+          </div>
+        )}
+
+        {adminTab === "spmb" && (
+          <div className="w-full">
+            <AdminSpmbManagement onRefresh={onRefresh} />
           </div>
         )}
 
@@ -19013,6 +19042,34 @@ export default function AdminPanel({
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  id="btn-mobile-menu-spmb"
+                  onClick={() => {
+                    setAdminTab("spmb");
+                    setSelectedStudent(null);
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-emerald-300 bg-emerald-50/70 hover:bg-emerald-100/70 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-emerald-600 rounded-xl text-white text-lg">
+                    🎒
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-1.5">
+                      <h5 className="font-extrabold text-xs text-emerald-950">
+                        SPMB 2027/2028
+                      </h5>
+                      <span className="px-1.5 py-0.5 rounded text-[8px] font-black uppercase tracking-wider bg-emerald-600 text-white">
+                        Baru
+                      </span>
+                    </div>
+                    <p className="text-[10px] text-emerald-800/80 mt-0.5 leading-tight">
+                      Penerimaan murid baru, verifikasi berkas, token, &amp; daftar ulang
+                    </p>
+                  </div>
+                </button>
+
                 <button
                   type="button"
                   onClick={() => {

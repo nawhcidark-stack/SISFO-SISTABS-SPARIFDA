@@ -12,9 +12,10 @@ interface LoginProps {
     subjectTeacher?: SubjectTeacher | null
   ) => void;
   schoolIdentity?: SchoolIdentity;
+  onOpenSpmb?: () => void;
 }
 
-export default function Login({ students, onLoginSuccess, schoolIdentity }: LoginProps) {
+export default function Login({ students, onLoginSuccess, schoolIdentity, onOpenSpmb }: LoginProps) {
   const [activeRole, setActiveRole] = useState<'student' | 'admin' | 'homeroom' | 'subject_teacher' | 'treasurer' | 'principal' | 'waka_sarpras' | 'bk'>('student');
   const [activeGroup, setActiveGroup] = useState<'student' | 'teacher' | 'staff'>('student');
   const [username, setUsername] = useState('');
@@ -310,6 +311,38 @@ export default function Login({ students, onLoginSuccess, schoolIdentity }: Logi
             <p className="text-xs text-slate-500 leading-relaxed">
               Sistem informasi monitoring kas tabungan mandiri siswa, pembayaran SPP bulanan instan, serta manajemen logistik inventaris sarana prasarana sekolah.
             </p>
+          </div>
+
+          {/* SPMB 2027/2028 Direct Access Card */}
+          <div className="bg-gradient-to-br from-emerald-600 to-teal-700 rounded-2xl p-5 text-white shadow-lg flex flex-col gap-3 relative overflow-hidden border border-emerald-400/40">
+            <div className="absolute -right-6 -bottom-6 w-24 h-24 bg-white/10 rounded-full blur-xl pointer-events-none" />
+            <div className="flex items-center gap-2">
+              <span className="px-2 py-0.5 bg-white/20 text-white rounded text-[10px] font-black uppercase tracking-wider">
+                Penerimaan Siswa Baru
+              </span>
+              <span className="text-[11px] font-bold text-emerald-100">T.A 2027/2028</span>
+            </div>
+            <div>
+              <h3 className="font-black text-base leading-tight">Pendaftaran Murid Baru (SPMB) Telah Dibuka!</h3>
+              <p className="text-xs text-emerald-100 mt-1 leading-relaxed">
+                Pendaftaran online praktis 3 sesi (Inden, Gelombang 1 & 2), pembayaran token Midtrans, pengisian buku induk, dan daftar ulang seragam lengkap.
+              </p>
+            </div>
+            <button
+              type="button"
+              id="btn-login-open-spmb"
+              onClick={() => {
+                if (onOpenSpmb) {
+                  onOpenSpmb();
+                } else {
+                  window.location.href = "/spmb";
+                }
+              }}
+              className="mt-1 py-2.5 px-4 bg-white text-emerald-800 hover:bg-emerald-50 font-black text-xs rounded-xl transition-all shadow-md flex items-center justify-center gap-2 cursor-pointer"
+            >
+              <span>Daftar / Cek Status SPMB</span>
+              <ArrowRight size={14} className="stroke-[3]" />
+            </button>
           </div>
         </div>
 

@@ -1,0 +1,22 @@
+<IfModule mod_rewrite.c>
+  RewriteEngine On
+  RewriteBase /
+  
+  # Allow access to existing files and directories
+  RewriteCond %{REQUEST_FILENAME} !-f
+  RewriteCond %{REQUEST_FILENAME} !-d
+  
+  # Route all other requests to index.html for SPA (Single Page Application)
+  RewriteRule . /index.html [L]
+</IfModule>
+
+# Disable Directory Browsing to avoid security warnings, but allow file reads
+Options -Indexes
+
+# Ensure standard mime types
+<IfModule mod_mime.c>
+  AddType application/javascript .js .mjs
+  AddType text/css .css
+  AddType image/svg+xml .svg
+  AddType application/json .json
+</IfModule>

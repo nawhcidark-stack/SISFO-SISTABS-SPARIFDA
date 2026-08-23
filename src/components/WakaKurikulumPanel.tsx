@@ -778,7 +778,16 @@ export default function WakaKurikulumPanel({
             </p>
           </div>
 
-          <div className="flex flex-wrap gap-2.5 shrink-0">
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              onClick={handleExportTeacherWorkloadExcel}
+              className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-md"
+              title="Export Laporan Monitoring Jumlah Jam Mengajar Guru ke Excel (.xlsx)"
+            >
+              <FileSpreadsheet size={15} />
+              <span>Export Jam Mengajar Guru (.xlsx)</span>
+            </button>
+
             <button
               onClick={() => onRefreshData && onRefreshData()}
               className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm"

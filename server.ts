@@ -1455,25 +1455,26 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
 
   targetStudents.forEach(student => {
     const nisStr = String(student.nis || "").trim();
-    const baseBalance = AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr) ? AUTHORITATIVE_SAVINGS_MAP[nisStr] : 0;
 
     const studentTxs = savingsTransactions.filter(t => 
       (t.studentId === student.id || (student.nis && String(t.studentId).trim() === String(student.nis).trim())) &&
       (t.status === "success" || !t.status || (t.status as any) === "completed")
     );
 
-    let netTxAmount = 0;
-    studentTxs.forEach(t => {
-      if (t.type === "deposit") {
-        netTxAmount += t.amount;
-      } else if (t.type === "withdrawal") {
-        netTxAmount -= t.amount;
+    if (studentTxs.length > 0) {
+      let netTxAmount = 0;
+      studentTxs.forEach(t => {
+        if (t.type === "deposit") {
+          netTxAmount += t.amount;
+        } else if (t.type === "withdrawal") {
+          netTxAmount -= t.amount;
+        }
+      });
+      student.savingsBalance = netTxAmount;
+    } else {
+      if (student.savingsBalance === undefined || student.savingsBalance === null) {
+        student.savingsBalance = AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr) ? AUTHORITATIVE_SAVINGS_MAP[nisStr] : 0;
       }
-    });
-
-    const calculatedBalance = baseBalance + netTxAmount;
-    if (student.savingsBalance === undefined || student.savingsBalance === null || student.savingsBalance < calculatedBalance) {
-      student.savingsBalance = calculatedBalance;
     }
   });
 }

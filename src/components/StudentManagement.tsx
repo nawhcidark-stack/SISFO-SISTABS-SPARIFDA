@@ -1,8 +1,9 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers, Hash } from 'lucide-react';
 import { Pagination } from './Pagination';
+import BulkNisEditorModal from './BulkNisEditorModal';
 
 interface StudentManagementProps {
   students: Student[];
@@ -40,6 +41,9 @@ export default function StudentManagement({
   const [isCreateOpen, setIsCreateOpen] = useState(false);
   const [editingStudent, setEditingStudent] = useState<Student | null>(null);
   const [deletingStudent, setDeletingStudent] = useState<Student | null>(null);
+
+  // Bulk NIS Editor
+  const [isBulkNisOpen, setIsBulkNisOpen] = useState(false);
 
   // Form states
   const [formData, setFormData] = useState({
@@ -627,6 +631,16 @@ export default function StudentManagement({
           >
             <FileSpreadsheet size={14} className="text-indigo-600" />
             <span>Import CSV</span>
+          </button>
+
+          <button
+            type="button"
+            onClick={() => setIsBulkNisOpen(true)}
+            className="px-3.5 py-2 bg-teal-50 border border-teal-200 hover:bg-teal-100 text-teal-800 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+            title="Sesuaikan nomor NIS massal siswa tanpa mengubah NISN"
+          >
+            <Hash size={14} className="text-teal-700" />
+            <span>Edit Massal NIS</span>
           </button>
 
           <button
@@ -1507,6 +1521,15 @@ export default function StudentManagement({
           </div>
         )}
       </AnimatePresence>
+
+      {/* Modal Edit Massal NIS Siswa (NISN Tetap) */}
+      <BulkNisEditorModal
+        isOpen={isBulkNisOpen}
+        onClose={() => setIsBulkNisOpen(false)}
+        students={students}
+        onRefresh={onRefresh}
+        initialClassFilter={classFilter}
+      />
     </div>
   );
 }

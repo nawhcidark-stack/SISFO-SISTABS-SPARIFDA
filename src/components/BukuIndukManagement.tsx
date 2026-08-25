@@ -5,9 +5,10 @@ import { motion, AnimatePresence } from 'motion/react';
 import { 
   BookOpen, Search, FileUp, FileDown, Edit, X, Check, Filter, 
   Users, CheckSquare, Square, AlertCircle, RefreshCw, UserCheck, 
-  Trash2, ShieldAlert, ExternalLink, Eye, Info
+  Trash2, ShieldAlert, ExternalLink, Eye, Info, Hash
 } from 'lucide-react';
 import { Pagination } from './Pagination';
+import BulkNisEditorModal from './BulkNisEditorModal';
 
 interface BukuIndukManagementProps {
   students: Student[];
@@ -40,6 +41,9 @@ export default function BukuIndukManagement({
   const [importResult, setImportResult] = useState<{ success: boolean; added: number; updated: number } | null>(null);
   const [previewData, setPreviewData] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Bulk NIS Editor
+  const [isBulkNisOpen, setIsBulkNisOpen] = useState(false);
 
   // List of unique grades (tingkat) for grade filter
   const gradesList = useMemo(() => {
@@ -708,6 +712,13 @@ export default function BukuIndukManagement({
               title="Ekspor seluruh database buku induk siswa Pasuruan ke berkas CSV (.csv)"
             >
               <FileUp size={14} /> Ekspor CSV
+            </button>
+            <button
+              onClick={() => setIsBulkNisOpen(true)}
+              className="px-3.5 py-2 bg-teal-600 hover:bg-teal-500 text-white text-xs font-bold rounded-xl transition duration-150 flex items-center gap-1.5 cursor-pointer shadow-sm"
+              title="Sesuaikan nomor NIS secara massal untuk kelas tertentu (NISN tetap utuh)"
+            >
+              <Hash size={14} /> Edit Massal NIS
             </button>
           </div>
         </div>
@@ -1940,6 +1951,14 @@ export default function BukuIndukManagement({
         )}
       </AnimatePresence>
 
+      {/* Modal Edit Massal NIS Siswa (NISN Tetap) */}
+      <BulkNisEditorModal
+        isOpen={isBulkNisOpen}
+        onClose={() => setIsBulkNisOpen(false)}
+        students={students}
+        onRefresh={onRefresh}
+        initialClassFilter={selectedClass !== 'ALL' ? selectedClass : (selectedGrade !== 'ALL' ? selectedGrade : 'ALL')}
+      />
     </div>
   );
 }

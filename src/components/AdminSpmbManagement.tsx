@@ -48,19 +48,26 @@ import {
   RotateCcw,
   BadgePercent,
   Undo2,
-  ArrowLeftRight
+  ArrowLeftRight,
+  Hash,
+  Layers,
+  ShieldCheck
 } from 'lucide-react';
+import BulkNisEditorModal from './BulkNisEditorModal';
+import { Student } from '../types';
 
 interface AdminSpmbManagementProps {
   schoolIdentity?: SchoolIdentity;
   onOpenPublicLandingPage?: () => void;
   onRefresh?: () => void;
+  students?: Student[];
 }
 
 export default function AdminSpmbManagement({
   schoolIdentity,
   onOpenPublicLandingPage,
-  onRefresh
+  onRefresh,
+  students = []
 }: AdminSpmbManagementProps) {
   const [currentSchoolIdentity, setCurrentSchoolIdentity] = useState<SchoolIdentity | undefined>(schoolIdentity);
   const [config, setConfig] = useState<SpmbConfig | null>(null);
@@ -68,6 +75,10 @@ export default function AdminSpmbManagement({
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
   const [activeTab, setActiveTab] = useState<'candidates' | 'finance' | 'settings' | 'uniforms' | 'sessions'>('candidates');
+
+  // Bulk NIS Editor Modal
+  const [isBulkNisOpen, setIsBulkNisOpen] = useState(false);
+  const [bulkNisFilterClass, setBulkNisFilterClass] = useState('GRADE_7');
 
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -321,7 +332,7 @@ export default function AdminSpmbManagement({
       return;
     }
 
-    if (!confirm(`Apakah Anda yakin ingin memigrasikan ${acceptedCandidates.length} calon murid yang DITERIMA ke daftar Siswa Aktif Kelas ${migrationTargetClass}? Sistem akan otomatis membuat akun login dan NIS resmi.`)) {
+    if (!confirm(`Apakah Anda yakin ingin memigrasikan ${acceptedCandidates.length} calon murid yang DITERIMA ke daftar Siswa Aktif Kelas ${migrationTargetClass}?\n\nCatatan:\n- NIS sementara otomatis disamakan dengan NISN.\n- NISN tetap utuh dan tersimpan permanen.\n- Anda dapat menyesuaikan nomor NIS definitif melalui fitur Edit Massal NIS.`)) {
       return;
     }
 
@@ -339,7 +350,8 @@ export default function AdminSpmbManagement({
 
       if (res.ok) {
         const result = await res.json();
-        setMigrationSuccessMsg(`Berhasil memigrasikan ${result.promotedCount || acceptedCandidates.length} siswa ke data siswa aktif kelas ${migrationTargetClass}!`);
+        setMigrationSuccessMsg(`Berhasil memigrasikan ${result.promotedCount || acceptedCandidates.length} siswa ke Kelas ${migrationTargetClass}! NIS sementara otomatis disamakan dengan NISN. Anda dapat menyesuaikan NIS definitif secara massal kapan saja.`);
+        if (onRefresh) onRefresh();
         loadData();
       } else {
         const err = await res.json();
@@ -940,6 +952,20 @@ export default function AdminSpmbManagement({
                 {isMigrating ? <RefreshCw size={14} className="animate-spin" /> : <UserCheck size={14} />}
                 <span>Migrasi ke Kelas 7</span>
               </button>
+
+              {/* Edit Massal NIS Button */}
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkNisFilterClass('GRADE_7');
+                  setIsBulkNisOpen(true);
+                }}
+                className="px-3.5 py-2 bg-teal-50 hover:bg-teal-100 text-teal-900 border border-teal-300 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all cursor-pointer shrink-0"
+                title="Sesuaikan nomor NIS massal untuk siswa kelas 7 atau kelas lainnya (NISN tetap utuh)"
+              >
+                <Hash size={14} className="text-teal-700" />
+                <span>Edit Massal NIS</span>
+              </button>
             </div>
           </div>
 
@@ -961,9 +987,22 @@ export default function AdminSpmbManagement({
           )}
 
           {migrationSuccessMsg && (
-            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex items-center gap-2 shadow-xs">
-              <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-              <span className="font-bold">{migrationSuccessMsg}</span>
+            <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex flex-wrap items-center justify-between gap-3 shadow-xs">
+              <div className="flex items-center gap-2">
+                <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
+                <span className="font-bold">{migrationSuccessMsg}</span>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  setBulkNisFilterClass(migrationTargetClass);
+                  setIsBulkNisOpen(true);
+                }}
+                className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs cursor-pointer ml-auto"
+              >
+                <Hash size={13} />
+                <span>Sesuaikan NIS Massal</span>
+              </button>
             </div>
           )}
 
@@ -2458,6 +2497,18 @@ export default function AdminSpmbManagement({
         config={config}
         schoolIdentity={currentSchoolIdentity}
         defaultType={receiptModalType}
+      />
+
+      {/* Modal Edit Massal NIS Siswa (NISN Tetap) */}
+      <BulkNisEditorModal
+        isOpen={isBulkNisOpen}
+        onClose={() => setIsBulkNisOpen(false)}
+        students={students || []}
+        onRefresh={() => {
+          if (onRefresh) onRefresh();
+          loadData();
+        }}
+        initialClassFilter={bulkNisFilterClass}
       />
     </div>
   );

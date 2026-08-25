@@ -5910,6 +5910,54 @@ async function startServer() {
         };
       });
 
+    // 2d. Get all paid SPMB Token / Registration Form payments
+    const spmbTokenIntegrated = (spmbCandidates || [])
+      .filter(c => c.tokenPaymentStatus === 'paid' && (Number(c.tokenAmount) || 50000) > 0)
+      .map(c => ({
+        id: `spmb-tok-${c.id}`,
+        type: 'incoming' as const,
+        category: 'SPMB Formulir',
+        amount: Number(c.tokenAmount) || 50000,
+        description: `Pembayaran Token Formulir SPMB (${c.sessionId ? c.sessionId.toUpperCase() : 'SPMB'}) - ${c.fullName} (NISN: ${c.nisn || '-'})`,
+        date: getWIBDateString(c.tokenPaidAt || c.createdAt || new Date()),
+        source: 'custom' as const,
+        studentName: c.fullName,
+        nis: c.nisn || '',
+        createdBy: c.tokenPaymentMethod || 'Midtrans (Online)'
+      }));
+
+    // 2e. Get all cash refunds for SPMB collective token (if any)
+    const spmbRefundIntegrated = (spmbCandidates || [])
+      .filter(c => c.collectiveRefundStatus === 'refunded' && (Number(c.collectiveRefundAmount) || 0) > 0)
+      .map(c => ({
+        id: `spmb-ref-${c.id}`,
+        type: 'outgoing' as const,
+        category: 'SPMB Formulir',
+        amount: Number(c.collectiveRefundAmount) || 50000,
+        description: `Pengembalian Tunai Token SPMB Kolektif - ${c.fullName} (NISN: ${c.nisn || '-'})${c.collectiveRefundRecipient ? ` [Penerima: ${c.collectiveRefundRecipient}]` : ''}`,
+        date: getWIBDateString(c.collectiveRefundedAt || new Date()),
+        source: 'custom' as const,
+        studentName: c.fullName,
+        nis: c.nisn || '',
+        createdBy: c.collectiveRefundedBy || 'Kasir/Panitia SPMB'
+      }));
+
+    // 2f. Get all paid SPMB Re-registration (Daftar Ulang) payments
+    const spmbReRegIntegrated = (spmbCandidates || [])
+      .filter(c => c.reRegistrationStatus === 'paid' && (Number(c.reRegistrationAmount) || 0) > 0)
+      .map(c => ({
+        id: `spmb-rereg-${c.id}`,
+        type: 'incoming' as const,
+        category: 'SPMB Daftar Ulang',
+        amount: Number(c.reRegistrationAmount) || 0,
+        description: `Pembayaran Daftar Ulang SPMB (${c.sessionId ? c.sessionId.toUpperCase() : 'SPMB'}) - ${c.fullName} (NISN: ${c.nisn || '-'})`,
+        date: getWIBDateString(c.reRegistrationPaidAt || new Date()),
+        source: 'custom' as const,
+        studentName: c.fullName,
+        nis: c.nisn || '',
+        createdBy: c.reRegistrationPaymentMethod || 'Midtrans (Online)'
+      }));
+
     // 3. Merged transactions - Filter out any manually logged misc payments under "Operasional" to avoid double counting
     const filteredTreasurerTransactions = treasurerTransactions.filter(t => 
       !t.id.startsWith("tx-misc-") && 
@@ -5920,7 +5968,10 @@ async function startServer() {
       ...filteredTreasurerTransactions,
       ...sppIntegrated,
       ...savingsIntegrated,
-      ...miscIntegrated
+      ...miscIntegrated,
+      ...spmbTokenIntegrated,
+      ...spmbRefundIntegrated,
+      ...spmbReRegIntegrated
     ];
 
     // Sort by date descending
@@ -6028,6 +6079,8 @@ async function startServer() {
       : [
           { name: 'Operasional', type: 'outgoing' },
           { name: 'Gaji Guru', type: 'outgoing' },
+          { name: 'SPMB Formulir', type: 'both' },
+          { name: 'SPMB Daftar Ulang', type: 'incoming' },
           { name: 'Pembangunan', type: 'outgoing' },
           { name: 'Ujian', type: 'outgoing' },
           { name: 'HUT RI 81 2026', type: 'both' },
@@ -7053,24 +7106,56 @@ async function startServer() {
     if (midtransConfig.isDisabled) {
       return res.status(400).json({ error: "Pembayaran online mandiri via Midtrans sedang dinonaktifkan sementara oleh Administrator sekolah." });
     }
-    const { billIds, studentId: reqStudentId, origin } = req.body;
-    if (!Array.isArray(billIds) || billIds.length === 0) {
-      return res.status(400).json({ error: "Keranjang belanja kosong atau format data tidak valid." });
+    const { 
+      billIds = [], 
+      sppBillIds = [], 
+      miscBillIds = [], 
+      savingsDeposits = [], 
+      studentId: reqStudentId, 
+      origin 
+    } = req.body;
+
+    const allSppIds = [
+      ...(Array.isArray(sppBillIds) ? sppBillIds : []),
+      ...(Array.isArray(billIds) ? billIds.filter(id => typeof id === "string" && !id.startsWith("misc-") && !id.startsWith("sav-") && !id.startsWith("cart-savings-") && !id.startsWith("savings-deposit-")) : [])
+    ];
+    const allMiscIds = [
+      ...(Array.isArray(miscBillIds) ? miscBillIds : []),
+      ...(Array.isArray(billIds) ? billIds.filter(id => typeof id === "string" && (id.startsWith("misc-") || miscBills.some(m => m.id === id))) : [])
+    ];
+
+    const selectedSpp = sppBills.filter(b => allSppIds.includes(b.id));
+    const selectedMisc = miscBills.filter(b => allMiscIds.includes(b.id));
+
+    // Extract savings deposit items from cart IDs or savingsDeposits array
+    const selectedSavings: { studentId?: string; amount: number; notes?: string }[] = [];
+    if (Array.isArray(savingsDeposits) && savingsDeposits.length > 0) {
+      savingsDeposits.forEach((s: any) => {
+        const amt = Number(s.amount);
+        if (!isNaN(amt) && amt > 0) {
+          selectedSavings.push({
+            studentId: s.studentId,
+            amount: amt,
+            notes: s.notes || "Setoran Tabungan"
+          });
+        }
+      });
     }
 
-    const selectedSpp = sppBills.filter(b => billIds.includes(b.id));
-    const selectedMisc = miscBills.filter(b => billIds.includes(b.id));
-
-    // Extract savings deposit items from cart IDs (e.g. savings-deposit-TIMESTAMP-AMOUNT or savings-deposit-AMOUNT)
-    const savingsCartIds = billIds.filter(id => typeof id === "string" && id.startsWith("savings-deposit-"));
-    const selectedSavings: { id: string; amount: number }[] = [];
-    savingsCartIds.forEach(id => {
-      const parts = id.split("-");
-      const amt = Number(parts[parts.length - 1]);
-      if (!isNaN(amt) && amt >= 10000) {
-        selectedSavings.push({ id, amount: amt });
-      }
-    });
+    if (Array.isArray(billIds)) {
+      const savingsCartIds = billIds.filter(id => typeof id === "string" && (id.startsWith("savings-deposit-") || id.startsWith("cart-savings-")));
+      savingsCartIds.forEach(id => {
+        const parts = id.split("-");
+        const amt = Number(parts[parts.length - 1]);
+        if (!isNaN(amt) && amt >= 1000) {
+          selectedSavings.push({
+            studentId: parts.length > 3 ? parts[2] : reqStudentId,
+            amount: amt,
+            notes: "Setoran Tabungan"
+          });
+        }
+      });
+    }
 
     const totalBills = selectedSpp.length + selectedMisc.length + selectedSavings.length;
     if (totalBills === 0) {
@@ -7086,22 +7171,19 @@ async function startServer() {
     const studentIds = new Set<string>();
     selectedSpp.forEach(b => studentIds.add(b.studentId));
     selectedMisc.forEach(b => studentIds.add(b.studentId));
-
-    if (studentIds.size > 1) {
-      return res.status(400).json({ error: "Tagihan dalam keranjang harus berasal dari siswa yang sama." });
-    }
+    selectedSavings.forEach(s => { if (s.studentId) studentIds.add(s.studentId); });
 
     let studentId = Array.from(studentIds)[0];
     if (!studentId && reqStudentId) {
       studentId = reqStudentId;
     }
     
-    const student = students.find(s => s.id === studentId);
+    const student = students.find(s => s.id === studentId) || students[0];
     if (!student) {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
-    const studentNis = (student.nis ? String(student.nis).trim() : studentId.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
+    const studentNis = (student.nis ? String(student.nis).trim() : studentId ? studentId.replace(/^std-/, '') : 'SYS').replace(/[^a-zA-Z0-9]/g, '');
     let orderId = `CART-${studentNis}-${Date.now().toString().slice(-6)}`;
     if (orderId.length > 48) {
       orderId = `CART-${studentNis}-${Date.now().toString().slice(-4)}`;
@@ -7111,7 +7193,7 @@ async function startServer() {
     const sortedSelectedSpp = sortSppChronologically(selectedSpp);
 
     // Validate that SPP months are sequential without skipping earlier unpaid months
-    if (sortedSelectedSpp.length > 0) {
+    if (sortedSelectedSpp.length > 0 && student) {
       const studentAllSpp = sortSppChronologically(sppBills.filter(b => b.studentId === student.id));
       const selectedIds = new Set(sortedSelectedSpp.map(b => b.id));
       
@@ -7140,18 +7222,19 @@ async function startServer() {
 
     // Create pending savings deposit transactions for each deposit item in cart
     selectedSavings.forEach((savItem, idx) => {
+      const targetStudent = students.find(s => s.id === savItem.studentId) || student;
       const newSavingsTx: SavingsTransaction = {
         id: `sav-cart-${Date.now()}-${idx}-${Math.random().toString(36).substring(2, 6)}`,
-        studentId: student.id,
+        studentId: targetStudent.id,
         type: "deposit",
         amount: savItem.amount,
         status: "pending",
         createdAt: new Date().toISOString(),
         paymentMethod: "Midtrans (Keranjang)",
         orderId: orderId,
-        notes: "Setoran Tabungan via Keranjang Pembayaran"
+        notes: savItem.notes || "Setoran Tabungan via Keranjang Pembayaran"
       };
-      (newSavingsTx as any).studentNis = student.nis;
+      (newSavingsTx as any).studentNis = targetStudent.nis;
       savingsTransactions.push(newSavingsTx);
     });
 
@@ -8479,6 +8562,94 @@ async function startServer() {
     broadcastNotification(notification);
 
     res.json({ success: true, message: `Siswa ${studentName} berhasil dihapus.` });
+  });
+
+  // 2b. Edit Massal NIS Siswa (NISN Tetap / Tidak Berubah)
+  app.post("/api/admin/students/bulk-update-nis", (req, res) => {
+    try {
+      const { updates } = req.body;
+      if (!Array.isArray(updates) || updates.length === 0) {
+        return res.status(400).json({ error: "Daftar pembaruan NIS tidak boleh kosong." });
+      }
+
+      // Pre-validate for duplicate NIS among students and inside updates
+      const newNisSet = new Set<string>();
+      for (const item of updates) {
+        const cleanNis = String(item.newNis || "").trim();
+        if (!cleanNis) {
+          return res.status(400).json({ error: "Setiap siswa harus memiliki nomor NIS yang valid (tidak boleh kosong)." });
+        }
+        if (newNisSet.has(cleanNis)) {
+          return res.status(400).json({ error: `Nomor NIS ${cleanNis} duplikat di dalam daftar perubahan massal.` });
+        }
+        newNisSet.add(cleanNis);
+      }
+
+      // Check against existing students that are NOT in this update list
+      const updateStudentIds = new Set(updates.map(u => u.studentId));
+      for (const item of updates) {
+        const cleanNis = String(item.newNis).trim();
+        const existingOther = students.find(s => !updateStudentIds.has(s.id) && String(s.nis).trim() === cleanNis);
+        if (existingOther) {
+          return res.status(400).json({ 
+            error: `Nomor NIS ${cleanNis} sudah digunakan oleh siswa lain (${existingOther.name} - Kelas ${existingOther.class}).` 
+          });
+        }
+      }
+
+      let updatedCount = 0;
+      const updatedList: Array<{ id: string; name: string; oldNis: string; newNis: string; nisn: string }> = [];
+
+      updates.forEach(item => {
+        const student = students.find(s => s.id === item.studentId);
+        if (!student) return;
+
+        const oldNis = student.nis;
+        const cleanNewNis = String(item.newNis).trim();
+
+        // Update NIS only - NISN tetap/tidak berubah
+        student.nis = cleanNewNis;
+
+        // If email was default generated using old NIS, update email and password if still matching
+        if (student.email && student.email.endsWith("@smpmaarifnu.sch.id") && student.email.includes(oldNis)) {
+          student.email = student.email.replace(oldNis, cleanNewNis);
+        }
+        if (student.password === oldNis) {
+          student.password = cleanNewNis;
+        }
+
+        updatedCount++;
+        updatedList.push({
+          id: student.id,
+          name: student.name,
+          oldNis,
+          newNis: cleanNewNis,
+          nisn: student.nisn || ""
+        });
+      });
+
+      saveState();
+
+      // Broadcast notification
+      const notification: RealtimeNotification = {
+        id: `notif-bulk-nis-${Date.now()}`,
+        title: "Penyesuaian Massal NIS",
+        message: `Sebanyak ${updatedCount} siswa telah disesuaikan nomor induknya (NIS). NISN tetap utuh sesuai data pokok siswa.`,
+        type: "info",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+
+      res.json({
+        success: true,
+        message: `Berhasil memperbarui NIS untuk ${updatedCount} siswa secara massal. NISN masing-masing siswa tetap aman dan tidak berubah.`,
+        updatedCount,
+        updatedList
+      });
+    } catch (err: any) {
+      console.error("Error bulk updating student NIS:", err);
+      res.status(500).json({ error: "Gagal memperbarui NIS massal: " + err.message });
+    }
   });
 
   // 3a. Massal Kenaikan Kelas (Otomatis mengaktifkan Tahun Ajaran SPP Baru)
@@ -12297,67 +12468,139 @@ async function startServer() {
   // 12. Promote SPMB Candidate into Official Active Student (Siswa Resmi)
   app.post("/api/spmb/promote-to-students", (req, res) => {
     try {
-      const { candidateId, targetClass, targetNis } = req.body;
-      const candidate = spmbCandidates.find(c => c.id === candidateId || c.nisn === candidateId);
-      if (!candidate) {
-        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      const { candidateId, candidateIds, targetClass, defaultClass, targetNis } = req.body;
+      
+      const idsToPromote: string[] = Array.isArray(candidateIds) && candidateIds.length > 0
+        ? candidateIds
+        : (candidateId ? [candidateId] : []);
+
+      if (idsToPromote.length === 0) {
+        return res.status(400).json({ error: "Daftar ID calon murid yang akan dimigrasikan tidak boleh kosong." });
       }
 
-      const assignedClass = targetClass || "VII-A";
-      // Generate unique NIS if not provided
-      let finalNis = targetNis ? String(targetNis) : "";
-      if (!finalNis) {
-        const maxNis = students.reduce((max, s) => {
-          const n = Number(s.nis);
-          return (!isNaN(n) && n > max) ? n : max;
-        }, 2700);
-        finalNis = String(maxNis + 1);
-      }
+      const assignedClass = defaultClass || targetClass || "7-A";
+      const promotedStudents: Student[] = [];
+      const updatedCandidates: SpmbCandidate[] = [];
 
-      // Check if student with this NIS or NISN already exists
-      const existingStudent = students.find(s => String(s.nis) === String(finalNis) || (candidate.nisn && s.email && s.email.includes(candidate.nisn)));
-      if (existingStudent) {
+      for (const id of idsToPromote) {
+        const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+        if (!candidate) continue;
+
+        // NIS Sementara OTOMATIS disamakan dengan NISN calon siswa
+        const temporaryNis = candidate.nisn ? String(candidate.nisn).trim() : (targetNis ? String(targetNis).trim() : `STD-${Date.now()}`);
+        const permanentNisn = candidate.nisn ? String(candidate.nisn).trim() : "";
+
+        // Check if student with this NISN or ID already promoted
+        let existingStudent = students.find(s => 
+          (candidate.promotedStudentId && s.id === candidate.promotedStudentId) ||
+          (permanentNisn && s.nisn === permanentNisn) ||
+          (s.id === `std-spmb-${candidate.id}` || s.id === `std-spmb-${candidate.nisn}`)
+        );
+
+        if (existingStudent) {
+          // Update details & ensure nisn and temporary nis are intact
+          existingStudent.name = candidate.fullName;
+          existingStudent.class = assignedClass;
+          if (permanentNisn) existingStudent.nisn = permanentNisn;
+          if (!existingStudent.nis) existingStudent.nis = temporaryNis;
+
+          candidate.status = "accepted";
+          candidate.isPromotedToStudent = true;
+          candidate.promotedStudentId = existingStudent.id;
+          candidate.assignedClass = assignedClass;
+          candidate.promotedAt = new Date().toISOString();
+          candidate.updatedAt = new Date().toISOString();
+
+          promotedStudents.push(existingStudent);
+          updatedCandidates.push(candidate);
+          continue;
+        }
+
+        // Create new active Grade 7 student
+        const newStudent: Student = {
+          id: `std-spmb-${candidate.nisn || candidate.id}`,
+          name: candidate.fullName,
+          nis: temporaryNis, // NIS Sementara = NISN
+          nisn: permanentNisn, // NISN Asli & Permanen (Tidak Berubah saat NIS diedit masal)
+          class: assignedClass,
+          gender: candidate.gender === "P" ? "P" : "L",
+          phone: candidate.phone || candidate.fatherPhone || candidate.motherPhone || "",
+          email: candidate.email || `${candidate.fullName.toLowerCase().replace(/[^a-z0-9]/g, "")}.${temporaryNis}@smpmaarifnu.sch.id`,
+          password: temporaryNis,
+          savingsBalance: 0,
+          photoUrl: candidate.documents?.pasPhoto || candidate.photoUrl || "",
+          parentName: candidate.fatherName || candidate.motherName || candidate.guardianName || candidate.parentName || "",
+          address: candidate.address || "",
+          
+          // Biodata Lengkap Buku Induk
+          nik: candidate.nik || "",
+          nickname: candidate.nickname || "",
+          birthPlace: candidate.birthPlace || "",
+          birthDate: candidate.birthDate || "",
+          kkNumber: candidate.kkNumber || "",
+          birthCertNumber: candidate.birthCertNumber || "",
+          livingWith: candidate.livingWith || "",
+          childOrder: candidate.childOrder || "",
+          siblingsCount: candidate.siblingsCount || "",
+          stepSiblingsCount: candidate.stepSiblingsCount || "",
+
+          // Orang Tua - Ayah
+          fatherName: candidate.fatherName || "",
+          fatherNik: candidate.fatherNik || "",
+          fatherBirthPlace: candidate.fatherBirthPlace || "",
+          fatherBirthDate: candidate.fatherBirthDate || "",
+          fatherEducation: candidate.fatherEducation || "",
+          fatherOccupation: candidate.fatherOccupation || "",
+          fatherIncome: candidate.fatherIncome || "",
+          fatherAddress: candidate.fatherAddress || "",
+          fatherPhone: candidate.fatherPhone || "",
+          fatherStatus: candidate.fatherStatus || "Hidup",
+
+          // Orang Tua - Ibu
+          motherName: candidate.motherName || "",
+          motherNik: candidate.motherNik || "",
+          motherBirthPlace: candidate.motherBirthPlace || "",
+          motherBirthDate: candidate.motherBirthDate || "",
+          motherEducation: candidate.motherEducation || "",
+          motherOccupation: candidate.motherOccupation || "",
+          motherIncome: candidate.motherIncome || "",
+          motherAddress: candidate.motherAddress || "",
+          motherPhone: candidate.motherPhone || "",
+          motherStatus: candidate.motherStatus || "Hidup",
+
+          // Wali
+          guardianName: candidate.guardianName || "",
+          guardianNik: candidate.guardianNik || "",
+          guardianBirthPlace: candidate.guardianBirthPlace || "",
+          guardianBirthDate: candidate.guardianBirthDate || "",
+          guardianEducation: candidate.guardianEducation || "",
+          guardianOccupation: candidate.guardianOccupation || "",
+          guardianIncome: candidate.guardianIncome || "",
+          guardianAddress: candidate.guardianAddress || "",
+          guardianPhone: candidate.guardianPhone || "",
+          guardianStatus: candidate.guardianStatus || "",
+          googleDriveLink: candidate.googleDriveLink || ""
+        };
+
+        students.push(newStudent);
         candidate.status = "accepted";
         candidate.isPromotedToStudent = true;
-        candidate.promotedStudentId = existingStudent.id;
-        saveState();
-        return res.json({
-          success: true,
-          message: `Calon murid sudah terdaftar sebagai siswa resmi: ${existingStudent.name} (NIS: ${existingStudent.nis})`,
-          student: existingStudent,
-          candidate
-        });
+        candidate.promotedStudentId = newStudent.id;
+        candidate.assignedClass = assignedClass;
+        candidate.promotedAt = new Date().toISOString();
+        candidate.updatedAt = new Date().toISOString();
+
+        promotedStudents.push(newStudent);
+        updatedCandidates.push(candidate);
       }
-
-      const newStudent: Student = {
-        id: `std-spmb-${Date.now()}-${candidate.nisn}`,
-        name: candidate.fullName,
-        nis: finalNis,
-        class: assignedClass,
-        gender: candidate.gender === "P" ? "P" : "L",
-        phone: candidate.phone || candidate.fatherPhone || candidate.motherPhone || "",
-        email: candidate.email || `${candidate.fullName.toLowerCase().replace(/[^a-z0-9]/g, "")}.${finalNis}@smpmaarifnu.sch.id`,
-        password: String(finalNis),
-        savingsBalance: 0,
-        photoUrl: candidate.documents?.pasPhoto || candidate.photoUrl || "",
-        parentName: candidate.fatherName || candidate.motherName || candidate.guardianName || candidate.parentName || "",
-        address: candidate.address || ""
-      };
-
-      students.push(newStudent);
-      candidate.status = "accepted";
-      candidate.isPromotedToStudent = true;
-      candidate.promotedStudentId = newStudent.id;
-      candidate.updatedAt = new Date().toISOString();
 
       saveState();
 
       // Broadcast notification
       const notification: RealtimeNotification = {
         id: `notif-spmb-promoted-${Date.now()}`,
-        studentId: newStudent.id,
-        title: "Siswa Baru Diterima",
-        message: `${newStudent.name} resmi diterima sebagai siswa kelas ${newStudent.class} (NIS: ${newStudent.nis}).`,
+        title: "Migrasi Siswa Baru Kelas 7",
+        message: `Sebanyak ${promotedStudents.length} calon siswa SPMB berhasil resmi dimigrasikan menjadi Siswa Aktif Kelas 7 dengan NIS sementara = NISN.`,
         type: "success",
         createdAt: new Date().toISOString()
       };
@@ -12365,9 +12608,12 @@ async function startServer() {
 
       res.json({
         success: true,
-        message: `Calon murid ${candidate.fullName} berhasil resmi dipromosikan menjadi siswa kelas ${newStudent.class} dengan NIS ${newStudent.nis}.`,
-        student: newStudent,
-        candidate
+        message: `Berhasil memigrasikan ${promotedStudents.length} siswa ke Kelas ${assignedClass}. NIS sementara otomatis disamakan dengan NISN.`,
+        promotedCount: promotedStudents.length,
+        students: promotedStudents,
+        candidates: updatedCandidates,
+        student: promotedStudents[0],
+        candidate: updatedCandidates[0]
       });
     } catch (err: any) {
       console.error("Error promoting candidate to student:", err);

@@ -24,6 +24,7 @@ import {
   exportFilteredMiscBillsToExcel,
 } from "../utils/excelExport";
 import { MidtransBulkReportModal } from "./MidtransBulkReportModal";
+import MidtransPayModal from "./MidtransPayModal";
 import {
   ShieldAlert,
   BookOpen,
@@ -2517,8 +2518,97 @@ export default function AdminPanel({
     );
   };
 
+  const [isCartMidtransModalOpen, setIsCartMidtransModalOpen] = useState(false);
+  const [cartSnapToken, setCartSnapToken] = useState<string | null>(null);
+  const [cartSnapOrderId, setCartSnapOrderId] = useState<string | null>(null);
+  const [cartSnapAmount, setCartSnapAmount] = useState(0);
+  const [cartSnapItemName, setCartSnapItemName] = useState("");
+  const [isProcessingCartMidtrans, setIsProcessingCartMidtrans] = useState(false);
+
   const removeFromCart = (cartItemId: string) => {
     setPaymentCart((prev) => prev.filter((item) => item.id !== cartItemId));
+  };
+
+  const handleProcessCartMidtransCheckout = async () => {
+    if (paymentCart.length === 0) return;
+    setIsProcessingCartMidtrans(true);
+    try {
+      const sppBillIds = paymentCart
+        .filter((item) => item.type === "spp" && item.billId)
+        .map((item) => item.billId!);
+
+      const miscBillIds = paymentCart
+        .filter((item) => item.type === "misc" && item.billId)
+        .map((item) => item.billId!);
+
+      const savingsDeposits = paymentCart
+        .filter((item) => item.type === "savings_deposit")
+        .map((item) => ({
+          studentId: item.student.id,
+          amount: item.amount,
+          notes: item.notes || "Setoran Tabungan",
+        }));
+
+      const res = await fetch("/api/pay-cart-snap", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          sppBillIds,
+          miscBillIds,
+          savingsDeposits,
+          billIds: [...sppBillIds, ...miscBillIds],
+          studentId: selectedStudent?.id || paymentCart[0]?.student?.id,
+          origin: window.location.origin,
+        }),
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || "Gagal menginisiasi pembayaran Midtrans untuk keranjang.");
+      }
+
+      setCartSnapToken(data.token);
+      setCartSnapOrderId(data.orderId);
+      setCartSnapAmount(data.totalAmount);
+      setCartSnapItemName(`Keranjang Pembayaran (${paymentCart.length} Item: SPP, Tabungan, Lain2)`);
+      setIsCartMidtransModalOpen(true);
+    } catch (error: any) {
+      console.error("Error initiating Midtrans cart checkout:", error);
+      alert(error.message || "Gagal membuka jendela pembayaran online Midtrans.");
+    } finally {
+      setIsProcessingCartMidtrans(false);
+    }
+  };
+
+  const handleCartMidtransSuccess = () => {
+    const executedItems = paymentCart.map((item) => ({
+      name:
+        item.type === "spp"
+          ? `SPP Bulanan (${item.month} ${item.year})`
+          : item.type === "misc"
+          ? `Lain-lain (${item.notes})`
+          : `Setoran Tabungan (${item.notes || "Setoran"})`,
+      amount: item.amount,
+      desc: `Siswa: ${item.student.name} (${item.student.nis} - Kelas ${item.student.class})`,
+    }));
+
+    const totalAmount = paymentCart.reduce((sum, item) => sum + item.amount, 0);
+
+    setReceiptToPrint({
+      type: "consolidated",
+      detail: {
+        id: cartSnapOrderId || `CART-MIDTRANS-${Date.now()}`,
+        amount: totalAmount,
+        items: executedItems,
+        paidAt: new Date().toISOString(),
+        paymentMethod: "Midtrans (Online / QRIS)",
+      },
+      student: paymentCart[0]?.student || selectedStudent,
+    });
+    setPrintId("print-receipt-section");
+    setPaymentCart([]);
+    setIsCartMidtransModalOpen(false);
+    if (onRefresh) onRefresh();
   };
 
   const handleProcessCartCheckout = async () => {
@@ -4667,22 +4757,36 @@ export default function AdminPanel({
                     <motion.div
                       initial={{ opacity: 0, scale: 0.98 }}
                       animate={{ opacity: 1, scale: 1 }}
-                      className="bg-amber-50/70 border border-amber-200 rounded-2xl p-4 flex flex-col gap-3 relative shadow-xs"
+                      className="bg-amber-50/80 border-2 border-amber-300 rounded-2xl p-4 flex flex-col gap-3 relative shadow-sm"
                     >
-                      <div className="flex flex-wrap justify-between items-center border-b border-amber-200 pb-2 gap-2">
-                        <div className="flex items-center gap-2">
-                          <div className="p-1 px-2.5 bg-amber-500 text-white rounded-xl text-[10px] font-black flex items-center gap-1.5 shadow-sm">
+                      <div className="flex flex-wrap justify-between items-center border-b border-amber-200 pb-2.5 gap-2">
+                        <div className="flex items-center flex-wrap gap-2">
+                          <div className="p-1 px-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white rounded-xl text-[10px] font-black flex items-center gap-1.5 shadow-sm">
                             <ShoppingCart
-                              size={12}
+                              size={13}
                               className="animate-bounce"
                             />
                             <span>
-                              KERANJANG PEMBAYARAN TUNAI ({paymentCart.length})
+                              KERANJANG PEMBAYARAN ({paymentCart.length} ITEM)
                             </span>
                           </div>
-                          <span className="text-[10px] text-amber-700 font-bold tracking-wide">
-                            (Digabung Menjadi 1 Kuitansi Kolektif)
-                          </span>
+                          <div className="flex items-center gap-1.5">
+                            {paymentCart.filter((i) => i.type === "spp").length > 0 && (
+                              <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-lg text-[10px] font-black">
+                                {paymentCart.filter((i) => i.type === "spp").length} SPP
+                              </span>
+                            )}
+                            {paymentCart.filter((i) => i.type === "savings_deposit").length > 0 && (
+                              <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 rounded-lg text-[10px] font-black">
+                                {paymentCart.filter((i) => i.type === "savings_deposit").length} Tabungan
+                              </span>
+                            )}
+                            {paymentCart.filter((i) => i.type === "misc").length > 0 && (
+                              <span className="px-2 py-0.5 bg-amber-100 text-amber-800 rounded-lg text-[10px] font-black">
+                                {paymentCart.filter((i) => i.type === "misc").length} Lain-lain
+                              </span>
+                            )}
+                          </div>
                         </div>
                         <button
                           type="button"
@@ -4693,20 +4797,37 @@ export default function AdminPanel({
                         </button>
                       </div>
 
-                      <div className="divide-y divide-amber-200/50 max-h-48 overflow-y-auto pr-1">
+                      <div className="divide-y divide-amber-200/60 max-h-48 overflow-y-auto pr-1">
                         {paymentCart.map((item) => (
                           <div
                             key={item.id}
                             className="py-2.5 flex justify-between items-center text-xs"
                           >
                             <div className="flex flex-col text-left">
-                              <span className="font-extrabold text-slate-800">
-                                {item.type === "spp"
-                                  ? `SPP Bulanan (${item.month} ${item.year})`
-                                  : item.type === "misc"
-                                  ? `Lain-lain (${item.notes})`
-                                  : "Setoran Tabungan Tunai"}
-                              </span>
+                              <div className="flex items-center gap-2">
+                                <span className="font-extrabold text-slate-800">
+                                  {item.type === "spp"
+                                    ? `SPP Bulanan (${item.month} ${item.year})`
+                                    : item.type === "misc"
+                                    ? `Lain-lain (${item.notes})`
+                                    : "Setoran Tabungan"}
+                                </span>
+                                <span
+                                  className={`text-[9px] font-black px-1.5 py-0.2 rounded uppercase ${
+                                    item.type === "spp"
+                                      ? "bg-indigo-50 text-indigo-700 border border-indigo-200"
+                                      : item.type === "savings_deposit"
+                                      ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                      : "bg-amber-50 text-amber-700 border border-amber-200"
+                                  }`}
+                                >
+                                  {item.type === "spp"
+                                    ? "SPP"
+                                    : item.type === "savings_deposit"
+                                    ? "Tabungan"
+                                    : "Lainnya"}
+                                </span>
+                              </div>
                               <span className="text-[10px] text-slate-550 font-medium">
                                 Siswa:{" "}
                                 <strong className="text-slate-700">
@@ -4733,10 +4854,10 @@ export default function AdminPanel({
                         ))}
                       </div>
 
-                      <div className="flex flex-wrap justify-between items-center pt-3 border-t border-amber-200 gap-3 font-bold text-sm bg-amber-100/30 -mx-4 -mb-4 p-4 rounded-b-2xl">
+                      <div className="flex flex-wrap justify-between items-center pt-3 border-t border-amber-200 gap-3 font-bold text-sm bg-amber-100/40 -mx-4 -mb-4 p-4 rounded-b-2xl">
                         <div className="flex flex-col text-left">
-                          <span className="text-[9px] uppercase tracking-wider text-amber-800">
-                            Total Nominal Pembayaran
+                          <span className="text-[9px] uppercase tracking-wider text-amber-900 font-black">
+                            Total Tagihan Keranjang ({paymentCart.length} Item)
                           </span>
                           <span className="font-mono text-slate-900 font-extrabold text-base">
                             Rp{" "}
@@ -4746,30 +4867,57 @@ export default function AdminPanel({
                             ,00
                           </span>
                         </div>
-                        <button
-                          type="button"
-                          disabled={processingCart}
-                          onClick={handleProcessCartCheckout}
-                          className={`px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md ${
-                            processingCart
-                              ? "opacity-50 cursor-not-allowed shadow-none"
-                              : "hover:from-amber-600 hover:to-orange-600 active:scale-95 cursor-pointer"
-                          }`}
-                        >
-                          {processingCart ? (
-                            <>
-                              <RefreshCw size={13} className="animate-spin" />
-                              <span>
-                                Sedang Memproses ({paymentCart.length} Item)...
-                              </span>
-                            </>
-                          ) : (
-                            <>
-                              <CheckCircle size={13} />
-                              <span>Bayar & Cetak 1 Kuitansi Kolektif 🖨</span>
-                            </>
-                          )}
-                        </button>
+                        <div className="flex flex-wrap items-center gap-2">
+                          {/* Tombol Bayar via Midtrans Online */}
+                          <button
+                            type="button"
+                            disabled={isProcessingCartMidtrans || processingCart}
+                            onClick={handleProcessCartMidtransCheckout}
+                            className={`px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md ${
+                              isProcessingCartMidtrans || processingCart
+                                ? "opacity-50 cursor-not-allowed shadow-none"
+                                : "hover:from-emerald-700 hover:to-teal-700 active:scale-95 cursor-pointer"
+                            }`}
+                            title="Bayar online menggunakan gateway Midtrans (QRIS, VA Bank, Gopay, ShopeePay)"
+                          >
+                            {isProcessingCartMidtrans ? (
+                              <>
+                                <RefreshCw size={13} className="animate-spin" />
+                                <span>Menyiapkan Midtrans...</span>
+                              </>
+                            ) : (
+                              <>
+                                <Zap size={13} className="text-amber-300 fill-amber-300" />
+                                <span>Bayar via Midtrans (QRIS/VA) ⚡</span>
+                              </>
+                            )}
+                          </button>
+
+                          {/* Tombol Bayar Kasir Tunai / Teller */}
+                          <button
+                            type="button"
+                            disabled={processingCart || isProcessingCartMidtrans}
+                            onClick={handleProcessCartCheckout}
+                            className={`px-4 py-2.5 bg-gradient-to-r from-amber-500 to-orange-500 text-white font-extrabold rounded-xl text-xs uppercase tracking-wider transition-all flex items-center gap-1.5 shadow-md ${
+                              processingCart || isProcessingCartMidtrans
+                                ? "opacity-50 cursor-not-allowed shadow-none"
+                                : "hover:from-amber-600 hover:to-orange-600 active:scale-95 cursor-pointer"
+                            }`}
+                            title="Bayar langsung secara tunai di kasir dan cetak kuitansi kolektif"
+                          >
+                            {processingCart ? (
+                              <>
+                                <RefreshCw size={13} className="animate-spin" />
+                                <span>Sedang Memproses...</span>
+                              </>
+                            ) : (
+                              <>
+                                <CheckCircle size={13} />
+                                <span>Bayar Tunai & Cetak 🖨</span>
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     </motion.div>
                   )}
@@ -6654,7 +6802,11 @@ export default function AdminPanel({
 
         {adminTab === "spmb" && (
           <div className="w-full">
-            <AdminSpmbManagement onRefresh={onRefresh} schoolIdentity={schoolIdentity} />
+            <AdminSpmbManagement
+              onRefresh={onRefresh}
+              schoolIdentity={schoolIdentity}
+              students={students}
+            />
           </div>
         )}
 
@@ -19536,6 +19688,17 @@ export default function AdminPanel({
         onSuccessReconciliation={() => {
           if (onRefresh) onRefresh();
         }}
+      />
+      <MidtransPayModal
+        isOpen={isCartMidtransModalOpen}
+        token={cartSnapToken}
+        orderId={cartSnapOrderId}
+        amount={cartSnapAmount}
+        itemName={cartSnapItemName}
+        isProduction={midtransStatus?.isProduction || false}
+        clientKey={midtransStatus?.clientKey || ""}
+        onSuccess={handleCartMidtransSuccess}
+        onClose={() => setIsCartMidtransModalOpen(false)}
       />
       <SavingsPassbookModal
         isOpen={!!passbookModalStudent}

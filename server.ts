@@ -1443,6 +1443,38 @@ function applyAuthoritativeSavingsBalances(studentList: Student[]) {
         s.savingsBalance = 0;
       }
     }
+    // Also ensure that all successful savings transactions in the database are reflected in the student's savingsBalance
+    ensureStudentSavingsBalanceAccurate(s.id || s.nis);
+  });
+}
+
+function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
+  const targetStudents = studentIdOrNis 
+    ? students.filter(s => s.id === studentIdOrNis || String(s.nis).trim() === String(studentIdOrNis).trim())
+    : students;
+
+  targetStudents.forEach(student => {
+    const nisStr = String(student.nis || "").trim();
+    const baseBalance = AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr) ? AUTHORITATIVE_SAVINGS_MAP[nisStr] : 0;
+
+    const studentTxs = savingsTransactions.filter(t => 
+      (t.studentId === student.id || (student.nis && String(t.studentId).trim() === String(student.nis).trim())) &&
+      (t.status === "success" || !t.status || (t.status as any) === "completed")
+    );
+
+    let netTxAmount = 0;
+    studentTxs.forEach(t => {
+      if (t.type === "deposit") {
+        netTxAmount += t.amount;
+      } else if (t.type === "withdrawal") {
+        netTxAmount -= t.amount;
+      }
+    });
+
+    const calculatedBalance = baseBalance + netTxAmount;
+    if (student.savingsBalance === undefined || student.savingsBalance === null || student.savingsBalance < calculatedBalance) {
+      student.savingsBalance = calculatedBalance;
+    }
   });
 }
 
@@ -3369,10 +3401,10 @@ async function startServer() {
       for (const item of pendingList) {
         try {
           const resSync = await processMidtransOrderStatus(item.orderId);
-          if (resSync && resSync.statusResult) {
+          if (resSync && resSync.status) {
             syncedCount++;
-            if (resSync.statusResult === "settled") settledCount++;
-            else if (resSync.statusResult === "expired") expiredCount++;
+            if (resSync.status === "settled") settledCount++;
+            else if (resSync.status === "expired") expiredCount++;
           }
         } catch (e) {
           console.warn(`Error syncing status for order ${item.orderId}:`, e);
@@ -10310,63 +10342,245 @@ async function startServer() {
     }
 
     // D. SAVINGS TRANSACTIONS
-    else if (targetOrderId.startsWith("SAV-") || cleanOrderId.startsWith("SAV-")) {
+    else if (
+      targetOrderId.startsWith("SAV-") || 
+      cleanOrderId.startsWith("SAV-") ||
+      savingsTransactions.some(t => 
+        (targetTransactionId && t.transactionId === targetTransactionId) || 
+        t.orderId === targetOrderId || 
+        t.orderId === cleanOrderId || 
+        t.transactionId === cleanOrderId ||
+        t.id === cleanOrderId
+      ) ||
+      midtransTransactions.some(mt => 
+        (mt.orderId === targetOrderId || mt.orderId === cleanOrderId || (targetTransactionId && mt.transactionId === targetTransactionId) || mt.transactionId === cleanOrderId) &&
+        (mt.billType === "savings" || mt.description?.toLowerCase().includes("tabungan"))
+      )
+    ) {
       const activeOrderId = targetOrderId.startsWith("SAV-") ? targetOrderId : cleanOrderId;
-      let transaction = savingsTransactions.find(t => t.orderId === activeOrderId || t.orderId === cleanOrderId || (targetTransactionId && t.transactionId === targetTransactionId));
-      if (!transaction && isSettled) {
-        const parts = activeOrderId.split("-");
-        if (parts.length >= 2) {
-          const studentId = parts[1];
-          const student = students.find(s => s.id === studentId);
-          if (student) {
-            const recoveredAmount = Number(statusData.gross_amount) || 0;
-            if (recoveredAmount > 0) {
-              transaction = {
-                id: `sav-pay-auto-${Date.now()}`,
-                studentId,
-                type: "deposit",
-                amount: recoveredAmount,
-                status: "pending",
-                createdAt: resolvedPaidAt,
-                orderId: targetOrderId,
-                transactionId: targetTransactionId || undefined,
-                paymentMethod: actualPaymentType,
-                notes: "Setoran via Payment Gateway (Auto Recovery)"
-              };
-              savingsTransactions.push(transaction);
-            }
+      let transaction = savingsTransactions.find(t => 
+        (targetTransactionId && t.transactionId === targetTransactionId) ||
+        t.orderId === activeOrderId || 
+        t.orderId === cleanOrderId || 
+        t.orderId === targetOrderId ||
+        t.transactionId === cleanOrderId ||
+        t.id === cleanOrderId
+      );
+
+      // Resolve student with maximum resilience
+      let student: Student | undefined = undefined;
+      if (transaction) {
+        student = students.find(s => s.id === transaction.studentId || String(s.nis).trim() === String(transaction.studentId).trim());
+      }
+
+      if (!student) {
+        const candidateParts = [...activeOrderId.split("-"), ...targetOrderId.split("-")];
+        for (const p of candidateParts) {
+          const cleanP = p.trim();
+          if (cleanP && !["SAV", "sav", "CART", "cart", "SPP", "spp", "MISC", "misc"].includes(cleanP)) {
+            student = students.find(s => 
+              s.id === cleanP || 
+              String(s.nis).trim() === cleanP || 
+              (s.id && s.id.includes(cleanP)) || 
+              (cleanP.length >= 4 && s.nis && String(s.nis).trim().includes(cleanP))
+            );
+            if (student) break;
           }
         }
       }
 
-      if (transaction) {
-        if (isSettled && transaction.status === "pending") {
-          transaction.status = "success";
-          transaction.paymentMethod = actualPaymentType;
-          transaction.orderId = targetOrderId;
-          if (targetTransactionId) transaction.transactionId = targetTransactionId;
-          if (midtransTime) transaction.createdAt = resolvedPaidAt;
+      if (!student && statusData.customer_details) {
+        const cust = statusData.customer_details;
+        const custEmail = (cust.email || "").toLowerCase().trim();
+        const custNis = custEmail.includes("@") ? custEmail.split("@")[0].replace(/\D/g, "") : "";
+        const custPhone = (cust.phone || cust.mobile_number || "").replace(/\D/g, "");
+        const custName = (cust.first_name || cust.name || "").toLowerCase().trim();
 
-          const student = students.find(s => s.id === transaction.studentId);
-          if (student) {
-            student.savingsBalance += transaction.amount;
-          }
-          actionTaken = true;
-          detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} - Rp ${transaction.amount.toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
+        if (custNis) {
+          student = students.find(s => String(s.nis).trim() === custNis);
+        }
+        if (!student && custEmail) {
+          student = students.find(s => s.email && s.email.toLowerCase().trim() === custEmail);
+        }
+        if (!student && custPhone && custPhone.length >= 8) {
+          student = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(custPhone));
+        }
+        if (!student && custName && custName.length >= 3) {
+          student = students.find(s => s.name.toLowerCase().trim() === custName || s.name.toLowerCase().includes(custName) || custName.includes(s.name.toLowerCase()));
+        }
+      }
 
-          const notification: RealtimeNotification = {
-            id: `notif-sav-auto-${Date.now()}`,
-            studentId: transaction.studentId,
-            title: "Setoran Tabungan Lunas (Auto-Sync)",
-            message: `Setoran tabungan e-money sebesar Rp ${transaction.amount.toLocaleString("id-ID")} via ${paymentType} terverifikasi LUNAS. Saldo baru: Rp ${student?.savingsBalance.toLocaleString("id-ID")}.`,
-            type: "success",
-            createdAt: new Date().toISOString()
+      if (!student) {
+        const mtHist = midtransTransactions.find(mt => 
+          mt.orderId === targetOrderId || 
+          mt.orderId === cleanOrderId || 
+          (targetTransactionId && mt.transactionId === targetTransactionId) ||
+          mt.transactionId === cleanOrderId
+        );
+        if (mtHist) {
+          if (mtHist.studentId) student = students.find(s => s.id === mtHist.studentId);
+          if (!student && mtHist.studentNis) student = students.find(s => String(s.nis).trim() === String(mtHist.studentNis).trim());
+          if (!student && mtHist.studentName) student = students.find(s => s.name.toLowerCase().trim() === mtHist.studentName?.toLowerCase().trim());
+        }
+      }
+
+      if (!transaction && isSettled) {
+        const recoveredAmount = Number(statusData.gross_amount) || 0;
+        if (recoveredAmount > 0) {
+          const targetStudentId = student ? student.id : (activeOrderId.split("-")[1] || "unknown");
+          transaction = {
+            id: `sav-pay-auto-${Date.now()}`,
+            studentId: targetStudentId,
+            type: "deposit",
+            amount: recoveredAmount,
+            status: "pending",
+            createdAt: resolvedPaidAt,
+            orderId: targetOrderId,
+            transactionId: targetTransactionId || undefined,
+            paymentMethod: actualPaymentType,
+            notes: "Setoran via Payment Gateway (Auto Recovery / Reconciled)"
           };
-          broadcastNotification(notification);
+          savingsTransactions.push(transaction);
+        }
+      }
+
+      if (transaction) {
+        if (isSettled) {
+          if (!student) {
+            student = students.find(s => s.id === transaction.studentId || String(s.nis).trim() === String(transaction.studentId).trim());
+          }
+
+          if (transaction.status === "pending") {
+            transaction.status = "success";
+            transaction.paymentMethod = actualPaymentType;
+            transaction.orderId = targetOrderId;
+            if (targetTransactionId) transaction.transactionId = targetTransactionId;
+            if (midtransTime) transaction.createdAt = resolvedPaidAt;
+
+            if (student) {
+              student.savingsBalance = (student.savingsBalance || 0) + transaction.amount;
+              ensureStudentSavingsBalanceAccurate(student.id);
+            }
+            actionTaken = true;
+            detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} (Rp ${transaction.amount.toLocaleString("id-ID")}) berhasil diverifikasi LUNAS & saldo bertambah.` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
+
+            const notification: RealtimeNotification = {
+              id: `notif-sav-auto-${Date.now()}`,
+              studentId: transaction.studentId,
+              title: "Setoran Tabungan Lunas (Auto-Sync)",
+              message: `Setoran tabungan e-money sebesar Rp ${transaction.amount.toLocaleString("id-ID")} via ${paymentType} terverifikasi LUNAS. Saldo baru: Rp ${(student?.savingsBalance || 0).toLocaleString("id-ID")}.`,
+              type: "success",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+
+            if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student && student.phone) {
+              const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+                `📝 *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
+                `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Payment Gateway Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
+                `• Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
+                `• Kode Order: *${transaction.orderId}*\n` +
+                (targetTransactionId ? `• Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
+                `• Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n\n` +
+                `Terima kasih telah mendorong budaya menabung pada putra-putri Anda.\n` +
+                `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+              sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
+            }
+          } else if (transaction.status === "success") {
+            if (targetTransactionId && transaction.transactionId !== targetTransactionId) {
+              transaction.transactionId = targetTransactionId;
+              actionTaken = true;
+            }
+            if (student) {
+              ensureStudentSavingsBalanceAccurate(student.id);
+              actionTaken = true;
+              detailMessage = `Setoran Tabungan ${student.name} (Rp ${transaction.amount.toLocaleString("id-ID")}) LUNAS terverifikasi. Saldo tabungan aktif: Rp ${student.savingsBalance.toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
+            }
+          }
         } else if (isExpired && transaction.status === "pending") {
           transaction.status = "failed";
           actionTaken = true;
           detailMessage = `Setoran Tabungan ${activeOrderId} kedaluwarsa/batal.`;
+        }
+      }
+    }
+
+    // E. GENERIC / FALLBACK TRANSACTION RECOVERY (e.g. Raw Midtrans Transaction ID or Direct Order ID)
+    if (!actionTaken && isSettled) {
+      let matchedSav = savingsTransactions.find(t => 
+        (targetTransactionId && t.transactionId === targetTransactionId) || 
+        t.orderId === targetOrderId || 
+        t.orderId === cleanOrderId || 
+        t.transactionId === cleanOrderId ||
+        t.id === cleanOrderId
+      );
+
+      let student: Student | undefined = undefined;
+      if (matchedSav) {
+        student = students.find(s => s.id === matchedSav.studentId || String(s.nis).trim() === String(matchedSav.studentId).trim());
+      }
+
+      if (!student && statusData.customer_details) {
+        const cust = statusData.customer_details;
+        const custEmail = (cust.email || "").toLowerCase().trim();
+        const custNis = custEmail.includes("@") ? custEmail.split("@")[0].replace(/\D/g, "") : "";
+        const custPhone = (cust.phone || cust.mobile_number || "").replace(/\D/g, "");
+        const custName = (cust.first_name || cust.name || "").toLowerCase().trim();
+
+        if (custNis) {
+          student = students.find(s => String(s.nis).trim() === custNis);
+        }
+        if (!student && custEmail) {
+          student = students.find(s => s.email && s.email.toLowerCase().trim() === custEmail);
+        }
+        if (!student && custPhone && custPhone.length >= 8) {
+          student = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(custPhone));
+        }
+        if (!student && custName && custName.length >= 3) {
+          student = students.find(s => s.name.toLowerCase().trim() === custName || s.name.toLowerCase().includes(custName) || custName.includes(s.name.toLowerCase()));
+        }
+      }
+
+      if (matchedSav) {
+        if (!student) {
+          student = students.find(s => s.id === matchedSav.studentId || String(s.nis).trim() === String(matchedSav.studentId).trim());
+        }
+        if (matchedSav.status !== "success") {
+          matchedSav.status = "success";
+          matchedSav.paymentMethod = actualPaymentType;
+          if (targetTransactionId) matchedSav.transactionId = targetTransactionId;
+          if (student) {
+            student.savingsBalance = (student.savingsBalance || 0) + matchedSav.amount;
+            ensureStudentSavingsBalanceAccurate(student.id);
+          }
+          actionTaken = true;
+          detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} (Rp ${matchedSav.amount.toLocaleString("id-ID")}) berhasil diverifikasi & saldo bertambah.` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
+        } else {
+          if (targetTransactionId && !matchedSav.transactionId) matchedSav.transactionId = targetTransactionId;
+          if (student) ensureStudentSavingsBalanceAccurate(student.id);
+          actionTaken = true;
+          detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} (Rp ${matchedSav.amount.toLocaleString("id-ID")}) telah LUNAS & saldo aktif: Rp ${(student?.savingsBalance || 0).toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
+        }
+      } else if (student) {
+        const amt = Number(statusData.gross_amount) || 0;
+        if (amt > 0) {
+          const newTx: SavingsTransaction = {
+            id: `sav-pay-recov-${Date.now()}`,
+            studentId: student.id,
+            type: "deposit",
+            amount: amt,
+            status: "success",
+            createdAt: resolvedPaidAt,
+            orderId: targetOrderId,
+            transactionId: targetTransactionId || cleanOrderId,
+            paymentMethod: actualPaymentType,
+            notes: "Setoran Tabungan (Midtrans Reconciled)"
+          };
+          savingsTransactions.push(newTx);
+          student.savingsBalance = (student.savingsBalance || 0) + amt;
+          ensureStudentSavingsBalanceAccurate(student.id);
+          actionTaken = true;
+          detailMessage = `Setoran Tabungan ${student.name} (NIS: ${student.nis}) sebesar Rp ${amt.toLocaleString("id-ID")} berhasil diproses & ditambahkan ke saldo tabungan.` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
         }
       }
     }
@@ -10469,7 +10683,7 @@ async function startServer() {
 
   // Client simulated success trigger (Allows direct browser simulation and instant local sync verification)
   app.post("/api/simulate-payment-success", async (req, res) => {
-    const { orderId, paymentType } = req.body;
+    const { orderId, paymentType, transactionId, transaction_id: customTxId } = req.body;
     if (!orderId) {
       return res.status(400).json({ error: "Order ID is required." });
     }
@@ -10483,6 +10697,8 @@ async function startServer() {
     } catch (e) {
       console.error("Failed to fetch real Midtrans status:", e);
     }
+
+    const transaction_id = transactionId || customTxId || midtransStatus?.transaction_id || "";
 
     let isSettled = false;
     let actualPaymentType = paymentType || "Midtrans Snap";
@@ -10786,23 +11002,24 @@ async function startServer() {
         return res.json({ success: true, type: "misc", bill, student: affectedStudent });
       }
     } else if (resolvedOrderId.startsWith("SAV-")) {
-      let transaction = savingsTransactions.find(t => t.orderId === resolvedOrderId);
+      let transaction = savingsTransactions.find(t => t.orderId === resolvedOrderId || (transaction_id && t.transactionId === transaction_id));
       if (!transaction) {
         // Recovery mechanism from webhook
         const middle = resolvedOrderId.slice(4);
         const lastHyphenIndex = middle.lastIndexOf("-");
         const studentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-        const student = students.find(s => s.id === studentId);
+        const student = students.find(s => s.id === studentId || String(s.nis).trim() === studentId || (studentId && s.id.includes(studentId)));
         if (student) {
           const recoveredAmount = actualGrossAmount || 50000;
           transaction = {
             id: `sav-pay-recovered-${Date.now()}`,
-            studentId,
+            studentId: student.id,
             type: "deposit",
             amount: recoveredAmount,
             status: "pending",
             createdAt: resolvedPaidAt,
             orderId: resolvedOrderId,
+            transactionId: transaction_id || undefined,
             paymentMethod: actualPaymentType,
             notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
           };
@@ -10815,17 +11032,19 @@ async function startServer() {
         if (transaction.status === "pending") {
           transaction.status = "success";
           transaction.paymentMethod = actualPaymentType;
+          if (transaction_id) transaction.transactionId = transaction_id;
           if (midtransTime) {
             transaction.createdAt = resolvedPaidAt;
           }
           
-          affectedStudent = students.find(s => s.id === transaction.studentId) || null;
+          affectedStudent = students.find(s => s.id === transaction.studentId || String(s.nis).trim() === String(transaction.studentId).trim()) || null;
           if (affectedStudent) {
-            affectedStudent.savingsBalance += transaction.amount;
+            affectedStudent.savingsBalance = (affectedStudent.savingsBalance || 0) + transaction.amount;
+            ensureStudentSavingsBalanceAccurate(affectedStudent.id);
           }
 
           title = "Tabungan Terisi Real-time";
-          message = `Uang tabungan Rp ${transaction.amount.toLocaleString("id-ID")} untuk ${affectedStudent?.name || ""} sukses ditambahkan via Midtrans (${actualPaymentType}). Saldo total: Rp ${affectedStudent?.savingsBalance.toLocaleString("id-ID")}.`;
+          message = `Uang tabungan Rp ${transaction.amount.toLocaleString("id-ID")} untuk ${affectedStudent?.name || ""} sukses ditambahkan via Midtrans (${actualPaymentType}). Saldo total: Rp ${(affectedStudent?.savingsBalance || 0).toLocaleString("id-ID")}.`;
 
           const notification: RealtimeNotification = {
             id: `notif-sav-sim-${Date.now()}`,
@@ -10844,6 +11063,7 @@ async function startServer() {
               `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Payment Gateway Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
               `• Saldo Baru Tabungan: *Rp ${affectedStudent.savingsBalance.toLocaleString("id-ID")}*\n` +
               `• Kode Order: *${transaction.orderId}*\n` +
+              (transaction_id ? `• Transaction ID Midtrans: *${transaction_id}*\n` : '') +
               `• Waktu Transaksi: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n\n` +
               `Terima kasih telah mendorong budaya menabung pada putra-putri Anda.\n` +
               `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
@@ -10853,7 +11073,10 @@ async function startServer() {
           saveState();
           return res.json({ success: true, type: "savings", transaction, student: affectedStudent });
         } else {
-          affectedStudent = students.find(s => s.id === transaction.studentId) || null;
+          affectedStudent = students.find(s => s.id === transaction.studentId || String(s.nis).trim() === String(transaction.studentId).trim()) || null;
+          if (affectedStudent) {
+            ensureStudentSavingsBalanceAccurate(affectedStudent.id);
+          }
           return res.json({ success: true, type: "savings", transaction, student: affectedStudent, message: "Transaksi sudah diproses sebelumnya." });
         }
       }
@@ -10893,9 +11116,9 @@ async function startServer() {
   // Real Midtrans Webhook Notification Handler (Midtrans HTTP POST calls this directly)
   app.post("/api/midtrans-webhook", async (req, res) => {
     const webhookData = req.body;
-    const { order_id, transaction_status, payment_type, gross_amount, settlement_time, transaction_time } = webhookData;
+    const { order_id, transaction_status, payment_type, gross_amount, settlement_time, transaction_time, transaction_id } = webhookData;
 
-    console.log("Midtrans Webhook Received:", { order_id, transaction_status, payment_type, gross_amount, settlement_time, transaction_time });
+    console.log("Midtrans Webhook Received:", { order_id, transaction_status, payment_type, gross_amount, settlement_time, transaction_time, transaction_id });
 
     // Handle verification
     const isSettlement = transaction_status === "settlement" || transaction_status === "capture";
@@ -11151,24 +11374,25 @@ async function startServer() {
         }
       }
     } else if (order_id.startsWith("SAV-")) {
-      let transaction = savingsTransactions.find(t => t.orderId === order_id);
+      let transaction = savingsTransactions.find(t => t.orderId === order_id || (transaction_id && t.transactionId === transaction_id));
       if (!transaction && isSettlement) {
         // Recovery mechanism: if transaction is missing from local state (e.g. database synced or updated without it)
         const middle = order_id.slice(4);
         const lastHyphenIndex = middle.lastIndexOf("-");
         const studentId = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-        const student = students.find(s => s.id === studentId);
+        const student = students.find(s => s.id === studentId || String(s.nis).trim() === studentId || (studentId && s.id.includes(studentId)));
         if (student) {
           const recoveredAmount = Number(gross_amount) || 0;
           if (recoveredAmount > 0) {
             transaction = {
               id: `sav-pay-recovered-${Date.now()}`,
-              studentId,
+              studentId: student.id,
               type: "deposit",
               amount: recoveredAmount,
               status: "pending",
               createdAt: resolvedPaidAt,
               orderId: order_id,
+              transactionId: transaction_id || undefined,
               paymentMethod: `Midtrans (${payment_type || 'Online'})`,
               notes: "Setoran via Payment Gateway (Sistem Pemulihan)"
             };
@@ -11177,41 +11401,52 @@ async function startServer() {
         }
       }
       if (transaction) {
-        if (isSettlement && transaction.status === "pending") {
-          transaction.status = "success";
-          transaction.paymentMethod = `Midtrans (${payment_type})`;
-          if (midtransTime) {
-            transaction.createdAt = resolvedPaidAt;
-          }
-          
-          const student = students.find(s => s.id === transaction.studentId);
-          if (student) {
-            student.savingsBalance += transaction.amount;
-          }
-          isHandled = true;
+        if (isSettlement) {
+          if (transaction_id) transaction.transactionId = transaction_id;
+          const student = students.find(s => s.id === transaction.studentId || String(s.nis).trim() === String(transaction.studentId).trim());
 
-          // Broadcast notifications
-          const notification: RealtimeNotification = {
-            id: `notif-sav-midtrans-${Date.now()}`,
-            studentId: transaction.studentId,
-            title: "Setoran Tabungan Otomatis",
-            message: `Midtrans berhasil meneruskan transaksi e-money sebesar Rp ${transaction.amount.toLocaleString("id-ID")} ke rekening Tabungan ${student?.name || ""}. Saldo baru: Rp ${student?.savingsBalance.toLocaleString("id-ID")}.`,
-            type: "success",
-            createdAt: new Date().toISOString()
-          };
-          broadcastNotification(notification);
+          if (transaction.status === "pending") {
+            transaction.status = "success";
+            transaction.paymentMethod = `Midtrans (${payment_type})`;
+            if (midtransTime) {
+              transaction.createdAt = resolvedPaidAt;
+            }
+            
+            if (student) {
+              student.savingsBalance = (student.savingsBalance || 0) + transaction.amount;
+              ensureStudentSavingsBalanceAccurate(student.id);
+            }
+            isHandled = true;
 
-          // Send automated WA
-          if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student && student.phone) {
-            const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-              `📝 *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
-              `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
-              `• Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
-              `• Kode Order: *${transaction.orderId}*\n\n` +
-              `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
-            sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online savings web WA:", err));
+            // Broadcast notifications
+            const notification: RealtimeNotification = {
+              id: `notif-sav-midtrans-${Date.now()}`,
+              studentId: transaction.studentId,
+              title: "Setoran Tabungan Otomatis",
+              message: `Midtrans berhasil meneruskan transaksi e-money sebesar Rp ${transaction.amount.toLocaleString("id-ID")} ke rekening Tabungan ${student?.name || ""}. Saldo baru: Rp ${(student?.savingsBalance || 0).toLocaleString("id-ID")}.`,
+              type: "success",
+              createdAt: new Date().toISOString()
+            };
+            broadcastNotification(notification);
+
+            // Send automated WA
+            if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student && student.phone) {
+              const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+                `📝 *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
+                `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
+                `• Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
+                `• Kode Order: *${transaction.orderId}*\n` +
+                (transaction_id ? `• Transaction ID Midtrans: *${transaction_id}*\n` : '') +
+                `\n-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
+              sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online savings web WA:", err));
+            }
+            isHandled = true;
+          } else if (transaction.status === "success") {
+            if (student) {
+              ensureStudentSavingsBalanceAccurate(student.id);
+            }
+            isHandled = true;
           }
-          isHandled = true;
         }
       }
     } else if (order_id.startsWith("SPMB-TOKEN-")) {
@@ -12653,9 +12888,9 @@ async function startServer() {
             studentName: candidate.fullName,
             studentNis: candidate.nisn,
             nisn: candidate.nisn,
-            billType: "spmb_rereg",
+            billType: "spmb_reregistration",
             description: `Pembayaran Daftar Ulang SPMB - ${candidate.fullName}`,
-            grossAmount: reRegistrationTotal,
+            grossAmount: totalAmount,
             paymentType: "Midtrans Snap",
             transactionStatus: "pending",
             snapToken: snapToken,

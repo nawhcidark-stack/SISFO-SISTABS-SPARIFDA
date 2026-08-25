@@ -9,7 +9,7 @@ import multer from "multer";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 
 // Setup serverport
@@ -29,6 +29,7 @@ const sppBills: SppBill[] = [];
 const miscBills: MiscBill[] = [];
 const treasurerTransactions: TreasurerTransaction[] = [];
 const savingsTransactions: SavingsTransaction[] = [];
+const midtransTransactions: MidtransTransactionRecord[] = [];
 const notifications: RealtimeNotification[] = [
   {
     id: "notif-init-1",
@@ -1084,6 +1085,243 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
   return { treasurerPurged, savingsPurged, categoriesPurged };
 }
 
+// Global helper to record or update a Midtrans transaction in memory
+function recordOrUpdateMidtransTransaction(data: {
+  orderId: string;
+  transactionId?: string;
+  studentId?: string;
+  studentName?: string;
+  studentNis?: string;
+  nisn?: string;
+  billType?: 'spp' | 'misc' | 'cart' | 'savings' | 'spmb_token' | 'spmb_reregistration' | 'other';
+  description?: string;
+  grossAmount?: number;
+  paymentType?: string;
+  transactionStatus: 'settlement' | 'capture' | 'pending' | 'expire' | 'cancel' | 'deny' | 'refund' | 'failure';
+  fraudStatus?: string;
+  settlementTime?: string;
+  transactionTime?: string;
+  snapToken?: string;
+  rawResponse?: any;
+}): MidtransTransactionRecord {
+  const cleanOrderId = (data.orderId || "").trim();
+  if (!cleanOrderId) {
+    return {
+      id: `mtx-invalid-${Date.now()}`,
+      orderId: `UNKNOWN-${Date.now()}`,
+      billType: "other",
+      description: "Invalid Transaction",
+      grossAmount: 0,
+      paymentType: "unknown",
+      transactionStatus: "failure",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+  }
+
+  let existing = midtransTransactions.find(t => t.orderId === cleanOrderId || (data.transactionId && t.transactionId === data.transactionId));
+  const now = new Date().toISOString();
+
+  if (existing) {
+    if (data.transactionId) existing.transactionId = data.transactionId;
+    if (data.studentId && !existing.studentId) existing.studentId = data.studentId;
+    if (data.studentName && (!existing.studentName || existing.studentName === "Siswa")) existing.studentName = data.studentName;
+    if (data.studentNis && !existing.studentNis) existing.studentNis = data.studentNis;
+    if (data.nisn && !existing.nisn) existing.nisn = data.nisn;
+    if (data.billType && (!existing.billType || existing.billType === "other")) existing.billType = data.billType;
+    if (data.description) existing.description = data.description;
+    if (data.grossAmount !== undefined && data.grossAmount > 0) existing.grossAmount = data.grossAmount;
+    if (data.paymentType && data.paymentType !== "Online Gateway") existing.paymentType = data.paymentType;
+    if (data.transactionStatus) existing.transactionStatus = data.transactionStatus;
+    if (data.fraudStatus) existing.fraudStatus = data.fraudStatus;
+    if (data.settlementTime) existing.settlementTime = data.settlementTime;
+    if (data.transactionTime) existing.transactionTime = data.transactionTime;
+    if (data.snapToken) existing.snapToken = data.snapToken;
+    if (data.rawResponse) existing.rawResponse = data.rawResponse;
+    existing.updatedAt = now;
+    return existing;
+  } else {
+    // Infer bill type & description if not fully provided
+    let inferredBillType: 'spp' | 'misc' | 'cart' | 'savings' | 'spmb_token' | 'spmb_reregistration' | 'other' = data.billType || "other";
+    let inferredDesc = data.description || `Transaksi Midtrans (${cleanOrderId})`;
+    let stdName = data.studentName;
+    let stdNis = data.studentNis;
+    let studentId = data.studentId;
+
+    if (!data.billType) {
+      if (cleanOrderId.startsWith("SPP-")) inferredBillType = "spp";
+      else if (cleanOrderId.startsWith("MISC-")) inferredBillType = "misc";
+      else if (cleanOrderId.startsWith("CART-")) inferredBillType = "cart";
+      else if (cleanOrderId.startsWith("SAV-")) inferredBillType = "savings";
+      else if (cleanOrderId.startsWith("SPMB-TOKEN-")) inferredBillType = "spmb_token";
+      else if (cleanOrderId.startsWith("SPMB-REREG-")) inferredBillType = "spmb_reregistration";
+    }
+
+    if (!stdName && studentId) {
+      const s = students.find(std => std.id === studentId);
+      if (s) {
+        stdName = s.name;
+        stdNis = s.nis;
+      }
+    }
+
+    const newRecord: MidtransTransactionRecord = {
+      id: `mtx-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
+      orderId: cleanOrderId,
+      transactionId: data.transactionId,
+      studentId,
+      studentName: stdName || "Siswa",
+      studentNis: stdNis,
+      nisn: data.nisn,
+      billType: inferredBillType,
+      description: inferredDesc,
+      grossAmount: data.grossAmount || 0,
+      paymentType: data.paymentType || "Midtrans",
+      transactionStatus: data.transactionStatus || "pending",
+      fraudStatus: data.fraudStatus,
+      settlementTime: data.settlementTime,
+      transactionTime: data.transactionTime || now,
+      createdAt: data.transactionTime || now,
+      updatedAt: now,
+      snapToken: data.snapToken,
+      rawResponse: data.rawResponse
+    };
+    midtransTransactions.unshift(newRecord);
+    return newRecord;
+  }
+}
+
+// Auto-seed historical midtrans transactions from bills, savings, and SPMB
+function autoSyncHistoricalMidtransTransactions() {
+  let added = 0;
+  // 1. SPP Bills
+  sppBills.forEach(b => {
+    if (b.orderId && (b.orderId.startsWith("SPP-") || b.orderId.startsWith("CART-") || (b.paymentMethod && b.paymentMethod.includes("Midtrans")))) {
+      if (!midtransTransactions.some(m => m.orderId === b.orderId)) {
+        const student = students.find(s => s.id === b.studentId);
+        midtransTransactions.push({
+          id: `mtx-spp-${b.id}`,
+          orderId: b.orderId,
+          transactionId: b.transactionId,
+          studentId: b.studentId,
+          studentName: student?.name || "Siswa",
+          studentNis: student?.nis,
+          billType: b.orderId.startsWith("CART-") ? "cart" : "spp",
+          description: `SPP ${b.month} ${b.year} - ${student?.name || "Siswa"}`,
+          grossAmount: b.amount,
+          paymentType: b.paymentMethod || "Midtrans",
+          transactionStatus: b.status === "paid" ? "settlement" : b.status === "pending" ? "pending" : "expire",
+          settlementTime: b.paidAt,
+          transactionTime: b.paidAt || new Date().toISOString(),
+          createdAt: b.paidAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        added++;
+      }
+    }
+  });
+
+  // 2. Misc Bills
+  miscBills.forEach(b => {
+    if (b.orderId && (b.orderId.startsWith("MISC-") || b.orderId.startsWith("CART-") || (b.paymentMethod && b.paymentMethod.includes("Midtrans")))) {
+      if (!midtransTransactions.some(m => m.orderId === b.orderId)) {
+        const student = students.find(s => s.id === b.studentId);
+        midtransTransactions.push({
+          id: `mtx-misc-${b.id}`,
+          orderId: b.orderId,
+          transactionId: b.transactionId,
+          studentId: b.studentId,
+          studentName: student?.name || "Siswa",
+          studentNis: student?.nis,
+          billType: b.orderId.startsWith("CART-") ? "cart" : "misc",
+          description: `${b.title} - ${student?.name || "Siswa"}`,
+          grossAmount: b.amount,
+          paymentType: b.paymentMethod || "Midtrans",
+          transactionStatus: b.status === "paid" ? "settlement" : b.status === "pending" ? "pending" : "expire",
+          settlementTime: b.paidAt,
+          transactionTime: b.paidAt || new Date().toISOString(),
+          createdAt: b.paidAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        added++;
+      }
+    }
+  });
+
+  // 3. Savings Transactions
+  savingsTransactions.forEach(t => {
+    if (t.orderId && (t.orderId.startsWith("SAV-") || t.orderId.startsWith("CART-") || (t.paymentMethod && t.paymentMethod.includes("Midtrans")))) {
+      if (!midtransTransactions.some(m => m.orderId === t.orderId)) {
+        const student = students.find(s => s.id === t.studentId);
+        midtransTransactions.push({
+          id: `mtx-sav-${t.id}`,
+          orderId: t.orderId,
+          transactionId: t.transactionId,
+          studentId: t.studentId,
+          studentName: student?.name || "Siswa",
+          studentNis: student?.nis,
+          billType: t.orderId.startsWith("CART-") ? "cart" : "savings",
+          description: `Setoran Tabungan - ${student?.name || "Siswa"}`,
+          grossAmount: t.amount,
+          paymentType: t.paymentMethod || "Midtrans",
+          transactionStatus: t.status === "success" ? "settlement" : t.status === "pending" ? "pending" : "expire",
+          settlementTime: t.status === "success" ? t.createdAt : undefined,
+          transactionTime: t.createdAt || new Date().toISOString(),
+          createdAt: t.createdAt || new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        });
+        added++;
+      }
+    }
+  });
+
+  // 4. SPMB Candidates
+  spmbCandidates.forEach(c => {
+    if (c.tokenOrderId && !midtransTransactions.some(m => m.orderId === c.tokenOrderId)) {
+      midtransTransactions.push({
+        id: `mtx-spmb-token-${c.id || c.nisn}`,
+        orderId: c.tokenOrderId,
+        studentId: c.id,
+        studentName: c.fullName,
+        nisn: c.nisn,
+        billType: "spmb_token",
+        description: `Pembelian Formulir / Token SPMB - ${c.fullName}`,
+        grossAmount: c.tokenAmount || 50000,
+        paymentType: c.tokenPaymentMethod || "Midtrans",
+        transactionStatus: c.tokenPaid ? "settlement" : "pending",
+        settlementTime: c.tokenPaidAt,
+        transactionTime: c.tokenPaidAt || c.createdAt || new Date().toISOString(),
+        createdAt: c.tokenPaidAt || c.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      added++;
+    }
+    if (c.reRegistrationOrderId && !midtransTransactions.some(m => m.orderId === c.reRegistrationOrderId)) {
+      midtransTransactions.push({
+        id: `mtx-spmb-rereg-${c.id || c.nisn}`,
+        orderId: c.reRegistrationOrderId,
+        studentId: c.id,
+        studentName: c.fullName,
+        nisn: c.nisn,
+        billType: "spmb_reregistration",
+        description: `Daftar Ulang & Seragam SPMB - ${c.fullName}`,
+        grossAmount: c.reRegistrationAmount || 0,
+        paymentType: c.reRegistrationPaymentMethod || "Midtrans",
+        transactionStatus: c.reRegistrationPaid ? "settlement" : "pending",
+        settlementTime: c.reRegistrationPaidAt,
+        transactionTime: c.reRegistrationPaidAt || c.createdAt || new Date().toISOString(),
+        createdAt: c.reRegistrationPaidAt || c.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
+      });
+      added++;
+    }
+  });
+
+  if (added > 0) {
+    console.log(`[MIDTRANS HISTORICAL] Auto-recovered & recorded ${added} historical Midtrans transactions.`);
+  }
+}
+
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
 
 // MongoDB Database connection initialization
@@ -1219,6 +1457,7 @@ async function saveStateToFirestore(forceAll: boolean = false) {
       ["sppBills", sppBills],
       ["miscBills", miscBills],
       ["savingsTransactions", savingsTransactions],
+      ["midtransTransactions", midtransTransactions],
       ["realtimeNotifications", notifications.slice(0, 100)],
       ["attendanceLogs", attendanceLogs],
       ["homeroomTeachers", homeroomTeachers],
@@ -1770,6 +2009,28 @@ async function syncWithFirestore(forcePush: boolean = false) {
       spmbCandidates.forEach(cand => recordDocumentSignature("spmbCandidates", cand));
       console.log(`[BOOT] Loaded & safely synchronized ${spmbCandidates.length} SPMB candidates from MongoDB & Local storage.`);
 
+      // Load Midtrans Transactions
+      try {
+        const loadedMtx = await mongoDb.collection("midtransTransactions").find({}).toArray();
+        const loadedMtxMap = new Map<string, MidtransTransactionRecord>();
+        midtransTransactions.forEach((tx) => {
+          if (tx && tx.orderId) loadedMtxMap.set(tx.orderId, tx);
+        });
+        loadedMtx.forEach((d: any) => {
+          const { _id, ...rest } = d;
+          if (rest && rest.orderId) loadedMtxMap.set(rest.orderId, rest as MidtransTransactionRecord);
+        });
+        midtransTransactions.length = 0;
+        midtransTransactions.push(...Array.from(loadedMtxMap.values()));
+        midtransTransactions.forEach(tx => recordDocumentSignature("midtransTransactions", tx));
+        console.log(`[BOOT] Loaded & synchronized ${midtransTransactions.length} Midtrans transactions from MongoDB.`);
+      } catch (errMtx) {
+        console.warn("Failed loading midtransTransactions collection:", errMtx);
+      }
+
+      // Auto sync any historical transactions from other collections
+      autoSyncHistoricalMidtransTransactions();
+
       // Load configurations
       const loadedConfigs = await mongoDb.collection("configs").find({}).toArray();
       loadedConfigs.forEach((d: any) => {
@@ -1911,6 +2172,7 @@ function saveState(skipRemoteSync: boolean = false) {
       sppBills,
       miscBills,
       savingsTransactions,
+      midtransTransactions,
       notifications,
       sppRates,
       schoolIdentity,
@@ -2006,6 +2268,10 @@ function loadState() {
       if (Array.isArray(data.savingsTransactions)) {
         savingsTransactions.length = 0;
         savingsTransactions.push(...data.savingsTransactions);
+      }
+      if (Array.isArray(data.midtransTransactions)) {
+        midtransTransactions.length = 0;
+        midtransTransactions.push(...data.midtransTransactions);
       }
       // Apply authoritative savings balances for all loaded students
       applyAuthoritativeSavingsBalances(students);
@@ -2632,6 +2898,7 @@ async function startServer() {
       sppBills,
       miscBills,
       savingsTransactions,
+      midtransTransactions,
       notifications,
       attendanceLogs,
       homeroomTeachers,
@@ -2672,6 +2939,7 @@ async function startServer() {
       sppBills: sppBills.length,
       miscBills: miscBills.length,
       savingsTransactions: savingsTransactions.length,
+      midtransTransactions: midtransTransactions.length,
       treasurerTransactions: treasurerTransactions.length,
       attendanceLogs: attendanceLogs.length,
       teachingJournals: teachingJournals.length,
@@ -2866,6 +3134,19 @@ async function startServer() {
 
     const spmbArr = getArray(["spmbCandidates"]);
     if (spmbArr) { spmbCandidates.length = 0; spmbCandidates.push(...spmbArr); }
+
+    const midtransArr = getArray([
+      "midtransTransactions",
+      "midtrans_transactions",
+      "midtrans",
+      "midtransLogs",
+      "onlineTransactions",
+      "transaksi_midtrans"
+    ]);
+    if (midtransArr) {
+      midtransTransactions.length = 0;
+      midtransTransactions.push(...midtransArr);
+    }
 
     if (snapshot.sppRates) Object.assign(sppRates, snapshot.sppRates);
     if (snapshot.salaryConfig) Object.assign(salaryConfig, snapshot.salaryConfig);
@@ -3062,6 +3343,100 @@ async function startServer() {
     saveState();
 
     res.json({ success: true, message: "Konfigurasi Midtrans berhasil disimpan!" });
+  });
+
+  // Get list of all Midtrans transactions
+  app.get("/api/admin/midtrans-transactions", (req, res) => {
+    // Make sure all records are up to date
+    autoSyncHistoricalMidtransTransactions();
+    const sorted = [...midtransTransactions].sort((a, b) => {
+      const timeA = new Date(a.transactionTime || a.createdAt || 0).getTime();
+      const timeB = new Date(b.transactionTime || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+    res.json({ success: true, transactions: sorted, count: sorted.length });
+  });
+
+  // Trigger batch status sync with Midtrans Gateway for pending transactions
+  app.post("/api/admin/midtrans-transactions/sync-all", async (req, res) => {
+    try {
+      autoSyncHistoricalMidtransTransactions();
+      const pendingList = midtransTransactions.filter(t => t.transactionStatus === "pending");
+      let syncedCount = 0;
+      let settledCount = 0;
+      let expiredCount = 0;
+
+      for (const item of pendingList) {
+        try {
+          const resSync = await processMidtransOrderStatus(item.orderId);
+          if (resSync && resSync.statusResult) {
+            syncedCount++;
+            if (resSync.statusResult === "settled") settledCount++;
+            else if (resSync.statusResult === "expired") expiredCount++;
+          }
+        } catch (e) {
+          console.warn(`Error syncing status for order ${item.orderId}:`, e);
+        }
+      }
+
+      saveState();
+      res.json({
+        success: true,
+        message: `Sinkronisasi selesai. Diproses: ${syncedCount}, Lunas: ${settledCount}, Expired: ${expiredCount}`,
+        syncedCount,
+        settledCount,
+        expiredCount,
+        total: midtransTransactions.length
+      });
+    } catch (err: any) {
+      console.error("Error in sync-all midtrans transactions:", err);
+      res.status(500).json({ error: "Gagal menyinkronkan transaksi Midtrans: " + err.message });
+    }
+  });
+
+  // Export Midtrans transactions to CSV
+  app.get("/api/admin/midtrans-transactions/export", (req, res) => {
+    autoSyncHistoricalMidtransTransactions();
+    const sorted = [...midtransTransactions].sort((a, b) => {
+      const timeA = new Date(a.transactionTime || a.createdAt || 0).getTime();
+      const timeB = new Date(b.transactionTime || b.createdAt || 0).getTime();
+      return timeB - timeA;
+    });
+
+    const headers = [
+      "Order ID",
+      "Transaction ID",
+      "Jenis Tagihan",
+      "Deskripsi",
+      "Nama Siswa / Pembayar",
+      "NIS",
+      "NISN",
+      "Nominal (Rp)",
+      "Metode Pembayaran",
+      "Status Transaksi",
+      "Waktu Transaksi",
+      "Waktu Settlement"
+    ];
+
+    const rows = sorted.map(t => [
+      `"${t.orderId || ''}"`,
+      `"${t.transactionId || ''}"`,
+      `"${t.billType || ''}"`,
+      `"${(t.description || '').replace(/"/g, '""')}"`,
+      `"${(t.studentName || '').replace(/"/g, '""')}"`,
+      `"${t.studentNis || ''}"`,
+      `"${t.nisn || ''}"`,
+      t.grossAmount || 0,
+      `"${t.paymentType || ''}"`,
+      `"${t.transactionStatus || ''}"`,
+      `"${t.transactionTime || t.createdAt || ''}"`,
+      `"${t.settlementTime || ''}"`
+    ]);
+
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\r\n");
+    res.setHeader("Content-Type", "text/csv; charset=utf-8");
+    res.setHeader("Content-Disposition", `attachment; filename=transaksi_midtrans_${Date.now()}.csv`);
+    res.send(csvContent);
   });
 
   // Get dynamic SPP config rates
@@ -7323,6 +7698,19 @@ async function startServer() {
       }
 
       const snapResponse: any = await response.json();
+      recordOrUpdateMidtransTransaction({
+        orderId,
+        studentId: student.id,
+        studentName: student.name,
+        studentNis: student.nis,
+        billType: "cart",
+        description: `Pembayaran Keranjang (${totalBills} Item) - ${student.name}`,
+        grossAmount: grossAmountVal,
+        paymentType: "Midtrans Snap",
+        transactionStatus: "pending",
+        snapToken: snapResponse.token,
+        rawResponse: snapResponse
+      });
       res.json({
         token: snapResponse.token,
         redirectUrl: snapResponse.redirect_url,
@@ -7439,6 +7827,19 @@ async function startServer() {
       }
 
       const snapResponse = await response.json();
+      recordOrUpdateMidtransTransaction({
+        orderId,
+        studentId: student.id,
+        studentName: student.name,
+        studentNis: student.nis,
+        billType: "misc",
+        description: `${bill.title} - ${student.name}`,
+        grossAmount: bill.amount,
+        paymentType: "Midtrans Snap",
+        transactionStatus: "pending",
+        snapToken: snapResponse.token,
+        rawResponse: snapResponse
+      });
       res.json({
         token: snapResponse.token,
         redirectUrl: snapResponse.redirect_url,
@@ -9345,6 +9746,19 @@ async function startServer() {
       }
 
       const snapResponse: any = await response.json();
+      recordOrUpdateMidtransTransaction({
+        orderId,
+        studentId: student.id,
+        studentName: student.name,
+        studentNis: student.nis,
+        billType: "spp",
+        description: `SPP ${bill.month} ${bill.year} - ${student.name}`,
+        grossAmount: grossAmountVal,
+        paymentType: "Midtrans Snap",
+        transactionStatus: "pending",
+        snapToken: snapResponse.token,
+        rawResponse: snapResponse
+      });
       res.json({
         token: snapResponse.token,
         redirectUrl: snapResponse.redirect_url,
@@ -9481,6 +9895,19 @@ async function startServer() {
       }
 
       const snapResponse: any = await response.json();
+      recordOrUpdateMidtransTransaction({
+        orderId,
+        studentId: student.id,
+        studentName: student.name,
+        studentNis: student.nis,
+        billType: "savings",
+        description: `Setoran Tabungan - ${student.name}`,
+        grossAmount: grossAmountVal,
+        paymentType: "Midtrans Snap",
+        transactionStatus: "pending",
+        snapToken: snapResponse.token,
+        rawResponse: snapResponse
+      });
       res.json({
         token: snapResponse.token,
         redirectUrl: snapResponse.redirect_url,
@@ -9943,6 +10370,20 @@ async function startServer() {
         }
       }
     }
+
+    // Persist/Update to midtransTransactions history array
+    const inferredStatus = isSettled ? "settlement" : isExpired ? "expire" : (ts === "pending" ? "pending" : (ts || "pending"));
+    recordOrUpdateMidtransTransaction({
+      orderId: targetOrderId,
+      transactionId: targetTransactionId || undefined,
+      grossAmount: Number(statusData.gross_amount) || undefined,
+      paymentType: paymentType,
+      transactionStatus: inferredStatus as any,
+      fraudStatus: statusData.fraud_status,
+      settlementTime: statusData.settlement_time,
+      transactionTime: statusData.transaction_time || resolvedPaidAt,
+      rawResponse: statusData
+    });
 
     if (actionTaken) {
       saveState();
@@ -10804,6 +11245,19 @@ async function startServer() {
         }
       }
     }
+
+    const webhookStatus = isSettlement ? "settlement" : (transaction_status === "expire" || transaction_status === "deny" || transaction_status === "cancel" ? "expire" : (transaction_status || "pending"));
+    recordOrUpdateMidtransTransaction({
+      orderId: order_id,
+      transactionId: webhookData.transaction_id || undefined,
+      grossAmount: Number(gross_amount) || undefined,
+      paymentType: payment_type || "Online Gateway",
+      transactionStatus: webhookStatus as any,
+      fraudStatus: webhookData.fraud_status,
+      settlementTime: settlement_time,
+      transactionTime: transaction_time || resolvedPaidAt,
+      rawResponse: webhookData
+    });
 
     if (isHandled) {
       saveState();
@@ -11854,6 +12308,19 @@ async function startServer() {
           snapToken = snapJson.token || "";
           redirectUrl = snapJson.redirect_url || "";
           candidate.tokenSnapToken = snapToken;
+          recordOrUpdateMidtransTransaction({
+            orderId,
+            studentName: candidate.fullName,
+            studentNis: candidate.nisn,
+            nisn: candidate.nisn,
+            billType: "spmb_token",
+            description: `Pembayaran Token SPMB - ${candidate.fullName}`,
+            grossAmount: tokenFee,
+            paymentType: "Midtrans Snap",
+            transactionStatus: "pending",
+            snapToken: snapToken,
+            rawResponse: snapJson
+          });
           saveState();
         } else {
           const errText = await snapResponse.text();
@@ -12181,6 +12648,19 @@ async function startServer() {
           snapToken = snapJson.token || "";
           redirectUrl = snapJson.redirect_url || "";
           candidate.reRegistrationSnapToken = snapToken;
+          recordOrUpdateMidtransTransaction({
+            orderId,
+            studentName: candidate.fullName,
+            studentNis: candidate.nisn,
+            nisn: candidate.nisn,
+            billType: "spmb_rereg",
+            description: `Pembayaran Daftar Ulang SPMB - ${candidate.fullName}`,
+            grossAmount: reRegistrationTotal,
+            paymentType: "Midtrans Snap",
+            transactionStatus: "pending",
+            snapToken: snapToken,
+            rawResponse: snapJson
+          });
           saveState();
         } else {
           const errText = await snapResponse.text();

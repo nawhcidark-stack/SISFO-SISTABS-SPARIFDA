@@ -11105,6 +11105,8 @@ export default function AdminPanel({
                                 <span className="text-slate-300">•</span>
                                 <span>Tabungan: <strong className="text-slate-700">{bkp.collections.savingsTransactions || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
+                                <span>Midtrans: <strong className="text-slate-700">{bkp.collections.midtransTransactions || 0}</strong></span>
+                                <span className="text-slate-300">•</span>
                                 <span>Kas Admin: <strong className="text-slate-700">{bkp.collections.treasurerTransactions || 0}</strong></span>
                                 <span className="text-slate-300">•</span>
                                 <span>Absensi: <strong className="text-slate-700">{bkp.collections.attendanceLogs || 0}</strong></span>

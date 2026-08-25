@@ -141,6 +141,28 @@ export interface MidtransConfig {
   pin?: string;
 }
 
+export interface MidtransTransactionRecord {
+  id: string;
+  orderId: string;
+  transactionId?: string;
+  studentId?: string;
+  studentName?: string;
+  studentNis?: string;
+  nisn?: string;
+  billType: 'spp' | 'misc' | 'cart' | 'savings' | 'spmb_token' | 'spmb_reregistration' | 'other';
+  description: string;
+  grossAmount: number;
+  paymentType: string;
+  transactionStatus: 'settlement' | 'capture' | 'pending' | 'expire' | 'cancel' | 'deny' | 'refund' | 'failure';
+  fraudStatus?: string;
+  settlementTime?: string;
+  transactionTime?: string;
+  createdAt: string;
+  updatedAt: string;
+  snapToken?: string;
+  rawResponse?: any;
+}
+
 export interface SchoolIdentity {
   name: string;
   subheading: string;

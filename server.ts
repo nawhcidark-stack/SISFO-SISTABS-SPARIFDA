@@ -6085,37 +6085,49 @@ async function startServer() {
 
   app.post("/api/sarpras/loans", (req, res) => {
     const loan = req.body;
-    if (!loan.itemId || !loan.borrowerId || !loan.borrowerName || !loan.qty) {
-      return res.status(400).json({ error: "Barang, peminjam, dan jumlah pinjam wajib diisi." });
-    }
-
-    const itemIdx = sarprasItems.findIndex(i => i.id === loan.itemId);
-    if (itemIdx === -1) {
-      return res.status(404).json({ error: "Barang tidak ditemukan." });
-    }
-
+    const borrowerName = String(loan.borrowerName || "").trim();
+    const itemId = String(loan.itemId || "").trim();
     const reqQty = Number(loan.qty) || 1;
+
+    if (!itemId) {
+      return res.status(400).json({ error: "Silakan pilih barang inventaris yang ingin dipinjam." });
+    }
+    if (!borrowerName) {
+      return res.status(400).json({ error: "Nama pendidik/peminjam wajib dipilih atau diisi." });
+    }
+    if (reqQty <= 0) {
+      return res.status(400).json({ error: "Jumlah unit dipinjam minimal 1." });
+    }
+
+    const itemIdx = sarprasItems.findIndex(i => i.id === itemId);
+    if (itemIdx === -1) {
+      return res.status(404).json({ error: "Data barang inventaris tidak ditemukan." });
+    }
+
     if (sarprasItems[itemIdx].availableQty < reqQty) {
-      return res.status(400).json({ error: `Stok tersedia tidak mencukupi. Tersedia: ${sarprasItems[itemIdx].availableQty} unit.` });
+      return res.status(400).json({ 
+        error: `Stok tidak mencukupi! Hanya tersedia ${sarprasItems[itemIdx].availableQty} unit untuk barang "${sarprasItems[itemIdx].name}".` 
+      });
     }
 
     sarprasItems[itemIdx].availableQty -= reqQty;
 
     const newLoan = {
       id: "loan-" + Date.now(),
-      itemId: loan.itemId,
+      itemId: itemId,
       itemName: sarprasItems[itemIdx].name,
-      borrowerId: loan.borrowerId,
-      borrowerName: loan.borrowerName,
+      borrowerId: loan.borrowerId ? String(loan.borrowerId).trim() : `borrower-${Date.now()}`,
+      borrowerName: borrowerName,
       qty: reqQty,
       loanDate: loan.loanDate || new Date().toISOString().split('T')[0],
       status: "dipinjam",
-      notes: String(loan.notes || "").trim()
+      notes: String(loan.notes || "").trim(),
+      createdAt: new Date().toISOString()
     };
     sarprasLoans.unshift(newLoan);
 
     saveState();
-    res.json({ success: true, sarprasLoans, sarprasItems });
+    res.json({ success: true, sarprasLoans, sarprasItems, loan: newLoan });
   });
 
   app.post("/api/sarpras/loans/:id/return", (req, res) => {
@@ -6126,7 +6138,7 @@ async function startServer() {
     }
 
     if (sarprasLoans[loanIdx].status === 'kembali') {
-      return res.status(400).json({ error: "Barang ini sudah dikembalikan sebelumnya." });
+      return res.status(400).json({ error: "Barang ini sudah berstatus dikembalikan." });
     }
 
     const itemIdx = sarprasItems.findIndex(i => i.id === sarprasLoans[loanIdx].itemId);
@@ -6140,6 +6152,30 @@ async function startServer() {
     sarprasLoans[loanIdx].status = "kembali";
     sarprasLoans[loanIdx].returnDate = new Date().toISOString().split('T')[0];
 
+    saveState();
+    res.json({ success: true, sarprasLoans, sarprasItems });
+  });
+
+  app.delete("/api/sarpras/loans/:id", (req, res) => {
+    const { id } = req.params;
+    const loanIdx = sarprasLoans.findIndex(l => l.id === id);
+    if (loanIdx === -1) {
+      return res.status(404).json({ error: "Data peminjaman tidak ditemukan." });
+    }
+
+    const targetLoan = sarprasLoans[loanIdx];
+    // If deleted while still borrowed, return qty to inventory
+    if (targetLoan.status === 'dipinjam') {
+      const itemIdx = sarprasItems.findIndex(i => i.id === targetLoan.itemId);
+      if (itemIdx !== -1) {
+        sarprasItems[itemIdx].availableQty = Math.min(
+          sarprasItems[itemIdx].totalQty,
+          sarprasItems[itemIdx].availableQty + targetLoan.qty
+        );
+      }
+    }
+
+    sarprasLoans.splice(loanIdx, 1);
     saveState();
     res.json({ success: true, sarprasLoans, sarprasItems });
   });

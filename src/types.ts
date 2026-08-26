@@ -169,6 +169,8 @@ export interface SchoolIdentity {
   accreditation: string;
   address: string;
   phone: string;
+  email?: string;
+  npsn?: string;
   principal: string;
   principalSignature?: string;
   treasurer: string;

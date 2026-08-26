@@ -94,6 +94,9 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   const [selectedBarcodeItems, setSelectedBarcodeItems] = useState<string[]>([]);
   const [barcodePrintData, setBarcodePrintData] = useState<SarprasItem[] | null>(null);
 
+  // Loan Receipt Print Preview State
+  const [receiptLoan, setReceiptLoan] = useState<SarprasLoan | null>(null);
+
   // Auto coding states
   const [autoCode, setAutoCode] = useState(true);
 
@@ -171,15 +174,27 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   const [showProposalForm, setShowProposalForm] = useState(false);
 
   // Form States - Loans
-  const [loanForm, setLoanForm] = useState({
+  const [loanForm, setLoanForm] = useState<{
+    itemId: string;
+    borrowerType: 'guru' | 'manual';
+    borrowerId: string;
+    customBorrowerName: string;
+    qty: number;
+    loanDate: string;
+    notes: string;
+  }>({
     itemId: '',
+    borrowerType: 'guru',
     borrowerId: '',
-    borrowerName: '',
+    customBorrowerName: '',
     qty: 1,
     loanDate: new Date().toISOString().split('T')[0],
     notes: ''
   });
   const [showLoanForm, setShowLoanForm] = useState(false);
+  const [isSubmittingLoan, setIsSubmittingLoan] = useState(false);
+  const [localHomerooms, setLocalHomerooms] = useState<HomeroomTeacher[]>([]);
+  const [localSubjectTeachers, setLocalSubjectTeachers] = useState<SubjectTeacher[]>([]);
 
   // Filters & Search States
   const [itemSearch, setItemSearch] = useState('');
@@ -200,27 +215,42 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   // Unified Teacher representation mapped from homerooms and subjectTeachers
   const teachersList = useMemo(() => {
     const arr: { id: string; name: string; detail: string }[] = [];
-    homerooms.forEach(h => {
-      arr.push({ id: h.id, name: h.name, detail: `Wali Kelas ${h.className}` });
+    const seen = new Set<string>();
+
+    const hList = localHomerooms.length > 0 ? localHomerooms : (homerooms || []);
+    const sList = localSubjectTeachers.length > 0 ? localSubjectTeachers : (subjectTeachers || []);
+
+    hList.forEach(h => {
+      if (h.id && !seen.has(h.id)) {
+        seen.add(h.id);
+        arr.push({ id: h.id, name: h.name, detail: `Wali Kelas ${h.className || ''}` });
+      }
     });
-    subjectTeachers.forEach(s => {
-      arr.push({ id: s.id, name: s.name, detail: `Guru Mapel ${s.subject}` });
+    sList.forEach(s => {
+      if (s.id && !seen.has(s.id)) {
+        seen.add(s.id);
+        arr.push({ id: s.id, name: s.name, detail: `Guru Mapel ${s.subject || ''}` });
+      }
     });
     return arr.sort((a, b) => a.name.localeCompare(b.name));
-  }, [homerooms, subjectTeachers]);
+  }, [localHomerooms, localSubjectTeachers, homerooms, subjectTeachers]);
 
   // Load all data
   const loadSarprasData = async () => {
     setIsLoading(true);
     try {
-      const [rItems, rProposals, rLoans] = await Promise.all([
+      const [rItems, rProposals, rLoans, rHomerooms, rSubjects] = await Promise.all([
         fetch('/api/sarpras/items').then(r => r.json()),
         fetch('/api/sarpras/proposals').then(r => r.json()),
-        fetch('/api/sarpras/loans').then(r => r.json())
+        fetch('/api/sarpras/loans').then(r => r.json()),
+        fetch('/api/homerooms').then(r => r.ok ? r.json() : []).catch(() => []),
+        fetch('/api/subject-teachers').then(r => r.ok ? r.json() : []).catch(() => [])
       ]);
       setItems(Array.isArray(rItems) ? rItems : []);
       setProposals(Array.isArray(rProposals) ? rProposals : []);
       setLoans(Array.isArray(rLoans) ? rLoans : []);
+      if (Array.isArray(rHomerooms) && rHomerooms.length > 0) setLocalHomerooms(rHomerooms);
+      if (Array.isArray(rSubjects) && rSubjects.length > 0) setLocalSubjectTeachers(rSubjects);
     } catch (err) {
       console.error("Gagal menjaring data sarpras:", err);
       showMsg('error', 'Gagal memuat database sarpras.');
@@ -510,45 +540,106 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
   // Loan/Borrowing checker out handler
   const handleCheckoutLoan = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!loanForm.itemId || !loanForm.borrowerId || !loanForm.qty) {
-      showMsg('error', 'Lengkapi seluruh formulir peminjaman.');
+    if (isSubmittingLoan) return;
+
+    if (!loanForm.itemId) {
+      showMsg('error', 'Silakan pilih barang inventaris yang akan dipinjam.');
       return;
     }
 
-    const t = teachersList.find(teacher => teacher.id === loanForm.borrowerId);
-    if (!t) {
-      showMsg('error', 'Pendidik tidak valid.');
+    const selectedItem = items.find(i => i.id === loanForm.itemId);
+    if (!selectedItem) {
+      showMsg('error', 'Barang inventaris tidak valid atau tidak ditemukan.');
       return;
     }
 
+    const borrowQty = Number(loanForm.qty) || 1;
+    if (borrowQty < 1) {
+      showMsg('error', 'Kuantitas unit yang dipinjam minimal 1.');
+      return;
+    }
+
+    if (selectedItem.availableQty < borrowQty) {
+      showMsg('error', `Stok barang "${selectedItem.name}" tidak mencukupi! Tersedia hanya ${selectedItem.availableQty} unit.`);
+      return;
+    }
+
+    let finalBorrowerName = '';
+    let finalBorrowerId = '';
+
+    if (loanForm.borrowerType === 'manual') {
+      finalBorrowerName = String(loanForm.customBorrowerName || '').trim();
+      if (!finalBorrowerName) {
+        showMsg('error', 'Silakan masukkan nama peminjam (Staf / Siswa / Umum).');
+        return;
+      }
+      finalBorrowerId = `manual-${Date.now()}`;
+    } else {
+      if (!loanForm.borrowerId) {
+        showMsg('error', 'Silakan pilih pendidik (Wali Kelas / Guru Mapel) yang meminjam.');
+        return;
+      }
+      const t = teachersList.find(teacher => teacher.id === loanForm.borrowerId);
+      if (!t) {
+        showMsg('error', 'Pendidik yang dipilih tidak ditemukan dalam daftar.');
+        return;
+      }
+      finalBorrowerName = t.name;
+      finalBorrowerId = t.id;
+    }
+
+    setIsSubmittingLoan(true);
     try {
       const res = await fetch('/api/sarpras/loans', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          ...loanForm,
-          borrowerName: t.name
+          itemId: loanForm.itemId,
+          borrowerId: finalBorrowerId,
+          borrowerName: finalBorrowerName,
+          qty: borrowQty,
+          loanDate: loanForm.loanDate || new Date().toISOString().split('T')[0],
+          notes: loanForm.notes || ''
         })
       });
       const data = await res.json();
-      if (res.ok) {
-        setLoans(data.sarprasLoans);
-        setItems(data.sarprasItems);
-        showMsg('success', `Peminjaman barang berhasil dicatat atas nama ${t.name}.`);
+      if (res.ok && data.success) {
+        if (data.sarprasLoans) setLoans(data.sarprasLoans);
+        if (data.sarprasItems) setItems(data.sarprasItems);
+        showMsg('success', `Peminjaman "${selectedItem.name}" (${borrowQty} unit) berhasil dicatat atas nama ${finalBorrowerName}.`);
+        
+        // Auto display receipt & print proof for the newly recorded loan
+        const recordedLoan: SarprasLoan = data.loan || (data.sarprasLoans && data.sarprasLoans[0]) || {
+          id: `loan-${Date.now()}`,
+          itemId: loanForm.itemId,
+          itemName: selectedItem.name,
+          borrowerId: finalBorrowerId,
+          borrowerName: finalBorrowerName,
+          qty: borrowQty,
+          loanDate: loanForm.loanDate || new Date().toISOString().split('T')[0],
+          status: 'dipinjam',
+          notes: loanForm.notes || ''
+        };
+        setReceiptLoan(recordedLoan);
+
         setLoanForm({
           itemId: '',
+          borrowerType: 'guru',
           borrowerId: '',
-          borrowerName: '',
+          customBorrowerName: '',
           qty: 1,
           loanDate: new Date().toISOString().split('T')[0],
           notes: ''
         });
         setShowLoanForm(false);
       } else {
-        showMsg('error', data.error || 'Gagal melakukan peminjaman.');
+        showMsg('error', data.error || 'Gagal menyimpan transaksi peminjaman.');
       }
     } catch (err) {
-      showMsg('error', 'Kesalahan server.');
+      console.error("Gagal simpan peminjaman:", err);
+      showMsg('error', 'Terjadi kesalahan jaringan/server saat memproses peminjaman.');
+    } finally {
+      setIsSubmittingLoan(false);
     }
   };
 
@@ -563,15 +654,43 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
             method: 'POST'
           });
           const data = await res.json();
-          if (res.ok) {
-            setLoans(data.sarprasLoans);
-            setItems(data.sarprasItems);
-            showMsg('success', 'Barang telah dikembalikan dan kuantitas tersedia disinkronkan kembali.');
+          if (res.ok && data.success) {
+            if (data.sarprasLoans) setLoans(data.sarprasLoans);
+            if (data.sarprasItems) setItems(data.sarprasItems);
+            showMsg('success', 'Barang telah dikembalikan dan stok inventaris telah diperbarui.');
           } else {
             showMsg('error', data.error || 'Gagal memperbarui status pengembalian.');
           }
         } catch (err) {
           showMsg('error', 'Gagal memproses pengembalian barang.');
+        } finally {
+          setConfirmDialog(prev => ({ ...prev, isOpen: false }));
+        }
+      }
+    });
+  };
+
+  const handleDeleteLoan = (loanId: string) => {
+    const target = loans.find(l => l.id === loanId);
+    setConfirmDialog({
+      isOpen: true,
+      title: 'Hapus / Batalkan Peminjaman',
+      message: `Apakah Anda yakin ingin menghapus catatan peminjaman "${target?.itemName || 'barang'}" oleh ${target?.borrowerName || 'peminjam'}? ${target?.status === 'dipinjam' ? 'Stok unit akan otomatis dikembalikan ke inventaris.' : ''}`,
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/sarpras/loans/${loanId}`, {
+            method: 'DELETE'
+          });
+          const data = await res.json();
+          if (res.ok && data.success) {
+            if (data.sarprasLoans) setLoans(data.sarprasLoans);
+            if (data.sarprasItems) setItems(data.sarprasItems);
+            showMsg('success', 'Catatan peminjaman berhasil dihapus.');
+          } else {
+            showMsg('error', data.error || 'Gagal menghapus catatan peminjaman.');
+          }
+        } catch (err) {
+          showMsg('error', 'Gagal memproses penghapusan peminjaman.');
         } finally {
           setConfirmDialog(prev => ({ ...prev, isOpen: false }));
         }
@@ -622,7 +741,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
 
   return (
     <div className="min-h-screen bg-slate-50 text-slate-800 font-sans print:bg-white print:text-black">
-      {/* Printable Area Overlay */}
+      {/* Printable Area Overlay - General Table Reports */}
       {printData && (
         <div id="print-report-section" className="hidden print:block absolute inset-0 bg-white p-8 overflow-visible z-50">
           <div className="flex flex-col gap-1 items-center border-b-4 border-double border-slate-800 pb-4 mb-6">
@@ -690,6 +809,139 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
           >
             <ArrowLeft size={14} /> Kembali
           </button>
+        </div>
+      )}
+
+      {/* Printable Area Overlay - Official Loan Receipt (Kuitansi / Tanda Bukti Peminjaman) */}
+      {receiptLoan && (
+        <div id="print-receipt-section" className="hidden print:block absolute inset-0 bg-white p-8 overflow-visible z-50 text-slate-900">
+          {/* Letterhead */}
+          <div className="flex flex-col items-center border-b-4 border-double border-slate-900 pb-3 mb-5">
+            <h1 className="text-xl font-black uppercase tracking-wide text-center text-slate-950">
+              {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+            </h1>
+            <p className="text-[11px] text-center text-slate-700 font-semibold italic mt-0.5">
+              {schoolIdentity?.address || "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan"}
+            </p>
+            <p className="text-[10px] text-center text-slate-600 font-mono mt-0.5">
+              NPSN: {schoolIdentity?.npsn || '20519342'} • Unit Sarana, Prasarana &amp; Logistik Inventaris
+            </p>
+          </div>
+
+          {/* Document Title */}
+          <div className="text-center mb-6">
+            <h2 className="text-sm font-black uppercase tracking-wider underline text-slate-950">
+              SURAT TANDA BUKTI PEMINJAMAN SARANA &amp; PRASARANA
+            </h2>
+            <p className="text-[10.5px] font-mono text-slate-600 font-bold mt-1">
+              Nomor: {receiptLoan.id.toUpperCase()} / SARPRAS / {new Date(receiptLoan.loanDate || Date.now()).getFullYear()}
+            </p>
+          </div>
+
+          {/* Identification Details */}
+          <div className="border border-slate-400 rounded-lg p-4 mb-5 bg-slate-50/50 text-[11px]">
+            <div className="grid grid-cols-2 gap-4">
+              <div className="flex flex-col gap-1.5">
+                <div className="flex">
+                  <span className="w-32 text-slate-500 font-semibold">Nama Peminjam</span>
+                  <span className="font-bold text-slate-900">: {receiptLoan.borrowerName}</span>
+                </div>
+                <div className="flex">
+                  <span className="w-32 text-slate-500 font-semibold">Status / Jabatan</span>
+                  <span className="font-medium text-slate-800">
+                    : {receiptLoan.borrowerId.startsWith('manual-') 
+                        ? 'Staf / Siswa / Umum' 
+                        : (teachersList.find(t => t.id === receiptLoan.borrowerId)?.detail || 'Pendidik / Dewan Guru')}
+                  </span>
+                </div>
+                <div className="flex">
+                  <span className="w-32 text-slate-500 font-semibold">ID Peminjam</span>
+                  <span className="font-mono text-slate-700">: {receiptLoan.borrowerId}</span>
+                </div>
+              </div>
+
+              <div className="flex flex-col gap-1.5">
+                <div className="flex">
+                  <span className="w-32 text-slate-500 font-semibold">Tanggal Pinjam</span>
+                  <span className="font-bold text-slate-900">: {receiptLoan.loanDate}</span>
+                </div>
+                <div className="flex">
+                  <span className="w-32 text-slate-500 font-semibold">Status Peminjaman</span>
+                  <span className="font-bold uppercase text-slate-900">: {receiptLoan.status === 'dipinjam' ? 'Sedang Dipinjam (Aktif)' : 'Telah Dikembalikan'}</span>
+                </div>
+                <div className="flex">
+                  <span className="w-32 text-slate-500 font-semibold">Keperluan / Catatan</span>
+                  <span className="italic text-slate-800">: {receiptLoan.notes || 'Keperluan Kegiatan Pembelajaran / Madrasah'}</span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Items Table */}
+          {(() => {
+            const itemObj = items.find(it => it.id === receiptLoan.itemId);
+            return (
+              <table className="w-full text-left text-[11px] border-collapse border border-slate-700 mb-5">
+                <thead>
+                  <tr className="bg-slate-200 border-b border-slate-700 text-slate-900">
+                    <th className="py-2 px-2.5 font-black border-r border-slate-700 text-center w-8">No</th>
+                    <th className="py-2 px-3 font-black border-r border-slate-700">Nama Barang Inventaris</th>
+                    <th className="py-2 px-3 font-black border-r border-slate-700">Kode Aset</th>
+                    <th className="py-2 px-3 font-black border-r border-slate-700">Kategori &amp; Lokasi</th>
+                    <th className="py-2 px-3 font-black border-r border-slate-700 text-center">Jumlah</th>
+                    <th className="py-2 px-3 font-black text-center">Kondisi Awal</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr className="border-b border-slate-400">
+                    <td className="py-2.5 px-2.5 border-r border-slate-400 text-center font-bold">1</td>
+                    <td className="py-2.5 px-3 border-r border-slate-400 font-bold text-slate-900">{receiptLoan.itemName}</td>
+                    <td className="py-2.5 px-3 border-r border-slate-400 font-mono text-[10.5px]">{itemObj?.code || '-'}</td>
+                    <td className="py-2.5 px-3 border-r border-slate-400 text-[10.5px]">{itemObj?.category || 'Umum'} ({itemObj?.location || 'Gudang'})</td>
+                    <td className="py-2.5 px-3 border-r border-slate-400 text-center font-black">{receiptLoan.qty} Unit</td>
+                    <td className="py-2.5 px-3 text-center font-semibold text-slate-800">{itemObj?.condition || 'Baik'}</td>
+                  </tr>
+                </tbody>
+              </table>
+            );
+          })()}
+
+          {/* Terms & Regulations */}
+          <div className="border border-slate-300 rounded-lg p-3 mb-8 bg-white text-[10px] text-slate-700">
+            <span className="font-extrabold uppercase text-slate-900 block mb-1">Ketentuan &amp; Tata Tertib Peminjaman:</span>
+            <ol className="list-decimal list-inside space-y-0.5 leading-relaxed">
+              <li>Peminjam bertanggung jawab penuh atas keutuhan, kebersihan, dan keselamatan barang yang dipinjam.</li>
+              <li>Kerusakan atau kehilangan akibat kelalaian pemakaian menjadi tanggung jawab pihak peminjam untuk mengganti/memperbaiki.</li>
+              <li>Barang wajib diserahkan kembali kepada Petugas Waka Sarpras segera setelah kegiatan selesai dalam keadaan baik dan lengkap.</li>
+            </ol>
+          </div>
+
+          {/* Dual Signatures & Verification QR */}
+          <div className="flex items-center justify-between px-6 text-[11px] pt-4">
+            <div className="text-center w-52">
+              <span className="block text-slate-600 font-medium">Pihak Peminjam,</span>
+              <div className="h-16 flex items-end justify-center pb-1">
+                <span className="text-[10px] text-slate-400 italic">(Tanda Tangan)</span>
+              </div>
+              <span className="block font-black underline text-slate-950">{receiptLoan.borrowerName}</span>
+              <span className="block text-[9.5px] text-slate-500">Peminjam Barang</span>
+            </div>
+
+            <div className="flex flex-col items-center justify-center">
+              <QRCodeElement value={`BUKTI-SARPRAS-${receiptLoan.id}-${receiptLoan.borrowerName}`} size={70} />
+              <span className="text-[8.5px] font-bold text-slate-500 font-mono mt-1">VALIDASI DIGITAL SARPRAS</span>
+            </div>
+
+            <div className="text-center w-52">
+              <span className="block text-slate-600 font-medium">Pandaan, {receiptLoan.loanDate}</span>
+              <span className="block text-slate-600 text-[10px]">Petugas Sarana &amp; Prasarana,</span>
+              <div className="h-16 flex items-end justify-center pb-1">
+                <span className="text-[10px] text-slate-400 italic">(Tanda Tangan &amp; Stempel)</span>
+              </div>
+              <span className="block font-black underline text-slate-950">{schoolIdentity?.principal || "H. Ahmad Fuad, M.PdI"}</span>
+              <span className="block text-[9.5px] text-slate-500">Unit Sarpras / Kepala Sekolah</span>
+            </div>
+          </div>
         </div>
       )}
 
@@ -1533,6 +1785,22 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                               <td className="py-4.5 px-2 text-right">
                                 <div className="flex items-center justify-end gap-1.5 font-sans">
                                   <button
+                                    onClick={() => {
+                                      setActiveTab('peminjaman');
+                                      setShowLoanForm(true);
+                                      setLoanForm(prev => ({
+                                        ...prev,
+                                        itemId: it.id,
+                                        qty: 1
+                                      }));
+                                    }}
+                                    disabled={it.availableQty <= 0}
+                                    className="px-2 py-1.5 bg-amber-50 hover:bg-amber-100 disabled:opacity-40 disabled:hover:bg-amber-50 text-amber-900 border border-amber-200 font-extrabold text-[10.5px] rounded-lg cursor-pointer transition-all flex items-center gap-1"
+                                    title={it.availableQty > 0 ? "Pinjamkan barang ini" : "Stok habis / sedang dipinjam"}
+                                  >
+                                    <Users2 size={11} /> Pinjamkan
+                                  </button>
+                                  <button
                                     onClick={() => setBarcodePrintData([it])}
                                     className="p-2 text-slate-600 hover:bg-slate-50 border border-slate-200 rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1"
                                     title="Cetak QR Code Satuan"
@@ -1585,96 +1853,185 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               {/* Loan Checkout Form */}
               {showLoanForm && (
                 <form onSubmit={handleCheckoutLoan} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
-                  <h3 className="font-extrabold text-sm text-slate-800">
-                    🤝 Formulir Kontrak Peminjaman Barang
-                  </h3>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    {/* Item selector */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pilih Aset Sekolah</label>
-                      <select
-                        value={loanForm.itemId}
-                        onChange={(e) => setLoanForm({ ...loanForm, itemId: e.target.value })}
-                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer text-slate-705"
-                        required
-                      >
-                        <option value="">-- Hubungkan Aset --</option>
-                        {items.map((it) => (
-                          <option key={it.id} value={it.id} disabled={it.availableQty <= 0}>
-                            {it.name} [Stok: {it.availableQty} unit available] ({it.condition})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Teacher accounts list dropdown link */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Pendidik Peminjam (Link Akun)</label>
-                      <select
-                        value={loanForm.borrowerId}
-                        onChange={(e) => setLoanForm({ ...loanForm, borrowerId: e.target.value })}
-                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer text-slate-705"
-                        required
-                      >
-                        <option value="">-- Hubungkan Guru Mapel / Wali --</option>
-                        {teachersList.map((t) => (
-                          <option key={t.id} value={t.id}>
-                            {t.name} ({t.detail})
-                          </option>
-                        ))}
-                      </select>
-                    </div>
-
-                    {/* Borrowed Quantity */}
-                    <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Kuantitas Unit Dipinjam</label>
-                      <input
-                        type="number"
-                        min="1"
-                        value={loanForm.qty}
-                        onChange={(e) => setLoanForm({ ...loanForm, qty: Number(e.target.value) || 1 })}
-                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
-                        required
-                      />
-                    </div>
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                    <h3 className="font-extrabold text-sm text-slate-800 flex items-center gap-2">
+                      <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm">🤝</span>
+                      Formulir Pencatatan Peminjaman Barang
+                    </h3>
+                    <span className="text-[11px] text-slate-400 font-medium font-mono">Status Otomatis: Dipinjam</span>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {/* Item selector */}
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Tanggal Keluar Pinjaman</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                        Pilih Aset / Barang Inventaris <span className="text-rose-500">*</span>
+                      </label>
+                      <select
+                        value={loanForm.itemId}
+                        onChange={(e) => {
+                          const itId = e.target.value;
+                          setLoanForm(prev => ({ ...prev, itemId: itId, qty: 1 }));
+                        }}
+                        className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer text-slate-800 font-bold"
+                        required
+                      >
+                        <option value="">-- Pilih Barang Inventaris --</option>
+                        {items.map((it) => (
+                          <option key={it.id} value={it.id} disabled={it.availableQty <= 0}>
+                            {it.name} (Tersedia: {it.availableQty} unit / Total: {it.totalQty}) [{it.condition}]
+                          </option>
+                        ))}
+                      </select>
+                      {loanForm.itemId && (
+                        <div className="mt-1 text-[10.5px] text-slate-500 font-medium">
+                          {(() => {
+                            const it = items.find(i => i.id === loanForm.itemId);
+                            if (!it) return null;
+                            return (
+                              <span className="flex items-center gap-2">
+                                <span>📍 Lokasi: <strong className="text-slate-700">{it.location || 'Gudang'}</strong></span>
+                                <span>•</span>
+                                <span>Stok Sisa: <strong className={it.availableQty > 0 ? 'text-emerald-600' : 'text-rose-600'}>{it.availableQty} unit</strong></span>
+                              </span>
+                            );
+                          })()}
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Borrower Type and Selection */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1.5">
+                        <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                          Peminjam Barang <span className="text-rose-500">*</span>
+                        </label>
+                        <div className="flex items-center gap-2 text-[10.5px]">
+                          <button
+                            type="button"
+                            onClick={() => setLoanForm(prev => ({ ...prev, borrowerType: 'guru', customBorrowerName: '' }))}
+                            className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                              loanForm.borrowerType === 'guru'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            Daftar Guru
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => setLoanForm(prev => ({ ...prev, borrowerType: 'manual', borrowerId: '' }))}
+                            className={`px-2 py-0.5 rounded-md font-bold transition-all cursor-pointer ${
+                              loanForm.borrowerType === 'manual'
+                                ? 'bg-indigo-600 text-white'
+                                : 'bg-slate-100 text-slate-600 hover:bg-slate-200'
+                            }`}
+                          >
+                            Input Manual / Lainnya
+                          </button>
+                        </div>
+                      </div>
+
+                      {loanForm.borrowerType === 'guru' ? (
+                        <select
+                          value={loanForm.borrowerId}
+                          onChange={(e) => setLoanForm({ ...loanForm, borrowerId: e.target.value })}
+                          className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 cursor-pointer text-slate-800 font-bold"
+                          required
+                        >
+                          <option value="">-- Pilih Guru Mapel / Wali Kelas --</option>
+                          {teachersList.map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.name} ({t.detail})
+                            </option>
+                          ))}
+                        </select>
+                      ) : (
+                        <input
+                          type="text"
+                          value={loanForm.customBorrowerName}
+                          onChange={(e) => setLoanForm({ ...loanForm, customBorrowerName: e.target.value })}
+                          placeholder="Masukkan nama peminjam (cth: Bpk. Ahmad TU / OSIS / Nama Tamu)"
+                          className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 text-slate-800 font-bold"
+                          required
+                        />
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    {/* Borrowed Quantity */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                        Jumlah Unit Dipinjam <span className="text-rose-500">*</span>
+                      </label>
+                      <input
+                        type="number"
+                        min="1"
+                        max={(() => {
+                          const it = items.find(i => i.id === loanForm.itemId);
+                          return it ? it.availableQty : 999;
+                        })()}
+                        value={loanForm.qty}
+                        onChange={(e) => setLoanForm({ ...loanForm, qty: Math.max(1, parseInt(e.target.value) || 1) })}
+                        className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 font-mono font-bold"
+                        required
+                      />
+                    </div>
+
+                    {/* Date */}
+                    <div>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                        Tanggal Pinjam <span className="text-rose-500">*</span>
+                      </label>
                       <input
                         type="date"
                         value={loanForm.loanDate}
                         onChange={(e) => setLoanForm({ ...loanForm, loanDate: e.target.value })}
-                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                        className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600 font-mono font-bold"
                         required
                       />
                     </div>
+
+                    {/* Notes */}
                     <div>
-                      <label className="block text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Deskripsi / Peruntukan</label>
+                      <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
+                        Deskripsi / Keperluan
+                      </label>
                       <input
                         type="text"
                         value={loanForm.notes}
                         onChange={(e) => setLoanForm({ ...loanForm, notes: e.target.value })}
-                        placeholder="Misal: Keperluan Praktik Listening kls 8-B, rapat wali murid"
-                        className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
+                        placeholder="Cth: Praktik Lab 8-B, Rapat Dinas, Peringatan Maulid"
+                        className="w-full px-4 py-2.5 text-xs border border-slate-200 rounded-xl bg-slate-50/50 focus:outline-indigo-600"
                       />
                     </div>
                   </div>
 
-                  <div className="flex justify-end gap-3 pt-2">
+                  <div className="flex items-center justify-end gap-3 pt-3 border-t border-slate-100">
                     <button
                       type="button"
                       onClick={() => setShowLoanForm(false)}
-                      className="px-4 py-2 text-slate-500 hover:bg-slate-100 text-xs font-bold rounded-xl cursor-pointer"
+                      disabled={isSubmittingLoan}
+                      className="px-4 py-2.5 text-slate-500 hover:bg-slate-100 text-xs font-bold rounded-xl cursor-pointer transition-all"
                     >
                       Batal
                     </button>
                     <button
                       type="submit"
-                      className="px-5 py-2.5 bg-amber-550 hover:bg-amber-600 text-slate-950 font-black text-xs rounded-xl cursor-pointer shadow-sm"
+                      id="btn-save-peminjaman"
+                      disabled={isSubmittingLoan}
+                      className="px-6 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 disabled:opacity-50 text-slate-950 font-black text-xs rounded-xl cursor-pointer shadow-sm flex items-center justify-center gap-2 transition-all"
                     >
-                      Konfirmasikan Pinjaman
+                      {isSubmittingLoan ? (
+                        <>
+                          <Loader2 size={14} className="animate-spin" /> Menyimpan...
+                        </>
+                      ) : (
+                        <>
+                          <Check size={14} className="stroke-[2.5]" /> Simpan Peminjaman Barang
+                        </>
+                      )}
                     </button>
                   </div>
                 </form>
@@ -1755,16 +2112,33 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                               </span>
                             </td>
                             <td className="py-4.5 px-2 text-right">
-                              {l.status === 'dipinjam' ? (
+                              <div className="flex items-center justify-end gap-1.5">
                                 <button
-                                  onClick={() => handleReturnLoan(l.id)}
-                                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg transition-all cursor-pointer shadow-xs inline-flex items-center gap-1"
+                                  type="button"
+                                  onClick={() => setReceiptLoan(l)}
+                                  className="px-2.5 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 font-extrabold text-[10px] rounded-lg transition-all cursor-pointer shadow-xs inline-flex items-center gap-1"
+                                  title="Cetak Tanda Bukti / Kuitansi Peminjaman"
                                 >
-                                  <Check size={10} /> Konfirm Kembali
+                                  <Printer size={11} /> Bukti
                                 </button>
-                              ) : (
-                                <span className="text-slate-400 font-bold text-[10px] italic">Selesai</span>
-                              )}
+                                {l.status === 'dipinjam' ? (
+                                  <button
+                                    onClick={() => handleReturnLoan(l.id)}
+                                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg transition-all cursor-pointer shadow-xs inline-flex items-center gap-1"
+                                  >
+                                    <Check size={11} /> Konfirm Kembali
+                                  </button>
+                                ) : (
+                                  <span className="text-slate-400 font-bold text-[10px] italic px-2 py-1 bg-slate-50 rounded-md">Selesai</span>
+                                )}
+                                <button
+                                  onClick={() => handleDeleteLoan(l.id)}
+                                  className="p-1.5 text-rose-600 hover:bg-rose-50 border border-rose-100 rounded-lg cursor-pointer transition-all"
+                                  title="Hapus Catatan Peminjaman"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
                             </td>
                           </tr>
                         ))}
@@ -2517,6 +2891,176 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     </button>
                   </div>
                 </form>
+              </motion.div>
+            </div>
+          )}
+
+          {/* Interactive Screen Modal - Loan Receipt Preview (Tanda Bukti Peminjaman) */}
+          {receiptLoan && (
+            <div className="fixed inset-0 z-250 flex items-center justify-center p-3 sm:p-5 bg-slate-950/75 backdrop-blur-xs print:hidden overflow-y-auto">
+              <motion.div
+                initial={{ scale: 0.94, opacity: 0, y: 15 }}
+                animate={{ scale: 1, opacity: 1, y: 0 }}
+                exit={{ scale: 0.94, opacity: 0, y: 15 }}
+                className="bg-white border border-slate-200 w-full max-w-2xl rounded-2xl overflow-hidden shadow-2xl flex flex-col my-auto"
+              >
+                {/* Header modal */}
+                <div className="p-4 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+                  <div className="flex items-center gap-2.5 text-left">
+                    <div className="p-2 rounded-xl bg-amber-500/20 border border-amber-500/30 text-amber-400">
+                      <Printer size={16} />
+                    </div>
+                    <div>
+                      <h3 className="font-extrabold text-xs sm:text-sm tracking-tight text-white flex items-center gap-2">
+                        Tanda Bukti Peminjaman Barang
+                        <span className="text-[10px] font-mono px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-bold uppercase">
+                          Tersimpan
+                        </span>
+                      </h3>
+                      <p className="text-[9.5px] text-slate-400 font-mono">
+                        No. Bukti: {receiptLoan.id} • Siap dicetak / disimpan
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setReceiptLoan(null)}
+                    className="p-1.5 hover:bg-slate-800 rounded-lg text-slate-400 hover:text-white cursor-pointer transition-all text-sm font-bold"
+                  >
+                    &times;
+                  </button>
+                </div>
+
+                {/* Body - Authentic Letter Preview */}
+                <div className="p-5 sm:p-6 overflow-y-auto max-h-[70vh] bg-slate-50 flex flex-col gap-4 text-left">
+                  <div className="bg-white border border-slate-300 p-5 rounded-xl shadow-xs text-slate-800 flex flex-col gap-4">
+                    {/* Letterhead */}
+                    <div className="flex flex-col items-center border-b-2 border-slate-800 pb-3 text-center">
+                      <h4 className="text-sm sm:text-base font-black uppercase text-slate-900 tracking-wide">
+                        {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                      </h4>
+                      <p className="text-[10.5px] text-slate-600 font-medium italic mt-0.5">
+                        {schoolIdentity?.address || "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan"}
+                      </p>
+                      <p className="text-[9.5px] text-slate-500 font-mono mt-0.5">
+                        NPSN: {schoolIdentity?.npsn || '20519342'} • Unit Sarana, Prasarana &amp; Logistik
+                      </p>
+                    </div>
+
+                    {/* Receipt Title */}
+                    <div className="text-center">
+                      <span className="text-xs font-black uppercase underline tracking-wider text-slate-900">
+                        SURAT TANDA BUKTI PEMINJAMAN SARPRAS
+                      </span>
+                      <p className="text-[10px] font-mono text-slate-500 font-bold mt-0.5">
+                        No: {receiptLoan.id.toUpperCase()} / SARPRAS / {new Date(receiptLoan.loanDate || Date.now()).getFullYear()}
+                      </p>
+                    </div>
+
+                    {/* Meta info */}
+                    <div className="bg-slate-50 border border-slate-200 rounded-lg p-3 text-[11px] grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+                      <div>
+                        <span className="text-slate-400 font-bold text-[9.5px] uppercase block">Nama Peminjam</span>
+                        <span className="font-bold text-slate-800">{receiptLoan.borrowerName}</span>
+                        <span className="text-[10px] text-slate-500 block">
+                          ID: {receiptLoan.borrowerId} ({receiptLoan.borrowerId.startsWith('manual-') ? 'Umum / Staf' : 'Pendidik / Guru'})
+                        </span>
+                      </div>
+                      <div>
+                        <span className="text-slate-400 font-bold text-[9.5px] uppercase block">Tanggal Pinjam &amp; Status</span>
+                        <span className="font-mono font-bold text-slate-800">📅 {receiptLoan.loanDate}</span>
+                        <span className="text-[10px] font-bold text-amber-600 block mt-0.5">
+                          Status: {receiptLoan.status === 'dipinjam' ? 'Sedang Dipinjam' : 'Telah Dikembalikan'}
+                        </span>
+                      </div>
+                      {receiptLoan.notes && (
+                        <div className="sm:col-span-2 border-t border-slate-200/60 pt-1.5 mt-0.5">
+                          <span className="text-slate-400 font-bold text-[9.5px] uppercase block">Keperluan / Keterangan</span>
+                          <span className="text-slate-700 italic text-[10.5px]">{receiptLoan.notes}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    {/* Item Detail Table */}
+                    {(() => {
+                      const itemObj = items.find(it => it.id === receiptLoan.itemId);
+                      return (
+                        <table className="w-full text-left text-[11px] border-collapse border border-slate-300">
+                          <thead>
+                            <tr className="bg-slate-100 border-b border-slate-300 text-slate-700">
+                              <th className="py-2 px-2.5 font-extrabold border-r border-slate-300 text-center w-8">No</th>
+                              <th className="py-2 px-3 font-extrabold border-r border-slate-300">Nama Barang Inventaris</th>
+                              <th className="py-2 px-3 font-extrabold border-r border-slate-300">Kode &amp; Lokasi</th>
+                              <th className="py-2 px-3 font-extrabold border-r border-slate-300 text-center">Jumlah</th>
+                              <th className="py-2 px-3 font-extrabold text-center">Kondisi</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr className="border-b border-slate-200">
+                              <td className="py-2.5 px-2.5 border-r border-slate-200 text-center font-bold">1</td>
+                              <td className="py-2.5 px-3 border-r border-slate-200 font-extrabold text-slate-850">{receiptLoan.itemName}</td>
+                              <td className="py-2.5 px-3 border-r border-slate-200 text-[10px] font-mono text-slate-600">
+                                {itemObj?.code || '-'} ({itemObj?.location || 'Gudang'})
+                              </td>
+                              <td className="py-2.5 px-3 border-r border-slate-200 text-center font-black text-indigo-700">{receiptLoan.qty} Unit</td>
+                              <td className="py-2.5 px-3 text-center font-semibold text-emerald-700">{itemObj?.condition || 'Baik'}</td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      );
+                    })()}
+
+                    {/* Dual Signature Preview */}
+                    <div className="flex items-center justify-between px-3 pt-2 text-[10px]">
+                      <div className="text-center w-36">
+                        <span className="text-slate-500 font-medium block">Peminjam</span>
+                        <div className="h-10 flex items-end justify-center">
+                          <span className="text-[9px] text-slate-300 italic">(Ttd)</span>
+                        </div>
+                        <span className="font-bold underline text-slate-800 block truncate">{receiptLoan.borrowerName}</span>
+                      </div>
+
+                      <div className="flex flex-col items-center justify-center">
+                        <QRCodeElement value={`BUKTI-SARPRAS-${receiptLoan.id}-${receiptLoan.borrowerName}`} size={52} />
+                        <span className="text-[8px] font-mono text-slate-400 mt-0.5">Verifikasi Digital</span>
+                      </div>
+
+                      <div className="text-center w-36">
+                        <span className="text-slate-500 font-medium block">Petugas Sarpras</span>
+                        <div className="h-10 flex items-end justify-center">
+                          <span className="text-[9px] text-slate-300 italic">(Ttd &amp; Cap)</span>
+                        </div>
+                        <span className="font-bold underline text-slate-800 block truncate">{schoolIdentity?.principal || "Petugas Sarpras"}</span>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Footer Modal Actions */}
+                <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3">
+                  <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
+                    💡 Klik tombol Cetak untuk mencetak tanda bukti fisik.
+                  </span>
+                  <div className="flex items-center justify-end gap-2.5 w-full sm:w-auto">
+                    <button
+                      type="button"
+                      onClick={() => setReceiptLoan(null)}
+                      className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl cursor-pointer transition-all"
+                    >
+                      Tutup
+                    </button>
+                    <button
+                      type="button"
+                      id="btn-print-receipt-loan"
+                      onClick={() => {
+                        window.print();
+                      }}
+                      className="px-5 py-2.5 bg-amber-500 hover:bg-amber-600 active:scale-95 text-slate-950 font-black text-xs rounded-xl cursor-pointer shadow-md flex items-center gap-2 transition-all"
+                    >
+                      <Printer size={14} className="stroke-[2.5]" /> Cetak Tanda Bukti Peminjaman
+                    </button>
+                  </div>
+                </div>
               </motion.div>
             </div>
           )}

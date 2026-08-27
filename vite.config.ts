@@ -16,12 +16,12 @@ export default defineConfig(() => {
       },
     },
     build: {
+      outDir: 'dist',
       rollupOptions: {
-        external: ['bun.lock', 'database_hostinger.sql'],
+        input: {
+          main: path.resolve(__dirname, 'index.html'),
+        },
       },
-    },
-    optimizeDeps: {
-      exclude: ['bun.lock'],
     },
     server: {
       hmr: process.env.DISABLE_HMR !== 'true',

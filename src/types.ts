@@ -29,7 +29,6 @@ export interface Student {
   photoUrl?: string;
   parentName?: string;
   googleDriveLink?: string;
-  schoolOrigin?: string;
 
   // Data Orang Tua - Ayah
   fatherName?: string;

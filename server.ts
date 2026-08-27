@@ -1,4 +1,4 @@
-ï»¿import dotenv from "dotenv";
+import dotenv from "dotenv";
 dotenv.config();
 
 import express from "express";
@@ -6,7 +6,6 @@ import path from "path";
 import fs from "fs";
 import { MongoClient } from "mongodb";
 import multer from "multer";
-import { mysqlAdapter } from "./server/mysql_adapter";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
@@ -1394,26 +1393,22 @@ function recordConfigSignature(configId: string, configData: any) {
 }
 
 async function deleteDocFromFirestore(colName: string, docId: string) {
+  if (!mongoDb) return;
   try {
     const sigKey = `${colName}:${docId}`;
     lastSyncedDocSignatures.delete(sigKey);
-    // Background delete from MySQL Hostinger if connected
-    mysqlAdapter.deleteDoc(colName, docId).catch(() => {});
-
-    if (mongoDb) {
-      await executeMongoOperationWithRetry(async () => {
-        const col = mongoDb.collection(colName);
-        await col.deleteOne({ $or: [{ _id: docId }, { id: docId }] });
-      });
-      console.log(`[MongoDB Direct] Deleted document ${docId} from ${colName}`);
-    }
+    await executeMongoOperationWithRetry(async () => {
+      const col = mongoDb.collection(colName);
+      await col.deleteOne({ $or: [{ _id: docId }, { id: docId }] });
+    });
+    console.log(`[MongoDB Direct] Deleted document ${docId} from ${colName}`);
   } catch (err) {
-    console.error(`[Direct Delete] Failed to delete document ${docId} from ${colName}:`, err);
+    console.error(`[MongoDB Direct] Failed to delete document ${docId} from ${colName}:`, err);
   }
 }
 
 async function upsertDocToMongoDB(colName: string, doc: any) {
-  if (!doc) return;
+  if (!mongoDb || !isInitialSyncCompleted) return;
   try {
     const docCopy = { ...doc };
     const docId = String(docCopy.id || docCopy._id || `id-${Math.random()}`);
@@ -1421,11 +1416,6 @@ async function upsertDocToMongoDB(colName: string, doc: any) {
     docCopy.id = docId;
     const docSig = JSON.stringify(docCopy);
     const sigKey = `${colName}:${docId}`;
-
-    // Background upsert to MySQL Hostinger if connected
-    mysqlAdapter.upsertDoc(colName, docCopy).catch(() => {});
-
-    if (!mongoDb || !isInitialSyncCompleted) return;
 
     // Skip if document signature is identical to what is already stored
     if (lastSyncedDocSignatures.get(sigKey) === docSig) {
@@ -1439,7 +1429,7 @@ async function upsertDocToMongoDB(colName: string, doc: any) {
     lastSyncedDocSignatures.set(sigKey, docSig);
     console.log(`[MongoDB Direct] Upserted document ${docId} in ${colName}`);
   } catch (err) {
-    console.error(`[Direct Upsert] Failed to upsert document in ${colName}:`, err);
+    console.error(`[MongoDB Direct] Failed to upsert document in ${colName}:`, err);
   }
 }
 
@@ -1490,6 +1480,7 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
 }
 
 async function saveStateToFirestore(forceAll: boolean = false) {
+  if (!mongoDb || !isInitialSyncCompleted) return;
   try {
     let totalWrites = 0;
     let totalDeletes = 0;
@@ -1522,30 +1513,6 @@ async function saveStateToFirestore(forceAll: boolean = false) {
       ["teacherSalaries", teacherSalaries],
       ["spmbCandidates", spmbCandidates],
     ];
-
-    const configsToSync: [string, any][] = [
-      ["sppRates", sppRates],
-      ["schoolIdentity", schoolIdentity],
-      ["midtransConfig", midtransConfig],
-      ["whatsappConfig", whatsappConfig],
-      ["treasurerConfig", treasurerConfig],
-      ["principalConfig", principalConfig],
-      ["sarprasConfig", sarprasConfig],
-      ["bkConfig", bkConfig],
-      ["curriculumConfig", curriculumConfig],
-      ["adminConfig", adminConfig],
-      ["spmbConfig", spmbConfig],
-      ["salaryConfig", salaryConfig],
-      ["backupConfig", backupConfig],
-      ["systemMetadata", { seeded: true }],
-    ];
-
-    // Background sync to MySQL Hostinger
-    mysqlAdapter.syncAllCollections(collectionsToSync, configsToSync).catch(err => {
-      console.warn("[MySQL Sync] Warning:", err?.message || err);
-    });
-
-    if (!mongoDb) return;
 
     // Differential List Saver: only sends operations for docs that actually changed or were deleted
     for (const [colName, list] of collectionsToSync) {
@@ -1611,6 +1578,22 @@ async function saveStateToFirestore(forceAll: boolean = false) {
 
     // Save configurations only if changed
     const configCol = mongoDb.collection("configs");
+    const configsToSync: [string, any][] = [
+      ["sppRates", sppRates],
+      ["schoolIdentity", schoolIdentity],
+      ["midtransConfig", midtransConfig],
+      ["whatsappConfig", whatsappConfig],
+      ["treasurerConfig", treasurerConfig],
+      ["principalConfig", principalConfig],
+      ["sarprasConfig", sarprasConfig],
+      ["bkConfig", bkConfig],
+      ["curriculumConfig", curriculumConfig],
+      ["adminConfig", adminConfig],
+      ["spmbConfig", spmbConfig],
+      ["salaryConfig", salaryConfig],
+      ["backupConfig", backupConfig],
+      ["systemMetadata", { seeded: true }],
+    ];
 
     for (const [configId, configData] of configsToSync) {
       const { _id, ...cleanedData } = configData;
@@ -1640,19 +1623,24 @@ let hasPendingFirestoreSave = false;
 let firestoreSyncTimeout: NodeJS.Timeout | null = null;
 
 function triggerFirestoreSync() {
+  if (!mongoDb || !isInitialSyncCompleted) return;
+
   if (firestoreSyncTimeout) {
     clearTimeout(firestoreSyncTimeout);
   }
 
-  // Debounce sync execution by 5000ms (5 seconds) to avoid intense writes while keeping data completely safe
+  // Debounce sync execution by 5000ms (5 seconds) to avoid intense MongoDB writes while keeping data completely safe
   firestoreSyncTimeout = setTimeout(async () => {
     firestoreSyncTimeout = null;
+
     if (isSavingToFirestore) {
       hasPendingFirestoreSave = true;
       return;
     }
+
     isSavingToFirestore = true;
     hasPendingFirestoreSave = false;
+
     try {
       await saveStateToFirestore(false);
     } catch (err) {
@@ -1709,234 +1697,7 @@ function sanitizeMongoUri(uriString: string): string {
   }
 }
 
-async function loadStateFromMySQL(): Promise<boolean> {
-  try {
-    const hasData = await mysqlAdapter.hasAnyData();
-    if (!hasData) return false;
-
-    console.log("[MySQL] Memuat data dari database MySQL Hostinger...");
-    const [
-      loadedStudents,
-      loadedSppBills,
-      loadedMiscBills,
-      loadedSav,
-      loadedMtx,
-      loadedNotif,
-      loadedAtt,
-      loadedHt,
-      loadedSt,
-      loadedTj,
-      loadedBnd,
-      loadedDev,
-      loadedInf,
-      loadedCouns,
-      loadedAnn,
-      loadedMeet,
-      loadedMerd,
-      loadedSched,
-      loadedWork,
-      loadedEval,
-      loadedRules,
-      loadedSItems,
-      loadedSProp,
-      loadedSLoans,
-      loadedSalaries,
-      loadedCandidates,
-      loadedConfigs
-    ] = await Promise.all([
-      mysqlAdapter.loadCollection<Student>('students'),
-      mysqlAdapter.loadCollection<SppBill>('sppBills'),
-      mysqlAdapter.loadCollection<MiscBill>('miscBills'),
-      mysqlAdapter.loadCollection<SavingsTransaction>('savingsTransactions'),
-      mysqlAdapter.loadCollection<MidtransTransactionRecord>('midtransTransactions'),
-      mysqlAdapter.loadCollection<RealtimeNotification>('realtimeNotifications'),
-      mysqlAdapter.loadCollection<AttendanceLog>('attendanceLogs'),
-      mysqlAdapter.loadCollection<HomeroomTeacher>('homeroomTeachers'),
-      mysqlAdapter.loadCollection<SubjectTeacher>('subjectTeachers'),
-      mysqlAdapter.loadCollection<TeachingJournal>('teachingJournals'),
-      mysqlAdapter.loadCollection<TreasurerTransaction>('treasurerTransactions'),
-      mysqlAdapter.loadCollection<StudentDevelopmentLog>('studentDevelopmentLogs'),
-      mysqlAdapter.loadCollection<StudentInfractionLog>('studentInfractionLogs'),
-      mysqlAdapter.loadCollection<StudentCounselingLog>('studentCounselingLogs'),
-      mysqlAdapter.loadCollection<ClassAnnouncement>('classAnnouncements'),
-      mysqlAdapter.loadCollection<ClassMeetingLog>('classMeetingLogs'),
-      mysqlAdapter.loadCollection<MerdekaAssessment>('merdekaAssessments'),
-      mysqlAdapter.loadCollection<ClassSchedule>('classSchedules'),
-      mysqlAdapter.loadCollection<any>('principalWorkPrograms'),
-      mysqlAdapter.loadCollection<any>('teacherEvaluations'),
-      mysqlAdapter.loadCollection<any>('infractionRules'),
-      mysqlAdapter.loadCollection<any>('sarprasItems'),
-      mysqlAdapter.loadCollection<any>('sarprasProposals'),
-      mysqlAdapter.loadCollection<any>('sarprasLoans'),
-      mysqlAdapter.loadCollection<TeacherSalary>('teacherSalaries'),
-      mysqlAdapter.loadCollection<SpmbCandidate>('spmbCandidates'),
-      mysqlAdapter.loadAllConfigs()
-    ]);
-
-    if (loadedStudents && loadedStudents.length > 0) {
-      students.length = 0;
-      students.push(...loadedStudents);
-      students.forEach(s => recordDocumentSignature("students", s));
-    }
-    if (loadedSppBills && loadedSppBills.length > 0) {
-      sppBills.length = 0;
-      sppBills.push(...loadedSppBills);
-      sppBills.forEach(b => recordDocumentSignature("sppBills", b));
-    }
-    if (loadedMiscBills && loadedMiscBills.length > 0) {
-      miscBills.length = 0;
-      miscBills.push(...loadedMiscBills);
-      miscBills.forEach(b => recordDocumentSignature("miscBills", b));
-    }
-    if (loadedSav && loadedSav.length > 0) {
-      savingsTransactions.length = 0;
-      savingsTransactions.push(...loadedSav);
-      savingsTransactions.forEach(t => recordDocumentSignature("savingsTransactions", t));
-    }
-    if (loadedMtx && loadedMtx.length > 0) {
-      midtransTransactions.length = 0;
-      midtransTransactions.push(...loadedMtx);
-      midtransTransactions.forEach(t => recordDocumentSignature("midtransTransactions", t));
-    }
-    if (loadedNotif && loadedNotif.length > 0) {
-      notifications.length = 0;
-      notifications.push(...loadedNotif);
-      notifications.forEach(n => recordDocumentSignature("realtimeNotifications", n));
-    }
-    if (loadedAtt && loadedAtt.length > 0) {
-      attendanceLogs.length = 0;
-      attendanceLogs.push(...loadedAtt);
-      attendanceLogs.forEach(a => recordDocumentSignature("attendanceLogs", a));
-    }
-    if (loadedHt && loadedHt.length > 0) {
-      homeroomTeachers.length = 0;
-      homeroomTeachers.push(...loadedHt);
-      homeroomTeachers.forEach(h => recordDocumentSignature("homeroomTeachers", h));
-    }
-    if (loadedSt && loadedSt.length > 0) {
-      subjectTeachers.length = 0;
-      subjectTeachers.push(...loadedSt);
-      subjectTeachers.forEach(s => recordDocumentSignature("subjectTeachers", s));
-    }
-    if (loadedTj && loadedTj.length > 0) {
-      teachingJournals.length = 0;
-      teachingJournals.push(...loadedTj);
-      teachingJournals.forEach(t => recordDocumentSignature("teachingJournals", t));
-    }
-    if (loadedBnd && loadedBnd.length > 0) {
-      treasurerTransactions.length = 0;
-      treasurerTransactions.push(...loadedBnd);
-      treasurerTransactions.forEach(tx => recordDocumentSignature("treasurerTransactions", tx));
-    }
-    if (loadedDev && loadedDev.length > 0) {
-      studentDevelopmentLogs.length = 0;
-      studentDevelopmentLogs.push(...loadedDev);
-    }
-    if (loadedInf && loadedInf.length > 0) {
-      studentInfractionLogs.length = 0;
-      studentInfractionLogs.push(...loadedInf);
-    }
-    if (loadedCouns && loadedCouns.length > 0) {
-      studentCounselingLogs.length = 0;
-      studentCounselingLogs.push(...loadedCouns);
-    }
-    if (loadedAnn && loadedAnn.length > 0) {
-      classAnnouncements.length = 0;
-      classAnnouncements.push(...loadedAnn);
-    }
-    if (loadedMeet && loadedMeet.length > 0) {
-      classMeetingLogs.length = 0;
-      classMeetingLogs.push(...loadedMeet);
-    }
-    if (loadedMerd && loadedMerd.length > 0) {
-      merdekaAssessments.length = 0;
-      merdekaAssessments.push(...loadedMerd);
-    }
-    if (loadedSched && loadedSched.length > 0) {
-      classSchedules.length = 0;
-      classSchedules.push(...loadedSched);
-    }
-    if (loadedWork && loadedWork.length > 0) {
-      principalWorkPrograms.length = 0;
-      principalWorkPrograms.push(...loadedWork);
-    }
-    if (loadedEval && loadedEval.length > 0) {
-      teacherEvaluations.length = 0;
-      teacherEvaluations.push(...loadedEval);
-    }
-    if (loadedRules && loadedRules.length > 0) {
-      infractionRules.length = 0;
-      infractionRules.push(...loadedRules);
-    }
-    if (loadedSItems && loadedSItems.length > 0) {
-      sarprasItems.length = 0;
-      sarprasItems.push(...loadedSItems);
-    }
-    if (loadedSProp && loadedSProp.length > 0) {
-      sarprasProposals.length = 0;
-      sarprasProposals.push(...loadedSProp);
-    }
-    if (loadedSLoans && loadedSLoans.length > 0) {
-      sarprasLoans.length = 0;
-      sarprasLoans.push(...loadedSLoans);
-    }
-    if (loadedSalaries && loadedSalaries.length > 0) {
-      teacherSalaries.length = 0;
-      teacherSalaries.push(...loadedSalaries);
-    }
-    if (loadedCandidates && loadedCandidates.length > 0) {
-      spmbCandidates.length = 0;
-      spmbCandidates.push(...loadedCandidates);
-    }
-    if (loadedConfigs && Object.keys(loadedConfigs).length > 0) {
-      if (loadedConfigs.sppRates) Object.assign(sppRates, loadedConfigs.sppRates);
-      if (loadedConfigs.schoolIdentity) Object.assign(schoolIdentity, loadedConfigs.schoolIdentity);
-      if (loadedConfigs.midtransConfig) Object.assign(midtransConfig, loadedConfigs.midtransConfig);
-      if (loadedConfigs.whatsappConfig) Object.assign(whatsappConfig, loadedConfigs.whatsappConfig);
-      if (loadedConfigs.treasurerConfig) Object.assign(treasurerConfig, loadedConfigs.treasurerConfig);
-      if (loadedConfigs.principalConfig) Object.assign(principalConfig, loadedConfigs.principalConfig);
-      if (loadedConfigs.sarprasConfig) Object.assign(sarprasConfig, loadedConfigs.sarprasConfig);
-      if (loadedConfigs.bkConfig) Object.assign(bkConfig, loadedConfigs.bkConfig);
-      if (loadedConfigs.curriculumConfig) Object.assign(curriculumConfig, loadedConfigs.curriculumConfig);
-      if (loadedConfigs.adminConfig) Object.assign(adminConfig, loadedConfigs.adminConfig);
-      if (loadedConfigs.spmbConfig) Object.assign(spmbConfig, loadedConfigs.spmbConfig);
-      if (loadedConfigs.salaryConfig) Object.assign(salaryConfig, loadedConfigs.salaryConfig);
-      if (loadedConfigs.backupConfig) Object.assign(backupConfig, loadedConfigs.backupConfig);
-    }
-
-    applyAuthoritativeSavingsBalances(students);
-    saveState(true);
-    console.log("[MySQL] âœ… Berhasil memuat seluruh state dari database MySQL Hostinger.");
-    return true;
-  } catch (err: any) {
-    console.warn("[MySQL Load] Gagal memuat dari MySQL:", err?.message || err);
-    return false;
-  }
-}
-
 async function syncWithFirestore(forcePush: boolean = false) {
-  // Step 1: Connect and check MySQL Hostinger
-  let mysqlLoaded = false;
-  try {
-    const isMysqlConnected = await mysqlAdapter.connect();
-    if (isMysqlConnected) {
-      if (forcePush) {
-        console.log("[MySQL] Force push ke database MySQL Hostinger...");
-        await saveStateToFirestore(true);
-      } else {
-        mysqlLoaded = await loadStateFromMySQL();
-        if (mysqlLoaded) {
-          dbSyncStatus = "Synced (Loaded from MySQL Hostinger)";
-          lastSyncTime = new Date().toISOString();
-          dbSyncError = null;
-          isInitialSyncCompleted = true;
-        }
-      }
-    }
-  } catch (mysqlErr: any) {
-    console.warn("[MySQL] Peringatan koneksi awal MySQL:", mysqlErr?.message || mysqlErr);
-  }
-
   const rawUri = process.env.MONGODB_URI || "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
   
   // Build a distinct pool of Connection Candidate URIs to attempt
@@ -3098,45 +2859,6 @@ async function startServer() {
       });
     } catch (err: any) {
       console.error("Manual MongoDB sync failed:", err);
-      res.status(500).json({ success: false, error: err.message || String(err) });
-    }
-  });
-
-  // MySQL Hostinger Status & Sync Endpoints
-  app.get("/api/admin/mysql-status", (req, res) => {
-    res.json({
-      success: true,
-      status: mysqlAdapter.getStatus()
-    });
-  });
-
-  app.post("/api/admin/test-mysql", async (req, res) => {
-    try {
-      const testResult = await mysqlAdapter.testConnection();
-      res.json(testResult);
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || String(err) });
-    }
-  });
-
-  app.post("/api/admin/mysql-sync", async (req, res) => {
-    try {
-      const direction = req.body?.direction || "push";
-      if (direction === "push") {
-        console.log("Admin triggered manual MySQL Push (Memory/Local -> MySQL Hostinger)...");
-        await saveStateToFirestore(true);
-        res.json({ success: true, message: "Berhasil mengekspor dan mensinkronkan seluruh data ke MySQL Hostinger!" });
-      } else {
-        console.log("Admin triggered manual MySQL Pull (MySQL Hostinger -> Memory)...");
-        const loaded = await loadStateFromMySQL();
-        if (loaded) {
-          res.json({ success: true, message: "Berhasil memuat seluruh data dari MySQL Hostinger ke aplikasi!" });
-        } else {
-          res.json({ success: false, message: "Tidak ada data yang ditemukan di database MySQL Hostinger atau koneksi belum aktif." });
-        }
-      }
-    } catch (err: any) {
-      console.error("MySQL manual sync failed:", err);
       res.status(500).json({ success: false, error: err.message || String(err) });
     }
   });
@@ -12553,7 +12275,6 @@ async function startServer() {
       configured: !!(midtransConfig.clientKey && midtransConfig.serverKey),
       version: "1.0.0",
       sseConnectedClients: sseClients.length,
-      mysql: mysqlAdapter.getStatus(),
       firestore: {
         status: dbSyncStatus,
         lastSync: lastSyncTime,
@@ -12651,12 +12372,12 @@ async function startServer() {
         return res.status(400).json({ error: "Pendaftaran SPMB saat ini belum aktif atau sedang ditutup." });
       }
 
-      const { nisn, fullName, gender, sessionId, parentPhone, phone, whatsapp, noHp, parentName, originSchool, schoolOrigin, schoolOriginType, registrationType, email, origin } = req.body;
+      const { nisn, fullName, gender, sessionId, parentPhone, phone, whatsapp, noHp, parentName, originSchool, schoolOrigin, schoolOriginType, registrationType, email } = req.body;
       
       const cleanNisn = (nisn || "").trim();
       const cleanFullName = (fullName || req.body.name || "").trim().toUpperCase();
       const cleanPhone = (parentPhone || phone || whatsapp || noHp || req.body.parent_phone || "").trim();
-      const cleanGender = (gender || req.body.jenisKelamin || "L") as 'L' | 'P';
+      const cleanGender = gender || req.body.jenisKelamin || "L";
 
       if (!cleanNisn || !cleanFullName || !cleanPhone) {
         return res.status(400).json({ error: "NISN, Nama Lengkap, Jenis Kelamin, dan No. HP WhatsApp Orang Tua wajib diisi." });
@@ -12687,60 +12408,1247 @@ async function startServer() {
         ? (spmbConfig.maarifSchoolName || 'SD MAARIF JOGOSARI') 
         : (schoolOrigin || originSchool || 'SD Lainnya');
 
-      // Draft candidate object
-      let candidate: SpmbCandidate = existingCandidate || {
-        id: `cand-${Date.now()}-${Math.random().toString(36).substring(2, 7)}`,
-        registrationNo: regNumber,
-        nisn: cleanNisn,
-        nik: req.body.nik || "",
-        fullName: cleanFullName,
-        gender: cleanGender,
-        birthPlace: req.body.birthPlace || "",
-        birthDate: req.body.birthDate || "",
-        phone: cleanPhone,
-        schoolOriginType: schoolOriginType || 'other',
-        schoolOrigin: effectiveSchoolOrigin,
-        registrationType: registrationType || 'online_individual',
-        sessionId: selectedSession.id,
-        originalSessionId: selectedSession.id,
-        createdAt: new Date().toISOString(),
-        tokenPaymentStatus: 'unpaid',
-        tokenPaymentOrderId: orderId,
-        tokenAmount: tokenFee,
-        isFormCompleted: false,
-        reRegistrationStatus: 'unpaid',
-        status: 'registered'
-      };
+      const isMaarif = schoolOriginType === 'maarif_jogosari' || 
+        effectiveSchoolOrigin.toUpperCase().includes('MAARIF JOGOSARI') ||
+        (originSchool || '').toUpperCase().includes('MAARIF JOGOSARI');
 
-      if (!existingCandidate) {
-        spmbCandidates.push(candidate);
+      // Calculate fees: Uang Gedung (with wave discount in % and SD Maarif discount), SPP Juli 2027, and Uniforms
+      const normGender: 'L' | 'P' = (cleanGender === "female" || cleanGender === "P") ? "P" : "L";
+      const eligibleUniforms = spmbConfig.uniformItems.filter(u => 
+        u.gender === "both" || u.gender === "all" || (u.gender as string) === normGender || 
+        (normGender === "L" && u.gender === "male") || (normGender === "P" && u.gender === "female")
+      );
+      const uniformTotal = eligibleUniforms.reduce((sum, item) => sum + item.price, 0);
+      const buildingFee = spmbConfig.buildingFee || 1500000;
+      const julySppFee = spmbConfig.julySppFee || 200000;
+      const baseAdmFee = spmbConfig.reRegistrationBaseFee || 0;
+      
+      const waveDiscountPercent = typeof selectedSession?.discountPercent === "number" 
+        ? selectedSession.discountPercent 
+        : (selectedSession?.discountAmount ? Math.round((selectedSession.discountAmount / (buildingFee || 1)) * 100) : 0);
+      const buildingWaveDiscount = Math.round(buildingFee * (waveDiscountPercent / 100));
+
+      // SD Maarif discounts
+      let maarifBuildingDiscount = 0;
+      if (isMaarif) {
+        if (spmbConfig.maarifBuildingDiscountType === 'percent') {
+          maarifBuildingDiscount = Math.round(buildingFee * ((spmbConfig.maarifBuildingDiscount || 0) / 100));
+        } else {
+          maarifBuildingDiscount = spmbConfig.maarifBuildingDiscount || 0;
+        }
+      }
+
+      let maarifUniformDiscount = 0;
+      if (isMaarif) {
+        if (spmbConfig.maarifUniformDiscountType === 'percent') {
+          maarifUniformDiscount = Math.round(uniformTotal * ((spmbConfig.maarifUniformDiscount || 0) / 100));
+        } else {
+          maarifUniformDiscount = spmbConfig.maarifUniformDiscount || 0;
+        }
+      }
+
+      const totalBuildingDiscount = Math.min(buildingFee, buildingWaveDiscount + maarifBuildingDiscount);
+      const netBuildingFee = Math.max(0, buildingFee - totalBuildingDiscount);
+      const netUniformTotal = Math.max(0, uniformTotal - maarifUniformDiscount);
+      const reRegistrationTotal = netBuildingFee + julySppFee + baseAdmFee + netUniformTotal;
+
+      let candidate: SpmbCandidate;
+      if (existingCandidate) {
+        existingCandidate.fullName = cleanFullName;
+        existingCandidate.gender = normGender;
+        existingCandidate.sessionId = selectedSession?.id || "gelombang-1";
+        existingCandidate.sessionName = selectedSession?.name || "Gelombang 1";
+        existingCandidate.parentPhone = cleanPhone;
+        existingCandidate.phone = cleanPhone;
+        existingCandidate.parentName = parentName || existingCandidate.parentName;
+        existingCandidate.originSchool = effectiveSchoolOrigin;
+        existingCandidate.schoolOrigin = effectiveSchoolOrigin;
+        existingCandidate.schoolOriginType = schoolOriginType || (isMaarif ? 'maarif_jogosari' : 'other');
+        existingCandidate.registrationType = registrationType || existingCandidate.registrationType || 'online_individual';
+        existingCandidate.email = email || existingCandidate.email;
+        existingCandidate.tokenFee = tokenFee;
+        existingCandidate.tokenAmount = tokenFee;
+        existingCandidate.tokenOrderId = orderId;
+        existingCandidate.tokenPaymentOrderId = orderId;
+        existingCandidate.uniformCost = netUniformTotal;
+        existingCandidate.reRegistrationFee = reRegistrationTotal;
+        existingCandidate.reRegistrationAmount = reRegistrationTotal;
+        existingCandidate.updatedAt = new Date().toISOString();
+        candidate = existingCandidate;
       } else {
-        Object.assign(existingCandidate, {
+        candidate = {
+          id: `spmb-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+          registrationNumber: regNumber,
           registrationNo: regNumber,
+          nisn: cleanNisn,
+          nik: req.body.nik || "",
           fullName: cleanFullName,
-          gender: cleanGender,
+          gender: normGender,
+          birthPlace: req.body.birthPlace || "",
+          birthDate: req.body.birthDate || "",
           phone: cleanPhone,
-          sxœìksÛ6ò{~ªÉDTcÑNó¬2¾œ_IÓ&¶ÆrzsÓéØ	Iˆø*AÆQ]ÿ÷ÛH )[‘^šIî¦–À°»Ø÷‚òfq¥|Ê£“EÂDxöùë/Ò³K»wˆşg‚›L˜—ñld[àLG¯}Ø€ Ëü‘r¹ofñœECºY”¥>KqJ¬>4àvÂ8²úò’1ıü²÷\öhäsŸfŒlö‘‹ŒGÓ½r¬»¼S|ØÜ${3æÍ	Ÿ/EIÙf¦4Œ	d’êİ Ğ1K¦moo“®âÑiµL—Ü»GD÷âhÂ§nõäDR ‹öÈEs×äÊ(£Y.€˜î9…™~·…Ôr÷.Ksv%ÌNP;'û0ìôàÁëÑÑ(KQN#-tŞ²lã6İ_â€Í3`ÇˆÍã€Îˆó
-9"ˆ$®gà)(HJ&7«S–åi„û^Ä‘saŠOîy .I‹)4HõHEóaSèdº3d‘O'MiDŞÓ OÉ¼DVÈY:£‚Ä¦¦|Âçğd4J(sº JÊÜ¹ƒfI‹äY"X‚ ¾å>I$È(¢‰bK°Œ”cÀÌNç¹ñ$e>OAPŞ¥Añ¬xèÅ‘Èà­WŞ&añ±1ÁR ç¶@Ù«=ó'X<û®ö‹}.è8`şsCÒ½LQÍÒ1L!FólöœK¯İŒDêNÒ8tÎî^,Córp†Xˆ_gL{ò¨cÈI¹x.™Ñ@z˜Æ~îI=5¦ò‚tfY–ˆÁæ&M·œ:n"ç7?<Ø”#TN{úÀ.ààÇñÇ–Ñge°%I¥°«óŒ¥µD;[mÁE?IYÿÃ‹Âÿàóùûä©—ıùô<ÎÓ¸ÿøáÜzôìÙ³G]SÚgTdÜ4\X¼mOÄ46ˆ)êê…E›ï©Ï2ÊĞ4„(|ÊÛ­1ş›¦±§t™I–*aÏá««­WG àaó³“£_ûw/¼€Ñè‹èòÌùX(yÙÚ ·zuÔIRî±
-«&À92-äAóaDC†[Kåßî’»†§ˆxÈ½ÿ2š^’>){™Á!ÌlA°¶Ã¥õıw/Yï—Í„§";UHZ;×)IfqTÂñs€…°Ã@ıA<3ùüo$ÙaR
-Ò÷ÎûìªöhŒ©7oE:âb6À-L}¸|»œ–Ò¶}÷¢·Ë{òAFÇÛIœf4¸ó£mKlTŒo—K4â˜¡Å¤àH32a™7sÀªlÔp¥‡C/r4:éØÎ¤uk!¯²‘qíc8ĞÉ@dÀ=!l¢ëÔy¿..ÉV‚³
-FãO	ÜàÔUæ¶Î
-{…qìƒœÿ<::t•TòÉÂ1„)èÏŒ¯è
-Æ¹ñ¼W#»bìÏ1£ÑB³·œ%}»eÎ‰åùÊÙ*È°ál?¨!ËáS8¼ç5ù+C–ú'õÕ+q¹„i 
-ŠĞƒ4í5<Ä.KÓ8u:ø‡xèß‘Ê8v}¼aZR®Xm\n«£+6ºSÒİˆ‰–DDÛ¬i­†$cKŸXæÑàx5XzÊ˜G3É£¯øÖÊ3pyàJù&ªõ¦
- YÚ—(ô7äÓœBù:·¶z;ˆ\tæÒ 45LÀR'FÀWĞÛ!÷	s‹˜°Âù–qˆÓ¸äWşäØøÕ/@bÄ"s:2h\ø'
-( by˜ ü±4ôÈö¿
-¶˜!“Rœ‹Š³‰Ó}š¤XO¦— Á°œ‹ZüÜš¯-!@8ÖR/\4–hÑË™z Óp+åa¥“Åb0ÿµÿÕ=]¹špÁpû¯#Ÿ}t<$FK…SmÑ¤ãµì Ó"Öƒ‡Õì‚ÖbnK('—P°lÔò´W°JƒĞniŠ ²ÿÀÔj#õ(dìÑÖ£†Œ!#Ñ£@.Î!! Ì!_€0&ŸSHÚ¢ÿŠ›ejóó·­ß5û¯ÉúÈuºKßºùŞ5Ù)‘X!°S›£(àÓX"÷Ë³Y²°>ÆòŸßA4sÀpiœ¶–hÍş¾ëÜ¶ÍSFB;ŠÅõì‘«&5W3yO]2ŒÉ.}”ò—q.±sxı	 ÷' ôÉÂÁ©RV4f·e¬V±JÿD›q4~NRAÁ§Qeú+F›1-x¼{q˜,cºÉÄ|¸é2Ka’3Ü*Ì–ÁJßÎü.dá]\ÿ¢g5§*vË6 ”ï€EÓ9Ø)Cíj•wnGåu­ï¨6’¿kéz´(Êò€§d¬¨YMÏŸ¹ä]"ÓÿıØËÑàr@˜Åb‰ªç¾ï—ğk*»ÿMÛo;B¨XkÖt\×uÚ`€—†Úœ~X"uÅJ|ØjáCÉÎ¦9¨ë?†r×Ùöª¸Ğ1‘ÆñTùC£*~K‰•aCX
-î¤z[.‹"òh:¥³Û7'J'µEÑ„¯gQ¦
-MDhZÍüèBrÔ·ò#;ø+":r’òé”¥KŒD=ı”™™õ­icÊ¦Ò»ˆ£|øŸàüTå¬:ŒÑµÖ[4Dí:+MÑšVè;½ìßkj¹’¦²>/Â&\®Ò.C#Ë6ævmÓÛúİfaGó
-Tˆöİ7`HwØEŞÖc*Ÿƒ\(ıÀ-;Ò€up›k ‡ÿ‡¬á¿éØÛ³ äa°BHĞ˜8Ú¹~Ü“æó·ß{À€ Œ’“[Éo^n-·ÇÙL¢fÓ Pç¢ª§p­˜`UnlŒË…Şt0M¶—ìlo€[Àş™²É–‚î“8£Xi«s	+n¹ÇGäá†,ãK%…o`?ğ«+ëíd«¶î8ç¯—ŒÙâe> €Õ‚öä÷y°%Ic®1Sh™‰M¤?lÌL™iÆvªXd«Öa;ß±Ï…‡½!K=4ofCòOêzóÂõëÈğ(ÁÊ]¥Nx}€P.ÛDõÀaµ·4›¹)|ñ:tx“8u†÷zä{ò |l¶ìÔşcpÈ764Wû8mìÚ”«÷jŒåâ­l&ËŠÔ¯ Èp@uNßÇÓXÀ§®­"í³ei¢‹!Ê»$aéœ0,<ò‚ÜgÂé¾İÙ9~ı’ü|ôêhŸº5ÂÕ–Éİ–™Pp»4<l®äX2Õ^Ì(v-uüéGì™í·@¿†^÷u·8ïmSî7÷¾oêÖ}Kûkçë2ÍÆıãƒãƒWV7¾`\èFñ¹Ó»<kÆ“¶ÒµÔ}êZ|;ªqs´9µ œÕÇ4‰ßšğßšğ_Y^Û î6úğJówßì¯Û‹¯[¡õzòï(¤B¯ ?Îİ‹ºãC¨ËŞõøúúW=×%º²³ë‘[ƒkşœ‚Ş2qï_¯Kœé7Ö#‚…¢4Ş##–B¦šk:tî;A@ğKw•S¶¾ßìš…v1“kîZhÀäŠßîYo÷,ş±÷,nñêD½²ôe\¢hñ§kŞ°08{£2 uybI)í†(t3Q•7	zéj%Â[Æ=
-û@WºDQ#fİÛª4¨/Q¨S\½V¸Æ¥‹/øR…·,ñ2îMTÅ #ÙøÇ5El:¯½8aƒ_yƒÂÕÉõ¡,í8J¾zvC£uŠª0]È'^Ô¨/pÃ-zÒ»IZ.…©®f½OÏÖmÑ´ZAßa¡ˆJ/»Fm½¢”¥ÏyÍÄ4œÿ§&¾Z¯®|†»&k¸‡.ÙñC|qè$NF´^“½êS˜—øÍ³Í÷73¹X¿z«¨\ÕW€Ö—6>²Bñ¼ĞxÅç
-—°J[È+»'Ü¿½öÏ4³aÂÚ«™YÃxÔ_aj’l7[V~éééÆÒ¼œõü÷sà½XáÕêXSCƒã×jÍÕÂ~­èş Ew˜Æˆ‚)±{TÌ@l'yä¯$°‰ZÂXĞVœ}»‚‹+Q+|óx‚G™³™¿»(?ïË{CZß¯LÂ+.«#.Aq¡%:¨Oª;}“»=]ñ¿~ãò$3±Ã‡²ºpı‚x†r-ıüF<ãT:ƒ¨+.wT’ º«ãj´‰åwÄ®ß²ğóRàd·f%Ş1d‡1¶!^¾;”EH5úU-»ç
-Hú™Ó"›_¸µy¨­h˜Ç‚›O®ğ9mÍWf¢Øˆ}†÷!¯5+ƒ£¦}ğîbe`mYVa†Õ«,¯”ï‹WGZyŞ%*¶Ô[Ê{¦í×¦¯vş$íØ(nÂn¨0¼(."{¯¼ûøOTO©fVÖ¤Ó2c ‡Yo 4A·›¬ûâí±†èÈvŠ´9A²†¥å~•RŸ‘§ …¹_Ü½l½!§ëg1È¢‚üiÔä¿öA÷4²½€ŠvQ”¢´“¦tár!ÿ:æ
-vU\ìÓd3)’[×I^3§ÜWIãëı–ÊĞ’Ú™Ç0czUq˜²‚¤m›B,=íïXıû‚ş^Àw|Lº&qz@½™ƒêö/ƒ®µuµ\À*XÈŠ\ë­W]½×*ÙT—œÄ…à4«ë™ş…‹D*¨’ëæ,#Úw÷ÊÊ¢|hL-`V[AJNmÛö†‰Åó©ğ«wtd/Rd¾}‘¾©ûF€HšİÃ'=£ñ÷ÃÁÈ®ŞÊ¬5"Z@¢ëaæ6È\Õbp+6	=”Ö)É†~q7²qÇQ
-ËP&×C™L¿é^Ñ\´cã2Ñl2®ÖÅl'zBñWb†õÆpû¼0ng·Ïƒ´È™šÛ53)µ\9Ş¶šçqê_'öß,¿vÖÜaÌÓl6¨gá[^1¡1Iæg­s¨ï§ÒV3Š¡vxõŠØ¥æ²e=¿|n}Õö$ÉÅÌ©tÚ2
-fSøJÖø}¾4Ù+ş@9U½
-Ö¾p†Š™,§pÿ~KKñÖ_B:Û-+Á!ù4…o‘».—…cTÁÙœÁÿw€2¹t}µf¯ZB¾aàóD>û*mĞî°iT6±4'½½Ô“¯ĞTksËè¼øš[ŸA×P‰¬F 
-äÁšÅÏª÷`´ÚJFÓaFA_œ>—L<Õ2qÌ ”ÏHù:Á	6›&Kß±‹©œÛÏŠ9·Y–Ò,NUô+*tAñ¨|ÃºW Wyœ‹ê©å!ÕHèÇVnP[øÓCşIõ)Iù9]P|áDpøÏ˜y-(¤ˆYdÎ±¹ğk(Å;¬Õ«*-ï 4‰Â`K&0¥Ä¦æ;1ˆ¶—ëØŸ Ó……Qı™|‘äÚ%”­¸\\€Áj5ê†íœÀ_Ë3¾šWRˆííÎh˜¬òÖoÊ¨¼}¤K·²õ™aoÅMágú÷ÖdN—¨j´z©ŒK-›¥ëÏæ;†7¦Zğ¬´¼¯"¢’Õ½ØwCû¬Ñ‚ÚÉ³XÛ×+Ê	²ÙDXÖÕ+
-ğÒk”küyÄÈÇMË=>&´¤²²»İŸ­}Tg#ˆ&åöÏ¼”bgqˆ¿6èõÖÒİ…±V«´Y©³õ9ÎÇ‡S² 	Pİz>Ï3<i#Ær]W-ú7ôú¤ßÒ(¢ö€Ò©UÈT:¼’Oõää~aoÓ¥b IÍÁ*+ñ5¹Ø5OÓón›Ë\í©Lîş_O(…ğTÉÑMü%/7s>…xîä…¢1‘…B÷‹r6#&ïÎ´¿1>¾áûâ736¿r¬JÊÎ÷È,#?
-0şÒµÂƒ¸,úàíœş*kûD¿ïÓ)ñÑuhùÓ§#ùfÑ ø†{©iÔÅeâ}s§ó–¯©EpDƒÕWĞìÅø:’°sš²·±ÏÔiTw³ÁPª_:îˆ„ü.Y‚F4ÌÁİj!_¡ŸE3¤X‡Ø&›¹ïci6yç>H,é P§¶û˜`9F÷œršÓù~‰™.N$é%˜Sm^®ûrL}İYr]E§´g¸E€·à"§¸Ê0<:>‘uş‡[[[0Ë•ÿCŒË[gA<uÎŠCLó(Â+g ˆøòÔ`s³˜;¸{«^©}á¿°7ĞœfÅáÁÈÿ   ÿÿ ²å˜
+          schoolOrigin: effectiveSchoolOrigin,
+          schoolOriginType: schoolOriginType || (isMaarif ? 'maarif_jogosari' : 'other'),
+          registrationType: registrationType || 'online_individual',
+          sessionId: selectedSession?.id || "gelombang-1",
+          sessionName: selectedSession?.name || "Gelombang 1",
+          parentPhone: cleanPhone,
+          parentName: parentName || "",
+          originSchool: effectiveSchoolOrigin,
+          email: email || "",
+          status: "registered",
+          tokenFee,
+          tokenAmount: tokenFee,
+          tokenPaid: false,
+          tokenPaymentStatus: "unpaid",
+          tokenOrderId: orderId,
+          tokenPaymentOrderId: orderId,
+          reRegistrationFee: reRegistrationTotal,
+          reRegistrationAmount: reRegistrationTotal,
+          reRegistrationPaid: false,
+          reRegistrationStatus: "unpaid",
+          uniformCost: netUniformTotal,
+          selectedUniforms: eligibleUniforms.map(u => u.id),
+          uniformSizes: {
+            sportShirtSize: "L",
+            batikSize: "L",
+            shoesSize: "39"
+          },
+          isFormCompleted: false,
+          documentsUploaded: false,
+          documents: {},
+          createdAt: new Date().toISOString(),
+          updatedAt: new Date().toISOString()
+        };
+        spmbCandidates.push(candidate);
+      }
+
+      saveState();
+
+      // Create Midtrans Snap Token for online individual registration
+      let snapToken = "";
+      let redirectUrl = "";
+
+      if (!midtransConfig.serverKey || !midtransConfig.clientKey || midtransConfig.isDisabled) {
+        // Clean up candidate draft since payment cannot be initiated
+        const cIdx = spmbCandidates.findIndex(c => c.id === candidate.id || c.nisn === cleanNisn);
+        if (cIdx !== -1) {
+          spmbCandidates.splice(cIdx, 1);
+          saveState();
+        }
+        return res.status(400).json({
+          error: "Gateway pembayaran online Midtrans belum dikonfigurasi oleh Admin. Silakan hubungi panitia SPMB atau periksa Pengaturan Midtrans."
+        });
+      }
+
+      try {
+        const authString = Buffer.from(midtransConfig.serverKey.trim() + ":").toString("base64");
+        const baseUrl = midtransConfig.isProduction ? "https://app.midtrans.com/snap/v1/transactions" : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+        const midtransPayload = {
+          transaction_details: {
+            order_id: orderId,
+            gross_amount: tokenFee
+          },
+          customer_details: {
+            first_name: cleanFullName,
+            email: email || `spmb.${cleanNisn}@smpmaarifnu.sch.id`,
+            phone: cleanPhone
+          },
+          item_details: [
+            {
+              id: "TOKEN-SPMB",
+              price: tokenFee,
+              quantity: 1,
+              name: `Token SPMB ${spmbConfig.academicYear} - ${cleanFullName}`.slice(0, 50)
+            }
+          ]
+        };
+
+        const snapResponse = await fetch(baseUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": `Basic ${authString}`
+          },
+          body: JSON.stringify(midtransPayload)
+        });
+
+        if (snapResponse.ok) {
+          const snapJson: any = await snapResponse.json();
+          snapToken = snapJson.token || "";
+          redirectUrl = snapJson.redirect_url || "";
+          candidate.tokenSnapToken = snapToken;
+          recordOrUpdateMidtransTransaction({
+            orderId,
+            studentName: candidate.fullName,
+            studentNis: candidate.nisn,
+            nisn: candidate.nisn,
+            billType: "spmb_token",
+            description: `Pembayaran Token SPMB - ${candidate.fullName}`,
+            grossAmount: tokenFee,
+            paymentType: "Midtrans Snap",
+            transactionStatus: "pending",
+            snapToken: snapToken,
+            rawResponse: snapJson
+          });
+          saveState();
+        } else {
+          const errText = await snapResponse.text();
+          console.warn("Midtrans Snap error for SPMB token:", errText);
+          // Clean up draft
+          const cIdx = spmbCandidates.findIndex(c => c.id === candidate.id || c.nisn === cleanNisn);
+          if (cIdx !== -1) {
+            spmbCandidates.splice(cIdx, 1);
+            saveState();
+          }
+          let parsedErrMsg = "Gagal membuat sesi pembayaran Midtrans.";
+          try {
+            const errObj = JSON.parse(errText);
+            if (errObj.error_messages) parsedErrMsg = Array.isArray(errObj.error_messages) ? errObj.error_messages.join(", ") : String(errObj.error_messages);
+            else if (errObj.message) parsedErrMsg = errObj.message;
+          } catch (_) {
+            parsedErrMsg = errText || parsedErrMsg;
+          }
+          return res.status(500).json({ error: "Gagal membuat sesi pembayaran Midtrans Snap: " + parsedErrMsg });
+        }
+      } catch (snapErr: any) {
+        console.error("Error creating Midtrans Snap token for SPMB:", snapErr);
+        const cIdx = spmbCandidates.findIndex(c => c.id === candidate.id || c.nisn === cleanNisn);
+        if (cIdx !== -1) {
+          spmbCandidates.splice(cIdx, 1);
+          saveState();
+        }
+        return res.status(500).json({ error: "Koneksi gateway pembayaran Midtrans gagal: " + snapErr.message });
+      }
+
+      res.json({
+        success: true,
+        orderId,
+        snapToken,
+        token: snapToken,
+        redirectUrl,
+        candidate,
+        tokenFee
+      });
+    } catch (err: any) {
+      console.error("Error in /api/spmb/register-token-snap:", err);
+      res.status(500).json({ error: "Gagal memulai transaksi pendaftaran: " + err.message });
+    }
+  });
+
+  // 6. Verify or Simulate Token Payment Success
+  app.post("/api/spmb/verify-token-payment", async (req, res) => {
+    try {
+      const { orderId, nisn, paymentMethod } = req.body;
+      if (!orderId && !nisn) {
+        return res.status(400).json({ error: "Order ID atau NISN wajib disertakan." });
+      }
+
+      const candidate = spmbCandidates.find(c => 
+        (orderId && (c.tokenOrderId === orderId || c.tokenPaymentOrderId === orderId)) ||
+        (nisn && (c.nisn || "").trim() === (nisn || "").trim())
+      );
+
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      candidate.tokenPaid = true;
+      candidate.tokenPaymentStatus = "paid";
+      candidate.tokenPaidAt = new Date().toISOString();
+      candidate.tokenPaymentMethod = paymentMethod || "Midtrans Snap Online";
+      candidate.status = "registered";
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      // Broadcast notification
+      const notification: RealtimeNotification = {
+        id: `notif-spmb-token-${Date.now()}`,
+        studentId: candidate.nisn,
+        title: "Pendaftaran Murid Baru (SPMB)",
+        message: `Calon murid baru ${candidate.fullName} (NISN: ${candidate.nisn}) berhasil membayar token pendaftaran Rp ${(candidate.tokenFee || candidate.tokenAmount || 50000).toLocaleString("id-ID")}.`,
+        type: "payment",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+
+      // Send WhatsApp receipt if configured
+      if (whatsappConfig.enabled && (candidate.parentPhone || candidate.phone)) {
+        const targetPhone = candidate.parentPhone || candidate.phone;
+        const waMsg = `Yth. Calon Wali Murid dari *${candidate.fullName}* (NISN: ${candidate.nisn}).\n\n` +
+          `ğŸ“¢ *BUKTI PEMBAYARAN TOKEN PENDAFTARAN SPMB ${spmbConfig.academicYear}*\n` +
+          `Pembayaran formulir/token pendaftaran sebesar *Rp ${(candidate.tokenFee || candidate.tokenAmount || 50000).toLocaleString("id-ID")}* telah BERHASIL diverifikasi.\n\n` +
+          `â€¢ No. Pendaftaran: *${candidate.registrationNumber || candidate.registrationNo || candidate.nisn}*\n` +
+          `â€¢ Sesi: *${candidate.sessionName || "SPMB"}*\n` +
+          `â€¢ Status: *TERDAFTAR (Silakan Lanjut Isi Buku Induk)*\n\n` +
+          `Silakan buka portal SPMB untuk melanjutkan pengisian data lengkap buku induk dan pembayaran daftar ulang seragam.\n\n` +
+          `-- PANITIA SPMB SMP MAARIF NU PANDAAN --`;
+        sendWhatsappNotification(targetPhone, waMsg).catch(e => console.error("Error sending SPMB token WA:", e));
+      }
+
+      res.json({
+        success: true,
+        message: "Pembayaran token pendaftaran berhasil dikonfirmasi.",
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error in verify-token-payment:", err);
+      res.status(500).json({ error: "Gagal memverifikasi pembayaran token: " + err.message });
+    }
+  });
+
+  // 7. Save Complete Form (Format Buku Induk Siswa)
+  app.post("/api/spmb/save-full-form", (req, res) => {
+    try {
+      const { nisn, fullFormData, formData, uniformSizes } = req.body;
+      if (!nisn) {
+        return res.status(400).json({ error: "NISN wajib disertakan." });
+      }
+
+      const candidate = spmbCandidates.find(c => (c.nisn || "").trim() === (nisn || "").trim());
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      if (!candidate.tokenPaid && candidate.tokenPaymentStatus !== "paid") {
+        return res.status(400).json({ error: "Token pendaftaran belum dibayar. Mohon selesaikan pembayaran token terlebih dahulu." });
+      }
+
+      const incomingData = fullFormData || formData || {};
+      if (incomingData.fullName) {
+        incomingData.fullName = String(incomingData.fullName).trim().toUpperCase();
+      }
+
+      Object.assign(candidate, incomingData);
+      if (candidate.fullName) {
+        candidate.fullName = String(candidate.fullName).trim().toUpperCase();
+      }
+      candidate.isFormCompleted = true;
+      candidate.formCompletedAt = new Date().toISOString();
+      candidate.fullFormData = { ...(candidate.fullFormData || {}), ...incomingData };
+      if (uniformSizes) {
+        candidate.uniformSizes = { ...(candidate.uniformSizes || {}), ...uniformSizes };
+      }
+      
+      candidate.status = "form_submitted";
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      res.json({
+        success: true,
+        message: "Data formulir buku induk calon murid berhasil disimpan.",
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error saving full SPMB form:", err);
+      res.status(500).json({ error: "Gagal menyimpan formulir buku induk: " + err.message });
+    }
+  });
+
+  // 8. Re-registration Midtrans Snap Payment (Daftar Ulang & Seragam)
+  app.post("/api/spmb/pay-reregistration-snap", async (req, res) => {
+    try {
+      const { nisn, selectedUniforms, uniformSizes, customAmount } = req.body;
+      if (!nisn) {
+        return res.status(400).json({ error: "NISN wajib disertakan." });
+      }
+
+      const candidate = spmbCandidates.find(c => (c.nisn || "").trim() === (nisn || "").trim());
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      // Validasi Gating Tahap 1: Token harus lunas
+      if (!candidate.tokenPaid && candidate.tokenPaymentStatus !== "paid") {
+        return res.status(400).json({ error: "Tahap 1 belum selesai: Token pendaftaran belum dibayar." });
+      }
+
+      // Validasi Gating Tahap 2: Data lengkap siswa harus sudah disimpan
+      if (!candidate.isFormCompleted) {
+        return res.status(400).json({ error: "Tahap 2 belum selesai: Lengkapi dan simpan Data Lengkap Siswa terlebih dahulu." });
+      }
+
+      // Validasi Gating Tahap 3: Berkas persyaratan harus sudah diunggah
+      const hasRequiredDocs = candidate.documentsUploaded || (candidate.documents && (candidate.documents.aktaPhoto || candidate.documents.kkPhoto || candidate.documents.pasPhoto));
+      if (!hasRequiredDocs) {
+        return res.status(400).json({ error: "Tahap 3 belum selesai: Unggah seluruh berkas persyaratan terlebih dahulu sebelum melakukan daftar ulang." });
+      }
+
+      const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || 
+        (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF JOGOSARI') ||
+        (candidate.originSchool || '').toUpperCase().includes('MAARIF JOGOSARI');
+
+      const selectedSession = spmbConfig.sessions.find(s => s.id === candidate.sessionId) || spmbConfig.sessions[0];
+      const buildingFee = spmbConfig.buildingFee || 1500000;
+      const julySppFee = spmbConfig.julySppFee || 200000;
+      const baseAdmFee = spmbConfig.reRegistrationBaseFee || 0;
+      const discountPercent = typeof selectedSession?.discountPercent === "number" 
+        ? selectedSession.discountPercent 
+        : (selectedSession?.discountAmount ? Math.round((selectedSession.discountAmount / (buildingFee || 1)) * 100) : 0);
+      const buildingWaveDiscount = Math.round(buildingFee * (discountPercent / 100));
+
+      // SD Maarif discounts
+      let maarifBuildingDiscount = 0;
+      if (isMaarif) {
+        if (spmbConfig.maarifBuildingDiscountType === 'percent') {
+          maarifBuildingDiscount = Math.round(buildingFee * ((spmbConfig.maarifBuildingDiscount || 0) / 100));
+        } else {
+          maarifBuildingDiscount = spmbConfig.maarifBuildingDiscount || 0;
+        }
+      }
+
+      const totalBuildingDiscount = Math.min(buildingFee, buildingWaveDiscount + maarifBuildingDiscount);
+      const netBuildingFee = Math.max(0, buildingFee - totalBuildingDiscount);
+
+      // Recalculate uniform total based on selection or all default
+      const eligibleUniforms = spmbConfig.uniformItems.filter(u => 
+        (u.gender === "both" || u.gender === "all" || (u.gender as string) === candidate.gender || 
+         (candidate.gender === "L" && u.gender === "male") || (candidate.gender === "P" && u.gender === "female")) &&
+        (!selectedUniforms || selectedUniforms.includes(u.id))
+      );
+      const rawUniformTotal = eligibleUniforms.reduce((sum, item) => sum + item.price, 0);
+
+      let maarifUniformDiscount = 0;
+      if (isMaarif) {
+        if (spmbConfig.maarifUniformDiscountType === 'percent') {
+          maarifUniformDiscount = Math.round(rawUniformTotal * ((spmbConfig.maarifUniformDiscount || 0) / 100));
+        } else {
+          maarifUniformDiscount = spmbConfig.maarifUniformDiscount || 0;
+        }
+      }
+      const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount);
+
+      const defaultTotal = netBuildingFee + julySppFee + baseAdmFee + netUniformTotal;
+      const totalAmount = customAmount ? Number(customAmount) : defaultTotal;
+
+      const orderId = `SPMB-REREG-${candidate.nisn}-${Date.now()}`;
+      candidate.reRegistrationOrderId = orderId;
+      candidate.reRegistrationFee = totalAmount;
+      candidate.reRegistrationAmount = totalAmount;
+      candidate.uniformCost = netUniformTotal;
+      if (selectedUniforms) candidate.selectedUniforms = selectedUniforms;
+      if (uniformSizes) candidate.uniformSizes = uniformSizes;
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      let snapToken = "";
+      let redirectUrl = "";
+
+      if (!midtransConfig.serverKey || !midtransConfig.clientKey || midtransConfig.isDisabled) {
+        return res.status(400).json({
+          error: "Gateway pembayaran online Midtrans belum dikonfigurasi oleh Admin. Silakan hubungi panitia SPMB."
+        });
+      }
+
+      try {
+        const authString = Buffer.from(midtransConfig.serverKey.trim() + ":").toString("base64");
+        const baseUrl = midtransConfig.isProduction ? "https://app.midtrans.com/snap/v1/transactions" : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+
+        const midtransPayload = {
+          transaction_details: {
+            order_id: orderId,
+            gross_amount: totalAmount
+          },
+          customer_details: {
+            first_name: candidate.fullName,
+            email: candidate.email || `spmb.${candidate.nisn}@smpmaarifnu.sch.id`,
+            phone: candidate.parentPhone || candidate.phone
+          },
+          item_details: [
+            {
+              id: "BUILDING-FEE",
+              price: buildingFee,
+              quantity: 1,
+              name: "Uang Gedung / Infaq Pembangunan"
+            },
+            ...(buildingWaveDiscount > 0 ? [{
+              id: "DISC-BUILDING-WAVE",
+              price: -buildingWaveDiscount,
+              quantity: 1,
+              name: `Diskon Uang Gedung (${discountPercent}% - ${selectedSession?.name || "Sesi"})`
+            }] : []),
+            ...(maarifBuildingDiscount > 0 ? [{
+              id: "DISC-BUILDING-MAARIF",
+              price: -maarifBuildingDiscount,
+              quantity: 1,
+              name: "Diskon Gedung Khusus SD Maarif Jogosari"
+            }] : []),
+            {
+              id: "SPP-JULY",
+              price: julySppFee,
+              quantity: 1,
+              name: "SPP Bulan Juli 2027"
+            },
+            ...(baseAdmFee > 0 ? [{
+              id: "REREG-BASE",
+              price: baseAdmFee,
+              quantity: 1,
+              name: "Biaya Administrasi"
+            }] : []),
+            ...eligibleUniforms.map(u => ({
+              id: u.id,
+              price: u.price,
+              quantity: 1,
+              name: u.name.slice(0, 50)
+            })),
+            ...(maarifUniformDiscount > 0 ? [{
+              id: "DISC-UNIFORM-MAARIF",
+              price: -maarifUniformDiscount,
+              quantity: 1,
+              name: "Diskon Seragam Khusus SD Maarif Jogosari"
+            }] : [])
+          ]
+        };
+
+        const snapResponse = await fetch(baseUrl, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "Authorization": `Basic ${authString}`
+          },
+          body: JSON.stringify(midtransPayload)
+        });
+
+        if (snapResponse.ok) {
+          const snapJson: any = await snapResponse.json();
+          snapToken = snapJson.token || "";
+          redirectUrl = snapJson.redirect_url || "";
+          candidate.reRegistrationSnapToken = snapToken;
+          recordOrUpdateMidtransTransaction({
+            orderId,
+            studentName: candidate.fullName,
+            studentNis: candidate.nisn,
+            nisn: candidate.nisn,
+            billType: "spmb_reregistration",
+            description: `Pembayaran Daftar Ulang SPMB - ${candidate.fullName}`,
+            grossAmount: totalAmount,
+            paymentType: "Midtrans Snap",
+            transactionStatus: "pending",
+            snapToken: snapToken,
+            rawResponse: snapJson
+          });
+          saveState();
+        } else {
+          const errText = await snapResponse.text();
+          console.warn("Midtrans Snap error for SPMB reregistration:", errText);
+          let parsedErrMsg = "Gagal membuat sesi pembayaran Midtrans.";
+          try {
+            const errObj = JSON.parse(errText);
+            if (errObj.error_messages) parsedErrMsg = Array.isArray(errObj.error_messages) ? errObj.error_messages.join(", ") : String(errObj.error_messages);
+            else if (errObj.message) parsedErrMsg = errObj.message;
+          } catch (_) {
+            parsedErrMsg = errText || parsedErrMsg;
+          }
+          return res.status(500).json({ error: "Gagal membuat sesi pembayaran daftar ulang Midtrans: " + parsedErrMsg });
+        }
+      } catch (snapErr: any) {
+        console.error("Error creating Midtrans Snap token for SPMB reregistration:", snapErr);
+        return res.status(500).json({ error: "Koneksi gateway pembayaran Midtrans gagal: " + snapErr.message });
+      }
+
+      res.json({
+        success: true,
+        orderId,
+        snapToken,
+        token: snapToken,
+        redirectUrl,
+        candidate,
+        totalAmount
+      });
+    } catch (err: any) {
+      console.error("Error in /api/spmb/pay-reregistration-snap:", err);
+      res.status(500).json({ error: "Gagal membuat transaksi daftar ulang: " + err.message });
+    }
+  });
+
+  // 9. Verify Re-Registration Payment Success
+  app.post("/api/spmb/verify-reregistration-payment", async (req, res) => {
+    try {
+      const { orderId, nisn, paymentMethod } = req.body;
+      const candidate = spmbCandidates.find(c => 
+        (orderId && c.reRegistrationOrderId === orderId) ||
+        (nisn && (c.nisn || "").trim() === (nisn || "").trim())
+      );
+
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      candidate.reRegistrationPaid = true;
+      candidate.reRegistrationStatus = "paid";
+      candidate.reRegistrationPaidAt = new Date().toISOString();
+      candidate.reRegistrationPaymentMethod = paymentMethod || "Midtrans Snap Online";
+      if (candidate.documentsUploaded || candidate.documents?.kkPhoto) {
+        candidate.status = "accepted";
+      } else {
+        candidate.status = "re_registered";
+      }
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      // Broadcast notification
+      const notification: RealtimeNotification = {
+        id: `notif-spmb-rereg-${Date.now()}`,
+        studentId: candidate.nisn,
+        title: "Daftar Ulang Murid Baru (SPMB)",
+        message: `Calon murid ${candidate.fullName} telah MELUNASI Biaya Daftar Ulang & Seragam Rp ${(candidate.reRegistrationFee || candidate.reRegistrationAmount || 0).toLocaleString("id-ID")}.`,
+        type: "payment",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+
+      // Send WhatsApp confirmation
+      if (whatsappConfig.enabled && (candidate.parentPhone || candidate.phone)) {
+        const targetPhone = candidate.parentPhone || candidate.phone;
+        const waMsg = `Yth. Calon Wali Murid dari *${candidate.fullName}* (NISN: ${candidate.nisn}).\n\n` +
+          `ğŸ‰ *KUITANSI DAFTAR ULANG & SERAGAM SPMB ${spmbConfig.academicYear}*\n` +
+          `Pembayaran Daftar Ulang & Perlengkapan Seragam sebesar *Rp ${(candidate.reRegistrationFee || candidate.reRegistrationAmount || 0).toLocaleString("id-ID")}* telah BERHASIL divalidasi.\n\n` +
+          `â€¢ No. Pendaftaran: *${candidate.registrationNumber || candidate.registrationNo || candidate.nisn}*\n` +
+          `â€¢ Status: *${candidate.status.toUpperCase()}*\n\n` +
+          `Silakan pastikan berkas administrasi (KK, Akta Kelahiran, Pas Foto, Surat Keterangan Lulus) telah diunggah di portal SPMB.\n\n` +
+          `-- PANITIA SPMB SMP MAARIF NU PANDAAN --`;
+        sendWhatsappNotification(targetPhone, waMsg).catch(e => console.error("Error sending SPMB rereg WA:", e));
+      }
+
+      res.json({
+        success: true,
+        message: "Pembayaran daftar ulang berhasil diverifikasi.",
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error in verify-reregistration-payment:", err);
+      res.status(500).json({ error: "Gagal memverifikasi pembayaran daftar ulang: " + err.message });
+    }
+  });
+
+  // 10. Upload Registration Documents
+  app.post("/api/spmb/upload-documents", (req, res) => {
+    try {
+      const { nisn, documents } = req.body;
+      if (!nisn || !documents) {
+        return res.status(400).json({ error: "NISN dan data berkas wajib disertakan." });
+      }
+
+      const candidate = spmbCandidates.find(c => (c.nisn || "").trim() === (nisn || "").trim());
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      // Validasi Gating Tahap 1: Token harus lunas
+      if (!candidate.tokenPaid && candidate.tokenPaymentStatus !== "paid") {
+        return res.status(400).json({ error: "Tahap 1 belum selesai: Token pendaftaran belum dibayar." });
+      }
+
+      // Validasi Gating Tahap 2: Data lengkap siswa harus sudah disimpan
+      if (!candidate.isFormCompleted) {
+        return res.status(400).json({ error: "Tahap 2 belum selesai: Lengkapi dan simpan Data Lengkap Siswa terlebih dahulu sebelum mengunggah berkas." });
+      }
+
+      candidate.documents = { ...(candidate.documents || {}), ...documents };
+      candidate.documentsUploaded = true;
+      candidate.documentsUploadedAt = new Date().toISOString();
+      if (candidate.reRegistrationPaid || candidate.reRegistrationStatus === "paid") {
+        candidate.status = "accepted";
+      } else {
+        candidate.status = "documents_verified";
+      }
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      res.json({
+        success: true,
+        message: "Berkas pendaftaran berhasil disimpan. Calon murid resmi diterima!",
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error in upload-documents:", err);
+      res.status(500).json({ error: "Gagal mengunggah berkas: " + err.message });
+    }
+  });
+
+  // 11. Admin Update Status or Notes
+  app.post("/api/spmb/update-status", (req, res) => {
+    try {
+      const { id, status, adminNotes, verificationNotes } = req.body;
+      const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      if (status) candidate.status = status;
+      if (adminNotes !== undefined || verificationNotes !== undefined) {
+        candidate.adminNotes = adminNotes || verificationNotes;
+        candidate.verificationNotes = verificationNotes || adminNotes;
+      }
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      res.json({ success: true, message: "Status calon murid berhasil diperbarui.", candidate });
+    } catch (err: any) {
+      console.error("Error updating candidate status:", err);
+      res.status(500).json({ error: "Gagal memperbarui status: " + err.message });
+    }
+  });
+
+  // 11b. Toggle / Update Collective Registration Status (Admin)
+  app.post("/api/spmb/candidate/:id/toggle-collective", (req, res) => {
+    try {
+      const id = req.params.id;
+      const { registrationType } = req.body;
+      const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      const targetType = registrationType || (candidate.registrationType === "school_collective" ? "online_individual" : "school_collective");
+      candidate.registrationType = targetType;
+      
+      // If marked as collective and token has been paid online, mark refund status as pending if not yet refunded
+      if (targetType === "school_collective" && (candidate.tokenPaymentStatus === "paid" || candidate.tokenPaid)) {
+        if (!candidate.collectiveRefundStatus || candidate.collectiveRefundStatus === "none") {
+          candidate.collectiveRefundStatus = "pending";
+        }
+      } else if (targetType === "online_individual" && candidate.collectiveRefundStatus === "pending") {
+        candidate.collectiveRefundStatus = "none";
+      }
+
+      candidate.updatedAt = new Date().toISOString();
+      saveState();
+
+      res.json({
+        success: true,
+        message: `Status jalur calon murid berhasil diubah menjadi: ${targetType === "school_collective" ? "Kolektif Sekolah" : "Mandiri Online"}.`,
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error toggling candidate collective status:", err);
+      res.status(500).json({ error: "Gagal mengubah status jalur kolektif: " + err.message });
+    }
+  });
+
+  // 11c. Process Cash Refund for Collective Registration Token (Admin)
+  app.post("/api/spmb/candidate/:id/process-collective-refund", (req, res) => {
+    try {
+      const id = req.params.id;
+      const { refundAmount, recipientName, refundedBy, note, refundDate } = req.body;
+      const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      const effectiveAmount = Number(refundAmount) || candidate.tokenAmount || candidate.tokenFee || 50000;
+      const refundReceiptNo = `KW-REFUND-${candidate.nisn}-${Date.now().toString().slice(-6)}`;
+
+      candidate.registrationType = "school_collective";
+      candidate.collectiveRefundStatus = "refunded";
+      candidate.collectiveRefundAmount = effectiveAmount;
+      candidate.collectiveRefundedAt = refundDate || new Date().toISOString();
+      candidate.collectiveRefundedBy = refundedBy || "Panitia SPMB";
+      candidate.collectiveRefundRecipient = recipientName || candidate.parentName || candidate.fullName;
+      candidate.collectiveRefundNote = note || "Pengembalian tunai (cash) biaya token pendaftaran online jalur kolektif";
+      candidate.collectiveRefundReceiptNo = refundReceiptNo;
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      // Send WhatsApp confirmation if configured
+      if (whatsappConfig.enabled && (candidate.parentPhone || candidate.phone)) {
+        const targetPhone = candidate.parentPhone || candidate.phone;
+        const waMsg = `Yth. Calon Wali Murid dari *${candidate.fullName}* (NISN: ${candidate.nisn}).\n\n` +
+          `ğŸ’µ *TANDA TERIMA PENGEMBALIAN UANG TOKEN PENDAFTARAN (CASH REFUND)*\n` +
+          `Panitia SPMB SMP Ma'arif NU Pandaan telah menyerahkan pengembalian uang token pendaftaran sebesar *Rp ${effectiveAmount.toLocaleString("id-ID")}* (Cash) untuk Jalur Kolektif Sekolah.\n\n` +
+          `â€¢ No. Kuitansi: *${refundReceiptNo}*\n` +
+          `â€¢ Diterima Oleh: *${candidate.collectiveRefundRecipient}*\n` +
+          `â€¢ Tanggal: *${new Date(candidate.collectiveRefundedAt).toLocaleDateString("id-ID", { dateStyle: "full" })}*\n` +
+          `â€¢ Petugas: *${candidate.collectiveRefundedBy}*\n\n` +
+          `Terima kasih atas kerja samanya.\n` +
+          `-- PANITIA SPMB SMP MAARIF NU PANDAAN --`;
+        sendWhatsappNotification(targetPhone, waMsg).catch(e => console.error("Error sending refund WA:", e));
+      }
+
+      res.json({
+        success: true,
+        message: `Pengembalian uang token pendaftaran Rp ${effectiveAmount.toLocaleString("id-ID")} (Cash) berhasil dicatat.`,
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error processing collective cash refund:", err);
+      res.status(500).json({ error: "Gagal memproses pengembalian uang cash: " + err.message });
+    }
+  });
+
+  // 11d. Cancel / Undo Cash Refund for Collective Registration Token (Admin)
+  app.post("/api/spmb/candidate/:id/cancel-collective-refund", (req, res) => {
+    try {
+      const id = req.params.id;
+      const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      candidate.collectiveRefundStatus = candidate.registrationType === "school_collective" ? "pending" : "none";
+      candidate.collectiveRefundAmount = undefined;
+      candidate.collectiveRefundedAt = undefined;
+      candidate.collectiveRefundedBy = undefined;
+      candidate.collectiveRefundRecipient = undefined;
+      candidate.collectiveRefundNote = undefined;
+      candidate.collectiveRefundReceiptNo = undefined;
+      candidate.updatedAt = new Date().toISOString();
+
+      saveState();
+
+      res.json({
+        success: true,
+        message: "Status pengembalian uang tunai berhasil dibatalkan / direset.",
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error cancelling collective cash refund:", err);
+      res.status(500).json({ error: "Gagal membatalkan pengembalian uang: " + err.message });
+    }
+  });
+
+  // 12. Promote SPMB Candidate into Official Active Student (Siswa Resmi)
+  app.post("/api/spmb/promote-to-students", (req, res) => {
+    try {
+      const { candidateId, candidateIds, targetClass, defaultClass, targetNis } = req.body;
+      
+      const idsToPromote: string[] = Array.isArray(candidateIds) && candidateIds.length > 0
+        ? candidateIds
+        : (candidateId ? [candidateId] : []);
+
+      if (idsToPromote.length === 0) {
+        return res.status(400).json({ error: "Daftar ID calon murid yang akan dimigrasikan tidak boleh kosong." });
+      }
+
+      const assignedClass = defaultClass || targetClass || "7-A";
+      const promotedStudents: Student[] = [];
+      const updatedCandidates: SpmbCandidate[] = [];
+
+      for (const id of idsToPromote) {
+        const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+        if (!candidate) continue;
+
+        // NIS Sementara OTOMATIS disamakan dengan NISN calon siswa
+        const temporaryNis = candidate.nisn ? String(candidate.nisn).trim() : (targetNis ? String(targetNis).trim() : `STD-${Date.now()}`);
+        const permanentNisn = candidate.nisn ? String(candidate.nisn).trim() : "";
+
+        // Check if student with this NISN or ID already promoted
+        let existingStudent = students.find(s => 
+          (candidate.promotedStudentId && s.id === candidate.promotedStudentId) ||
+          (permanentNisn && s.nisn === permanentNisn) ||
+          (s.id === `std-spmb-${candidate.id}` || s.id === `std-spmb-${candidate.nisn}`)
+        );
+
+        if (existingStudent) {
+          // Update details & ensure nisn and temporary nis are intact
+          existingStudent.name = candidate.fullName;
+          existingStudent.class = assignedClass;
+          if (permanentNisn) existingStudent.nisn = permanentNisn;
+          if (!existingStudent.nis) existingStudent.nis = temporaryNis;
+
+          candidate.status = "accepted";
+          candidate.isPromotedToStudent = true;
+          candidate.promotedStudentId = existingStudent.id;
+          candidate.assignedClass = assignedClass;
+          candidate.promotedAt = new Date().toISOString();
+          candidate.updatedAt = new Date().toISOString();
+
+          promotedStudents.push(existingStudent);
+          updatedCandidates.push(candidate);
+          continue;
+        }
+
+        // Create new active Grade 7 student
+        const newStudent: Student = {
+          id: `std-spmb-${candidate.nisn || candidate.id}`,
+          name: candidate.fullName,
+          nis: temporaryNis, // NIS Sementara = NISN
+          nisn: permanentNisn, // NISN Asli & Permanen (Tidak Berubah saat NIS diedit masal)
+          class: assignedClass,
+          gender: candidate.gender === "P" ? "P" : "L",
+          phone: candidate.phone || candidate.fatherPhone || candidate.motherPhone || "",
+          email: candidate.email || `${candidate.fullName.toLowerCase().replace(/[^a-z0-9]/g, "")}.${temporaryNis}@smpmaarifnu.sch.id`,
+          password: temporaryNis,
+          savingsBalance: 0,
+          photoUrl: candidate.documents?.pasPhoto || candidate.photoUrl || "",
+          parentName: candidate.fatherName || candidate.motherName || candidate.guardianName || candidate.parentName || "",
+          address: candidate.address || "",
+          
+          // Biodata Lengkap Buku Induk
+          nik: candidate.nik || "",
+          nickname: candidate.nickname || "",
+          birthPlace: candidate.birthPlace || "",
+          birthDate: candidate.birthDate || "",
+          kkNumber: candidate.kkNumber || "",
+          birthCertNumber: candidate.birthCertNumber || "",
+          livingWith: candidate.livingWith || "",
+          childOrder: candidate.childOrder || "",
+          siblingsCount: candidate.siblingsCount || "",
+          stepSiblingsCount: candidate.stepSiblingsCount || "",
+
+          // Orang Tua - Ayah
+          fatherName: candidate.fatherName || "",
+          fatherNik: candidate.fatherNik || "",
+          fatherBirthPlace: candidate.fatherBirthPlace || "",
+          fatherBirthDate: candidate.fatherBirthDate || "",
+          fatherEducation: candidate.fatherEducation || "",
+          fatherOccupation: candidate.fatherOccupation || "",
+          fatherIncome: candidate.fatherIncome || "",
+          fatherAddress: candidate.fatherAddress || "",
+          fatherPhone: candidate.fatherPhone || "",
+          fatherStatus: candidate.fatherStatus || "Hidup",
+
+          // Orang Tua - Ibu
+          motherName: candidate.motherName || "",
+          motherNik: candidate.motherNik || "",
+          motherBirthPlace: candidate.motherBirthPlace || "",
+          motherBirthDate: candidate.motherBirthDate || "",
+          motherEducation: candidate.motherEducation || "",
+          motherOccupation: candidate.motherOccupation || "",
+          motherIncome: candidate.motherIncome || "",
+          motherAddress: candidate.motherAddress || "",
+          motherPhone: candidate.motherPhone || "",
+          motherStatus: candidate.motherStatus || "Hidup",
+
+          // Wali
+          guardianName: candidate.guardianName || "",
+          guardianNik: candidate.guardianNik || "",
+          guardianBirthPlace: candidate.guardianBirthPlace || "",
+          guardianBirthDate: candidate.guardianBirthDate || "",
+          guardianEducation: candidate.guardianEducation || "",
+          guardianOccupation: candidate.guardianOccupation || "",
+          guardianIncome: candidate.guardianIncome || "",
+          guardianAddress: candidate.guardianAddress || "",
+          guardianPhone: candidate.guardianPhone || "",
+          guardianStatus: candidate.guardianStatus || "",
+          googleDriveLink: candidate.googleDriveLink || ""
+        };
+
+        students.push(newStudent);
+        candidate.status = "accepted";
+        candidate.isPromotedToStudent = true;
+        candidate.promotedStudentId = newStudent.id;
+        candidate.assignedClass = assignedClass;
+        candidate.promotedAt = new Date().toISOString();
+        candidate.updatedAt = new Date().toISOString();
+
+        promotedStudents.push(newStudent);
+        updatedCandidates.push(candidate);
+      }
+
+      saveState();
+
+      // Broadcast notification
+      const notification: RealtimeNotification = {
+        id: `notif-spmb-promoted-${Date.now()}`,
+        title: "Migrasi Siswa Baru Kelas 7",
+        message: `Sebanyak ${promotedStudents.length} calon siswa SPMB berhasil resmi dimigrasikan menjadi Siswa Aktif Kelas 7 dengan NIS sementara = NISN.`,
+        type: "success",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
+
+      res.json({
+        success: true,
+        message: `Berhasil memigrasikan ${promotedStudents.length} siswa ke Kelas ${assignedClass}. NIS sementara otomatis disamakan dengan NISN.`,
+        promotedCount: promotedStudents.length,
+        students: promotedStudents,
+        candidates: updatedCandidates,
+        student: promotedStudents[0],
+        candidate: updatedCandidates[0]
+      });
+    } catch (err: any) {
+      console.error("Error promoting candidate to student:", err);
+      res.status(500).json({ error: "Gagal mempromosikan calon murid: " + err.message });
+    }
+  });
+
+  // 12b. Process Auto Transfers Manually (Admin)
+  app.post("/api/spmb/process-auto-transfers", (req, res) => {
+    try {
+      const result = checkAndAutoTransferExpiredCandidates(true);
+      res.json({
+        success: true,
+        message: result.transferredCount > 0
+          ? `Berhasil memeriksa dan mengalihkan ${result.transferredCount} calon siswa yang melewati batas akhir pendaftaran ulang.`
+          : `Pemeriksaan selesai. Tidak ada calon siswa yang perlu dialihkan.`,
+        ...result
+      });
+    } catch (err: any) {
+      console.error("Error in /api/spmb/process-auto-transfers:", err);
+      res.status(500).json({ error: "Gagal memproses pengalihan jalur: " + err.message });
+    }
+  });
+
+  // 12c. Revert / Batalkan Pengalihan Jalur ke Jalur Sebelumnya (Admin)
+  app.post("/api/spmb/candidate/:id/revert-transfer", (req, res) => {
+    try {
+      const { id } = req.params;
+      const { operatorName, note } = req.body || {};
+
+      const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      const targetSessionId = candidate.previousSessionId || candidate.originalSessionId;
+      if (!targetSessionId || targetSessionId === candidate.sessionId) {
+        return res.status(400).json({ error: "Calon murid ini tidak memiliki riwayat jalur sebelumnya untuk dikembalikan." });
+      }
+
+      const fromSessionId = candidate.sessionId;
+      const fromSession = spmbConfig.sessions.find(s => s.id === fromSessionId);
+      const targetSession = spmbConfig.sessions.find(s => s.id === targetSessionId);
+
+      const targetName = targetSession?.name || targetSessionId;
+      const fromName = fromSession?.name || fromSessionId;
+
+      candidate.sessionId = targetSessionId;
+      candidate.isTransferredSession = false;
+      candidate.previousSessionId = undefined;
+      candidate.updatedAt = new Date().toISOString();
+
+      if (!candidate.transferHistory) candidate.transferHistory = [];
+      candidate.transferHistory.push({
+        action: 'revert',
+        fromSessionId,
+        toSessionId: targetSessionId,
+        timestamp: new Date().toISOString(),
+        reason: note || `Pembatalan pengalihan jalur oleh panitia. Dikembalikan dari ${fromName} ke ${targetName}.`,
+        operator: operatorName || 'Panitia SPMB'
+      });
+
+      saveState();
+
+      res.json({
+        success: true,
+        message: `Berhasil membatalkan pengalihan. Calon siswa ${candidate.fullName} telah dikembalikan ke ${targetName}.`,
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error in /api/spmb/candidate/:id/revert-transfer:", err);
+      res.status(500).json({ error: "Gagal membatalkan pengalihan jalur: " + err.message });
+    }
+  });
+
+  // 12d. Manual Change Candidate Session / Jalur Pendaftaran (Admin)
+  app.post("/api/spmb/candidate/:id/change-session", (req, res) => {
+    try {
+      const { id } = req.params;
+      const { newSessionId, operatorName, reason } = req.body || {};
+
+      if (!newSessionId) {
+        return res.status(400).json({ error: "Sesi tujuan (newSessionId) wajib dipilih." });
+      }
+
+      const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      const targetSession = spmbConfig.sessions.find(s => s.id === newSessionId);
+      if (!targetSession) {
+        return res.status(400).json({ error: "Sesi tujuan tidak valid." });
+      }
+
+      const fromSessionId = candidate.sessionId;
+      const fromSession = spmbConfig.sessions.find(s => s.id === fromSessionId);
+
+      candidate.originalSessionId = candidate.originalSessionId || fromSessionId;
+      candidate.previousSessionId = fromSessionId;
+      candidate.sessionId = newSessionId;
+      candidate.isTransferredSession = true;
+      candidate.transferredAt = new Date().toISOString();
+      candidate.transferReason = reason || `Pemindahan sesi manual ke ${targetSession.name} oleh ${operatorName || 'Panitia SPMB'}.`;
+      candidate.updatedAt = new Date().toISOString();
+
+      if (!candidate.transferHistory) candidate.transferHistory = [];
+      candidate.transferHistory.push({
+        action: 'manual_change',
+        fromSessionId,
+        toSessionId: newSessionId,
+        timestamp: new Date().toISOString(),
+        reason: candidate.transferReason,
+        operator: operatorName || 'Panitia SPMB'
+      });
+
+      saveState();
+
+      res.json({
+        success: true,
+        message: `Sesi pendaftaran ${candidate.fullName} berhasil diubah ke ${targetSession.name}.`,
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error in /api/spmb/candidate/:id/change-session:", err);
+      res.status(500).json({ error: "Gagal mengubah sesi pendaftaran: " + err.message });
+    }
+  });
+
+  // 13. Delete Candidate Record (Admin)
+  app.delete("/api/spmb/candidate/:id", (req, res) => {
+    try {
+      const id = req.params.id;
+      const idx = spmbCandidates.findIndex(c => c.id === id || c.nisn === id);
+      if (idx === -1) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      spmbCandidates.splice(idx, 1);
+      saveState();
+
+      res.json({ success: true, message: "Data calon murid berhasil dihapus." });
+    } catch (err: any) {
+      console.error("Error deleting candidate:", err);
+      res.status(500).json({ error: "Gagal menghapus data calon murid: " + err.message });
+    }
+  });
+
+  // Dynamic PWA manifest.json generation synchronized with the current School Identity
+  app.get("/manifest.json", (req, res) => {
+    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "/icon-512.png";
+    const isSvg = pwaIcon.startsWith("data:image/svg") || pwaIcon.toLowerCase().endsWith(".svg");
+    
+    res.json({
+      name: schoolIdentity.name || "SMP MA'ARIF NU PANDAAN",
+      short_name: schoolIdentity.name ? schoolIdentity.name.split(" ").slice(0, 3).join(" ") : "SIPAS Portal",
+      description: `Sistem Informasi Spp & Tabungan Siswa - ${schoolIdentity.name || "SMP MA'ARIF NU PANDAAN"}`,
+      start_url: "/",
+      display: "standalone",
+      background_color: "#0f172a",
+      theme_color: "#4f46e5",
+      orientation: "portrait-primary",
+      icons: [
+        {
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "512x512"
+        },
+        {
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "192x192"
+        }
+      ]
+    });
+  });
+
+  // Vite development integration or client index serving
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa"
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
+
+  // Handle errors
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandled Error", err);
+    res.status(500).json({ error: "Terjadi kesalahan internal server" });
+  });
+
+  const isUnixSocket = typeof PORT === "string" && (PORT.includes("/") || PORT.includes("\\") || isNaN(Number(PORT)));
+  if (isUnixSocket) {
+    app.listen(PORT, () => {
+      console.log(`SMP Maarif NU Pandaan app is running on Unix socket: ${PORT}`);
+    });
+  } else {
+    const portNumber = typeof PORT === "number" ? PORT : parseInt(PORT, 10) || 3000;
+    app.listen(portNumber, "0.0.0.0", () => {
+      console.log(`SMP Maarif NU Pandaan app is running on TCP port ${portNumber}`);
+    });
+  }
+
+  // Start background auto-backup engine checks
+  setInterval(async () => {
+    if (!backupConfig.enabled) return;
+    
+    const now = Date.now();
+    const lastTime = backupConfig.lastBackupTime ? new Date(backupConfig.lastBackupTime).getTime() : 0;
+    const nextTime = backupConfig.nextBackupTime ? new Date(backupConfig.nextBackupTime).getTime() : 0;
+    
+    // Check if backup is due
+    const isDue = now >= nextTime || (lastTime === 0 && isInitialSyncCompleted && databaseBackups.length === 0);
+    
+    if (isDue) {
+      console.log("[AUTO-BACKUP ENGINE] Automated database backup is due. Starting backup snapshot creation...");
+      try {
+        const backupId = `bkp-${Date.now()}`;
+        const createdAt = new Date().toISOString();
+
+        const { snapshot, counts } = await buildFullBackupSnapshot();
+        const snapshotStr = JSON.stringify(snapshot);
+        const sizeBytes = getUtf8ByteLength(snapshotStr);
+
+        const newBackup = {
+          id: backupId,
+          createdAt,
+          type: "auto",
+          description: "Backup Otomatis Database (Siklus Periodik)",
+          sizeBytes,
+          collections: counts,
+          data: snapshotStr
+        };
+
+        if (mongoDb) {
+          await executeMongoOperationWithRetry(async () => {
+            const col = mongoDb.collection("databaseBackups");
+            await col.insertOne({ ...newBackup, _id: backupId });
+          });
+        }
+
+        databaseBackups.push(newBackup);
+
+        // Enforce max count
+        if (databaseBackups.length > backupConfig.maxBackups) {
+          const sorted = [...databaseBackups].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          const toRemove = sorted.slice(0, databaseBackups.length - backupConfig.maxBackups);
+          for (const item of toRemove) {
+            const idx = databaseBackups.findIndex(b => b.id === item.id);
+            if (idx > -1) databaseBackups.splice(idx, 1);
+            if (mongoDb) {
+              try {
+                await executeMongoOperationWithRetry(async () => {
+                  await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: item.id }, { id: item.id }] });
+                });
+              } catch (delErr) {
+                console.warn("Failed to prune auto backup from MongoDB:", delErr);
+              }
+            }
+          }
+        }
+
+        backupConfig.lastBackupTime = createdAt;
+        backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
+
+        if (mongoDb) {
+          await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
+        }
+        saveState();
+        console.log(`[AUTO-BACKUP ENGINE] Automated database backup successful: ${backupId}`);
+      } catch (err: any) {
+        console.error("[AUTO-BACKUP ENGINE] Automated database backup failed:", err.message || err);
+      }
+    }
+  }, 10 * 60 * 1000); // Check every 10 minutes
+}
+
+startServer();

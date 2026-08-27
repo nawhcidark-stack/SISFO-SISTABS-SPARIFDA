@@ -219,10 +219,10 @@ export const SavingsPassbookModal: React.FC<SavingsPassbookModalProps> = ({
 
                       {/* School Contact Strip */}
                       <div className="mt-4 pt-2.5 border-t border-emerald-700/60 flex flex-wrap justify-center items-center gap-x-4 gap-y-1 text-[9px] sm:text-[10px] text-slate-200 text-center font-medium">
-                        <span>📍 Alamat: {schoolAddress}</span>
-                        <span>📞 Telp: {schoolPhone}</span>
-                        <span>✉️ Email: {schoolEmail}</span>
-                        <span>🌐 Website: {schoolWeb}</span>
+                        <span>  Alamat: {schoolAddress}</span>
+                        <span>  Telp: {schoolPhone}</span>
+                        <span>   Email: {schoolEmail}</span>
+                        <span> Website: {schoolWeb}</span>
                       </div>
                     </>
                   )}

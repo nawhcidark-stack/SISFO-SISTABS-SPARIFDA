@@ -299,7 +299,7 @@ export default function TreasurerPanel({
         setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
         await fetchTransactions();
         await fetchTreasurerCategories();
-        showBudgetMsg('success', `☁️ ${data.message || 'Sinkronisasi Cloud MongoDB Atlas sukses!'}`);
+        showBudgetMsg('success', `   ${data.message || 'Sinkronisasi Cloud MongoDB Atlas sukses!'}`);
       } else {
         showBudgetMsg('error', data.error || 'Gagal sinkronisasi dengan Cloud.');
       }
@@ -437,7 +437,7 @@ export default function TreasurerPanel({
       if (res.ok) {
         setTransferMessage({
           type: 'success',
-          text: `🎉 Berhasil memindahkan Rp ${amt.toLocaleString('id-ID')} dari POS "${transferSource}" ke POS "${transferTarget}" secara aman!`
+          text: `[SUKSES] Berhasil memindahkan Rp ${amt.toLocaleString('id-ID')} dari POS "${transferSource}" ke POS "${transferTarget}" secara aman!`
         });
         setTransferAmount('');
         setTransferDescription('');
@@ -680,7 +680,7 @@ export default function TreasurerPanel({
         const data = await res.json();
         setReconcileStatus({
           type: 'success',
-          text: `🔍 ${data.message}`
+          text: ` ${data.message}`
         });
         await fetchTransactions(); // Refresh the list
       } else {
@@ -721,7 +721,7 @@ export default function TreasurerPanel({
       if (res.ok && data.success) {
         setReconcileStatus({
           type: 'success',
-          text: `✅ ${data.message}`
+          text: `[OK] ${data.message}`
         });
         setManualOrderIdInput('');
         await fetchTransactions();
@@ -1623,7 +1623,7 @@ export default function TreasurerPanel({
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-indigo-950/60 hover:bg-indigo-900/80 text-indigo-300 border border-indigo-700/80 hover:border-indigo-500 font-bold text-xs rounded-xl cursor-pointer transition-all disabled:opacity-50"
                 title="Sinkronisasi data buku kas & POS dengan MongoDB Atlas"
               >
-                <span className={isCloudSyncing ? "animate-spin" : ""}>🔄</span>
+                <span className={isCloudSyncing ? "animate-spin" : ""}> </span>
                 <span>{isCloudSyncing ? 'Sinkron...' : 'Sinkron Cloud'}</span>
               </button>
               <button
@@ -1744,7 +1744,7 @@ export default function TreasurerPanel({
                   : 'text-slate-600 hover:bg-slate-200'
               }`}
             >
-              💵 Gaji Guru
+               Gaji Guru
             </button>
           </div>
         </div>
@@ -1888,7 +1888,7 @@ export default function TreasurerPanel({
             <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4 mb-4">
               <div>
                 <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
-                  <span>💼</span> Neraca Saldo per POS BUDGET (Pos Anggaran)
+                  <span> </span> Neraca Saldo per POS BUDGET (Pos Anggaran)
                 </h3>
                 <p className="text-[11px] text-slate-500 font-semibold mt-0.5">Pemantauan otomatis limit kuota dan akumulasi sisa kas di masing-masing pos keuangan.</p>
               </div>
@@ -1900,7 +1900,7 @@ export default function TreasurerPanel({
                   className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-indigo-200 disabled:opacity-50"
                   title="Sinkronkan kategori dan saldo POS ke MongoDB Cloud"
                 >
-                  <span className={isCloudSyncing ? "animate-spin" : ""}>🔄</span>
+                  <span className={isCloudSyncing ? "animate-spin" : ""}> </span>
                   <span>{isCloudSyncing ? 'Menyinkronkan...' : 'Sinkron Cloud'}</span>
                   {lastSyncTime && <span className="text-[9px] text-indigo-500 font-normal">({lastSyncTime})</span>}
                 </button>
@@ -1909,7 +1909,7 @@ export default function TreasurerPanel({
                   onClick={() => setShowManageBudgetPos(!showManageBudgetPos)}
                   className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-slate-250 font-display"
                 >
-                  <span>🛠️</span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
+                  <span>  </span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
                 </button>
               </div>
             </div>
@@ -1917,7 +1917,7 @@ export default function TreasurerPanel({
             {/* Expander: Management of POS BUDGET Categories */}
             {showManageBudgetPos && (
               <div className="mb-6 p-5 bg-slate-50 border border-slate-200 rounded-2xl animate-fade-in text-left">
-                <h4 className="text-xs font-black text-slate-950 uppercase tracking-wider mb-2">📋 Tambah & Kelola POS BUDGET Utama</h4>
+                <h4 className="text-xs font-black text-slate-950 uppercase tracking-wider mb-2"> Tambah & Kelola POS BUDGET Utama</h4>
                 <p className="text-[11.5px] text-slate-500 font-medium leading-relaxed mb-4">
                   Kategori POS BUDGET yang didaftarkan di bawah ini akan muncul sebagai opsi ketika Bendahara merekam kuitansi transaksi keuangan baru secara manual. Pos bawaan sistem seperti <b>SPP</b> dan <b>Tabungan</b> dikelola oleh mutasi otomatis.
                 </p>
@@ -1934,7 +1934,7 @@ export default function TreasurerPanel({
                 <div className="grid grid-cols-1 md:grid-cols-12 gap-6">
                   {/* Form to add */}
                   <form onSubmit={handleAddBudgetCategory} className="md:col-span-5 flex flex-col gap-3 p-4 bg-slate-150/40 border border-slate-200 rounded-2xl">
-                    <h5 className="text-[11px] font-black text-slate-750 uppercase tracking-wide">🆕 Daftarkan POS Baru</h5>
+                    <h5 className="text-[11px] font-black text-slate-750 uppercase tracking-wide">  Daftarkan POS Baru</h5>
                     <div>
                       <label className="text-[10px] font-bold text-slate-400 uppercase">Nama POS BUDGET Baru</label>
                       <input
@@ -1971,11 +1971,11 @@ export default function TreasurerPanel({
                     <label className="text-[10px] font-bold text-slate-400 uppercase block mb-2">Kategori POS Aktif saat ini</label>
                     <div className="flex flex-wrap gap-2">
                       <span className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl font-bold text-[11px] select-none border border-slate-300 flex items-center gap-1.5 shadow-3xs">
-                        <span>🔒 SPP (Sistem)</span>
+                        <span> SPP (Sistem)</span>
                         <span className="bg-emerald-50 text-emerald-700 border border-emerald-200 px-1 py-0.2 rounded text-[8px] font-black">Pemasukan</span>
                       </span>
                       <span className="px-3 py-1.5 bg-slate-200 text-slate-600 rounded-xl font-bold text-[11px] select-none border border-slate-300 flex items-center gap-1.5 shadow-3xs">
-                        <span>🔒 Tabungan (Sistem)</span>
+                        <span> Tabungan (Sistem)</span>
                         <span className="bg-slate-100 text-slate-600 border border-slate-200 px-1 py-0.2 rounded text-[8px] font-black">Umum</span>
                       </span>
                       {categories.map((cat) => {
@@ -1987,7 +1987,7 @@ export default function TreasurerPanel({
                               className="w-full max-w-xs flex flex-col gap-2 p-3.5 bg-slate-100 border border-slate-350 rounded-2xl text-[11px] font-extrabold text-slate-800 shadow-xs animate-fade-in text-left"
                             >
                               <div className="text-slate-800 font-extrabold text-[10px] border-b pb-1 border-slate-200">
-                                ⚙️ Ubah POS BUDGET
+                                 Ubah POS BUDGET
                               </div>
                               <div>
                                 <label className="text-[9px] text-slate-450 block mb-0.5 uppercase tracking-wide">Nama POS</label>
@@ -2081,7 +2081,7 @@ export default function TreasurerPanel({
                 {/* Transfer Form block */}
                 <div>
                   <h4 className="text-xs font-black text-slate-950 uppercase tracking-wider mb-1 flex items-center gap-1.5">
-                    💸 Pindahkan Dana Antar POS BUDGET
+                     Pindahkan Dana Antar POS BUDGET
                   </h4>
                   <p className="text-[11.5px] text-slate-500 font-medium leading-relaxed mb-4">
                     Pindahkan anggaran saldo netto dari satu POS (sumber) ke POS lainnya (tujuan) secara langsung. Sistem akan mendebit POS sumber dan mengkredit POS tujuan secara otomatis dan tercatat aman di riwayat buku kas.
@@ -2162,7 +2162,7 @@ export default function TreasurerPanel({
                       disabled={isTransferring}
                       className="w-full py-2.5 bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl cursor-pointer transition-all inline-flex items-center justify-center gap-1.5 shadow-sm shadow-indigo-500/10"
                     >
-                      <span>🔄</span>
+                      <span> </span>
                       <span>{isTransferring ? 'Memproses...' : 'Kirim Dana'}</span>
                     </button>
                   </form>
@@ -2188,7 +2188,7 @@ export default function TreasurerPanel({
                     <div>
                       <div className="flex items-center justify-between gap-1.5 mb-2">
                         <span className="text-[10.5px] font-black text-slate-900 uppercase truncate" title={pos.name}>
-                          📊 {pos.name}
+                           {pos.name}
                         </span>
                         {pos.name === 'SPP' || pos.name === 'Tabungan' ? (
                           <span className="text-[8.5px] font-mono text-indigo-650 bg-indigo-50 font-black px-1.5 py-0.5 rounded border border-indigo-100">AUTO</span>
@@ -2418,7 +2418,7 @@ export default function TreasurerPanel({
                         : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
                     }`}
                   >
-                    <span>📖 Buku Kas Umum</span>
+                    <span>  Buku Kas Umum</span>
                   </button>
                   <button
                     type="button"
@@ -2429,7 +2429,7 @@ export default function TreasurerPanel({
                         : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
                     }`}
                   >
-                    <span>💵 Buku Pembantu Kas</span>
+                    <span> Buku Pembantu Kas</span>
                   </button>
                   <button
                     type="button"
@@ -2440,7 +2440,7 @@ export default function TreasurerPanel({
                         : 'text-slate-600 hover:bg-slate-250 hover:text-slate-900'
                     }`}
                   >
-                    <span>🏦 Buku Pembantu Bank</span>
+                    <span> Buku Pembantu Bank</span>
                   </button>
                 </div>
             
@@ -2449,9 +2449,9 @@ export default function TreasurerPanel({
                   <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                     <div className="flex-1">
                       <h3 className="font-extrabold text-sm text-indigo-950 flex items-center gap-2">
-                        {selectedBook === 'bku' && <span>📖 Buku Kas Umum (BKU) Sekolah</span>}
-                        {selectedBook === 'bp_kas' && <span>💵 Buku Pembantu Kas (Kas Tunai)</span>}
-                        {selectedBook === 'bp_bank' && <span>🏦 Buku Pembantu Bank (Giro / Rekening)</span>}
+                        {selectedBook === 'bku' && <span>  Buku Kas Umum (BKU) Sekolah</span>}
+                        {selectedBook === 'bp_kas' && <span> Buku Pembantu Kas (Kas Tunai)</span>}
+                        {selectedBook === 'bp_bank' && <span> Buku Pembantu Bank (Giro / Rekening)</span>}
                       </h3>
                       <p className="text-[11px] text-slate-500 font-semibold leading-relaxed max-w-3xl mt-0.5">
                         {selectedBook === 'bku' && 'Laporan konsolidasi arus kas masuk dan keluar secara menyeluruh (gabungan tunai dan transaksi bank sekolah).'}
@@ -2600,7 +2600,7 @@ export default function TreasurerPanel({
                   }}
                   className="text-[10px] bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold px-3 py-2 rounded-lg uppercase tracking-wider transition-all cursor-pointer shadow-3xs"
                 >
-                  📅 Lacak Sejak 15 Juni 2026
+                   Lacak Sejak 15 Juni 2026
                 </button>
                 {(filterStartDate || filterEndDate) && (
                   <button
@@ -2608,7 +2608,7 @@ export default function TreasurerPanel({
                     onClick={() => { setFilterStartDate(''); setFilterEndDate(''); }}
                     className="text-[10px] text-rose-600 hover:text-rose-700 font-extrabold uppercase hover:underline ml-auto cursor-pointer"
                   >
-                    Hapus Filter Tanggal ×
+                    Hapus Filter Tanggal  
                   </button>
                 )}
               </div>
@@ -2876,7 +2876,7 @@ export default function TreasurerPanel({
           {activeTab === 'password' && (
             <div className="max-w-md mx-auto w-full bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden mt-2">
               <div className="p-5 bg-slate-900 border-b border-slate-800 text-white flex items-center gap-2.5">
-                <span className="p-2 bg-slate-800 rounded-xl text-slate-350">🔑</span>
+                <span className="p-2 bg-slate-800 rounded-xl text-slate-350"></span>
                 <div>
                   <h3 className="font-extrabold text-sm text-slate-100 leading-tight">Ubah Kata Sandi Bendahara</h3>
                   <p className="text-[10px] text-slate-400 uppercase tracking-widest mt-0.5 font-bold font-mono">Keamanan Akun Keuangan</p>
@@ -2952,7 +2952,7 @@ export default function TreasurerPanel({
               {/* Header Info */}
               <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
                 <div>
-                  <h2 className="text-lg font-black text-slate-900 tracking-tight">💵 Sistem Penggajian Guru (Payroll)</h2>
+                  <h2 className="text-lg font-black text-slate-900 tracking-tight"> Sistem Penggajian Guru (Payroll)</h2>
                   <p className="text-xs text-slate-500 mt-1">
                     Manajemen penggajian terpadu Guru Mata Pelajaran (berdasarkan pencantuman teaching journal) dan Wali Kelas yang terhubung langsung ke Buku Kas Pengeluaran.
                   </p>
@@ -2970,7 +2970,7 @@ export default function TreasurerPanel({
                     }}
                     className="flex-1 md:flex-initial p-2.5 px-4 bg-white border border-slate-250 hover:bg-slate-100 text-slate-750 font-semibold rounded-xl text-xs font-sans inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
                   >
-                    <span>⚙️ Atur Tarif Standar</span>
+                    <span> Atur Tarif Standar</span>
                   </button>
                 </div>
               </div>
@@ -3029,7 +3029,7 @@ export default function TreasurerPanel({
                         disabled={isGeneratingGaji}
                         className="p-2.5 px-4 bg-indigo-650 hover:bg-indigo-700 disabled:opacity-50 text-white font-bold rounded-xl text-xs inline-flex items-center gap-1.5 cursor-pointer transition-all shadow-xs"
                       >
-                        {isGeneratingGaji ? 'Memproses...' : '📥 Generate Gaji Bulanan'}
+                        {isGeneratingGaji ? 'Memproses...' : ' Generate Gaji Bulanan'}
                       </button>
                     </div>
                   </div>
@@ -3087,7 +3087,7 @@ export default function TreasurerPanel({
               <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
                 <div className="p-4 bg-slate-50 border-b border-slate-150 flex items-center justify-between flex-wrap gap-2">
                   <h4 className="text-xs font-extrabold text-slate-800 tracking-tight flex items-center gap-1.5">
-                    <span>🧾 Daftar Gaji Guru</span>
+                    <span>  Daftar Gaji Guru</span>
                     <span className="p-1 px-2.5 bg-indigo-50 text-indigo-600 rounded-lg text-[9px] font-mono font-black">{filteredSalaries.length} Records</span>
                   </h4>
                   <span className="text-[10px] text-slate-500 font-bold font-mono">Periode Bulan: {salaryMonth}</span>
@@ -3135,7 +3135,7 @@ export default function TreasurerPanel({
                               <td className="p-3.5 text-center">
                                 {s.teacherType === 'subject_teacher' ? (
                                   <span className="text-[11px]" title={`Mengajar: ${s.journalCount} jurnal @ Rp ${s.journalRate.toLocaleString('id-ID')}`}>
-                                    <strong className="font-mono text-indigo-650">{s.journalCount}</strong> <span className="text-slate-400">× Rp {s.journalRate.toLocaleString('id-ID')}</span>
+                                    <strong className="font-mono text-indigo-650">{s.journalCount}</strong> <span className="text-slate-400">  Rp {s.journalRate.toLocaleString('id-ID')}</span>
                                   </span>
                                 ) : (
                                   <span className="text-slate-350">-</span>
@@ -3170,7 +3170,7 @@ export default function TreasurerPanel({
                                         className="p-1 px-2 bg-emerald-600 hover:bg-emerald-750 text-white rounded-lg text-[10px] font-bold cursor-pointer transition-colors shadow-2xs"
                                         title="Bayarkan Gaji"
                                       >
-                                        💸 Bayar
+                                         Bayar
                                       </button>
                                       <button
                                         type="button"
@@ -3332,7 +3332,7 @@ export default function TreasurerPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">🔄</span>
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg"> </span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Sinkronisasi Kas</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ulang muat mutasi tabungan &amp; rekapitulasi SPP terintegrasi</p>
@@ -3347,7 +3347,7 @@ export default function TreasurerPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🖨️</span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg"></span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Cetak Laporan</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ekspor cetakan Buku Kas Besar Resmi lembaga</p>
@@ -3362,7 +3362,7 @@ export default function TreasurerPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">💵</span>
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg"></span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Gaji Guru (Payroll)</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kelola dan bayarkan gaji guru mapel &amp; wali kelas</p>
@@ -3377,7 +3377,7 @@ export default function TreasurerPanel({
                   }}
                   className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
+                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg"> </span>
                   <div>
                     <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
                     <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar aman dari portal utama bendahara sekolah</p>
@@ -3388,7 +3388,7 @@ export default function TreasurerPanel({
               {/* Quick access to download Mobile Apps in the bottom sheet menu */}
               <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                  📲 Unduh Aplikasi Mobile Resmi
+                    Unduh Aplikasi Mobile Resmi
                 </span>
                 <p className="text-[10px] text-slate-500 leading-normal">
                   Gunakan aplikasi mobile resmi untuk kemudahan akses monitor kas tabungan, rekonsiliasi SPP, &amp; data lembaga langsung lewat HP.
@@ -3507,7 +3507,7 @@ export default function TreasurerPanel({
                   >
                     {categories.map((c) => (
                       <option key={c.name} value={c.name}>
-                        📊 {c.name} ({c.type === 'both' ? 'Umum' : c.type === 'incoming' ? 'Pemasukan saja' : 'Pengeluaran saja'})
+                         {c.name} ({c.type === 'both' ? 'Umum' : c.type === 'incoming' ? 'Pemasukan saja' : 'Pengeluaran saja'})
                       </option>
                     ))}
                   </select>
@@ -3571,14 +3571,14 @@ export default function TreasurerPanel({
                       onClick={() => setFormPaymentMethod('kas')}
                       className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'kas' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
                     >
-                      <span>💵 Tunai / Kas</span>
+                      <span> Tunai / Kas</span>
                     </button>
                     <button
                       type="button"
                       onClick={() => setFormPaymentMethod('bank')}
                       className={`py-2 text-center font-extrabold rounded-lg cursor-pointer transition-all flex items-center justify-center gap-1.5 ${formPaymentMethod === 'bank' ? 'bg-indigo-600 text-white shadow-md' : 'text-slate-600 hover:bg-slate-200'}`}
                     >
-                      <span>🏦 Bank / Rekening</span>
+                      <span> Bank / Rekening</span>
                     </button>
                   </div>
                 </div>
@@ -3720,7 +3720,7 @@ export default function TreasurerPanel({
                             <UserCheck size={14} />
                           </div>
                           <div className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none text-[8px]">
-                            ▼
+                             
                           </div>
                         </>
                       )}
@@ -4182,7 +4182,7 @@ export default function TreasurerPanel({
             >
               <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm">⚙️</span>
+                  <span className="text-sm"></span>
                   <div>
                     <h3 className="font-extrabold text-xs tracking-tight text-white">Tarif Standar Penggajian</h3>
                     <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-none mt-0.5">Konfigurasi Finansial</p>
@@ -4309,7 +4309,7 @@ export default function TreasurerPanel({
             >
               <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="p-1 px-1.5 bg-indigo-950 rounded-lg text-indigo-400">✏️</span>
+                  <span className="p-1 px-1.5 bg-indigo-950 rounded-lg text-indigo-400">  </span>
                   <div>
                     <h3 className="font-extrabold text-xs tracking-tight text-white">Sesuaikan Nominal Gaji</h3>
                     <p className="text-[9px] text-indigo-200 uppercase font-bold tracking-wider leading-none mt-0.5">{editingGaji.teacherName}</p>
@@ -4330,7 +4330,7 @@ export default function TreasurerPanel({
               <form onSubmit={handleUpdateGaji} className="p-6 flex flex-col gap-4 text-xs font-semibold bg-white max-h-[80vh] overflow-y-auto">
                 <div className="grid grid-cols-2 gap-3">
                   <div className="col-span-2 border-b border-dashed border-slate-200 pb-1 text-[9px] font-bold text-indigo-700 uppercase tracking-wider">
-                    💰 Rincian Pendapatan &amp; Penerimaan
+                     Rincian Pendapatan &amp; Penerimaan
                   </div>
                   <div>
                     <label className="block text-[8px] font-bold text-slate-400 uppercase mb-1 tracking-wider">GAJI POKOK (RP)</label>
@@ -4389,7 +4389,7 @@ export default function TreasurerPanel({
                   </div>
 
                   <div className="col-span-2 border-b border-dashed border-slate-200 pb-1 mt-2 text-[9px] font-bold text-rose-700 uppercase tracking-wider">
-                    💸 Rincian Pemotongan Gaji
+                     Rincian Pemotongan Gaji
                   </div>
 
                   <div>
@@ -4484,7 +4484,7 @@ export default function TreasurerPanel({
               {/* Header inside overlay modal, hidden on print */}
               <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between print:hidden">
                 <div className="flex items-center gap-2">
-                  <span className="p-1 px-1.5 bg-slate-850 rounded-lg text-slate-355">📄</span>
+                  <span className="p-1 px-1.5 bg-slate-850 rounded-lg text-slate-355"></span>
                   <div>
                     <h3 className="font-extrabold text-xs tracking-tight text-white">Slip Gaji Resmi Guru</h3>
                     <p className="text-[9px] text-slate-400 uppercase font-bold tracking-wider leading-none mt-0.5">Preview &amp; Cetak Berkas</p>
@@ -4618,7 +4618,7 @@ export default function TreasurerPanel({
                         <div>
                           <span>Vakasi (Jasa Jam Mengajar Jurnal)</span>
                           <p className="text-[9.5px] text-slate-400 font-normal">
-                             Total {receiptGaji.journalCount} laporan teaching journal × Rp {(receiptGaji.journalRate || 0).toLocaleString('id-ID')}
+                             Total {receiptGaji.journalCount} laporan teaching journal   Rp {(receiptGaji.journalRate || 0).toLocaleString('id-ID')}
                           </p>
                         </div>
                         <span className="font-bold font-mono text-slate-900">Rp {(receiptGaji.vakasi || (receiptGaji.journalCount * receiptGaji.journalRate)).toLocaleString('id-ID')}</span>

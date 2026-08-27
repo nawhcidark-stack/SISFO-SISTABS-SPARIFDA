@@ -1757,7 +1757,7 @@ export default function ScheduleView({
                 >
                   {allTeachersList.map(t => (
                     <option key={t.id} value={t.id}>
-                      {t.name} — [Mapel: {t.mainSubject}] ({t.roleStr})
+                      {t.name} - [Mapel: {t.mainSubject}] ({t.roleStr})
                     </option>
                   ))}
                 </select>
@@ -1949,7 +1949,7 @@ export default function ScheduleView({
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">2. Kelas (7-A, 8-B)</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">3. Mata Pelajaran</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">4. Nama Guru</div>
-                  <div className="bg-emerald-100 text-emerald-900 font-extrabold p-1.5 rounded border border-emerald-300">5. ID / Username Guru ★</div>
+                  <div className="bg-emerald-100 text-emerald-900 font-extrabold p-1.5 rounded border border-emerald-300">5. ID / Username Guru  </div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">6. Jam Ke (0, 1, 2, dst)</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">7. Waktu Mulai (07:00)</div>
                   <div className="bg-slate-100 p-1.5 rounded border border-slate-200">8. Waktu Selesai (08:20)</div>
@@ -2023,7 +2023,7 @@ export default function ScheduleView({
                           onChange={() => setImportMode('update')}
                           className="text-indigo-600 cursor-pointer accent-indigo-600"
                         />
-                        <span>Update / Timpa Slot Sama (Cegah Ganda) ★</span>
+                        <span>Update / Timpa Slot Sama (Cegah Ganda)  </span>
                       </label>
                       <label className="flex items-center gap-1.5 cursor-pointer text-slate-700">
                         <input

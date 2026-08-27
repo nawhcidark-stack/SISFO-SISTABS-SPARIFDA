@@ -560,7 +560,7 @@ export default function AdminSpmbManagement({
               </span>
               {needRefundCount > 0 && (
                 <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-xs font-black animate-pulse">
-                  ⚠️ {needRefundCount} Perlu Refund Token Cash
+                  [PERINGATAN] {needRefundCount} Perlu Refund Token Cash
                 </span>
               )}
             </div>
@@ -850,7 +850,7 @@ export default function AdminSpmbManagement({
                 className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Semua Asal SD</option>
-                <option value="maarif">✨ SD Ma'arif ({maarifCount})</option>
+                <option value="maarif"> SD Ma'arif ({maarifCount})</option>
                 <option value="other">SD Umum / Luar ({umumCount})</option>
               </select>
 
@@ -872,7 +872,7 @@ export default function AdminSpmbManagement({
                 className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Semua Status Pengalihan</option>
-                <option value="transferred">⚠️ Dialihkan Jalur ({transferredCount})</option>
+                <option value="transferred">[PERINGATAN] Dialihkan Jalur ({transferredCount})</option>
                 <option value="normal">Jalur Asli / Normal</option>
               </select>
 
@@ -884,8 +884,8 @@ export default function AdminSpmbManagement({
               >
                 <option value="all">Semua Jalur (Mandiri & Kolektif)</option>
                 <option value="school_collective">Hanya Jalur Kolektif</option>
-                <option value="needs_refund">⚠️ Perlu Refund Cash ({needRefundCount})</option>
-                <option value="refunded">✅ Sudah Refund Cash ({refundedCashCount})</option>
+                <option value="needs_refund">[PERINGATAN] Perlu Refund Cash ({needRefundCount})</option>
+                <option value="refunded">[OK] Sudah Refund Cash ({refundedCashCount})</option>
                 <option value="online_individual">Hanya Jalur Mandiri</option>
               </select>
 
@@ -1050,7 +1050,7 @@ export default function AdminSpmbManagement({
                               <div>
                                 <p className="font-extrabold text-slate-900 m-0">{candidate.fullName}</p>
                                 <p className="text-[10px] text-slate-500 m-0">
-                                  {candidate.gender === 'P' || (candidate.gender as string) === 'female' ? 'Perempuan' : 'Laki-laki'} • {candidate.phone || '-'}
+                                  {candidate.gender === 'P' || (candidate.gender as string) === 'female' ? 'Perempuan' : 'Laki-laki'} - {candidate.phone || '-'}
                                 </p>
                               </div>
                             </div>
@@ -1173,7 +1173,7 @@ export default function AdminSpmbManagement({
                                         >
                                           Kuitansi Refund
                                         </button>
-                                        <span className="text-slate-300">•</span>
+                                        <span className="text-slate-300">-</span>
                                         <button
                                           type="button"
                                           onClick={() => handleCancelRefund(candidate)}
@@ -1325,7 +1325,7 @@ export default function AdminSpmbManagement({
               </div>
               <div>
                 <strong className="text-sm font-bold text-white block">
-                  Status Master Pendaftaran SPMB: {config.isOpen !== false ? '🟢 DIBUKA / AKTIF' : '🔴 DITUTUP / TIDAK AKTIF'}
+                  Status Master Pendaftaran SPMB: {config.isOpen !== false ? '  DIBUKA / AKTIF' : '  DITUTUP / TIDAK AKTIF'}
                 </strong>
                 <span className="text-xs text-slate-400">
                   {config.isOpen !== false 
@@ -1355,7 +1355,7 @@ export default function AdminSpmbManagement({
               </div>
               <div>
                 <strong className="text-sm font-bold text-white block">
-                  Pengalihan Jalur Otomatis (Batas Akhir Daftar Ulang): {config.autoTransferExpiredSessions !== false ? '🟢 AKTIF' : '⚪ NONAKTIF'}
+                  Pengalihan Jalur Otomatis (Batas Akhir Daftar Ulang): {config.autoTransferExpiredSessions !== false ? '  AKTIF' : '  NONAKTIF'}
                 </strong>
                 <span className="text-xs text-slate-400">
                   Otomatis memindahkan calon siswa yang belum melunasi daftar ulang hingga tanggal batas akhir (endDate) ke gelombang selanjutnya. Panitia dapat membatalkan dan mengembalikan jalur calon murid kapan saja.
@@ -1757,7 +1757,7 @@ export default function AdminSpmbManagement({
                   </div>
 
                   <div className="p-3 bg-emerald-950/40 rounded-xl border border-emerald-500/30 text-emerald-300 text-[11px]">
-                    ✓ Kuitansi pengembalian uang cash otomatis tersimpan dan dapat dicetak kapan saja.
+                    [OK] Kuitansi pengembalian uang cash otomatis tersimpan dan dapat dicetak kapan saja.
                   </div>
                 </div>
               </div>
@@ -2097,7 +2097,7 @@ export default function AdminSpmbManagement({
                   {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
                 </h2>
                 <p className="text-[11px] text-slate-600 m-0">
-                  {schoolIdentity?.address || "Jl. Jogosari No. 01 Pandaan, Pasuruan - Jawa Timur"} • Telp: {schoolIdentity?.phone || "0343-631xxx"}
+                  {schoolIdentity?.address || "Jl. Jogosari No. 01 Pandaan, Pasuruan - Jawa Timur"} - Telp: {schoolIdentity?.phone || "0343-631xxx"}
                 </p>
               </div>
 
@@ -2199,7 +2199,7 @@ export default function AdminSpmbManagement({
                   </span>
                 </h3>
                 <p className="text-xs text-slate-400 m-0">
-                  Asal Sekolah: {selectedCandidate.schoolOrigin} • Sesi: {selectedCandidate.sessionId.toUpperCase()} • Jalur: {selectedCandidate.registrationType === 'school_collective' ? 'Kolektif Sekolah' : 'Mandiri Online'}
+                  Asal Sekolah: {selectedCandidate.schoolOrigin} - Sesi: {selectedCandidate.sessionId.toUpperCase()} - Jalur: {selectedCandidate.registrationType === 'school_collective' ? 'Kolektif Sekolah' : 'Mandiri Online'}
                 </p>
               </div>
               <button
@@ -2407,7 +2407,7 @@ export default function AdminSpmbManagement({
                     {selectedCandidate.documents?.kkPhoto ? (
                       <a href={selectedCandidate.documents.kkPhoto} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-center hover:border-emerald-500 block">
                         <span className="text-[10px] text-slate-300 block font-bold">Foto Kartu Keluarga</span>
-                        <span className="text-[9px] text-emerald-400">Lihat File ↗</span>
+                        <span className="text-[9px] text-emerald-400">Lihat File  </span>
                       </a>
                     ) : (
                       <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center text-slate-500 text-[10px]">
@@ -2418,7 +2418,7 @@ export default function AdminSpmbManagement({
                     {selectedCandidate.documents?.aktaPhoto ? (
                       <a href={selectedCandidate.documents.aktaPhoto} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-center hover:border-emerald-500 block">
                         <span className="text-[10px] text-slate-300 block font-bold">Akta Kelahiran</span>
-                        <span className="text-[9px] text-emerald-400">Lihat File ↗</span>
+                        <span className="text-[9px] text-emerald-400">Lihat File  </span>
                       </a>
                     ) : (
                       <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center text-slate-500 text-[10px]">
@@ -2429,7 +2429,7 @@ export default function AdminSpmbManagement({
                     {selectedCandidate.documents?.sklPhoto ? (
                       <a href={selectedCandidate.documents.sklPhoto} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-center hover:border-emerald-500 block">
                         <span className="text-[10px] text-slate-300 block font-bold">SKL / Ijazah</span>
-                        <span className="text-[9px] text-emerald-400">Lihat File ↗</span>
+                        <span className="text-[9px] text-emerald-400">Lihat File  </span>
                       </a>
                     ) : (
                       <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center text-slate-500 text-[10px]">

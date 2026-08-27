@@ -80,7 +80,7 @@ export default function BukuIndukManagement({
     setIsViewModalOpen(true);
   };
 
-  // Helper to calculate how many fields are filled for a student’s Buku Induk profile (Completeness Score)
+  // Helper to calculate how many fields are filled for a student's Buku Induk profile (Completeness Score)
   const calculateCompleteness = (student: Student) => {
     const fieldsToTrack: (keyof Student)[ ] = [
       'nis', 'nisn', 'name', 'nickname', 'nik', 'gender', 'birthPlace', 'birthDate', 
@@ -948,7 +948,7 @@ export default function BukuIndukManagement({
                                 <span className="bg-indigo-50 text-indigo-650 px-1 py-0.5 rounded text-[8.5px] font-black uppercase font-sans">
                                   Kelas {student.class}
                                 </span>
-                                <span>• {student.gender || 'Laki-laki'}</span>
+                                <span>- {student.gender || 'Laki-laki'}</span>
                                 {student.googleDriveLink && (
                                   <a
                                     href={student.googleDriveLink}
@@ -1098,7 +1098,7 @@ export default function BukuIndukManagement({
                       : 'text-slate-650 hover:bg-slate-150'
                   }`}
                 >
-                  🏫 I. Data Siswa
+                   I. Data Siswa
                 </button>
                 <button
                   type="button"
@@ -1109,7 +1109,7 @@ export default function BukuIndukManagement({
                       : 'text-slate-650 hover:bg-slate-150'
                   }`}
                 >
-                  👨🏼‍💼 II. Data Ayah
+                       II. Data Ayah
                 </button>
                 <button
                   type="button"
@@ -1120,7 +1120,7 @@ export default function BukuIndukManagement({
                       : 'text-slate-650 hover:bg-slate-150'
                   }`}
                 >
-                  👩🏼‍💼 III. Data Ibu
+                       III. Data Ibu
                 </button>
                 <button
                   type="button"
@@ -1131,7 +1131,7 @@ export default function BukuIndukManagement({
                       : 'text-slate-650 hover:bg-slate-150'
                   }`}
                 >
-                  💼 IV. Data Wali (Opsional)
+                    IV. Data Wali (Opsional)
                 </button>
               </div>
 
@@ -1648,7 +1648,7 @@ export default function BukuIndukManagement({
               {/* Modal controls footer */}
               <div className="p-4 bg-slate-50 border-t border-slate-150 flex justify-between items-center shrink-0">
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  ⚠️ Data di-sync ke Rapor Wali kelas & Akun Murid
+                  [PERINGATAN] Data di-sync ke Rapor Wali kelas & Akun Murid
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -1923,7 +1923,7 @@ export default function BukuIndukManagement({
               {/* Modal controls footer */}
               <div className="p-4 bg-slate-50 border-t border-slate-150 flex justify-between items-center shrink-0">
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  ℹ️ Buku Induk Siswa Digital Pasuruan
+                  [i] Buku Induk Siswa Digital Pasuruan
                 </div>
                 <div className="flex gap-2">
                   <button

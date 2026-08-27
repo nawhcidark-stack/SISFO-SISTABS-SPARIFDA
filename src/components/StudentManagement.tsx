@@ -876,7 +876,7 @@ export default function StudentManagement({
                     <td className="px-5 py-3.5 text-right font-mono text-xs font-semibold">
                       {std.customSppRate ? (
                         <span className="inline-flex items-center gap-1 font-bold text-amber-800 bg-amber-50 px-2 py-0.5 rounded border border-amber-200/80 text-[10px]">
-                          ⭐ Rp {std.customSppRate.toLocaleString('id-ID')}
+                          * Rp {std.customSppRate.toLocaleString('id-ID')}
                         </span>
                       ) : (
                         <span className="text-slate-400 text-[10px] italic">
@@ -957,7 +957,7 @@ export default function StudentManagement({
               <form onSubmit={handleCreateSubmit} className="p-5 flex flex-col gap-4 text-xs">
                 {errorMsg && (
                   <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-700 rounded-lg font-bold">
-                    ⚠️ {errorMsg}
+                    [PERINGATAN] {errorMsg}
                   </div>
                 )}
 
@@ -1056,7 +1056,7 @@ export default function StudentManagement({
 
                 <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 flex flex-col gap-1.5">
                   <label className="font-bold text-amber-900 uppercase text-[9px] tracking-wide flex items-center justify-between">
-                    <span>Nominal Khusus SPP (Rp) — Opsional</span>
+                    <span>Nominal Khusus SPP (Rp) - Opsional</span>
                     <span className="text-[9px] text-amber-700 font-normal">Kosongkan jika tarif standar</span>
                   </label>
                   <div className="relative">
@@ -1129,7 +1129,7 @@ export default function StudentManagement({
               <form onSubmit={handleUpdateSubmit} className="p-5 flex flex-col gap-4 text-xs">
                 {errorMsg && (
                   <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-700 rounded-lg font-bold">
-                    ⚠️ {errorMsg}
+                    [PERINGATAN] {errorMsg}
                   </div>
                 )}
 
@@ -1211,7 +1211,7 @@ export default function StudentManagement({
 
                 <div className="p-3 bg-amber-50/70 rounded-lg border border-amber-200 flex flex-col gap-1.5 mt-1">
                   <label className="font-bold text-amber-900 uppercase text-[9px] tracking-wide flex items-center justify-between">
-                    <span>Nominal Khusus SPP (Rp) — Opsional</span>
+                    <span>Nominal Khusus SPP (Rp) - Opsional</span>
                     <span className="text-[9px] text-amber-700 font-normal">Kosongkan jika menggunakan tarif standar</span>
                   </label>
                   <div className="relative">
@@ -1282,7 +1282,7 @@ export default function StudentManagement({
             >
               <div className="bg-rose-900 text-white p-4 flex justify-between items-center">
                 <h4 className="font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                  ⚠️ Tindakan Kritis: Hapus Siswa
+                  [PERINGATAN] Tindakan Kritis: Hapus Siswa
                 </h4>
                 <button
                   onClick={() => setDeletingStudent(null)}
@@ -1321,7 +1321,7 @@ export default function StudentManagement({
                     onClick={handleDeleteSubmit}
                     className="px-5 py-1.5 bg-rose-700 hover:bg-rose-850 text-white font-bold rounded-lg cursor-pointer text-xs flex items-center justify-center gap-1 shadow-sm"
                   >
-                    {saving ? 'Menghapus...' : 'Ya, Hapus Permanen 🚨'}
+                    {saving ? 'Menghapus...' : 'Ya, Hapus Permanen '}
                   </button>
                 </div>
               </div>
@@ -1385,7 +1385,7 @@ export default function StudentManagement({
 
                 {importResult && (
                   <div className="p-4 bg-emerald-50 border border-emerald-250 text-emerald-950 rounded-lg">
-                    <p className="font-bold text-emerald-800 text-sm mb-1">🎉 Import Selesai Berhasil!</p>
+                    <p className="font-bold text-emerald-800 text-sm mb-1">[SUKSES] Import Selesai Berhasil!</p>
                     <ul className="list-disc pl-5 mt-1.5 space-y-1 text-[11px] font-bold">
                       <li className="text-emerald-800">Siswa Baru Ditambahkan: {importResult.added}</li>
                       <li className="text-emerald-800">Siswa Lama Diperbarui (NIS Sama): {importResult.updated}</li>
@@ -1511,7 +1511,7 @@ export default function StudentManagement({
                         onClick={handleExecuteImport}
                         className="px-5 py-1.5 bg-indigo-700 hover:bg-indigo-850 text-white font-bold rounded-lg cursor-pointer flex items-center gap-1 shadow-sm disabled:opacity-50 font-sans"
                       >
-                        {isImporting ? 'Mengimpor...' : `Proses Impor ${previewImportData.length} Siswa 🚀`}
+                        {isImporting ? 'Mengimpor...' : `Proses Impor ${previewImportData.length} Siswa `}
                       </button>
                     )}
                   </div>

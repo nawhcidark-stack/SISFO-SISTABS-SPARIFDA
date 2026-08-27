@@ -274,7 +274,7 @@ export default function App() {
             // Push a beautiful floating dynamic toast notification
             const scanNotif: RealtimeNotification = {
               id: 'qr-scan-toast-' + Date.now(),
-              title: 'Kartu QR Terdeteksi 🔍',
+              title: 'Kartu QR Terdeteksi ',
               message: `Menampilkan profil ${matchedStudent.name} (Kelas ${matchedStudent.class}).`,
               type: 'success',
               createdAt: new Date().toISOString()
@@ -401,7 +401,7 @@ export default function App() {
           // Show elegant toast and sound beep
           const successNotif: RealtimeNotification = {
             id: 'pay-success-toast-' + Date.now(),
-            title: 'Pembayaran Terkonfirmasi ✓',
+            title: 'Pembayaran Terkonfirmasi [OK]',
             message: orderId.startsWith('SAV-')
               ? `Top up tabungan dengan order ID ${orderId} sukses terverifikasi!`
               : `Pembayaran SPP dengan order ID ${orderId} lunas terverifikasi!`,
@@ -1556,7 +1556,7 @@ export default function App() {
     // Create a beautiful success toast notification with checkicon
     const successNotif: RealtimeNotification = {
       id: 'pay-success-toast-' + Date.now(),
-      title: 'Pembayaran Berhasil! ✓',
+      title: 'Pembayaran Berhasil! [OK]',
       message: `${payItemName || 'SPP'} sebesar Rp ${payAmount.toLocaleString('id-ID')} lunas terverifikasi.`,
       type: 'success',
       createdAt: new Date().toISOString()
@@ -1925,7 +1925,7 @@ export default function App() {
                     <div className="border-b border-slate-100 pb-3">
                       <span className="text-[10px] font-black uppercase text-indigo-600 tracking-widest block mb-0.5">Identitas Barang</span>
                       <h4 className="text-base font-extrabold text-slate-900 leading-tight">{scannedItem.name}</h4>
-                      <p className="text-xs font-mono font-bold text-slate-400 mt-1 uppercase">🌐 {scannedItem.code}</p>
+                      <p className="text-xs font-mono font-bold text-slate-400 mt-1 uppercase"> {scannedItem.code}</p>
                     </div>
 
                     <div className="grid grid-cols-2 gap-x-4 gap-y-3.5 text-xs">
@@ -1936,12 +1936,12 @@ export default function App() {
                       <div>
                         <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Tahun Beli</span>
                         <span className="font-mono font-extrabold text-indigo-700 inline-block px-1.5 py-0.5 bg-indigo-50 rounded">
-                          📅 {scannedItem.purchaseYear || "-"}
+                           {scannedItem.purchaseYear || "-"}
                         </span>
                       </div>
                       <div>
                         <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Lokasi Fisik</span>
-                        <span className="font-extrabold text-slate-800">📍 {scannedItem.location || "Gudang Utama"}</span>
+                        <span className="font-extrabold text-slate-800">  {scannedItem.location || "Gudang Utama"}</span>
                       </div>
                       <div>
                         <span className="text-[9.5px] font-bold text-slate-400 uppercase block mb-0.5">Kondisi Fisik</span>
@@ -2112,7 +2112,7 @@ export default function App() {
                   Transaksi Berhasil!
                 </h2>
                 <div className="hidden print:block text-xs font-bold text-emerald-700 uppercase tracking-widest mt-1">
-                  ✓ STATUS: LUNAS TERVERIFIKASI
+                  [OK] STATUS: LUNAS TERVERIFIKASI
                 </div>
                 <p className="text-[11px] text-slate-500 font-medium mt-2 max-w-[360px] print:text-slate-700">
                   Pembayaran Anda telah sukses divalidasi dan diupdate ke dalam database keuangan sekolah secara real-time.
@@ -2184,10 +2184,10 @@ export default function App() {
 
               {/* Verified Checklist Process Stack on Screen, simplified */}
               <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1.5 py-2.5 bg-slate-50/20 border-t border-b border-slate-150 text-[10px] text-slate-500 font-bold tracking-tight print:hidden">
-                <span className="flex items-center gap-1 text-emerald-700">✓ Midtrans Diproses</span>
-                <span className="flex items-center gap-1 text-emerald-700">✓ Dana Lunas</span>
-                <span className="flex items-center gap-1 text-emerald-700">✓ Sistem Terupdate</span>
-                <span className="flex items-center gap-1 text-emerald-700">✓ Kuitansi Digital Siap</span>
+                <span className="flex items-center gap-1 text-emerald-700">[OK] Midtrans Diproses</span>
+                <span className="flex items-center gap-1 text-emerald-700">[OK] Dana Lunas</span>
+                <span className="flex items-center gap-1 text-emerald-700">[OK] Sistem Terupdate</span>
+                <span className="flex items-center gap-1 text-emerald-700">[OK] Kuitansi Digital Siap</span>
               </div>
 
               {/* Foot lock for the printed receipt page */}
@@ -2259,7 +2259,7 @@ export default function App() {
                   </>
                 ) : (
                   <p className="text-[10px] text-slate-500 font-bold text-center mt-2 bg-emerald-50/65 border border-emerald-150 px-3 py-1 rounded-xl">
-                    📌 Mode Tinjau Kuitansi Terverifikasi &amp; Siap Diunduh/Dicetak
+                      Mode Tinjau Kuitansi Terverifikasi &amp; Siap Diunduh/Dicetak
                   </p>
                 )}
               </div>

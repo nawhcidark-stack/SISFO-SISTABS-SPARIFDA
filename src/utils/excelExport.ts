@@ -365,9 +365,9 @@ export function exportSppChecklistToExcel(params: {
   const rows = checklistMatrix.map((item, idx) => {
     const monthCols = months.map(m => {
       const st = item.monthlyMap?.[m]?.status;
-      if (st === "paid") return "✓";
+      if (st === "paid") return "[OK]";
       if (st === "waived") return "Beasiswa";
-      if (st === "unpaid") return "✗";
+      if (st === "unpaid") return " ";
       return "-";
     });
 
@@ -396,7 +396,7 @@ export function exportSppChecklistToExcel(params: {
     headers,
     ...rows,
     [],
-    ["Keterangan: ✓ = Lunas, Beasiswa = Bebas/Beasiswa, ✗ = Belum Lunas, - = Non-Aktif/Tanpa Tagihan"]
+    ["Keterangan: [OK] = Lunas, Beasiswa = Bebas/Beasiswa,   = Belum Lunas, - = Non-Aktif/Tanpa Tagihan"]
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);

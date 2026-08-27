@@ -2168,7 +2168,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
       dbSyncStatus = "Blocked (Bad Credentials)";
       dbSyncError = "Koneksi ke MongoDB Atlas gagal karena autentikasi (username/password) ditolak oleh basis data Anda.\n\n" +
                     `URI yang dicoba (Masked): ${maskedUri}\n\n` +
-                    "âš ï¸ CARA MEMPERBAIKI:\n" +
+                    "   CARA MEMPERBAIKI:\n" +
                     "1. Buka Settings -> Secrets di panel sebelah kanan AI Studio Anda.\n" +
                     "2. Cari variabel bernama MONGODB_URI.\n" +
                     "3. Jika ada, edit nilainya dengan string koneksi baru Anda, pastikan password ditulis dengan benar (contoh: Sparifda20519113).\n" +
@@ -2184,7 +2184,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
       dbSyncStatus = "Blocked (Firewall/IP Whitelist)";
       dbSyncError = "Koneksi ke MongoDB Atlas gagal karena IP server aplikasi ini diblokir (Firewall / IP Access List di MongoDB Atlas).\n\n" +
                     `URI yang dicoba (Masked): ${maskedUri}\n\n` +
-                    "âš ï¸ CARA MEMPERBAIKI:\n" +
+                    "   CARA MEMPERBAIKI:\n" +
                     "1. Buka dashboard MongoDB Atlas Anda di https://cloud.mongodb.com\n" +
                     "2. Pada menu kiri, pilih 'Network Access' di bawah kategori 'Security'.\n" +
                     "3. Klik tombol '+ Add IP Address'.\n" +
@@ -3381,7 +3381,7 @@ async function startServer() {
     
     const notif: RealtimeNotification = {
       id: `notif-sys-${Date.now()}`,
-      title: "Konfigurasi Gateway Diupdate âš™ï¸",
+      title: "Konfigurasi Gateway Diupdate   ",
       message: `Konfigurasi Midtrans diperbarui. Pembayaran online sekarang ${isDisabled ? 'NONAKTIF' : 'AKTIF'}.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3597,7 +3597,7 @@ async function startServer() {
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-wa-config-${Date.now()}`,
-      title: "Konfigurasi WhatsApp Diupdate ðŸ“²",
+      title: "Konfigurasi WhatsApp Diupdate  ",
       message: `Integrasi Whatsapp API status: ${whatsappConfig.enabled ? 'AKTIF' : 'NON-AKTIF'} (${whatsappConfig.provider}).`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3741,7 +3741,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-treasurer-${Date.now()}`,
-      title: "Sandi Akun Bendahara Berubah ðŸ”‘",
+      title: "Sandi Akun Bendahara Berubah  ",
       message: `Password akun Bendahara baru saja diperbarui melalui portal bendahara keamanan.`,
       type: "warning",
       createdAt: new Date().toISOString()
@@ -3758,7 +3758,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-treasurer-reset-${Date.now()}`,
-      title: "Sandi Bendahara Direset ðŸ”’",
+      title: "Sandi Bendahara Direset  ",
       message: `Akun Bendahara disetel ulang ke sandi bawaan (bendahara123) oleh Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3779,7 +3779,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-treasurer-admin-${Date.now()}`,
-      title: "Sandi Bendahara Diubah Admin ðŸ”‘",
+      title: "Sandi Bendahara Diubah Admin  ",
       message: `Password akun Bendahara telah disetel oleh Kepala/Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3816,7 +3816,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-principal-${Date.now()}`,
-      title: "Sandi Akun Kepala Sekolah Berubah ðŸ”‘",
+      title: "Sandi Akun Kepala Sekolah Berubah  ",
       message: `Password akun Kepala Sekolah baru saja diperbarui melalui portal keamanan pribadi.`,
       type: "warning",
       createdAt: new Date().toISOString()
@@ -3833,7 +3833,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-principal-reset-${Date.now()}`,
-      title: "Sandi Kepala Sekolah Direset ðŸ”’",
+      title: "Sandi Kepala Sekolah Direset  ",
       message: `Akun Kepala Sekolah disetel ulang ke sandi bawaan (kepala123) oleh Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3854,7 +3854,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-principal-admin-${Date.now()}`,
-      title: "Sandi Kepala Sekolah Diubah Admin ðŸ”‘",
+      title: "Sandi Kepala Sekolah Diubah Admin  ",
       message: `Password akun Kepala Sekolah telah disetel oleh Kepala/Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3892,7 +3892,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-sarpras-${Date.now()}`,
-      title: "Sandi Akun Waka Sarpras Berubah ðŸ”‘",
+      title: "Sandi Akun Waka Sarpras Berubah  ",
       message: `Password akun Waka Sarpras baru saja diperbarui melalui portal sarpras keamanan.`,
       type: "warning",
       createdAt: new Date().toISOString()
@@ -3909,7 +3909,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-sarpras-reset-${Date.now()}`,
-      title: "Sandi Waka Sarpras Direset ðŸ”’",
+      title: "Sandi Waka Sarpras Direset  ",
       message: `Akun Waka Sarpras disetel ulang ke sandi bawaan (sarpras123) oleh Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3930,7 +3930,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-sarpras-admin-${Date.now()}`,
-      title: "Sandi Waka Sarpras Diubah Admin ðŸ”‘",
+      title: "Sandi Waka Sarpras Diubah Admin  ",
       message: `Password akun Waka Sarpras telah disetel oleh Kepala/Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3968,7 +3968,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-bk-${Date.now()}`,
-      title: "Sandi Akun Guru BK Berubah ðŸ”‘",
+      title: "Sandi Akun Guru BK Berubah  ",
       message: `Password akun Guru BK baru saja diperbarui melalui portal keamanan.`,
       type: "warning",
       createdAt: new Date().toISOString()
@@ -3985,7 +3985,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-bk-reset-${Date.now()}`,
-      title: "Sandi Guru BK Direset ðŸ”’",
+      title: "Sandi Guru BK Direset  ",
       message: `Akun Guru BK disetel ulang ke sandi bawaan (bk123) oleh Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -4006,7 +4006,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-bk-admin-${Date.now()}`,
-      title: "Sandi Guru BK Diubah Admin ðŸ”‘",
+      title: "Sandi Guru BK Diubah Admin  ",
       message: `Password akun Guru BK telah disetel oleh Kepala/Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -4043,7 +4043,7 @@ async function startServer() {
 
     const notification: RealtimeNotification = {
       id: `notif-pwd-curriculum-${Date.now()}`,
-      title: "Sandi Akun Waka Kurikulum Berubah ðŸ”‘",
+      title: "Sandi Akun Waka Kurikulum Berubah  ",
       message: `Password akun Waka Kurikulum baru saja diperbarui melalui portal kurikulum.`,
       type: "warning",
       createdAt: new Date().toISOString()
@@ -4059,7 +4059,7 @@ async function startServer() {
 
     const notification: RealtimeNotification = {
       id: `notif-pwd-curriculum-reset-${Date.now()}`,
-      title: "Sandi Waka Kurikulum Direset ðŸ”’",
+      title: "Sandi Waka Kurikulum Direset  ",
       message: `Akun Waka Kurikulum disetel ulang ke sandi bawaan (kurikulum123) oleh Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -4079,7 +4079,7 @@ async function startServer() {
 
     const notification: RealtimeNotification = {
       id: `notif-pwd-curriculum-admin-${Date.now()}`,
-      title: "Sandi Waka Kurikulum Diubah Admin ðŸ”‘",
+      title: "Sandi Waka Kurikulum Diubah Admin  ",
       message: `Password akun Waka Kurikulum telah disetel oleh Kepala/Staf Administrasi.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -4116,7 +4116,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-admin-${Date.now()}`,
-      title: "Sandi Administrator Utama Diperbarui âš™ï¸",
+      title: "Sandi Administrator Utama Diperbarui   ",
       message: `Password akun Utama Administrator telah berhasil diperbarui secara mandiri oleh Staf Administrasi.`,
       type: "warning",
       createdAt: new Date().toISOString()
@@ -4155,7 +4155,7 @@ async function startServer() {
       notifications.length = 0;
       notifications.unshift({
         id: `notif-reset-${Date.now()}`,
-        title: "Sistem Terbuka & Bersih! ðŸš€",
+        title: "Sistem Terbuka & Bersih!  ",
         message: "Data murid bawaan, catatan kehadiran, portofolio kedisiplinan, serta seluruh riwayat keuangan (SPP & Tabungan) berhasil dikosongkan. Aplikasi siap dioperasikan.",
         type: "success",
         createdAt: new Date().toISOString()
@@ -5047,7 +5047,7 @@ async function startServer() {
     const notification: RealtimeNotification = {
       id: `notif-bk-feedback-${id}-${Date.now()}`,
       studentId: studentCounselingLogs[index].studentId,
-      title: `Saran Guru BK Masuk ðŸ§ `,
+      title: `Saran Guru BK Masuk  `,
       message: `Guru BK memberikan saran & solusi untuk bimbingan konseling siswa ${studentCounselingLogs[index].studentName}.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -5086,7 +5086,7 @@ async function startServer() {
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-ca-${newLog.id}`,
-      title: `ðŸ“¢ Pengumuman Baru Kelas ${className}`,
+      title: `  Pengumuman Baru Kelas ${className}`,
       message: `${title}: ${content.substr(0, 80)}...`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -7347,7 +7347,7 @@ async function startServer() {
     // Send automated WhatsApp confirmation if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `ðŸ“¢ *KUITANSI PEMBAYARAN DIGITAL*\n` +
+        `  *KUITANSI PEMBAYARAN DIGITAL*\n` +
         `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL diterima & diverifikasi oleh teller sekolah pada ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}.\n\n` +
         `Metode Pembayaran: *${bill.paymentMethod}*\n` +
         `No. Transaksi: *${bill.orderId}*\n` +
@@ -7396,7 +7396,7 @@ async function startServer() {
       // Send automated WhatsApp confirmation if enabled
       if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
         const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-          `ðŸ“¢ *KUITANSI PEMBAYARAN DIGITAL*\n` +
+          `  *KUITANSI PEMBAYARAN DIGITAL*\n` +
           `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL diterima & diverifikasi oleh teller sekolah pada ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}.\n\n` +
           `Metode Pembayaran: *${bill.paymentMethod}*\n` +
           `No. Transaksi: *${bill.orderId}*\n` +
@@ -7548,7 +7548,7 @@ async function startServer() {
     // Send WA
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `ðŸ“¢ *KUITANSI PEMBAYARAN DIGITAL*\n` +
+        `  *KUITANSI PEMBAYARAN DIGITAL*\n` +
         `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL menggunakan saldo tabungan pada ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}.\n\n` +
         `Sisa Saldo Tabungan Anda: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
         `Terima kasih atas partisipasi aktif Anda.\n` +
@@ -8040,7 +8040,7 @@ async function startServer() {
     // Send automated WhatsApp confirmation if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `ðŸ“¢ *KUITANSI PEMBAYARAN SPP DIGITAL*\n` +
+        `  *KUITANSI PEMBAYARAN SPP DIGITAL*\n` +
         `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL diterima & diverifikasi oleh teller sekolah pada ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}.\n\n` +
         `Metode Pembayaran: *${bill.paymentMethod}*\n` +
         `No. Transaksi: *${bill.orderId}*\n` +
@@ -8111,7 +8111,7 @@ async function startServer() {
       // Send automated WhatsApp confirmation
       if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
         const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-          `ðŸ“¢ *KUITANSI PEMBAYARAN SPP DIGITAL (KOLEKTIF)*\n` +
+          `  *KUITANSI PEMBAYARAN SPP DIGITAL (KOLEKTIF)*\n` +
           `Pembayaran SPP *${paidBills.length} Bulan* (${monthList}) sebesar *Rp ${totalAmount.toLocaleString("id-ID")}* telah BERHASIL diterima & diverifikasi oleh teller sekolah pada ${now.toLocaleDateString('id-ID')} pukul ${now.toLocaleTimeString('id-ID')}.\n\n` +
           `Metode Pembayaran: *Manual Teller (Kolektif)*\n` +
           `No. Transaksi: *${batchOrderId}*\n` +
@@ -8204,7 +8204,7 @@ async function startServer() {
           executedItems.push({
             name: `Setoran Tabungan Manual`,
             amount: valAmount,
-            desc: `Siswa: ${student.name} â€¢ Memo: "${notes || "Setoran"}"`
+            desc: `Siswa: ${student.name} - Memo: "${notes || "Setoran"}"`
           });
         }
       }
@@ -8266,7 +8266,7 @@ async function startServer() {
     // Send automated WhatsApp void notification if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `âš ï¸ *PEMBATALAN / KOREKSI PEMBAYARAN SPP*\n` +
+        `   *PEMBATALAN / KOREKSI PEMBAYARAN SPP*\n` +
         `Transaksi pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* (${prevMethod} - No. Transaksi: ${prevOrderId || "-"}) telah *DIBATALKAN / DIKOREKSI* oleh pihak administrasi sekolah.\n\n` +
         `Status tagihan Anda kembali menjadi: *BELUM LUNAS (UNPAID)*.\n\n` +
         `Silakan abaikan kuitansi/bukti transaksi sebelumnya. Hubungi bagian keuangan jika ada pertanyaan.\n` +
@@ -8318,26 +8318,26 @@ async function startServer() {
 
     // Broadcast SSE notification
     const monthsText = waivedBills.map(b => `${b.month} ${b.year}`).join(", ");
-    let notifTitle = `Bebas SPP Prestasi ðŸ†`;
+    let notifTitle = `Bebas SPP Prestasi  `;
     let notifMsg = `Selamat kepada ${student.name}! Tagihan SPP bulan (${monthsText}) dibebaskan karena prestasi ${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}: ${achievementDetail || ""}.`;
-    let waHeader = `ðŸ† *APRESIASI BEBAS SPP BEASISWA PRESTASI*\n` +
+    let waHeader = `  *APRESIASI BEBAS SPP BEASISWA PRESTASI*\n` +
       `Selamat! Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)* dari kewajiban iuran bulanan.\n\n` +
       `Jenis Prestasi: *${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'}*\n` +
       `Detail Piagam/Apresiasi: *${achievementDetail || "Apresiasi Prestasi Siswa Utama"}*\n\n` +
       `Sekolah sangat bangga atas pencapaian luar biasa yang diukir oleh putra/putri Anda. Terus asah potensi dan raih masa depan gemilang.`;
 
     if (achievementType === 'non-prestasi' || achievementType === 'keringanan') {
-      notifTitle = `Bebas SPP (Diluar Prestasi) ðŸ¤`;
+      notifTitle = `Bebas SPP (Diluar Prestasi)  `;
       notifMsg = `Informasi untuk ${student.name}: Tagihan SPP bulan (${monthsText}) telah DIBEBASKAN (Bebas SPP Diluar Prestasi/Keringanan Khusus): ${achievementDetail || "Beasiswa Sosial / Keringanan"}.`;
-      waHeader = `ðŸ¤ *PEMBEBASAN SPP (DILUAR PRESTASI / BEASISWA SOSIAL)*\n` +
+      waHeader = `  *PEMBEBASAN SPP (DILUAR PRESTASI / BEASISWA SOSIAL)*\n` +
         `Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)* dari kewajiban iuran bulanan.\n\n` +
         `Kategori: *Bebas SPP Diluar Prestasi (Keringanan / Beasiswa Sosial)*\n` +
         `Keterangan / Alasan: *${achievementDetail || "Keringanan Khusus Sekolahan"}*\n\n` +
         `Semoga bantuan ini membawa keberkahan dan kelancaran dalam menuntut ilmu di sekolah.`;
     } else if (achievementType === 'kebijakan') {
-      notifTitle = `Bebas SPP (Kebijakan Yayasan) ðŸ“œ`;
+      notifTitle = `Bebas SPP (Kebijakan Yayasan)  `;
       notifMsg = `Informasi untuk ${student.name}: Tagihan SPP bulan (${monthsText}) telah DIBEBASKAN berdasarkan Kebijakan Yayasan/Sekolah: ${achievementDetail || "Kebijakan Khusus"}.`;
-      waHeader = `ðŸ“œ *PEMBEBASAN SPP (KEBIJAKAN YAYASAN / SEKOLAH)*\n` +
+      waHeader = `  *PEMBEBASAN SPP (KEBIJAKAN YAYASAN / SEKOLAH)*\n` +
         `Kami informasikan bahwa iuran SPP putra/putri Anda untuk bulan *(${monthsText})* telah *DIBEBASKAN (WAIVED)*.\n\n` +
         `Kategori: *Kebijakan Yayasan / Subsidi Khusus*\n` +
         `Keterangan / Alasan: *${achievementDetail || "Kebijakan Pengurus Yayasan / Sekolah"}*\n\n` +
@@ -8487,12 +8487,12 @@ async function startServer() {
       // Send automated WhatsApp confirmation for savings if enabled
       if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
         const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-          `ðŸ“ *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
+          `  *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
           `Pengajuan *TARIK PENARIKAN TABUNGAN* sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* telah DISETUJUI oleh Admin:\n\n` +
-          `â€¢ Status: *BERHASIL / DISETUJUI*\n` +
-          `â€¢ Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
-          `â€¢ Memo: *${transaction.notes}*\n` +
-          `â€¢ *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
+          `- Status: *BERHASIL / DISETUJUI*\n` +
+          `- Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+          `- Memo: *${transaction.notes}*\n` +
+          `- *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
           `Terima kasih.\n` +
           `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
         sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings WA:", err));
@@ -8567,12 +8567,12 @@ async function startServer() {
     // Send automated WhatsApp confirmation for savings if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `ðŸ“ *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
+        `  *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
         `Transaksi *${type === "deposit" ? "SETOR TUNAI (DEPOSIT)" : "TARIK TUNAI (WITHDRAWAL)"}* telah berhasil diproses:\n\n` +
-        `â€¢ Jumlah: *Rp ${valAmount.toLocaleString("id-ID")}*\n` +
-        `â€¢ Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
-        `â€¢ Memo: *${transaction.notes}*\n` +
-        `â€¢ *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
+        `- Jumlah: *Rp ${valAmount.toLocaleString("id-ID")}*\n` +
+        `- Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+        `- Memo: *${transaction.notes}*\n` +
+        `- *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
         `Terima kasih telah menabung untuk masa depan pendidikan yang cemerlang.\n` +
         `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings WA:", err));
@@ -8633,9 +8633,9 @@ async function startServer() {
     // Send automated WhatsApp confirmation for savings cancellation if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `âš ï¸ *PEMBATALAN TRANSAKSI TABUNGAN SISWA*\n` +
+        `   *PEMBATALAN TRANSAKSI TABUNGAN SISWA*\n` +
         `Transaksi *${transaction.type === "deposit" ? "SETOR TUNAI (DEPOSIT)" : "TARIK TUNAI (WITHDRAWAL)"}* sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* telah *DIBATALKAN / DIKOREKSI* oleh Admin Sekolah.\n\n` +
-        `â€¢ *SALDO AKHIR TABUNGAN SISWA*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
+        `- *SALDO AKHIR TABUNGAN SISWA*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
         `Terima kasih atas perhatian Anda.\n` +
         `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
       sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending savings cancel WA:", err));
@@ -8748,13 +8748,13 @@ async function startServer() {
       // Send automated WhatsApp notification (if enabled)
       if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
         const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-          `ðŸ“ *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
+          `  *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
           `Telah diproses *PENARIKAN TABUNGAN MASSAL* Tingkat ${grade} oleh Teller Sekolah:\n\n` +
-          `â€¢ Jumlah Penarikan: *Rp ${deductVal.toLocaleString("id-ID")}*\n` +
-          `â€¢ Keperluan: *${customNotes}*\n` +
-          `â€¢ Tanggal: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
-          `â€¢ Status: *BERHASIL*\n` +
-          `â€¢ *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
+          `- Jumlah Penarikan: *Rp ${deductVal.toLocaleString("id-ID")}*\n` +
+          `- Keperluan: *${customNotes}*\n` +
+          `- Tanggal: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
+          `- Status: *BERHASIL*\n` +
+          `- *SALDO AKHIR TABUNGAN*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
           `Terima kasih.\n` +
           `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
         sendWhatsappNotification(student.phone, waMsg).catch(err => console.error(`Error sending bulk savings WA for ${student.name}:`, err));
@@ -10178,12 +10178,12 @@ async function startServer() {
 
             if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
               const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-                `ðŸ“¢ *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
+                `  *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
                 `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${paymentType} telah BERHASIL divalidasi.\n\n` +
-                `â€¢ Metode Pembayaran: *${bill.paymentMethod}*\n` +
-                `â€¢ No. Order ID: *${bill.orderId}*\n` +
-                (targetTransactionId ? `â€¢ Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
-                `â€¢ Status: *LUNAS (PAID)*\n\n` +
+                `- Metode Pembayaran: *${bill.paymentMethod}*\n` +
+                `- No. Order ID: *${bill.orderId}*\n` +
+                (targetTransactionId ? `- Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
+                `- Status: *LUNAS (PAID)*\n\n` +
                 `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
               sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
             }
@@ -10230,12 +10230,12 @@ async function startServer() {
 
             if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
               const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-                `ðŸ“¢ *KUITANSI PEMBAYARAN ONLINE*\n` +
+                `  *KUITANSI PEMBAYARAN ONLINE*\n` +
                 `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${paymentType} telah BERHASIL divalidasi.\n\n` +
-                `â€¢ Metode Pembayaran: *${bill.paymentMethod}*\n` +
-                `â€¢ No. Order ID: *${bill.orderId}*\n` +
-                (targetTransactionId ? `â€¢ Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
-                `â€¢ Status: *LUNAS (PAID)*\n\n` +
+                `- Metode Pembayaran: *${bill.paymentMethod}*\n` +
+                `- No. Order ID: *${bill.orderId}*\n` +
+                (targetTransactionId ? `- Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
+                `- Status: *LUNAS (PAID)*\n\n` +
                 `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
               sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
             }
@@ -10528,12 +10528,12 @@ async function startServer() {
 
             if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student && student.phone) {
               const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-                `ðŸ“ *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
+                `  *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
                 `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Payment Gateway Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
-                `â€¢ Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
-                `â€¢ Kode Order: *${transaction.orderId}*\n` +
-                (targetTransactionId ? `â€¢ Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
-                `â€¢ Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n\n` +
+                `- Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
+                `- Kode Order: *${transaction.orderId}*\n` +
+                (targetTransactionId ? `- Transaction ID Midtrans: *${targetTransactionId}*\n` : '') +
+                `- Waktu: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n\n` +
                 `Terima kasih telah mendorong budaya menabung pada putra-putri Anda.\n` +
                 `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
               sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending WA:", err));
@@ -10838,12 +10838,12 @@ async function startServer() {
         // Send automated WA
         if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && affectedStudent && affectedStudent.phone) {
           const waMsg = `Yth. Orang Tua / Wali Siswa dari *${affectedStudent.name}* (NIS: ${affectedStudent.nis}).\n\n` +
-            `ðŸ“¢ *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
+            `  *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
             `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah BERHASIL diselesaikan secara online via Midtrans.\n\n` +
-            `â€¢ Metode Pembayaran: *${bill.paymentMethod}*\n` +
-            `â€¢ No. Transaksi (OrderId): *${bill.orderId}*\n` +
-            `â€¢ Waktu: ${new Date(resolvedPaidAt).toLocaleDateString('id-ID')} pukul ${new Date(resolvedPaidAt).toLocaleTimeString('id-ID')}\n` +
-            `â€¢ Status: *LUNAS (PAID)*\n\n` +
+            `- Metode Pembayaran: *${bill.paymentMethod}*\n` +
+            `- No. Transaksi (OrderId): *${bill.orderId}*\n` +
+            `- Waktu: ${new Date(resolvedPaidAt).toLocaleDateString('id-ID')} pukul ${new Date(resolvedPaidAt).toLocaleTimeString('id-ID')}\n` +
+            `- Status: *LUNAS (PAID)*\n\n` +
             `Terima kasih atas tertib administrasi pembayaran iuran sekolah.\n` +
             `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
           sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online payment WA:", err));
@@ -10982,13 +10982,13 @@ async function startServer() {
         ].join(", ");
 
         const waMsg = `Yth. Orang Tua / Wali Siswa dari *${affectedStudent.name}* (NIS: ${affectedStudent.nis}).\n\n` +
-          `ðŸ“¢ *KUITANSI PEMBAYARAN ONLINE (KERANJANG)*\n` +
+          `  *KUITANSI PEMBAYARAN ONLINE (KERANJANG)*\n` +
           `Pembayaran Keranjang belanja sekolah sebesar *Rp ${totalAmount.toLocaleString("id-ID")}* telah BERHASIL diselesaikan secara online via Midtrans.\n\n` +
-          `â€¢ Item Pembayaran: *${itemNames}*\n` +
-          `â€¢ Metode Pembayaran: *${actualPaymentType}*\n` +
-          `â€¢ No. Transaksi (OrderId): *${resolvedOrderId}*\n` +
-          `â€¢ Waktu: ${new Date(resolvedPaidAt).toLocaleDateString('id-ID')} pukul ${new Date(resolvedPaidAt).toLocaleTimeString('id-ID')}\n` +
-          `â€¢ Status: *LUNAS (PAID)*\n\n` +
+          `- Item Pembayaran: *${itemNames}*\n` +
+          `- Metode Pembayaran: *${actualPaymentType}*\n` +
+          `- No. Transaksi (OrderId): *${resolvedOrderId}*\n` +
+          `- Waktu: ${new Date(resolvedPaidAt).toLocaleDateString('id-ID')} pukul ${new Date(resolvedPaidAt).toLocaleTimeString('id-ID')}\n` +
+          `- Status: *LUNAS (PAID)*\n\n` +
           `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
         sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending cart payment WA:", err));
       }
@@ -11041,11 +11041,11 @@ async function startServer() {
         // Send automated WA
         if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && affectedStudent && affectedStudent.phone) {
           const waMsg = `Yth. Orang Tua / Wali Siswa dari *${affectedStudent.name}* (NIS: ${affectedStudent.nis}).\n\n` +
-            `ðŸ“¢ *KUITANSI PEMBAYARAN ONLINE*\n` +
+            `  *KUITANSI PEMBAYARAN ONLINE*\n` +
             `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via Midtrans telah BERHASIL diselesaikan secara online.\n\n` +
-            `â€¢ Metode Pembayaran: *${bill.paymentMethod}*\n` +
-            `â€¢ No. Transaksi (OrderId): *${bill.orderId}*\n` +
-            `â€¢ Status: *LUNAS (PAID)*\n\n` +
+            `- Metode Pembayaran: *${bill.paymentMethod}*\n` +
+            `- No. Transaksi (OrderId): *${bill.orderId}*\n` +
+            `- Status: *LUNAS (PAID)*\n\n` +
             `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
           sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online misc payment WA:", err));
         }
@@ -11111,12 +11111,12 @@ async function startServer() {
           // Send automated WA
           if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && affectedStudent && affectedStudent.phone) {
             const waMsg = `Yth. Orang Tua / Wali Siswa dari *${affectedStudent.name}* (NIS: ${affectedStudent.nis}).\n\n` +
-              `ðŸ“ *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
+              `  *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
               `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Payment Gateway Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
-              `â€¢ Saldo Baru Tabungan: *Rp ${affectedStudent.savingsBalance.toLocaleString("id-ID")}*\n` +
-              `â€¢ Kode Order: *${transaction.orderId}*\n` +
-              (transaction_id ? `â€¢ Transaction ID Midtrans: *${transaction_id}*\n` : '') +
-              `â€¢ Waktu Transaksi: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n\n` +
+              `- Saldo Baru Tabungan: *Rp ${affectedStudent.savingsBalance.toLocaleString("id-ID")}*\n` +
+              `- Kode Order: *${transaction.orderId}*\n` +
+              (transaction_id ? `- Transaction ID Midtrans: *${transaction_id}*\n` : '') +
+              `- Waktu Transaksi: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n\n` +
               `Terima kasih telah mendorong budaya menabung pada putra-putri Anda.\n` +
               `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
             sendWhatsappNotification(affectedStudent.phone, waMsg).catch(err => console.error("Error sending online savings WA:", err));
@@ -11219,11 +11219,11 @@ async function startServer() {
           // Send automated WA
           if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
             const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-              `ðŸ“¢ *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
+              `  *KUITANSI PEMBAYARAN SPP ONLINE*\n` +
               `Pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${payment_type} telah BERHASIL divalidasi oleh Midtrans.\n\n` +
-              `â€¢ Metode Pembayaran: *${bill.paymentMethod}*\n` +
-              `â€¢ No. Transaksi (OrderId): *${bill.orderId}*\n` +
-              `â€¢ Status: *LUNAS (PAID)*\n\n` +
+              `- Metode Pembayaran: *${bill.paymentMethod}*\n` +
+              `- No. Transaksi (OrderId): *${bill.orderId}*\n` +
+              `- Status: *LUNAS (PAID)*\n\n` +
               `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
             sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online payment web WA:", err));
           }
@@ -11345,11 +11345,11 @@ async function startServer() {
           ].join(", ");
 
           const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-            `ðŸ“¢ *KUITANSI PEMBAYARAN ONLINE (KERANJANG)*\n` +
+            `  *KUITANSI PEMBAYARAN ONLINE (KERANJANG)*\n` +
             `Pembayaran Keranjang belanja sekolah sebesar *Rp ${totalAmount.toLocaleString("id-ID")}* via ${payment_type} telah BERHASIL divalidasi oleh Midtrans.\n\n` +
-            `â€¢ Item Pembayaran: *${itemNames}*\n` +
-            `â€¢ No. Transaksi (OrderId): *${order_id}*\n` +
-            `â€¢ Status: *LUNAS (PAID)*\n\n` +
+            `- Item Pembayaran: *${itemNames}*\n` +
+            `- No. Transaksi (OrderId): *${order_id}*\n` +
+            `- Status: *LUNAS (PAID)*\n\n` +
             `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
           sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online cart payment web WA:", err));
         }
@@ -11408,11 +11408,11 @@ async function startServer() {
 
           if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
             const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-              `ðŸ“¢ *KUITANSI PEMBAYARAN ONLINE*\n` +
+              `  *KUITANSI PEMBAYARAN ONLINE*\n` +
               `Pembayaran *${bill.title}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* via ${payment_type} telah BERHASIL divalidasi oleh Midtrans.\n\n` +
-              `â€¢ Metode Pembayaran: *${bill.paymentMethod}*\n` +
-              `â€¢ No. Transaksi (OrderId): *${bill.orderId}*\n` +
-              `â€¢ Status: *LUNAS (PAID)*\n\n` +
+              `- Metode Pembayaran: *${bill.paymentMethod}*\n` +
+              `- No. Transaksi (OrderId): *${bill.orderId}*\n` +
+              `- Status: *LUNAS (PAID)*\n\n` +
               `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
             sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online misc payment WA:", err));
           }
@@ -11484,11 +11484,11 @@ async function startServer() {
             // Send automated WA
             if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student && student.phone) {
               const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-                `ðŸ“ *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
+                `  *PENGISIAN TABUNGAN ONLINE BERHASIL*\n` +
                 `Pengisian saldo tabungan sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* via Midtrans (${transaction.paymentMethod}) telah BERHASIL dikonfirmasi.\n\n` +
-                `â€¢ Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
-                `â€¢ Kode Order: *${transaction.orderId}*\n` +
-                (transaction_id ? `â€¢ Transaction ID Midtrans: *${transaction_id}*\n` : '') +
+                `- Saldo Baru Tabungan: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n` +
+                `- Kode Order: *${transaction.orderId}*\n` +
+                (transaction_id ? `- Transaction ID Midtrans: *${transaction_id}*\n` : '') +
                 `\n-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;
               sendWhatsappNotification(student.phone, waMsg).catch(err => console.error("Error sending online savings web WA:", err));
             }
@@ -12727,43 +12727,49 @@ async function startServer() {
           } catch (_) {
             parsedErrMsg = errText || parsedErrMsg;
           }
-          return res.status(500).json({ error: "Gagal membuat sesi pembayaran Midtransxœì=Ûr¹rïûXÆY“69’½·º´eÉ^®­K‰ÒºN9Žr@æpfv.–yUå5/yH> Uù‡üP¾ Ÿn 3`0)Ë{vO­·Ö–@hôèÈ(¤qŸ´ÈCÓ$eþ~’¤—äºóä¢þ\«Ÿ®É„f“i§Ðêõ	—ò±¬8‰Â4
-˜Ç’$JÚ­}ü‡LF3^’îg	S‚]’,š³L¡Âèø`·ßêUëáed2ô?’Æ‹ñ3úÜ§K½)ýaè³í	ÙùL<î“¢ª‚þå_  äi(‹FÃCøMë‚OI[tð%Tè=ÒgCì.Ó8à&ªwÉ#Ô¤ïÙ(ƒZmÞIX–'!ü@ Vž¶¿ÝÞîxïÒ(l$]°/£ÍSN.Î]’˜-ÆtIgî.é%äz)|y–¦ô’iKvýÅE¿©ê¤JšO&Ð O²$gÝòs”ø,úÕ„~ŠkT}KÖw•$Ìç	›dgIP},WÂ‚ðœ±bœjÄ%a±Q9IŠ‡d‹Æ|×g+a—<ÍXÒÀ{8:¤&¦QÒx8%¶ÈÊ‰À3ÅuˆYèÓi† 1ÎØÆEÆŸáŸ­-òG~f	Ÿ.	6Gˆ#[ä˜.,ÌÈH® 4 qìÅQšµ[ÕtÞ‹æj2±lÓ¡é2œvÂ~éât:HóGY²4°•‘åj¤ý.Q`X6‹|Àö€øÅGþ²À²Á—ªùê+ò%6Ô™¡NÁß80y„ÈpÐŒæäp8:$WôŸ§,Éèœ†^ËE¨ŠÓŠq³»äôrHmm¼í‰'0v¤>!»ÅBˆRµŽJT« ‘!ÁŠD«Õñ²„/ÚÑ®]ÿÞQí%1”X-'u:¿©¡sÐH	¢,òäY€æ€Ìhµ—¥T“FÉ(ØýIS–‘TmÅÐ¤ÕX™ûƒj…ìŠì	‰ÃÑÑ°^VòÏÝ‰¢Á‹&‘¦~8
-2Ç(Òr˜ç3×`óÿ¹i¨ª™!¾Õ7àæÝ$¢þ„e†QÆ§¤Bƒdõ‚>9a4Èø‚j_¡ÿjÝ¹ß'¢M	\±ù½8:/Œ®ÚëMg¹8B£jb‚¥+‰Ê³€©W²ŠZÙ¥INÚ¨\;­ª¾_0Šg]±î½U'Ó<é‚]“6rqß(Ä\wÈ˜%3šr!9…žR:]›ä$†–m‹@¦4¿QÒ
-@F£lÉ¢W?S«Õâ~o¸×ê\{†²eŒ³/åd¥|ÐêÀåï7®~Á7íŒ‹ÕÖW¯­/°A#˜&y=£Y:ˆcàä	ãq†,„1å—9¥&®°"Èûg¢Ðc!L‰®`Á,Žg`˜ŠñSÇ6µ2H¾dªnú¬dXW-¾rñçlæI¯iÀ!ù4áä“:4“‡÷Oá?…ä¡f$]üßýç“»g/O‡äxÿ`wðçÁÉàœ½Ü?„‡{ƒç§âR-À:@"ŒN¨Ï|ògF“ë5ÈÇ•©&%¨]žlÕ©1ec–>ødù€d, 3²»òã`4|bZèr>&qaãÿõ¿Éaä‘cÝÌ0ð,\"hï0_ Ã™4Ê#³L¬BQØéˆ¥Üê)±€@`Q…,Æh55 œîŸÈ1ÃTîäßå‚õ´›Ïsz>ï<pÌ¾h1EFâŒƒ@.;`;ŸƒL	(¬Kóäð“
-1€_ç !ÆØÇà{¨[ËŒ/p;Àð ûnáZ^‡§ÃìztpLƒ“ásrx†E{ Æ^ï¢â˜ëµâeCNh¬Ø•Õñ„UÛfÂ?qÙ±=#Ñ¹$××a¼v>Å–/e|Kc‹:7”òÛçsd²d„ÚrðŸn®»¬ÚÛZéWék®œ“õÌôï=2•OžE‹8``o>¡AÚø7Í4Ê>½¢S­†ÊÂÊ˜Íºæ¹´Ê±%öˆV^Wˆ-ùSrüeÄÿÂÒfcývúç1É73“iüêÖ±Ù«f"ƒ*^iã´Œ7Gû©ƒù‚|cäë‘ƒÈƒ ôŸ›ÒLr.Ø¹ó·Yä«ÖŒ‡“hrE hÇ 3\Š©öóÇk}5ô†¥’×gë¬ ](]èn¯ÖpzÇ,yFSm—¤úÑø›d=tVª¹kôiÐNÝ1¤Zi5NGËiÃä)b´ÍþÕT¯µ¡Ûd¬8Äó¼vC±XÊN««o,¯.XÜ¨2DO½K£XëÒ”X6ÖVxpØê<ÍÇžeŸÇ‹»Ö˜+ÌHÝÌÐ…¦=S¾ˆQÜÜ½æ„¡}€K-Õ-õf¸ÃtMl]µùx¸=Ýê´6u‹-®öž´ÀÎ„öXœÂkR¤` T®ØÆÛxÛKêU”¢ š3I•©©Q»d’§Y´PvýúõŽõ+ÉÏà;úhž½ÿ§t´ñ¨¯öAg4îò¦U,G¥4±R½Å›Uõf“~Ü'{ºÏ’¢=©0æ ÊKñáF…¥gn;ËÇö,_Éñpá9ÉÈªiø®gt4Nþë>Ùe	ê€Î$Ec&£¡5ù<¼¼¤3ƒ%@¬ž°_rž0/š¤ÆÆ†Mr\ÿô,"ê3±sØv”[;+åwÎ3
-^Zf¹ËU…ù|eqLSQnñ™5èÛ.Ô×öB	üàïy’ÏPëØø´ÖHlr ô çÈ§†;¼ÒnL(ßÊÀx:™EQp”ðKž.c&ÄÎý…¨xþ.ºŒRøé>b«Ú>w·Æ:÷ï[&š+Aî³´}_yÞ?½8ÁO÷Í-ù
-f$ äa>1§\èŠ‘Üÿ(„°ÜsR›"J§(‰Óú1£ª5ôq¼®æo¶ß>1:ç<@¿7œŒõ€õHì8m›ßåÁrÇµ¶ÚwhúØÑrÈø‹ZË„hšwj) V{TÔ™Ç,™ ’ß»¯ÑÔFâS¯VÅt(6°Z™<µÖÚ•Uû¤ÝØ‰RäOÉÍf^¿øm»¶]y‹´m\w:äyŒ	mwÜöÌ=	¦¯u¨C{@ÚöD¶dsûx(n+*Ú$=‘üµ« j}nëR§`XÃEƒïÚâºUŒËÞ7¾»ožòÍ
-’êT¸(:»&,HÙzý¯×‰#tÁdû,ÊhÐ4=pžôÉuÝËÿ°aé„,Û5Ø]vA?´·»† è¹eÐÌ	sl"Ï”•M+[	Þö‰ÚB˜ËÜ
-nƒÏ¦42cP, 	:Xa!›ˆU‡`æ¡è@Á´sóä5÷.Á@b‰äìq”ÍZˆxó3ô.¾VµAs¥ÂiëX2T•ëJD—ø:ÔW-TífO°VÇ2ô
-ÇŽFS&›u ¨šÙ—¶÷ „ºõ­R09èýàWÇrB¯TƒS±F;5¼ƒèõó	ÞÉ]‚vµppà7 /üÕ‹>
-Ü®È ’
-Ê'Îz²¡Þ¹&ì™;ÅƒaSéPÁZ]¸dƒÅ°ÖªékÏ¬çŒmf(&, ZBá¡®Ôêzú¡=œ'u1¦TÚŽé×>%òÀ¨­EÝ¦Åe0±C.p³¡w²²ÿ¢W;Ú³Ž«ë›6¦AQF[ðoj å¤6·›”XÙF‰µgQ*7“œxbq{Ç0ö,é°SÍ;nûlú¯ŸaEF´…ÛnåF–h±[ªL÷kj§´i“÷,yÉ–ÈKvá$à .T¡UÆSàqæ½¶k¤q|µ—U‹Œ‹DœHµUxësu
-^i°–â¡GŠsÇY>ß“ð|yÆ©Ø^óZ•p¨;IúŽSÁ24Ïfr w»ùtÊošD‹vÞŠÍ›‡¤ÕÇ-›¨8FF®ÿî›V-ú¿Ë¥©aô8‰@}eÿ”´fY§ý­-Ü`+ªz“h±…K¿õþÑ–lõÓH£E
-ä6Ž>¬Ñ²¤b„E“cºDŸÜˆw!Dk{î³Œò íTìá9†ÆÔ¢ñÏe¥é9lÝ×y\«u­7‘"@6ô7åIš‡tÁúŽc³s0x WÀ/PÝx5éøé"–:!ÌÑýáÂ)b0t«£5šf‰öA5Ã7Fæ|eØQk÷løjoxø¢÷|¿ÕµjC£¯[¤v_rf<[öÉ#»H¢²u†›½/À¤¶È0œÒ_ˆ8/ó†-£Õµ	œvöd¨ûsF{ÃÑ³^9­×ƒŸçÕsÁÞx†Ðä
-Ñ'Ú¾÷Ñòö®ÿÌ‚{kkXW°”·®;&>ÞK¾yÛ©£¥ÁÑY1r¤5nø›/¿BŽÂËËYžæ©ææþ¤öŠZkLÛ9©Ññqï§³WnšHeDm>v€â; ½ðSpòxûñ÷7“ke§­ZiEíFÍLWÚ|à»ô ÔmÂJ×Â/¿æ‹,h,Ý¼¶kèè4?W^Ê¦cÏGx©ªÛúÛíŽ9ôN#3Ø†ý¼pv8|~tr°+XÐoÍ	êÔkSVÐ>¾­ì‘šÚEå|ÂÒ~A{™^Qž‘)Ãˆ#e3tM¯IDÚbPÐÑèÔÀÀŒQP»55ÙC#yÖC°ÁNT¸Óšh[ƒÉ„ÅÙZ5ÁlŠþQ\ìáN@hVöÔµ.îÃ£º>ùittèÉÝ>]¶-#¤BâuGÃœ0ï5¼yÑÜtn+Ôþ”b@/—%n†ÂD5S@4»  Ï¬äùœ^×´¹ËÚÅçó<	êšÜŸ‘Õ±øÙìm†ÕQr&‰ÂR>­³¶Ã³­0‹|¸–ÕTTæisä2þÁ/«kŒyœÊ _´·ÎÍcb‹®|–NËXl=&Ô8Žé=w¸³eª	ÓsP·<-ƒNžIªa'âÖ 5c¸ˆ¢lÅ2ÐªY.¤3ßF¬*½*¨±_’Î3k$(Õ÷VÔa’œ²™›ô3(1I¿ˆ]¸¢IØ¶âø…ëVæysýT(öe D¿ÔHGÛÑâÿÆ9Åƒ3ü¯èÔ3XÆtÙŒùßT!EDOm×8¤ÄµedÆ¹Š wÞà Iè¼2ñoS›§ÄYà½‹8`®KZ¸E£\B7sxbý´1ªjµÁ™Å:Œ2$å¼c¡ªBÐÈ%½Ä€euRÞV/ªÇ[¬ð_?YÑAÄõÜÅ?Rþ
-¶¿~'Y!C·)äWeþé„·npÔŸÊÔ¿ÖÓõóf‰Ö¤~µÀOÍÀ›4mûjIv‹9væ¬W&ÛYfÛMévuÈÚ >)ÏŒ¸uÆá8ŠŸá4îxÓ*”
-ßA‹­Ù&îÀsG`=\÷÷‘(Xÿ.’swól@w" Ìn:Øuv8‰ÜxpÇyÖÒþê<V“ã8Gœþ¾’ '*F#Œ?rÿäŸ‹ÿû¯ÿ7òàåÙðtpä£ÇÎ^_ áìŸ^>)ñÏ¢ÅcŒ‹ÁŒ´ÚŠiÌ ¼{
-uåª0ÉßV6`‘ÎgäŠfXÝõª4¾XF$®¨EªíH’öË—]2˜ƒ¢}‰(á0·.XE)yš¡vŠ@ŠÃÒaaä`àHü1¢ðƒž'ø›ÏçÒüóåó¾‘–Œ åœ~ÖT>·z·9}·1Ãm{D%Ä0Â÷
-“¤ÁüÎE›^i¹lœÎW…¯Ì)çeÝ[føE.¬â¶?2þÈ8ø›Ì8Ð¢ÙñYèIó7ùe;ÖóØª2-‰Mãßº+U÷wšœ¼ZÍµœ6Ó»rø”+¬‘Â‘tRæÝùZåÄÎ¥°þ¼×m´c™lâÌqWYzD÷t —òýòó(L[³Ü6Ï¤ÿµõá#Oyü£ì={‡5«C¬Ü“ãÚ@r¿Kd£®´E']i5(ÛJ|úÔM¨òÂ·Ú5oÜÿ¤˜K 'Éô!Vˆú%}•›*uÄUÜ¼®ÜÑ–Á	ï‰£}½ÓÇ@ ZûW‘–Ðx_QuC†.ø0xÅšÄuÝ–§Å„PãV äšÞÖú-†W€Y›µÇX——#[{?‹‘ðž™ö¯BP[È‚¦DÜrB[}îoetoRB\[ˆMPdî¤0ÆËûO,9¡;"âüoWèÛ52¸¾>{3u¡V,t»Ì¥;×–Ã>eüë9 ‚¿ç~NÚY¯ëÜ¶»ÑFYT¯ìÍá”,h2±J¶‚ã«2`7à:4fÑd‘#ëŠF0ã)È,EàDiiä!X“0ÊÈRD"cãÚ,k80·Ñ\Ú•†‘ãz'4®:vŠ„fW=ˆÑ)˜ †:2ë-
-YËŠ1¹±aà:×,Ï|mä8HÁpgV³èÐ­Oš*æ·Â_Oø¯#û×¶/ÔèÞÑ Oš4B>K
-ˆäõ9na®AhOñ¸6`óp?bó( 3Ák8Ù„&ÆÖô]™‘B›*GãÀOÒ>`W".Ris5Ïõ5ÑÄ#ÇI„ëv:#’NÄ‘y“F’~ï&
-)–=h©'eÆ*&¨Â|0tŠÇ\Å=uK	µ»ì¢Ô*¿ì	sâo\ƒ±éT"½Ì·Q)F:Ê:+¯Ð³
-Ô6û·õ\e	òD^ªxáÅË×½“ýçg‡{7d$U9[ÚûN¤)­£ÿ|_×›ÍÒ° 5•H´ÐzsK%M5Ê®*\·»,Á‰_psïXK‹Yc6'ŸHÏXGPâlªþ½8Tº¹#ô5P•DrÚxïé%nx=`–‡”£5Î:d,(ë×Þ©„!SÐ­7Å’-ò¬7¾‹çæ³Å?n]}ÒøÿCœâi9Ý?ðnÑxßè«áàœá‘cýÎÑö³ÁèG"ELÇqÐ¨1„<X¢÷E07ž,Á¨¨¸Š#VÅ’%tV\]Y’gŽG57ÝJj‰ƒÇ‹íg‚Îå}™?	r¶í“U/sžÑPÝjtÃQážÚ(#G›Y'†¡Ö)ÅÝ¬@@)9dµÐ«ÎZ±²‰.¨n_|]Š$Ôe½ƒ¶¼¤ö©§K4:O=O%ð¼j†w§dÎ’w8y¶õ~³'“Ê»ÓSÉ‹ã5ˆ|#Ú.H[³×a‚4û–µ²)…m]ª¨B²n½©“D)K a¯oXû(+Ã	p‹'ô£Ïh^OD?ŸÑºþÝÛÁ7›€·ÛÄ)¼ot'zû±Ü
-^ÛrÜ¨…07h¡[‚4SvÝf•öØŠf•“(Eí/,TM®´¶ÆS§,ûa’³ƒ»råðkS][Â=;\¡K¡@x˜Eäh
-ŠCo9è‘ƒÄ+Çñ¼øOðï•”p{YÔSÑ“›e•ÈÇ0jí—´«,âgMáu£†úMr÷—%.ÓÓHÍ½¯nÆyó¶–J¢wÝ1vôàƒ‡çüÙ3 KªyjÔ(?÷‰
-ó%µ_Uî¡V­¯è…ØöæA*6o¸gÝ%²„óù‚_b¬þ"eñXÜÚ0 ÐÊ[ëäÁÌøäéË
-D[+á1~ß´Lµ¤ÈÄW¤•ö"‹ñÆº½M	”JwAu]—•T+ÔÑíR?FScÙëÎÖÝéÈº–„2bÔBY8|+ðpÃ´69:=:œÂ'Ÿ£5+‡‰¨<y$—O•Ø^"˜<QB“%Ò¾®ÅØžÖï^7¬¡Eýb;[—•ËOZ½‹Ñéž$]»4#fà)‡21¼Í`´kPŽžÍØdŽøTr„\q`†lƒh‰ä«GAÂ¨¿,	ª„€ùlì˜Ði!Àv
-Xúý‚šÏ {ì&Ê„ÇU„µzFÆ€4ñ"€””c”ÙËÎ.ÒÌ—ÑêºãÄýëqQÖêjÂg¿¨rsíÔ\Eæ±ÉVyÄ©.½ _¦yÂD ž<†*h?šB'úM!VòV‰ö^”«ÑDÉCöèp6BkKÒ4jÙ ¾t4rBÂ£;ÿ4¼®dVwËR:*zÕžÌúuÝ©²rÌ¶¶ünÄi½»µN•Ì¦™ƒøÇV^œ§³¥êÕ„lRÉacd¥H.¾\›‚G¤0ˆ¡Ri ½H¨ÏÈ÷…ô°$TTc*µ˜u!È:idOs#ùZÏ:^çÎœ“¾ubìÖ•ÌŽšf£°oòBÑìÒ€Ë€~QJÚ§Â@Øe‰<¹¢4ð}ÎÀ#šÒ@¿EApkß$,}ÄòV@}^ÖÝOÅß}¼|PoW¿È§¾:¥ÙŒ%Ž=R *½ e@^qëk‡Tl¤\•×ß&,è„µ·Þü3íýe»÷§·[—]Œ×½öî}ÔWæÆËŠbÀÔU”øÖ‚j5äõé.ÐÅè“mAYt–3ÑRÃŠ«”k›Ç¢Q+ÕéA¿†áú™‚DpýûeN¼”›N'Ì¾©ï'ÂåÓƒ¬Ä§z]SiíòÈ×ã\«×eúŸ›i]ó:ØOæ6ßêµÇ<ÉfÇHzýêkC”‡µÅ!“Y>—çzõâ[ôg,Éê¬¢zÛ€#‘½“KoV}­·˜Ìxà‹T½EõµÞ"åcôÓgò²MiêŽv‹GmíÂ¢½I"G˜÷BNsJzd°,¯CÇ?u7Ó¼9 UfTù±©þ®“\ì²•­mÒ±ŠšÚîûy‘1i·-‹šÚM&yÜÐ¸*kj=Ä—RC–ß›Zê’À(hjwlkK5¸Ú¹Yv£*
-©õ#÷óx%EÇ¹VX‰Å~£°4‡¢ÊL‚*?6Õw”]¶²µMPVQS['AYEMmÝe—5µ®”þ½©•ƒ Œ‚¦v5‚ZiRÈÂ:AéßWžÔê&“¦DÃÉR®æÊR“–´ÏÍmÜôT/½‚MSµÂæöNºª6·wÓV½´B¾Ì’æ–³ŠšÛÖèÌ(hnW§5³ÄÑ2Š.¶—€›óŠ‡&˜E²må3i.[j8j•?¤o­çoæ¯ö†«qŽðÆnð­à[»ÀnØ‰×µ=ßëB_>ÿ]Å¬¯[(îR8ûÒ*=M\£€IÌ)ùÞyÂˆ1`Nî}¬!Nn¡_ë{¨òÈ£<*ò‘´Íp£ªúˆè5 mc–¤–oí¸AZýz÷#Ü&–`W{TºBÂ
-dJ4Î™BÊ½ã\{vÀ·ÄªÔ½½­c­èQõ¨ÝÏ‘Ö«:Îó VYj êÞl¿u sÀ‚ŠÅÊÝ>.º6CŽÁU/†vû ˆE$×T;Zÿ¬p\…rŽ¸ÄpÊ’”Ð0§A°¼!â¡!¦Ðº—­×>„ò<—íãÀ ôqÅ ö?ÄøþSµ
-m¤rG²ƒìÎ+Æ™(j4Nûð¼Ï`–ðyJEž-Fwƒá6“<Ô ÍHâLnÁvlBÆ"¸‰Îg<1Âyä[RúòÂEÙ7-Ÿ2õˆÜ«£>­÷³$ÈÕuæó<OŽö©Ø¼3Ì¹öwßƒ€9‹Òõiy‚¯)¾g	>´[œ£WàdHH6ùÃHfBƒrÙ(¨']”ÓÝ(•³<Â–ñ<v¨|H³(‘±ñ"$W?ó&ê}Y£Õï>H‹ˆ/™Q±€qåiUjl2Ê×ËhPó±—ç×Z_M¯mz&¯'Bó«ù£Þøœ“„_Ñ%ÍT tZQŸ8õù\Æ{Ü€*|Á¨ÔÆ@­Yû96£ëëƒ´ðn?é¢Ž¦åé¡Q·ºéÝQŸ§j®¾jlLÉ‘½jHmêHs`N+©_¡bJƒÔt_'á»±²oÞPÃú‘§ I–zÂ´Ud†b4Õ’GÅ
-ò²Ý>¹/åàýJÅøÕï«,?öm¼êÞH÷Œ.âfËY¿*“ŠË¤‹¤yiU†G&5õ!ß*Q’xdOã2"ïcA8×¨ŠÌ5ñA× …pîbZ¼—¨‡²ß×ì
-ŸìSMy#NLÎ·ÈÁª;çtQ³rÎw.gX+ÕéÄÍÝÎ|ð=eó’gÐ*Vsƒo)ÓA»Sl³€`¸§$Í]š¸}Pr•eHHvYeJÈË”4›+?|ƒƒdù»Qb‚*.SŠAÎ>ù&¥ß—-³¾z4pÖlÃ|ÚÊÈiˆkó~{6FMÕL;c(õÒº’·!ºñMt³@_£µm÷µFšÓ¸á-´EËÉÖ;+Ex¦3á0Â²/¤@Ód|ñ€k(ôPŽ÷>®Öh ~§6Šœþ¹»š*†Dý4;¥ií~KÆÅH^_é5·agü7QÖ¯lE˜Šõ÷-L¬mA|æ%ÃKÞ4ËáD<b	¾¨Õh&ÜYz÷?¸5é|ªS>÷ýZêÔx‹äsG—<ZóŽ‹æûjCÒ({FA hcÚ”PÅú;½·¦H1y5å-öw÷–ÀŒ|BŽ_Pð)È.Ñ†è1•×†×àÏ’(äa~†ÍÈ$OqÇ¾|~ˆ›Ô<[*
-vò5@6P­Š¿¢Ã‰´¼œ7¥ïùD*/«$ˆ.E [k+ô¾}ôØ‹Ë\}§£÷˜­ #F“,Å ¦vQÖçÀÍVúþR>f\Ô3£û€ÓUOÔ”=|á¤2\ÌiõHB½oe¡–çCé,JŠg] žº¾
-²d“V§zÙëëŽzàD¾oÒ#r,.ó-»3ïá¥î|D0Jâü-ŽÉWä”â«x¡³ðÅ;{›Í®:ãèÇ§–`D[Õ08Ì€.ñ¼,v@"feá˜Næ—âcÌà´ÿwÛÓGß?¦e Æ«J¿™~óû¶,#¢ä$[xqByÖ‹18Y–Õ„ŒGõ Þ4™ôÚÐOÏå1Ÿ$²§¤UÓÃy)”ü[o¥øê,”Å~€ÿµCõî¯Ùý£?=þ ÿkÝ«ŸäA–•¨ø™‹D€÷,ˆbñ¸3v©Df¼‰·há+h‚¯¯‚|ûBÅåËc `¤÷ÞáÑÞþùþáÏê^×òAÕò¤2L•ŽÄ3®}õŽA~Îª|*‰cœ,0À{(,˜SÁ/e5BÉ²©êâ#¾«êã1LÂ"ŸI•P-
-ˆµò],ÚÒp$%^²;ô*(òí ã®Oõ:5ðÚ1Åä.ã[×‚W,M®|°I+µ¬Ø‡CG„jà“v§£U’÷Aƒ°UŠ$Ús°vÕy	ú+èÍ2 ¢®¢E	?—Lê¢â6K\©ý°×_ÊŸRõSÈ>dJ9Â_ÓŽgáLÀö‰Ð“†N¼A#žâu >{3¥ðo>pÿÔ·LŠVj'*c`wÈ×êRœO€ÒÖ¤,Äl{â?D­c
- ŽÚŠ8“<Q½gà“¿ý­­ ÓîgQšõï}¬€ªDªŠÉF(!5¡GÄÉþžÇ´=Þ£"Bï)Ë†8GðÖÛê­m\Â¥’-ÍËI:Ê&ÓÔXàqX¨‚3tV
-hšr±wnÀÄï»âƒ(}Z9=+ªuHñ‘ùµ­÷ƒDâê¿¯ÑYÍÙøKO0SØÅ…œÆÃ^.o¾¹"?ìT#Ã›+t`v&æuñt(Ü°`Q^æŒ%hhàûr\©™×©IØÐØgÝxDÚj½œõvÏ^ž“ýÃÃÃý·âL~~vÙ9O’£úŽ6¡¡"úcžWÝUèzr[6”ÏÔçqÃkôå]â²^°S!î‹au‰x4Õ¼xIø9x˜ƒ#UÓˆµ*_‘Äè†ìØïU…õV w—òÊU —³lúøë+±Lmf}Ø0?9&GÆO5#H¾ÀM]·Ó=m˜g-ÕÏQM³W,w{Äç¸ Ç,á‘Ïçš²“3†¡2Ò…É#ÑmtŒ–±ŽÌÊB°ÒQxíÍ´A¹hì›ä(R¨q+W­è4æWEâv	ß«,ívô÷Û«Þ¡ÇC¼œÿ(dmqy¹V]r®¯õl£ù²]ù£ÍÄEHžü½cæ®î£=aàQ}è5Ö ~0´Uœï¥‚
-W¢¿Á{ÔM€o=,m·i—Œ~©WÒ'ôCùöI{\•t,¨êè„-¢÷b·]tX9“è5NB‡®'h£ÏMË®ì'õ}
-»Ïj£bŒÓ— Ó3Ò²Ô#œÄ…Ë½wp¥ãŸúƒ—Þšt kñ€Ú1’Ä~¢7%™+d€+N‰´o-ÊW4_ûVnn@øâ¢c¬æs¤Ï)G.‹H†6L¡}pc•„ìíâž‡‚Yëó‹¦ß®]Ü¹Ê$Ù©¤îwË¶ÐÔV¥çÈC³W†×Qž¤äùn»øëÑööv³º»Ajº[Þ;‡‹¬Òå*‹M}L-¹Æ ô¯ÝÆŠ@8 /Ç{ÅOÎ7lƒwC£Dí¶Mó ï–+D°vŸÀŠ´š·°aßSA–j£­ÜkNßw»®6É@˜‹ú¤2ñLz‰åæx§?£ØÝP¾%Àû   ÿÿ õTv
+          return res.status(500).json({ error: "Gagal membuat sesi pembayaran Midtrans Snap: " + parsedErrMsg });
+        }
+      } catch (snapErr: any) {
+        console.error("Error creating Midtrans Snap token for SPMB:", snapErr);
+        const cIdx = spmbCandidates.findIndex(c => c.id === candidate.id || c.nisn === cleanNisn);
+        if (cIdx !xœì=kwÛ6²ßû+PÝÜFJ$ÚI_»ÊqsåGR5ñãXvsöäæÚYˆ(’å#Ž6ëÿ~g @P–§ÛîizšØ0 óf€Ò{Ò!Ÿ¾"åŸ4^Œ÷hèsŸf,õÒ8àÖžý]ò¤óL¯I?°QµÚÚç›ò§„eyÂ? jåiûûííŽ÷>Âö'Â’$Jú¤õ*
+Ù<åä
+à\Ó%‰ÙbL—4¡!9ä~ÿ¦PvE¨K“4¤ñA’x–¦ôŠ‘›²ë›¯¾*úMU'åPÒ|2}’%9ë–Ÿ£ÄgÉÐ¯> ô³hÎÂêS†¿ö]%	óyÂ&ÙyT'æ,/+Æ©F|u³ÉŒ´}BÃeµ“(L£€yGíÖþCxH¶hÌ·p}¶vÅÓŒ%=¼‡£ë·ºˆÔ·àý%â”,Ø"('Ï×!f¡O§.€Ä8s`†¶¶Èù•%|º„’Gˆ#[ä„.,ÌÈH® 4 qìÅQšµ[Õt>ˆæj2±lÓ¡é2œvÂ~ëât:dç'…£,YØÊÈ§r5IÈÓ°K˜C–Í"°½ ~óÆ‘¿,0Ä§¤ýµjE¾ù†|uf¨SðwL#2Ü'4£99ŽŽÈ5}ÏÇÄç)K2:§¡×rªxI10B‹÷¦<ôÛœu9¤¶6ÞöÄ;VŸvvv
+$ý‹¨RµŽJT« ãìXñ#€hµ:^–ðE»#Úµëß;ª½$†«å¤nCçw5tî)A’EžpŸd hÈÌ€V›qYtXLîvÖTC e$U[14i5Væþ ƒZ!»&ûBâAÁpt<,„W•üsw¢hpÇ¢IDd)ãFÀÂä8xÈ£HËaœÏ\ƒÍcüç¶¡ªf†øVß€›w“ˆú
+”FŸrR<
+’Õúä”Ñ ãv¤}…þ«uç~Ÿ\Š6=$pÅæ>áè¼0ºnwn.5œå>àhª‰	–®$*Ï¤rRÉ*r(he—&9iNw;­ª¾_0Š=®ÆX÷Á§ª“iGtÁnH¹¸oân:dÌ’M¹œBOIñ®‹MrCË¶E
+  Sš_‹(é £Q¶dÑëˆŸ©Õjq¿7Üoun<CÙ2ÆÙ—r²R>	“Ëßo\ý‚o
+Ú«­¯^[_`ƒ8F0MòfF³tÇÀÉÆãYcÊ¯r KM\cE÷{¢Ðc!L‰®1M`'3°LÅø©£I}€ä+¦ìu=³ \ÓÃô
+Ú_þ#›yDÒÅpEH>M8yä¤ŽGÍäáýoø¿á%y¬I—„<Ú=u6$'‡»ƒNGäìøÕÁ|8Ú¼8_d P [tB}¶à“0šÜ<ª=©ì¤i”€ÎåÉVS6f)é£/A“HÆ:#»§?FÃ× £…"çsà*zä(òÈ‰na(–²-dw”/€×Ìáå‘Y& Ž¦lÊ­~RVSaD~ËÝXÈ]h~vp*×
+¤P§“×4|ŸgdFÓn>ÏÉ0ôóyç‘cÞE‹1è/G`rÁÏùDI @aX<˜#‡Ÿ|Ôƒü:Å0Æ8v ßCÝH–¨$`s…W°Ü	˜u'î{ädp4<d×£Ãr8œ_£s,Ú öz—£¤°PoâAãÀ®d¤Ž'ŒÙ6CcÅi¾"0 Ù¹$Ô7a³v>Ç„/E{Kcˆ:”bÛçsd¯d$ÚrØíŸo¥»ŒÙ»ç?ék®|’õ¬ó=2MOö¢E003_€¸ mü›få‚åž^ÓNƒ…ŽÆBE`¥Ìf]«\ãØ{Dã®+–ü)9þ2âÿdi³~7»üËXâ›YÇÆ4~w£ØìU³ŒA¯4‡¿Þ)âÍÑ~æ`¾ _ÀXùzä0Áò  ÍÄç¦4“œæmÀÆ|Âm–ùª5ãá$Z€\Ú1è—bªýüéF_½a©ÛõÙ:+@JºÛ«uœžÇ1KöhªmŽ”C?¿g“Ì£ …®ÂJ)w>Ú©›!†]T+­ÆéhyË m˜<EŒâ£Ù­šêµ6ô–Œußxž×n(KÙébcõåÕ‹U†è©wik]šËÆÚ
+Ç[]¤ùxÁ³ìË8owÑšs…©›º°Ñ´gÊ1Š›û×œ0#´p©¥‘€£º£Þ—b˜®‰­«6ÿæcÛÓ-NbúêÅÎV{_Z`çÂûìMaƒ5)R0 ªWìÞm¼Û%õ*JÑ	Í¹¤ÊÔÔ¨]2ÉÓ,Z(‹þ/ýzÏúÈäWp}4Ï^ÂZÂúŸÑÐÆ“¾ÚþœÑ¸?ÈCšþ[u²•ÒÄJõclVÕ›MúiŸìë>KŠö¤Â@šƒ*/Å‡–ž¹ë,ŸÚ³|-ÇÃ…ç$ ª
+¤á»žÑÑ8ùoûd—%`¨:“™Œ†ÖäóðêŠÎ– ±zÊ~ËyÂüýh’û~4ÉqýÓó8ˆ¨ÏÄ†aÛQnm¨”ß=:Ï(xi™å*Wæó•Å1ME¹ÅgÖ ïºPßÚu.ðƒ¿çI>C­cãÓZ#±½ Ðƒž#ŸîðJ»1=¤|+ãédEÁqÂ¯xx¶Œ™;¢âÅûè*Já§‡ˆ­j×ÜÝë<|h™Xh®¹ÏÒöCåyÿrüòx?=4wâ+˜‘€67†ùÌœr¡+Fr÷£Âr·Im‰(Iœ¢$N=.j'CÇëjþvûÝ3£ÓqÎôûq«ÉèP/ XOÄ^Ó¶Ùø},Gq\k«}‡¦O-Ç€œ¿¨µLØ©¦yw¡–bµI5AyÂ’	*ù±éMm$>÷j5QL‡bóªU‘És»a­]YµOÚ(EþœÒlæ%ð‹ß¶kÛ•·HÛÆu§C‘'À˜ÐÙvÇ½`oÀÀÜW`úZ‡:´G¤mOdK@6w÷‰â¶¢r¡AÒÉ_»
+ªÖç¶.u
+†5\4ø®-®PÅÈ±áCó¼»±ûæ)ßÞ© ©N…‹¢³Â‚”­×ÿzÔOÞ-I—Eš¦Î“>¹®{ù7Ò"e»»Ë.èÇöv×=÷ š9e`ŽMäQ²²ie+ÁÛ>Q[a™ƒû@ÁmðÙ”æAfŠ AÇ+,d±
+òÌ<}(˜vn¸æÞH,‘œ=Ž²Yo~†ÞÅ×ª6h®T8mK†ªr]‰è_‡úº…ªÝìiAÖêX¦€^áÄÑhÊd³U3ûÚö„P·¾U
+&} Ÿ÷êXNèµjp&Öh§†w½~>aÀ;ù¢KÐ®üä…¿zqÂ'@ÛTÒAAùlá`ÁYO6Ô;×Dƒ=s§x°!l*ê#X«—l°ÖZ5cí™õÜƒ±ÍÅ„DK(<Ö•úc]O?¶‡ó¬.Æ”JÛ1ýÚçDµõ¯¨Ûô¡X£,â$vÈ%n6ôNN^öj'zÖ)u}ÓÆ4(Ê ‹þm¤œÔæv[ƒ+Û(±¶¥r3É‰WÁ ·wcÏ’;5áÐ¼ãÖ¸Ï¦ÿúöÀPd”±Z¸íVn´a‰²¥Êt¿f¡öwJ›6ùÀ’Wl‰¼dNâBZe<ÞGÝk»FÇW{Yµ€¸H„‡TûP…·>W‡ïè•F›`)z¤8wœåcð=9Ï—gœŠí5¯U	‡º“¤ï8,Cól&× p·›O§,ñ¦I´h7á­Ø¼yLZ}Ü²‰Šdäú¾ki’¯²ÚåÒÔ0z’D >„²NZ³,‹ÓþÖn°U½I´ØÂ¥ßúðdKÆ³‰úi$Ñ"rG×hYÒG1Â¢É	]¢On„¹¢µ½ðYFyö
+*äð#bjÁ‡øç*‰Òô‚
+¶îë<®ÕºÑ›H‘ ú›ò$Í.Bº`}Ç1Ù9	<Ð«‰Hà—¨n¼štüŸtKæèþ‚pi‚¡:ÈÕAM³Dû šá[£s¾2Ú¨µ{>|½?<zÙ{qpÐêZ5„¡Ñ×-R»Æo93ž-ûä‰]$QÙ:ÇÍÞ—`ÒÀ?[dNéoDœ@‡WyHÃ–ÑêÆ‚N;û'²ÔýÖ9£ýáh¯WNëÍà×Æyõ\°7žá%´¹Bô‰¶|²¼½›ÿ³àÁ§šÃ–¡,å­›Î¥‰wÀ’oßuêhiptÖGŒÜiDþæË¯£ðòj–§yª¹¹¿¨½¢ÖÓvNjtrÒûåüõ?š&RQ›`ƒø@/ü’œ<Ý~úãíäZÙi«ÖBZQ»ƒQ3Ó•€6ø.=(u›°‡ÒµðÃ¯ù"K7¯íš::ÃÏ•—²éØsÁ^*béÁ¶þ~»c½ÓÈ¶a+/œ_Ÿ®Ç
+ô;s‚:õÚ”´ï*{¤¦vQ9Ÿ²4†_Ð^¦×”gdÊ0âHÙ]Ók¶t<:300cÔnMM¶ÀÐÈ@žõÐ#lAC°î´…&š…ÆÖ`2aq¶VM0›¢„ÿSÔ€—»@¸š•=u£‹Gƒûð¨®O~yr7O—mË©xÓÑ0'Ì{o^47Û
+µ¿¤ÇKÃe‰[£¡0QÍÌÍÂ. È3+y>§×5mî²vñù"O‚z£&÷gdu,~6{›€auœœG¢°”Ï*Ã¬í°Çl+L… ­e5•yÚ°ŒðËêcg2¶í­ó˜Ø¢+Ÿ¥“„Ç2[5Ž£ÅAzÏål™jÂôÔ-OË “g’j˜Æ‰¸5@Í.¢([±´j–éL³«J¯jì—$¤óÌyIõ½µA˜$gìcæ&ýJLÒ/b®i¶­ð}áºaÐÄ»¹~*”û2 ¢_
+VqÊüƒ$‘1ÉUüß8§xpc†ÿzË˜.›1¿ãñ{€*¤ˆè©í‡”²¶ŒÌ¸PàÎ[$	]‚W&þmjóœ8¼÷ÌuI·h”KèaO¬Ÿ6FU­68³X‡Q†¤\t,TÕAš ¹¤—°¡³N¦ÛêE5âx‹–Á*ÆàtR/wõŠy©ì8+Ü¦!àFdp­7IÄRŒ¯ bÕ‰6Ž¿2ý
+¶¿~/É~!Cw)äW%üé„·npÔßËŒ¿SÖÓõófù~Ö¤~·Ä¿ÏM¼›4mûj¹uÿ‰©uæ¬WæØYfÛmYvuÈÚ >+ïÎŒ¸uÆá8ŠŸá4îxÓ*”
+ßA‹­Ù&îÄ¿Gî_=\÷Ï‘(Xÿ>r swó$@wþŸÌk:<x}~4‰ÜxpÇyÖ²ýê<V“ã8Gœþ¹rÿ&*F#Œ¿RþäŸKB½:žŽ€vTÖØùëÁÑK¤šƒÓÁËÁágåûY„x‚Aq"’‘Vû0‰÷Ož®4@#ùÇI,òøŒ4@ñÑŒ§»Y•¿¯ˆŒšHµ­HÒ~õªKsÐ°¯fÖs(%/@%tÁ ‚!CˆoX6LÌƒ,‰»"8~Ðÿð‰|BŒ¹D>Ã)Ò²´4Ó/šÃç6Pï7™ï.ö÷“mHk„Ö÷~a‹4ØÝ¹hÓ+M–óøª˜ã•ÉâÄ¼¬{ÇÔ¿H‚UÜöWªÁ_©ÿ‘©Z;ž= iþ6‡¬bÇz[U¦e¯iü[÷¡êŽN“wW«¹–·fºUgr…%RxNÊ¼?'«œØ…Ö_ÖÓº‹v,³LœÉí*=è.ô²àB¾€ £_…ik–»&î™ô¿¶>|âÉsa"Ï}”½‡qÁ`ï°fuˆ•{r\èBîw‰lÔ•6 è¤+­e[‰OŸ»û4)R0sH}%?ürË%ÐŽ‹“äú+D	ý’‡>ƒ‰ÊÝ”:âŒ*n^× îhËà„÷ÌÑ¾ÞéŽc  ­‚ý»ÈKh¼¯¨º!5|¼ÒMbºîÊÓbB¨q+PrMïjýÃ+À¬ÍÚc¬‡««€‘­‚½÷¢@„þ`¦ý«Ô² )·œÐVŸû[™ Ý›”×–b÷™;)Œòþ3KNèÎƒ5ÿÏú>Œª¯ÏÞÌY¨Ý.“è.´åÀxOøzˆà¸ŸÓ@ÄtÖë:7†ín´QÕ+{s8%šÌA,’­ ÃøêdØ¸Y4YäÈº¢Ìx
+2K8QZyÖ$Œ2²!ÈXÇ¸&KÇZÌý3×v¥aä¸Ñ	«Ž¡™ÃUO§bt
+¦¨¡ŽLw‹BÖ²‚KnmXE¸4ËÃ^9R0Ü™Uã,:të“æŠù­0Ã×þëÈþµíÀK5º÷4È“&Á’"yO}Ž{—kÚs<§Ø<ÜØ<
+èLðÚ!N6áÅI‰±'}_f¤Å¦ÊÑ8ð³´Ø•ˆ‹TGÚ\Ís}M4ñÈIáº€Îˆ¤qVÞ¤‘¤ß»‰BŠešFêI™q¯Š	ªøŒ™â1WOÝRBí.»(µÊ/ûÂœø×`l:•H/mTn‘Ž²ÎÊ[ó¬µÅþ}=IY‚<•—(Ex2ñêMïôàÅùÑþ-©HU2EG•ö~ùIëè?ß×õf³4,ècF%-´ÞÞRISò ‡ë×Áí.KpâÜÜ;ÑòaÖ˜ÍiÁ'’Æ3ÖÙ“8”ª/N“nï}T%‘œ6Þsz…ÆÞ˜å!åh¤³‹“Éú}w*SÈtëM±$F‹<ëïã¤¹ùPñ¯[Eo9b<Ã£rvp:<à]¢/ñ~Ñ×ÃÁ9Ç³Æú£í½Áèg"åKÇqÂ¨qƒ<U¢E7+Á¨¸€#&Å’%tV\XYÒfŽç4·ÝBjÉ‚çŠí=Aäò–Ì_-ÛÆIó	ã«œg4TwZ´ì<#ÜW;dä8`3ë¨°Q8!QÜÄ
+Œ’1VËºêx+›¨è‚ÆöÅ×¥y@šAæìûTäµ:]òÐyÔy&Q€‡T3¼Ð<%s–¼§À¾0à¨÷‡=ŽT¾×½E^ž¬AÜÑtAÒš‘¤Ù—0§•!)êÊ:E½¡uçœ$JYêà|„½¾5í£€',À}Ð¾ M=ý|A“úOoüÞn÷Ýmç¦p¹Ñ‡4Üè5ŒÆrÿwmsq£Â"Ü …nþmÐLs›uTa+šý[ŽŸ98´¾0K5¹6BÐBØ"=²ìKÄjHÎî_È•Ã¯Mum	÷Tl,pý…j,…áa‘ã)(>½ä G2è/ÇCâS<¶k¼ERÂíeQOÅJnr~U"ƒ¦µ_Ò®2ƒ÷šÂ/êþõ›,:âîS-K\¦g‘š{_Ýƒóö]-qDïºclãÁ÷³æ;–TóÜ¨Q~îfGj¿ªLC#ˆZ_Ñ
+±íÍ#T0ÞpßºKd	3æó¿Â 1üEÊâ±¸£a •wÔÉû™/ðÈÓ—ˆ¶VÂMü±7h™jI‘‰¯H+íD&ã­uW›(•î‚êº.+©V¨£Û¥~Œ¦Æ²×=¬ûÓ‘u-	=d<ÄP…²
+p 8Tà'à.9hmr|v|88ƒO>GkV,¡x"ÜH.Ÿˆ$±]C0y¢„&K¤}]Š±=¯ß´,îS-â‰úÅ6¶.+—Ÿ´z—£³}+$ºvEFÌÀ=e¾ax—Áh—žíÍØdŽøTr„\s`†lƒh‰äÓFAÂ¨¿,	ª„€Ùkì#˜Ði!Àv
+Xúm‚šÏ »é&Êô
+ÇÅƒµzF~€4ñ"€””c”ÙËÎ.ÓÌ—±éºãÄý›Kq-ÖêjÂQ¿¬2qíD\EæYÉVy®©®¸ ß¦yÂDÔ<{*h?šB'ú½ Vò‰ö”«ÑDÉCöèp6BkKÒ4jÙ ¾v4rBÂó:ÿ4¼®÷cV7ÉR:‹*zÕ£œÌúuÝ©²rÌ¶¶ünÄi½»µŽ’Ì¦™ƒøÇV^œ§³¥êÕ„lRÉacd¥H.¾Ü˜‚G$,ˆ¡Ri ½L¨ÏÈ…ô°$TTc*µ˜uýŽÈ1idOs÷ùZÏ1^ç†œS¼ubìÖ•ÌŽšf£°oòBÑìˆÒ€Ë~QJÚgÂ@Øe‰<®¢4ð}ÎÀ#šÒ@¿3Apkß$,}Äò@}^ÖMÏÅß}¼jPoW¿¶§¾ÿ9¥ÙŒ%ŽQ *½ e@^qÇk[Tl¤\——Ý&,è„µ·Þþíýs»÷÷w[W]Ò½ñ|ÒWæÖ«‰bÀÔu”øÖ‚j5ä}ôé.ÐÅè“mAYtž3ÑÁŠ‹“k;Æ¢Q+Õ‘A¿†áúA‚DpýûUN¼”ÛŽ$Ì¾©ï'ÂåÓ#«Ä§z]SiíòÈ×ƒ[«·dúŸ›I\ó:ØOæ6ßêµÇ<Éf'HzýêkC”‡µÅÉ’Y>—‡~zõâ[ô=–dõFVQ½mÀ‘ÈÞ€É¥7«¾Ö[Lf<ðEÂ©Þ¢úZo‘ò1úÇéž¼ÚASšz£]ÆâQc[»°ho’È1&»³œ’,ËËÏñOEÝÍ4oH•™U~lª¿ë$»lek›t¬¢¦¶~^äGÚmË¢¦¶Ç“I74®ÊšZñ]Çå÷¦Vƒº$0
+šÚØÚÂR®6EB–Ý¨
+=jýÌý<^IQÃq®Vb±ß(,Í¡¨2“ ÊMõÝe—­lm”UÔÔÖIPVQS[7AÙeM­ë¥ojå (£ ©] Vš²°NPú÷…Ç³ºÉ¤)QÃp²”«9†²Ô¤%íss7=ÕKo`ÓT­°¹½“®j…ÍíÝ´U/m†P§/³¤¹¥ƒÆ¬¢æ¶5:3
+šÛÕiÍ,q´Œ¢«€í'àæ¼æ¡I#f‘l[ùLšË–ŽZåé›DëyÄ›ùÃ«½áj†#¼±|g'øÎ.°ÛvâumÏ÷æ–x—/³B1«ÆËŠ›å¾´ÊI—&`ærJ~tÞš0bcŒ ˜“Ÿjˆ“[è7úª<ò(ÏƒŠ$$m3\¦ªþ"ªC@Û˜%©å[;nCP§V¿ßmw‰%ØÕ^Ž®°™s¦òà“Á87ž…ð-1p*uooëX+zTF}Ã j·q¤õªŽó<¨Uc–¨:¤·ÛïÀ° b±rw‹€®Í8cpÕ‹¡Ý=(bÉ5Õ‚Ö?+W±Åƒ†#®,œ²$%‡4Ìi,o‰x(â†)´îeEëµO¡<ÄÕúx 0}E1ˆƒ1¾öT­B©ÜÀÑ†ì »óŠq&ŠÓ><ï3Ø†%|žR‘\‹!Ý`¸Í$5@3’8“[°€]›±n¢óOŒpùr”~!§¼^QöMË‡K="÷ê¨Oë½Ä,	r`D5Bù<Ï“£ýL*6os®ý=Ä÷à`Î"Žt}ZžàÛ‰X‚íçè'8Ê’Mþ0’éÏ \6
+êIDåt7Êß,°e<ÁÒ,Jd@¼ˆÃÕÏ¼‰zMÖhõ§ÒÂ`GÅ;_f(,`œGyZ•›Œò­2”ÅÆ|lÀåùµÖWÓ[c›žÉëÙÏ<äjþ¨w>ç$á×tI3VÔ'M}>—ñ· 
+ß>p#*µ1Pk@Ö~|ÍèÅzuÇ@àú -¼Û¸¨£iyzhÔ­îu·@Ôç©šk£¯Sr¤,¤R›:Ò˜³JêW¨˜Ò uDÚ×IøþB¬ìë6Ô°~æ)H’¥ž%m™¡Mµ¤ÇQ±‚¼Z·OJ9ø°R1~õÛ)Ë}¯ºw Ò=£‹¸ÙrÖ/Æ¤âêè"SAÞR•á‘IM}È—IÔ$Ù×¸LÆÅ?øTÎê†"]M|Ð5h!œû†˜¯#ê!ì5»Â'û\SÞˆ“ó-ÿ¥A°ê†9]Ô¬œó}…ËVÃJuz/qsw3|OÙ¼dZCÅ*p®`ð-e:h×ˆm, ÷”¤¹OÓ·J®²	É.«L	yƒ’bså‡/n,Ÿ#JLPÅJ1èÁÙg_Ÿôç²eÖWÎšm˜Ï[9qOÞÏÆ¨©¢šig¥^ZWò6D—"¾¥‰nèk´¶Mà¾ËHs7¼s¶hy*Ùz§ào¥Ït&FXö…hšŒ/žk…>ÊñÁ§ÕTÂŸÔF‘Ó¿bwCSÅ¨Ÿg§4­ÝÉ¸É‹á+½æ6 ì4ÿ&Êú­S±~f¶¾…‰µ-ˆoÁ¼dx³›f9œŠ‡A,#ÁµÍ„{KâþG·&‚ïñqCu*€ÁçÞ“ßKZOc‘qãè’'k^lÑ|©QmHeÏ(mL›ªX_c§÷Î)†"ï£¼Ãþîþ˜‘OÈÉ›ª>Ù%úÂ=¦òÚðÒûY…üŸÌ/Â°™äI"nÔ—Àq“šgKEÁÀî@¾ÈªUñã×t8‘¶€W€ó¦ôŸHåe•Ñ•dkma…Þ÷Ožzqyk‹¢ïtôÓžtÄh’¥ÀÔn!Êú|¸ÙJ?\É§‹‹zftpºjã‰š²‡¯œ‚T†‹Y#­^I¨­,Ôò|(EIñ(¢Äs×WAö€lÒêTïx}ÛQÏ™È×LZ£áÉ`DNÄ¾ewæS=#¼Â}OFÉBœ¿Å1ù†œQ|£op^£xUo³ÙUg|ýø°Œh«‡Ð%ž—eÀHÄ¬,ÓÉüJ¼hŒ|‚öÿk{úäÇ§´¬Ä¸`UéwÓï~`ß—¥`âA”œdï0N(Ïz1¦'Ë²’ñ„£À›&“~Aúé¹<æ“Döœ´Jbzüq!o‚’_bëe¡ß˜…R Øð¿v¨Þý=»ò÷§á­{õ“<È’£¿r‘ðQ,žÒàaÆ®”ˆÀŒ7ñò,|ÍAð­Uo_©¸|y ŒôÁ;:Þ?¸88úU]æZ>ŸZ^~T&ƒ‰£Ò‘x´µ¯~Ã1È/ÂY•#qŒ“ø …sJ ø¥¬fC(Y6U]|ÂWT}<†IØaä3©ªE±V¾‚E[Ž¤ÄËAV`‡^E¾d\ð©Þ¢^;¡˜ÜEb|ÙZðj¥Éµ6"ia¥–ÕûcèˆP|Ò.àt´jBò>j¶J±€D{ÁÖ®:/ A¿b½YDTÀU´ (ágàÒ€I]T\a‰ƒ+µöú[ùSª~
+ÙÇL)GCøkÚñ<œ	Ø>zÒÐ‰·hÄ3¼Àç`o¦4þÒgîŸZà–IÑJíDeìùVÝ„ƒó	PÂš”å€˜mOü‡¨uLÔQûRg’‡!ªwà|à·¿µ`Úý,J³þƒOP•HU1Ù%¤&ôˆ89Ãßó˜€¶ÇËSÄA(â=eÙçÞz[½L£K¸T²¥y#IGÙdš+<®Up†ÎJM³3.öÎ˜ø}W|¥Ï+§gEµ)þ 2¿¶õ~H\ýà÷5ú1«9ûé	f
+»¡3ÃxØÏåu7×ä§jdx]`…ÌÎÄ¼.ž…Œ`!Êœ±|RŽ+5ó:µ1	û¬H[­·ƒó³ãÞî`ïÕù	98z9<:x'Îäèg—Ý˜óñ$I!1ªïøDJ ¢?æyÕ…®¶eCù(ýx7¼=_îÑ!.ë;â¾V—ˆ?SMÀ‹wƒ_€‡)18R5X«òÍH,nÈŽý:eQXoúpw)ïYz9Ï¦Ã__‹ejk0ëÃ†ùÉ192~
+¬Aònêj¼…œnèiÃ<k©~Ž‹hšýb¹Û#>À8a	|>ïÔ”½˜œ1•‘.L‰n£c´ŒudV‚•>¸ˆÂ«hl¦ÊEcÙ$Ï@‘BãX¹hEŸ2 1‡¼²¨(Ï­Kø^5`i·kì¤¿Ö^õ<âüÇ!k‹+ÈËµê’}}¬GÍwìÊm&.Bòäï3wõ mè	ê£D¯´yð“)ð ­ªà|Tˆ¸ý-^žn|çai»M»d,ðK½’î<¡‡Ê'°OÚãª¤c`AmTG§l}»í¢ÃÊÁh˜D¯q:t=A}ŽhZve?€¨ïSØ}Vcœæ¸Ü¨ ˜ž‘–] áü$6(lXî½ƒ[(ÿÔŸ·¬¨ðÎ< Y‹ÔŽ‘$öh½ý$É\!ÌXqJ¤}xgQ¾¢ùÚ·rsúÀ÷c5}A9špYDb0„˜°a
+íƒ«D d÷<ÌZŸ_5ývãâÎU&ÉN%uŸ¹X¶…¦¶*=G›m¸2¼~Žò$%ÈÛÅ_O¶··›ÕÝ-RÓµØò²9\d•f(WYlòècjÉ5 í6VÂùXx9†Ø+~r¾Xk¼%j·mšx¡\!‚µûVì¤Õ¼…ûž
+²Tmå¾Xsú¾ÛMµI‚À\Ôg•ÙˆgÒK,_ð0Ç‹üÅî†ò-Þÿ  ÿÿ •‹ë·

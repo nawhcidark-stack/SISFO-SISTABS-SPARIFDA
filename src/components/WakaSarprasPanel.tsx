@@ -329,7 +329,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
       });
       const data = await res.json();
       if (res.ok) {
-        setPasswordSuccess('🎉 Kata sandi berhasil diperbarui secara aman!');
+        setPasswordSuccess('[SUKSES] Kata sandi berhasil diperbarui secara aman!');
         setOldPassword('');
         setNewPassword('');
         setConfirmNewPassword('');
@@ -824,7 +824,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               {schoolIdentity?.address || "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan"}
             </p>
             <p className="text-[10px] text-center text-slate-600 font-mono mt-0.5">
-              NPSN: {schoolIdentity?.npsn || '20519342'} • Unit Sarana, Prasarana &amp; Logistik Inventaris
+              NPSN: {schoolIdentity?.npsn || '20519342'} - Unit Sarana, Prasarana &amp; Logistik Inventaris
             </p>
           </div>
 
@@ -951,7 +951,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 print:border-none print:shadow-none print:p-0 print:max-w-full">
             <div className="flex justify-between items-center border-b pb-3 print:hidden">
               <div className="text-left">
-                <h3 className="font-extrabold text-slate-900 text-sm">🖨️ Pratinjau Label QR Code Inventaris</h3>
+                <h3 className="font-extrabold text-slate-900 text-sm"> Pratinjau Label QR Code Inventaris</h3>
                 <p className="text-xs text-slate-500">Jumlah label QR Code yang siap dicetak: {barcodePrintData.length} label.</p>
               </div>
               <button 
@@ -1028,7 +1028,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider font-mono">Vice Principal Desk</span>
                 <h1 className="text-2xl font-black tracking-tight">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h1>
                 <p className="text-slate-300 text-xs font-semibold mt-0.5">
-                  🛡️ Portal Administrasi Sarana, Prasarana &amp; Logistik Terintegrasi (Waka Sarpras)
+                   Portal Administrasi Sarana, Prasarana &amp; Logistik Terintegrasi (Waka Sarpras)
                 </p>
               </div>
             </div>
@@ -1135,11 +1135,11 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
            {/* Tab Button bar switchers */}
           <div className="hidden md:flex border-b border-slate-200 gap-2 mb-8 bg-white p-1.5 rounded-2xl border">
             {[
-              { id: 'dashboard', label: '🏠 Beranda' },
-              { id: 'katalog', label: '📦 Katalog Inventaris' },
-              { id: 'peminjaman', label: '🤝 Peminjaman Barang' },
-              { id: 'pengajuan', label: '🛒 Pengajuan Pembelian' },
-              { id: 'laporan', label: '📊 Laporan & Cetak' }
+              { id: 'dashboard', label: '  Beranda' },
+              { id: 'katalog', label: ' Katalog Inventaris' },
+              { id: 'peminjaman', label: ' Peminjaman Barang' },
+              { id: 'pengajuan', label: '  Pengajuan Pembelian' },
+              { id: 'laporan', label: ' Laporan & Cetak' }
             ].map((tab) => (
               <button
                 key={tab.id}
@@ -1185,7 +1185,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       }}
                       className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-[11px] rounded-xl transition-all cursor-pointer shadow-sm"
                     >
-                      📦 Tambah Aset Baru
+                       Tambah Aset Baru
                     </button>
                     <button
                       type="button"
@@ -1196,7 +1196,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       }}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[11px] rounded-xl border border-slate-700 transition-all cursor-pointer"
                     >
-                      🤝 Catat Pinjaman
+                       Catat Pinjaman
                     </button>
                     <button
                       type="button"
@@ -1207,7 +1207,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       }}
                       className="px-4 py-2 bg-amber-500 hover:bg-amber-600 text-slate-950 font-black text-[11px] rounded-xl transition-all cursor-pointer shadow-sm"
                     >
-                      🛒 Ajukan Proposal Belanja
+                        Ajukan Proposal Belanja
                     </button>
                   </div>
                 </div>
@@ -1265,7 +1265,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 flex flex-col gap-4">
                   <div className="flex justify-between items-center border-b pb-3">
                     <div>
-                      <h4 className="font-extrabold text-sm text-slate-900">⚠️ Barang Rusak &amp; Perlu Perbaikan</h4>
+                      <h4 className="font-extrabold text-sm text-slate-900">[PERINGATAN] Barang Rusak &amp; Perlu Perbaikan</h4>
                       <p className="text-slate-550 text-[11px] mt-0.5">Datar inventaris dengan kondisi Rusak Ringan atau Rusak Berat.</p>
                     </div>
                     <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold uppercase">
@@ -1275,7 +1275,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                   
                   {items.filter(i => i.condition !== 'Baik').length === 0 ? (
                     <div className="py-6 text-center text-slate-450 text-xs font-semibold">
-                      🌱 Sip! Semua unit inventaris sekolah dalam keadaan baik saat ini.
+                        Sip! Semua unit inventaris sekolah dalam keadaan baik saat ini.
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2 max-h-[220px] overflow-y-auto">
@@ -1283,7 +1283,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                         <div key={item.id} className="flex justify-between items-center bg-slate-50/70 border border-slate-150 p-3 rounded-xl hover:bg-slate-50 transition-all">
                           <div className="flex flex-col text-xs">
                             <span className="font-bold text-slate-800 leading-tight">{item.name}</span>
-                            <span className="text-[10px] text-slate-400 font-mono mt-0.5">{item.code} • {item.location}</span>
+                            <span className="text-[10px] text-slate-400 font-mono mt-0.5">{item.code} - {item.location}</span>
                           </div>
                           <span className={`text-[10px] font-bold px-2.5 py-0.5 rounded-full ${
                             item.condition === 'Rusak Berat' ? 'bg-red-50 text-red-600 border border-red-150' : 'bg-amber-50 text-amber-700 border border-amber-150'
@@ -1298,7 +1298,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
 
                 <div className="bg-white border border-slate-200 rounded-3xl p-6 flex flex-col gap-4">
                   <div>
-                    <h4 className="font-extrabold text-sm text-slate-900">⚡ Status Ruang Penyimpanan</h4>
+                    <h4 className="font-extrabold text-sm text-slate-900"> Status Ruang Penyimpanan</h4>
                     <p className="text-slate-550 text-[11px] mt-0.5 font-semibold">Pemetaan persebaran kuantitas barang.</p>
                   </div>
                   <div className="flex flex-col gap-3 h-[250px] overflow-y-auto pr-1">
@@ -1342,7 +1342,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     }}
                     className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs border border-slate-300 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                   >
-                    🛠️ Kelola Kategori &amp; Lokasi
+                       Kelola Kategori &amp; Lokasi
                   </button>
                   <button
                     onClick={() => {
@@ -1372,7 +1372,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                   <div className="flex justify-between items-center pb-2 border-b border-slate-800">
                     <div>
                       <h3 className="font-black text-sm tracking-tight text-white flex items-center gap-1.5">
-                        📂 Master Kategori &amp; Lokasi Penyimpanan
+                          Master Kategori &amp; Lokasi Penyimpanan
                       </h3>
                       <p className="text-slate-400 text-[10.5px]">Tambahkan jenis kategori baru dan zonasi lokasi koordinasi sarpras sekolah.</p>
                     </div>
@@ -1389,7 +1389,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     {/* Part A: Kategori */}
                     <div className="bg-slate-950/40 p-5 rounded-xl border border-slate-800/80 flex flex-col gap-4">
                       <div>
-                        <h4 className="font-bold text-xs text-slate-200">🆕 Form Penambahan Kategori</h4>
+                        <h4 className="font-bold text-xs text-slate-200">  Form Penambahan Kategori</h4>
                         <p className="text-[10px] text-slate-500 mt-0.5">Daftarkan kategori logistik asrama / sekolah baru.</p>
                       </div>
                       
@@ -1433,7 +1433,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     {/* Part B: Lokasi */}
                     <div className="bg-slate-950/40 p-5 rounded-xl border border-slate-800/80 flex flex-col gap-4">
                       <div>
-                        <h4 className="font-bold text-xs text-slate-200">📍 Form Penambahan Lokasi Barang</h4>
+                        <h4 className="font-bold text-xs text-slate-200">  Form Penambahan Lokasi Barang</h4>
                         <p className="text-[10px] text-slate-500 mt-0.5">Daftarkan lokasi penyimpanan ruang atau lorong sekolah.</p>
                       </div>
 
@@ -1481,7 +1481,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               {showItemForm && (
                 <form onSubmit={handleSaveItem} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
                   <h3 className="font-extrabold text-sm text-slate-800">
-                    {isEditingItem ? "📝 Sunting Detail Barang Inventaris" : "🆕 Masukkan Barang Inventaris Baru"}
+                    {isEditingItem ? " Sunting Detail Barang Inventaris" : "  Masukkan Barang Inventaris Baru"}
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
                     <div className="md:col-span-2">
@@ -1695,7 +1695,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                   </div>
                 ) : filteredItems.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-2">
-                    <span className="text-3xl">🏜️</span>
+                    <span className="text-3xl">  </span>
                     <p className="text-xs font-bold">Tidak ada barang inventaris yang sesuai dengan filter.</p>
                   </div>
                 ) : (
@@ -1750,12 +1750,12 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                               <td className="py-4.5 px-2">
                                 <div className="font-extrabold text-slate-800">{it.name}</div>
                                 <div className="text-[10px] text-slate-400 font-mono font-bold mt-0.5">
-                                  {it.code} <span className="text-indigo-650 font-sans font-black ml-1.5 px-1 bg-indigo-50 rounded">📅 Beli: {it.purchaseYear || "-"}</span>
+                                  {it.code} <span className="text-indigo-650 font-sans font-black ml-1.5 px-1 bg-indigo-50 rounded"> Beli: {it.purchaseYear || "-"}</span>
                                 </div>
                               </td>
                               <td className="py-4.5 px-2">
                                 <span className="px-2 py-0.5 rounded-md bg-slate-100 font-bold text-[10px] text-slate-600 block w-fit mb-1">{it.category}</span>
-                                <span className="text-[11px] text-slate-500 font-medium">📍 {it.location || "Gudang Utama"}</span>
+                                <span className="text-[11px] text-slate-500 font-medium">  {it.location || "Gudang Utama"}</span>
                               </td>
                               <td className="py-4.5 px-2">
                                 <span className={`px-2.5 py-0.5 rounded-full font-black text-[9px] uppercase tracking-wider ${
@@ -1855,7 +1855,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 <form onSubmit={handleCheckoutLoan} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
                   <div className="flex items-center justify-between border-b border-slate-100 pb-3">
                     <h3 className="font-extrabold text-sm text-slate-800 flex items-center gap-2">
-                      <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm">🤝</span>
+                      <span className="p-1.5 bg-amber-100 text-amber-800 rounded-lg text-sm"></span>
                       Formulir Pencatatan Peminjaman Barang
                     </h3>
                     <span className="text-[11px] text-slate-400 font-medium font-mono">Status Otomatis: Dipinjam</span>
@@ -1890,8 +1890,8 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                             if (!it) return null;
                             return (
                               <span className="flex items-center gap-2">
-                                <span>📍 Lokasi: <strong className="text-slate-700">{it.location || 'Gudang'}</strong></span>
-                                <span>•</span>
+                                <span>  Lokasi: <strong className="text-slate-700">{it.location || 'Gudang'}</strong></span>
+                                <span>-</span>
                                 <span>Stok Sisa: <strong className={it.availableQty > 0 ? 'text-emerald-600' : 'text-rose-600'}>{it.availableQty} unit</strong></span>
                               </span>
                             );
@@ -2060,15 +2060,15 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       className="w-full px-4 py-2 text-xs border border-slate-200 rounded-xl bg-slate-50/50 cursor-pointer text-slate-700"
                     >
                       <option value="Semua">Semua Status</option>
-                      <option value="dipinjam">🚨 Aktif (Dipinjam)</option>
-                      <option value="kembali">✅ Selesai (Kembali)</option>
+                      <option value="dipinjam"> Aktif (Dipinjam)</option>
+                      <option value="kembali">[OK] Selesai (Kembali)</option>
                     </select>
                   </div>
                 </div>
 
                 {loans.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-2">
-                    <span className="text-3xl">🤝</span>
+                    <span className="text-3xl"></span>
                     <p className="text-xs font-bold">Belum ada pencatatan peminjaman barang inventaris.</p>
                   </div>
                 ) : (
@@ -2097,7 +2097,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                               <div className="text-[10px] text-slate-500 mt-0.5 font-mono">Jumlah: {l.qty} unit {l.notes ? `(${l.notes})` : ''}</div>
                             </td>
                             <td className="py-4.5 px-2">
-                              <span className="text-slate-600 font-mono text-[10.5px] font-bold block">📅 {l.loanDate}</span>
+                              <span className="text-slate-600 font-mono text-[10.5px] font-bold block"> {l.loanDate}</span>
                               {l.returnDate && (
                                 <span className="text-[10px] font-medium text-emerald-600 block mt-0.5">Kembali: {l.returnDate}</span>
                               )}
@@ -2180,7 +2180,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               {showProposalForm && (
                 <form onSubmit={handleSaveProposal} className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs flex flex-col gap-5">
                   <h3 className="font-extrabold text-sm text-slate-800">
-                    🛒 Formulir Pengajuan Pembelian Baru
+                      Formulir Pengajuan Pembelian Baru
                   </h3>
                   <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                     <div>
@@ -2335,12 +2335,12 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
               <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-xs relative overflow-hidden">
                 <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-teal-505 to-indigo-600" />
                 <h3 className="font-extrabold text-sm text-slate-800 mb-6 flex items-center gap-2">
-                  📝 Riwayat &amp; Status Monitor Pengajuan Pembelian Sarpras
+                   Riwayat &amp; Status Monitor Pengajuan Pembelian Sarpras
                 </h3>
 
                 {proposals.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-1">
-                    <span className="text-3xl">📭</span>
+                    <span className="text-3xl"></span>
                     <p className="text-xs font-bold">Belum ada riwayat pengajuan procurement.</p>
                   </div>
                 ) : (
@@ -2375,7 +2375,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                                   ? 'bg-rose-50 text-rose-850 border-rose-200'
                                   : 'bg-amber-50 text-amber-850 border-amber-205'
                             }`}>
-                              {prop.status === 'approved' ? '✅ Disetujui' : prop.status === 'rejected' ? '❌ Ditolak' : '⏳ Menunggu'}
+                              {prop.status === 'approved' ? '[OK] Disetujui' : prop.status === 'rejected' ? '[GAGAL] Ditolak' : '  Menunggu'}
                             </span>
                           </div>
                         </div>
@@ -2430,7 +2430,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 {/* Printable card 1 */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-slate-300 transition-all">
                   <div>
-                    <span className="text-[28px]">📜</span>
+                    <span className="text-[28px]"> </span>
                     <h3 className="font-extrabold text-sm text-slate-800 mt-3">Laporan Aset Inventaris Sekolah</h3>
                     <p className="text-slate-500 text-xs mt-1">
                       Rekapitulasi lengkap seluruh daftar barang, jumlah total, ketersediaan, serta lokasi penyimpanan.
@@ -2463,7 +2463,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 {/* Printable card 2 */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-slate-300 transition-all">
                   <div>
-                    <span className="text-[28px]">🤝</span>
+                    <span className="text-[28px]"></span>
                     <h3 className="font-extrabold text-sm text-slate-800 mt-3">Laporan Aktivitas Peminjaman</h3>
                     <p className="text-slate-500 text-xs mt-1">
                       Pencatatan rincian peminjaman barang oleh para tenaga pendidik, baik yang aktif maupun riwayat pengembalian.
@@ -2494,7 +2494,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 {/* Printable card 3 */}
                 <div className="bg-white border border-slate-200 rounded-2xl p-6 flex flex-col justify-between shadow-xs hover:border-slate-300 transition-all">
                   <div>
-                    <span className="text-[28px]">🛒</span>
+                    <span className="text-[28px]"> </span>
                     <h3 className="font-extrabold text-sm text-slate-800 mt-3">Laporan Sinking Budgets Belanja</h3>
                     <p className="text-slate-500 text-xs mt-1">
                       Daftar kalkulasi nominal anggaran pengeluaran belanja sarpras yang disetujui untuk pembiayaan instansi.
@@ -2657,7 +2657,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     }}
                     className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                   >
-                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">📊</span>
+                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg"></span>
                     <div>
                       <h5 className="font-extrabold text-xs text-slate-800">Laporan &amp; Cetak</h5>
                       <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cetak draf log berkas inventarisasi</p>
@@ -2674,7 +2674,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     }}
                     className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                   >
-                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🛠️</span>
+                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">  </span>
                     <div>
                       <h5 className="font-extrabold text-xs text-slate-800">Kelola Kategori &amp; Lokasi</h5>
                       <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengaturan label &amp; ruang sarana</p>
@@ -2689,7 +2689,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     }}
                     className="p-4 border border-red-100 hover:bg-red-50/50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all col-span-2 sm:col-span-1"
                   >
-                    <span className="p-2 w-fit bg-red-50 rounded-xl text-red-650 text-lg">🚪</span>
+                    <span className="p-2 w-fit bg-red-50 rounded-xl text-red-650 text-lg"> </span>
                     <div>
                       <h5 className="font-extrabold text-xs text-red-600">Keluar Portal</h5>
                       <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Logout &amp; mengakhiri sesi kerja</p>
@@ -2700,7 +2700,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 {/* Quick access to download Mobile Apps in the bottom sheet menu */}
                 <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
                   <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                    📲 Unduh Aplikasi Mobile Resmi
+                      Unduh Aplikasi Mobile Resmi
                   </span>
                   <p className="text-[10px] text-slate-500 leading-normal">
                     Gunakan aplikasi mobile resmi untuk kemudahan akses monitor laporan logistik sarana prasarana &amp; data lembaga langsung lewat HP.
@@ -2918,7 +2918,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                         </span>
                       </h3>
                       <p className="text-[9.5px] text-slate-400 font-mono">
-                        No. Bukti: {receiptLoan.id} • Siap dicetak / disimpan
+                        No. Bukti: {receiptLoan.id} - Siap dicetak / disimpan
                       </p>
                     </div>
                   </div>
@@ -2943,7 +2943,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                         {schoolIdentity?.address || "Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan"}
                       </p>
                       <p className="text-[9.5px] text-slate-500 font-mono mt-0.5">
-                        NPSN: {schoolIdentity?.npsn || '20519342'} • Unit Sarana, Prasarana &amp; Logistik
+                        NPSN: {schoolIdentity?.npsn || '20519342'} - Unit Sarana, Prasarana &amp; Logistik
                       </p>
                     </div>
 
@@ -2968,7 +2968,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       </div>
                       <div>
                         <span className="text-slate-400 font-bold text-[9.5px] uppercase block">Tanggal Pinjam &amp; Status</span>
-                        <span className="font-mono font-bold text-slate-800">📅 {receiptLoan.loanDate}</span>
+                        <span className="font-mono font-bold text-slate-800"> {receiptLoan.loanDate}</span>
                         <span className="text-[10px] font-bold text-amber-600 block mt-0.5">
                           Status: {receiptLoan.status === 'dipinjam' ? 'Sedang Dipinjam' : 'Telah Dikembalikan'}
                         </span>
@@ -3039,7 +3039,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 {/* Footer Modal Actions */}
                 <div className="p-4 bg-white border-t border-slate-200 flex items-center justify-between gap-3">
                   <span className="text-[11px] text-slate-500 font-medium hidden sm:inline">
-                    💡 Klik tombol Cetak untuk mencetak tanda bukti fisik.
+                     Klik tombol Cetak untuk mencetak tanda bukti fisik.
                   </span>
                   <div className="flex items-center justify-end gap-2.5 w-full sm:w-auto">
                     <button

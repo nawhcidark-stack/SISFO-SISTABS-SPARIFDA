@@ -249,7 +249,7 @@ export default function QRScannerModal({ students, onSelectStudentByNis, onClose
               title="Cerminkan tampilan kamera"
             >
               <RefreshCw size={10} className={`shrink-0 ${isMirrored ? 'rotate-180 transition-transform duration-500' : ''}`} />
-              <span>{isMirrored ? 'Mirror: Aktif  ' : 'Mirror: Nonaktif'}</span>
+              <span>{isMirrored ? 'Mirror: Aktif 🔄' : 'Mirror: Nonaktif'}</span>
             </button>
           )}
 

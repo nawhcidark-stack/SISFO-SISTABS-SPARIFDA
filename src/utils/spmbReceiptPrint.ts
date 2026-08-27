@@ -140,9 +140,9 @@ export function renderKopHeaderHtml(schoolIdentity?: SchoolIdentity, academicYea
         }
         <div class="kop-title-area">
           <h2 class="kop-school-name">${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
-          <p class="kop-subheading">${schoolIdentity?.subheading || "Lembaga Pendidikan Ma'arif Nahdlatul Ulama"}</p>
+          <p class="kop-subheading">${schoolIdentity?.subheading || 'Lembaga Pendidikan Ma’arif Nahdlatul Ulama'}</p>
           <p class="kop-spmb-title">PANITIA SISTEM PENERIMAAN MURID BARU (SPMB) T.A. ${academicYear}</p>
-          <p class="kop-meta-info">${schoolIdentity?.accreditation || 'Terakreditasi A'} - ${schoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} - Telp: ${schoolIdentity?.phone || '(0343) 631234'}</p>
+          <p class="kop-meta-info">${schoolIdentity?.accreditation || 'Terakreditasi A'} • ${schoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} • Telp: ${schoolIdentity?.phone || '(0343) 631234'}</p>
         </div>
       </div>
       ${
@@ -359,7 +359,7 @@ export async function generateReRegReceiptHtml(
               <td class="col-colon">:</td>
               <td class="col-value">
                 <strong>${candidate.fullName}</strong> 
-                <span class="sub-text">(NISN: ${candidate.nisn} - ${genderLabel})</span>
+                <span class="sub-text">(NISN: ${candidate.nisn} • ${genderLabel})</span>
               </td>
             </tr>
             <tr>
@@ -411,8 +411,8 @@ export async function generateReRegReceiptHtml(
                   <td style="text-align: center;">1</td>
                   <td>
                     <strong>Uang Gedung / Infaq Sarpras</strong>
-                    ${details.discountPercent > 0 ? `<br><small class="sub-text">- Potongan Gelombang (${details.discountPercent}%)</small>` : ''}
-                    ${details.maarifBuildingDiscount > 0 ? `<br><small class="sub-text">- Diskon Khusus SD Maarif Jogosari</small>` : ''}
+                    ${details.discountPercent > 0 ? `<br><small class="sub-text">• Potongan Gelombang (${details.discountPercent}%)</small>` : ''}
+                    ${details.maarifBuildingDiscount > 0 ? `<br><small class="sub-text">• Diskon Khusus SD Maarif Jogosari</small>` : ''}
                   </td>
                   <td style="text-align: right;">Rp ${details.buildingFee.toLocaleString('id-ID')}</td>
                   <td style="text-align: right; color: #047857;">- Rp ${details.totalBuildingDiscount.toLocaleString('id-ID')}</td>
@@ -430,7 +430,7 @@ export async function generateReRegReceiptHtml(
                   <td>
                     <strong>Paket Seragam & Atribut Lengkap (${genderLabel} - Ukuran ${uniformSize})</strong>
                     <br><small class="sub-text">${details.uniformItems.map(u => u.name).join(', ')}</small>
-                    ${details.maarifUniformDiscount > 0 ? `<br><small class="sub-text" style="color: #047857;">- Diskon Seragam SD Maarif Jogosari</small>` : ''}
+                    ${details.maarifUniformDiscount > 0 ? `<br><small class="sub-text" style="color: #047857;">• Diskon Seragam SD Maarif Jogosari</small>` : ''}
                   </td>
                   <td style="text-align: right;">Rp ${details.rawUniformTotal.toLocaleString('id-ID')}</td>
                   <td style="text-align: right; color: #047857;">- Rp ${details.maarifUniformDiscount.toLocaleString('id-ID')}</td>

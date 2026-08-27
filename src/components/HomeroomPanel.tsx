@@ -554,7 +554,7 @@ function printStudentCombinedRecap(
           </tr>
         </table>
 
-        <!-- SECTION 1: Catatan Perkembangan - ke 
+        <!-- SECTION 1: Catatan Perkembangan -->
         <div class="section-block">
           <div class="section-title">I. Jurnal Perkembangan Siswa</div>
           <table class="data-table">
@@ -572,7 +572,7 @@ function printStudentCombinedRecap(
           </table>
         </div>
 
-        <!-- SECTION 2: Pelanggaran - ke 
+        <!-- SECTION 2: Pelanggaran -->
         <div class="section-block">
           <div class="section-title">II. Jurnal Pelanggaran & Tindak Lanjut</div>
           <table class="data-table">
@@ -592,7 +592,7 @@ function printStudentCombinedRecap(
           </table>
         </div>
 
-        <!-- SECTION 3: Bimbingan & Konseling - ke 
+        <!-- SECTION 3: Bimbingan & Konseling -->
         <div class="section-block">
           <div class="section-title">III. Jurnal Bimbingan & Konseling</div>
           <table class="data-table">
@@ -843,7 +843,7 @@ export default function HomeroomPanel({
 
     setNotifMsg({
       type: 'success',
-      text: `[SUKSES] Berhasil mengambil ${filledCount} Judul TP otomatis dari Jurnal Pembelajaran ${selectedSubjectForGrading}!`
+      text: `🎉 Berhasil mengambil ${filledCount} Judul TP otomatis dari Jurnal Pembelajaran ${selectedSubjectForGrading}!`
     });
   };
 
@@ -1662,7 +1662,7 @@ export default function HomeroomPanel({
          })
        });
        if (res.ok) {
-         setNotifMsg({ type: 'success', text: `[SUKSES] Berhasil menyimpan catatan Jurnal Perkembangan untuk ${student.name}!` });
+         setNotifMsg({ type: 'success', text: `🎉 Berhasil menyimpan catatan Jurnal Perkembangan untuk ${student.name}!` });
          setShowSuccessCheck(true);
          // Reset form notes
          setLogNotes('');
@@ -1805,7 +1805,7 @@ export default function HomeroomPanel({
         })
       });
       if (res.ok) {
-        setNotifMsg({ type: 'success', text: `[SUKSES] Berhasil mencatat pelanggaran dengan poin ${infPoints} untuk ${student.name}!` });
+        setNotifMsg({ type: 'success', text: `🎉 Berhasil mencatat pelanggaran dengan poin ${infPoints} untuk ${student.name}!` });
         setShowSuccessCheck(true);
         setInfType('');
         setSelectedRuleId('');
@@ -1880,7 +1880,7 @@ export default function HomeroomPanel({
         })
       });
       if (res.ok) {
-        setNotifMsg({ type: 'success', text: `[SUKSES] Berhasil mencatat sesi bimbingan konseling untuk ${student.name}!` });
+        setNotifMsg({ type: 'success', text: `🎉 Berhasil mencatat sesi bimbingan konseling untuk ${student.name}!` });
         setShowSuccessCheck(true);
         setCounTopic('');
         setCounActionPlan('');
@@ -1950,7 +1950,7 @@ export default function HomeroomPanel({
         })
       });
       if (res.ok) {
-        setNotifMsg({ type: 'success', text: '[SUKSES] Berhasil memposting pengumuman kelas baru!' });
+        setNotifMsg({ type: 'success', text: '🎉 Berhasil memposting pengumuman kelas baru!' });
         setShowSuccessCheck(true);
         setAnnTitle('');
         setAnnContent('');
@@ -2040,7 +2040,7 @@ export default function HomeroomPanel({
         })
       });
       if (res.ok) {
-        setNotifMsg({ type: 'success', text: '[SUKSES] Berhasil menyimpan dokumen jurnal rapat/koordinasi!' });
+        setNotifMsg({ type: 'success', text: '🎉 Berhasil menyimpan dokumen jurnal rapat/koordinasi!' });
         setShowSuccessCheck(true);
         setMeetAttendees('');
         setMeetAgenda('');
@@ -2300,7 +2300,7 @@ export default function HomeroomPanel({
       });
 
       if (res1.ok) {
-        setNotifMsg({ type: 'success', text: `[SUKSES] Penilaian Kurikulum Merdeka & Nilai Kokurikuler Kelas ${currentTeacher.className} (${selectedSubjectForGrading}) berhasil disimpan!` });
+        setNotifMsg({ type: 'success', text: `🎉 Penilaian Kurikulum Merdeka & Nilai Kokurikuler Kelas ${currentTeacher.className} (${selectedSubjectForGrading}) berhasil disimpan!` });
         setShowSuccessCheck(true);
         fetchMerdekaAssessments();
       } else {
@@ -2343,7 +2343,7 @@ export default function HomeroomPanel({
       };
     });
     setGradeInputMap(updatedMap);
-    setNotifMsg({ type: 'success', text: ' Berhasil mengisi contoh nilai (80-95) untuk seluruh siswa. Klik Simpan untuk memperbarui database.' });
+    setNotifMsg({ type: 'success', text: '✨ Berhasil mengisi contoh nilai (80-95) untuk seluruh siswa. Klik Simpan untuk memperbarui database.' });
     setShowSuccessCheck(true);
   };
 
@@ -2363,7 +2363,7 @@ export default function HomeroomPanel({
         })
       });
       if (res.ok) {
-        setNotifMsg({ type: 'success', text: '[SUKSES] Nilai Kokurikuler berhasil disimpan & otomatis terhubung ke perhitungan Guru Mapel!' });
+        setNotifMsg({ type: 'success', text: '🎉 Nilai Kokurikuler berhasil disimpan & otomatis terhubung ke perhitungan Guru Mapel!' });
         setShowSuccessCheck(true);
         fetchMerdekaAssessments();
       } else {
@@ -2456,7 +2456,7 @@ export default function HomeroomPanel({
     try {
        const success = await onSaveBatchAttendance(logsToSave);
        if (success) {
-         setNotifMsg({ type: 'success', text: `[SUKSES] Berhasil menyimpan absensi Kelas ${currentTeacher.className} tanggal ${selectedDate}!` });
+         setNotifMsg({ type: 'success', text: `🎉 Berhasil menyimpan absensi Kelas ${currentTeacher.className} tanggal ${selectedDate}!` });
          setShowSuccessCheck(true);
        } else {
          setNotifMsg({ type: 'error', text: 'Gagal menghubungkan ke server untuk menyimpan absensi.' });
@@ -2489,7 +2489,7 @@ export default function HomeroomPanel({
       });
       const data = await res.json();
       if (res.ok && data.success) {
-        setPasswordSuccess('[SUKSES] Kata sandi berhasil diperbarui secara aman.');
+        setPasswordSuccess('🎉 Kata sandi berhasil diperbarui secara aman.');
         setOldPassword('');
         setNewPassword('');
       } else {
@@ -2959,7 +2959,7 @@ Wassalamualaikum Wr. Wb.
     </x:ExcelWorksheets>
   </x:ExcelWorkbook>
 </xml>
-<![endif]- ke 
+<![endif]-->
 <style>
   body {
     font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
@@ -3026,7 +3026,7 @@ Wassalamualaikum Wr. Wb.
 </head>
 <body>
   <table>
-    <!-- Header identity info block - ke 
+    <!-- Header identity info block -->
     <tr>
       <td colspan="11" class="title-school">${schoolNameUpper}</td>
     </tr>
@@ -3037,7 +3037,7 @@ Wassalamualaikum Wr. Wb.
       <td colspan="11" style="height: 6px;"></td>
     </tr>
     
-    <!-- Meta/Context Details - ke 
+    <!-- Meta/Context Details -->
     <tr>
       <td colspan="2" class="meta-label">Kelas:</td>
       <td colspan="9" class="meta-value">${currentTeacher.className}</td>
@@ -3058,7 +3058,7 @@ Wassalamualaikum Wr. Wb.
       <td colspan="11" style="height: 12px;"></td>
     </tr>
 
-    <!-- Table Grid Heads - ke 
+    <!-- Table Grid Heads -->
     <thead>
       <tr>
         <th class="th-header" style="width: 40px; background-color: #334155;">No</th>
@@ -3085,7 +3085,7 @@ Wassalamualaikum Wr. Wb.
       excelHtml += `
       <tr class="${zebraClass}">
         <td class="td-data td-center">${idx + 1}</td>
-        <!-- Force text formatting for NIS so leading zeroes are NOT dropped - ke 
+        <!-- Force text formatting for NIS so leading zeroes are NOT dropped -->
         <td class="td-data td-center" style="mso-number-format:'@';">${row.student.nis}</td>
         <td class="td-data td-left" style="font-weight: 500;">${row.student.name}</td>
         <td class="td-data td-center">${currentTeacher.className}</td>
@@ -3101,7 +3101,7 @@ Wassalamualaikum Wr. Wb.
     });
 
     excelHtml += `
-      <!-- Table Footer Summary for Class averages and absolute totals - ke 
+      <!-- Table Footer Summary for Class averages and absolute totals -->
       <tr class="summary-row" style="background-color: #e2e8f0; font-weight: bold;">
         <td colspan="4" class="td-data" style="text-align: right; background-color: #cbd5e1; border-top: 2px solid #475569; padding-right: 12px;">TOTAL / RATA-RATA KELAS</td>
         <td class="td-data td-center" style="color: #16a34a; background-color: #e2e8f0; border-top: 2px solid #475569;">${totalHadirClass}</td>
@@ -3191,7 +3191,7 @@ Wassalamualaikum Wr. Wb.
               onClick={onRefresh}
               className="px-3.5 py-1.5 bg-white/10 hover:bg-white/15 border border-white/20 rounded-xl text-xs font-bold transition-all text-white flex items-center gap-1.5 cursor-pointer"
             >
-                Muat Ulang
+              🔄 Muat Ulang
             </button>
             <button
               onClick={onLogout}
@@ -3255,17 +3255,17 @@ Wassalamualaikum Wr. Wb.
       {/* Mobile Sub-Navigation Pills (Horizontal Scrollable for Fast Access on Mobile) */}
       <div className="flex md:hidden items-center gap-2 overflow-x-auto pb-1 no-scrollbar select-none">
         {[
-          { id: 'record', label: 'Absensi', icon: '' },
-          { id: 'jadwal', label: 'Jadwal Kelas', icon: '', highlight: true },
-          { id: 'history', label: 'Jurnal', icon: '' },
-          { id: 'rekap_absensi', label: 'Rekap', icon: ' ' },
-          { id: 'finance', label: 'Keuangan', icon: '' },
-          { id: 'perkembangan', label: 'Perkembangan', icon: '' },
-          { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '*' },
-          { id: 'rapor_merdeka', label: 'Rapor Merdeka', icon: '' },
-          { id: 'buku_induk', label: 'Buku Induk', icon: ' ' },
-          { id: 'pkg', label: 'PKG', icon: '  ' },
-          { id: 'profile', label: 'Profil', icon: ' ' },
+          { id: 'record', label: 'Absensi', icon: '📝' },
+          { id: 'jadwal', label: 'Jadwal Kelas', icon: '📅', highlight: true },
+          { id: 'history', label: 'Jurnal', icon: '📊' },
+          { id: 'rekap_absensi', label: 'Rekap', icon: '📉' },
+          { id: 'finance', label: 'Keuangan', icon: '💳' },
+          { id: 'perkembangan', label: 'Perkembangan', icon: '📈' },
+          { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '⭐' },
+          { id: 'rapor_merdeka', label: 'Rapor Merdeka', icon: '🎓' },
+          { id: 'buku_induk', label: 'Buku Induk', icon: '📗' },
+          { id: 'pkg', label: 'PKG', icon: '🎖️' },
+          { id: 'profile', label: 'Profil', icon: '👤' },
         ].map((tab) => (
           <button
             key={tab.id}
@@ -3309,7 +3309,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Pengisian Absensi"
               >
-                <span className="text-sm"></span>
+                <span className="text-sm">📝</span>
                 <span className="inline">Pengisian Absensi</span>
               </button>
               <button
@@ -3322,7 +3322,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Matriks Jadwal Pelajaran Kelas & Guru"
               >
-                <span className="text-sm"></span>
+                <span className="text-sm">📅</span>
                 <span className="inline">Jadwal Pelajaran</span>
               </button>
               <button
@@ -3335,7 +3335,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Riwayat Jurnal Kelas"
               >
-                <span className="text-sm"></span>
+                <span className="text-sm">📊</span>
                 <span className="inline">Riwayat Jurnal</span>
               </button>
               <button
@@ -3348,7 +3348,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Rekap Absensi Kelas"
               >
-                <span className="text-sm"> </span>
+                <span className="text-sm">📉</span>
                 <span className="inline">Rekap Absensi</span>
               </button>
               <button
@@ -3361,7 +3361,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Tabungan & Tagihan SPP"
               >
-                <span className="text-sm"></span>
+                <span className="text-sm">💳</span>
                 <span className="inline">Tabungan & SPP</span>
               </button>
               <button
@@ -3374,7 +3374,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Jurnal Perkembangan Siswa"
               >
-                <span className="text-sm"></span>
+                <span className="text-sm">📈</span>
                 <span className="inline">Jurnal Perkembangan</span>
               </button>
               <button
@@ -3387,7 +3387,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Profil Wali Kelas & Ubah Sandi"
               >
-                <span className="text-sm"> </span>
+                <span className="text-sm">👤</span>
                 <span className="inline">Profil & Sandi</span>
               </button>
 
@@ -3401,7 +3401,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Halaman Rapor Kurikulum Merdeka Siswa"
               >
-                <span className="text-sm"></span>
+                <span className="text-sm">🎓</span>
                 <span className="inline">Rapor Merdeka</span>
               </button>
 
@@ -3415,7 +3415,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Input Nilai Kokurikuler Kelas Binaan"
               >
-                <span className="text-sm">*</span>
+                <span className="text-sm">⭐</span>
                 <span className="inline">Nilai Kokurikuler</span>
               </button>
 
@@ -3429,7 +3429,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Evaluasi Penilaian Kinerja Guru oleh Kepala Sekolah"
               >
-                <span className="text-sm">  </span>
+                <span className="text-sm">🎖️</span>
                 <span className="inline">Kinerja (PKG)</span>
               </button>
 
@@ -3443,7 +3443,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Buku Induk Kesiswaan Digital Kelas Binaan"
               >
-                <span className="text-sm"> </span>
+                <span className="text-sm">📗</span>
                 <span className="inline">Buku Induk Kelas</span>
               </button>
             </div>
@@ -3782,7 +3782,7 @@ Wassalamualaikum Wr. Wb.
                     onClick={() => setJournalViewMode('presensi')}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${journalViewMode === 'presensi' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
-                     Kehadiran Harian
+                    📝 Kehadiran Harian
                   </button>
                   <button
                     type="button"
@@ -3792,7 +3792,7 @@ Wassalamualaikum Wr. Wb.
                     }}
                     className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all cursor-pointer ${journalViewMode === 'kbm' ? 'bg-white text-slate-900 shadow-sm' : 'text-slate-500 hover:text-slate-800'}`}
                   >
-                      Jurnal Pembelajaran (KBM)
+                    📖 Jurnal Pembelajaran (KBM)
                   </button>
                 </div>
               </div>
@@ -3931,7 +3931,7 @@ Wassalamualaikum Wr. Wb.
                         disabled={loadingJournals}
                         className="px-3.5 py-2 border border-slate-300 hover:bg-white text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all bg-white/70"
                       >
-                          {loadingJournals ? 'Memuat...' : 'Muat Ulang'}
+                        🔄 {loadingJournals ? 'Memuat...' : 'Muat Ulang'}
                       </button>
                       {kbmJournalSubTab === 'binaan' ? (
                         <>
@@ -4195,7 +4195,7 @@ Wassalamualaikum Wr. Wb.
                                       } else {
                                         return (
                                           <div className="mt-2 text-[10.5px] font-extrabold text-emerald-700 bg-emerald-50/40 border border-emerald-100 rounded-lg p-1.5 w-fit px-2.5">
-                                            [OK] Nihil (Semua siswa hadir)
+                                            ✓ Nihil (Semua siswa hadir)
                                           </div>
                                         );
                                       }
@@ -4477,7 +4477,7 @@ Wassalamualaikum Wr. Wb.
                         }`}
                         title="Urutkan dari angka terbesar ke terkecil (Descending)"
                       >
-                        <span>   Terbesar  ke  Terkecil</span>
+                        <span>⬇️ Terbesar → Terkecil</span>
                       </button>
                       <button
                         type="button"
@@ -4489,7 +4489,7 @@ Wassalamualaikum Wr. Wb.
                         }`}
                         title="Urutkan dari angka terkecil ke terbesar (Ascending)"
                       >
-                        <span>   Terkecil  ke  Terbesar</span>
+                        <span>⬆️ Terkecil → Terbesar</span>
                       </button>
                     </div>
 
@@ -4532,7 +4532,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center gap-1">
                             <span>Nama Siswa</span>
-                            {rekapSortBy === 'name' && (<span>{rekapSortOrder === 'asc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'name' && (<span>{rekapSortOrder === 'asc' ? '▲' : '▼'}</span>)}
                           </div>
                         </th>
                         <th 
@@ -4544,7 +4544,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center justify-center gap-1">
                             <span>Hadir</span>
-                            {rekapSortBy === 'hadir' && (<span>{rekapSortOrder === 'desc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'hadir' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
                           </div>
                         </th>
                         <th 
@@ -4556,7 +4556,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center justify-center gap-1">
                             <span>Terlambat</span>
-                            {rekapSortBy === 'terlambat' && (<span>{rekapSortOrder === 'desc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'terlambat' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
                           </div>
                         </th>
                         <th 
@@ -4568,7 +4568,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center justify-center gap-1">
                             <span>Sakit</span>
-                            {rekapSortBy === 'sakit' && (<span>{rekapSortOrder === 'desc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'sakit' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
                           </div>
                         </th>
                         <th 
@@ -4580,7 +4580,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center justify-center gap-1">
                             <span>Izin</span>
-                            {rekapSortBy === 'izin' && (<span>{rekapSortOrder === 'desc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'izin' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
                           </div>
                         </th>
                         <th 
@@ -4592,7 +4592,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center justify-center gap-1">
                             <span>Alpa</span>
-                            {rekapSortBy === 'alpa' && (<span>{rekapSortOrder === 'desc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'alpa' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
                           </div>
                         </th>
                         <th 
@@ -4604,7 +4604,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center justify-center gap-1">
                             <span>Total Hari</span>
-                            {rekapSortBy === 'total' && (<span>{rekapSortOrder === 'desc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'total' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
                           </div>
                         </th>
                         <th 
@@ -4616,7 +4616,7 @@ Wassalamualaikum Wr. Wb.
                         >
                           <div className="flex items-center justify-end gap-1">
                             <span>Persentase</span>
-                            {rekapSortBy === 'rate' && (<span>{rekapSortOrder === 'desc' ? ' ' : ' '}</span>)}
+                            {rekapSortBy === 'rate' && (<span>{rekapSortOrder === 'desc' ? '▼' : '▲'}</span>)}
                           </div>
                         </th>
                       </tr>
@@ -4668,7 +4668,7 @@ Wassalamualaikum Wr. Wb.
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
                       title="Export Rekap SPP Kelas ke Excel"
                     >
-                      <Download size={12} /> Rekap SPP 
+                      <Download size={12} /> Rekap SPP 📊
                     </button>
                     <button
                       type="button"
@@ -4676,7 +4676,7 @@ Wassalamualaikum Wr. Wb.
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
                       title="Export Rekap Iuran Lain-lain ke Excel"
                     >
-                      <Download size={12} /> Rekap Iuran 
+                      <Download size={12} /> Rekap Iuran 📊
                     </button>
                     <button
                       type="button"
@@ -4684,7 +4684,7 @@ Wassalamualaikum Wr. Wb.
                       className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
                       title="Export Rekap Tabungan Kelas ke Excel"
                     >
-                      <Download size={12} /> Rekap Tabungan 
+                      <Download size={12} /> Rekap Tabungan 📊
                     </button>
                   </div>
                   {/* Search input inside Tab */}
@@ -4801,7 +4801,7 @@ Wassalamualaikum Wr. Wb.
                                   ) : (
                                     <div className="flex flex-col gap-1">
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full w-max animate-pulse">
-                                        [PERINGATAN] Menunggak SPP
+                                        ⚠️ Menunggak SPP
                                       </span>
                                       <span className="font-mono text-rose-700 font-semibold text-[10.5px]">
                                         Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
@@ -4820,7 +4820,7 @@ Wassalamualaikum Wr. Wb.
                                   ) : (
                                     <div className="flex flex-col gap-1">
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full w-max">
-                                        [PERINGATAN] {unpaidMisc.length} Tertunda
+                                        ⚠️ {unpaidMisc.length} Tertunda
                                       </span>
                                       <span className="font-mono text-indigo-700 font-semibold text-[10.5px]">
                                         Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaidMisc)}
@@ -4838,7 +4838,7 @@ Wassalamualaikum Wr. Wb.
                                     <div className="flex flex-wrap gap-1 max-w-[200px]">
                                       {paidBills.map(b => (
                                         <span key={b.id} className="inline-flex items-center gap-0.5 text-[9px] font-bold text-emerald-700 bg-emerald-50 border border-emerald-150 px-1.5 py-0.5 rounded-md">
-                                          [OK] {b.month} {b.year}
+                                          ✓ {b.month} {b.year}
                                         </span>
                                       ))}
                                     </div>
@@ -4908,20 +4908,20 @@ Wassalamualaikum Wr. Wb.
                               <div className="flex flex-col gap-1 items-end">
                                 {overdueBills.length === 0 ? (
                                   <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                    [OK] Lunas SPP
+                                    ✓ Lunas SPP
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full animate-pulse">
-                                    [PERINGATAN] Tunggakan SPP
+                                    ⚠️ Tunggakan SPP
                                   </span>
                                 )}
                                 {unpaidMisc.length === 0 ? (
                                   <span className="inline-flex items-center gap-1 text-[9px] font-black text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full">
-                                    [OK] Lunas Iuran
+                                    ✓ Lunas Iuran
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                                    [PERINGATAN] {unpaidMisc.length} Iuran Tertunda
+                                    ⚠️ {unpaidMisc.length} Iuran Tertunda
                                   </span>
                                 )}
                               </div>
@@ -4976,7 +4976,7 @@ Wassalamualaikum Wr. Wb.
                                 <div className="flex flex-wrap gap-1 mt-0.5">
                                   {paidBills.map(b => (
                                     <span key={b.id} className="inline-flex items-center gap-0.5 text-[8.5px] font-black text-emerald-700 bg-emerald-50/80 border border-emerald-150 px-1.5 py-0.5 rounded-md">
-                                      [OK] {b.month} {b.year}
+                                      ✓ {b.month} {b.year}
                                     </span>
                                   ))}
                                 </div>
@@ -5026,14 +5026,14 @@ Wassalamualaikum Wr. Wb.
                   <div className="pb-4 border-b border-slate-100 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
                     <div>
                       <h3 className="text-slate-900 font-extrabold text-base flex items-center gap-2">
-                        <span></span> Sistem Jurnal & Layanan Kerja Wali Kelas
+                        <span>📋</span> Sistem Jurnal & Layanan Kerja Wali Kelas
                       </h3>
                       <p className="text-slate-500 text-xs mt-1">
                         Pencatatan perkembangan, ketertiban, bimbingan, penyebaran informasi, dan aktivitas koordinasi kelas {currentTeacher.className}.
                       </p>
                     </div>
                     <div className="text-right text-[10px] font-mono text-slate-400 bg-slate-50 px-3 py-1.5 rounded-xl border border-slate-200 shrink-0">
-                      Kelas: {currentTeacher.className} - Wali: {currentTeacher.name}
+                      Kelas: {currentTeacher.className} • Wali: {currentTeacher.name}
                     </div>
                   </div>
 
@@ -5043,7 +5043,7 @@ Wassalamualaikum Wr. Wb.
                     {/* JOURNAL 1: Catatan Perkembangan Siswa */}
                     <div className="p-5 hover:bg-slate-50/50 transition-colors flex flex-col md:flex-row gap-5 items-start">
                       <div className="w-11 h-11 rounded-xl bg-orange-100/80 text-orange-600 flex items-center justify-center font-bold text-xl shrink-0 mt-1">
-                        
+                        📈
                       </div>
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -5071,7 +5071,7 @@ Wassalamualaikum Wr. Wb.
                           onClick={() => setSelectedJournalTab('development')}
                           className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
                         >
-                          Masuk Jurnal  ke 
+                          Masuk Jurnal →
                         </button>
                       </div>
                     </div>
@@ -5079,7 +5079,7 @@ Wassalamualaikum Wr. Wb.
                     {/* JOURNAL 2: Pelanggaran & Tindak Lanjut */}
                     <div className="p-5 hover:bg-slate-50/50 transition-colors flex flex-col md:flex-row gap-5 items-start">
                       <div className="w-11 h-11 rounded-xl bg-amber-100/85 text-amber-600 flex items-center justify-center font-bold text-xl shrink-0 mt-1">
-                        [PERINGATAN]
+                        ⚠️
                       </div>
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -5107,7 +5107,7 @@ Wassalamualaikum Wr. Wb.
                           onClick={() => setSelectedJournalTab('infraction')}
                           className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
                         >
-                          Masuk Jurnal  ke 
+                          Masuk Jurnal →
                         </button>
                       </div>
                     </div>
@@ -5115,7 +5115,7 @@ Wassalamualaikum Wr. Wb.
                     {/* JOURNAL 3: Bimbingan & Konseling */}
                     <div className="p-5 hover:bg-slate-50/50 transition-colors flex flex-col md:flex-row gap-5 items-start">
                       <div className="w-11 h-11 rounded-xl bg-purple-100/80 text-purple-600 flex items-center justify-center font-bold text-xl shrink-0 mt-1">
-                         
+                        👥
                       </div>
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -5143,7 +5143,7 @@ Wassalamualaikum Wr. Wb.
                           onClick={() => setSelectedJournalTab('counseling')}
                           className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
                         >
-                          Masuk Jurnal  ke 
+                          Masuk Jurnal →
                         </button>
                       </div>
                     </div>
@@ -5151,7 +5151,7 @@ Wassalamualaikum Wr. Wb.
                     {/* JOURNAL 4: Informasi & Pengumuman Kelas */}
                     <div className="p-5 hover:bg-slate-50/50 transition-colors flex flex-col md:flex-row gap-5 items-start">
                       <div className="w-11 h-11 rounded-xl bg-teal-100/80 text-teal-600 flex items-center justify-center font-bold text-xl shrink-0 mt-1">
-                        
+                        📢
                       </div>
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -5179,7 +5179,7 @@ Wassalamualaikum Wr. Wb.
                           onClick={() => setSelectedJournalTab('announcement')}
                           className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
                         >
-                          Masuk Jurnal  ke 
+                          Masuk Jurnal →
                         </button>
                       </div>
                     </div>
@@ -5187,7 +5187,7 @@ Wassalamualaikum Wr. Wb.
                     {/* JOURNAL 5: Rapat / Koordinasi */}
                     <div className="p-5 hover:bg-slate-50/50 transition-colors flex flex-col md:flex-row gap-5 items-start">
                       <div className="w-11 h-11 rounded-xl bg-yellow-100/90 text-yellow-700 flex items-center justify-center font-bold text-xl shrink-0 mt-1">
-                        
+                        📁
                       </div>
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -5215,7 +5215,7 @@ Wassalamualaikum Wr. Wb.
                           onClick={() => setSelectedJournalTab('meeting')}
                           className="w-full sm:w-auto px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl transition-all shadow-sm cursor-pointer"
                         >
-                          Masuk Jurnal  ke 
+                          Masuk Jurnal →
                         </button>
                       </div>
                     </div>
@@ -5237,7 +5237,7 @@ Wassalamualaikum Wr. Wb.
                         <span>Kembali ke Hub Jurnal Wali Kelas</span>
                       </button>
                       <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mt-1">
-                        <span className="p-1 px-1.5 bg-orange-50 text-orange-600 rounded-lg text-xs"></span>
+                        <span className="p-1 px-1.5 bg-orange-50 text-orange-600 rounded-lg text-xs">📈</span>
                         Jurnal Catatan Perkembangan Siswa
                       </h3>
                       <p className="text-slate-500 text-xs mt-0.5">
@@ -5253,7 +5253,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-orange-905 flex items-center gap-1.5">
-                         Cetak Jurnal Gabungan per Siswa
+                        🖨️ Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-orange-700 mt-1 leading-relaxed">
                         Pilih nama siswa dibawah ini untuk mengompilasi seluruh catatan jurnal perkembangan bersangkutan, memformat, dan mengunduh laporan rekap resmi secara instan.
@@ -5285,7 +5285,7 @@ Wassalamualaikum Wr. Wb.
                     {/* Form Perkembangan */}
                     <form onSubmit={handleSaveDevLog} className="lg:col-span-5 flex flex-col gap-4 border border-slate-200 bg-slate-50/50 p-5 rounded-2xl shadow-inner">
                       <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block pb-1 border-b border-slate-200">
-                         Buat Catatan Jurnal Baru
+                        📝 Buat Catatan Jurnal Baru
                       </span>
 
                       {/* Siswa */}
@@ -5405,7 +5405,7 @@ Wassalamualaikum Wr. Wb.
                         </div>
                       ) : filteredDevLogs.length === 0 ? (
                         <div className="p-12 border border-dashed border-slate-200 bg-slate-50/50 rounded-2xl text-center flex flex-col items-center justify-center gap-2 select-none">
-                          <span className="text-2xl"></span>
+                          <span className="text-2xl">📭</span>
                           <h4 className="text-slate-800 font-bold text-xs">Belum ada catatan ditemukan</h4>
                         </div>
                       ) : (
@@ -5427,7 +5427,7 @@ Wassalamualaikum Wr. Wb.
                                     </div>
                                     <div>
                                       <h4 className="text-xs font-black text-slate-900">{log.studentName}</h4>
-                                      <span className="text-[9.5px] text-slate-400 font-bold block mt-0.5">Kelas {log.className} - {log.date}</span>
+                                      <span className="text-[9.5px] text-slate-400 font-bold block mt-0.5">Kelas {log.className} • {log.date}</span>
                                     </div>
                                   </div>
                                   <span className={`px-2 py-0.5 rounded-full border text-[8.5px] font-extrabold uppercase ${badgeClasses[log.category] || 'bg-slate-50'}`}>
@@ -5474,7 +5474,7 @@ Wassalamualaikum Wr. Wb.
                         <span>Kembali ke Hub Jurnal Wali Kelas</span>
                       </button>
                       <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mt-1">
-                        <span className="p-1 px-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs">[PERINGATAN]</span>
+                        <span className="p-1 px-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs">⚠️</span>
                         Jurnal Pelanggaran & Tindak Lanjut Siswa
                       </h3>
                       <p className="text-slate-500 text-xs mt-0.5">
@@ -5490,7 +5490,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-rose-50 border border-rose-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-rose-950 flex items-center gap-1.5">
-                         Cetak Jurnal Gabungan per Siswa
+                        🖨️ Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-rose-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -5529,7 +5529,7 @@ Wassalamualaikum Wr. Wb.
                       }}
                       className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg border border-slate-200 text-xs font-extrabold flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
-                      <span>{showRuleCrudPanel ? "[GAGAL] Tutup Rubrik Poin CRUD" : " Kelola Rubrik Poin Pelanggaran (CRUD)"}</span>
+                      <span>{showRuleCrudPanel ? "❌ Tutup Rubrik Poin CRUD" : "⚙️ Kelola Rubrik Poin Pelanggaran (CRUD)"}</span>
                     </button>
                   </div>
 
@@ -5538,7 +5538,7 @@ Wassalamualaikum Wr. Wb.
                     <div className="mt-4 border border-rose-200 bg-rose-50/20 p-5 rounded-2xl shadow-xs flex flex-col gap-4">
                       <div className="flex justify-between items-center pb-2 border-b border-rose-100">
                         <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                           Konfigurasi Rubrik & Referensi Poin Pelanggaran (CRUD)
+                          ⚙️ Konfigurasi Rubrik & Referensi Poin Pelanggaran (CRUD)
                         </h4>
                         <span className="text-[10px] font-mono text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md font-bold">
                           {infractionRules.length} Aturan Aktif
@@ -5549,7 +5549,7 @@ Wassalamualaikum Wr. Wb.
                         {/* Form Tambah/Edit Aturan */}
                         <form onSubmit={handleSaveRule} className="md:col-span-4 bg-white border border-slate-100 p-4 rounded-xl flex flex-col gap-3 shadow-2xs">
                           <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest block border-b border-slate-100 pb-1">
-                            {editingRuleId ? "   Edit Aturan" : "  Tambah Referensi Baru"}
+                            {editingRuleId ? "✏️ Edit Aturan" : "➕ Tambah Referensi Baru"}
                           </span>
 
                           <div className="flex flex-col gap-1.5">
@@ -5684,7 +5684,7 @@ Wassalamualaikum Wr. Wb.
                     {/* Form Input Pelanggaran */}
                     <form onSubmit={handleSaveInfraction} className="lg:col-span-5 flex flex-col gap-4 border border-slate-200 bg-slate-50/50 p-5 rounded-2xl shadow-inner">
                       <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block pb-1 border-b border-slate-200">
-                         Catat Kejadian Pelanggaran & Poin
+                        🚨 Catat Kejadian Pelanggaran & Poin
                       </span>
 
                       {/* Siswa */}
@@ -5889,7 +5889,7 @@ Wassalamualaikum Wr. Wb.
                                       )}
                                     </h4>
                                     <span className="text-[9.5px] text-slate-400 font-bold block mt-0.5">
-                                        {log.location} - {log.date} @ {log.time}
+                                      📍 {log.location} • {log.date} @ {log.time}
                                     </span>
                                   </div>
                                   <span className={`px-2 py-0.5 rounded-full border text-[8.5px] font-extrabold uppercase ${statusColorColors[log.resolutionStatus]}`}>
@@ -5899,13 +5899,13 @@ Wassalamualaikum Wr. Wb.
                                 <div className="text-[11px] leading-relaxed mt-1 text-slate-700 grid grid-cols-1 md:grid-cols-2 gap-3.5 bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
                                   <div>
                                     <span className={`text-[9.5px] font-bold block mb-0.5 ${isReduction ? 'text-emerald-700' : 'text-rose-600'}`}>
-                                      {isReduction ? '   ALASAN PENGURANGAN BK' : '[PERINGATAN] JENIS PELANGGARAN'}
+                                      {isReduction ? '❇️ ALASAN PENGURANGAN BK' : '⚠️ JENIS PELANGGARAN'}
                                     </span>
                                     {log.infractionType}
                                   </div>
                                   <div>
                                     <span className={`text-[9.5px] font-bold block mb-0.5 ${isReduction ? 'text-emerald-750' : 'text-emerald-600'}`}>
-                                      {isReduction ? ' STATUS APRESIASI' : ' TINDAK LANJUT / SANKSI'}
+                                      {isReduction ? '🤝 STATUS APRESIASI' : '🤝 TINDAK LANJUT / SANKSI'}
                                     </span>
                                     {log.actionTaken}
                                   </div>
@@ -5947,7 +5947,7 @@ Wassalamualaikum Wr. Wb.
                         <span>Kembali ke Hub Jurnal Wali Kelas</span>
                       </button>
                       <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mt-1">
-                        <span className="p-1 px-1.5 bg-purple-50 text-purple-600 rounded-lg text-xs"> </span>
+                        <span className="p-1 px-1.5 bg-purple-50 text-purple-600 rounded-lg text-xs">👥</span>
                         Jurnal Bimbingan & Konseling (BK)
                       </h3>
                       <p className="text-slate-500 text-xs mt-0.5">
@@ -5963,7 +5963,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-purple-950 flex items-center gap-1.5">
-                         Cetak Jurnal Gabungan per Siswa
+                        🖨️ Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-purple-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -5996,7 +5996,7 @@ Wassalamualaikum Wr. Wb.
                     {/* Form Bimbingan */}
                     <form onSubmit={handleSaveCounseling} className="lg:col-span-12 xl:col-span-5 flex flex-col gap-4 border border-slate-200 bg-slate-50/50 p-5 rounded-2xl shadow-inner">
                       <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block pb-1 border-b border-slate-200">
-                         Catat Sesi Layanan Bimbingan Siswa
+                        🤝 Catat Sesi Layanan Bimbingan Siswa
                       </span>
 
                       {/* Siswa */}
@@ -6015,7 +6015,7 @@ Wassalamualaikum Wr. Wb.
                         </div>
                         <input
                           type="text"
-                          placeholder=" Tulis nama siswa atau NIS untuk mencari..."
+                          placeholder="🔍 Tulis nama siswa atau NIS untuk mencari..."
                           value={counStudentSearch}
                           onChange={(e) => setCounStudentSearch(e.target.value)}
                           className="w-full bg-white border border-slate-300 rounded-xl px-3 py-1.5 text-[11px] font-semibold placeholder-slate-400 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -6132,17 +6132,17 @@ Wassalamualaikum Wr. Wb.
                             <div key={log.id} className="border border-slate-200 rounded-xl p-4 bg-white hover:border-slate-300 transition-all flex flex-col gap-2 shadow-xxs">
                               <div>
                                 <h4 className="text-xs font-black text-slate-900">{log.studentName}</h4>
-                                <span className="text-[9.5px] text-slate-400 font-bold block mt-0.5"> Tanggal Bimbingan: {log.date}</span>
+                                <span className="text-[9.5px] text-slate-400 font-bold block mt-0.5">📅 Tanggal Bimbingan: {log.date}</span>
                               </div>
                               <div className="text-[11px] text-slate-700 leading-relaxed bg-slate-50 border border-slate-100 p-3 rounded-lg flex flex-col gap-2">
-                                <div><strong> Masalah Bimbingan:</strong> "{log.topic}"</div>
-                                <div><strong>  Rencana tindakan:</strong> "{log.actionPlan}"</div>
-                                <div><strong> Hasil &amp; Komitmen siswa:</strong> "{log.result}"</div>
+                                <div><strong>🤝 Masalah Bimbingan:</strong> "{log.topic}"</div>
+                                <div><strong>🧭 Rencana tindakan:</strong> "{log.actionPlan}"</div>
+                                <div><strong>🏆 Hasil &amp; Komitmen siswa:</strong> "{log.result}"</div>
                               </div>
                               {log.bkFeedback && (
                                 <div className="mt-1 p-3 bg-indigo-50 border border-indigo-150 rounded-xl flex flex-col gap-1.5 animate-fade-in text-left">
                                   <div className="flex justify-between items-center text-[10px] font-black text-indigo-900 tracking-wide uppercase">
-                                    <span className="flex items-center gap-1">  SARAN &amp; INTERVENSI GURU BK:</span>
+                                    <span className="flex items-center gap-1">🧠 SARAN &amp; INTERVENSI GURU BK:</span>
                                     {log.bkFeedbackAt && (
                                       <span className="text-[9px] text-indigo-400 font-mono font-medium lowercase">
                                         ({new Date(log.bkFeedbackAt).toLocaleDateString('id-ID')} {new Date(log.bkFeedbackAt).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})})
@@ -6190,7 +6190,7 @@ Wassalamualaikum Wr. Wb.
                         <span>Kembali ke Hub Jurnal Wali Kelas</span>
                       </button>
                       <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mt-1">
-                        <span className="p-1 px-1.5 bg-teal-50 text-teal-600 rounded-lg text-xs"></span>
+                        <span className="p-1 px-1.5 bg-teal-50 text-teal-600 rounded-lg text-xs">📢</span>
                         Jurnal Informasi &amp; Pengumuman Kelas
                       </h3>
                       <p className="text-slate-500 text-xs mt-0.5">
@@ -6206,7 +6206,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-teal-50 border border-teal-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-teal-950 flex items-center gap-1.5">
-                         Cetak Jurnal Gabungan per Siswa
+                        🖨️ Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-teal-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -6239,7 +6239,7 @@ Wassalamualaikum Wr. Wb.
                     {/* Form Post Pengumuman */}
                     <form onSubmit={handleSaveAnnouncement} className="lg:col-span-5 flex flex-col gap-4 border border-slate-200 bg-slate-50/50 p-5 rounded-2xl shadow-inner bg-slate-50">
                       <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block pb-1 border-b border-slate-200">
-                          Posting Pengumuman Kelas Baru
+                        📣 Posting Pengumuman Kelas Baru
                       </span>
 
                       {/* Judul */}
@@ -6339,14 +6339,14 @@ Wassalamualaikum Wr. Wb.
                                 <div className="flex justify-between items-start gap-3">
                                   <div>
                                     <h4 className="text-xs font-black text-slate-900">{log.title}</h4>
-                                    <span className="text-[9px] text-slate-400 font-bold font-mono"> Tanggal: {log.date} - Penerima: <span className="text-indigo-600 font-extrabold uppercase">{log.targetRecipient}</span></span>
+                                    <span className="text-[9px] text-slate-400 font-bold font-mono">📅 Tanggal: {log.date} • Penerima: <span className="text-indigo-600 font-extrabold uppercase">{log.targetRecipient}</span></span>
                                   </div>
                                   <button
                                     onClick={() => handleToggleAnnConfirmation(log.id, log.confirmationStatus)}
                                     className={`px-2 py-0.5 rounded border text-[8.5px] font-extrabold cursor-pointer hover:opacity-85 select-none transition-transform active:scale-95 ${statusColorColors[log.confirmationStatus]}`}
                                     title="Klik untuk mengubah status konfirmasi baca"
                                   >
-                                    {log.confirmationStatus}  
+                                    {log.confirmationStatus} 🔄
                                   </button>
                                 </div>
                                 <p className="text-[11px] leading-relaxed text-slate-700 font-medium whitespace-pre-wrap pl-2 border-l-2 border-teal-500 bg-teal-50/15 p-2 rounded-r-lg mt-1">
@@ -6389,7 +6389,7 @@ Wassalamualaikum Wr. Wb.
                         <span>Kembali ke Hub Jurnal Wali Kelas</span>
                       </button>
                       <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mt-1">
-                        <span className="p-1 px-1.5 bg-yellow-50 text-yellow-700 rounded-lg text-xs"></span>
+                        <span className="p-1 px-1.5 bg-yellow-50 text-yellow-700 rounded-lg text-xs">📁</span>
                         Jurnal Rapat &amp; Koordinasi Wali Kelas
                       </h3>
                       <p className="text-slate-500 text-xs mt-0.5">
@@ -6405,7 +6405,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-yellow-950 flex items-center gap-1.5">
-                         Cetak Jurnal Gabungan per Siswa
+                        🖨️ Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-yellow-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -6438,7 +6438,7 @@ Wassalamualaikum Wr. Wb.
                     {/* Form Jurnal Rapat */}
                     <form onSubmit={handleSaveMeeting} className="lg:col-span-12 xl:col-span-5 flex flex-col gap-4 border border-slate-200 bg-slate-50/50 p-5 rounded-2xl shadow-inner bg-slate-50">
                       <span className="text-[10px] font-extrabold text-slate-500 uppercase tracking-widest block pb-1 border-b border-slate-200">
-                         Dokumentasi Jurnal Rapat Terdahulu
+                        📄 Dokumentasi Jurnal Rapat Terdahulu
                       </span>
 
                       {/* Jenis Rapat */}
@@ -6546,12 +6546,12 @@ Wassalamualaikum Wr. Wb.
                               <div className="flex justify-between items-start gap-4">
                                 <div>
                                   <h4 className="text-xs font-black text-slate-950">{log.meetingType}</h4>
-                                  <span className="text-[9px] text-slate-400 font-bold block mt-0.5"> Tanggal: {log.date} - Peserta: {log.attendees}</span>
+                                  <span className="text-[9px] text-slate-400 font-bold block mt-0.5">📅 Tanggal: {log.date} • Peserta: {log.attendees}</span>
                                 </div>
                               </div>
                               <div className="text-[11px] leading-relaxed mt-1 text-slate-700 bg-slate-50 border border-slate-100 p-3 rounded-lg flex flex-col gap-2">
-                                <div><strong> Agenda Utama &amp; Keputusan:</strong><br/>{log.agenda}</div>
-                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"><strong> Rencana Tindak Lanjut:</strong><br/>{log.followUp}</div>
+                                <div><strong>📋 Agenda Utama &amp; Keputusan:</strong><br/>{log.agenda}</div>
+                                <div className="border-t border-slate-200 pt-1.5 mt-1.5"><strong>🚀 Rencana Tindak Lanjut:</strong><br/>{log.followUp}</div>
                               </div>
                               <div className="flex justify-end gap-2 border-t border-slate-100 pt-2 pb-1 mt-1">
                                 <button
@@ -6587,7 +6587,7 @@ Wassalamualaikum Wr. Wb.
                   <div>
                     <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Hasil Evaluasi Resmi</span>
                     <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                         Penilaian Kinerja Guru (PKG) Saya
+                      🎖️ Penilaian Kinerja Guru (PKG) Saya
                     </h2>
                     <p className="text-slate-500 text-[11px] mt-0.5">
                       Hasil evaluasi kompetensi pendidik dan penilaian kinerja terintegrasi yang dirilis secara resmi oleh Kepala Sekolah.
@@ -6602,7 +6602,7 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 ) : evaluations.length === 0 ? (
                   <div className="py-12 flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-slate-200 rounded-xl bg-slate-50/50 mt-6 gap-3">
-                    <span className="text-4xl text-slate-300"></span>
+                    <span className="text-4xl text-slate-300">📭</span>
                     <div>
                       <h4 className="font-bold text-slate-800 text-sm">Belum Ada Penilaian PKG</h4>
                       <p className="text-slate-500 text-xs mt-1 max-w-md">
@@ -6728,7 +6728,7 @@ Wassalamualaikum Wr. Wb.
               <div className="bg-white border border-slate-200 rounded-2xl p-6 shadow-sm flex flex-col gap-6">
                 <div>
                   <h3 className="text-slate-900 font-extrabold text-lg flex items-center gap-2">
-                    <span className="p-1 px-2 rounded-lg bg-indigo-50 text-indigo-700"> </span> Profil Wali Kelas
+                    <span className="p-1 px-2 rounded-lg bg-indigo-50 text-indigo-700">👤</span> Profil Wali Kelas
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
                     Detail informasi akun kedinasan Anda dan pengaturan privasi kata sandi.
@@ -6742,14 +6742,14 @@ Wassalamualaikum Wr. Wb.
                   </div>
                   <div className="flex items-center gap-4 relative z-10">
                     <div className="p-4 bg-white/10 backdrop-blur-md rounded-xl text-3xl font-extrabold">
-                      
+                      🏫
                     </div>
                     <div className="flex-1">
                       <span className="block text-[10px] uppercase font-bold text-indigo-200 tracking-wider">Wali Kelas Aktif</span>
                       <h4 className="text-lg font-bold tracking-tight">{currentTeacher.name}</h4>
                       <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-indigo-150 mt-1 border-t border-white/10 pt-1.5 font-medium">
                         <span>Kelas Binaan: <strong className="text-white font-extrabold">{currentTeacher.className}</strong></span>
-                        <span className="opacity-40">-</span>
+                        <span className="opacity-40">•</span>
                         <span>Username: <strong className="text-white font-mono font-bold">@{currentTeacher.username}</strong></span>
                       </div>
                       {currentTeacher.skUrl && (
@@ -6761,7 +6761,7 @@ Wassalamualaikum Wr. Wb.
                             className="inline-flex items-center gap-2 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-black transition-all shadow-xs"
                           >
                             <Download size={12} />
-                            Unduh SK Penugasan 
+                            Unduh SK Penugasan 📋
                           </a>
                         </div>
                       )}
@@ -6772,7 +6772,7 @@ Wassalamualaikum Wr. Wb.
                 {/* Password Change Form Section */}
                 <div className="border-t border-slate-100 pt-5">
                   <h4 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mb-4">
-                    <span className="p-1 rounded-md bg-amber-50 text-amber-700"></span> Ubah Kata Sandi Akun
+                    <span className="p-1 rounded-md bg-amber-50 text-amber-700">🔐</span> Ubah Kata Sandi Akun
                   </h4>
 
                   <form onSubmit={handleTeacherPasswordChange} className="flex flex-col gap-4">
@@ -6831,7 +6831,7 @@ Wassalamualaikum Wr. Wb.
                           Sedang Menyimpan...
                         </>
                       ) : (
-                        <>Ubah Sandi Akun </>
+                        <>Ubah Sandi Akun 🔐</>
                       )}
                     </button>
                   </form>
@@ -6843,7 +6843,7 @@ Wassalamualaikum Wr. Wb.
                 <div>
                   <div className="flex justify-between items-center">
                     <h3 className="text-slate-900 font-extrabold text-lg flex items-center gap-2">
-                      <span className="p-1 px-2 rounded-lg bg-teal-50 text-teal-700"></span> Program Kerja Kepala Sekolah
+                      <span className="p-1 px-2 rounded-lg bg-teal-50 text-teal-700">📢</span> Program Kerja Kepala Sekolah
                     </h3>
                     <span className="text-[10px] uppercase font-bold text-slate-400 font-mono tracking-wider">
                       Instruksi Resmi Pendidik
@@ -6887,7 +6887,7 @@ Wassalamualaikum Wr. Wb.
                           </div>
                           <p className="text-slate-600 text-[11px] leading-relaxed whitespace-pre-line">{p.description}</p>
                           <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400 font-bold border-t border-slate-200/50 pt-2 mt-1">
-                            <span> Batas Pelaksanaan: <span className="text-slate-705 font-mono">{p.targetDate}</span></span>
+                            <span>📅 Batas Pelaksanaan: <span className="text-slate-705 font-mono">{p.targetDate}</span></span>
                           </div>
                         </div>
                       )
@@ -6905,7 +6905,7 @@ Wassalamualaikum Wr. Wb.
                 <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-violet-600 to-indigo-600" />
                 <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Wali Kelas (Homeroom Teacher)</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                   Rekap Rapor Akhir Siswa (Kurikulum Merdeka)
+                  🎓 Rekap Rapor Akhir Siswa (Kurikulum Merdeka)
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
                   Kolektif nilai rapor hasil asessment mata pelajaran. Cetak lembar rapor resmi per individu dengan format standar kementerian pendidikan.
@@ -7333,7 +7333,7 @@ Wassalamualaikum Wr. Wb.
                 <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-600 to-indigo-600" />
                 <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Khusus Wali Kelas ({currentTeacher.className})</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                  * Input Penilaian Rapor Merdeka & Kokurikuler
+                  ⭐ Input Penilaian Rapor Merdeka & Kokurikuler
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
                   Input nilai TP 1 s.d. TP 4 (Tugas 1, Tugas 2, UH), Rata-rata TP, Nilai Kokurikuler, PTS, dan PAS. Nilai Kokurikuler otomatis terhitung ke Nilai Akhir Mapel Rapor.
@@ -7515,7 +7515,7 @@ Wassalamualaikum Wr. Wb.
                       onClick={handleFillSampleGrades}
                       className="px-3.5 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
                     >
-                      <span> Isi Contoh Nilai</span>
+                      <span>✨ Isi Contoh Nilai</span>
                     </button>
 
                     <button
@@ -7530,7 +7530,7 @@ Wassalamualaikum Wr. Wb.
                         </>
                       ) : (
                         <>
-                          <span>  Simpan Penilaian & Kokurikuler</span>
+                          <span>💾 Simpan Penilaian & Kokurikuler</span>
                         </>
                       )}
                     </button>
@@ -7553,7 +7553,7 @@ Wassalamualaikum Wr. Wb.
                           <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 3</th>
                           <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 4</th>
                           <th className="py-3 px-3 text-center border-r border-slate-700 bg-indigo-900/80">Rata TP</th>
-                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-purple-900/80 text-amber-300">* Kokurikuler</th>
+                          <th className="py-3 px-3 text-center border-r border-slate-700 bg-purple-900/80 text-amber-300">⭐ Kokurikuler</th>
                           <th className="py-3 px-3 text-center border-r border-slate-700 bg-slate-700/60">PTS</th>
                           <th className="py-3 px-3 text-center border-r border-slate-700 bg-slate-700/60">PAS</th>
                           <th className="py-3 px-3 text-center bg-emerald-900/90 text-emerald-200">NA Mapel</th>
@@ -7858,7 +7858,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">  </span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Jadwal Pelajaran</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Lihat matriks jadwal kelas &amp; mengajar</p>
@@ -7876,7 +7876,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-purple-100 rounded-xl text-purple-700 text-lg">*</span>
+                  <span className="p-2 w-fit bg-purple-100 rounded-xl text-purple-700 text-lg">⭐</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Nilai Kokurikuler</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Input &amp; rekap nilai kokurikuler kelas binaan</p>
@@ -7895,7 +7895,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-slate-100 rounded-xl text-slate-800 text-lg"> </span>
+                  <span className="p-2 w-fit bg-slate-100 rounded-xl text-slate-800 text-lg">📗</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Buku Induk Kelas</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Buku induk kesiswaan digital kelas binaan</p>
@@ -7914,7 +7914,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-orange-50 rounded-xl text-orange-600 text-lg"></span>
+                  <span className="p-2 w-fit bg-orange-50 rounded-xl text-orange-600 text-lg">📈</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Perkembangan Siswa</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pantau kepribadian, pelanggaran, &amp; konseling siswa</p>
@@ -7933,7 +7933,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-700 text-lg"></span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-700 text-lg">🎓</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Rapor Merdeka</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengelolaan rapor kurikulum merdeka terintegrasi</p>
@@ -7952,7 +7952,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg"> </span>
+                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">👤</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Profil Saya</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Detail akun pendidik dan pengaturan kata sandi privat</p>
@@ -7971,7 +7971,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">  </span>
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Evaluasi PKG</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru oleh Kepala Sekolah</p>
@@ -7982,7 +7982,7 @@ Wassalamualaikum Wr. Wb.
               {/* Quick access to download Mobile Apps in the bottom sheet menu */}
               <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                    Unduh Aplikasi Mobile Resmi
+                  📲 Unduh Aplikasi Mobile Resmi
                 </span>
                 <p className="text-[10px] text-slate-500 leading-normal">
                   Gunakan aplikasi mobile resmi untuk kemudahan akses monitor seluruh kegiatan kelas, presensi, &amp; dana tabungan wali murid langsung lewat HP.
@@ -8467,8 +8467,8 @@ Wassalamualaikum Wr. Wb.
                     </h2>
                     <p className="text-[9px] text-slate-500 font-semibold font-mono mt-1">
                       {compiledJournalPrintType === 'binaan'
-                        ? `Kelas Rujukan: ${currentTeacher.className} - Wali Kelas: ${currentTeacher.name} - Semester ${getSemesterFromDate()} - Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
-                        : `Guru Pengampu: ${currentTeacher.name} - Wali Kelas Rujukan - Semester ${getSemesterFromDate()} - Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
+                        ? `Kelas Rujukan: ${currentTeacher.className} • Wali Kelas: ${currentTeacher.name} • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
+                        : `Guru Pengampu: ${currentTeacher.name} • Wali Kelas Rujukan • Semester ${getSemesterFromDate()} • Tahun Ajaran ${schoolIdentity?.activeAcademicYear || "2026/2027"}`
                       }
                       {(kbmJournalStartDate || kbmJournalEndDate) && (
                         <span className="block font-bold text-indigo-900 mt-0.5">

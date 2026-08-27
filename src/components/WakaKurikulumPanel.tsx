@@ -1153,7 +1153,7 @@ export default function WakaKurikulumPanel({
                           </span>
                           {!hr.hasPrimaryTeacher && (
                             <span className="px-2 py-0.5 bg-indigo-100 text-indigo-800 rounded-md font-black text-[9px] uppercase">
-                               Lintas Kelas
+                              🌐 Lintas Kelas
                             </span>
                           )}
                           {hr.evaluatedSubjectsCount > 0 && (
@@ -1351,7 +1351,7 @@ export default function WakaKurikulumPanel({
                 <span>Rekapitulasi Nilai Akhir Tiap Mapel (Kurikulum Merdeka)</span>
               </h3>
               <p className="text-xs text-slate-500 mt-0.5">
-                Formula resmi: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-indigo-700 font-bold">NILAI AKHIR = ((Rata2 TP   2) + Kokurikuler + PTS + PAS) / 5</code>
+                Formula resmi: <code className="bg-slate-100 px-1.5 py-0.5 rounded text-indigo-700 font-bold">NILAI AKHIR = ((Rata2 TP × 2) + Kokurikuler + PTS + PAS) / 5</code>
               </p>
             </div>
 
@@ -1743,7 +1743,7 @@ export default function WakaKurikulumPanel({
                                 <div className="flex items-center justify-between border-b border-slate-100 pb-2">
                                   <h5 className="font-extrabold text-xs text-indigo-900 flex items-center gap-1.5">
                                     <BookOpen size={14} className="text-indigo-600" />
-                                    <span>Rincian Komponen Nilai {a.subject} - {a.studentName} ({a.className})</span>
+                                    <span>Rincian Komponen Nilai {a.subject} — {a.studentName} ({a.className})</span>
                                   </h5>
                                   <span className="text-[10px] font-bold text-slate-400">
                                     Penginput Guru: <strong>{a.teacherName || '-'}</strong>
@@ -1829,7 +1829,7 @@ export default function WakaKurikulumPanel({
                                       Perhitungan Nilai Akhir Kurikulum
                                     </span>
                                     <p className="text-slate-800 font-mono text-[10.5px]">
-                                      ((Rata2 TP: {a.nilaiRataTp || 0}   2) + Kokurikuler: {a.nilaiKokurikuler || 0} + PTS: {a.nilaiPts || 0} + PAS: {a.nilaiPas || 0}) / 5
+                                      ((Rata2 TP: {a.nilaiRataTp || 0} × 2) + Kokurikuler: {a.nilaiKokurikuler || 0} + PTS: {a.nilaiPts || 0} + PAS: {a.nilaiPas || 0}) / 5
                                     </p>
                                     <p className="text-indigo-900 font-black text-xs">
                                       = NILAI AKHIR MAPEL: {finalVal}
@@ -1865,7 +1865,7 @@ export default function WakaKurikulumPanel({
                 <div className="space-y-1">
                   <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-indigo-500/20 text-indigo-300 font-bold text-[10px] uppercase tracking-wider">
                     <GraduationCap size={12} />
-                    <span>Transkrip Nilai Siswa - Waka Kurikulum</span>
+                    <span>Transkrip Nilai Siswa — Waka Kurikulum</span>
                   </div>
                   <h3 className="text-xl font-black">{selectedStudentDetail.name}</h3>
                   <p className="text-xs text-slate-300">
@@ -2177,7 +2177,7 @@ export default function WakaKurikulumPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg"></span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">📋</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Detail Nilai Guru & Wali</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Inspeksi butir TP & Kokurikuler</p>
@@ -2196,7 +2196,7 @@ export default function WakaKurikulumPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg"></span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🔑</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Keamanan Sandi</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ubah kata sandi akun Kurikulum</p>
@@ -2211,7 +2211,7 @@ export default function WakaKurikulumPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg"> </span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🔄</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Muat Ulang Data</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Sinkronkan ulang data dari server</p>

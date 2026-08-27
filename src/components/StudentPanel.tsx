@@ -360,7 +360,7 @@ export default function StudentPanel({
     try {
       const success = await onUpdateStudent(currentStudent.id, bukuIndukForm);
       if (success) {
-        setSuccessBukuInduk('[SUKSES] Biodata Buku Induk Anda berhasil diperbarui secara mandiri!');
+        setSuccessBukuInduk('🎉 Biodata Buku Induk Anda berhasil diperbarui secara mandiri!');
         setIsEditingBukuInduk(false);
         onRefresh();
         // Hide success alert after 4 seconds
@@ -477,7 +477,7 @@ export default function StudentPanel({
     setChangingPassword(false);
 
     if (res.success) {
-      setPasswordSuccess('[SUKSES] Sandi akun berhasil diperbarui secara aman.');
+      setPasswordSuccess('🎉 Sandi akun berhasil diperbarui secara aman.');
       setOldPassword('');
       setNewPassword('');
       setTimeout(() => {
@@ -531,10 +531,10 @@ export default function StudentPanel({
     let itemSubtitle = "";
     if (type === 'spp') {
       itemTitle = "Pembayaran Iuran SPP Wajib Bulanan";
-      itemSubtitle = `Bulan periodik: ${detail.month} ${detail.year} - Metode: ${detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}`;
+      itemSubtitle = `Bulan periodik: ${detail.month} ${detail.year} • Metode: ${detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}`;
     } else {
       itemTitle = "Mutasi Keuangan Rekening Tabungan";
-      itemSubtitle = `${detail.type === 'deposit' ? 'Penyetoran Saldo Tunai' : 'Penarikan Saldo Tunai'} - Memo: "${detail.notes || 'Transaksi Teller Tabungan'}"`;
+      itemSubtitle = `${detail.type === 'deposit' ? 'Penyetoran Saldo Tunai' : 'Penarikan Saldo Tunai'} • Memo: "${detail.notes || 'Transaksi Teller Tabungan'}"`;
     }
 
     const schoolLogoStr = sIdentity?.logo ? `<img src="${sIdentity.logo}" style="width: 50px; height: 50px; object-fit: contain;" alt="Logo" />` : '';
@@ -755,7 +755,7 @@ export default function StudentPanel({
 </head>
 <body>
   <div class="action-bar row-layout">
-    <button class="btn" onclick="window.print()">Cetak Invoice </button>
+    <button class="btn" onclick="window.print()">Cetak Invoice 🖨️</button>
   </div>
   
   <div class="invoice-card">
@@ -1199,7 +1199,7 @@ export default function StudentPanel({
                   <span className="text-[11px] text-slate-400 block leading-tight">Sisa SPP</span>
                 </div>
                 <strong className={`text-lg mt-2 font-bold block truncate leading-none ${unpaidBillsCount > 0 ? 'text-indigo-600' : 'text-emerald-600'}`}>
-                  {unpaidBillsCount === 0 ? 'Lunas [SUKSES]' : `${unpaidBillsCount} Bulan`}
+                  {unpaidBillsCount === 0 ? 'Lunas 🎉' : `${unpaidBillsCount} Bulan`}
                 </strong>
               </div>
             </div>
@@ -1271,7 +1271,7 @@ export default function StudentPanel({
                     disabled={changingPassword}
                     className="w-full mt-1.5 py-2.5 bg-slate-900 hover:bg-slate-950 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm cursor-pointer disabled:opacity-50"
                   >
-                    {changingPassword ? 'Sedang Memproses...' : 'Ubah Sandi Baru Anda '}
+                    {changingPassword ? 'Sedang Memproses...' : 'Ubah Sandi Baru Anda 🔐'}
                   </button>
                 </form>
               )}
@@ -1541,7 +1541,7 @@ export default function StudentPanel({
                     <div className="mb-4 p-3.5 bg-rose-50 border border-rose-150 rounded-xl flex items-start gap-2.5 text-rose-900 shadow-3xs animate-fade-in text-xs shrink-0">
                       <Info size={14} className="text-rose-600 shrink-0 mt-0.5 animate-pulse" />
                       <div>
-                        <span className="font-extrabold text-rose-950 block">[PERINGATAN] Pembayaran Online Midtrans Dinonaktifkan Sementara</span>
+                        <span className="font-extrabold text-rose-950 block">⚠️ Pembayaran Online Midtrans Dinonaktifkan Sementara</span>
                         <p className="m-0 text-slate-500 font-medium mt-0.5 leading-relaxed">
                           Sistem pembayaran SPP online via gerbang pembayaran elektronik Midtrans dibatalkan/dinonaktifkan sementara oleh Administrator demi kelancaran rekonsiliasi manual kas keuangan sekolah. Sementara waktu, silakan melakukan pembayaran tunai langsung di loket Teller SMP Maarif NU Pandaan.
                         </p>
@@ -1587,7 +1587,7 @@ export default function StudentPanel({
                     <div className="mb-5 p-4.5 bg-indigo-50/40 border border-indigo-100 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-4 animate-fade-in">
                       <div className="text-left">
                         <span className="text-[10px] font-extrabold text-indigo-650 uppercase tracking-wider block mb-1">
-                           Bayar SPP Sekaligus (Multi-Bulan)
+                          ⚡ Bayar SPP Sekaligus (Multi-Bulan)
                         </span>
                         <p className="text-[11.5px] text-slate-550 font-semibold leading-normal">
                           Butuh membayar beberapa bulan sekaligus? Pilih opsi di bawah untuk otomatis mencentang tagihan terlama Anda ke keranjang pembayaran online.
@@ -1684,10 +1684,10 @@ export default function StudentPanel({
                                 ) : isWaived ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-indigo-50 text-indigo-705 border border-indigo-100 uppercase">
                                     {bill.achievementType === 'non-prestasi'
-                                      ? " BEBAS SPP (DILUAR PRESTASI)"
+                                      ? "🤝 BEBAS SPP (DILUAR PRESTASI)"
                                       : bill.achievementType === 'kebijakan'
-                                      ? "  BEBAS SPP (KEBIJAKAN)"
-                                      : " BEBAS SPP (PRESTASI)"}
+                                      ? "📜 BEBAS SPP (KEBIJAKAN)"
+                                      : "🏆 BEBAS SPP (PRESTASI)"}
                                   </span>
                                 ) : isPending ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
@@ -1699,7 +1699,7 @@ export default function StudentPanel({
                                   </span>
                                 ) : isSppBillOverdue(bill) ? (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-rose-50 text-rose-700 border border-rose-100 uppercase animate-pulse">
-                                    Menunggak [PERINGATAN]
+                                    Menunggak ⚠️
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[10px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase">
@@ -1812,7 +1812,7 @@ export default function StudentPanel({
                                 </span>
                               ) : isWaived ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-indigo-50 text-indigo-705 border border-indigo-100 uppercase">
-                                   Bebas SPP (Prestasi)
+                                  🏆 Bebas SPP (Prestasi)
                                 </span>
                               ) : isPending ? (
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded text-[9px] font-bold tracking-wider bg-amber-50 text-amber-700 border border-amber-100 uppercase animate-pulse">
@@ -1972,7 +1972,7 @@ export default function StudentPanel({
                     <div className="flex flex-col gap-2.5 mt-4">
                       {midtransStatus?.isDisabled ? (
                         <div className="p-4 bg-rose-50 border border-rose-150 rounded-xl flex flex-col gap-1.5 text-xs text-rose-900 leading-relaxed font-sans">
-                          <span className="font-extrabold text-rose-950 flex items-center gap-1">[PERINGATAN] Fitur Online Nonaktif Sementara</span>
+                          <span className="font-extrabold text-rose-950 flex items-center gap-1">⚠️ Fitur Online Nonaktif Sementara</span>
                           <p className="m-0 text-rose-800 font-medium font-sans">
                             Deposit tabungan online via Midtrans sedang dinonaktifkan sementara oleh Administrator keuangan demi kelancaran penyesuaian saldo berkala. Silakan berkoordinasi langsung dengan bagian kasir/bendahara sekolah untuk penyetoran manual secara tunai.
                           </p>
@@ -2147,7 +2147,7 @@ export default function StudentPanel({
                       {withdrawSuccess && (
                         <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 p-2.5 rounded-lg flex flex-col gap-1 font-semibold leading-relaxed">
                           <div className="flex items-center gap-1.5 text-[11px] text-amber-800 font-bold">
-                            <span className="text-sm"> </span> Pengajuan Berhasil Terkirim!
+                            <span className="text-sm">⏳</span> Pengajuan Berhasil Terkirim!
                           </div>
                           <span>Penarikan sedang diproses dan menunggu persetujuan/konfirmasi oleh Admin secara manual. Terima kasih!</span>
                         </div>
@@ -2382,7 +2382,7 @@ export default function StudentPanel({
                                     <h6 className="font-bold text-slate-800 text-xs leading-tight">{bill.title}</h6>
                                     {bill.isMonthly && (
                                       <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-purple-50 text-purple-700 border border-purple-200 uppercase">
-                                        Bulanan {bill.month ? `- ${bill.month}` : ''}
+                                        Bulanan {bill.month ? `• ${bill.month}` : ''}
                                       </span>
                                     )}
                                     {isPending && (
@@ -2464,7 +2464,7 @@ export default function StudentPanel({
                                   <h6 className="font-bold text-slate-800 text-xs leading-tight">{bill.title}</h6>
                                   {bill.isMonthly && (
                                     <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded text-[8px] font-bold tracking-wider bg-purple-50 text-purple-700 border border-purple-200 uppercase">
-                                      Bulanan {bill.month ? `- ${bill.month}` : ''}
+                                      Bulanan {bill.month ? `• ${bill.month}` : ''}
                                     </span>
                                   )}
                                 </div>
@@ -2861,7 +2861,7 @@ export default function StudentPanel({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 pb-4">
                     <div>
                       <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                         Jurnal Catatan & Perkembangan Siswa
+                        📋 Jurnal Catatan & Perkembangan Siswa
                       </h4>
                       <p className="text-slate-500 text-xs mt-0.5">
                         Rekaman riwayat catatan perkembangan, pelanggaran kedisiplinan, dan histori bimbingan konseling Anda secara langsung dari sekolah.
@@ -2911,7 +2911,7 @@ export default function StudentPanel({
                           : 'text-slate-650 hover:bg-slate-200'
                       }`}
                     >
-                       Catatan Perkembangan ({devLogs.length})
+                      📈 Catatan Perkembangan ({devLogs.length})
                     </button>
                     <button
                       type="button"
@@ -2922,7 +2922,7 @@ export default function StudentPanel({
                           : 'text-slate-655 hover:bg-slate-200'
                       }`}
                     >
-                       Pelanggaran & Disiplin ({infractionLogs.length})
+                      🚨 Pelanggaran & Disiplin ({infractionLogs.length})
                     </button>
                     <button
                       type="button"
@@ -2933,7 +2933,7 @@ export default function StudentPanel({
                           : 'text-slate-655 hover:bg-slate-200'
                       }`}
                     >
-                       Bimbingan & Konseling ({counselingLogs.length})
+                      🤝 Bimbingan & Konseling ({counselingLogs.length})
                     </button>
                   </div>
 
@@ -3016,11 +3016,11 @@ export default function StudentPanel({
                                        <div className="flex items-center gap-2 flex-wrap">
                                          {isReduction ? (
                                            <span className="text-[11px] font-black text-emerald-950 bg-emerald-50 border border-emerald-150 px-2.5 py-0.5 rounded-lg">
-                                                {log.infractionType}
+                                             ❇️ {log.infractionType}
                                            </span>
                                          ) : (
                                            <span className="text-[11px] font-black text-rose-950 bg-rose-50 border border-rose-150 px-2.5 py-0.5 rounded-lg">
-                                              {log.infractionType}
+                                             🚨 {log.infractionType}
                                            </span>
                                          )}
                                          {log.points !== undefined && (
@@ -3029,7 +3029,7 @@ export default function StudentPanel({
                                            </span>
                                          )}
                                          <span className="text-[10px] text-slate-400 font-bold font-mono">
-                                            {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} pukul {log.time}
+                                           ⏱️ {new Date(log.date).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} pukul {log.time}
                                          </span>
                                        </div>
                                        
@@ -3050,7 +3050,7 @@ export default function StudentPanel({
                                     <div className="shrink-0 flex md:flex-col justify-between items-center md:items-end gap-2 border-t md:border-t-0 border-slate-110 pt-3 md:pt-0">
                                       <span className="text-[9px] font-medium text-slate-400 hidden md:block">Status Penanganan</span>
                                       <span className={`text-[10px] font-black tracking-wide px-2.5 py-1 rounded-full border ${statusCol}`}>
-                                        * {log.resolutionStatus}
+                                        ● {log.resolutionStatus}
                                       </span>
                                     </div>
                                   </div>
@@ -3079,7 +3079,7 @@ export default function StudentPanel({
                                   <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 pb-2.5">
                                     <div className="flex items-center gap-2">
                                       <span className="text-xs font-black text-indigo-950 bg-indigo-50 border border-indigo-150 px-2.5 py-0.5 rounded-lg flex items-center gap-1">
-                                         Bimbingan BK
+                                        🤝 Bimbingan BK
                                       </span>
                                       {log.bkFeedback || log.result ? (
                                         <span className="text-[10px] font-extrabold text-emerald-800 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-full flex items-center gap-1">
@@ -3117,7 +3117,7 @@ export default function StudentPanel({
                                       <div className="mt-3 p-3.5 bg-indigo-50/70 border border-indigo-200/90 rounded-xl">
                                         <div className="flex items-center justify-between mb-1">
                                           <span className="text-[10px] font-black text-indigo-950 uppercase tracking-wide flex items-center gap-1">
-                                             Solusi &amp; Catatan Tanggapan Guru BK:
+                                            💡 Solusi &amp; Catatan Tanggapan Guru BK:
                                           </span>
                                           {log.bkFeedbackAt && (
                                             <span className="text-[9px] text-indigo-600 font-mono font-bold">
@@ -3146,7 +3146,7 @@ export default function StudentPanel({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-150 pb-4">
                     <div>
                       <h4 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
-                          Buku Induk Siswa Pasuruan (Master Portfolio)
+                        📗 Buku Induk Siswa Pasuruan (Master Portfolio)
                       </h4>
                       <p className="text-slate-500 text-xs mt-0.5 font-medium">
                         Rekaman daftar riwayat hidup resmi Anda dan keluarga kandung yang tercatat di database kesiswaan sekolah.
@@ -3204,7 +3204,7 @@ export default function StudentPanel({
                               : 'text-slate-650 hover:bg-slate-150'
                           }`}
                         >
-                           I. Data Siswa
+                          🏫 I. Data Siswa
                         </button>
                         <button
                           type="button"
@@ -3215,7 +3215,7 @@ export default function StudentPanel({
                               : 'text-slate-650 hover:bg-slate-150'
                           }`}
                         >
-                               II. Data Ayah
+                          👨🏼‍💼 II. Data Ayah
                         </button>
                         <button
                           type="button"
@@ -3226,7 +3226,7 @@ export default function StudentPanel({
                               : 'text-slate-650 hover:bg-slate-150'
                           }`}
                         >
-                               III. Data Ibu
+                          👩🏼‍💼 III. Data Ibu
                         </button>
                         <button
                           type="button"
@@ -3237,7 +3237,7 @@ export default function StudentPanel({
                               : 'text-slate-650 hover:bg-slate-150'
                           }`}
                         >
-                            IV. Data Wali (Opsional)
+                          💼 IV. Data Wali (Opsional)
                         </button>
                       </div>
 
@@ -3265,7 +3265,7 @@ export default function StudentPanel({
                               />
                             </div>
                             <div>
-                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIS (Nomor Induk Siswa) </label>
+                              <label className="text-[10px] font-black text-slate-450 uppercase tracking-wider block mb-1">NIS (Nomor Induk Siswa) 🔒</label>
                               <input
                                 type="text"
                                 value={bukuIndukForm.nis || ''}
@@ -3763,7 +3763,7 @@ export default function StudentPanel({
                             </span>
                           </div>
                           <div className="inline-flex items-center px-2.5 py-1 bg-emerald-50 border border-emerald-250 text-emerald-705 text-[9.5px] font-black uppercase rounded-lg tracking-wider">
-                            * TERVERIFIKASI
+                            ● TERVERIFIKASI
                           </div>
                         </div>
                       </div>
@@ -3773,7 +3773,7 @@ export default function StudentPanel({
                         {/* Section I: Data Pribadi */}
                         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
                           <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
-                             I. Biodata Utama Siswa
+                            🏫 I. Biodata Utama Siswa
                           </h5>
                           <div className="space-y-2 text-[11px] font-medium text-slate-650">
                             <div className="grid grid-cols-3 py-1 border-b border-slate-50">
@@ -3843,12 +3843,12 @@ export default function StudentPanel({
                         {/* Section II: Orang Tua */}
                         <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-3xs flex flex-col gap-3">
                           <h5 className="font-black text-xs text-slate-900 border-b border-slate-100 pb-2 uppercase tracking-wide flex items-center gap-1.5 text-indigo-700">
-                                     II. Biodata Orang Tua Kandung
+                            👨🏼‍👩🏼‍👦🏼 II. Biodata Orang Tua Kandung
                           </h5>
                           <div className="space-y-4">
                             {/* Ayah */}
                             <div>
-                              <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">     Data Ayah</span>
+                              <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👨🏼‍💼 Data Ayah</span>
                               <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
                                 <div className="flex justify-between border-b border-slate-50 py-0.5">
                                   <span className="text-slate-400">Nama Lengkap</span>
@@ -3871,7 +3871,7 @@ export default function StudentPanel({
 
                             {/* Ibu */}
                             <div className="pt-2 border-t border-slate-100">
-                              <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">     Data Ibu</span>
+                              <span className="text-[10px] font-black uppercase text-indigo-500 block mb-1">👩🏼‍💼 Data Ibu</span>
                               <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
                                 <div className="flex justify-between border-b border-slate-50 py-0.5">
                                   <span className="text-slate-400">Nama Lengkap</span>
@@ -3894,9 +3894,9 @@ export default function StudentPanel({
 
                             {/* Wali */}
                             <div className="pt-2 border-t border-slate-100 bg-slate-50/50 p-2.5 rounded-xl border border-slate-150">
-                              <span className="text-[10px] font-black uppercase text-slate-500 block mb-1">  III. Pihak Wali (Jika Ada)</span>
+                              <span className="text-[10px] font-black uppercase text-slate-500 block mb-1">💼 III. Pihak Wali (Jika Ada)</span>
                               {currentStudent.guardianIsSameAsFather ? (
-                                <span className="text-[10.5px] font-bold text-slate-455 italic flex items-center gap-1">  Wali diwakili langsung oleh Ayah kandung.</span>
+                                <span className="text-[10.5px] font-bold text-slate-455 italic flex items-center gap-1">✔ Wali diwakili langsung oleh Ayah kandung.</span>
                               ) : currentStudent.guardianName ? (
                                 <div className="space-y-1.5 text-[11px] font-semibold text-slate-650">
                                   <div className="flex justify-between py-0.5">
@@ -4056,7 +4056,7 @@ export default function StudentPanel({
                               <div className="flex flex-col gap-0.5">
                                 <span className="font-bold text-slate-800 leading-tight">SPP {bill.month} {bill.year}</span>
                                 <div className="flex items-center gap-1.5 text-[9px] text-indigo-600 font-bold uppercase tracking-wider mt-0.5">
-                                  <span>TERBAYAR [SUKSES]</span>
+                                  <span>TERBAYAR 🎉</span>
                                   {bill.paidAt && (
                                     <>
                                       <span>&bull;</span>
@@ -4375,7 +4375,7 @@ export default function StudentPanel({
                     disabled={changingPassword}
                     className="w-full mt-1.5 py-2.5 bg-slate-900 hover:bg-slate-950 text-white font-bold rounded-lg text-xs uppercase tracking-wider transition-all shadow-sm cursor-pointer disabled:opacity-50"
                   >
-                    {changingPassword ? 'Sedang Memproses...' : 'Ubah Sandi Baru Anda '}
+                    {changingPassword ? 'Sedang Memproses...' : 'Ubah Sandi Baru Anda 🔐'}
                   </button>
                 </form>
               </div>
@@ -4563,7 +4563,7 @@ export default function StudentPanel({
                   }}
                   className="p-4 border border-indigo-200 bg-indigo-50/40 hover:bg-indigo-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-indigo-100 rounded-xl text-indigo-700 text-lg">  </span>
+                  <span className="p-2 w-fit bg-indigo-100 rounded-xl text-indigo-700 text-lg">🗓️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-indigo-950">Jadwal Pelajaran</h5>
                     <p className="text-[10px] text-indigo-700/80 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran resmi kelas Anda</p>
@@ -4578,7 +4578,7 @@ export default function StudentPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg"> </span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">📇</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Kartu Pembayaran</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cetak kartu ID pembayaran digital dengan kode QR unik Anda</p>
@@ -4594,7 +4594,7 @@ export default function StudentPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg"></span>
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">💰</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800 font-sans">Tagihan SPP</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Cek status cicilan iuran bulanan dan pelunasan SPP online</p>
@@ -4610,7 +4610,7 @@ export default function StudentPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg"></span>
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🏦</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Setor &amp; Tarik</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ajukan setor tunai mandiri maupun penarikan dana tabungan</p>
@@ -4626,7 +4626,7 @@ export default function StudentPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg"></span>
+                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">📅</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Kehadiran Kelas</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Rekapitulasi log harian dan absen mata pelajaran siswa</p>
@@ -4641,7 +4641,7 @@ export default function StudentPanel({
                   }}
                   className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg"> </span>
+                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
                     <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Keluar dengan aman serta akhiri pengalihan akses siswa</p>
@@ -4652,7 +4652,7 @@ export default function StudentPanel({
               {/* Quick access to download Mobile Apps in the bottom sheet menu */}
               <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                    Unduh Aplikasi Mobile Resmi
+                  📲 Unduh Aplikasi Mobile Resmi
                 </span>
                 <p className="text-[10px] text-slate-500 leading-normal">
                   Gunakan aplikasi mobile resmi untuk kemudahan akses monitor laporan tagihan SPP, presensi kelas, &amp; dana tabungan langsung lewat HP.
@@ -4787,7 +4787,7 @@ export default function StudentPanel({
                   }}
                   className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
                 >
-                  <Printer size={12} /> Cetak Kartu 
+                  <Printer size={12} /> Cetak Kartu 🖨️
                 </button>
                 <button
                   type="button"
@@ -4810,7 +4810,7 @@ export default function StudentPanel({
               </div>
 
               <span className="text-center text-[7.5px] text-slate-400 uppercase tracking-widest font-extrabold pt-4 no-print select-none">
-                   Potong Mengikuti Batas Luar Kartu
+                ✂️ Potong Mengikuti Batas Luar Kartu
               </span>
             </div>
 
@@ -5157,14 +5157,14 @@ export default function StudentPanel({
                   onClick={() => handleDownloadInvoice(receiptToPrint.type, receiptToPrint.detail, receiptToPrint.student, schoolIdentity)}
                   className="px-3 py-1.5 bg-indigo-600 hover:bg-slate-900 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                 >
-                  <Download size={12} /> Unduh Invoice HTML 
+                  <Download size={12} /> Unduh Invoice HTML 📥
                 </button>
                 <button
                   type="button"
                   onClick={() => window.print()}
                   className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-colors cursor-pointer"
                 >
-                  <Printer size={12} /> Cetak / Save PDF 
+                  <Printer size={12} /> Cetak / Save PDF 🖨️
                 </button>
                 <button
                   type="button"

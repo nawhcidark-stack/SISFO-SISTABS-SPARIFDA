@@ -96,7 +96,7 @@ export default function SpmbReceiptModal({
             <div>
               <h3 className="text-base font-black text-white m-0">Cetak Kuitansi Resmi SPMB</h3>
               <p className="text-xs text-slate-400 m-0">
-                {candidate.fullName} - NISN: <span className="font-mono text-slate-200">{candidate.nisn}</span>
+                {candidate.fullName} • NISN: <span className="font-mono text-slate-200">{candidate.nisn}</span>
               </p>
             </div>
           </div>
@@ -187,7 +187,7 @@ export default function SpmbReceiptModal({
                     <h3 className="text-sm font-black uppercase text-slate-900 m-0">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h3>
                     <p className="text-[10px] text-slate-600 font-bold uppercase m-0">{schoolIdentity?.subheading || 'Lembaga Pendidikan Maarif Nahdlatul Ulama'}</p>
                     <p className="text-[10px] font-black text-emerald-800 uppercase m-0">PANITIA PENERIMAAN MURID BARU (SPMB) T.A. {academicYear}</p>
-                    <p className="text-[9px] text-slate-500 m-0">{schoolIdentity?.address || 'Pasuruan, Jawa Timur'} - Telp: {schoolIdentity?.phone || '(0343) 631234'}</p>
+                    <p className="text-[9px] text-slate-500 m-0">{schoolIdentity?.address || 'Pasuruan, Jawa Timur'} • Telp: {schoolIdentity?.phone || '(0343) 631234'}</p>
                   </div>
                 </div>
                 {schoolIdentity?.logo2 && (
@@ -306,7 +306,7 @@ export default function SpmbReceiptModal({
                       <td className="py-1 text-slate-500 w-44 font-semibold">Telah Diterima Dari</td>
                       <td className="py-1 w-3 text-center">:</td>
                       <td className="py-1 font-bold text-slate-900">
-                        {candidate.fullName} <span className="font-normal text-slate-500">(NISN: {candidate.nisn} - {genderLabel})</span>
+                        {candidate.fullName} <span className="font-normal text-slate-500">(NISN: {candidate.nisn} • {genderLabel})</span>
                       </td>
                     </tr>
                     <tr className="border-b border-slate-100">
@@ -356,8 +356,8 @@ export default function SpmbReceiptModal({
                       <tr>
                         <td className="p-1.5">
                           <strong>Uang Gedung / Infaq</strong>
-                          {reregDetails.discountPercent > 0 && <span className="block text-slate-500">- Diskon Gelombang ({reregDetails.discountPercent}%)</span>}
-                          {reregDetails.maarifBuildingDiscount > 0 && <span className="block text-emerald-700">- Diskon SD Maarif</span>}
+                          {reregDetails.discountPercent > 0 && <span className="block text-slate-500">• Diskon Gelombang ({reregDetails.discountPercent}%)</span>}
+                          {reregDetails.maarifBuildingDiscount > 0 && <span className="block text-emerald-700">• Diskon SD Maarif</span>}
                         </td>
                         <td className="p-1.5 text-right">Rp {reregDetails.buildingFee.toLocaleString('id-ID')}</td>
                         <td className="p-1.5 text-right text-emerald-700">- Rp {reregDetails.totalBuildingDiscount.toLocaleString('id-ID')}</td>
@@ -372,7 +372,7 @@ export default function SpmbReceiptModal({
                       <tr>
                         <td className="p-1.5">
                           <strong>Paket Seragam & Atribut ({genderLabel} - {uniformSize})</strong>
-                          {reregDetails.maarifUniformDiscount > 0 && <span className="block text-emerald-700">- Diskon Seragam SD Maarif</span>}
+                          {reregDetails.maarifUniformDiscount > 0 && <span className="block text-emerald-700">• Diskon Seragam SD Maarif</span>}
                         </td>
                         <td className="p-1.5 text-right">Rp {reregDetails.rawUniformTotal.toLocaleString('id-ID')}</td>
                         <td className="p-1.5 text-right text-emerald-700">- Rp {reregDetails.maarifUniformDiscount.toLocaleString('id-ID')}</td>

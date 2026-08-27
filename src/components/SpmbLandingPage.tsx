@@ -863,15 +863,15 @@ export default function SpmbLandingPage({
     const hasFoto = Boolean(docUploads.pasPhoto || activeCandidate.documents?.pasPhoto);
 
     if (!hasAkta) {
-      alert('[PERINGATAN] Mohon unggah berkas wajib: Akte Kelahiran calon siswa.');
+      alert('⚠️ Mohon unggah berkas wajib: Akte Kelahiran calon siswa.');
       return;
     }
     if (!hasKk) {
-      alert('[PERINGATAN] Mohon unggah berkas wajib: Kartu Keluarga (KK).');
+      alert('⚠️ Mohon unggah berkas wajib: Kartu Keluarga (KK).');
       return;
     }
     if (!hasFoto) {
-      alert('[PERINGATAN] Mohon unggah berkas wajib: Pas Foto Calon Siswa (3x4).');
+      alert('⚠️ Mohon unggah berkas wajib: Pas Foto Calon Siswa (3x4).');
       return;
     }
 
@@ -988,7 +988,7 @@ export default function SpmbLandingPage({
                 </span>
               </div>
               <p className="text-[11px] text-slate-400 m-0 hidden sm:block">
-                {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"} - {schoolIdentity?.accreditation || 'Terakreditasi A'}
+                {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"} • {schoolIdentity?.accreditation || 'Terakreditasi A'}
               </p>
             </div>
           </div>
@@ -1267,14 +1267,14 @@ export default function SpmbLandingPage({
                   <Sparkles size={18} className="text-emerald-400 shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-emerald-200 font-bold block text-sm">
-                      * Diskon Spesial Alumni SD MAARIF JOGOSARI Aktif!
+                      🌟 Diskon Spesial Alumni SD MAARIF JOGOSARI Aktif!
                     </strong>
                     <div className="mt-1 space-y-0.5 text-slate-300">
                       <p className="m-0">
-                        - <strong>Diskon Uang Gedung Tambahan:</strong> Potongan {config?.maarifBuildingDiscountType === 'percent' ? `${config.maarifBuildingDiscount || 0}%` : `Rp ${(config?.maarifBuildingDiscount || 250000).toLocaleString('id-ID')}`}.
+                        • <strong>Diskon Uang Gedung Tambahan:</strong> Potongan {config?.maarifBuildingDiscountType === 'percent' ? `${config.maarifBuildingDiscount || 0}%` : `Rp ${(config?.maarifBuildingDiscount || 250000).toLocaleString('id-ID')}`}.
                       </p>
                       <p className="m-0">
-                        - <strong>Diskon Seragam/Perlengkapan:</strong> Potongan {config?.maarifUniformDiscountType === 'percent' ? `${config.maarifUniformDiscount || 0}%` : `Rp ${(config?.maarifUniformDiscount || 100000).toLocaleString('id-ID')}`}.
+                        • <strong>Diskon Seragam/Perlengkapan:</strong> Potongan {config?.maarifUniformDiscountType === 'percent' ? `${config.maarifUniformDiscount || 0}%` : `Rp ${(config?.maarifUniformDiscount || 100000).toLocaleString('id-ID')}`}.
                       </p>
                     </div>
                   </div>
@@ -1538,7 +1538,7 @@ export default function SpmbLandingPage({
                       )}
                     </div>
                     <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
-                       Diskon Khusus Gedung & Seragam
+                      ✨ Diskon Khusus Gedung & Seragam
                     </span>
                   </button>
 
@@ -1922,7 +1922,7 @@ export default function SpmbLandingPage({
                         </span>
                       </div>
                       <p className="text-xs text-slate-400 m-0 mt-0.5">
-                        NISN: <span className="font-mono text-white">{activeCandidate.nisn}</span> - Asal: <span className="text-white">{activeCandidate.schoolOrigin}</span> - Sesi: <span className="text-emerald-400 font-bold uppercase">{activeCandidate.sessionId}</span>
+                        NISN: <span className="font-mono text-white">{activeCandidate.nisn}</span> • Asal: <span className="text-white">{activeCandidate.schoolOrigin}</span> • Sesi: <span className="text-emerald-400 font-bold uppercase">{activeCandidate.sessionId}</span>
                       </p>
                     </div>
                   </div>
@@ -1942,7 +1942,7 @@ export default function SpmbLandingPage({
                     <button
                       onClick={() => {
                         if (!isStep5Unlocked) {
-                          alert(' Bukti Resmi Terkunci!\n\nSelesaikan seluruh tahap pendaftaran dan pembayaran Daftar Ulang (Tahap 4) terlebih dahulu untuk mencetak kartu tanda terima resmi.');
+                          alert('⛔ Bukti Resmi Terkunci!\n\nSelesaikan seluruh tahap pendaftaran dan pembayaran Daftar Ulang (Tahap 4) terlebih dahulu untuk mencetak kartu tanda terima resmi.');
                           return;
                         }
                         setPortalTab('card');
@@ -1969,7 +1969,7 @@ export default function SpmbLandingPage({
                         key={tab.id}
                         onClick={() => {
                           if (!tab.unlocked) {
-                            alert(` ${tab.label} Masih Terkunci!\n\n${tab.lockReason}`);
+                            alert(`⛔ ${tab.label} Masih Terkunci!\n\n${tab.lockReason}`);
                             return;
                           }
                           setPortalTab(tab.id);
@@ -1989,7 +1989,7 @@ export default function SpmbLandingPage({
                           <tab.icon size={15} className={isCurrent ? 'text-white' : tab.done ? 'text-emerald-400' : tab.unlocked ? 'text-slate-300' : 'text-slate-600'} />
                           {tab.done ? (
                             <span className="px-1.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 flex items-center gap-0.5 text-[9px] font-black">
-                              [OK] Selesai
+                              ✓ Selesai
                             </span>
                           ) : !tab.unlocked ? (
                             <span className="px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-0.5 text-[9px] font-bold">
@@ -2095,7 +2095,7 @@ export default function SpmbLandingPage({
                       <button
                         onClick={() => {
                           if (!isStep2Unlocked) {
-                            alert(' Tahap 2 Masih Terkunci!\n\nSelesaikan pembayaran token pendaftaran (Tahap 1) terlebih dahulu.');
+                            alert('⛔ Tahap 2 Masih Terkunci!\n\nSelesaikan pembayaran token pendaftaran (Tahap 1) terlebih dahulu.');
                             return;
                           }
                           setPortalTab('form');
@@ -2853,7 +2853,7 @@ export default function SpmbLandingPage({
                       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">1. Akte Kelahiran <span className="text-rose-400">*</span></span>
-                          {docUploads.aktaPhoto && <span className="text-[10px] font-bold text-emerald-400">[OK] Terunggah</span>}
+                          {docUploads.aktaPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
                         </div>
                         {docUploads.aktaPhoto && (
                           <img src={docUploads.aktaPhoto} alt="Akta Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
@@ -2870,7 +2870,7 @@ export default function SpmbLandingPage({
                       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">2. Kartu Keluarga (KK) <span className="text-rose-400">*</span></span>
-                          {docUploads.kkPhoto && <span className="text-[10px] font-bold text-emerald-400">[OK] Terunggah</span>}
+                          {docUploads.kkPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
                         </div>
                         {docUploads.kkPhoto && (
                           <img src={docUploads.kkPhoto} alt="KK Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
@@ -2887,7 +2887,7 @@ export default function SpmbLandingPage({
                       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">3. KTP Ayah <span className="text-rose-400">*</span></span>
-                          {docUploads.ktpAyahPhoto && <span className="text-[10px] font-bold text-emerald-400">[OK] Terunggah</span>}
+                          {docUploads.ktpAyahPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
                         </div>
                         {docUploads.ktpAyahPhoto && (
                           <img src={docUploads.ktpAyahPhoto} alt="KTP Ayah Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
@@ -2904,7 +2904,7 @@ export default function SpmbLandingPage({
                       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">4. KTP Ibu <span className="text-rose-400">*</span></span>
-                          {docUploads.ktpIbuPhoto && <span className="text-[10px] font-bold text-emerald-400">[OK] Terunggah</span>}
+                          {docUploads.ktpIbuPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
                         </div>
                         {docUploads.ktpIbuPhoto && (
                           <img src={docUploads.ktpIbuPhoto} alt="KTP Ibu Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
@@ -2921,7 +2921,7 @@ export default function SpmbLandingPage({
                       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">5. Foto Siswa (3x4) <span className="text-rose-400">*</span></span>
-                          {docUploads.pasPhoto && <span className="text-[10px] font-bold text-emerald-400">[OK] Terunggah</span>}
+                          {docUploads.pasPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
                         </div>
                         {docUploads.pasPhoto && (
                           <img src={docUploads.pasPhoto} alt="Foto Preview" className="w-24 h-28 object-cover rounded-xl border border-slate-700 mx-auto" />
@@ -2938,7 +2938,7 @@ export default function SpmbLandingPage({
                       <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
                         <div className="flex items-center justify-between">
                           <span className="text-xs font-bold text-white">6. SKL / Ijazah (Opsional)</span>
-                          {docUploads.sklPhoto && <span className="text-[10px] font-bold text-emerald-400">[OK] Terunggah</span>}
+                          {docUploads.sklPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
                         </div>
                         {docUploads.sklPhoto && (
                           <img src={docUploads.sklPhoto} alt="SKL Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
@@ -3182,7 +3182,7 @@ export default function SpmbLandingPage({
                       <button
                         onClick={() => {
                           if (!isStep5Unlocked) {
-                            alert(' Tahap 5 Terkunci!\n\nSelesaikan pembayaran Daftar Ulang & Seragam (Tahap 4) terlebih dahulu untuk menerbitkan Tanda Terima & Kartu Pendaftaran Resmi.');
+                            alert('⛔ Tahap 5 Terkunci!\n\nSelesaikan pembayaran Daftar Ulang & Seragam (Tahap 4) terlebih dahulu untuk menerbitkan Tanda Terima & Kartu Pendaftaran Resmi.');
                             return;
                           }
                           setPortalTab('card');
@@ -3296,7 +3296,7 @@ export default function SpmbLandingPage({
                               PANITIA SISTEM PENERIMAAN MURID BARU (SPMB) T.A. {config?.academicYear || '2027/2028'}
                             </p>
                             <p className="text-[10px] text-slate-600 m-0">
-                              {currentSchoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} - Telp: {currentSchoolIdentity?.phone || '(0343) 631234'}
+                              {currentSchoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} • Telp: {currentSchoolIdentity?.phone || '(0343) 631234'}
                             </p>
                           </div>
                           {qrCodeDataUrl && (
@@ -3367,7 +3367,7 @@ export default function SpmbLandingPage({
                           <div className="grid grid-cols-3 py-1">
                             <span className="font-semibold text-slate-500">Status Pembayaran</span>
                             <span className="col-span-2 font-bold text-emerald-700">
-                              : Token (Lunas) - Daftar Ulang ({activeCandidate.reRegistrationStatus === 'paid' ? 'Lunas' : 'Belum Lunas'})
+                              : Token (Lunas) • Daftar Ulang ({activeCandidate.reRegistrationStatus === 'paid' ? 'Lunas' : 'Belum Lunas'})
                             </span>
                           </div>
                         </div>

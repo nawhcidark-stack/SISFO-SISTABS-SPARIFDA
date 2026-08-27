@@ -515,13 +515,13 @@ export default function SpmbFinanceReport({
           ${kopHeaderImg ? `<img src="${kopHeaderImg}" class="kop-header-img" />` : `
             <p class="kop-text-org">LEMBAGA PENDIDIKAN MA'ARIF NU KABUPATEN PASURUAN</p>
             <h1 class="kop-school-name">${schoolName}</h1>
-            <p class="kop-sub">${schoolAddress} - Telp: ${schoolPhone}</p>
+            <p class="kop-sub">${schoolAddress} • Telp: ${schoolPhone}</p>
           `}
         </div>
 
         <div class="title-section">
           <h2 class="report-title">REKAPITULASI LAPORAN KEUANGAN PENERIMAAN MURID BARU (SPMB)</h2>
-          <p class="report-subtitle">Tahun Ajaran ${currentAcademicYear} - Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</p>
+          <p class="report-subtitle">Tahun Ajaran ${currentAcademicYear} • Tanggal Cetak: ${new Date().toLocaleDateString('id-ID', { dateStyle: 'long' })}</p>
         </div>
 
         <!-- Ringkasan Pemasukan Bersih -->

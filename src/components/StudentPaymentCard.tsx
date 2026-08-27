@@ -112,7 +112,7 @@ export default function StudentPaymentCard({ student, schoolIdentity, isPreview 
             />
           ) : (
             <div className="w-7 h-7 bg-amber-500 rounded-full flex items-center justify-center text-white font-bold text-[7px] shrink-0 shadow-xs">
-              *
+              ⭐
             </div>
           )}
         </div>

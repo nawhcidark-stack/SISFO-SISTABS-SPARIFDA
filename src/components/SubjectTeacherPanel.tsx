@@ -380,7 +380,7 @@ export default function SubjectTeacherPanel({
 
     setFeedback({
       type: 'success',
-      text: `[SUKSES] Berhasil mengambil ${filledCount} Tujuan Pembelajaran (TP) secara otomatis dari Jurnal Pembelajaran ${selectedSubject}!`
+      text: `🎉 Berhasil mengambil ${filledCount} Tujuan Pembelajaran (TP) secara otomatis dari Jurnal Pembelajaran ${selectedSubject}!`
     });
   };
 
@@ -2076,7 +2076,7 @@ export default function SubjectTeacherPanel({
                         } else {
                           return (
                             <div className="mt-2 text-[10.5px] font-extrabold text-emerald-700 bg-emerald-50/40 border border-emerald-100 rounded-lg p-1.5 w-fit px-2.5">
-                              [OK] Nihil (Semua siswa hadir)
+                              ✓ Nihil (Semua siswa hadir)
                             </div>
                           );
                         }
@@ -2259,7 +2259,7 @@ export default function SubjectTeacherPanel({
               <div>
                 <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Laporan Hasil Kinerja</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                     Penilaian Kinerja Guru (PKG) Saya
+                  🎖️ Penilaian Kinerja Guru (PKG) Saya
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
                   Hasil evaluasi dan penilaian kuantitatif kompetensi pendidik terintegrasi yang dirilis secara resmi oleh Kepala Sekolah.
@@ -2274,7 +2274,7 @@ export default function SubjectTeacherPanel({
               </div>
             ) : evaluations.length === 0 ? (
               <div className="py-12 flex flex-col items-center justify-center text-center p-6 border-2 border-dashed border-slate-200 rounded-2xl bg-slate-50/50 mt-6 gap-3">
-                <span className="text-4xl text-slate-300"></span>
+                <span className="text-4xl text-slate-300">📭</span>
                 <div>
                   <h4 className="font-bold text-slate-800 text-sm">Belum Ada Penilaian PKG</h4>
                   <p className="text-slate-500 text-xs mt-1 max-w-md">
@@ -2408,7 +2408,7 @@ export default function SubjectTeacherPanel({
                   className="w-full mb-3 py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs uppercase tracking-wider rounded-xl transition-all flex items-center justify-center gap-2 shadow-xs"
                 >
                   <Download size={13} />
-                  <span>Unduh SK Penugasan </span>
+                  <span>Unduh SK Penugasan 📋</span>
                 </a>
               )}
 
@@ -2471,7 +2471,7 @@ export default function SubjectTeacherPanel({
               <div>
                 <div className="flex justify-between items-center">
                   <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2">
-                    <span className="p-1.5 rounded-lg bg-teal-50 text-teal-700"></span> Program Kerja Kepala Sekolah
+                    <span className="p-1.5 rounded-lg bg-teal-50 text-teal-700">📢</span> Program Kerja Kepala Sekolah
                   </h3>
                   <span className="text-[9px] uppercase font-bold text-slate-400 font-mono tracking-wider">
                     Instruksi Resmi Pendidik
@@ -2515,7 +2515,7 @@ export default function SubjectTeacherPanel({
                         </div>
                         <p className="text-slate-600 text-[11px] leading-relaxed whitespace-pre-line">{p.description}</p>
                         <div className="flex items-center gap-1.5 text-[9.5px] text-slate-400 font-bold border-t border-slate-200/50 pt-2 mt-1">
-                          <span> Batas Pelaksanaan: <span className="text-slate-705 font-mono">{p.targetDate}</span></span>
+                          <span>📅 Batas Pelaksanaan: <span className="text-slate-705 font-mono">{p.targetDate}</span></span>
                         </div>
                       </div>
                     )
@@ -3028,7 +3028,7 @@ export default function SubjectTeacherPanel({
             {/* Bottom Form Actions */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-[10px] font-semibold text-slate-500">
-                Formula: Nilai Akhir TP = (Rata2 Tugas   60%) + (UH   40%) | Nilai Akhir Mapel = ((Rata2 TP   2) + Kokurikuler + PTS + PAS) / 5
+                Formula: Nilai Akhir TP = (Rata2 Tugas × 60%) + (UH × 40%) | Nilai Akhir Mapel = ((Rata2 TP × 2) + Kokurikuler + PTS + PAS) / 5
               </span>
               <button
                 type="button"
@@ -3954,7 +3954,7 @@ export default function SubjectTeacherPanel({
                   <div className="flex justify-between items-center">
                     <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metode Tempel Data (Copy-Paste) atau Unggah CSV/TXT</span>
                     <label className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer">
-                      <span> Unggah Berkas</span>
+                      <span>📁 Unggah Berkas</span>
                       <input
                         type="file"
                         accept=".csv,.tsv,.txt"
@@ -4432,7 +4432,7 @@ export default function SubjectTeacherPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">  </span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Jadwal Pelajaran</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran &amp; mengajar</p>
@@ -4451,7 +4451,7 @@ export default function SubjectTeacherPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg"> </span>
+                  <span className="p-2 w-fit bg-sky-50 rounded-xl text-sky-600 text-lg">👤</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Profil Saya</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Detail pendidik, verifikasi mata pelajaran, &amp; atur sandi</p>
@@ -4471,7 +4471,7 @@ export default function SubjectTeacherPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">  </span>
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Evaluasi PKG</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru berkala dari Kepala Sekolah</p>
@@ -4486,7 +4486,7 @@ export default function SubjectTeacherPanel({
                   }}
                   className="p-4 border border-rose-100 bg-rose-50/30 hover:bg-rose-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg"> </span>
+                  <span className="p-2 w-fit bg-rose-100 rounded-xl text-rose-600 text-lg">🚪</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-rose-800">Keluar Sesi</h5>
                     <p className="text-[10px] text-rose-500 mt-0.5 leading-tight">Akhiri sesi login guru mata pelajaran dengan aman</p>
@@ -4497,7 +4497,7 @@ export default function SubjectTeacherPanel({
               {/* Quick access to download Mobile Apps in the bottom sheet menu */}
               <div className="mt-3 border-t border-slate-100 pt-4 flex flex-col gap-2 shadow-3xs bg-slate-50/50 p-3 rounded-2xl">
                 <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest flex items-center gap-1">
-                    Unduh Aplikasi Mobile Resmi
+                  📲 Unduh Aplikasi Mobile Resmi
                 </span>
                 <p className="text-[10px] text-slate-500 leading-normal">
                   Gunakan aplikasi mobile resmi untuk kemudahan akses monitor seluruh kegiatan pengajaran &amp; pelaporan penilaian langsung lewat HP.

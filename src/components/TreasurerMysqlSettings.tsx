@@ -299,7 +299,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
     setTimeout(() => setCopiedSql(false), 2500);
   };
 
-  const totalRecords = Object.values(countsData).reduce((a, b) => a + (Number(b) || 0), 0);
+  const totalRecords = Object.values(countsData).reduce<number>((a, b) => a + (Number(b) || 0), 0);
 
   return (
     <div className="flex flex-col gap-6 text-left">

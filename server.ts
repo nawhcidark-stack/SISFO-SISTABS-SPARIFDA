@@ -1330,17 +1330,41 @@ function autoSyncHistoricalMidtransTransactions() {
 
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
 
-// MongoDB Database connection initialization
+// MongoDB Database connection state & disconnection control
 let mongoClient: MongoClient | null = null;
 let mongoDb: any = null;
-let dbSyncStatus = "Initial";
+let dbSyncStatus = "Terputus (Disconnected)";
 let dbSyncError: string | null = null;
-let lastSyncTime: string | null = null;
-let isInitialSyncCompleted = false;
+let lastSyncTime: string | null = new Date().toISOString();
+let isInitialSyncCompleted = true;
+
+async function disconnectMongoDB() {
+  if (mongoClient) {
+    try {
+      await mongoClient.close();
+    } catch (e) {
+      console.warn("Failed to close existing MongoClient:", e);
+    }
+    mongoClient = null;
+    mongoDb = null;
+  }
+  dbSyncStatus = "Terputus (Disconnected)";
+  dbSyncError = null;
+  lastSyncTime = new Date().toISOString();
+  console.log("[MongoDB] Connection explicitly disconnected. Using Local Disk & MySQL.");
+}
 
 async function reconnectMongoClient() {
+  if (process.env.ENABLE_MONGODB !== "true") {
+    await disconnectMongoDB();
+    return;
+  }
   try {
-    const rawUri = process.env.MONGODB_URI || "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
+    const rawUri = process.env.MONGODB_URI;
+    if (!rawUri) {
+      await disconnectMongoDB();
+      return;
+    }
     if (mongoClient) {
       try {
         await mongoClient.close();
@@ -1703,8 +1727,12 @@ function sanitizeMongoUri(uriString: string): string {
   }
 }
 
-async function syncWithFirestore(forcePush: boolean = false) {
-  const rawUri = process.env.MONGODB_URI || "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
+async function syncWithFirestore(forcePush: boolean = false, forceDisconnect: boolean = false) {
+  if (forceDisconnect || process.env.ENABLE_MONGODB !== "true" || !process.env.MONGODB_URI) {
+    await disconnectMongoDB();
+    return;
+  }
+  const rawUri = process.env.MONGODB_URI;
   
   // Build a distinct pool of Connection Candidate URIs to attempt
   const candidates: string[] = [];
@@ -2637,12 +2665,18 @@ async function sendWhatsappNotification(phoneNumber: string, message: string): P
 }
 
 async function startServer() {
-  // Sync state with Firestore database and await completion on startup
-  console.log("Awaiting initial Firestore database sync before starting Express server...");
+  console.log("Loading local database state from JSON store...");
   try {
-    await syncWithFirestore();
+    loadState();
+    isInitialSyncCompleted = true;
+    if (process.env.ENABLE_MONGODB === "true" && process.env.MONGODB_URI) {
+      await syncWithFirestore();
+    } else {
+      await disconnectMongoDB();
+      console.log("[MongoDB] Connection is disconnected. Server running seamlessly on Local Storage & MySQL.");
+    }
   } catch (err) {
-    console.error("Critical: Initial sync with Firestore failed on startup, proceeding anyway:", err);
+    console.error("Initial database load warning:", err);
     isInitialSyncCompleted = true;
   }
 
@@ -2846,11 +2880,14 @@ async function startServer() {
     }
   });
 
-  // Force database synchronization with MongoDB
+  // Force database synchronization / disconnection with MongoDB
   app.post("/api/admin/force-firestore-sync", async (req, res) => {
     try {
-      const direction = req.body?.direction || "pull";
-      if (direction === "push") {
+      const direction = req.body?.direction || "disconnect";
+      if (direction === "disconnect") {
+        console.log("Admin requested MongoDB disconnection...");
+        await disconnectMongoDB();
+      } else if (direction === "push") {
         console.log("Admin triggered manual MongoDB synchronization (Force Push Local -> Remote)...");
         await syncWithFirestore(true);
       } else {
@@ -2864,7 +2901,22 @@ async function startServer() {
         error: dbSyncError
       });
     } catch (err: any) {
-      console.error("Manual MongoDB sync failed:", err);
+      console.error("Manual MongoDB operation failed:", err);
+      res.status(500).json({ success: false, error: err.message || String(err) });
+    }
+  });
+
+  // Dedicated explicit endpoint to disconnect MongoDB
+  app.post("/api/admin/mongodb/disconnect", async (req, res) => {
+    try {
+      await disconnectMongoDB();
+      res.json({
+        success: true,
+        message: "Koneksi MongoDB berhasil diputuskan. Sistem saat ini beroperasi dengan Penyimpanan Lokal (data_store.json) dan Integrasi MySQL.",
+        status: dbSyncStatus,
+        lastSync: lastSyncTime
+      });
+    } catch (err: any) {
       res.status(500).json({ success: false, error: err.message || String(err) });
     }
   });

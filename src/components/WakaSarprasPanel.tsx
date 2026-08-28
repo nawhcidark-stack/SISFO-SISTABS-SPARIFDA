@@ -951,7 +951,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
           <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl max-w-4xl w-full p-6 flex flex-col gap-4 print:border-none print:shadow-none print:p-0 print:max-w-full">
             <div className="flex justify-between items-center border-b pb-3 print:hidden">
               <div className="text-left">
-                <h3 className="font-extrabold text-slate-900 text-sm">🖨 Pratinjau Label QR Code Inventaris</h3>
+                <h3 className="font-extrabold text-slate-900 text-sm">🖨️ Pratinjau Label QR Code Inventaris</h3>
                 <p className="text-xs text-slate-500">Jumlah label QR Code yang siap dicetak: {barcodePrintData.length} label.</p>
               </div>
               <button 
@@ -1028,7 +1028,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 <span className="text-[10px] font-black uppercase text-amber-400 tracking-wider font-mono">Vice Principal Desk</span>
                 <h1 className="text-2xl font-black tracking-tight">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h1>
                 <p className="text-slate-300 text-xs font-semibold mt-0.5">
-                  🛡 Portal Administrasi Sarana, Prasarana &amp; Logistik Terintegrasi (Waka Sarpras)
+                  🛡️ Portal Administrasi Sarana, Prasarana &amp; Logistik Terintegrasi (Waka Sarpras)
                 </p>
               </div>
             </div>
@@ -1265,7 +1265,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                 <div className="lg:col-span-2 bg-white border border-slate-200 rounded-3xl p-6 flex flex-col gap-4">
                   <div className="flex justify-between items-center border-b pb-3">
                     <div>
-                      <h4 className="font-extrabold text-sm text-slate-900">⚠ Barang Rusak &amp; Perlu Perbaikan</h4>
+                      <h4 className="font-extrabold text-sm text-slate-900">⚠️ Barang Rusak &amp; Perlu Perbaikan</h4>
                       <p className="text-slate-550 text-[11px] mt-0.5">Datar inventaris dengan kondisi Rusak Ringan atau Rusak Berat.</p>
                     </div>
                     <span className="text-[10px] font-mono px-2 py-0.5 bg-slate-100 text-slate-600 rounded-md font-bold uppercase">
@@ -1342,7 +1342,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     }}
                     className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs border border-slate-300 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                   >
-                    🛠 Kelola Kategori &amp; Lokasi
+                    🛠️ Kelola Kategori &amp; Lokasi
                   </button>
                   <button
                     onClick={() => {
@@ -1695,7 +1695,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                   </div>
                 ) : filteredItems.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 border border-dashed rounded-xl bg-slate-50/50 flex flex-col items-center justify-center gap-2">
-                    <span className="text-3xl">🏜</span>
+                    <span className="text-3xl">🏜️</span>
                     <p className="text-xs font-bold">Tidak ada barang inventaris yang sesuai dengan filter.</p>
                   </div>
                 ) : (
@@ -2674,7 +2674,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                     }}
                     className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                   >
-                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🛠</span>
+                    <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-650 text-lg">🛠️</span>
                     <div>
                       <h5 className="font-extrabold text-xs text-slate-800">Kelola Kategori &amp; Lokasi</h5>
                       <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengaturan label &amp; ruang sarana</p>

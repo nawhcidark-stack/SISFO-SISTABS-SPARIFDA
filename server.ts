@@ -1,3 +1,12 @@
+import {
+  getMySQLConfig,
+  saveMySQLConfig,
+  testMySQLConnection,
+  runMySQLMigration,
+  syncAppDataToMySQL,
+  executeMySQLQuery,
+  generateConnectionSnippets,
+} from "./src/server/mysqlService";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -11,7 +20,6 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { MySqlMigrationService, MySqlConfig } from "./src/server/mysqlMigrationService";
 
 // Setup serverport
 const PORT = process.env.PORT || 3000;
@@ -2168,7 +2176,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
       dbSyncStatus = "Blocked (Bad Credentials)";
       dbSyncError = "Koneksi ke MongoDB Atlas gagal karena autentikasi (username/password) ditolak oleh basis data Anda.\n\n" +
                     `URI yang dicoba (Masked): ${maskedUri}\n\n` +
-                    "âš  CARA MEMPERBAIKI:\n" +
+                    "âš ï¸ CARA MEMPERBAIKI:\n" +
                     "1. Buka Settings -> Secrets di panel sebelah kanan AI Studio Anda.\n" +
                     "2. Cari variabel bernama MONGODB_URI.\n" +
                     "3. Jika ada, edit nilainya dengan string koneksi baru Anda, pastikan password ditulis dengan benar (contoh: Sparifda20519113).\n" +
@@ -2184,7 +2192,7 @@ async function syncWithFirestore(forcePush: boolean = false) {
       dbSyncStatus = "Blocked (Firewall/IP Whitelist)";
       dbSyncError = "Koneksi ke MongoDB Atlas gagal karena IP server aplikasi ini diblokir (Firewall / IP Access List di MongoDB Atlas).\n\n" +
                     `URI yang dicoba (Masked): ${maskedUri}\n\n` +
-                    "âš  CARA MEMPERBAIKI:\n" +
+                    "âš ï¸ CARA MEMPERBAIKI:\n" +
                     "1. Buka dashboard MongoDB Atlas Anda di https://cloud.mongodb.com\n" +
                     "2. Pada menu kiri, pilih 'Network Access' di bawah kategori 'Security'.\n" +
                     "3. Klik tombol '+ Add IP Address'.\n" +
@@ -3350,136 +3358,6 @@ async function startServer() {
     }
   });
 
-
-  // ==========================================
-  // MySQL & phpMyAdmin Migration API Endpoints
-  // ==========================================
-  let mysqlConfig: MySqlConfig = {
-    host: process.env.DB_HOST || "localhost",
-    port: Number(process.env.DB_PORT) || 3306,
-    user: process.env.DB_USER || "root",
-    password: process.env.DB_PASSWORD || "",
-    database: process.env.DB_NAME || "spp_db",
-    ssl: false,
-  };
-
-  function getFullDataStoreForMigration() {
-    return {
-      students,
-      sppBills,
-      savingsTransactions,
-      miscBills,
-      attendanceLogs,
-      homeroomTeachers,
-      subjectTeachers,
-      treasurerTransactions,
-      classSchedules,
-      teachingJournals,
-      studentInfractionLogs,
-      studentCounselingLogs,
-      merdekaAssessments,
-      midtransTransactions,
-      spmbCandidates,
-      sarprasItems,
-      notifications,
-      configs: {
-        sppRates,
-        schoolIdentity,
-        midtransConfig,
-        whatsappConfig,
-        treasurerConfig,
-        principalConfig,
-        sarprasConfig,
-        bkConfig,
-        curriculumConfig,
-        adminConfig,
-        spmbConfig,
-        salaryConfig,
-        backupConfig,
-      },
-    };
-  }
-
-  // 1. Test live MySQL connection
-  app.post("/api/admin/mysql/test-connection", async (req, res) => {
-    try {
-      const configToTest: MySqlConfig = {
-        host: req.body.host || mysqlConfig.host,
-        port: Number(req.body.port) || mysqlConfig.port,
-        user: req.body.user || mysqlConfig.user,
-        password: req.body.password !== undefined ? req.body.password : mysqlConfig.password,
-        database: req.body.database || mysqlConfig.database,
-        ssl: !!req.body.ssl,
-      };
-
-      const result = await MySqlMigrationService.testConnection(configToTest);
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ success: false, message: "Error pengujian koneksi: " + err.message });
-    }
-  });
-
-  // 2. Direct migration of all data to MySQL tables
-  app.post("/api/admin/mysql/migrate-live-data", async (req, res) => {
-    try {
-      const targetConfig: MySqlConfig = {
-        host: req.body.host || mysqlConfig.host,
-        port: Number(req.body.port) || mysqlConfig.port,
-        user: req.body.user || mysqlConfig.user,
-        password: req.body.password !== undefined ? req.body.password : mysqlConfig.password,
-        database: req.body.database || mysqlConfig.database,
-        ssl: !!req.body.ssl,
-      };
-
-      const dataStore = getFullDataStoreForMigration();
-      const result = await MySqlMigrationService.migrateAllData(targetConfig, dataStore);
-      res.json(result);
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message });
-    }
-  });
-
-  // 3. Export complete SQL dump for phpMyAdmin
-  app.get("/api/admin/mysql/export-dump-sql", (req, res) => {
-    try {
-      const dataStore = getFullDataStoreForMigration();
-      const sqlDump = MySqlMigrationService.generateSqlDump(dataStore);
-      const filename = "smp_maarif_mysql_dump_" + (new Date().toISOString().slice(0, 10)) + ".sql";
-      res.setHeader("Content-Disposition", "attachment; filename=\"" + filename + "\"");
-      res.setHeader("Content-Type", "application/sql; charset=utf-8");
-      res.send(sqlDump);
-    } catch (err: any) {
-      res.status(500).json({ error: "Gagal membuat file dump SQL: " + err.message });
-    }
-  });
-
-  // 4. Get MySQL config
-  app.get("/api/admin/mysql/config", (req, res) => {
-    res.json({
-      host: mysqlConfig.host,
-      port: mysqlConfig.port,
-      user: mysqlConfig.user,
-      database: mysqlConfig.database,
-      ssl: !!mysqlConfig.ssl,
-      hasPassword: !!mysqlConfig.password,
-    });
-  });
-
-  // 5. Save MySQL config
-  app.post("/api/admin/mysql/save-config", (req, res) => {
-    const { host, port, user, password, database, ssl } = req.body;
-    mysqlConfig = {
-      host: host || "localhost",
-      port: Number(port) || 3306,
-      user: user || "root",
-      password: password !== undefined ? password : mysqlConfig.password,
-      database: database || "spp_db",
-      ssl: !!ssl,
-    };
-    saveState();
-    res.json({ success: true, message: "Konfigurasi MySQL berhasil disimpan!" });
-  });
-
   // Update dynamic midtrans credentials
   app.post("/api/set-midtrans-config", (req, res) => {
     const { merchantId, clientKey, serverKey, isProduction, isDisabled, pin } = req.body;
@@ -3497,7 +3375,7 @@ async function startServer() {
     
     const notif: RealtimeNotification = {
       id: `notif-sys-${Date.now()}`,
-      title: "Konfigurasi Gateway Diupdate âš™",
+      title: "Konfigurasi Gateway Diupdate âš™ï¸",
       message: `Konfigurasi Midtrans diperbarui. Pembayaran online sekarang ${isDisabled ? 'NONAKTIF' : 'AKTIF'}.`,
       type: "info",
       createdAt: new Date().toISOString()
@@ -3693,6 +3571,86 @@ async function startServer() {
   });
 
   // Get WhatsApp Config Settings
+  
+  // ==========================================
+  // MySQL & phpMyAdmin Integration Endpoints
+  // ==========================================
+  app.get("/api/mysql/config", (req, res) => {
+    try {
+      const config = getMySQLConfig();
+      const snippets = generateConnectionSnippets(config);
+      res.json({ success: true, config, snippets });
+    } catch (err) {
+      res.status(500).json({ success: false, message: (err && err.message) || "Gagal memuat konfigurasi MySQL" });
+    }
+  });
+
+  app.post("/api/mysql/config", (req, res) => {
+    try {
+      const updated = saveMySQLConfig(req.body);
+      const snippets = generateConnectionSnippets(updated);
+      res.json({ success: true, message: "Konfigurasi database MySQL berhasil disimpan!", config: updated, snippets });
+    } catch (err) {
+      res.status(500).json({ success: false, message: (err && err.message) || "Gagal menyimpan konfigurasi MySQL" });
+    }
+  });
+
+  app.post("/api/mysql/test", async (req, res) => {
+    try {
+      const result = await testMySQLConnection(req.body);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ success: false, message: (err && err.message) || "Gagal melakukan tes koneksi MySQL", error: err && err.message });
+    }
+  });
+
+  app.post("/api/mysql/migrate", async (req, res) => {
+    try {
+      const result = await runMySQLMigration(req.body);
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ success: false, message: (err && err.message) || "Gagal menjalankan migrasi skema SQL", error: err && err.message });
+    }
+  });
+
+  app.post("/api/mysql/sync", async (req, res) => {
+    try {
+      const result = await syncAppDataToMySQL({
+        students: typeof students !== "undefined" ? students : [],
+        sppBills: typeof sppBills !== "undefined" ? sppBills : [],
+        savingsTransactions: typeof savingsTransactions !== "undefined" ? savingsTransactions : [],
+        schoolIdentity: typeof schoolIdentity !== "undefined" ? schoolIdentity : {},
+        homeroomTeachers: typeof homeroomTeachers !== "undefined" ? homeroomTeachers : [],
+        subjectTeachers: typeof subjectTeachers !== "undefined" ? subjectTeachers : [],
+        miscBills: typeof miscBills !== "undefined" ? miscBills : [],
+        spmbRegistrations: typeof spmbRegistrations !== "undefined" ? spmbRegistrations : [],
+      });
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ success: false, message: (err && err.message) || "Gagal sinkronisasi data ke MySQL", error: err && err.message });
+    }
+  });
+
+  app.post("/api/mysql/query", async (req, res) => {
+    try {
+      const { sql } = req.body;
+      const result = await executeMySQLQuery(sql || "");
+      res.json(result);
+    } catch (err) {
+      res.status(500).json({ success: false, message: (err && err.message) || "Gagal eksekusi query SQL", error: err && err.message });
+    }
+  });
+
+  app.get("/api/mysql/snippets", (req, res) => {
+    try {
+      const config = getMySQLConfig();
+      const snippets = generateConnectionSnippets(config);
+      res.json({ success: true, snippets });
+    } catch (err) {
+      res.status(500).json({ success: false, message: (err && err.message) || "Gagal membuat cuplikan kode koneksi" });
+    }
+  });
+
   app.get("/api/whatsapp-config", (req, res) => {
     res.json({ success: true, whatsappConfig });
   });
@@ -4232,7 +4190,7 @@ async function startServer() {
     // Broadcast notification
     const notification: RealtimeNotification = {
       id: `notif-pwd-admin-${Date.now()}`,
-      title: "Sandi Administrator Utama Diperbarui âš™",
+      title: "Sandi Administrator Utama Diperbarui âš™ï¸",
       message: `Password akun Utama Administrator telah berhasil diperbarui secara mandiri oleh Staf Administrasi.`,
       type: "warning",
       createdAt: new Date().toISOString()
@@ -8382,7 +8340,7 @@ async function startServer() {
     // Send automated WhatsApp void notification if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnPayment && student && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `âš  *PEMBATALAN / KOREKSI PEMBAYARAN SPP*\n` +
+        `âš ï¸ *PEMBATALAN / KOREKSI PEMBAYARAN SPP*\n` +
         `Transaksi pembayaran SPP Bulan *${bill.month} ${bill.year}* sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* (${prevMethod} - No. Transaksi: ${prevOrderId || "-"}) telah *DIBATALKAN / DIKOREKSI* oleh pihak administrasi sekolah.\n\n` +
         `Status tagihan Anda kembali menjadi: *BELUM LUNAS (UNPAID)*.\n\n` +
         `Silakan abaikan kuitansi/bukti transaksi sebelumnya. Hubungi bagian keuangan jika ada pertanyaan.\n` +
@@ -8749,7 +8707,7 @@ async function startServer() {
     // Send automated WhatsApp confirmation for savings cancellation if enabled
     if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
-        `âš  *PEMBATALAN TRANSAKSI TABUNGAN SISWA*\n` +
+        `âš ï¸ *PEMBATALAN TRANSAKSI TABUNGAN SISWA*\n` +
         `Transaksi *${transaction.type === "deposit" ? "SETOR TUNAI (DEPOSIT)" : "TARIK TUNAI (WITHDRAWAL)"}* sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* telah *DIBATALKAN / DIKOREKSI* oleh Admin Sekolah.\n\n` +
         `â€¢ *SALDO AKHIR TABUNGAN SISWA*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
         `Terima kasih atas perhatian Anda.\n` +
@@ -12726,39 +12684,55 @@ async function startServer() {
           });
           saveState();
         } else {
-          const errText = await snapResponxœì}Ûr7¶è{¾áñ‰I›lÉÎm]Šu±ÃØº”HÅ5åñ‘@6(Âlv3}±Äñ¨ê¼î—ýpÎLÕüÃù¡ýûöZ º@£)R–3ÉT25‰Ø €…uÖæ¥ì:m¶ž}AŠÆQ˜Dó®h6‡ÜOc&dÒaqÅdÿœî’4š±°Ûhã÷! 2àlm‘½€ÑdâÇt’Z}¤dÜ÷¯ÉIóÑ}îÓ”%Þ„‡~?ôÙusLv~ cûdgg‡Œó*øáoƒ‚'¡,Â~Žà—1 >!MÑÅ—P¥ó¤E>j…Äî6Y|ÌDƒ6yb ‚ºô¤PÏDÕöwÀR² qÂüƒ8>L.ab—ô’dÎæ£Œ¦$a	'øA—PJrÔzf/­JdŠGïêOƒã#OôÔt¡]Î[ÖöÄzÏY’ÐK–´ìöâ˜.=žˆÿÖµyNœÞûˆ}´I£EºdÆ<¼¬a	ÓÇ¨ªUghZHÇSÒ<·×´
-ñƒÔ¢—Ô-aÌÒ,á?@°ØYÒüv{»å½O¢°ùQÒ~wÝEüµÉcsP76ò¾‹ù$Ðêu	—úÔr–Ch6ŽcFS@ºÙ¥äÉ‚E‘9T­ã_ýV2ßú¬çd¼rÍÖ[±WQÈf°L— çŠ.Ëu‰«*×Ká+§<mÉn¾ø"ï7QCI²ñt3Ö.>G±Ïâ¾_~@èC\£ò“£®’˜ù<fãô,ÊÅJX^0–S¸ ,V!*'IñlÑßÂõÙŠÙ%ORwðŽN‰úërJPNžéL°Kèƒ>Àglã"ãß_MòG~f1Ÿ,	6Gˆ)#[ä„.ç,LÉ@® 4 ‹…·ˆ’´Ù(§óA4W“YÈ&0š,Ã1iÆì—6N§…4/q¤bÉ0‹Õ$Hûm¢À²tù€í ñ‹7ŠüeŽ!dƒ/U+òÕWäKl¨3C•‚¿q`ò!þ>¡)ÍÈQpD®è{>">OXœÒ½†‹P§çãfwÉéÅšÚx›cO`ìX}BvÏ‹…¥j•Z-¨VB"C‚ˆF£åò˜7[¢]³ú½¥ÚKb(°ZLê6t~SAç> D!™g1È³ Í ™)Ðj=.	¨&’Q°û³º-1´Ð¤Q[™û½j…ìŠì‰ýÁ±R­­Õ(Ü±hiê‡ã0à!sŒ")†™s>s6[ànªjfˆoõ¸y7Ž¨?¦@™a”ò	)Å£Ð Y½ KNR>gGÚWè¿\wîwÉ…hÓAWlþà#ŽÎ£«fëæB“ÁiæŽúÐ¨œ˜`éR¢ò4`@*'¥¬"‡‚Vviœ‘&*×V£¬¯ÄŒbO£«Ö}ð±ìd’Á³ÒD.î…8‚›±xJ.mÔSJ§kb“œ. eÓ"P ‚)Í¯½y”…Â²%^G@üL­Vƒûþ~£uãiJ—œ}!'KåƒV.·võs¾Éig”¯¶¾zM}âÀ4É›)M“Þbœ<f|‘"ËaLøed©‰+¬ò~Oz,¤£€)ÑUà,0˜ÅÉì AüÔ²M­” ’/™j ›>«ÙÖ•fèÅŸÓ©G$]¼¡W„äÓ˜“GNêxTOÞ_Â¿„ä±f$]ü×ßÿß?È£Ý³WÃ>998Üíý¹wÚ;"ÃãWGðáh¿÷b(¾¯íÁG¡$Âè˜úlÎÇf4¾yT|RšJ`R‚ÚåñV•6b	Ðé£ÏA–HÊ:%»§?öý× ¦….ç3`6þóÿüƒE9ÑÍÏRÀÅ‚öŽ²90œ9@£<2ËÄ*T…À°z÷ A °¨Bã4êš †§rÅ@Ìð •;yMÃ÷YJú`=íf³Œ€…žÍZ³Ï[Œ@‘‘EÆA —°Í@¦V%„yrøËG…ÀÏhˆvÀ±øêÖ²D'ãÜ0<À¾›»V Ó!'½£þ°ß“]OÈa¯wÚAŽÎ°h¿ÄØé\”“Àb½Q¼lÈ	Û’£Zž°j›Lø'.;¡gTnR7=a¼¶>Å–/d|Cc‹*7òÛç3d²xŽ„ÚpðŸn®»¬Ú»Zé%Wék®œ“õÌôï=2 •Oö¢ù"``o¾ ¡Ašøoð•KÊ>¹¢­S­†ÊÂÊ˜Íºæ¹´Ê±%öˆV^[ˆ-ùWrü1àeI½±~7ýó˜ä›™ÉÆ4~uëØìU3‘A¯´‹qƒ@ZÆ›£}è`¾ ›ÃXùzä0Áò  ýÄg¦4“œvnÀF|
-ÂmšÙª5ãá8šƒ\Ú1è—b¢ýýñF_½a¡äõÙ:+@JºÛ«uœž-,Þ£‰¶KRýxôžS‚ºKÕÜ6ú4h§jR¥´§£å-ƒ´aò1š‹zÿj¢×ÚÐm2Öœây^³¦X,e«UŒÕ7–W,nT¢§Ú¥Q¬uiJ,k+<8lužd£9OÓÏãÅÝEk
-Ìåf¤nfèÂFÓž	Ÿ/PÜÜ¿æ„¡}€K-Õõf¸ÃtMl]µùox¸Ýê´6uó-®æ¾´ÀÎ„öXœÂ«S¤` T®ØÆÛxÛKêU”¢c š3I•‰©QÛdœ%i4Wvýúõžõ+ÉÏà;úhž½”ÿC:ÚxÒUû S÷YH“ªN–£RšX©Þ|Œõªz³I?í’}ÝgIÐžTH2På…øp£ÂÒ3wåS{–¯åx¸ðœä ä@U4|×3:j'ÿu—ì²u@gœ 1“ÒÐš|^^Ò©Á VOÙ/™¿ccÃÆ®r¶"ê3±sØt”[;+ÅwÎR
-^Zj¹Ëe…Ùleñ‚&¢Üâ3kÐw]¨¯í…:øÁßYœMQëØø´ÖHlr ô gÈ§†;¼ÒnL)ßÊÀx2žFQpóK—&ÄÎÃ¹¨xþ>ºŒøë!b«Ü>w·Æ:Z&š+Aæ³¤ùPyÞ?¿<À_Í-ùf$ äa>3§œëŠÜÿÈ…°ÜsR›"J'(‰“ê1£ªÕ÷q¼®æo·ß=3:e<@¿7œŒõ€õDì8m›ßgÁr°XTÚjß¡éSGË §çÏ+-cvªiÞ]¨¥€XíARQgž°xŒJ~Gì¾F‰Ï½JMÓ¡ØÀj”dòÜnXiWTí’fm'J‘?'‡4z1üð›vm»òiÚ¸nµÈ#ò:Ûn¹ì˜û
-L_ëP‡öˆ4í‰l	Èæöñ>QÜ–WÎµ!FhHþÚUPµ>·u©“3¬á¢ÁwmqÝ€JF^È>4¾k»¯Ÿòí
-’j•¸È;»‘¡kõ¿^'ŽÐ“íÓ(¥AÝôÀyÒ'×v/ÿãšAZ¤²t×`wÙ½nn·AÐqÊ ™SæØXž)+›V¶¼íµ…0–9¸ÜŸMh¤Æ X t°ÜB6« ÷ÁÌCÑ€‚ifæÉkæ]‚ÄbÉÙ£(6ñægè]|-kƒæJ„ÓÖ²d¨*×•ˆ.ñu¨¯¨ÚÍžæ4`–e
-èN&L6kAQ9³/mïAuë[©`2ÐúÁ¯Žå˜^©C±F;¼ƒèõ³1ÞÉæm‚vµppàþô1n—dPJå“…ƒg=ÙPí\öÌâÁ†°©t¨Ž`­.\²ÁbXkÕtŽµgÖqÆ63æ-¡ðXWêu=ýØÎ³ªS*mÇôkŸy`ÔÔ¿¢nÓ‡b2˜Ø!¸ÙÐ9=8=xÙ©íYÇÕÕMÓ (¢-rø·5rR›Ûm
-¬l£ÄÚ^”ÈÍ$'^ƒXÜÞ2Œ=K:ìT„CýŽ[í>›þó3ì¡È(‚¶pÛ­ØhÃ-vK•é~Í\íï6müÅ¯ØyÉ.Ä…*´Êx¼!Î¼×v4Ž/÷²*‘q‘ˆ)÷¡ro}¦NáÑ+6%ÀR<ôH~î8ÍFà{rž/O9Ûk^£U'ÉŒx•,C³t*× p·›M&,ö&q4oÖá-ß¼yL]Ü²‰òcdäúï¾iT¢ñ»\š
-FOâÔ‡PöÏIcš¦‹¤»µ…lyUoÍ·pé·><Ù’m¢~Ò I`´H€ÜFÑõ-úÈG˜79¡KôÉxB´¶ç>K)’®+äÂ9†ÆT¢ñŸË8J’s*Øº«ó¸VëFo"E€¬éoÂã$=éœuÇfç`$ð@¯&> _ ºñ*Òñ%ó…Ô	a†î/&Hƒ¡ƒ\­Q7K´Ê¾5º0ç+ÃŽ»gý×ûý£—¶UC]Ý"µkü’Ñ0åé²KžØE•3Üì}	&üg‹ôÃ	ý…ˆèð2iØ0ZÝ˜@ð Áigÿ@¶ºß:g´ßìuŠi½éý\;¯ŽöÆ3¼€– Wˆ>Ñæƒ–·wó?Á,xð±â°†EpKxã¦uaâã°äÛw­*Zjõ#7AjQã†¿ùò+ä(¼¼šfI–hnîOj¯¨±Æ´“œœt~:{ýçº‰”FÔæcØ ¾Ð?e'O·Ÿ~;¹–vÚªµVÔnoPÏt Í¾ËAJÝ&ì¡d-üÂð+¾Èœ.¤›×tMšágÊKÙtì™à/Aõ`[»Ý2‡ÞªeÛ°¿•ÎŽú/ŽO×cú9AzmÊ
-ÚÇw¥=RQ»¨œOY²€h/Ó+ÊS2aq¤l†¶é5‰H[
-:Lµ[Q“04RgôÐì„@…;m¡‰f¡±ÑÙ"]«&˜MQÌÿ*j@ƒ‹] Ü1ÍÒžºÑÅ£Á}xT×•éEr7O–MË)‘xÓÒ0'Ì{o^43Ûµ?%ÐKÃe[£¡0QÍÍÂÎÈ3+y>§×5mî¢vþù<‹ƒj£:÷g`u,þ6{ƒauŸ	G"·”‡¥aÖtØc¶¦b‘Ö²šòÊ<©\ÆðËê#Cä‹öÖ¹yLlÑ•Ï’qÌ2[	5Ž£ÅAzÇîl™jÂôìU-OË “g’j˜Æ‰¸5@ÍÎ£(hÕ,Ò™o#V•^åÔØ-HHç™5”ª{+EŸHHs’þ'¥bšëW—“ùG’âIŠvo¾ÂÿüdEWsÿHùË!Øþú½dýÕ„Ý5¦X_™ù§ÞºÁQ*RÿNYG×Ï›%þY“úÕ2 ?5o\·í«%Ùý+æØ™³^™lg™m·¥ÛU!o@jø¤<3âÖ‡ã(~ž‡Ó¸ãMËHP*|-´b›¸3 ÏI€ÕpÝßG2 `ýûH4ÌÝÍ³Ý‰€2»éðàõÙQoÐ'rãÁçYIû«ðXyLŽãqøûJ«40þÈý“ÿ\ü×ßÿãßÉ£WgýaïÈG%Ž½î½DÂ98í½ì~RâŸE‹''‚i¹S›xÿêÊTa’¿­lÀ<ÏÈÍ°º›Ui|`‘¸¢"©¶#Iš¯^µIoŠö¢„ÃÜÚ`%äh†6ØE0h()K‡Y„Y#ñ—ÇˆÂzžào>ŸOHóÏ—ÏgøFZ2‚–súYSùÜvêýæôÝÅ²íi”ÃßÏM’ó;m:…å²q:_z¼2§@œuï˜aàç¹°ŠÛþÈ8ø#ãà_2ã@‹fÇCd¡$Íßæ—•ìXÍc+Ë´$6«®TÕß©sò*5×rÚLïÊáS®°FrGÒI™÷çk;—Âúó:\wÑŽE²‰3Ç]eéÝÓ^æ\ÈdôËÏ£0mÍr×ü=“þ×Ö‡O<y<Läñ²÷0<ìV¯±rGŽk]Èý6‘ÚÒ´¥Õ l+ñéS7¡Šß*×¼qÿ7b.¶\œ$ÿÐ‡X"Jè—,ôLTnªTgTqóºpG['¼gŽöÕNwh%ì_EX2@ã}EÕ5ºàÃàGhkÔuWžB[‚’kzWë7^fmÖy`=\^Œlåì½"à3í_… ¦u‰¸Å„¶ºÜßJèÎ¸€¸¶› ÈÜÂ/ï?³ä„î<ˆˆó]q o×ÈàúêìÍÔ…J±Ðí2—î\[û”ñ¯ç€þûDhgµ®sØîFe^½´7û2§ñÄ(Ù20Œ¯È€Ý€ëÐ˜E“EŽ¬-ÁŒ' ³¥¥‘‡`MÂ(%K‰ŒuŒk³t¬ÕàÀÜFs]hWFŽëÐ¸jÙ)š9\öt*F§`€jêÈ¬·(d+ÆäÖ†eP€ë\³8óµ‘ã ÃY5Î¼C·>©¨˜ß
-3|=á¿Žì_Û¼P£{Oƒ,®ÓÙ,) ’÷Ôç¸…¹¡=ÇãÚ€ÍRÀý€Í¢€N¯âdcž˜[Ó÷eF
-Qlª?Iû€]‰¸Ht¤ÍÔ<××DcœÄ®ØÉ”H:GæuIú½›(¤…ìAÓH)3îU1!@æƒ¡S|ÁUÜS»P»Ë6J­âË¾0'þÅ5›L$Ò‹|•b¤£¬µò
-=«@m³[ÍU– Oå¥ŠGP¼zÓ9=xqv´KFR™SÑR±¥ïDšÒ:úÏÁ÷U½Y/súX£QD­··TÒT£<Àáú§ÂUp»Ëœø›{'ZZÌ³9ÍùD@ÒxÆ:‚gSÕïù¡Òí¡¯ª$’ÓÆ{O/qÃ8ÀëÓ,¤­dÚ"#q@Y½öN%™‚n½)Äh‘gµñ}8×Ÿ-þqËèê“ÆÿûÿÉ£!žöáÁiÿ°‡w‹¾ÄûF_÷{Gä«wŽ6÷zƒ‰1-ÇA£Æò`‰>ÁÜx²£¢â*Ž@ZKÓi~ueAžÕÜv+©%V/6÷Ëû2älÛ'«_e<¥¡º	Ô"èš£Â}µQFŽ6µNk%B¬!ÅÝ¬@@)8dµÐ+ÏZ±²‰6¨n_|]Š$Ôe5½Ÿ€¶¼¤ö©§K4:O=‡x^5Å»Î2cñ{
-œ<[Žz¿Ù“Iå†Ýë©äÅÉD¾mç¤­Ùë0Aš~ËZÙ”Â¶.UT!
-YwÞÔ‰£„%	€°×7¬}”•á˜¸ÅúÑg4¯Ç¢ŸÏh]ÿîíàÛMÀ»mâäÞ7º“†G½†ýXl¯m9nÔB‡´Ð-Áš)»n³Ž
-{lE³ÊI”"‡öª&×F@ˆZ
-[ã©–~Ž°ÉÙÁý¹bø•©®-ážŠƒ9®¿P…P <L#r<ÅÇ¡·žô@†Aâ•ãx^|Š'xµ÷JJ¸4ê¨èÉMŽ²
-äcµö#i+‹x/ 	üP7j¨_²èˆ»¸,q™#5÷®ºçí»J*‰ÞuËØÑƒžó§SÌ€,¨æ¹Q£øÜ%:(Ì—Ô~ªÜC#¬Z_Þ
-±íÍƒTl^ßºKd	>æó9¿ÄX1ü!eñHÜÚ0‹ ÐÊ[ëäÁÌøäéË
-D[+á1~ßé5Lµ¤ÈÄW¤•ts"‹ñÖº½M	”RwAu]—T+ÔÑÍB?FcÙ«ÎÖýéÈª–„RbÔBQ8|+ðpÃ´69ö†ðÉçhÍŠÅa"*ODÉåA%¶—&OÓx‰´¯+B1¶çÕ»—Å«yhQ7ßÎÆÖEåâ“Vïb0Ü·‚¤+—f,xÊ¡Ì@ï2íùBà”gˆO%GÈfH§0X–H¾zÄŒúË‚ 
-˜ÏÆ®Á€Ns¶“ÃÒïÔ|Ýc7	T&\8®"¬Ô32. ¤‰¤ £ÌnXtv‘¤¾ŒV×'îß\ˆ‹²VW>ûE™›k§æZ(2M¶Š#NuéùŠ°0Éb&ðä1TNƒø‰ÐXè:Öo
-±ú·2èH´÷¢\ÆJÖ²Go€³±ZéX’¦QËñ¥£‘Ýiü§áuÍ ³¢¸[FÒ0*éUx2ëW	t§2ÊÒ0ÛÚò»§ÕîÖ:U2›ndâ?¶rðY2­PªÞYEAÈ&¥6FVˆäüË)xD
-ƒ*•ÐË˜úŒ|ŸKKòAE5¦B‹Yòˆ¬“Zö47ò¯õ¬ãuîÌ	1é['ÆvUÉì©i6
-»&/äÍŽH/	¸è¥¤9Â.‹åÉ¥©€ïs™Ó„ú-
-‚[»&aé#–·êó²î|.þÝÅËõvÕ‹|ª[¡šNYìØ#¢Òä·¹vHÅFÊUqýmÌ³æÖÛÿM;ÝîüéÝÖeãuo¼õ•¹õ²¢`ê*Š}kAµò†úd—èbtÉ¶… 4:‹™h©aùUÊ•ÍcÑ¨Š•òô [ÁpõLA"¸úý2£±^Êm§fßÔ÷cáòéAVâSµ®©´vyäëq®åë2ýÏÌ´®YlÈÇ3›óoÕÚ#§Ó¤½~ùµ¦ÊÃJƒüÉ¬?›Éó?½zþ­ú‹Ój#«¨Ú6àHdoÀäÒ›•_«-ÆSø"UoQ~­¶HøýãdO^ö )M½ÀÑ.e‹Am[»0oo’È1æ½aFI‡ô–ÅuèøOIÝõ4oH•™U|¬«¿ë$»lek›t¬¢º¶~–gLÚm‹¢º¶Çãq¶¨i\–ÕµîãK)Ž!Ëïu­zUI`Ôµ;±µ…¥\mòÜ,»Q…Ôø‘ûÙb%EõG™VXŠÅn­°4‡¢ÊL‚*>ÖÕw”]¶²µMPVQ]['AYEumÝe—Õµ®”þ½®•ƒ Œ‚ºv‚ZiRÈÂ*AéßWžÔê&“¦DÃÉR®æŠR“–´ÏõmÜôT-½‚MS•ÂúöNºªÖ·wÓVµ´B•¾Ì’ú–³ŠêÛVèÌ(¨oW¥5³ÄÑ2Š.¶ƒ›óš‡&˜E²mé3i.[b8j¥?¤o­çoæ¯ö†ËqŽðÆnðà;»ÀnØ‰×µ=ß›[B_>ÿ]ù¬j¯[ÈïR8”ûÒ*=M\£€IÌ	ùÞyÂ€0`F|¬ Nn¡ßè{¨òÈ£8Êó‘´Íp£ªúï‰è5 mc–$–oí¸AZýz÷#Ü%–`W{TºDÂ
-dJ4Î˜BÊƒãÜxvÀ·ÄªÄ½½­c-ïQõ5¨ÜÏ‘T«:Îó V…Y* ªÞn¿s sÀ‚ŠùÊÝ=.º6CŽÁUÏ‡v÷ ˆy$×T;Zÿ¬pT†÷2Ž¸ÄpÂâ„Ò0£A°¼%â!!¦Ðº“æ­×>„ò,—íã@/ôqù ®øþS¹
-M¤rG²ƒìÎËÇ+j4Nûð¼Ï`óYBEž-Fwƒá6•<TÍHâLnÎvlBF"¸‰Î¦<6Âyä[RúòÂEÙ7-ž2õˆÜ«£>­ö²`q#ªêÌçyží'R±yg˜síï!¾' s!¥ëÓò_SüÀb|h7?G?)ÁÉ>lòÌ„å²QPO,º(¦»Q*gq„-ãyìPù¦Q,cãEH®~æMÔû²F«ß};È_þ2£bã<Ê’²ÔØd”¯—Ñ (6æc.Î¯µ¾ê^ÛôL^O„æ!WóG½ð'1¿¢Kšª@é¤¤>pêó™Œ÷¸Uø‚Q‰J²öslF/Ö;<×iáÝ~ÒEMËÓC£nyÓ»¢:OÕ\}ÙØ˜’#{!ÑZ×‘æÀK©_¢bBƒÄt_%áû±²oÞPÃú‘' I–zÂ´Ud†bÔÕ’GÉ
-ò²Ý.y(åàÃRÅøÕï«,>vm¼êÞH÷”Îõ–³~U&—IçIòÒªL*êC¾U¢%ñÈ¾Æe2DþÁÇœpnP7ä™kâƒ®AsáÜ5Ä´x/Qe¨)Ø>Ù§šòFœ˜œož ‚UwÎé¢fåœï+\Î°VªÓ{‰›»›ùà{Êæ%{Ð*–s9ƒo)ÓA»Sl³€`¸£$Í}š¸}Pp•eHHvYeJÈË”4›+?|ƒƒ¤ÙûQb‚Ê/SZ€œ~òMJ¿/[f}õhà¬Þ†ù´•‘Ó×æýölŒŠ*ª˜vÆPª¥U%oCt)â[šèf¾FkÛîk4§qÃ[hó–§’­wrþVŠðL§Âa„eŸK¦Éøü×Pè¡|\­Ñ@%üNm9ýs)v74U‰úivJÝÚý–Œ‹¼*¾ÔknÂÎø¯£¬_ÙŠ0ë'&î[˜XÛ‚øÌK†—¼i–Ã©x*Ä2|Q«ÖL¸·ô î_»5i|ëÕ© Ÿ;O~-uj<YˆäsG›<YóŽ‹úû*CÒ({JA hcÚ”PÅú;½w¦H1y5åöw÷—ÀŒ|LNÞôPð	È.Ñ†è1•×†×àOã(äe~†ÍÈ8‹cqÇ¾|¾›Ô<]*
-vò5@ÖP­Š¿¢ý±´¼œ7¡øX*/«$ˆ.E [c+t¾}òÔ[¸(úN0ZAGŒÆi‚LÍ¢¬Ëç€›­äÃ¥|Ì8¯gF÷§«6ž¨){øÂ)He¸˜5Òò:‘„úÐÊB-Î‡’içÏ$º@<w}dÈ&Vù²××-õÀ‰|ß¤1èŸôäD\æ[tg>Þ3ÀKÝçøˆ`ÏÅùÛbA¾"CŠ¯vâ…ÎÂkïìm6»òŒO ŸZ‚m•Ãà0ºÄó²Ø‰˜…#:ž]Š7Ž1ƒOÐþÿØž<ùþ)-ª 1ÎYYúÍä›ïØ·E)x%'ÙÀëŒcÊÓÎÓ‰ãeQIÈxÔQàMâq7§ýô\óI"{N1=¾žËK¡ä—…õÖP‚¯ÎB)Pì5ü_;ToÿšÝ?ùÓÓkø¿Ö½úKdIQŠŠŸ¹HøÀ‚h!×àaÊ.•ˆÀŒ7ñ-|ÍAðõUo_¨¸|y ŒôÁ;:Þ?8?8úYÝëZ<¨ZÜƒT$ƒ‰£ÒxÆµ«~áäá¬Ê§’8ÆÉ|€Âœ9%üRT³!,›¨.>â»ª>ÃÄì0ò™T	å¢€X+ÞÅ¢GRâe +°C¯„"ß2îúT¯S¯PLî"|ëZðjŽ¥ñ•6"i`¥†Õ»^`èˆP|ÜÌá´´jBò>ª¶J±€D{ÁÖ,;Ï!A¿b½i
-D”ÃU´ (áGàÒ€I]”ßf‰ƒ+´öúKñW¢þ
-Ùuª”£!ü5íxNlŸ=ièÄ[4â¯ð9Ø›	„ƒôƒû§¸aRt® ÎB~=ˆÆ3&âK`}£	99>ªäaa²Ë+Ïðkù=0¡2¬¯ù‹üÌ“#zÔT×õ`–Ä¥|'¾ì4§zÄa€8µaõŒUËñ:¯y!ïÂ°¯Â Ð+‰³0DËM…^H"ºÁ›<n‘¹uSGšÈK**ØP”`|¾øÖ•¯BõÃTúÉ¶˜ý×ÅõBÚ¼JÈ@dÛžø_ã^&:Ü;ãÆ¨…¢{ªŠx¨ƒ4µBÄÙ$þÎì)¼©F5#e',í#} AS½¤V8­²¥yýKKY½š¡‡Ð\VËð]X4I‡\œN0ñû®ø JŸ—nåŠj-ø‡È­ÛÖûA6tõƒß×èÇ¬æìGüKOáSØÅŒæÙ~&ïº"?ì”#Ã»Kt`þ+2 OúÂÑ°ÅuÙX‚¦¾À)Ç•˜™³Ú˜$óAŸUóé­ñ¶w6<îìöö^ƒ£—ý£ƒw"êaŽ;E7æ|<IRHŠê;>‹¦œR9èñz^y¤ëQsÙPì ]Œf+Dê™U»"Z/œ,W¨ù°ÚD<²šh*T¼Õü|x‰ÁªiD³ïtb	tCvìAóÂj+°8v—òR[ —³tòoøóµX¦¦³:l˜Ÿ“#§*Çš‘†ã¦j(5ÓKÈ0€ªŸã<^i?_îæ€Ïp²NXÌ#ŸÏZsJLÎ†ÊùF¥D·Ñ1ú:2KÌJÐœGáe´?23å¢±k6ÎR0U ÆñB9kè§œ2 1‡¼²¨(OÜKø^9`éiìÔÐÖ³ì€ÚÃçŽCÖ÷½kÕ&çúúXcšoÚLœ=Êß-3;ø ½”1ŸõZ¢×@Z<øÁxÐVUp¾HŠD\:ÿoª7¾ó°´Ù¤m2ø¥^Aw Ið‚”O`6GeIËÀ‚:
-ˆNÙ<ú Î3D‡¥W3‰Ní$tèz
-<zu Äó®ìG'õ »Ïr+h„Ó[A Ó3ßsÔ#œÄË½;s¥ã?Õ'EK*¼3è@Öâµ''‰ýšœo?J2WÈ GAœÃiÞY”¯h¾ò­Ø>‚>ðMKÇXÍ__PŽFr‘˜ALØ0¹öÁ­k"²¿‹»J
-f¥Ï/ê~Ý¸¸s•I²SJÝgî–m¡©­RÏ‘Çf®¯£,NÈ#òÝvþ¯'ÛÛÛõêî©éZly³.²Jä”«,¶Ñô15äƒ@Ð¿¶k+á€|ÌýHCìå9_	6ŒàµŸ9É´ùs¬ÝØ°b¯²âmØ÷D¥ÚÊ,vÁšÓw6oÊmHôŒE}Všxê¿Äò93|5ˆQì)ïàý7   ÿÿ 8¼¿
+          const errText = await snapResponse.text();
+          console.warn("Midtrans Snap error for SPMB token:", errText);
+          // Clean up draft
+          const cIdx = spmbCandidates.findIndex(c => c.id === candidate.id || c.nisn === cleanNisn);
+          if (cIdx !== -1) {
+            spmbCandidates.splice(cIdx, 1);
+            saveState();
+          }
+          let parsedErrMsg = "Gagal membuat sesi pembayaran Midtrans.";
+          try {
+            const errObj = JSON.parse(errText);
+            if (errObj.error_messages) parsedErrMsg = Array.isArray(errObj.error_messages) ? errObj.error_messages.join(", ") : String(errObj.error_messages);
+            else if (errObj.message) parsedErrMsg = errObj.message;
+          } catch (_) {
+            parsedErrMsg = errText || parsedErrMsg;
+          }
+          return res.status(500).json({ error: "Gagal membuaxœì}Ûr9²à{šëm“6Y’Ý·3t¨½ÔÅn¶­KˆT;&<^	d"Ìb».–8Eìëy9»0óûCçÎ'œL U P)Ë=ÝíŽ¶¥ y2”$,ádÁæ#º¤1É!÷Sø7!ƒ.º¤A“æÄñarInZÏ¾ êÏúé†Œi:ž’fm ^—ÐpÙ"‹Šã(L¢€y,Ž£¸Ù8ÀÈ8f4åá¥Ù%I£É*Nw»6QPµŽ^JÆ}ÿšìd1íÑÐç>MYâMxè÷CŸ]7Çdç2ö¸Ovvv`ˆª
+~øÛß  äI(‹FÃ#øMë‚OHStð%Tè<ÑgCì.“EÀÇLTo“'¨I?°A
+µš¼³4‹Cø€@­,i~»½ÝòÞ'QØüHº`^E!›Á2]œ+ºt.×%½¤\/…/oÎ’„^2mÉn¾ø"ï7QCI²ñtIg¬]|ŽbŸÅ}¿ü€Ð‡¸Få'±d]WIÌ|³qzåÇb%,/ËÇ©F\«•“¤xH¶è‚oáúlÅì’')‹;xG‡ÔÄ4Jºï/§dÎæY@9x¦3Á.¡O').€Ä8s`†¶¶Èwù™Å|²$HØ!¦Œl‘ºœ³0%¹Ð€.Þ"JÒf£œÎÑ\Mf!›Àth²Ç¤³_Ú8Ò¼ÄQ/l¥äc±ši¿M˜C–N#°½ ~ñF‘¿Ì1„lð¥jE¾úŠ|‰uf¨Rð7L#Òß'4¥9êŽÈ}ÏGÄç	‹S:£¡×pªâôœbÜì.9½RSosì	Œ«OÈîy±¢T­€£R«ÕJÈBdH°âG Ñh´¼4æófK´kV¿·T{IV‹IÝ†Îo*èÜ4R‚($ó,y–  3Z­Çe!Õ¤Q2
+vVWC e UhÒ¨­Ìý^
+µBvEö…Äƒ‚þàx X/KùçîDÑàŽE“ˆHS?‡™cI1Ìœó™k°Ùÿ¹m¨ª™!¾Õ7àæÝ8¢þ˜e†QÊ'¤Bƒdõ‚.9e4Hùœi_¡ÿrÝ¹ß%¢M	\±ùƒ8:/Œ®š­›M§™8êC£rb‚¥K‰ÊÓ€©œ”²Š
+ZÙ¥qFš¨\[²¾_0Š=®FX÷ÁÇ²“IGtÎnH¹¸kânZdÄâ)M¸œBO)®‰Mrº€–M‹@¦4¿öæQÒ
+@F£lI£×?S«Õà~§¿ßhÝx†Òåg_ÈÉRù ÕËß­]ýœorÚå«­¯^S_`ƒ80MòfJÓ¤·X '_¤Èò@~™Yjbà
++‚¼ß…é(`Jtx fq2;ÀDÐ?µlS+%€äK¦è¦Ïj@¶uEÑâÛ!N§‘tñ†\’OcN9©ãQ=yx	ÿ^Çš‘tñ_ÿÿ vÏ^ûääàp·÷çÞiïˆ_Á‡£ýÞ‹¡ø‚T0…£cê³9ÿ™ÑøæQòIi*I	j—Ç[UjLØˆ%@§>Y>")è”ìœþØô_ƒ˜ºœÏ€I\ØøÏÿóryäD73<KÚ;ÊæÀpæ òÈ,«PEv: _Àê	ÜƒÀ¢
+YŒÐ¨k.0 œÊ1ÃTîä5ßg)éƒõ´›Í2z6k=rÌ>o1EF\vÀv6™PX–æÉá'b ¿Î@CŒ°ŽÀ÷P·–%:	_àv€áöÝÜµ9éõ‡ýžìzpxB{½Óþrt†Eû= ÆNç¢ä˜ëâeCNh¬Ø–Õò„UÛdÂ?qÙ±=#Ñ¹$×7=a¼¶>Å–/d|Cc‹*7òÛç3d²xŽ„ÚpðŸn®»¬Ú»Zé%Wék®œ“õÌôï=2 •Oö¢ù"``o¾ ¡Ašø7M5Ê>¹¢­S­†ÊÂÊ˜Íºæ¹´Ê±%öˆV^[ˆ-ùSrüeÀÿÊ’zcýnúç1É73“iüêÖ±Ù«f"ƒ*^iã´Œ7GûÐÁ|A6‡±
+òõÈa‚äA ú‰ÏLi&9ìÜ€ø„Û4²UkÆÃq4¹"´cÐ.ÅDûùã¾zÃBÉë³uV€.”.t·Wë8=[,X¼Gm—¤úñè=§=t–ª¹môiÐNÕ1¤Ji9NGË[iÃä	b4õþÕD¯µ¡Ûd¬8Äó¼fM±XÊV««o,¯.XÜ¨2DOµK£XëÒ”X6ÖVxpØê<ÉFsž¦ŸÇ‹»‹Ö˜ËÍHÝÌÐ…¦=>_ ¸¹Í	3Bû —Z	8ª;êÍp)†éšØºjóß<ðp;ºÕimêæ[\Í}i	ì+°8…V§HÁ  ¨:\±·ñ¶—Ô«(EÇ@4g’*S£¶É8KÒh®ìú?ôë=ëW “ŸÁwôÑ<{)7þ‡t
+´ñ¤«öA§4î²&ÿT,G¥4±R½ùëUõf“~Ú%ûºÏ’ =©0d ÊñáF…¥gî:Ë§ö,_Ëñpá9ÉÈªiø®gtÔNþë.Ùe1ê€Î8Ac&¥¡5ù,¼¼¤Sƒ%@¬ž²_23?'ÆÆ†3\ÿälDÔgbç°é(·vVŠï¥¼´Ôr—Ë
+³ÙÊâMD¹ÅgÖ ïºP_Ûu&ðƒ¿gq6E­cãÓZ#±É Ðƒž!ŸîðJ»19¤|+ãÉxEÁqÌ/y8\.˜;ç¢âùûè2Jà§‡ˆ­rûÜÝë<|h™Xh®™Ï’æCåyÿtüòx ?=4·äK˜‘€67†ùÌœr®+rÿ#ÂrÏImŠ(Iœ $NªÇŒªVßÇñºš¿Ý~÷Ìèt”ñ ý~Üp2:Ô Ö±ã´m6~ŸËÁbQi«}‡¦O-G€œž?¯´ŒÙ©¦yw¡–bµI5FyÂâ1*ù±ûMl$>÷*5QL‡b«Q’És»a¥]QµKšµ(EþœÒtêÅð‹ß´kÛ•·HÓÆu«E‘'À˜ÐÙvË½`oÀÀÜW`úZ‡:´G¤iOdK@6·÷‰â¶¼r®AÒÉ_»
+ªÖç¶.ur†5\4ø®-®PÉÈ9Â‡æÁwm÷õS¾½SAR­yg7„	[¯ÿõ:q„.˜lŸF)ê¦Î“>¹¶{ù×Ò"¥»»Ë.èus»m‚Ž{PÍœ20ÇÆòLYÙ´²•àmŸ¨-„±°ÌÁ} à6ølB³ 5Å £€å²‰X¹fŠ¾ L33O^3ï$KÎEé´ˆ7?CïâkY4W"œ¶–%CU¹®Dt‰¯C}Ý@Õnö4§k´,S@¯pâh4a²YŠÊ™}i{B¨[ßJ“>Ð~u,ÇôJ5Š5Ú©àD¯ŸðN6o´«…ƒ¿yá¯Þ"æc Àí’Jé  |²p°à¬'ªk¢Áž¹S<Ø6•Õ¬Õ…K6Xk­šÎ±öÌ:îÁØf†bÂ¢%ëJý±®§ÛÃyVcJ¥í˜~ís"ŒšúWÔmúP¬Qæ;ä7:§§/;•£=ë¸ººicE´Eÿ¶RNjs»­A•m”XÛ‹¹™äÄ«`‹Û[†±gI‡Šp¨ßq«ÝgÓý{`(2Š -Üv+6Ú°D‹ÝReº_3Wû;…M`ñ+¶D^²Çq¡
+­2ž oˆ3ïµ]#ãË½¬Jd\$âDÊ}¨Ü[Ÿ©SxôJ£€M	°=’Ÿ;N³øžœ€çËSNÅöš×(…CÕIÒwœr–¡Y:•k ¸ÛÍ&{“8š7ëð–oÞ<&.nÙDù12rýwß4*Ñø].M£'qêC(ûç¤1MÓEÒÝÚÂ¶¼ª7Žæ[¸ô[žlÉÀ6Q?i€$0Z$@n£èz–}ä#Ì›œÐ%úäF¼!ZÛsŸ¥”I×¨ bÏ14¦…ˆ.ã(IÎ©`ë®ÎãZ­½‰y ²¦¿	“ô<¤sÖu˜ƒ‘À½šø€~êÆ«HÇÿ•ÌR'„º¿` \˜ E†ru´FÝ,Ñ>(gøÖèÂœ¯;jìžõ_ï÷^v^4ÚVahtu‹Ô®ñKFÃ”§Ë.ybIT6Îp³÷%˜4ðÏé‡ú'ÐáeÒ°a´º1àAƒÓÎþlu¿uÎh¿?ØëÓzÓû¹v^ìgx-A®}¢Í-oïæ‚YðàcÅa‹à
+–ðÆMëÂÄÇ;`É·ïZU´Ô8:ë#Fn‚Ô¢ÆóåWÈQxy5Í’,ÑÜÜŸÔ^Qci;'589éütöúÏu)¨ÍÇ°A| ~ÊNžn?ýþvr-í´Uk!­¨ÝÞ žé
+@›|—ƒ”ºMØCÉZø…áW|‘9]H7¯éš::5ÃÏ”—²éØ3Á^"‚êÁ¶þv»e½UË¶a+/œõ_Ÿ®Ç
+ô;s‚:õÚ”´ïJ{¤¢vQ9Ÿ²d¿ ½L¯(OÉ„aÄ‘²Ú¦×$"m1(èx0400eÔnEM6ÀÐHAžuÐ#l@C°î´…&š…ÆFo<f‹t­š`6E1ÿ«¨.vpÇ 4K{êF÷áQ]—ü48>òänŸ,›–R"ñ¦¥aN˜÷Þ¼hf:·%jJ0 —†Ë·FCa¢š) š…gVò|N¯kÚÜEíüóyÕFuîÏÀêXülö6Ãê8>ŽDn)KÃ¬é°Çl+LÅ"­e5å•yR¹ŒðËê#Cä‹öÖ¹yLlÑ•Ï’qÌ2[	5Ž£ÅAzÇîl™jÂôìU-OË “g’j˜Æ‰¸5@ÍÎ£(hÕ,Ò™o#V•^åÔØ-HHç™5”ª{+jƒ0Ž‡ì:u“~
+%&éç±W4›V¿pÝŠ</b®Ÿ
+eÀ¾€è—éh;Züß(£im>›g°Œé²ó;½¨BŠˆžš®qH‰!kËÈŒs!î¼5À^Ó%xeâßº6Ï‰³À{qÀ\›4p‹F¹„næðÄúicTÕ*ƒ3‹uEHÊyËBU„ 	Kz‰Ë:ë¤¼­^T#Ž7_á~²¢ƒˆ«¹‹¤üålý^²þjB†îS,È¯ÌüÓ	oÝà¨?©§¬£ëçÍÿ¬Iýj€Ÿš7®ÛöÕ’ìþsìÌY¯L¶³Ì¶ÛÒíª7 µ|RžqëŒÃq?ÏÃiÜñ¦e$(¾ƒZ±MÜ€çŽ$Àj¸îï#P°þ}$æîæÙ€îD@™Ýtxðúì¨7è¹ñàŽó¬¤ýUx¬<&ÇqŽ8ü}%ŽUFäþÉ?ÿõ÷ÿøwòèÕYØ;òQ‰cg¯{G/‘pN{/{‡Ÿ”øgÑâ	ÆÅ‰`FZnÅÔf Þ?…ºòU˜äo+0Oç3òÅG3¬îfUßXF$®¨EªíH’æ«WmÒ›¢}…(á0·6XE	yš¡vŠ@ŠÃÒaad`àHüå1¢ðƒž'ø›ÏçÒüóåó¾‘–Œ åœ~ÖT>·z¿9}w1ÃŸl{D%Ä0Â÷s“¤ÆüÎD›Na¹lœÎW†¯Ì)çEÝ;føy.¬â¶?2þÈ8ø—Ì8Ð¢ÙñYèIó·ùe%;VóØÊ2-‰Mãßª+Uõwêœ¼JÍµœ6Ó»rø”+¬‘Ü‘tRæýùZÅÄÎ¥°þ¼×]´c‘lâÌqWYzD÷t —9òýòó(L[³Ü5Ï¤ÿµõáOyü£ì={‡Õ«C¬Ü‘ãÚ@r¿Md£¶´E'mi5(ÛJ|úÔM¨âÂ·Ê5oÜÿ¤˜K -'Éô!–ˆú%}•›*UÄUÜ¼®ÜÑ–Á	ï™£}µÓÇ@ Z	ûW‘–Ðx_QuM†.ø0xÅšÄuÝ•§Å„Pã– äšÞÕúÍ‡—ƒY›µGX——#[9{ïEÈ øÀLûW!¨)dA]"n1¡­.÷·Rº3. ®-Ä&(2÷¤0ÆËûÏ,9¡;"âü_WèÛ52¸¾:{3u¡R,t»Ì¥;×–Ã>eüë9 ‚à~FÚY­ëÜ¶»ÑF™W/íÍþ„Ìi<±J¶„ã«2`7à:4fÑd‘#k‹F0ã	È,EàDiiä!X“0JÉRD"cãÚ,k580·Ñ\Ú†‘ãz'4®ZvŠ„f—=ŠÑ)˜ š:2ë-
+YÃŠ1¹µaà:×,Î|mä8HÁpgV3ïÐ­Oê*æ·Â_Oø¯#û×¶/ÔèÞÓ ‹ë4B6K
+ˆä=õ9na®AhÏñ¸6`³p?`³( SÁk‡8Ù˜ç&ÆÖô}™‘B›*GãÀOÒ>`W".i35Ïõ5ÑØ#'q„ëv2%’NÄ‘yF’~ï&
+i!{Ð4RGÊŒ{ULP…ù`è_p÷Ô.$Ôî²R«ø²/Ì‰qÆ&‰ô"ßF¥é(k­¼BÏ*PÛìßVs•%ÈSy©âQ„¯ÞtN^œíß’‘TæT´Tliç;‘¦´Žþsð}UoÖKÃœ>ÖhT ÑBëí-•4Õ(p¸þ©pÜî² '~ÁÍ½--fÙœæ|" i<cA‰³©ê÷üPéöŽÐ×@UÉiã½§—¸aàõ€iRŽÖ@2m‘‘8 ¬^{§†LA·Þb´È³Úø>œëÏÿ¸etõIãÿýÿäÑO{Èðà´ØÃ»E_â}£¯û½#r†GŽÕ;G›{½ÁDŠ˜–ã Qcy°DŠ`n<Y‚QQqG ­Š%‹é4¿º² Ïjn»•Ô+Ž›{‚Îå}™?	r¶í“U¯2žÒPÝjtÍQá¾Ú(#Ç›Z'†µ¡ÖânV  ²Zè•g­XÙDHT·/¾.Eê²šÞO@[^RûÔÓ%§žC‰<¯šâ]ç	™±ø=Nžƒ-G½ßìÉ¤rÃîõTòâd"ßˆ¶sÒÖìu˜ M?‡e­lJa[—†*ª…¬;oêÄQÂ‡@ØëÖ>ÊÊpÌÜâ	ýè3š×cÑÏg´®÷vðí&àÝ6qrïÝIÃ£^Ã~,¶‚×¶7j!ŒÃZè–àÍ”]·YG…=¶¢Ù?å$J‘ƒCûU“k# Ä -…-‚ñÔ	K?GØ†äìàþ…\1üÊT×–pOÅÎÁ×_¨ÆB(¦9ž€âãÐ[Oz Ã ñÊq</>Å¼Ú{%%ÜNuTôä&GYò1ŒZû%i+‹x/ 	ü¢nÔP¿É¢#î>à²Äe2ŒÔÜ»êfœ·ï*©$z×-cG>xxÎŸN1² šçFâs—è 0_RûUåaÕúøò~Pˆmo bóúû†Ð]"Kˆð1ŸÏù%ÆŠá/RÄ­³ ­¼µNÞÌ|@ž¾¨@´µã÷^ÃTKŠL|EZI7'2±o­ÛÛ”@)uT×uYÑHµBÝ,ôc41–½êlÝŸŽ¬jIè!å!F-U€Á·7ÌAk“ãáñaoŸ|ŽÖ¬X&¢òDä‘\>Tb{‰`òD1—Hûº"c{^½{YÜ°š‡uóíll]T.>iõ.Ã}+HºriÆ‚§ÊÄð.ƒÑ®A8Ú›²ññ©ä¹âÀé+ÐÉW‚˜QYTóÙØ5˜Ði.ÀvrXúý‚šÏ {ì&Ê„ÇU„•zFÆ€4ñ"€”c”Ù‹Î.’Ô—ÑêºãÄý›qQÖêjÂg¿(ssíÔ\Eæ±ÉVqÄ©.½ _&YÌD ž<†Êi?BÇúM!VòV‰ö^”«ÑXÉCöèp6B+KÒ4jÙ ¾t4rBÂ£;ÿ4¼®dVwËRF%½êOfý*îTFY:f[[~×â´ÚÝZ§JfÓÌAüc+o‘%Ó
+¥êU„lRÊacd…HÎ¿Ü˜‚G¤0ˆ¡Ri ½Œ©ÏÈ÷¹ô°$TTc*´˜u!È:©eOs#ùZÏ:^çÎœ“¾ublW•ÌŽšf£°kòBÞìˆô’€Ë€~QJšCa ì²Xž\Qš
+ø>gàÀ‘9Mh ß¢ ¸µk–>by+ >/ëîÀçâï.^>¨·«^äSÝ
+ÐtÊbÇ)•^Ð0 ¯¸uÈµC*6R®Šëoc¶è˜5·ÞþoÚùëvçOï¶.Û¯{ã=ø¨¯Ì­—- SWQì[ªÕ7Ô'»4@£K¶-¥ÑYlÌDKË¯R®l‹FU¬”§Ý
+†«g
+ÁÕï—}ðRn;0û¦¾—O²ŸªuM¥µË#_s-_—1èf¦uÍª`C>žÙ˜«Öñ8ž èõË¯5-PVä‡LfýÙLžÿéÕóo5Ð÷XœVYEÕ¶G"{&—Þ¬üZm1žòÀ)¨z‹òkµEÂGè'{ò²MiêŽv)[jÛÚ…y{“DŽ1ï…3J:¤·,®CÇ?%u×Ó¼9 UfTñ±®þ®“\ì²•­mÒ±ŠêÚøYž1i·-ŠêÚÇÙ¢¦qYV×º/¥8†,¿×µêU%QP×îÄÖ–jpµÉs³ìFeRãGîg‹•ÕeZa)»µÂÒŠ*3	ªøXWßMPvÙÊÖ6AYEumeÕµu”]V×ºJPú÷ºV‚2
+êÚUj¥I!«¥_APxR«›Lš5'K¹šc(JMZÒ>×·qÓSµô6MU
+ëÛ;éªRXßÞM[ÕÒzUú2Kê[:hÌ*ªo[¡3£ ¾]•ÖÌGË(ºØ~nÎkš4bÉ¶¥Ï¤¹l‰á¨•þ¾I´žG¼™?¼Ú.Ça8Â»Áwv‚ïì»`'^×ö|on	}ùüw-ä³ª½n!¿KáPîK«ô4q&1'ä{ç=
+6Â€yð±‚8¹…~£ï¡Ê#â<(ÏGÒ6ÃUŒªê¿'¢;Ô ´Y’X¾µã~ujõëÝp—X‚]íQé	+)Ñ8c
+)>ŒsãYØßc¨÷ö¶Žµ¼GeÔ× r?GR­ê8ÏƒZf©€ªBz»ýÎÌ*æ+w÷¸èÚ9W=ÚÝƒ"æ‘\Sí hý³ÂQfÜË`8âÃ	‹rHÃŒÁò–ˆ‡<„˜BëNš·^ûTÊ³@\¶½ÐÇQäƒ8¸^àûOå*4‘ÊmÈ²;/g¬¨Ñ8íÃó>ƒmXÌg	y¶Ý†ÛTòP4S ‰3¹9Ø°	‰à&:›òØç‘oIéWtÊeß´xÊÔ#r¯Žú´ÚË‚ÅAŒ¨F¨3Ÿçyr´ŸHÅæaÎµ¿‡øœ ÌY„”®OËc|Mñ‹ñy Ýüý¤'Cú@²É2”ËFA=±è¢˜îF©œÅ¶Œç±Cå#X@šF±Œ!¹ú™7QïË­~÷!@ZDì ùËŒŠŒó(KÊRc“Q¾^Fƒ¢Ø˜¸8¿Öúª{}lÓ3y=š‡\ÍõnÀgœÄüŠ.iª¥“’údÀ©Ïg2ÞãTáknD%6*ÈÚÏ±½Xïð\¤…wûIu4-OºåMïˆê<UsmôeccJŽì…DCj]Gš3,¥~‰Š	GÐ}•„ï/ÄÊ¾yCëGž€$Yê	ÓV‘ŠQWKz%+ÈËv»ä¡”ƒKcàW¿¯²øØµñª{ ÝS:_Ô[ÎúU™T\&'-ÈK«R<2©¨ùV‰z”Ä#û—ÉùsÂ¹AÝg®‰ºÍ…s×Óâ½D=”ý¡¦`WødŸjÊqbr¾y€4VÝ9§‹š•s¾¯p9ÃjX©Nï%nînæƒï)›—ìAk¨XÎå¾¥LíN±Í‚àŽ’4÷i:àöAÁU–!!Ùe•)!/SÒ@l®üð’fï3D‰	*¿LizpúÉ7)ý¾l™õÕ£³zæÓVFNC\›÷Û³1*ª¨bÚC©–V•¼Ñ¥ˆoi¢›ú­m¸¯5ÒœÆo¡Í[žJ¶ÞÉù[)BÀ3
+‡–}.š&ãó\C¡„r|ðqµF•ð;µQäôÏ¥ØÝÐT1$ê§Ù)uk÷[2.òªøR¯¹;ã¿Ž²~e+ÂT¬Ÿ˜¸oabmâk0/^ò¦Y§â©ËHðE­Z3áÞÒƒ¸íÖ¤}ð=®7T§|î<ùµÔ©5ðd!’ÏamòdÍ;.êï7ªI£ì)¢iSBëkìôÞ™"ÅPäÕ”wØßÝ_3ò19yÓCUÀ' »D_¢ÇT^^ƒ?£ÿ•ùy6#ã,ŽÅûòYø>nRót©(ØÈ× YCµ*~üŠöÇÒ6ðrpÞ„~àc©¼¬’ ºl-¬ÐùöÉSoQ\à¢è;|Àh1§	05ˆ².Ÿn¶’—ò1ã¼žÝœ®Úx¢¦ìá§ •ábÖHËwèDêC+µ8J¦Qœ?“èñÜõU= ›4ZåË^_·Ô'ò}“Æ Òq™oÑùxÏ /uŸã#‚Q<ço‹ùŠ)¾Ú‰:¯Q¼³·ÙìÊ3>~|j	F´UƒÃèÏËR`$bVŽèxv)Þ8Æ>Aûÿc{òäû§´¨Ä8geé7“o¾cß¥`âA”œd¯3Ž)O;L'Ž—E5$!ãQG=€7‰ÇÝœ6ôÓsyÌ'‰ì9iÄôøz./…’_Ö[C	¾:¥@±×ð¿v¨Þþ5»ò§§×ð¿Ö½úIdIQŠŠŸ¹HøÀ‚h!×àaÊ.•ˆÀŒ7ñ-|ÍAðõUo_¨¸|y ŒôÁ;:Þ?8?8úYÝëZ<¨ZÜƒT$ƒ‰£ÒxÆµ«~Ã1È/ÂY•O%qŒ“ø …9sJ ø¥¨fC(X6Q]|ÄwU}<†‰Ùaä3©ÊE±V¼‹EŽ¤ÄË@V`‡^	E¾dÜõ©^§^;¡˜ÜEøÖµàÕKã+lDÒÀJ«v½ÀÐ¡ø¸™ÃiiÕ„ä}T#l•b‰ö‚¬YvžC‚~Å
+zÓˆ(‡«hAQÂÀ¥“º(¿ÍWh?ìõ—â§Dý²ëT)GCøkÚñ,œ
+Ø>zÒÐ‰·hÄ!^às°7ÿé3÷O-pÃ¤è\Aœ…üzgLÄ—ÀúFrr|:TÉÃÂd—Wžá×òz`BeX_ÿòù™'Gô¨©®ëÁ:-‰KùN|ÙiNõˆÃ %p(jÃê«–ã	t^óBÞ…a_… Wgaˆ–>š
+½Dtƒ7y Ü"së¦Ž4‘—TT°¡(Áø|ñ­+_…ê‡©õ“m1û¯‹ë…´y•È¶=ñ_ã^&:Ü;ãÆ¨…¢{ªŠx¨ƒ4µBÄÙ$þž-ØSxS8jFÊNXÚG*ú@ƒ¦zH­pZeKóú—–²z5C!¡¹¬–á/º°
+h’¹80`â÷]ñA”>/ÝÊÕZ(ð‘[·­÷ƒlèê¿¯ÑYÍÙøKOáSØÅŒæÙ~&ïº"?ì”#Ã»Kt`þ+2 OúÂÑ°ÅuÙX‚¦¾À)Ç•˜™³Ú˜$óAŸUóé­ñ¶w6<îìöö^ƒ£—ý£ƒw"êaŽ;E7æ|<IRHŠê;>‹¦œR9èñz^y¤ëQsÙPì ]Œf+Dê™U»"Z/œ,W¨ù°ÚD<²šh*T¼Õü|x‰ÁªiD³ïtb	tCvìAóÂj+°8v—òR[ —³tòoøëk±LMfuØ0?9&GNUŽ5#!ÇMÕPj §–a 7T?Çy¼Ò~¾ÜÍŸàd°˜G>Ÿµ*æ”˜œ1•ó/ŒJ‰n£cô=td–6˜• 9ÂËhd&fÊEc×lœ¥`ª@ã…rÖÐO9e@cyeQQ$ž¸—ð½rÀÒ3ÒØ©¡­gÙ;4 µ‡Ï‡¬)î{/ÖªMÎõõ±Æ4ß,~´™8z”¿·ÌìàôRÆ|Ök‰^i5òàSàA[UÁù"-(qéü[¼©ÞøÎÃÒf“¶ÉHà—zÝ$ÁvP>Ø•%-ê( :eóèƒ8Ï–.\Í$:µ“Ð¡ë)ðèÕÏ»²Ôw‚ì>Ë­ NsTlLÏH|ÏQp~[@6,÷îÌ-”ŽªOŠ–TxgÐ¬ÅjONû49ß~”d®Ž‚8‡Ó>¼³(_Ñ|å[±}}à›–Ž±š¾¾ ä4"0ƒ˜°aríƒ[×D dw•ÌJŸ_ÔývãâÎU&ÉN)uŸ¹X¶…¦¶J=G›m¸2¼~Œ²8!ÈwÛù_O¶··ëÕÝ-RÓµØòf?\d•È)WYl£écjÈ5 m×VÂù˜û‘†ØËr¾lÁ%j?s’hóç"X»±aÅ^eÅÛ°ï‰ Kµ•Yì<‚5§ïlÞ”Ûè/‹ú¬4ñÔ‰åsføj£Ø?RÞ;Àûo   ÿÿ :Çì

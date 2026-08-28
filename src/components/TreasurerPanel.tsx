@@ -299,7 +299,7 @@ export default function TreasurerPanel({
         setLastSyncTime(new Date().toLocaleTimeString('id-ID'));
         await fetchTransactions();
         await fetchTreasurerCategories();
-        showBudgetMsg('success', `☁ ${data.message || 'Sinkronisasi Cloud MongoDB Atlas sukses!'}`);
+        showBudgetMsg('success', `☁️ ${data.message || 'Sinkronisasi Cloud MongoDB Atlas sukses!'}`);
       } else {
         showBudgetMsg('error', data.error || 'Gagal sinkronisasi dengan Cloud.');
       }
@@ -1909,7 +1909,7 @@ export default function TreasurerPanel({
                   onClick={() => setShowManageBudgetPos(!showManageBudgetPos)}
                   className="px-3.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-extrabold text-xs rounded-xl flex items-center gap-1.5 cursor-pointer transition-all border border-slate-250 font-display"
                 >
-                  <span>🛠</span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
+                  <span>🛠️</span> {showManageBudgetPos ? 'Sembunyikan Pengelola' : 'Kelola Kategori POS BUDGET'}
                 </button>
               </div>
             </div>
@@ -1987,7 +1987,7 @@ export default function TreasurerPanel({
                               className="w-full max-w-xs flex flex-col gap-2 p-3.5 bg-slate-100 border border-slate-350 rounded-2xl text-[11px] font-extrabold text-slate-800 shadow-xs animate-fade-in text-left"
                             >
                               <div className="text-slate-800 font-extrabold text-[10px] border-b pb-1 border-slate-200">
-                                ⚙ Ubah POS BUDGET
+                                ⚙️ Ubah POS BUDGET
                               </div>
                               <div>
                                 <label className="text-[9px] text-slate-450 block mb-0.5 uppercase tracking-wide">Nama POS</label>
@@ -2970,7 +2970,7 @@ export default function TreasurerPanel({
                     }}
                     className="flex-1 md:flex-initial p-2.5 px-4 bg-white border border-slate-250 hover:bg-slate-100 text-slate-750 font-semibold rounded-xl text-xs font-sans inline-flex items-center justify-center gap-1.5 cursor-pointer shadow-3xs"
                   >
-                    <span>⚙ Atur Tarif Standar</span>
+                    <span>⚙️ Atur Tarif Standar</span>
                   </button>
                 </div>
               </div>
@@ -3347,7 +3347,7 @@ export default function TreasurerPanel({
                   }}
                   className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🖨</span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🖨️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Cetak Laporan</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Ekspor cetakan Buku Kas Besar Resmi lembaga</p>
@@ -4182,7 +4182,7 @@ export default function TreasurerPanel({
             >
               <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="text-sm">⚙</span>
+                  <span className="text-sm">⚙️</span>
                   <div>
                     <h3 className="font-extrabold text-xs tracking-tight text-white">Tarif Standar Penggajian</h3>
                     <p className="text-[9px] text-slate-400 uppercase font-black tracking-widest leading-none mt-0.5">Konfigurasi Finansial</p>
@@ -4309,7 +4309,7 @@ export default function TreasurerPanel({
             >
               <div className="p-4 bg-slate-900 border-b border-slate-800 text-white flex items-center justify-between">
                 <div className="flex items-center gap-2">
-                  <span className="p-1 px-1.5 bg-indigo-950 rounded-lg text-indigo-400">✏</span>
+                  <span className="p-1 px-1.5 bg-indigo-950 rounded-lg text-indigo-400">✏️</span>
                   <div>
                     <h3 className="font-extrabold text-xs tracking-tight text-white">Sesuaikan Nominal Gaji</h3>
                     <p className="text-[9px] text-indigo-200 uppercase font-bold tracking-wider leading-none mt-0.5">{editingGaji.teacherName}</p>

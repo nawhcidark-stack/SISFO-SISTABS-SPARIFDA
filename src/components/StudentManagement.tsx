@@ -957,7 +957,7 @@ export default function StudentManagement({
               <form onSubmit={handleCreateSubmit} className="p-5 flex flex-col gap-4 text-xs">
                 {errorMsg && (
                   <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-700 rounded-lg font-bold">
-                    ⚠ {errorMsg}
+                    ⚠️ {errorMsg}
                   </div>
                 )}
 
@@ -1129,7 +1129,7 @@ export default function StudentManagement({
               <form onSubmit={handleUpdateSubmit} className="p-5 flex flex-col gap-4 text-xs">
                 {errorMsg && (
                   <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-700 rounded-lg font-bold">
-                    ⚠ {errorMsg}
+                    ⚠️ {errorMsg}
                   </div>
                 )}
 
@@ -1282,7 +1282,7 @@ export default function StudentManagement({
             >
               <div className="bg-rose-900 text-white p-4 flex justify-between items-center">
                 <h4 className="font-bold text-xs uppercase tracking-wider flex items-center gap-1.5">
-                  ⚠ Tindakan Kritis: Hapus Siswa
+                  ⚠️ Tindakan Kritis: Hapus Siswa
                 </h4>
                 <button
                   onClick={() => setDeletingStudent(null)}

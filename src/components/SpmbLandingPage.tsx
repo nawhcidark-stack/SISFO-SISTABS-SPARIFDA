@@ -863,15 +863,15 @@ export default function SpmbLandingPage({
     const hasFoto = Boolean(docUploads.pasPhoto || activeCandidate.documents?.pasPhoto);
 
     if (!hasAkta) {
-      alert('⚠ Mohon unggah berkas wajib: Akte Kelahiran calon siswa.');
+      alert('⚠️ Mohon unggah berkas wajib: Akte Kelahiran calon siswa.');
       return;
     }
     if (!hasKk) {
-      alert('⚠ Mohon unggah berkas wajib: Kartu Keluarga (KK).');
+      alert('⚠️ Mohon unggah berkas wajib: Kartu Keluarga (KK).');
       return;
     }
     if (!hasFoto) {
-      alert('⚠ Mohon unggah berkas wajib: Pas Foto Calon Siswa (3x4).');
+      alert('⚠️ Mohon unggah berkas wajib: Pas Foto Calon Siswa (3x4).');
       return;
     }
 

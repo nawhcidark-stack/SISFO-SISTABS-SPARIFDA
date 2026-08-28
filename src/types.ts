@@ -796,5 +796,68 @@ export interface SpmbCandidate {
   [key: string]: any;
 }
 
+export interface MySQLConfig {
+  host: string;
+  port: number;
+  database: string;
+  user: string;
+  password?: string;
+  tablePrefix?: string;
+  charset?: string;
+  sslMode?: 'none' | 'required' | 'preferred';
+  socketPath?: string;
+  enabled?: boolean;
+  autoSync?: boolean;
+  lastConnectedAt?: string;
+  lastSyncAt?: string;
+  status?: 'disconnected' | 'connected' | 'error';
+}
 
+export interface MySQLTestResult {
+  success: boolean;
+  message: string;
+  latencyMs?: number;
+  serverVersion?: string;
+  databaseName?: string;
+  tablesCount?: number;
+  tables?: Array<{
+    name: string;
+    rows: number;
+    engine?: string;
+    collation?: string;
+  }>;
+  error?: string;
+}
 
+export interface MySQLSyncResult {
+  success: boolean;
+  message: string;
+  tablesCreated?: number;
+  recordsSynced?: {
+    students?: number;
+    spp_bills?: number;
+    savings_transactions?: number;
+    school_identity?: number;
+    homerooms?: number;
+    subject_teachers?: number;
+    schedules?: number;
+    teaching_journals?: number;
+    spmb_registrations?: number;
+    attendance?: number;
+    misc_bills?: number;
+    [key: string]: number | undefined;
+  };
+  durationMs?: number;
+  error?: string;
+}
+
+export interface MySQLQueryResult {
+  success: boolean;
+  message: string;
+  query?: string;
+  rows?: any[];
+  fields?: string[];
+  affectedRows?: number;
+  executionTimeMs?: number;
+  error?: string;
+}

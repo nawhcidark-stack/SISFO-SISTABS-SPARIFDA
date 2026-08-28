@@ -139,7 +139,7 @@ export default function SppPaymentReviewModal({
           <div className="p-5 bg-slate-50 border-t border-slate-200 flex items-center justify-end gap-3 shrink-0">
             {midtransStatus?.isDisabled && (
               <div className="mr-auto text-[10px] text-rose-600 font-bold bg-rose-50 px-2.5 py-1 rounded-md border border-rose-100 flex items-center gap-1.5 animate-pulse uppercase tracking-wider font-mono">
-                ⚠ GERBANG NONAKTIF
+                ⚠️ GERBANG NONAKTIF
               </div>
             )}
             <button

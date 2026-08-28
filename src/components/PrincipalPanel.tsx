@@ -1296,7 +1296,7 @@ export default function PrincipalPanel({
                 : 'text-indigo-700 bg-indigo-50/60 hover:bg-indigo-100/60'
             }`}
           >
-            🗓 Matriks Jadwal
+            🗓️ Matriks Jadwal
           </button>
           <button
             onClick={() => setActiveTab('bk_monitoring')}
@@ -1306,7 +1306,7 @@ export default function PrincipalPanel({
                 : 'text-slate-650 hover:bg-slate-50'
             }`}
           >
-            🛡 Monitoring BK & Moral
+            🛡️ Monitoring BK & Moral
           </button>
           <button
             onClick={() => setActiveTab('attendance_recap')}
@@ -1351,7 +1351,7 @@ export default function PrincipalPanel({
               : 'border-slate-200 text-slate-700 hover:bg-slate-50'
           }`}
         >
-          ⚙ Identitas Sekolah
+          ⚙️ Identitas Sekolah
         </button>
       </div>
 
@@ -1724,7 +1724,7 @@ export default function PrincipalPanel({
                                           : b.status === 'pending' 
                                             ? 'Pending' 
                                             : isSppBillOverdue(b) 
-                                              ? 'Tunggakan ⚠' 
+                                              ? 'Tunggakan ⚠️' 
                                               : 'Belum Bayar'}
                                       </span>
                                     </td>
@@ -1787,7 +1787,7 @@ export default function PrincipalPanel({
                     {/* BK counseling & Infractions monitor for inspected student */}
                     <div className="border-t border-slate-100 pt-5 flex flex-col gap-3.5">
                       <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider flex items-center gap-1">
-                        🛡 Layanan Bimbingan Konseling (BK) & Kasus Disiplin Siswa
+                        🛡️ Layanan Bimbingan Konseling (BK) & Kasus Disiplin Siswa
                       </span>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -2884,7 +2884,7 @@ export default function PrincipalPanel({
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-red-500 to-amber-500" />
             <h2 className="text-slate-900 font-black text-lg leading-tight flex items-center gap-1.5">
-              🛡 Log Konseling BK & Kedisiplinan Pelanggaran Moral
+              🛡️ Log Konseling BK & Kedisiplinan Pelanggaran Moral
             </h2>
             <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">
               Pantau langsung log asessment konseling (BK) dan data pelanggaran disiplin moral harian yang dicatat oleh wali kelas ditiap jenjang.
@@ -4058,7 +4058,7 @@ export default function PrincipalPanel({
                               ? 'bg-amber-50 text-amber-800 border border-amber-250 animate-pulse'
                               : 'bg-emerald-50 text-emerald-800 border border-emerald-250'
                           }`}>
-                            {l.status === 'dipinjam' ? '⚠ Dipinjam' : '✅ Selesai'}
+                            {l.status === 'dipinjam' ? '⚠️ Dipinjam' : '✅ Selesai'}
                           </span>
                         </td>
                         <td className="py-4 px-2 text-right italic text-slate-600 font-medium">
@@ -4079,7 +4079,7 @@ export default function PrincipalPanel({
         <div className="flex flex-col gap-6">
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-indigo-500 via-teal-500 to-emerald-500" />
-            <h2 className="text-slate-900 font-black text-lg leading-tight">⚙ Pengaturan Identitas Mandiri & Informasi Sekolah</h2>
+            <h2 className="text-slate-900 font-black text-lg leading-tight">⚙️ Pengaturan Identitas Mandiri & Informasi Sekolah</h2>
             <p className="text-slate-500 text-xs mt-0.5 leading-relaxed">
               Sesuaikan data kop surat lembaga, logo yayasan, penandatangan bendahara kas, atau nama kepala sekolah yang akan tercetak otomatis ditiap bon transaksi & kuitansi SPP.
             </p>
@@ -4412,7 +4412,7 @@ export default function PrincipalPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓</span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Matriks Jadwal</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran seluruh kelas &amp; guru</p>
@@ -4508,7 +4508,7 @@ export default function PrincipalPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">⚙</span>
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">⚙️</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Identitas Sekolah</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Perbarui identitas kop surat &amp; nama lembaga</p>

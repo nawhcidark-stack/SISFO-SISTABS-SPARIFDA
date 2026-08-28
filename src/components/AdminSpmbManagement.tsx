@@ -560,7 +560,7 @@ export default function AdminSpmbManagement({
               </span>
               {needRefundCount > 0 && (
                 <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-xs font-black animate-pulse">
-                  ⚠ {needRefundCount} Perlu Refund Token Cash
+                  ⚠️ {needRefundCount} Perlu Refund Token Cash
                 </span>
               )}
             </div>
@@ -872,7 +872,7 @@ export default function AdminSpmbManagement({
                 className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
                 <option value="all">Semua Status Pengalihan</option>
-                <option value="transferred">⚠ Dialihkan Jalur ({transferredCount})</option>
+                <option value="transferred">⚠️ Dialihkan Jalur ({transferredCount})</option>
                 <option value="normal">Jalur Asli / Normal</option>
               </select>
 
@@ -884,7 +884,7 @@ export default function AdminSpmbManagement({
               >
                 <option value="all">Semua Jalur (Mandiri & Kolektif)</option>
                 <option value="school_collective">Hanya Jalur Kolektif</option>
-                <option value="needs_refund">⚠ Perlu Refund Cash ({needRefundCount})</option>
+                <option value="needs_refund">⚠️ Perlu Refund Cash ({needRefundCount})</option>
                 <option value="refunded">✅ Sudah Refund Cash ({refundedCashCount})</option>
                 <option value="online_individual">Hanya Jalur Mandiri</option>
               </select>

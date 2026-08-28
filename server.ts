@@ -7019,10 +7019,11 @@ async function startServer() {
     res.json({ success: true, message: "Data gaji berhasil dihapus." });
   });
 
-    // ==========================================
+  // ==========================================
   // Modular MySQL & phpMyAdmin Router for Treasurer
   // ==========================================
   app.use("/api/treasurer", createMysqlRouter({
+    getFullSnapshot: () => buildFullBackupSnapshot(),
     getStudents: () => students,
     getTransactions: () => treasurerTransactions,
     getSppBills: () => sppBills,

@@ -1,9 +1,8 @@
 import React, { useState, useEffect } from 'react';
-import { motion, AnimatePresence } from 'motion/react';
+import { motion } from 'motion/react';
 import {
   Database,
   Server,
-  HardDrive,
   CheckCircle2,
   AlertTriangle,
   RefreshCw,
@@ -15,17 +14,17 @@ import {
   EyeOff,
   Save,
   Play,
-  Clock,
-  Table,
   Check,
   Globe,
   Info,
   Shield,
   Layers,
   FileCode2,
-  Terminal,
   HelpCircle,
-  FolderSync
+  FolderSync,
+  FileSpreadsheet,
+  ArrowDownToLine,
+  CheckCircle
 } from 'lucide-react';
 import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult, SchoolIdentity } from '../types';
 
@@ -61,9 +60,11 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
   const [testResult, setTestResult] = useState<MysqlTestResult | null>(null);
   const [syncResult, setSyncResult] = useState<MysqlSyncResult | null>(null);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
+  const [countsData, setCountsData] = useState<Record<string, number>>({});
+  const [isLoadingCounts, setIsLoadingCounts] = useState(false);
 
   const [copiedSql, setCopiedSql] = useState(false);
-  const [activeSubTab, setActiveSubTab] = useState<'config' | 'sync' | 'schema' | 'guide'>('config');
+  const [activeSubTab, setActiveSubTab] = useState<'config' | 'export' | 'sync' | 'schema' | 'guide'>('config');
 
   // Fetch initial config
   const fetchConfig = async () => {
@@ -81,8 +82,27 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
     }
   };
 
+  // Fetch stats of all collections
+  const fetchCounts = async () => {
+    setIsLoadingCounts(true);
+    try {
+      const res = await fetch('/api/treasurer/mysql-stats');
+      if (res.ok) {
+        const data = await res.json();
+        if (data.counts) {
+          setCountsData(data.counts);
+        }
+      }
+    } catch (err) {
+      console.error('Gagal memuat data hitungan tabel:', err);
+    } finally {
+      setIsLoadingCounts(false);
+    }
+  };
+
   useEffect(() => {
     fetchConfig();
+    fetchCounts();
   }, []);
 
   const handleSaveConfig = async (e: React.FormEvent) => {
@@ -210,6 +230,7 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
           type: 'success',
           message: data.message
         });
+        fetchCounts();
       } else {
         setNotification({
           type: 'error',
@@ -226,7 +247,11 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
     }
   };
 
-  const handleDownloadSql = () => {
+  const handleDownloadFullSql = () => {
+    window.location.href = '/api/treasurer/mysql-export-full-sql';
+  };
+
+  const handleDownloadSchemaSql = () => {
     window.location.href = '/api/treasurer/mysql-export-sql';
   };
 
@@ -255,7 +280,7 @@ CREATE TABLE IF NOT EXISTS \`spp_bills\` (
   \`student_id\` VARCHAR(64) NOT NULL,
   \`month\` VARCHAR(32) NOT NULL,
   \`year\` INT NOT NULL,
-  \`amount\` DECIMAL(12,2) NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
   \`status\` ENUM('paid', 'unpaid', 'pending', 'waived') DEFAULT 'unpaid'
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
 
@@ -274,6 +299,8 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
     setTimeout(() => setCopiedSql(false), 2500);
   };
 
+  const totalRecords = Object.values(countsData).reduce((a, b) => a + (Number(b) || 0), 0);
+
   return (
     <div className="flex flex-col gap-6 text-left">
       {/* Header Banner */}
@@ -287,7 +314,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
             <div>
               <div className="flex items-center gap-2">
                 <span className="text-[10px] uppercase font-black tracking-widest text-emerald-400 bg-emerald-950/80 px-2 py-0.5 rounded-md border border-emerald-800/80">
-                  Integrasi Database SQL
+                  Migrasi &amp; Database MySQL
                 </span>
                 {config.status === 'connected' ? (
                   <span className="inline-flex items-center gap-1 text-[10px] font-bold text-emerald-300 bg-emerald-900/40 px-2 py-0.5 rounded-full border border-emerald-700/60">
@@ -303,9 +330,9 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
                   </span>
                 )}
               </div>
-              <h2 className="text-xl font-black text-white mt-1">Koneksi Database MySQL &amp; phpMyAdmin</h2>
+              <h2 className="text-xl font-black text-white mt-1">Ekspor &amp; Sinkronisasi Database MySQL / phpMyAdmin</h2>
               <p className="text-xs text-slate-300 max-w-2xl leading-relaxed mt-1">
-                Atur sambungan basis data relasional MySQL untuk akun Bendahara. Anda dapat menyinkronkan data Buku Kas Umum (BKU), penerimaan SPP, mutasi tabungan, dan gaji ke tabel MySQL di phpMyAdmin (XAMPP / cPanel / Server VPS).
+                Pindahkan seluruh data sistem (Siswa, Kas BKU, SPP, Mutasi Tabungan, SPMB, Gaji, dll.) langsung ke database MySQL phpMyAdmin Anda tanpa ketergantungan MongoDB.
               </p>
             </div>
           </div>
@@ -325,12 +352,12 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
             )}
             <button
               type="button"
-              onClick={handleDownloadSql}
-              className="px-3.5 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all shadow-md shadow-emerald-900/30"
-              title="Unduh file SQL untuk diimpor ke phpMyAdmin"
+              onClick={handleDownloadFullSql}
+              className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white font-extrabold text-xs rounded-xl flex items-center gap-2 transition-all shadow-lg shadow-emerald-900/40 cursor-pointer"
+              title="Unduh file SQL lengkap berisi seluruh data dan skema untuk langsung diimpor ke phpMyAdmin"
             >
-              <Download size={13} />
-              <span>Unduh Skema SQL</span>
+              <ArrowDownToLine size={15} />
+              <span>Ekspor Full SQL (Data Lengkap)</span>
             </button>
           </div>
         </div>
@@ -350,10 +377,8 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
             <span className="font-mono text-slate-200 font-bold">{config.user}</span>
           </div>
           <div>
-            <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Sinkronisasi Terakhir</span>
-            <span className="font-sans text-slate-300 font-medium">
-              {config.lastSyncAt ? new Date(config.lastSyncAt).toLocaleString('id-ID') : 'Belum pernah'}
-            </span>
+            <span className="text-[10px] text-slate-400 block uppercase font-bold tracking-wider">Total Record Siap Migrasi</span>
+            <span className="font-mono text-amber-300 font-bold">{totalRecords} baris data</span>
           </div>
         </div>
       </div>
@@ -407,6 +432,19 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
 
         <button
           type="button"
+          onClick={() => setActiveSubTab('export')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
+            activeSubTab === 'export'
+              ? 'bg-emerald-700 text-white shadow-sm'
+              : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100'
+          }`}
+        >
+          <Download size={14} />
+          <span>Ekspor Data Lengkap (phpMyAdmin)</span>
+        </button>
+
+        <button
+          type="button"
           onClick={() => setActiveSubTab('sync')}
           className={`px-4 py-2.5 rounded-xl text-xs font-bold flex items-center gap-2 transition-all cursor-pointer ${
             activeSubTab === 'sync'
@@ -415,7 +453,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
           }`}
         >
           <FolderSync size={14} />
-          <span>Sinkronisasi Data ke MySQL</span>
+          <span>Sinkronisasi Langsung ke MySQL</span>
         </button>
 
         <button
@@ -428,7 +466,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
           }`}
         >
           <FileCode2 size={14} />
-          <span>Struktur Tabel &amp; Skrip SQL</span>
+          <span>Struktur Skema SQL</span>
         </button>
 
         <button
@@ -441,7 +479,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
           }`}
         >
           <HelpCircle size={14} />
-          <span>Panduan phpMyAdmin</span>
+          <span>Panduan Import phpMyAdmin</span>
         </button>
       </div>
 
@@ -558,7 +596,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
                   <button
                     type="button"
                     onClick={() => setShowPassword(!showPassword)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 cursor-pointer"
                   >
                     {showPassword ? <EyeOff size={16} /> : <Eye size={16} />}
                   </button>
@@ -713,14 +751,119 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
                 <Shield size={12} className="text-emerald-600" /> Keamanan &amp; Perlindungan Data
               </span>
               <p className="text-slate-600 text-[11px] leading-relaxed">
-                Password disimpan secara terisolasi pada environment server backend sekolah. Data keuangan tetap memiliki cadangan in-memory dan dapat di-dump ke phpMyAdmin kapan saja.
+                Kredensial disimpan aman. Ekspor file <code>.sql</code> berisi seluruh baris data siswa, kas, SPP, tabungan, SPMB, dan modul sekolah untuk dipindahkan ke MySQL phpMyAdmin.
               </p>
             </div>
           </div>
         </div>
       )}
 
-      {/* TAB 2: SINKRONISASI DATA */}
+      {/* TAB 2: EKSPOR DATA LENGKAP KE PHPMYADMIN (FULL DUMP) */}
+      {activeSubTab === 'export' && (
+        <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col gap-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+            <div>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-emerald-100 text-emerald-800 text-[10px] font-black uppercase rounded-lg mb-1.5">
+                <FileSpreadsheet size={12} /> Ekspor Lengkap (Data + Skema Tabel)
+              </div>
+              <h3 className="text-base font-black text-slate-900">Download File SQL Lengkap untuk phpMyAdmin</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
+                File SQL ini berisi perintah <code>CREATE TABLE</code> untuk seluruh 22+ tabel serta seluruh perintah <code>INSERT INTO</code> data aktual yang ada di sistem (Siswa, Kas, SPP, Tabungan, Gaji, SPMB, dll.) tanpa ada data yang tertinggal.
+              </p>
+            </div>
+
+            <button
+              type="button"
+              onClick={handleDownloadFullSql}
+              className="px-6 py-3.5 bg-emerald-600 hover:bg-emerald-500 text-white font-black text-xs rounded-2xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-lg shadow-emerald-700/20 shrink-0"
+            >
+              <ArrowDownToLine size={16} />
+              <span>Download SQL Dump Full Data (.sql)</span>
+            </button>
+          </div>
+
+          {/* Table Counts Overview */}
+          <div className="flex flex-col gap-3">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-black uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
+                <Layers size={14} className="text-emerald-600" /> Ringkasan Data Yang Akan Diekspor ({totalRecords} Total Baris)
+              </span>
+              <button
+                type="button"
+                onClick={fetchCounts}
+                className="text-[11px] font-bold text-slate-500 hover:text-slate-800 flex items-center gap-1 cursor-pointer"
+              >
+                <RefreshCw size={12} className={isLoadingCounts ? 'animate-spin' : ''} /> Segarkan Hitungan
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-3">
+              {[
+                { key: 'students', label: 'Data Siswa', color: 'text-slate-900', bg: 'bg-slate-50' },
+                { key: 'treasurerTransactions', label: 'Buku Kas (BKU)', color: 'text-emerald-700', bg: 'bg-emerald-50/50' },
+                { key: 'sppBills', label: 'Tagihan SPP', color: 'text-blue-700', bg: 'bg-blue-50/50' },
+                { key: 'savingsTransactions', label: 'Tabungan Siswa', color: 'text-amber-700', bg: 'bg-amber-50/50' },
+                { key: 'teacherSalaries', label: 'Gaji Guru', color: 'text-purple-700', bg: 'bg-purple-50/50' },
+                { key: 'spmbCandidates', label: 'Pendaftar SPMB', color: 'text-teal-700', bg: 'bg-teal-50/50' },
+                { key: 'miscBills', label: 'Tagihan Lain', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'teachingJournals', label: 'Jurnal Mengajar', color: 'text-indigo-700', bg: 'bg-indigo-50/50' },
+                { key: 'attendanceLogs', label: 'Presensi Siswa', color: 'text-sky-700', bg: 'bg-sky-50/50' },
+                { key: 'merdekaAssessments', label: 'Penilaian Rapor', color: 'text-rose-700', bg: 'bg-rose-50/50' },
+                { key: 'homeroomTeachers', label: 'Wali Kelas', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'subjectTeachers', label: 'Guru Mapel', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'sarprasItems', label: 'Inventaris Sarpras', color: 'text-amber-800', bg: 'bg-amber-50/30' },
+                { key: 'sarprasProposals', label: 'Proposal Sarpras', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'sarprasLoans', label: 'Peminjaman Sarpras', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'studentDevelopmentLogs', label: 'Catatan Siswa', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'studentInfractionLogs', label: 'Pelanggaran Siswa', color: 'text-rose-800', bg: 'bg-rose-50/30' },
+                { key: 'studentCounselingLogs', label: 'Bimbingan Konseling', color: 'text-teal-800', bg: 'bg-teal-50/30' },
+                { key: 'classAnnouncements', label: 'Pengumuman Kelas', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'classMeetingLogs', label: 'Notulen Rapat', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'principalWorkPrograms', label: 'Program Kepsek', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'teacherEvaluations', label: 'Evaluasi Guru', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'classSchedules', label: 'Jadwal Pelajaran', color: 'text-slate-700', bg: 'bg-slate-50' },
+                { key: 'infractionRules', label: 'Aturan Poin', color: 'text-slate-700', bg: 'bg-slate-50' }
+              ].map((item) => (
+                <div key={item.key} className={`p-3 rounded-2xl border border-slate-200 ${item.bg} flex flex-col justify-between`}>
+                  <span className="text-[10px] text-slate-500 font-bold uppercase tracking-tight block truncate">{item.label}</span>
+                  <span className={`text-base font-black font-mono mt-1 ${item.color}`}>
+                    {countsData[item.key] !== undefined ? `${countsData[item.key]} data` : '0 data'}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Migration Steps Instruction */}
+          <div className="p-5 bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-2xl border border-slate-700 flex flex-col gap-4">
+            <h4 className="text-xs font-black uppercase tracking-wider text-emerald-400 flex items-center gap-2">
+              <CheckCircle size={15} /> 3 Langkah Mudah Memindahkan Data ke phpMyAdmin
+            </h4>
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs text-slate-200">
+              <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex flex-col gap-1.5">
+                <span className="font-extrabold text-emerald-300">1. Unduh File SQL</span>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Klik tombol <strong>"Download SQL Dump Full Data"</strong> di atas untuk menyimpan file berkas <code>smp_maarif_full_database_dump.sql</code>.
+                </p>
+              </div>
+              <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex flex-col gap-1.5">
+                <span className="font-extrabold text-emerald-300">2. Buka phpMyAdmin</span>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Buka phpMyAdmin di XAMPP / cPanel sekolah Anda. Buat database baru (misal: <code>smp_maarif_keuangan</code>) lalu pilih database tersebut.
+                </p>
+              </div>
+              <div className="p-3 bg-white/5 border border-white/10 rounded-xl flex flex-col gap-1.5">
+                <span className="font-extrabold text-emerald-300">3. Impor File SQL</span>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Buka menu <strong>"Import / Impor"</strong> pada menu atas phpMyAdmin, pilih file yang sudah diunduh, lalu klik <strong>"Kirim / Import"</strong>. Selesai!
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 3: SINKRONISASI DATA */}
       {activeSubTab === 'sync' && (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col gap-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -824,7 +967,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
         </div>
       )}
 
-      {/* TAB 3: SKEMA SQL */}
+      {/* TAB 4: SKEMA SQL */}
       {activeSubTab === 'schema' && (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col gap-5">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 border-b border-slate-100 pb-4">
@@ -847,11 +990,11 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
 
               <button
                 type="button"
-                onClick={handleDownloadSql}
+                onClick={handleDownloadSchemaSql}
                 className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
               >
                 <Download size={13} />
-                <span>Unduh File .sql</span>
+                <span>Unduh Skema .sql</span>
               </button>
             </div>
           </div>
@@ -863,7 +1006,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
         </div>
       )}
 
-      {/* TAB 4: PANDUAN PHPMYADMIN */}
+      {/* TAB 5: PANDUAN PHPMYADMIN */}
       {activeSubTab === 'guide' && (
         <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
           {/* Card 1: XAMPP Localhost */}
@@ -876,8 +1019,8 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
               <li>Buka XAMPP Control Panel dan aktifkan modul <strong>Apache</strong> dan <strong>MySQL</strong>.</li>
               <li>Buka browser dan buka alamat <code>http://localhost/phpmyadmin</code>.</li>
               <li>Klik menu <strong>"New / Baru"</strong> di bilah kiri dan buat database bernama <code>smp_maarif_keuangan</code>.</li>
-              <li>Di panel bendahara ini, atur Host: <code>localhost</code>, Port: <code>3306</code>, User: <code>root</code>, Password: <em>(kosongkan)</em>.</li>
-              <li>Klik <strong>"Uji Koneksi Database"</strong> lalu klik <strong>"Mulai Sinkronisasi"</strong>.</li>
+              <li>Di panel bendahara ini, buka tab <strong>"Ekspor Data Lengkap"</strong> dan klik <strong>"Download SQL Dump Full Data"</strong>.</li>
+              <li>Buka menu <strong>"Import"</strong> di phpMyAdmin dan pilih file <code>.sql</code> tersebut.</li>
             </ol>
           </div>
 
@@ -891,8 +1034,8 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
               <li>Login ke cPanel web sekolah, masuk ke menu <strong>"MySQL® Databases"</strong>.</li>
               <li>Buat database baru (misal: <code>username_keuangan</code>) dan buat MySQL User beserta password.</li>
               <li>Tambahkan User ke Database dan berikan <strong>"ALL PRIVILEGES"</strong>.</li>
-              <li>Buka menu <strong>"Remote MySQL"</strong> di cPanel dan tambahkan tanda wildcard <code>%</code> agar mengizinkan koneksi dari aplikasi.</li>
-              <li>Masukkan Host IP server hosting, nama database, user, dan password pada tab pengaturan.</li>
+              <li>Buka menu <strong>"phpMyAdmin"</strong> di cPanel, pilih database yang baru dibuat.</li>
+              <li>Klik tab <strong>"Import"</strong> dan masukkan file full dump <code>.sql</code>.</li>
             </ol>
           </div>
 
@@ -901,13 +1044,11 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
             <div className="p-2.5 bg-emerald-50 text-emerald-700 w-fit rounded-xl border border-emerald-200">
               <FileCode2 size={18} />
             </div>
-            <h4 className="text-xs font-black text-slate-900 uppercase">3. Cara Impor File SQL Manual</h4>
+            <h4 className="text-xs font-black text-slate-900 uppercase">3. Pemeliharaan &amp; Backup Rutin</h4>
             <ol className="text-[11px] text-slate-600 space-y-2 list-decimal list-inside leading-relaxed">
-              <li>Klik tombol <strong>"Unduh Skema SQL"</strong> di bagian atas halaman ini.</li>
-              <li>Buka phpMyAdmin dan pilih database sekolah yang diinginkan.</li>
-              <li>Klik tab menu <strong>"Import / Impor"</strong> pada menu navigasi atas phpMyAdmin.</li>
-              <li>Klik tombol <strong>"Choose File / Pilih Berkas"</strong> dan pilih file <code>.sql</code> yang telah diunduh.</li>
-              <li>Gulir ke bawah dan klik tombol <strong>"Import / Kirim"</strong>. Seluruh tabel siap digunakan!</li>
+              <li>Setiap kali Anda ingin melakukan sinkronisasi atau cadangan, cukup unduh file SQL dump baru.</li>
+              <li>Semua query menggunakan sintaks <code>ON DUPLICATE KEY UPDATE</code> sehingga aman diimpor ulang tanpa merusak data lama.</li>
+              <li>Database MySQL phpMyAdmin kini siap menjadi pusat data mandiri sekolah Anda.</li>
             </ol>
           </div>
         </div>

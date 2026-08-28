@@ -1293,7 +1293,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
           resultList.push({
             ...st,
             alpaCount: newAlpaCount,
-            reason: `⚠️ Siswa kembali ALPA ${newAlpaCount} kali setelah Sesi Bimbingan BK terakhir (${latestCounselingDate}). Urgen dilakukan bimbingan ulang!`
+            reason: `⚠ Siswa kembali ALPA ${newAlpaCount} kali setelah Sesi Bimbingan BK terakhir (${latestCounselingDate}). Urgen dilakukan bimbingan ulang!`
           });
         }
         // Otherwise (< 2 new Alpa): Hidden from Radar because already handled in Jurnal Bimbingan!
@@ -2003,7 +2003,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
       <td class="cell text-center" style="font-weight:bold;">Kelas ${st.className}</td>
       <td class="cell text-center">${st.count} Kali</td>
       <td class="cell text-center" style="color:#e11d48; font-weight:bold; background:#faf5ff;">${st.points} Poin</td>
-      <td class="cell text-center">${st.points >= 15 ? '⚠️ Butuh Panggilan Khusus' : 'Biasa'}</td>
+      <td class="cell text-center">${st.points >= 15 ? '⚠ Butuh Panggilan Khusus' : 'Biasa'}</td>
     </tr>
 `;
     });
@@ -2314,7 +2314,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     </p>
                   </div>
                   <span className="text-[10px] font-black bg-rose-50 text-rose-700 px-3 py-1 rounded-xl uppercase tracking-wider border border-rose-200">
-                    ⚠️ Urgen Diperhatikan
+                    ⚠ Urgen Diperhatikan
                   </span>
                 </div>
 
@@ -3168,7 +3168,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         }`}
                         title="Urutkan dari angka terbesar ke terkecil (Descending)"
                       >
-                        <span>⬇️ Terbesar → Terkecil</span>
+                        <span>⬇ Terbesar → Terkecil</span>
                       </button>
                       <button
                         type="button"
@@ -3180,7 +3180,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                         }`}
                         title="Urutkan dari angka terkecil ke terbesar (Ascending)"
                       >
-                        <span>⬆️ Terkecil → Terbesar</span>
+                        <span>⬆ Terkecil → Terbesar</span>
                       </button>
                     </div>
 
@@ -3474,7 +3474,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     infractionSubTab === 'reduction' ? 'bg-emerald-50 text-emerald-700 border border-emerald-100' : 'text-slate-400 bg-transparent hover:text-emerald-700'
                   }`}
                 >
-                  Input Pengurangan Poin BK ❇️
+                  Input Pengurangan Poin BK ❇
                 </button>
                 <button
                   type="button"
@@ -3590,7 +3590,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                             </td>
                             <td className="py-3 px-4 text-center">
                               {isSevere ? (
-                                <span className="px-2 py-0.5 font-bold text-[9px] bg-rose-100 text-rose-800 border border-rose-200 rounded uppercase">⚠️ Urgen Advokasi</span>
+                                <span className="px-2 py-0.5 font-bold text-[9px] bg-rose-100 text-rose-800 border border-rose-200 rounded uppercase">⚠ Urgen Advokasi</span>
                               ) : isMedium ? (
                                 <span className="px-2 py-0.5 font-bold text-[9px] bg-amber-100 text-amber-800 border border-amber-200 rounded uppercase">Peringatan Ringan</span>
                               ) : (
@@ -3614,7 +3614,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                                   }}
                                   className="px-2.5 py-1 bg-emerald-50 border border-emerald-150 hover:bg-emerald-100 text-emerald-800 text-[10.5px] uppercase font-bold rounded-lg transition-all cursor-pointer inline-flex items-center gap-1"
                                 >
-                                  <span>❇️ Kurangi Poin</span>
+                                  <span>❇ Kurangi Poin</span>
                                 </button>
                               </div>
                             </td>
@@ -3633,7 +3633,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                 <div className="bg-slate-50 border border-slate-200 rounded-2xl p-6 shadow-xxs">
                   <div className="flex items-center gap-2 pb-3 mb-5 border-b border-slate-205">
                     <div className="h-7 w-7 rounded-lg bg-emerald-500 text-white flex items-center justify-center font-bold text-sm">
-                      ❇️
+                      ❇
                     </div>
                     <div>
                       <h3 className="font-extrabold text-sm text-slate-800">Form Pengurangan Poin Tata Tertib Siswa</h3>
@@ -3727,7 +3727,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
 
                     <div className="flex flex-col gap-1.5 text-left font-semibold">
                       <label className="text-[10px] font-black uppercase text-slate-555 flex items-center gap-1">
-                        ⏱️ Waktu (WIB / Setempat)
+                        ⏱ Waktu (WIB / Setempat)
                       </label>
                       <input
                         type="time"
@@ -3796,7 +3796,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                     {/* Left: Input Form */}
                     <form onSubmit={handleSaveRule} className="lg:col-span-4 bg-white border border-slate-200 p-5 rounded-2xl flex flex-col gap-4 shadow-3xs text-left">
                       <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest block border-b border-slate-100 pb-2">
-                        {editingRuleId ? "✏️ Edit Acuan Sanksi" : "➕ Tambah Referensi Baru"}
+                        {editingRuleId ? "✏ Edit Acuan Sanksi" : "➕ Tambah Referensi Baru"}
                       </span>
 
                       <div className="flex flex-col gap-1.5">
@@ -3937,7 +3937,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                       <div className="flex justify-between items-start gap-2">
                         <div>
                           {log.points && log.points < 0 ? (
-                            <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded mr-2 inline-block">❇️ Apresiasi BK</span>
+                            <span className="text-[9px] font-black uppercase text-emerald-700 bg-emerald-50 border border-emerald-100 px-2 py-0.5 rounded mr-2 inline-block">❇ Apresiasi BK</span>
                           ) : (
                             <span className="text-[9px] font-black uppercase text-rose-700 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded mr-2 inline-block">🚨 Kasus</span>
                           )}
@@ -4512,7 +4512,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                   className="w-full text-left py-3 px-4 rounded-xl border border-indigo-100 bg-indigo-50/60 hover:bg-indigo-100/60 flex items-center gap-3 text-indigo-950 font-extrabold text-xs"
                 >
                   <Calendar size={16} className="text-indigo-600 shrink-0" />
-                  <span>🗓️ Matriks Jadwal Pelajaran</span>
+                  <span>🗓 Matriks Jadwal Pelajaran</span>
                 </button>
                 <button
                   onClick={() => {
@@ -4691,7 +4691,7 @@ export default function CounselorPanel({ schoolIdentity, onLogout, onRefresh, on
                 </div>
 
                 <div className="bg-indigo-50/60 border border-indigo-100 rounded-2xl p-3 text-[11px] text-indigo-900 leading-relaxed font-semibold">
-                  ℹ️ Dokumen cetak per siswa mencakup identitas siswa lengkap, daftar kronologi permasalahan, upaya advokasi wali kelas, komitmen siswa, dan masukan solusi resmi dari Guru BK.
+                  ℹ Dokumen cetak per siswa mencakup identitas siswa lengkap, daftar kronologi permasalahan, upaya advokasi wali kelas, komitmen siswa, dan masukan solusi resmi dari Guru BK.
                 </div>
 
                 <div className="flex justify-end gap-2 pt-2 border-t border-slate-100">

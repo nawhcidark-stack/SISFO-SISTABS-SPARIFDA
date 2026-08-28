@@ -1109,7 +1109,7 @@ export default function BukuIndukManagement({
                       : 'text-slate-650 hover:bg-slate-150'
                   }`}
                 >
-                  👨🏼‍💼 II. Data Ayah
+                  👨🏼💼 II. Data Ayah
                 </button>
                 <button
                   type="button"
@@ -1120,7 +1120,7 @@ export default function BukuIndukManagement({
                       : 'text-slate-650 hover:bg-slate-150'
                   }`}
                 >
-                  👩🏼‍💼 III. Data Ibu
+                  👩🏼💼 III. Data Ibu
                 </button>
                 <button
                   type="button"
@@ -1648,7 +1648,7 @@ export default function BukuIndukManagement({
               {/* Modal controls footer */}
               <div className="p-4 bg-slate-50 border-t border-slate-150 flex justify-between items-center shrink-0">
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  ⚠️ Data di-sync ke Rapor Wali kelas & Akun Murid
+                  ⚠ Data di-sync ke Rapor Wali kelas & Akun Murid
                 </div>
                 <div className="flex gap-2">
                   <button
@@ -1923,7 +1923,7 @@ export default function BukuIndukManagement({
               {/* Modal controls footer */}
               <div className="p-4 bg-slate-50 border-t border-slate-150 flex justify-between items-center shrink-0">
                 <div className="text-[10px] text-slate-400 font-bold uppercase tracking-wider">
-                  ℹ️ Buku Induk Siswa Digital Pasuruan
+                  ℹ Buku Induk Siswa Digital Pasuruan
                 </div>
                 <div className="flex gap-2">
                   <button

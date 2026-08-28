@@ -3264,7 +3264,7 @@ Wassalamualaikum Wr. Wb.
           { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '⭐' },
           { id: 'rapor_merdeka', label: 'Rapor Merdeka', icon: '🎓' },
           { id: 'buku_induk', label: 'Buku Induk', icon: '📗' },
-          { id: 'pkg', label: 'PKG', icon: '🎖️' },
+          { id: 'pkg', label: 'PKG', icon: '🎖' },
           { id: 'profile', label: 'Profil', icon: '👤' },
         ].map((tab) => (
           <button
@@ -3429,7 +3429,7 @@ Wassalamualaikum Wr. Wb.
                 }`}
                 title="Evaluasi Penilaian Kinerja Guru oleh Kepala Sekolah"
               >
-                <span className="text-sm">🎖️</span>
+                <span className="text-sm">🎖</span>
                 <span className="inline">Kinerja (PKG)</span>
               </button>
 
@@ -4477,7 +4477,7 @@ Wassalamualaikum Wr. Wb.
                         }`}
                         title="Urutkan dari angka terbesar ke terkecil (Descending)"
                       >
-                        <span>⬇️ Terbesar → Terkecil</span>
+                        <span>⬇ Terbesar → Terkecil</span>
                       </button>
                       <button
                         type="button"
@@ -4489,7 +4489,7 @@ Wassalamualaikum Wr. Wb.
                         }`}
                         title="Urutkan dari angka terkecil ke terbesar (Ascending)"
                       >
-                        <span>⬆️ Terkecil → Terbesar</span>
+                        <span>⬆ Terkecil → Terbesar</span>
                       </button>
                     </div>
 
@@ -4801,7 +4801,7 @@ Wassalamualaikum Wr. Wb.
                                   ) : (
                                     <div className="flex flex-col gap-1">
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-rose-600 bg-rose-50 border border-rose-100 px-2 py-0.5 rounded-full w-max animate-pulse">
-                                        ⚠️ Menunggak SPP
+                                        ⚠ Menunggak SPP
                                       </span>
                                       <span className="font-mono text-rose-700 font-semibold text-[10.5px]">
                                         Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaid)}
@@ -4820,7 +4820,7 @@ Wassalamualaikum Wr. Wb.
                                   ) : (
                                     <div className="flex flex-col gap-1">
                                       <span className="inline-flex items-center gap-1 text-[10px] font-bold text-indigo-600 bg-indigo-50 border border-indigo-100 px-2 py-0.5 rounded-full w-max">
-                                        ⚠️ {unpaidMisc.length} Tertunda
+                                        ⚠ {unpaidMisc.length} Tertunda
                                       </span>
                                       <span className="font-mono text-indigo-700 font-semibold text-[10.5px]">
                                         Total: {new Intl.NumberFormat('id-ID', { style: 'currency', currency: 'IDR', minimumFractionDigits: 0 }).format(totalUnpaidMisc)}
@@ -4912,7 +4912,7 @@ Wassalamualaikum Wr. Wb.
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-[9px] font-black text-rose-700 bg-rose-50 border border-rose-200 px-2 py-0.5 rounded-full animate-pulse">
-                                    ⚠️ Tunggakan SPP
+                                    ⚠ Tunggakan SPP
                                   </span>
                                 )}
                                 {unpaidMisc.length === 0 ? (
@@ -4921,7 +4921,7 @@ Wassalamualaikum Wr. Wb.
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-[9px] font-black text-indigo-700 bg-indigo-50 border border-indigo-200 px-2 py-0.5 rounded-full">
-                                    ⚠️ {unpaidMisc.length} Iuran Tertunda
+                                    ⚠ {unpaidMisc.length} Iuran Tertunda
                                   </span>
                                 )}
                               </div>
@@ -5079,7 +5079,7 @@ Wassalamualaikum Wr. Wb.
                     {/* JOURNAL 2: Pelanggaran & Tindak Lanjut */}
                     <div className="p-5 hover:bg-slate-50/50 transition-colors flex flex-col md:flex-row gap-5 items-start">
                       <div className="w-11 h-11 rounded-xl bg-amber-100/85 text-amber-600 flex items-center justify-center font-bold text-xl shrink-0 mt-1">
-                        ⚠️
+                        ⚠
                       </div>
                       <div className="flex-1">
                         <div className="flex flex-wrap items-center gap-2">
@@ -5253,7 +5253,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-orange-50 border border-orange-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-orange-905 flex items-center gap-1.5">
-                        🖨️ Cetak Jurnal Gabungan per Siswa
+                        🖨 Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-orange-700 mt-1 leading-relaxed">
                         Pilih nama siswa dibawah ini untuk mengompilasi seluruh catatan jurnal perkembangan bersangkutan, memformat, dan mengunduh laporan rekap resmi secara instan.
@@ -5474,7 +5474,7 @@ Wassalamualaikum Wr. Wb.
                         <span>Kembali ke Hub Jurnal Wali Kelas</span>
                       </button>
                       <h3 className="text-slate-900 font-extrabold text-sm flex items-center gap-2 mt-1">
-                        <span className="p-1 px-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs">⚠️</span>
+                        <span className="p-1 px-1.5 bg-rose-50 text-rose-600 rounded-lg text-xs">⚠</span>
                         Jurnal Pelanggaran & Tindak Lanjut Siswa
                       </h3>
                       <p className="text-slate-500 text-xs mt-0.5">
@@ -5490,7 +5490,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-rose-50 border border-rose-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-rose-950 flex items-center gap-1.5">
-                        🖨️ Cetak Jurnal Gabungan per Siswa
+                        🖨 Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-rose-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -5529,7 +5529,7 @@ Wassalamualaikum Wr. Wb.
                       }}
                       className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg border border-slate-200 text-xs font-extrabold flex items-center gap-1.5 transition-colors cursor-pointer"
                     >
-                      <span>{showRuleCrudPanel ? "❌ Tutup Rubrik Poin CRUD" : "⚙️ Kelola Rubrik Poin Pelanggaran (CRUD)"}</span>
+                      <span>{showRuleCrudPanel ? "❌ Tutup Rubrik Poin CRUD" : "⚙ Kelola Rubrik Poin Pelanggaran (CRUD)"}</span>
                     </button>
                   </div>
 
@@ -5538,7 +5538,7 @@ Wassalamualaikum Wr. Wb.
                     <div className="mt-4 border border-rose-200 bg-rose-50/20 p-5 rounded-2xl shadow-xs flex flex-col gap-4">
                       <div className="flex justify-between items-center pb-2 border-b border-rose-100">
                         <h4 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                          ⚙️ Konfigurasi Rubrik & Referensi Poin Pelanggaran (CRUD)
+                          ⚙ Konfigurasi Rubrik & Referensi Poin Pelanggaran (CRUD)
                         </h4>
                         <span className="text-[10px] font-mono text-rose-700 bg-rose-100 px-2 py-0.5 rounded-md font-bold">
                           {infractionRules.length} Aturan Aktif
@@ -5549,7 +5549,7 @@ Wassalamualaikum Wr. Wb.
                         {/* Form Tambah/Edit Aturan */}
                         <form onSubmit={handleSaveRule} className="md:col-span-4 bg-white border border-slate-100 p-4 rounded-xl flex flex-col gap-3 shadow-2xs">
                           <span className="text-[10px] font-black text-rose-800 uppercase tracking-widest block border-b border-slate-100 pb-1">
-                            {editingRuleId ? "✏️ Edit Aturan" : "➕ Tambah Referensi Baru"}
+                            {editingRuleId ? "✏ Edit Aturan" : "➕ Tambah Referensi Baru"}
                           </span>
 
                           <div className="flex flex-col gap-1.5">
@@ -5899,7 +5899,7 @@ Wassalamualaikum Wr. Wb.
                                 <div className="text-[11px] leading-relaxed mt-1 text-slate-700 grid grid-cols-1 md:grid-cols-2 gap-3.5 bg-slate-50 border border-slate-100 p-2.5 rounded-lg">
                                   <div>
                                     <span className={`text-[9.5px] font-bold block mb-0.5 ${isReduction ? 'text-emerald-700' : 'text-rose-600'}`}>
-                                      {isReduction ? '❇️ ALASAN PENGURANGAN BK' : '⚠️ JENIS PELANGGARAN'}
+                                      {isReduction ? '❇ ALASAN PENGURANGAN BK' : '⚠ JENIS PELANGGARAN'}
                                     </span>
                                     {log.infractionType}
                                   </div>
@@ -5963,7 +5963,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-purple-50 border border-purple-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-purple-950 flex items-center gap-1.5">
-                        🖨️ Cetak Jurnal Gabungan per Siswa
+                        🖨 Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-purple-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -6206,7 +6206,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-teal-50 border border-teal-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-teal-950 flex items-center gap-1.5">
-                        🖨️ Cetak Jurnal Gabungan per Siswa
+                        🖨 Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-teal-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -6405,7 +6405,7 @@ Wassalamualaikum Wr. Wb.
                   <div className="mt-5 bg-yellow-50 border border-yellow-200 rounded-xl p-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 shadow-2xs">
                     <div>
                       <h4 className="text-xs font-black text-yellow-950 flex items-center gap-1.5">
-                        🖨️ Cetak Jurnal Gabungan per Siswa
+                        🖨 Cetak Jurnal Gabungan per Siswa
                       </h4>
                       <p className="text-[11px] text-yellow-700 mt-1 leading-relaxed">
                         Pilih nama siswa di bawah ini untuk mengompilasi seluruh catatan jurnal gabungan perkembangan, pelanggaran, bimbingan, pengumuman, dan rapat secara instan.
@@ -6587,7 +6587,7 @@ Wassalamualaikum Wr. Wb.
                   <div>
                     <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Hasil Evaluasi Resmi</span>
                     <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                      🎖️ Penilaian Kinerja Guru (PKG) Saya
+                      🎖 Penilaian Kinerja Guru (PKG) Saya
                     </h2>
                     <p className="text-slate-500 text-[11px] mt-0.5">
                       Hasil evaluasi kompetensi pendidik dan penilaian kinerja terintegrasi yang dirilis secara resmi oleh Kepala Sekolah.
@@ -7858,7 +7858,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓️</span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Jadwal Pelajaran</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Lihat matriks jadwal kelas &amp; mengajar</p>
@@ -7971,7 +7971,7 @@ Wassalamualaikum Wr. Wb.
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖️</span>
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Evaluasi PKG</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru oleh Kepala Sekolah</p>

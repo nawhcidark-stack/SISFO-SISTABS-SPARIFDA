@@ -2259,7 +2259,7 @@ export default function SubjectTeacherPanel({
               <div>
                 <span className="text-[10px] font-black uppercase text-amber-600 tracking-wider">Laporan Hasil Kinerja</span>
                 <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                  🎖️ Penilaian Kinerja Guru (PKG) Saya
+                  🎖 Penilaian Kinerja Guru (PKG) Saya
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
                   Hasil evaluasi dan penilaian kuantitatif kompetensi pendidik terintegrasi yang dirilis secara resmi oleh Kepala Sekolah.
@@ -4432,7 +4432,7 @@ export default function SubjectTeacherPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓️</span>
+                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-600 text-lg">🗓</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Jadwal Pelajaran</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Lihat matriks jadwal pelajaran &amp; mengajar</p>
@@ -4471,7 +4471,7 @@ export default function SubjectTeacherPanel({
                       : 'border-slate-150 hover:bg-slate-50'
                   }`}
                 >
-                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖️</span>
+                  <span className="p-2 w-fit bg-amber-50 rounded-xl text-amber-600 text-lg">🎖</span>
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Evaluasi PKG</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Penilaian Kinerja Guru berkala dari Kepala Sekolah</p>

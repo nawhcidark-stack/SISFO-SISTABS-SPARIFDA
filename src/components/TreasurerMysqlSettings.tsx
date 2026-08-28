@@ -35,19 +35,19 @@ interface TreasurerMysqlSettingsProps {
 export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysqlSettingsProps) {
   // Config state
   const [config, setConfig] = useState<MysqlDatabaseConfig>({
-    host: 'localhost',
+    host: 'srv1393.hstgr.io',
     port: 3306,
-    database: 'smp_maarif_keuangan',
-    user: 'root',
+    database: 'u604170242_spp_db',
+    user: 'u604170242_spp_user',
     password: '',
     hasPassword: false,
     ssl: false,
-    phpmyadminUrl: 'http://localhost/phpmyadmin',
+    phpmyadminUrl: 'https://portal.smpmaarifpdn.sch.id:8443',
     charset: 'utf8mb4',
     connectionLimit: 10,
-    connectTimeout: 8000,
+    connectTimeout: 10000,
     autoSyncEnabled: false,
-    status: 'unconfigured'
+    status: 'disconnected'
   });
 
   const [inputPassword, setInputPassword] = useState('');

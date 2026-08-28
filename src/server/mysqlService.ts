@@ -5,21 +5,21 @@ import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult } from '../types'
 
 const CONFIG_FILE = path.join(process.cwd(), 'mysql_config.json');
 
-// Default initial configuration
+// Default initial configuration based on Hostinger Remote MySQL
 let currentConfig: MysqlDatabaseConfig = {
-  host: process.env.MYSQL_HOST || 'localhost',
+  host: process.env.MYSQL_HOST || 'srv1393.hstgr.io',
   port: parseInt(process.env.MYSQL_PORT || '3306', 10),
-  database: process.env.MYSQL_DATABASE || 'smp_maarif_keuangan',
-  user: process.env.MYSQL_USER || 'root',
+  database: process.env.MYSQL_DATABASE || 'u604170242_spp_db',
+  user: process.env.MYSQL_USER || 'u604170242_spp_user',
   password: process.env.MYSQL_PASSWORD || '',
   hasPassword: Boolean(process.env.MYSQL_PASSWORD),
   ssl: false,
-  phpmyadminUrl: process.env.MYSQL_PHPMYADMIN_URL || 'http://localhost/phpmyadmin',
+  phpmyadminUrl: process.env.MYSQL_PHPMYADMIN_URL || 'https://portal.smpmaarifpdn.sch.id:8443',
   charset: 'utf8mb4',
   connectionLimit: 10,
-  connectTimeout: 8000,
+  connectTimeout: 10000,
   autoSyncEnabled: false,
-  status: 'unconfigured'
+  status: 'disconnected'
 };
 
 // Load saved configuration on startup

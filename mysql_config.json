@@ -1,0 +1,14 @@
+{
+  "host": "srv1393.hstgr.io",
+  "port": 3306,
+  "database": "u604170242_spp_db",
+  "user": "u604170242_spp_user",
+  "password": "",
+  "ssl": false,
+  "phpmyadminUrl": "https://portal.smpmaarifpdn.sch.id:8443",
+  "charset": "utf8mb4",
+  "connectionLimit": 10,
+  "connectTimeout": 10000,
+  "autoSyncEnabled": false,
+  "status": "disconnected"
+}

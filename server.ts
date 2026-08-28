@@ -4338,7 +4338,7 @@ async function startServer() {
       }
       res.json({ success: true, message: "Login Administrator berhasil." });
     } else {
-      res.status(401).json({ error: "Password Administrator salah. Coba periksa kembali password Anda (Gunakan password admin Anda atau 'Sparifda@92' / 'admin123')." });
+      res.status(401).json({ error: "Password Administrator salah. Coba periksa kembali password Anda." });
     }
   });
 

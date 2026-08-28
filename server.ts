@@ -1,12 +1,3 @@
-import {
-  getMySQLConfig,
-  saveMySQLConfig,
-  testMySQLConnection,
-  runMySQLMigration,
-  syncAppDataToMySQL,
-  executeMySQLQuery,
-  generateConnectionSnippets,
-} from "./src/server/mysqlService";
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -20,9 +11,15 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
+import { loadMysqlConfig } from "./src/server/mysqlService";
+import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
+import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
+
 
 // Setup serverport
 const PORT = process.env.PORT || 3000;
+// Load saved MySQL database configuration
+loadMysqlConfig();
 
 // Initialize dynamic in-memory store
 const students: Student[] = [];
@@ -3571,86 +3568,6 @@ async function startServer() {
   });
 
   // Get WhatsApp Config Settings
-  
-  // ==========================================
-  // MySQL & phpMyAdmin Integration Endpoints
-  // ==========================================
-  app.get("/api/mysql/config", (req, res) => {
-    try {
-      const config = getMySQLConfig();
-      const snippets = generateConnectionSnippets(config);
-      res.json({ success: true, config, snippets });
-    } catch (err) {
-      res.status(500).json({ success: false, message: (err && err.message) || "Gagal memuat konfigurasi MySQL" });
-    }
-  });
-
-  app.post("/api/mysql/config", (req, res) => {
-    try {
-      const updated = saveMySQLConfig(req.body);
-      const snippets = generateConnectionSnippets(updated);
-      res.json({ success: true, message: "Konfigurasi database MySQL berhasil disimpan!", config: updated, snippets });
-    } catch (err) {
-      res.status(500).json({ success: false, message: (err && err.message) || "Gagal menyimpan konfigurasi MySQL" });
-    }
-  });
-
-  app.post("/api/mysql/test", async (req, res) => {
-    try {
-      const result = await testMySQLConnection(req.body);
-      res.json(result);
-    } catch (err) {
-      res.status(500).json({ success: false, message: (err && err.message) || "Gagal melakukan tes koneksi MySQL", error: err && err.message });
-    }
-  });
-
-  app.post("/api/mysql/migrate", async (req, res) => {
-    try {
-      const result = await runMySQLMigration(req.body);
-      res.json(result);
-    } catch (err) {
-      res.status(500).json({ success: false, message: (err && err.message) || "Gagal menjalankan migrasi skema SQL", error: err && err.message });
-    }
-  });
-
-  app.post("/api/mysql/sync", async (req, res) => {
-    try {
-      const result = await syncAppDataToMySQL({
-        students: typeof students !== "undefined" ? students : [],
-        sppBills: typeof sppBills !== "undefined" ? sppBills : [],
-        savingsTransactions: typeof savingsTransactions !== "undefined" ? savingsTransactions : [],
-        schoolIdentity: typeof schoolIdentity !== "undefined" ? schoolIdentity : {},
-        homeroomTeachers: typeof homeroomTeachers !== "undefined" ? homeroomTeachers : [],
-        subjectTeachers: typeof subjectTeachers !== "undefined" ? subjectTeachers : [],
-        miscBills: typeof miscBills !== "undefined" ? miscBills : [],
-        spmbRegistrations: typeof spmbRegistrations !== "undefined" ? spmbRegistrations : [],
-      });
-      res.json(result);
-    } catch (err) {
-      res.status(500).json({ success: false, message: (err && err.message) || "Gagal sinkronisasi data ke MySQL", error: err && err.message });
-    }
-  });
-
-  app.post("/api/mysql/query", async (req, res) => {
-    try {
-      const { sql } = req.body;
-      const result = await executeMySQLQuery(sql || "");
-      res.json(result);
-    } catch (err) {
-      res.status(500).json({ success: false, message: (err && err.message) || "Gagal eksekusi query SQL", error: err && err.message });
-    }
-  });
-
-  app.get("/api/mysql/snippets", (req, res) => {
-    try {
-      const config = getMySQLConfig();
-      const snippets = generateConnectionSnippets(config);
-      res.json({ success: true, snippets });
-    } catch (err) {
-      res.status(500).json({ success: false, message: (err && err.message) || "Gagal membuat cuplikan kode koneksi" });
-    }
-  });
-
   app.get("/api/whatsapp-config", (req, res) => {
     res.json({ success: true, whatsappConfig });
   });
@@ -7101,6 +7018,18 @@ async function startServer() {
     saveState();
     res.json({ success: true, message: "Data gaji berhasil dihapus." });
   });
+
+    // ==========================================
+  // Modular MySQL & phpMyAdmin Router for Treasurer
+  // ==========================================
+  app.use("/api/treasurer", createMysqlRouter({
+    getStudents: () => students,
+    getTransactions: () => treasurerTransactions,
+    getSppBills: () => sppBills,
+    getSalaries: () => teacherSalaries,
+    getSavings: () => savingsTransactions,
+    getMiscBills: () => miscBills
+  }));
 
   // Get active students
   app.get("/api/students", (req, res) => {
@@ -12373,366 +12302,156 @@ async function startServer() {
   });
 
   // ==========================================
-  // SPMB (PENERIMAAN MURID BARU) API ENDPOINTS
+  // SPMB (PENERIMAAN MURID BARU) API ROUTER
   // ==========================================
+  app.use("/api/spmb", createSpmbRouter({
+    spmbConfig,
+    spmbCandidates,
+    students,
+    whatsappConfig,
+    midtransConfig,
+    saveState,
+    broadcastNotification,
+    sendWhatsappNotification,
+    checkAndAutoTransferExpiredCandidates,
+    recordOrUpdateMidtransTransaction
+  }));
 
-  // 1. Get SPMB Configuration
-  app.get("/api/spmb/config", (req, res) => {
-    res.json(spmbConfig);
-  });
-
-  // 2. Update SPMB Configuration (Admin)
-  app.post("/api/spmb/config", (req, res) => {
-    try {
-      const newConfig = req.body;
-      if (!newConfig) {
-        return res.status(400).json({ error: "Data konfigurasi tidak valid." });
-      }
-      Object.assign(spmbConfig, newConfig);
-      saveState();
-      res.json({ success: true, message: "Konfigurasi SPMB berhasil diperbarui.", config: spmbConfig });
-    } catch (err: any) {
-      console.error("Error updating SPMB config:", err);
-      res.status(500).json({ error: "Gagal memperbarui konfigurasi SPMB: " + err.message });
-    }
-  });
-
-  // 3. Get All Candidates (Admin)
-  app.get("/api/spmb/candidates", (req, res) => {
-    // Jalankan pemeriksaan otomatisasi pengalihan sesi bagi calon yang melewati batas akhir
-    checkAndAutoTransferExpiredCandidates();
-    // Only return registered candidates who have completed or waived token payment
-    const validCandidates = spmbCandidates.filter(c => c.tokenPaid || c.tokenPaymentStatus === 'paid' || c.tokenPaymentStatus === 'waived');
-    res.json(validCandidates);
-  });
-
-  // 4. Check Candidate Status by NISN (Automatically delete/deny if token is unpaid)
-  app.get("/api/spmb/candidate/:nisn", (req, res) => {
-    // Jalankan pemeriksaan otomatisasi pengalihan sesi
-    checkAndAutoTransferExpiredCandidates();
-
-    const rawNisn = (req.params.nisn || "").trim();
-    if (!rawNisn) {
-      return res.status(400).json({ error: "NISN wajib diisi." });
-    }
-
-    const candidateIdx = spmbCandidates.findIndex(c => (c.nisn || "").trim() === rawNisn || (c.registrationNumber || "").trim().toLowerCase() === rawNisn.toLowerCase());
-    if (candidateIdx === -1) {
-      return res.status(404).json({ error: `Calon murid dengan NISN/Nomor Pendaftaran '${rawNisn}' tidak ditemukan.` });
-    }
-
-    const candidate = spmbCandidates[candidateIdx];
-    // Jika belum membayar token, otomatis data tidak tersimpan / dihapus dari sistem
-    if (!candidate.tokenPaid && candidate.tokenPaymentStatus !== 'paid' && candidate.tokenPaymentStatus !== 'waived') {
-      spmbCandidates.splice(candidateIdx, 1);
-      saveState();
-      return res.status(404).json({ error: `Calon murid belum menyelesaikan pembayaran token. Data pendaftaran tidak tersimpan, silakan input formulir pendaftaran ulang.` });
-    }
-
-    res.json(candidate);
-  });
-
-  // Cancel / clean up unpaid token registration
-  app.post("/api/spmb/cancel-unpaid-token", (req, res) => {
-    try {
-      const { nisn, orderId } = req.body;
-      const index = spmbCandidates.findIndex(c => 
-        (nisn && (c.nisn || "").trim() === (nisn || "").trim()) ||
-        (orderId && (c.tokenOrderId === orderId || c.tokenPaymentOrderId === orderId))
-      );
-      if (index !== -1) {
-        const cand = spmbCandidates[index];
-        if (!cand.tokenPaid && cand.tokenPaymentStatus !== 'paid' && cand.tokenPaymentStatus !== 'waived') {
-          spmbCandidates.splice(index, 1);
-          saveState();
+  // Dynamic PWA manifest.json generation synchronized with the current School Identity
+  app.get("/manifest.json", (req, res) => {
+    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "/icon-512.png";
+    const isSvg = pwaIcon.startsWith("data:image/svg") || pwaIcon.toLowerCase().endsWith(".svg");
+    
+    res.json({
+      name: schoolIdentity.name || "SMP MA'ARIF NU PANDAAN",
+      short_name: schoolIdentity.name ? schoolIdentity.name.split(" ").slice(0, 3).join(" ") : "SIPAS Portal",
+      description: `Sistem Informasi Spp & Tabungan Siswa - ${schoolIdentity.name || "SMP MA'ARIF NU PANDAAN"}`,
+      start_url: "/",
+      display: "standalone",
+      background_color: "#0f172a",
+      theme_color: "#4f46e5",
+      orientation: "portrait-primary",
+      icons: [
+        {
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "512x512"
+        },
+        {
+          src: pwaIcon,
+          type: isSvg ? "image/svg+xml" : "image/png",
+          sizes: "192x192"
         }
-      }
-      res.json({ success: true, message: "Data formulir yang belum membayar token telah dihapus." });
-    } catch (e: any) {
-      res.status(500).json({ error: "Gagal membatalkan draft: " + e.message });
-    }
+      ]
+    });
   });
 
-  // 5. Initial Step: Create Draft & Generate Midtrans Snap for Registration Token (Rp 50.000) or Free for Collective Registration
-  app.post("/api/spmb/register-token-snap", async (req, res) => {
-    try {
-      // Validasi status buka/tutup pendaftaran SPMB
-      if (spmbConfig.isOpen === false) {
-        return res.status(400).json({ error: "Pendaftaran SPMB saat ini belum aktif atau sedang ditutup." });
-      }
+  // Vite development integration or client index serving
+  if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
+    const vite = await createViteServer({
+      server: { middlewareMode: true },
+      appType: "spa"
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(process.cwd(), "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
 
-      const { nisn, fullName, gender, sessionId, parentPhone, phone, whatsapp, noHp, parentName, originSchool, schoolOrigin, schoolOriginType, registrationType, email } = req.body;
-      
-      const cleanNisn = (nisn || "").trim();
-      const cleanFullName = (fullName || req.body.name || "").trim().toUpperCase();
-      const cleanPhone = (parentPhone || phone || whatsapp || noHp || req.body.parent_phone || "").trim();
-      const cleanGender = gender || req.body.jenisKelamin || "L";
+  // Handle errors
+  app.use((err: any, req: any, res: any, next: any) => {
+    console.error("Unhandled Error", err);
+    res.status(500).json({ error: "Terjadi kesalahan internal server" });
+  });
 
-      if (!cleanNisn || !cleanFullName || !cleanPhone) {
-        return res.status(400).json({ error: "NISN, Nama Lengkap, Jenis Kelamin, dan No. HP WhatsApp Orang Tua wajib diisi." });
-      }
+  const isUnixSocket = typeof PORT === "string" && (PORT.includes("/") || PORT.includes("\\") || isNaN(Number(PORT)));
+  if (isUnixSocket) {
+    app.listen(PORT, () => {
+      console.log(`SMP Maarif NU Pandaan app is running on Unix socket: ${PORT}`);
+    });
+  } else {
+    const portNumber = typeof PORT === "number" ? PORT : parseInt(PORT, 10) || 3000;
+    app.listen(portNumber, "0.0.0.0", () => {
+      console.log(`SMP Maarif NU Pandaan app is running on TCP port ${portNumber}`);
+    });
+  }
 
-      const selectedSession = spmbConfig.sessions.find(s => s.id === sessionId) || spmbConfig.sessions[0];
-      // Validasi jalur pendaftaran aktif / belum aktif
-      if (!selectedSession || selectedSession.isActive === false) {
-        return res.status(400).json({ error: `Jalur pendaftaran '${selectedSession ? selectedSession.name : sessionId}' belum aktif.` });
-      }
-
-      const existingCandidate = spmbCandidates.find(c => (c.nisn || "").trim() === cleanNisn);
-
-      if (existingCandidate && (existingCandidate.tokenPaid || existingCandidate.tokenPaymentStatus === 'paid' || existingCandidate.tokenPaymentStatus === 'waived')) {
-        return res.json({
-          success: true,
-          alreadyPaid: true,
-          message: "Calon murid ini sudah menyelesaikan verifikasi token pendaftaran.",
-          candidate: existingCandidate
-        });
-      }
-
-      const tokenFee = spmbConfig.registrationTokenFee || 50000;
-      const orderId = `SPMB-TOKEN-${cleanNisn}-${Date.now()}`;
-      const regNumber = `SPMB-${spmbConfig.academicYear.replace(/[^0-9]/g, "")}-${cleanNisn.slice(-4) || Math.floor(1000 + Math.random() * 9000)}`;
-
-      const effectiveSchoolOrigin = schoolOriginType === 'maarif_jogosari' 
-        ? (spmbConfig.maarifSchoolName || 'SD MAARIF JOGOSARI') 
-        : (schoolOrigin || originSchool || 'SD Lainnya');
-
-      const isMaarif = schoolOriginType === 'maarif_jogosari' || 
-        effectiveSchoolOrigin.toUpperCase().includes('MAARIF JOGOSARI') ||
-        (originSchool || '').toUpperCase().includes('MAARIF JOGOSARI');
-
-      // Calculate fees: Uang Gedung (with wave discount in % and SD Maarif discount), SPP Juli 2027, and Uniforms
-      const normGender: 'L' | 'P' = (cleanGender === "female" || cleanGender === "P") ? "P" : "L";
-      const eligibleUniforms = spmbConfig.uniformItems.filter(u => 
-        u.gender === "both" || u.gender === "all" || (u.gender as string) === normGender || 
-        (normGender === "L" && u.gender === "male") || (normGender === "P" && u.gender === "female")
-      );
-      const uniformTotal = eligibleUniforms.reduce((sum, item) => sum + item.price, 0);
-      const buildingFee = spmbConfig.buildingFee || 1500000;
-      const julySppFee = spmbConfig.julySppFee || 200000;
-      const baseAdmFee = spmbConfig.reRegistrationBaseFee || 0;
-      
-      const waveDiscountPercent = typeof selectedSession?.discountPercent === "number" 
-        ? selectedSession.discountPercent 
-        : (selectedSession?.discountAmount ? Math.round((selectedSession.discountAmount / (buildingFee || 1)) * 100) : 0);
-      const buildingWaveDiscount = Math.round(buildingFee * (waveDiscountPercent / 100));
-
-      // SD Maarif discounts
-      let maarifBuildingDiscount = 0;
-      if (isMaarif) {
-        if (spmbConfig.maarifBuildingDiscountType === 'percent') {
-          maarifBuildingDiscount = Math.round(buildingFee * ((spmbConfig.maarifBuildingDiscount || 0) / 100));
-        } else {
-          maarifBuildingDiscount = spmbConfig.maarifBuildingDiscount || 0;
-        }
-      }
-
-      let maarifUniformDiscount = 0;
-      if (isMaarif) {
-        if (spmbConfig.maarifUniformDiscountType === 'percent') {
-          maarifUniformDiscount = Math.round(uniformTotal * ((spmbConfig.maarifUniformDiscount || 0) / 100));
-        } else {
-          maarifUniformDiscount = spmbConfig.maarifUniformDiscount || 0;
-        }
-      }
-
-      const totalBuildingDiscount = Math.min(buildingFee, buildingWaveDiscount + maarifBuildingDiscount);
-      const netBuildingFee = Math.max(0, buildingFee - totalBuildingDiscount);
-      const netUniformTotal = Math.max(0, uniformTotal - maarifUniformDiscount);
-      const reRegistrationTotal = netBuildingFee + julySppFee + baseAdmFee + netUniformTotal;
-
-      let candidate: SpmbCandidate;
-      if (existingCandidate) {
-        existingCandidate.fullName = cleanFullName;
-        existingCandidate.gender = normGender;
-        existingCandidate.sessionId = selectedSession?.id || "gelombang-1";
-        existingCandidate.sessionName = selectedSession?.name || "Gelombang 1";
-        existingCandidate.parentPhone = cleanPhone;
-        existingCandidate.phone = cleanPhone;
-        existingCandidate.parentName = parentName || existingCandidate.parentName;
-        existingCandidate.originSchool = effectiveSchoolOrigin;
-        existingCandidate.schoolOrigin = effectiveSchoolOrigin;
-        existingCandidate.schoolOriginType = schoolOriginType || (isMaarif ? 'maarif_jogosari' : 'other');
-        existingCandidate.registrationType = registrationType || existingCandidate.registrationType || 'online_individual';
-        existingCandidate.email = email || existingCandidate.email;
-        existingCandidate.tokenFee = tokenFee;
-        existingCandidate.tokenAmount = tokenFee;
-        existingCandidate.tokenOrderId = orderId;
-        existingCandidate.tokenPaymentOrderId = orderId;
-        existingCandidate.uniformCost = netUniformTotal;
-        existingCandidate.reRegistrationFee = reRegistrationTotal;
-        existingCandidate.reRegistrationAmount = reRegistrationTotal;
-        existingCandidate.updatedAt = new Date().toISOString();
-        candidate = existingCandidate;
-      } else {
-        candidate = {
-          id: `spmb-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
-          registrationNumber: regNumber,
-          registrationNo: regNumber,
-          nisn: cleanNisn,
-          nik: req.body.nik || "",
-          fullName: cleanFullName,
-          gender: normGender,
-          birthPlace: req.body.birthPlace || "",
-          birthDate: req.body.birthDate || "",
-          phone: cleanPhone,
-          schoolOrigin: effectiveSchoolOrigin,
-          schoolOriginType: schoolOriginType || (isMaarif ? 'maarif_jogosari' : 'other'),
-          registrationType: registrationType || 'online_individual',
-          sessionId: selectedSession?.id || "gelombang-1",
-          sessionName: selectedSession?.name || "Gelombang 1",
-          parentPhone: cleanPhone,
-          parentName: parentName || "",
-          originSchool: effectiveSchoolOrigin,
-          email: email || "",
-          status: "registered",
-          tokenFee,
-          tokenAmount: tokenFee,
-          tokenPaid: false,
-          tokenPaymentStatus: "unpaid",
-          tokenOrderId: orderId,
-          tokenPaymentOrderId: orderId,
-          reRegistrationFee: reRegistrationTotal,
-          reRegistrationAmount: reRegistrationTotal,
-          reRegistrationPaid: false,
-          reRegistrationStatus: "unpaid",
-          uniformCost: netUniformTotal,
-          selectedUniforms: eligibleUniforms.map(u => u.id),
-          uniformSizes: {
-            sportShirtSize: "L",
-            batikSize: "L",
-            shoesSize: "39"
-          },
-          isFormCompleted: false,
-          documentsUploaded: false,
-          documents: {},
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        };
-        spmbCandidates.push(candidate);
-      }
-
-      saveState();
-
-      // Create Midtrans Snap Token for online individual registration
-      let snapToken = "";
-      let redirectUrl = "";
-
-      if (!midtransConfig.serverKey || !midtransConfig.clientKey || midtransConfig.isDisabled) {
-        // Clean up candidate draft since payment cannot be initiated
-        const cIdx = spmbCandidates.findIndex(c => c.id === candidate.id || c.nisn === cleanNisn);
-        if (cIdx !== -1) {
-          spmbCandidates.splice(cIdx, 1);
-          saveState();
-        }
-        return res.status(400).json({
-          error: "Gateway pembayaran online Midtrans belum dikonfigurasi oleh Admin. Silakan hubungi panitia SPMB atau periksa Pengaturan Midtrans."
-        });
-      }
-
+  // Start background auto-backup engine checks
+  setInterval(async () => {
+    if (!backupConfig.enabled) return;
+    
+    const now = Date.now();
+    const lastTime = backupConfig.lastBackupTime ? new Date(backupConfig.lastBackupTime).getTime() : 0;
+    const nextTime = backupConfig.nextBackupTime ? new Date(backupConfig.nextBackupTime).getTime() : 0;
+    
+    // Check if backup is due
+    const isDue = now >= nextTime || (lastTime === 0 && isInitialSyncCompleted && databaseBackups.length === 0);
+    
+    if (isDue) {
+      console.log("[AUTO-BACKUP ENGINE] Automated database backup is due. Starting backup snapshot creation...");
       try {
-        const authString = Buffer.from(midtransConfig.serverKey.trim() + ":").toString("base64");
-        const baseUrl = midtransConfig.isProduction ? "https://app.midtrans.com/snap/v1/transactions" : "https://app.sandbox.midtrans.com/snap/v1/transactions";
+        const backupId = `bkp-${Date.now()}`;
+        const createdAt = new Date().toISOString();
 
-        const midtransPayload = {
-          transaction_details: {
-            order_id: orderId,
-            gross_amount: tokenFee
-          },
-          customer_details: {
-            first_name: cleanFullName,
-            email: email || `spmb.${cleanNisn}@smpmaarifnu.sch.id`,
-            phone: cleanPhone
-          },
-          item_details: [
-            {
-              id: "TOKEN-SPMB",
-              price: tokenFee,
-              quantity: 1,
-              name: `Token SPMB ${spmbConfig.academicYear} - ${cleanFullName}`.slice(0, 50)
-            }
-          ]
+        const { snapshot, counts } = await buildFullBackupSnapshot();
+        const snapshotStr = JSON.stringify(snapshot);
+        const sizeBytes = getUtf8ByteLength(snapshotStr);
+
+        const newBackup = {
+          id: backupId,
+          createdAt,
+          type: "auto",
+          description: "Backup Otomatis Database (Siklus Periodik)",
+          sizeBytes,
+          collections: counts,
+          data: snapshotStr
         };
 
-        const snapResponse = await fetch(baseUrl, {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-            "Accept": "application/json",
-            "Authorization": `Basic ${authString}`
-          },
-          body: JSON.stringify(midtransPayload)
-        });
-
-        if (snapResponse.ok) {
-          const snapJson: any = await snapResponse.json();
-          snapToken = snapJson.token || "";
-          redirectUrl = snapJson.redirect_url || "";
-          candidate.tokenSnapToken = snapToken;
-          recordOrUpdateMidtransTransaction({
-            orderId,
-            studentName: candidate.fullName,
-            studentNis: candidate.nisn,
-            nisn: candidate.nisn,
-            billType: "spmb_token",
-            description: `Pembayaran Token SPMB - ${candidate.fullName}`,
-            grossAmount: tokenFee,
-            paymentType: "Midtrans Snap",
-            transactionStatus: "pending",
-            snapToken: snapToken,
-            rawResponse: snapJson
+        if (mongoDb) {
+          await executeMongoOperationWithRetry(async () => {
+            const col = mongoDb.collection("databaseBackups");
+            await col.insertOne({ ...newBackup, _id: backupId });
           });
-          saveState();
-        } else {
-          const errText = await snapResponse.text();
-          console.warn("Midtrans Snap error for SPMB token:", errText);
-          // Clean up draft
-          const cIdx = spmbCandidates.findIndex(c => c.id === candidate.id || c.nisn === cleanNisn);
-          if (cIdx !== -1) {
-            spmbCandidates.splice(cIdx, 1);
-            saveState();
+        }
+
+        databaseBackups.push(newBackup);
+
+        // Enforce max count
+        if (databaseBackups.length > backupConfig.maxBackups) {
+          const sorted = [...databaseBackups].sort((a, b) => a.createdAt.localeCompare(b.createdAt));
+          const toRemove = sorted.slice(0, databaseBackups.length - backupConfig.maxBackups);
+          for (const item of toRemove) {
+            const idx = databaseBackups.findIndex(b => b.id === item.id);
+            if (idx > -1) databaseBackups.splice(idx, 1);
+            if (mongoDb) {
+              try {
+                await executeMongoOperationWithRetry(async () => {
+                  await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: item.id }, { id: item.id }] });
+                });
+              } catch (delErr) {
+                console.warn("Failed to prune auto backup from MongoDB:", delErr);
+              }
+            }
           }
-          let parsedErrMsg = "Gagal membuat sesi pembayaran Midtrans.";
-          try {
-            const errObj = JSON.parse(errText);
-            if (errObj.error_messages) parsedErrMsg = Array.isArray(errObj.error_messages) ? errObj.error_messages.join(", ") : String(errObj.error_messages);
-            else if (errObj.message) parsedErrMsg = errObj.message;
-          } catch (_) {
-            parsedErrMsg = errText || parsedErrMsg;
-          }
-          return res.status(500).json({ error: "Gagal membuaxœì}Ûr9²à{šëm“6Y’İ·3t¨½ÔÅn¶­KˆT;&<^	d"Ìb».–8Eìëy9»0óûCçÎ'œL U P)Ë=İí¶¥ y2”$,ádÁæ#º¤1É!÷Sø7!ƒ.º¤A“æÄñarInZÏ¾ êÏúé†Œi:’fm ^—ĞpÙ"‹Šã(L¢€y,£¸Ù8ÀÈ8f4åá¥Ù%I£É*Nw»6QPµ^JÆ}ÿšìd1íÑĞç>MYâMxè÷CŸ]7Çdç2ö¸Ovvv`ˆª
-~øÛß  äI(‹FÃ#øMë‚OHStğ%Tè<ÑgCì.“EÀÇLTo“'¨I?°A
-µš¼³4‹Cø€@­,i~»½İòŞ'QØüHº`^E!›Á2]œ+ºt.×%½¤\/…/oÎ’„^2mÉn¾ø"ï7QCI²ñtIg¬]|bŸÅ}¿ü€Ğ‡¸Få'±d]WIÌ|³qzåÇb%,/ËÇ©F\«•“¤xH¶è‚oáúlÅì’')‹;xG‡ÔÄ4Jºï/§dÎæY@9x¦3Á.¡O').€Ä8s`†¶¶Èwù™Å|²$HØ!¦Œl‘ºœ³0%¹Ğ€.Ş"JÒf£œÎÑ\Mf!›Àth²Ç¤³_Ú8Ò¼ÄQ/l¥äc±ši¿M˜C–N#°½ ~ñF‘¿Ì1„lğ¥jE¾úŠ|‰uf¨Rğ7L#Òß'4¥9êÈ}ÏGÄç	‹S:£¡×pªâôœbÜì.9½RSosì	Œ«OÈîy±¢T­€£R«ÕJÈBdH°âG Ñh´¼4æófK´kV¿·T{IV‹Iİ†Îo*èÜ4R‚($ó,y–  3Z­Çe!Õ¤Q2
-vVWC e UhÒ¨­Ìı^
-µBvEö…Äƒ‚şàx X/KùçîDÑàE“ˆHS?‡™cI1Ìœó™k°Ùÿ¹m¨ª™!¾Õ7àæİ8¢ş˜e†QÊ'¤Bƒdõ‚.9e4Hùœi_¡ÿrİ¹ß%¢M	\±ùƒ8:/Œ®š­›M§™8êC£rb‚¥K‰ÊÓ€©œ”²Š
-ZÙ¥qFš¨\[²¾_0Š=®FX÷ÁÇ²“IGtÎnH¹¸kânZdÄâ)M¸œBO)®‰Mrº€–M‹@¦4¿öæQÒ
-@F£lI£×?S«Õà~§¿ßhİx†Òåg_ÈÉRù ÕËß­]ıœorÚå«­¯^S_`ƒ80MòfJÓ¤·X '_¤Èò@~™Yjbà
-+‚¼ß…é(`Jtx fq2;ÀDĞ?µlS+%€äK¦è¦Ïj@¶uEÑâÛ!N§‘tñ†\’OcN9©ãQ=yx	ÿ^Çš‘tñ_ÿÿ vÏ^ûääàp·÷çŞiïˆ_Á‡£ıŞ‹¡ø‚T0…£cê³9ÿ™ÑøæQòIi*I	j—Ç[UjLØˆ%@§>Y>")è”ìœşØô_ƒ˜ºœÏ€I\ØøÏÿóryäD73<KÚ;ÊæÀpæ òÈ,«PEv: _Àê	ÜƒÀ¢
-YŒĞ¨k.0 œÊ1ÃTîä5ßg)éƒõ´›Í2z6k=rÌ>o1EF\vÀv6™PX–æÉá'b ¿Î@CŒ°À÷P·–%:	_àv€áöİÜµ9éõ‡ıìzpxB{½Óşrt†Eû= ÆNç¢ä˜ëâeCNh¬Ø–Õò„UÛdÂ?qÙ±=#Ñ¹$×7=a¼¶>Å–/d|Cc‹*7òÛç3d²x„ÚpğŸn®»¬Ú»Zé%Wék®œ“õÌôï=2 •Oö¢ù"``o¾ ¡Ašø7M5Ê>¹¢­S­†ÊÂÊ˜Íºæ¹´Ê±%öˆV^[ˆ-ùSrüeÀÿÊ’zcınúç1É73“iüêÖ±Ù«f"ƒ*^iã´Œ7GûĞÁ|A6‡±
-òõÈa‚äA ú‰ÏLi&9ìÜ€ø„Û4²UkÆÃq4¹"´cĞ.ÅDûùã¾zÃBÉë³uV€.”.t·Wë8=[,X¼Gm—¤úñè=§=t–ª¹môiĞNÕ1¤Ji9NGË[iÃä	b4õşÕD¯µ¡Ûd¬8Äó¼fM±XÊV««o,¯.XÜ¨2DOµK£XëÒ”X6ÖVxpØê<ÉFs¦ŸÇ‹»‹Ö˜ËÍHİÌĞ…¦=>_ ¸¹Í	3Bû —Z	8ª;êÍp)†éšØºjóß<ğp;ºÕimêæ[\Í}i	ì+°8…V§HÁ  ¨:\±·ñ¶—Ô«(EÇ@4g’*S£¶É8KÒh®ìú?ôë=ëW “ŸÁwôÑ<{)7ş‡t
-´ñ¤«öA§4î²&ÿT,G¥4±R½ùëUõf“~Ú%ûºÏ’ =©0d ÊñáF…¥gî:Ë§ö,_Ëñpá9ÉÈªiø®gtÔNşë.Ùe1ê€Î8Ac&¥¡5ù,¼¼¤Sƒ%@¬²_23?'ÆÆ†3\ÿälDÔgbç°é(·vVŠï¥¼´Ôr—Ë
-³ÙÊâMD¹ÅgÖ ïºP_Ûu&ğƒ¿gq6E­cãÓZ#±É Ğƒ!ŸîğJ»19¤|+ãÉxEÁqÌ/y8\.˜;ç¢âùûè2Jà§‡ˆ­rûÜİë<|h™Xh®™Ï’æCåyÿtüòx ?=4·äK˜‘€67†ùÌœr®+rÿ#ÂrÏImŠ(Iœ $NªÇŒªVßÇñºš¿İ~÷Ìèt”ñ ı~Üp2:Ô Ö±ã´m6~ŸËÁbQi«}‡¦O-G€œ?¯´ŒÙ©¦yw¡–bµI5FyÂâ1*ù±ûMl$>÷*5QL‡b«Q’És»a¥]QµKšµ(EşœÒtêÅğ‹ß´kÛ•·HÓÆu«E‘'À˜ĞÙvË½`oÀÀÜW`úZ‡:´G¤iOdK@6·÷‰â¶¼r®AÒÉ_»
-ªÖç¶.ur†5\4ø®-®PÉÈ9Â‡æÁwm÷õS¾½SAR­yg7„	[¯ÿõ:q„.˜lŸF)ê¦Î“>¹¶{ù×Ò"¥»»Ë.èus»m‚{PÍœ20ÇÆòLYÙ´²•àmŸ¨-„±°ÌÁ} à6ølB³ 5Å £€å²‰X¹fŠ¾ L33O^3ï$KÎEé´ˆ7?CïâkY4W"œ¶–%CU¹®Dt‰¯C}İ@Õnö4§k´,S@¯pâh4a²YŠÊ™}i{B¨[ßJ“>Ğ~u,ÇôJ5Š5Ú©àD¯ŸğN6o´«…ƒ¿yá¯Ş"æc Àí’Jé  |²p°à¬'ªk¢Á¹S<Ø6•Õ¬Õ…K6Xk­šÎ±öÌ:îÁØf†bÂ¢%ëJı±®§ÛÃyVcJ¥í˜~ís"ŒšúWÔmúP¬Qæ;ä7:§§/;•£=ë¸ººicE´Eÿ¶RNjs»­A•m”XÛ‹¹™äÄ«`‹Û[†±gI‡Šp¨ßq«İgÓı{`(2Š -Üv+6Ú°D‹İReº_3Wû;…M`ñ+¶D^²Çq¡
-­2 oˆ3ïµ]#ãË½¬Jd\$âDÊ}¨Ü[Ÿ©SxôJ£€M	°=’Ÿ;N³øœ€çËSNÅöš×(…CÕIÒwœr–¡Y:•k ¸ÛÍ&{“8š7ëğ–oŞ<&.nÙDù12rıwß4*Ñø].M£'qêC(ûç¤1MÓEÒİÚÂ¶¼ª7æ[¸ô[lÉÀ6Q?i€$0Z$@n£èz–}ä#Ì›œĞ%úäF¼!ZÛsŸ¥”I×¨ bÏ14¦…ˆ.ã(IÎ©`ë®ÎãZ­½‰y ²¦¿	“ô<¤sÖu˜ƒ‘À½šø€~êÆ«HÇÿ•ÌR'„º¿` \˜ E†ru´Fİ,Ñ>(gøÖèÂœ¯;jìõ_ï÷^v^4ÚVahtu‹Ô®ñKFÃ”§Ë.ybIT6Îp³÷%˜4ğÏé‡ú'ĞáeÒ°a´º1àAƒÓÎşlu¿uÎh¿?ØëÓzÓû¹v^ìgx-A®}¢Í-oïæ‚YğàcÅa‹à
-–ğÆMëÂÄÇ;`É·ïZU´Ô8:ë#Fn‚Ô¢ÆóåWÈQxy5Í’,ÑÜÜŸÔ^Qci;'589éütöúÏu)¨ÍÇ°A| ~ÊNn?ışvr-í´Uk!­¨İŞ é
-@›|—ƒ”ºMØCÉZø…áW|‘9]H7¯éš::5ÃÏ”—²éØ3Á^"‚êÁ¶şv»e½UË¶a+/œõ_Ÿ®Ç
-ô;s‚:õÚ”´ïJ{¤¢vQ9Ÿ²d¿ ½L¯(OÉ„aÄ‘²Ú¦×$"m1(èx0400eÔnEM6ÀĞHAuĞ#l@C°î´…&š…ÆFo<f‹t­š`6E1ÿ«¨.vpÇ 4K{êF÷áQ]—ü48>òänŸ,›–R"ñ¦¥aN˜÷Ş¼hf:·%jJ0 —†Ë·FCa¢š) š…gVò|N¯kÚÜEíüóyÕFuîÏÀêXülö6Ãê8>Dn)KÃ¬é°Çl+LÅ"­e5å•yR¹ŒğËê#Cä‹öÖ¹yLlÑ•Ï’qÌ2[	5£ÅAzÇîl™jÂôìU-OË “g’j˜Æ‰¸5@ÍÎ£(hÕ,Ò™o#V•^åÔØ-HHç™5”ª{+jƒ0‡ì:u“~
-%&éç±W4›V¿pİŠ</b®Ÿ
-eÀ¾€è—éh;Züß(£im>›g°Œé²ó;½¨BŠˆš®qH‰!kËÈŒs!î¼5À^Ó%xeâßº6Ï‰³À{qÀ\›4p‹F¹„næğÄúicTÕ*ƒ3‹uEHÊyËBU„ 	Kz‰Ë:ë¤¼­^T#7_á~²¢ƒˆ«¹‹¤üålı^²şjB†îS,È¯ÌüÓ	oİà¨?©§¬£ëçÍÿ¬Iıj€Ÿš7®ÛöÕ’ìşsìÌY¯L¶³Ì¶ÛÒíª7 µ|RqëŒÃq?ÏÃiÜñ¦e$(¾ƒZ±MÜ€ç$Àj¸îï#P°ş}$æîæÙ€îD@™İtxğúì¨7è¹ñàó¬¤ıUx¬<&Çq8ü}%UFäşÉ?ÿõ÷ÿøwòèÕYØ;òQ‰cg¯{G/‘pN{/{‡Ÿ”øgÑâ	ÆÅ‰`FZnÅÔf Ş?…ºòU˜äo+0Oç3òÅG3¬îfUßXF$®¨EªíH’æ«WmÒ›¢}…(á0·6XE	yš¡vŠ@ŠÃÒaad`àHüå1¢ğƒ'ø›ÏçÒüóåó¾‘–Œ åœ~ÖT>·z¿9}w1ÃŸl{D%Ä0Â÷s“¤ÆüÎD›Na¹lœÎW†¯Ì)çEİ;føy.¬â¶?2şÈ8ø—Ì8Ğ¢ÙñYèIó·ùe%;VóØÊ2-‰Mãßª+Uõwêœ¼JÍµœ6Ó»rø”+¬‘Ü‘tRæıùZÅÄÎ¥°ş¼×]´c‘lâÌqWYzD÷t —9òıòó(L[³Ü5Ï¤ÿµõáOyü£ì={‡Õ«C¬Ü‘ãÚ@r¿Md£¶´E'mi5(ÛJ|úÔM¨âÂ·Ê5oÜÿ¤˜K -'Éô!–ˆú%}•›*UÄUÜ¼®ÜÑ–Á	ï™£}µÓÇ@ Z	ûW‘–Ğx_QuM†.ø0xÅšÄuİ•§Å„Pã– äšŞÕúÍ‡—ƒY›µGX——#[9{ïEÈ øÀLûW!¨)dA]"n1¡­.÷·Rº3. ®-Ä&(2÷¤0ÆËûÏ,9¡;"âü_WèÛ52¸¾:{3u¡R,t»Ì¥;×–Ã>eüë9 ‚à~FÚY­ëÜ¶»ÑF™W/íÍş„Ìi<±J¶„ã«2`7à:4fÑd‘#k‹F0ã	È,EàDiiä!X“0JÉRD"cãÚ,k580·Ñ\Ú†‘ãz'4®ZvŠ„f—=ŠÑ)˜ š:2ë-
-YÃŠ1¹µaà:×,Î|mä8HÁpgV3ïĞ­Oê*æ·Â_Oø¯#û×¶/ÔèŞÓ ‹ë4B6K
-ˆä=õ9na®AhÏñ¸6`³p?`³( SÁk‡8Ù˜ç&ÆÖô}™‘B›*GãÀOÒ>`W".i35Ïõ5ÑØ#'q„ëv2%’NÄ‘yF’~ï&
-i!{Ğ4RGÊŒ{ULP…ù`è_p÷Ô.$Ôî²R«ø²/Ì‰qÆ&‰ô"ßF¥é(k­¼BÏ*PÛìßVs•%ÈSy©âQ„¯ŞtN^œíß’‘TæT´Tliç;‘¦´şsğ}UoÖKÃœ>ÖhT ÑBëí-•4Õ(p¸ş©pÜî² '~ÁÍ½--fÙœæ|" i<cA‰³©ê÷üPéöĞ×@UÉiã½§—¸aàõ€iRÖ@2m‘‘8 ¬^{§†LA·Şb´È³Úø>œëÏÿ¸etõIãÿıÿäÑO{Èğà´ØÃ»E_â}£¯û½#r†GÕ;G›{½ÁDŠ˜–ã Qcy°DŠ`n<Y‚QQqG ­Š%‹é4¿º² Ïjn»•Ô+›{‚Îå}™?	r¶í“U¯2ÒPİjtÍQá¾Ú(#Ç›Z'†µ¡ÖânV  ²Zè•g­XÙDHT·/¾.Eê²šŞO@[^RûÔÓ%§C‰<¯šâ]ç	™±ø=Nƒ-G½ßìÉ¤rÃîõTòâd"ßˆ¶sÒÖìu˜ M?‡e­lJa[—†*ª…¬;oêÄQÂ‡@ØëÖ>ÊÊpÌÜâ	ıè3š×cÑÏg´®÷vğí&àİ6qrïİIÃ£^Ã~,¶‚×¶7j!ŒÃZè–àÍ”]·YG…=¶¢Ù?å$J‘ƒCûU“k# Ä -…-‚ñÔ	K?GØ†äìàş…\1üÊT×–pOÅÎÁ×_¨ÆB(¦9€âãĞ[Oz Ã ñÊq</>Å¼Ú{%%ÜNuTôä&GYò1ŒZû%i+‹x/ 	ü¢nÔP¿É¢#î>à²Äe2ŒÔÜ»êfœ·ï*©$z×-cG>xxÎŸN1² šçFâs—è 0_RûUåaÕúøò~Pˆmo bóúû†Ğ]"Kˆğ1ŸÏù%ÆŠá/RÄ­³ ­¼µNŞÌ|@¾¨@´µã÷^ÃTKŠL|EZI7'2±o­ÛÛ”@)uT×uYÑHµBİ,ôc41–½êlİŸ¬jIè!å!F-U€Á·7ÌAk“ãáñaoŸ|Ö¬X&¢òDä‘\>Tb{‰`òD1—Hûº"c{^½{YÜ°š‡uóíll]T.>iõ.Ã}+HºriÆ‚§ÊÄğ.ƒÑ®A8Ú›²ññ©ä¹âÀé+ĞÉW‚˜QYTóÙØ5˜Ği.ÀvrXúı‚šÏ {ì&Ê„ÇU„•zFÆ€4ñ"€”c”Ù‹Î.’Ô—ÑêºãÄı›qQÖêjÂg¿(ssíÔ\Eæ±ÉVqÄ©.½ _&YÌD <†Êi?BÇúM!VòV‰ö^”«ÑXÉCöèp6B+KÒ4jÙ ¾t4rBÂ£;ÿ4¼®dVwËRF%½êOfı*îTFY:f[[~×â´ÚİZ§JfÓÌAüc+o‘%Ó
-¥êU„lRÊacd…HÎ¿Ü˜‚G¤0ˆ¡Ri ½Œ©ÏÈ÷¹ô°$TTc*´˜u!È:©eOs#ùZÏ:^çÎœ“¾ublW•Ìšf£°kòBŞìˆô’€Ë€~QJšCa ì²X\Qš
-ø>gàÀ‘9Mh ß¢ ¸µk–>by+ >/ëîÀçâï.^>¨·«^äSİ
-ĞtÊbÇ)•^Ğ0 ¯¸uÈµC*6R®Šëoc¶è˜5·ŞşoÚùëvçOï¶.Û¯{ã=ø¨¯Ì­—- SWQì[ªÕ7Ô'»4@£K¶-¥ÑYlÌDKË¯R®l‹FU¬”§İ
-†«g
-ÁÕï—}ğRn;0û¦¾—O²ŸªuM¥µË#_s-_—1èf¦uÍª`C>Ù˜«Öñ8 èõË¯5-PVä‡LfıÙLÿéÕóo5Ğ÷XœVYEÕ¶G"{&—Ş¬üZm1òÀ)¨z‹òkµEÂGè'{ò²Miêv)[jÛÚ…y{“D1ï…3J:¤·,®CÇ?%u×Ó¼9 UfTñ±®ş®“\ì²•­mÒ±ŠêÚøY1i·-ŠêÚÇÙ¢¦qYV×º/¥8†,¿×µêU%QP×îÄÖ–jpµÉs³ìFeRãGîg‹•ÕeZa)»µÂÒŠ*3	ªøXWßMPvÙÊÖ6AYEumeÕµu”]V×ºJPú÷ºV‚2
-êÚUj¥I!«¥_APxR«›Lš5'K¹šc(JMZÒ>×·qÓSµô6MU
-ëÛ;éªRXßŞM[ÕÒzUú2Kê[:hÌ*ªo[¡3£ ¾]•ÖÌGË(ºØ~nÎkš4bÉ¶¥Ï¤¹l‰á¨•ş¾I´G¼™?¼Ú.Ça8Â»Áwv‚ïì»`'^×ö|on	}ùüw-ä³ª½n!¿KáPîK«ô4q&1'ä{ç=
-6Â€yğ±‚8¹…~£ï¡Ê#â<(ÏGÒ6ÃUŒªê¿'¢;Ô ´Y’X¾µã~ujõëİp—X‚]íQé	+)Ñ8c
-)>ŒsãYØßc¨÷ö¶µ¼GeÔ× r?GR­ê8ÏƒZf©€ªBz»ıÎÌ*æ+w÷¸èÚ9W=Úİƒ"æ‘\Sí hı³ÂQfÜË`8âÃ	‹rHÃŒÁò–ˆ‡<„˜BëNš·^ûTÊ³@\¶½ĞÇQäƒ8¸^àûOå*4‘ÊmÈ²;/g¬¨Ñ8íÃó>ƒmXÌg	y¶İ†ÛTòP4S ‰3¹9Ø°	‰à&:›òØç‘oIéWtÊeß´xÊÔ#r¯ú´ÚË‚ÅAŒ¨F¨3Ÿçyr´ŸHÅæaÎµ¿‡øœ ÌY„”®OËc|Mñ‹ñy İüı¤'Cú@²É2”ËFA=±è¢˜îF©œÅ¶Œç±Cå#X@šF±Œ!¹ú™7QïË­~÷!@ZDì ùËŒŠŒó(KÊRc“Q¾^Fƒ¢Ø˜¸8¿Öúª{}lÓ3y=š‡\ÍõnÀgœÄüŠ.iª¥“’údÀ©Ïg2ŞãTáknD%6*ÈÚÏ±½Xïğ\¤…wûIu4-OºåMïˆê<UsmôeccJì…DCj]Gš3,¥~‰Š	GĞ}•„ï/ÄÊ¾yCëG€$Yê	ÓV‘ŠQWKz%+ÈËv»ä¡”ƒKcàW¿¯²øØµñª{ İS:_Ô[ÎúU™T\&'-ÈK«R<2©¨ùV‰z”Ä#û—ÉùsÂ¹Aİg®‰ºÍ…s×Óâ½D=”ı¡¦`WødŸjÊqbr¾y€4Vİ9§‹š•s¾¯p9ÃjX©Nï%nînæƒï)›—ìAk¨XÎå¾¥LíN±Í‚à’4÷i:àöAÁU–!!Ùe•)!/SÒ@l®üğ’fï3D‰	*¿LizpúÉ7)ı¾l™õÕ£³zæÓVFNC\›÷Û³1*ª¨bÚC©–V•¼Ñ¥ˆoi¢›ú­m¸¯5ÒœÆo¡Í[J¶ŞÉù[)BÀ3
-‡–}.š&ãó\C¡„r|ğqµF•ğ;µQäôÏ¥ØİĞT1$ê§Ù)uk÷[2.òªøR¯¹;ã¿²~e+ÂT¬Ÿ˜¸oabmâk0/^ò¦Y§â©ËHğE­Z3áŞÒƒ¸íÖ¤}ğ=®7T§|î<ùµÔ©5ğd!’ÏamòdÍ;.êï7ªI£ì)¢iSBëkìôŞ™"ÅPäÕ”wØßİ_3ò19yÓCUÀ' »D_¢ÇT^^ƒ?£ÿ•ùy6#ã,ÅûòYø>nRót©(ØÈ× YCµ*~üŠöÇÒ6ğrpŞ„~àc©¼¬’ ºl-¬ĞùöÉSoQ\à¢è;|Àh1§	05ˆ².Ÿn¶’—ò1ã¼İœ®Úx¢¦ìá§ •ábÖHËwèDêC+µ8J¦Qœ?“èñÜõU= ›4ZåË^_·Ô'ò}“Æ Òq™oÑùxÏ /uŸã#‚Q<ço‹ùŠ)¾Ú‰:¯Q¼³·ÙìÊ3>~|j	F´UƒÃèÏËR`$bVèxv)Ş8Æ>Aûÿc{òäû§´¨Ä8geé7“o¾cß¥`âA”œd¯3)O;L'—E5$!ãQG=€7‰Çİœ6ôÓsyÌ'‰ì9iÄôøz./…’_Ö[C	¾:¥@±×ğ¿v¨Şş5»ò§§×ğ¿Ö½úIdIQŠŠŸ¹HøÀ‚h!×àaÊ.•ˆÀŒ7ñ-|ÍAğõUo_¨¸|y ŒôÁ;:Ş?8?8úYİëZ<¨ZÜƒT$ƒ‰£ÒxÆµ«~Ã1È/ÂY•O%qŒ“ø …9sJ ø¥¨fC(X6Q]|ÄwU}<†‰Ùaä3©ÊE±V¼‹E¤ÄË@V`‡^	E¾dÜõ©^§^;¡˜ÜEøÖµàÕKã+lDÒÀJ«v½ÀĞ¡ø¸™ÃiiÕ„ä}T#l•b‰ö‚¬YvC‚~Å
-zÓˆ(‡«hAQÂÀ¥“º(¿ÍWh?ìõ—â§Dı²ëT)GCøkÚñ,œ
-Ø>zÒĞ‰·hÄ!^às°7ÿé3÷O-pÃ¤è\Aœ…üzgLÄ—ÀúFrr|:TÉÃÂd—Wá×òz`BeX_ÿòù™'Gô¨©®ëÁ:-‰KùN|ÙiNõˆÃ %p(jÃê«–ã	t^óBŞ…a_… Wgaˆ–>š
-½Dtƒ7y Ü"së¦4‘—TT°¡(Áø|ñ­+_…ê‡©õ“m1û¯‹ë…´y•È¶=ñ_ã^&:Ü;ãÆ¨…¢{ªŠx¨ƒ4µBÄÙ$ş-ØSxS8jFÊNXÚG*ú@ƒ¦zH­pZeKóú—–²z5C!¡¹¬–á/º°
-h’¹80`â÷]ñA”>/İÊÕZ(ğ‘[·­÷ƒlèê¿¯ÑYÍÙøKOáSØÅŒæÙ~&ïº"?ì”#Ã»Kt`ş+2 OúÂÑ°ÅuÙX‚¦¾À)Ç•˜™³Ú˜$óAŸUóé­ñ¶w6<îìöö^ƒ£—ı£ƒw"êa;E7æ|<IRHŠê;>‹¦œR9èñz^y¤ëQsÙPì ]Œf+Dê™U»"Z/œ,W¨ù°ÚD<²šh*T¼Õü|x‰ÁªiD³ïtb	tCvìAóÂj+°8v—òR[ —³tòoøëk±LMfuØ0?9&GNU5#!ÇMÕPj §–a 7T?Çy¼Ò~¾ÜÍŸàd°˜G>Ÿµ*æ”˜œ1•ó/ŒJ‰n£cô=td–6˜• 9ÂËhd&fÊEc×lœ¥`ª@ã…rÖĞO9e@cyeQQ$¸—ğ½rÀÒ3ÒØ©¡­gÙ;4 µ‡Ï‡¬)î{/ÖªMÎõõ±Æ4ß,~´™8z”¿·ÌìàôRÆ|Ök‰^i5òàSàA[UÁù"-(qéü[¼©ŞøÎÃÒf“¶ÉHà—zİ$ÁvP>Ø•%-ê( :eóèƒ8Ï–.\Í$:µ“Ğ¡ë)ğèÕÏ»²Ôw‚ì>Ë­ NsTlLÏH|ÏQp~[@6,÷îÌ-”ªOŠ–TxgĞ¬ÅjONû49ß~”d®‚8‡Ó>¼³(_Ñ|å[±}}à›–±š¾¾ ä4"0ƒ˜°aríƒ[×D dw•ÌJŸ_ÔıvãâÎU&ÉN)uŸ¹X¶…¦¶J=G›m¸2¼~Œ²8!ÈwÛù_O¶··ëÕİ-RÓµØòf?\d•È)WYl£écjÈ5 m×VÂù˜û‘†ØËr¾lÁ%j?s’hóç"X»±aÅ^eÅÛ°ï‰ Kµ•Yì<‚5§ïlŞ”Ûè/‹ú¬4ñÔ‰åsføj£Ø?RŞ;Àûo   ÿÿ :Çì
+        }
+
+        backupConfig.lastBackupTime = createdAt;
+        backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
+
+        if (mongoDb) {
+          await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
+        }
+        saveState();
+        console.log(`[AUTO-BACKUP ENGINE] Automated database backup successful: ${backupId}`);
+      } catch (err: any) {
+        console.error("[AUTO-BACKUP ENGINE] Automated database backup failed:", err.message || err);
+      }
+    }
+  }, 10 * 60 * 1000); // Check every 10 minutes
+}
+
+startServer();

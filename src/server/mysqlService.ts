@@ -1,636 +1,684 @@
 import fs from 'fs';
 import path from 'path';
-import mysql, { PoolOptions, RowDataPacket } from 'mysql2/promise';
-import { MySQLConfig, MySQLTestResult, MySQLSyncResult, MySQLQueryResult } from '../types';
+import mysql from 'mysql2/promise';
+import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult, Student, SppBill, SavingsTransaction, TreasurerTransaction, TeacherSalary, MiscBill } from '../types';
 
 const CONFIG_FILE = path.join(process.cwd(), 'mysql_config.json');
-const SCHEMA_FILE = path.join(process.cwd(), 'database_schema.sql');
 
 // Default initial configuration
-let currentConfig: MySQLConfig = {
-  host: process.env.DB_HOST || process.env.MYSQL_HOST || 'localhost',
-  port: Number(process.env.DB_PORT || process.env.MYSQL_PORT || 3306),
-  database: process.env.DB_NAME || process.env.MYSQL_DATABASE || 'db_smp_maarif',
-  user: process.env.DB_USER || process.env.MYSQL_USER || 'root',
-  password: process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD || '',
-  tablePrefix: '',
+let currentConfig: MysqlDatabaseConfig = {
+  host: process.env.MYSQL_HOST || 'localhost',
+  port: parseInt(process.env.MYSQL_PORT || '3306', 10),
+  database: process.env.MYSQL_DATABASE || 'smp_maarif_keuangan',
+  user: process.env.MYSQL_USER || 'root',
+  password: process.env.MYSQL_PASSWORD || '',
+  hasPassword: Boolean(process.env.MYSQL_PASSWORD),
+  ssl: false,
+  phpmyadminUrl: process.env.MYSQL_PHPMYADMIN_URL || 'http://localhost/phpmyadmin',
   charset: 'utf8mb4',
-  sslMode: 'none',
-  socketPath: '',
-  enabled: false,
-  autoSync: false,
-  status: 'disconnected',
+  connectionLimit: 10,
+  connectTimeout: 8000,
+  autoSyncEnabled: false,
+  status: 'unconfigured'
 };
 
-// Load saved config on startup if present
-try {
-  if (fs.existsSync(CONFIG_FILE)) {
-    const raw = fs.readFileSync(CONFIG_FILE, 'utf8');
-    const parsed = JSON.parse(raw);
-    currentConfig = { ...currentConfig, ...parsed };
+// Load saved configuration on startup
+export function loadMysqlConfig(): MysqlDatabaseConfig {
+  try {
+    if (fs.existsSync(CONFIG_FILE)) {
+      const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      currentConfig = {
+        ...currentConfig,
+        ...parsed,
+        hasPassword: Boolean(parsed.password && parsed.password.length > 0)
+      };
+    }
+  } catch (err) {
+    console.error('Gagal membaca file konfigurasi MySQL:', err);
   }
-} catch (err) {
-  console.warn('[MySQL Service] Failed to load mysql_config.json, using defaults:', err);
+  return currentConfig;
 }
 
-export function getMySQLConfig(): MySQLConfig {
-  return { ...currentConfig };
-}
+export function saveMysqlConfig(newConfig: Partial<MysqlDatabaseConfig>): MysqlDatabaseConfig {
+  // If password was omitted or empty in request, keep existing password if requested
+  const password = (newConfig.password !== undefined && newConfig.password !== '') 
+    ? newConfig.password 
+    : currentConfig.password;
 
-export function saveMySQLConfig(config: Partial<MySQLConfig>): MySQLConfig {
   currentConfig = {
     ...currentConfig,
-    ...config,
-    port: Number(config.port) || 3306,
+    ...newConfig,
+    port: Number(newConfig.port) || 3306,
+    password,
+    hasPassword: Boolean(password && password.length > 0)
   };
 
   try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf8');
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
   } catch (err) {
-    console.error('[MySQL Service] Error saving config file:', err);
+    console.error('Gagal menulis file konfigurasi MySQL:', err);
   }
 
-  return { ...currentConfig };
+  return getSanitizedConfig();
 }
 
-// Helper to create connection options
-function createConnectionOptions(cfg: MySQLConfig): PoolOptions {
-  const options: PoolOptions = {
-    host: cfg.host || 'localhost',
-    port: Number(cfg.port) || 3306,
-    user: cfg.user || 'root',
-    password: cfg.password || '',
-    database: cfg.database || undefined,
-    charset: cfg.charset ? cfg.charset.toUpperCase() : 'UTF8MB4_UNICODE_CI',
-    connectTimeout: 10000,
-    waitForConnections: true,
-    connectionLimit: 5,
-    queueLimit: 0,
-    multipleStatements: true,
+export function getSanitizedConfig(): MysqlDatabaseConfig {
+  return {
+    host: currentConfig.host,
+    port: currentConfig.port,
+    database: currentConfig.database,
+    user: currentConfig.user,
+    hasPassword: Boolean(currentConfig.password && currentConfig.password.length > 0),
+    ssl: currentConfig.ssl,
+    phpmyadminUrl: currentConfig.phpmyadminUrl,
+    charset: currentConfig.charset || 'utf8mb4',
+    connectionLimit: currentConfig.connectionLimit || 10,
+    connectTimeout: currentConfig.connectTimeout || 8000,
+    autoSyncEnabled: currentConfig.autoSyncEnabled || false,
+    lastConnectedAt: currentConfig.lastConnectedAt,
+    lastSyncAt: currentConfig.lastSyncAt,
+    status: currentConfig.status || 'unconfigured'
+  };
+}
+
+// Create MySQL connection pool
+function createPool(overrideConfig?: Partial<MysqlDatabaseConfig>) {
+  const cfg = {
+    ...currentConfig,
+    ...overrideConfig
   };
 
-  if (cfg.socketPath && cfg.socketPath.trim()) {
-    options.socketPath = cfg.socketPath.trim();
-  }
-
-  if (cfg.sslMode === 'required') {
-    options.ssl = { rejectUnauthorized: false };
-  }
-
-  return options;
+  return mysql.createPool({
+    host: cfg.host,
+    port: Number(cfg.port) || 3306,
+    user: cfg.user,
+    password: cfg.password || '',
+    database: cfg.database,
+    waitForConnections: true,
+    connectionLimit: cfg.connectionLimit || 5,
+    connectTimeout: cfg.connectTimeout || 8000,
+    charset: cfg.charset || 'utf8mb4',
+    ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined
+  });
 }
 
-// Live connection test
-export async function testMySQLConnection(overrideConfig?: Partial<MySQLConfig>): Promise<MySQLTestResult> {
-  const cfg = overrideConfig ? { ...currentConfig, ...overrideConfig } : currentConfig;
+// Test MySQL & phpMyAdmin database connection
+export async function testMysqlConnection(customConfig?: Partial<MysqlDatabaseConfig>): Promise<MysqlTestResult> {
   const startTime = Date.now();
+  const cfgToUse: MysqlDatabaseConfig = {
+    ...currentConfig,
+    ...(customConfig || {}),
+    password: (customConfig?.password !== undefined && customConfig.password !== '') 
+      ? customConfig.password 
+      : currentConfig.password
+  };
+
+  if (!cfgToUse.host || !cfgToUse.database || !cfgToUse.user) {
+    return {
+      success: false,
+      message: 'Parameter konfigurasi belum lengkap. Mohon isi Host, Nama Database, dan User.',
+      hint: 'Periksa kembali isian Host (misal localhost atau nama IP server), Nama Database, dan User MySQL Anda.'
+    };
+  }
+
+  let connection: mysql.PoolConnection | null = null;
+  const pool = createPool(cfgToUse);
 
   try {
-    const pool = mysql.createPool(createConnectionOptions(cfg));
-    const conn = await pool.getConnection();
-    const latencyMs = Date.now() - startTime;
+    connection = await pool.getConnection();
+    const pingMs = Date.now() - startTime;
 
-    // Get Server Version
-    const [versionRows] = await conn.query<RowDataPacket[]>('SELECT VERSION() as version, DATABASE() as current_db');
-    const serverVersion = (versionRows[0] as any)?.version || 'MySQL / MariaDB';
-    const activeDb = (versionRows[0] as any)?.current_db || cfg.database;
+    // Query version, current database, server time
+    const [verRows]: any = await connection.query('SELECT VERSION() as version, DATABASE() as current_db, NOW() as server_time');
+    const serverVersion = verRows?.[0]?.version || 'MySQL / MariaDB';
+    const databaseName = verRows?.[0]?.current_db || cfgToUse.database;
+    const serverTime = verRows?.[0]?.server_time ? new Date(verRows[0].server_time).toLocaleString('id-ID') : new Date().toLocaleString('id-ID');
 
-    // Get Tables & Row counts
-    let tables: Array<{ name: string; rows: number; engine?: string; collation?: string }> = [];
-    if (activeDb) {
-      const [tableRows] = await conn.query<RowDataPacket[]>(
-        `SELECT TABLE_NAME, TABLE_ROWS, ENGINE, TABLE_COLLATION 
-         FROM information_schema.TABLES 
-         WHERE TABLE_SCHEMA = ?`,
-        [activeDb]
-      );
+    // Query existing tables
+    const [tableRows]: any = await connection.query('SHOW TABLES');
+    const tables: string[] = tableRows.map((r: any) => Object.values(r)[0] as string);
 
-      tables = (tableRows as any[]).map((t) => ({
-        name: t.TABLE_NAME,
-        rows: Number(t.TABLE_ROWS || 0),
-        engine: t.ENGINE || 'InnoDB',
-        collation: t.TABLE_COLLATION || 'utf8mb4_unicode_ci',
-      }));
-    }
-
-    conn.release();
-    await pool.end();
-
-    // Update status in config
+    // Update status
     currentConfig.status = 'connected';
     currentConfig.lastConnectedAt = new Date().toISOString();
-    saveMySQLConfig(currentConfig);
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+    } catch {}
 
     return {
       success: true,
-      message: `Berhasil terhubung ke database MySQL di ${cfg.host}:${cfg.port}!`,
-      latencyMs,
+      message: `Koneksi ke MySQL database "${databaseName}" via phpMyAdmin/Server berhasil terhubung!`,
+      pingMs,
       serverVersion,
-      databaseName: activeDb,
+      databaseName,
+      serverTime,
       tablesCount: tables.length,
-      tables,
+      tables
     };
   } catch (err: any) {
+    const pingMs = Date.now() - startTime;
     currentConfig.status = 'error';
-    saveMySQLConfig(currentConfig);
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+    } catch {}
 
-    let friendlyMsg = err.message || 'Gagal terhubung ke database MySQL.';
-    if (err.code === 'ECONNREFUSED') {
-      friendlyMsg = `Koneksi ditolak (Connection Refused). Pastikan server MySQL aktif di ${cfg.host}:${cfg.port} dan menerima koneksi jaringan.`;
-    } else if (err.code === 'ER_ACCESS_DENIED_ERROR') {
-      friendlyMsg = `Akses ditolak untuk user '${cfg.user}' (Password salah atau user tidak memiliki hak akses/privilege).`;
-    } else if (err.code === 'ER_BAD_DB_ERROR') {
-      friendlyMsg = `Database '${cfg.database}' belum ada di phpMyAdmin/MySQL server. Anda dapat membuatnya terlebih dahulu melalui phpMyAdmin atau cPanel.`;
-    } else if (err.code === 'ETIMEDOUT') {
-      friendlyMsg = `Koneksi timed out. Pastikan IP/Port server tidak diblokir oleh firewall hosting cPanel (Remote MySQL).`;
+    let hint = 'Pastikan server database MySQL aktif dan dapat diakses dari host ini.';
+    const code = err.code || '';
+    const errMessage = err.message || 'Gagal tersambung ke database.';
+
+    if (code === 'ECONNREFUSED') {
+      hint = `Tidak dapat terhubung ke ${cfgToUse.host}:${cfgToUse.port}. Pastikan service MySQL/MariaDB aktif di XAMPP/cPanel/VPS dan port 3306 terbuka.`;
+    } else if (code === 'ER_ACCESS_DENIED_ERROR') {
+      hint = `Akses ditolak untuk user "${cfgToUse.user}". Pastikan kata sandi (password) dan hak akses (Privileges) user di phpMyAdmin sudah benar.`;
+    } else if (code === 'ER_BAD_DB_ERROR') {
+      hint = `Database "${cfgToUse.database}" tidak ditemukan di server MySQL. Silakan buat database terlebih dahulu di menu phpMyAdmin / cPanel MySQL Databases.`;
+    } else if (code === 'ETIMEDOUT' || code === 'EHOSTUNREACH') {
+      hint = `Koneksi timeout. Jika menggunakan hosting remote (cPanel/Hostinger/VPS), pastikan menu "Remote MySQL" di cPanel sudah menambahkan wildcard '%' atau IP server ini.`;
     }
 
     return {
       success: false,
-      message: friendlyMsg,
-      error: err.code || err.message,
+      message: `Gagal terhubung ke MySQL (${code || 'ERROR'})`,
+      error: errMessage,
+      pingMs,
+      hint
     };
+  } finally {
+    if (connection) {
+      connection.release();
+    }
+    await pool.end().catch(() => {});
   }
 }
 
-// Run Migration from database_schema.sql
-export async function runMySQLMigration(overrideConfig?: Partial<MySQLConfig>): Promise<MySQLSyncResult> {
-  const cfg = overrideConfig ? { ...currentConfig, ...overrideConfig } : currentConfig;
+// SQL Table Initialization script for automated sync
+const INITIAL_TABLES_SQL = `
+CREATE TABLE IF NOT EXISTS \`students\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`nis\` VARCHAR(32) NOT NULL,
+  \`nisn\` VARCHAR(32) DEFAULT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`class\` VARCHAR(32) NOT NULL,
+  \`gender\` VARCHAR(20) DEFAULT 'Laki-laki',
+  \`email\` VARCHAR(120) DEFAULT NULL,
+  \`phone\` VARCHAR(32) DEFAULT NULL,
+  \`savings_balance\` DECIMAL(15,2) DEFAULT 0.00,
+  \`status\` VARCHAR(32) DEFAULT 'Aktif',
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`unique_nis\` (\`nis\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`treasurer_transactions\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`type\` ENUM('incoming', 'outgoing') NOT NULL,
+  \`category\` VARCHAR(100) NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`description\` TEXT NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`source\` VARCHAR(32) DEFAULT 'custom',
+  \`created_by\` VARCHAR(100) DEFAULT NULL,
+  \`recipient_name\` VARCHAR(150) DEFAULT NULL,
+  \`funding_source\` VARCHAR(100) DEFAULT NULL,
+  \`kode_rekening\` VARCHAR(64) DEFAULT NULL,
+  \`no_bukti\` VARCHAR(64) DEFAULT NULL,
+  \`payment_method\` ENUM('kas', 'bank') DEFAULT 'kas',
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`spp_bills\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`month\` VARCHAR(32) NOT NULL,
+  \`year\` INT NOT NULL,
+  \`amount\` DECIMAL(12,2) NOT NULL,
+  \`status\` ENUM('paid', 'unpaid', 'pending', 'waived') DEFAULT 'unpaid',
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`payment_method\` VARCHAR(64) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`teacher_id\` VARCHAR(64) NOT NULL,
+  \`teacher_name\` VARCHAR(150) NOT NULL,
+  \`teacher_type\` VARCHAR(32) NOT NULL,
+  \`month\` VARCHAR(32) NOT NULL,
+  \`base_salary\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`homeroom_allowance\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`journal_count\` INT NOT NULL DEFAULT 0,
+  \`journal_incentive\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`tunjangan_masa_kerja\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`vakasi\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`other_allowance\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_dana_sosial\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_absen\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_lain\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`deductions\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`total_amount\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`status\` ENUM('unpaid', 'paid') DEFAULT 'unpaid',
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`paid_by\` VARCHAR(100) DEFAULT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`savings_transactions\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`type\` ENUM('deposit', 'withdrawal') NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`status\` VARCHAR(32) DEFAULT 'success',
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`misc_bills\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`title\` VARCHAR(150) NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`status\` ENUM('paid', 'unpaid', 'pending') DEFAULT 'unpaid',
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`month\` VARCHAR(32) DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+`;
+
+// Synchronize all application data into MySQL database
+export async function syncDataToMysql(appState: {
+  students: Student[];
+  transactions: TreasurerTransaction[];
+  sppBills: SppBill[];
+  salaries: TeacherSalary[];
+  savings: SavingsTransaction[];
+  miscBills: MiscBill[];
+}): Promise<MysqlSyncResult> {
   const startTime = Date.now();
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
 
   try {
-    if (!fs.existsSync(SCHEMA_FILE)) {
-      throw new Error(`File skema tidak ditemukan di: ${SCHEMA_FILE}`);
+    connection = await pool.getConnection();
+
+    // 1. Create tables if not existing
+    const statements = INITIAL_TABLES_SQL.split(';').map(s => s.trim()).filter(Boolean);
+    for (const stmt of statements) {
+      await connection.query(stmt);
     }
 
-    const schemaSql = fs.readFileSync(SCHEMA_FILE, 'utf8');
-    const pool = mysql.createPool(createConnectionOptions(cfg));
-    const conn = await pool.getConnection();
-
-    // Split SQL by semicolon safely or run multiple statements
-    await conn.query(schemaSql);
-
-    // Verify created tables
-    const [tables] = await conn.query<RowDataPacket[]>(
-      `SELECT TABLE_NAME FROM information_schema.TABLES WHERE TABLE_SCHEMA = ?`,
-      [cfg.database]
-    );
-
-    conn.release();
-    await pool.end();
-
-    const durationMs = Date.now() - startTime;
-    return {
-      success: true,
-      message: `Migrasi skema database berhasil dieksekusi! ${tables.length} tabel siap digunakan di phpMyAdmin.`,
-      tablesCreated: tables.length,
-      durationMs,
-    };
-  } catch (err: any) {
-    return {
-      success: false,
-      message: `Gagal menjalankan migrasi skema SQL: ${err.message}`,
-      error: err.message,
-      durationMs: Date.now() - startTime,
-    };
-  }
-}
-
-// Synchronize all application data into MySQL tables
-export async function syncAppDataToMySQL(appData: {
-  students?: any[];
-  sppBills?: any[];
-  savingsTransactions?: any[];
-  schoolIdentity?: any;
-  homeroomTeachers?: any[];
-  subjectTeachers?: any[];
-  classSchedules?: any[];
-  teachingJournals?: any[];
-  miscBills?: any[];
-  spmbRegistrations?: any[];
-}): Promise<MySQLSyncResult> {
-  const startTime = Date.now();
-  const recordsSynced: Record<string, number> = {};
-
-  try {
-    const pool = mysql.createPool(createConnectionOptions(currentConfig));
-    const conn = await pool.getConnection();
-
-    // 1. Sync School Identity
-    if (appData.schoolIdentity) {
-      const si = appData.schoolIdentity;
-      await conn.query(
-        `INSERT INTO school_identity (id, name, npsn, address, phone, email, website, principal_name, principal_nip, academic_year, semester)
-         VALUES (1, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-         ON DUPLICATE KEY UPDATE 
-          name = VALUES(name), npsn = VALUES(npsn), address = VALUES(address), phone = VALUES(phone),
-          email = VALUES(email), website = VALUES(website), principal_name = VALUES(principal_name),
-          principal_nip = VALUES(principal_nip), academic_year = VALUES(academic_year), semester = VALUES(semester)`,
-        [
-          si.name || '',
-          si.npsn || '',
-          si.address || '',
-          si.phone || '',
-          si.email || '',
-          si.website || '',
-          si.principalName || '',
-          si.principalNip || '',
-          si.academicYear || '',
-          si.semester || 'Ganjil',
-        ]
-      );
-      recordsSynced.school_identity = 1;
-    }
+    let studentsSynced = 0;
+    let transactionsSynced = 0;
+    let sppSynced = 0;
+    let salariesSynced = 0;
+    let savingsSynced = 0;
+    let miscSynced = 0;
 
     // 2. Sync Students
-    if (Array.isArray(appData.students) && appData.students.length > 0) {
-      let studentCount = 0;
-      for (const s of appData.students) {
-        await conn.query(
-          `INSERT INTO students (
-            id, nis, nisn, name, nickname, class, gender, email, phone, password,
-            savings_balance, status, nik, birth_place, birth_date, kk_number,
-            birth_cert_number, living_with, child_order, siblings_count, step_siblings_count,
-            address, photo_url, google_drive_link, father_name, father_nik, father_occupation,
-            father_phone, mother_name, mother_nik, mother_occupation, mother_phone,
-            is_spp_exempt, custom_spp_rate
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    if (appState.students && appState.students.length > 0) {
+      for (const s of appState.students) {
+        await connection.query(`
+          INSERT INTO \`students\` (\`id\`, \`nis\`, \`nisn\`, \`name\`, \`class\`, \`gender\`, \`email\`, \`phone\`, \`savings_balance\`, \`status\`)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            nis = VALUES(nis), nisn = VALUES(nisn), name = VALUES(name), nickname = VALUES(nickname),
-            class = VALUES(class), gender = VALUES(gender), email = VALUES(email), phone = VALUES(phone),
-            password = VALUES(password), savings_balance = VALUES(savings_balance), status = VALUES(status),
-            nik = VALUES(nik), birth_place = VALUES(birth_place), birth_date = VALUES(birth_date),
-            kk_number = VALUES(kk_number), birth_cert_number = VALUES(birth_cert_number),
-            living_with = VALUES(living_with), child_order = VALUES(child_order), siblings_count = VALUES(siblings_count),
-            step_siblings_count = VALUES(step_siblings_count), address = VALUES(address), photo_url = VALUES(photo_url),
-            google_drive_link = VALUES(google_drive_link), father_name = VALUES(father_name), father_nik = VALUES(father_nik),
-            father_occupation = VALUES(father_occupation), father_phone = VALUES(father_phone),
-            mother_name = VALUES(mother_name), mother_nik = VALUES(mother_nik), mother_occupation = VALUES(mother_occupation),
-            mother_phone = VALUES(mother_phone), is_spp_exempt = VALUES(is_spp_exempt), custom_spp_rate = VALUES(custom_spp_rate)`,
-          [
-            s.id,
-            s.nis,
-            s.nisn || null,
-            s.name,
-            s.nickname || null,
-            s.class,
-            s.gender || 'Laki-laki',
-            s.email || null,
-            s.phone || null,
-            s.password || '123456',
-            s.savingsBalance || 0,
-            s.status || 'Aktif',
-            s.nik || null,
-            s.birthPlace || null,
-            s.birthDate || null,
-            s.kkNumber || null,
-            s.birthCertNumber || null,
-            s.livingWith || null,
-            Number(s.childOrder) || 1,
-            Number(s.siblingsCount) || 0,
-            Number(s.stepSiblingsCount) || 0,
-            s.address || null,
-            s.photoUrl || null,
-            s.googleDriveLink || null,
-            s.fatherName || null,
-            s.fatherNik || null,
-            s.fatherOccupation || null,
-            s.fatherPhone || null,
-            s.motherName || null,
-            s.motherNik || null,
-            s.motherOccupation || null,
-            s.motherPhone || null,
-            s.isSppExempt ? 1 : 0,
-            s.customSppRate || null,
-          ]
-        );
-        studentCount++;
+            \`name\` = VALUES(\`name\`),
+            \`class\` = VALUES(\`class\`),
+            \`savings_balance\` = VALUES(\`savings_balance\`),
+            \`status\` = VALUES(\`status\`),
+            \`phone\` = VALUES(\`phone\`)
+        `, [
+          s.id,
+          s.nis || '',
+          s.nisn || null,
+          s.name || 'Siswa',
+          s.class || '7-A',
+          s.gender || 'Laki-laki',
+          s.email || null,
+          s.phone || null,
+          Number(s.savingsBalance) || 0,
+          s.status || 'Aktif'
+        ]);
+        studentsSynced++;
       }
-      recordsSynced.students = studentCount;
     }
 
-    // 3. Sync SPP Bills
-    if (Array.isArray(appData.sppBills) && appData.sppBills.length > 0) {
-      let billCount = 0;
-      for (const b of appData.sppBills) {
-        await conn.query(
-          `INSERT INTO spp_bills (id, student_id, month, year, amount, status, paid_at, payment_method, order_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-            amount = VALUES(amount), status = VALUES(status), paid_at = VALUES(paid_at),
-            payment_method = VALUES(payment_method), order_id = VALUES(order_id)`,
-          [
-            b.id,
-            b.studentId,
-            b.month,
-            b.year,
-            b.amount,
-            b.status,
-            b.paidAt ? new Date(b.paidAt) : null,
-            b.paymentMethod || null,
-            b.orderId || null,
-          ]
-        );
-        billCount++;
-      }
-      recordsSynced.spp_bills = billCount;
-    }
-
-    // 4. Sync Savings Transactions
-    if (Array.isArray(appData.savingsTransactions) && appData.savingsTransactions.length > 0) {
-      let txCount = 0;
-      for (const t of appData.savingsTransactions) {
-        await conn.query(
-          `INSERT INTO savings_transactions (id, student_id, type, amount, status, note, created_at)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-            amount = VALUES(amount), status = VALUES(status), note = VALUES(note)`,
-          [
-            t.id,
-            t.studentId,
-            t.type,
-            t.amount,
-            t.status || 'success',
-            t.note || null,
-            t.createdAt ? new Date(t.createdAt) : new Date(),
-          ]
-        );
-        txCount++;
-      }
-      recordsSynced.savings_transactions = txCount;
-    }
-
-    // 5. Sync Homerooms
-    if (Array.isArray(appData.homeroomTeachers) && appData.homeroomTeachers.length > 0) {
-      let hrCount = 0;
-      for (const hr of appData.homeroomTeachers) {
-        await conn.query(
-          `INSERT INTO homeroom_teachers (id, name, class_name, username, password, phone, sk_url)
-           VALUES (?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-            name = VALUES(name), class_name = VALUES(class_name), username = VALUES(username),
-            password = VALUES(password), phone = VALUES(phone), sk_url = VALUES(sk_url)`,
-          [
-            hr.id,
-            hr.name,
-            hr.className,
-            hr.username,
-            hr.password || '123456',
-            hr.phone || null,
-            hr.skUrl || null,
-          ]
-        );
-        hrCount++;
-      }
-      recordsSynced.homerooms = hrCount;
-    }
-
-    // 6. Sync Subject Teachers
-    if (Array.isArray(appData.subjectTeachers) && appData.subjectTeachers.length > 0) {
-      let stCount = 0;
-      for (const st of appData.subjectTeachers) {
-        await conn.query(
-          `INSERT INTO subject_teachers (id, name, nip, subject, username, password, phone, assigned_classes)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-            name = VALUES(name), nip = VALUES(nip), subject = VALUES(subject),
-            username = VALUES(username), password = VALUES(password), phone = VALUES(phone),
-            assigned_classes = VALUES(assigned_classes)`,
-          [
-            st.id,
-            st.name,
-            st.nip || null,
-            st.subject,
-            st.username,
-            st.password || '123456',
-            st.phone || null,
-            JSON.stringify(st.assignedClasses || []),
-          ]
-        );
-        stCount++;
-      }
-      recordsSynced.subject_teachers = stCount;
-    }
-
-    // 7. Sync Miscellaneous Bills
-    if (Array.isArray(appData.miscBills) && appData.miscBills.length > 0) {
-      let miscCount = 0;
-      for (const m of appData.miscBills) {
-        await conn.query(
-          `INSERT INTO misc_bills (id, student_id, title, category, amount, status, due_date, paid_at, payment_method, order_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-           ON DUPLICATE KEY UPDATE
-            title = VALUES(title), category = VALUES(category), amount = VALUES(amount),
-            status = VALUES(status), due_date = VALUES(due_date), paid_at = VALUES(paid_at),
-            payment_method = VALUES(payment_method), order_id = VALUES(order_id)`,
-          [
-            m.id,
-            m.studentId,
-            m.title,
-            m.category || 'Lainnya',
-            m.amount,
-            m.status,
-            m.dueDate || null,
-            m.paidAt ? new Date(m.paidAt) : null,
-            m.paymentMethod || null,
-            m.orderId || null,
-          ]
-        );
-        miscCount++;
-      }
-      recordsSynced.misc_bills = miscCount;
-    }
-
-    // 8. Sync SPMB Registrations
-    if (Array.isArray(appData.spmbRegistrations) && appData.spmbRegistrations.length > 0) {
-      let spmbCount = 0;
-      for (const sp of appData.spmbRegistrations) {
-        await conn.query(
-          `INSERT INTO spmb_registrations (
-            id, registration_number, full_name, nickname, gender, nisn, nik, birth_place,
-            birth_date, phone, address, previous_school, wave, parent_name, parent_phone,
-            status, re_registration_status, re_registration_amount
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    // 3. Sync Treasurer Transactions (Buku Kas)
+    if (appState.transactions && appState.transactions.length > 0) {
+      for (const t of appState.transactions) {
+        await connection.query(`
+          INSERT INTO \`treasurer_transactions\` 
+          (\`id\`, \`type\`, \`category\`, \`amount\`, \`description\`, \`date\`, \`source\`, \`created_by\`, \`recipient_name\`, \`funding_source\`, \`kode_rekening\`, \`no_bukti\`, \`payment_method\`)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            full_name = VALUES(full_name), nickname = VALUES(nickname), gender = VALUES(gender),
-            phone = VALUES(phone), address = VALUES(address), previous_school = VALUES(previous_school),
-            status = VALUES(status), re_registration_status = VALUES(re_registration_status),
-            re_registration_amount = VALUES(re_registration_amount)`,
-          [
-            sp.id,
-            sp.registrationNumber || sp.id,
-            sp.fullName || sp.name || '',
-            sp.nickname || null,
-            sp.gender || 'Laki-laki',
-            sp.nisn || null,
-            sp.nik || null,
-            sp.birthPlace || null,
-            sp.birthDate || null,
-            sp.phone || null,
-            sp.address || null,
-            sp.previousSchool || null,
-            sp.wave || 'Gelombang 1',
-            sp.parentName || sp.fatherName || null,
-            sp.parentPhone || sp.phone || null,
-            sp.status || 'registered',
-            sp.reRegistrationStatus || 'unpaid',
-            sp.reRegistrationAmount || 0,
-          ]
-        );
-        spmbCount++;
+            \`amount\` = VALUES(\`amount\`),
+            \`category\` = VALUES(\`category\`),
+            \`description\` = VALUES(\`description\`),
+            \`date\` = VALUES(\`date\`),
+            \`payment_method\` = VALUES(\`payment_method\`),
+            \`recipient_name\` = VALUES(\`recipient_name\`),
+            \`funding_source\` = VALUES(\`funding_source\`),
+            \`kode_rekening\` = VALUES(\`kode_rekening\`),
+            \`no_bukti\` = VALUES(\`no_bukti\`)
+        `, [
+          t.id,
+          t.type,
+          t.category || 'Operasional',
+          Number(t.amount) || 0,
+          t.description || '',
+          t.date || new Date().toISOString().substring(0, 10),
+          t.source || 'custom',
+          t.createdBy || 'Bendahara',
+          t.recipientName || null,
+          t.fundingSource || null,
+          t.kodeRekening || null,
+          t.noBukti || null,
+          t.paymentMethod === 'bank' ? 'bank' : 'kas'
+        ]);
+        transactionsSynced++;
       }
-      recordsSynced.spmb_registrations = spmbCount;
     }
 
-    conn.release();
-    await pool.end();
+    // 4. Sync SPP Bills
+    if (appState.sppBills && appState.sppBills.length > 0) {
+      for (const bill of appState.sppBills) {
+        await connection.query(`
+          INSERT INTO \`spp_bills\` (\`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`, \`order_id\`)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`amount\` = VALUES(\`amount\`),
+            \`status\` = VALUES(\`status\`),
+            \`paid_at\` = VALUES(\`paid_at\`),
+            \`payment_method\` = VALUES(\`payment_method\`),
+            \`order_id\` = VALUES(\`order_id\`)
+        `, [
+          bill.id,
+          bill.studentId,
+          bill.month,
+          bill.year || 2026,
+          Number(bill.amount) || 0,
+          bill.status || 'unpaid',
+          bill.paidAt || null,
+          bill.paymentMethod || null,
+          bill.orderId || null
+        ]);
+        sppSynced++;
+      }
+    }
 
-    currentConfig.lastSyncAt = new Date().toISOString();
-    saveMySQLConfig(currentConfig);
+    // 5. Sync Teacher Salaries
+    if (appState.salaries && appState.salaries.length > 0) {
+      for (const sal of appState.salaries) {
+        await connection.query(`
+          INSERT INTO \`teacher_salaries\`
+          (\`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`month\`, \`base_salary\`, \`homeroom_allowance\`, \`journal_count\`, \`journal_incentive\`, \`tunjangan_masa_kerja\`, \`vakasi\`, \`other_allowance\`, \`potongan_dana_sosial\`, \`potongan_absen\`, \`potongan_lain\`, \`deductions\`, \`total_amount\`, \`status\`, \`paid_at\`, \`paid_by\`, \`notes\`)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`base_salary\` = VALUES(\`base_salary\`),
+            \`homeroom_allowance\` = VALUES(\`homeroom_allowance\`),
+            \`journal_count\` = VALUES(\`journal_count\`),
+            \`journal_incentive\` = VALUES(\`journal_incentive\`),
+            \`tunjangan_masa_kerja\` = VALUES(\`tunjangan_masa_kerja\`),
+            \`vakasi\` = VALUES(\`vakasi\`),
+            \`other_allowance\` = VALUES(\`other_allowance\`),
+            \`potongan_dana_sosial\` = VALUES(\`potongan_dana_sosial\`),
+            \`potongan_absen\` = VALUES(\`potongan_absen\`),
+            \`potongan_lain\` = VALUES(\`potongan_lain\`),
+            \`deductions\` = VALUES(\`deductions\`),
+            \`total_amount\` = VALUES(\`total_amount\`),
+            \`status\` = VALUES(\`status\`),
+            \`paid_at\` = VALUES(\`paid_at\`),
+            \`paid_by\` = VALUES(\`paid_by\`),
+            \`notes\` = VALUES(\`notes\`)
+        `, [
+          sal.id,
+          sal.teacherId,
+          sal.teacherName,
+          sal.teacherType,
+          sal.month,
+          sal.baseSalary || 0,
+          sal.homeroomAllowance || 0,
+          sal.journalCount || 0,
+          ((sal.journalCount || 0) * (sal.journalRate || 0)),
+          sal.tunjanganMasaKerja || 0,
+          sal.vakasi || 0,
+          sal.otherAllowance || 0,
+          sal.potonganDanaSosial || 0,
+          sal.potonganAbsen || 0,
+          sal.potonganLain || 0,
+          sal.deductions || 0,
+          sal.totalAmount || 0,
+          sal.status || 'unpaid',
+          sal.paymentDate || null,
+          null,
+          sal.notes || null
+        ]);
+        salariesSynced++;
+      }
+    }
+
+    // 6. Sync Savings Transactions
+    if (appState.savings && appState.savings.length > 0) {
+      for (const sav of appState.savings) {
+        await connection.query(`
+          INSERT INTO \`savings_transactions\` (\`id\`, \`student_id\`, \`type\`, \`amount\`, \`status\`, \`created_at\`)
+          VALUES (?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`amount\` = VALUES(\`amount\`),
+            \`status\` = VALUES(\`status\`)
+        `, [
+          sav.id,
+          sav.studentId,
+          sav.type,
+          Number(sav.amount) || 0,
+          sav.status || 'success',
+          sav.createdAt || new Date().toISOString()
+        ]);
+        savingsSynced++;
+      }
+    }
+
+    // 7. Sync Misc Bills
+    if (appState.miscBills && appState.miscBills.length > 0) {
+      for (const m of appState.miscBills) {
+        await connection.query(`
+          INSERT INTO \`misc_bills\` (\`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`paid_at\`, \`month\`, \`created_at\`)
+          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`amount\` = VALUES(\`amount\`),
+            \`status\` = VALUES(\`status\`),
+            \`paid_at\` = VALUES(\`paid_at\`)
+        `, [
+          m.id,
+          m.studentId,
+          m.title,
+          Number(m.amount) || 0,
+          m.status || 'unpaid',
+          m.paidAt || null,
+          m.month || null,
+          m.createdAt || new Date().toISOString()
+        ]);
+        miscSynced++;
+      }
+    }
+
+    const durationMs = Date.now() - startTime;
+    const nowIso = new Date().toISOString();
+
+    // Update config sync timestamp
+    currentConfig.lastSyncAt = nowIso;
+    currentConfig.status = 'connected';
+    try {
+      fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
+    } catch {}
 
     return {
       success: true,
-      message: 'Sinkronisasi seluruh data ke database MySQL/phpMyAdmin berhasil diselesaikan!',
-      recordsSynced,
-      durationMs: Date.now() - startTime,
+      message: `Sinkronisasi ke MySQL database "${currentConfig.database}" berhasil selesai dalam ${durationMs}ms!`,
+      syncedAt: nowIso,
+      stats: {
+        students: studentsSynced,
+        transactions: transactionsSynced,
+        sppBills: sppSynced,
+        salaries: salariesSynced,
+        savings: savingsSynced,
+        miscBills: miscSynced
+      },
+      durationMs
     };
   } catch (err: any) {
     return {
       success: false,
-      message: `Gagal sinkronisasi data ke MySQL: ${err.message}`,
-      error: err.message,
-      recordsSynced,
-      durationMs: Date.now() - startTime,
+      message: 'Gagal melakukan sinkronisasi data ke MySQL.',
+      error: err.message || 'Kesalahan query MySQL',
+      syncedAt: new Date().toISOString(),
+      stats: {
+        students: 0,
+        transactions: 0,
+        sppBills: 0,
+        salaries: 0,
+        savings: 0,
+        miscBills: 0
+      },
+      durationMs: Date.now() - startTime
     };
+  } finally {
+    if (connection) connection.release();
+    await pool.end().catch(() => {});
   }
 }
 
-// Execute safe administrative SQL query from Admin UI
-export async function executeMySQLQuery(sql: string): Promise<MySQLQueryResult> {
-  const startTime = Date.now();
-  try {
-    const trimmed = sql.trim();
-    if (!trimmed) {
-      return { success: false, message: 'Query SQL tidak boleh kosong.' };
-    }
+// Generate complete phpMyAdmin ready-to-import SQL script
+export function generatePhpMyAdminSql(): string {
+  return `-- ==========================================================
+-- SKRIP DATABASE MYSQL / PHPMYADMIN (SMP MAARIF NU PANDAAN)
+-- Dibuat Otomatis dari Portal Bendahara Keuangan
+-- Tanggal Ekspor: ${new Date().toLocaleString('id-ID')}
+-- ==========================================================
 
-    // Safety checks for dangerous commands
-    const upper = trimmed.toUpperCase();
-    if (upper.startsWith('DROP DATABASE') || upper.startsWith('SHUTDOWN')) {
-      return { success: false, message: 'Perintah berbahaya tidak diizinkan melalui konsol admin.' };
-    }
+SET FOREIGN_KEY_CHECKS = 0;
+SET SQL_MODE = "NO_AUTO_VALUE_ON_ZERO";
+START TRANSACTION;
+SET time_zone = "+07:00";
 
-    const pool = mysql.createPool(createConnectionOptions(currentConfig));
-    const conn = await pool.getConnection();
+-- --------------------------------------------------------
+-- 1. Tabel: students (Data Siswa & Profil)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS \`students\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`nis\` VARCHAR(32) NOT NULL,
+  \`nisn\` VARCHAR(32) DEFAULT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`class\` VARCHAR(32) NOT NULL,
+  \`gender\` VARCHAR(20) DEFAULT 'Laki-laki',
+  \`email\` VARCHAR(120) DEFAULT NULL,
+  \`phone\` VARCHAR(32) DEFAULT NULL,
+  \`savings_balance\` DECIMAL(15,2) DEFAULT 0.00,
+  \`status\` VARCHAR(32) DEFAULT 'Aktif',
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  UNIQUE KEY \`unique_nis\` (\`nis\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-    const [results, fields] = await conn.query<any>(trimmed);
-    const executionTimeMs = Date.now() - startTime;
+-- --------------------------------------------------------
+-- 2. Tabel: treasurer_transactions (Buku Kas Terpadu BKU/BP)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS \`treasurer_transactions\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`type\` ENUM('incoming', 'outgoing') NOT NULL,
+  \`category\` VARCHAR(100) NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`description\` TEXT NOT NULL,
+  \`date\` VARCHAR(32) NOT NULL,
+  \`source\` VARCHAR(32) DEFAULT 'custom',
+  \`created_by\` VARCHAR(100) DEFAULT NULL,
+  \`recipient_name\` VARCHAR(150) DEFAULT NULL,
+  \`funding_source\` VARCHAR(100) DEFAULT NULL,
+  \`kode_rekening\` VARCHAR(64) DEFAULT NULL,
+  \`no_bukti\` VARCHAR(64) DEFAULT NULL,
+  \`payment_method\` ENUM('kas', 'bank') DEFAULT 'kas',
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-    conn.release();
-    await pool.end();
+-- --------------------------------------------------------
+-- 3. Tabel: spp_bills (Tagihan & Pembayaran SPP)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS \`spp_bills\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`month\` VARCHAR(32) NOT NULL,
+  \`year\` INT NOT NULL,
+  \`amount\` DECIMAL(12,2) NOT NULL,
+  \`status\` ENUM('paid', 'unpaid', 'pending', 'waived') DEFAULT 'unpaid',
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`payment_method\` VARCHAR(64) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-    if (Array.isArray(results)) {
-      const fieldNames = fields ? (fields as any[]).map((f) => f.name) : Object.keys(results[0] || {});
-      return {
-        success: true,
-        message: `Query berhasil dieksekusi (${results.length} baris, ${executionTimeMs} ms).`,
-        query: trimmed,
-        rows: results.slice(0, 100), // limit to max 100 rows preview
-        fields: fieldNames,
-        affectedRows: results.length,
-        executionTimeMs,
-      };
-    } else {
-      return {
-        success: true,
-        message: `Query berhasil (${results.affectedRows || 0} baris terpengaruh, ${executionTimeMs} ms).`,
-        query: trimmed,
-        affectedRows: results.affectedRows || 0,
-        executionTimeMs,
-      };
-    }
-  } catch (err: any) {
-    return {
-      success: false,
-      message: `Error SQL: ${err.message}`,
-      error: err.code || err.message,
-      executionTimeMs: Date.now() - startTime,
-    };
-  }
-}
+-- --------------------------------------------------------
+-- 4. Tabel: teacher_salaries (Gaji & Insentif Guru/Staf)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`teacher_id\` VARCHAR(64) NOT NULL,
+  \`teacher_name\` VARCHAR(150) NOT NULL,
+  \`teacher_type\` VARCHAR(32) NOT NULL,
+  \`month\` VARCHAR(32) NOT NULL,
+  \`base_salary\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`homeroom_allowance\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`journal_count\` INT NOT NULL DEFAULT 0,
+  \`journal_incentive\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`tunjangan_masa_kerja\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`vakasi\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`other_allowance\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_dana_sosial\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_absen\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`potongan_lain\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`deductions\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`total_amount\` DECIMAL(15,2) NOT NULL DEFAULT 0.00,
+  \`status\` ENUM('unpaid', 'paid') DEFAULT 'unpaid',
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`paid_by\` VARCHAR(100) DEFAULT NULL,
+  \`notes\` TEXT DEFAULT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-// Generate code snippets for various languages and phpMyAdmin
-export function generateConnectionSnippets(cfg: MySQLConfig) {
-  const host = cfg.host || 'localhost';
-  const port = cfg.port || 3306;
-  const db = cfg.database || 'db_smp_maarif';
-  const user = cfg.user || 'root';
-  const pass = cfg.password || '';
-  const charset = cfg.charset || 'utf8mb4';
+-- --------------------------------------------------------
+-- 5. Tabel: savings_transactions (Tabungan Siswa)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS \`savings_transactions\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`type\` ENUM('deposit', 'withdrawal') NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`status\` VARCHAR(32) DEFAULT 'success',
+  \`created_at\` VARCHAR(64) NOT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-  return {
-    // 1. PHP PDO (Modern Standard for phpMyAdmin / cPanel PHP)
-    phpPdo: `<?php
-// Koneksi Database SMP Maarif NU Pandaan (PDO PHP)
-$db_host = '${host}';
-$db_port = ${port};
-$db_name = '${db}';
-$db_user = '${user}';
-$db_pass = '${pass}';
-$charset = '${charset}';
+-- --------------------------------------------------------
+-- 6. Tabel: misc_bills (Tagihan Non-SPP / Lainnya)
+-- --------------------------------------------------------
+CREATE TABLE IF NOT EXISTS \`misc_bills\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`student_id\` VARCHAR(64) NOT NULL,
+  \`title\` VARCHAR(150) NOT NULL,
+  \`amount\` DECIMAL(15,2) NOT NULL,
+  \`status\` ENUM('paid', 'unpaid', 'pending') DEFAULT 'unpaid',
+  \`paid_at\` VARCHAR(64) DEFAULT NULL,
+  \`month\` VARCHAR(32) DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
-$dsn = "mysql:host=$db_host;port=$db_port;dbname=$db_name;charset=$charset";
-$options = [
-    PDO::ATTR_ERRMODE            => PDO::ERRMODE_EXCEPTION,
-    PDO::ATTR_DEFAULT_FETCH_MODE => PDO::FETCH_ASSOC,
-    PDO::ATTR_EMULATE_PREPARES   => false,
-];
-
-try {
-    $pdo = new PDO($dsn, $db_user, $db_pass, $options);
-    // Koneksi Berhasil
-} catch (\\PDOException $e) {
-    die("Koneksi MySQL Gagal: " . $e->getMessage());
-}
-?>`,
-
-    // 2. PHP mysqli Procedural & OOP
-    phpMysqli: `<?php
-// Koneksi Database SMP Maarif NU Pandaan (mysqli)
-$conn = mysqli_connect('${host}', '${user}', '${pass}', '${db}', ${port});
-
-if (!$conn) {
-    die("Koneksi Gagal: " . mysqli_connect_error());
-}
-mysqli_set_charset($conn, "${charset}");
-?>`,
-
-    // 3. .env format
-    envConfig: `# Konfigurasi Database MySQL / phpMyAdmin SMP Maarif NU
-DB_HOST=${host}
-DB_PORT=${port}
-DB_NAME=${db}
-DB_USER=${user}
-DB_PASSWORD=${pass}
-DB_CHARSET=${charset}
-`,
-
-    // 4. cPanel config.php standard
-    cpanelConfig: `<?php
-/**
- * Konfigurasi Database phpMyAdmin / cPanel
- * SMP Maarif NU Pandaan
- */
-define('DB_SERVER', '${host}');
-define('DB_PORT', ${port});
-define('DB_USERNAME', '${user}');
-define('DB_PASSWORD', '${pass}');
-define('DB_NAME', '${db}');
-
-$db = new mysqli(DB_SERVER, DB_USERNAME, DB_PASSWORD, DB_NAME, DB_PORT);
-if ($db->connect_error) {
-    die("ERROR: Tidak dapat terhubung ke MySQL. " . $db->connect_error);
-}
-?>`,
-  };
+SET FOREIGN_KEY_CHECKS = 1;
+COMMIT;
+`;
 }

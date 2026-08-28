@@ -5,7 +5,7 @@ import {
   LogOut, DollarSign, Calendar, Tag, FileText, Search, Printer, 
   Download, Building2, CheckCircle2, AlertTriangle, ArrowUpRight, 
   ArrowDownRight, Wallet, UserCheck, Percent, HelpCircle, Eye, Key,
-  LayoutGrid, Home, Smartphone, Apple, UploadCloud, FileSpreadsheet
+  LayoutGrid, Home, Smartphone, Apple, UploadCloud, FileSpreadsheet, Database
 } from 'lucide-react';
 import { 
   BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, 
@@ -14,6 +14,7 @@ import {
 import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
 import { MidtransBulkReportModal } from './MidtransBulkReportModal';
 import { Pagination } from './Pagination';
+import TreasurerMysqlSettings from './TreasurerMysqlSettings';
 
 interface TreasurerPanelProps {
   schoolIdentity: SchoolIdentity;
@@ -28,7 +29,7 @@ export default function TreasurerPanel({
   subjectTeachers = [], 
   onLogout 
 }: TreasurerPanelProps) {
-  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru'>('dashboard');
+  const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru' | 'database_mysql'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [transactions, setTransactions] = useState<TreasurerTransaction[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -1628,6 +1629,19 @@ export default function TreasurerPanel({
               </button>
               <button
                 type="button"
+                onClick={() => setActiveTab('database_mysql')}
+                className={`inline-flex items-center gap-1.5 px-3 py-2 ${
+                  activeTab === 'database_mysql'
+                    ? 'bg-emerald-700 text-white border border-emerald-500 shadow-xs'
+                    : 'bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:border-slate-500'
+                } font-bold text-xs rounded-xl cursor-pointer transition-all`}
+                title="Pengaturan Koneksi Database MySQL & phpMyAdmin"
+              >
+                <Database size={13} className="text-emerald-400" />
+                <span>MySQL / phpMyAdmin</span>
+              </button>
+              <button
+                type="button"
                 onClick={() => setShowPasswordModal(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 hover:border-slate-500 font-bold text-xs rounded-xl cursor-pointer transition-all"
               >
@@ -1745,6 +1759,18 @@ export default function TreasurerPanel({
               }`}
             >
               💵 Gaji Guru
+            </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab('database_mysql')}
+              className={`px-4 py-2 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center gap-1.5 ${
+                activeTab === 'database_mysql'
+                  ? 'bg-slate-900 text-white shadow-sm'
+                  : 'text-slate-600 hover:bg-slate-200'
+              }`}
+            >
+              <Database size={13} className="text-emerald-500" />
+              <span>Database MySQL</span>
             </button>
           </div>
         </div>
@@ -3229,6 +3255,10 @@ export default function TreasurerPanel({
             </div>
           )}
 
+          {activeTab === 'database_mysql' && (
+            <TreasurerMysqlSettings schoolIdentity={schoolIdentity} />
+          )}
+
         </main>
       </div>
 
@@ -3366,6 +3396,21 @@ export default function TreasurerPanel({
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Gaji Guru (Payroll)</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Kelola dan bayarkan gaji guru mapel &amp; wali kelas</p>
+                  </div>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    setActiveTab('database_mysql');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-slate-150 hover:bg-slate-50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-emerald-50 rounded-xl text-emerald-600 text-lg">🗄️</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-slate-800">Database MySQL</h5>
+                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengaturan koneksi &amp; sinkronisasi phpMyAdmin</p>
                   </div>
                 </button>
 

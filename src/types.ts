@@ -796,68 +796,52 @@ export interface SpmbCandidate {
   [key: string]: any;
 }
 
-export interface MySQLConfig {
+export interface MysqlDatabaseConfig {
   host: string;
   port: number;
   database: string;
   user: string;
   password?: string;
-  tablePrefix?: string;
+  hasPassword?: boolean;
+  ssl?: boolean;
+  phpmyadminUrl?: string;
   charset?: string;
-  sslMode?: 'none' | 'required' | 'preferred';
-  socketPath?: string;
-  enabled?: boolean;
-  autoSync?: boolean;
+  connectionLimit?: number;
+  connectTimeout?: number;
+  autoSyncEnabled?: boolean;
   lastConnectedAt?: string;
   lastSyncAt?: string;
-  status?: 'disconnected' | 'connected' | 'error';
+  status?: 'connected' | 'disconnected' | 'error' | 'unconfigured';
 }
 
-export interface MySQLTestResult {
+export interface MysqlTestResult {
   success: boolean;
   message: string;
-  latencyMs?: number;
+  pingMs?: number;
   serverVersion?: string;
   databaseName?: string;
+  serverTime?: string;
   tablesCount?: number;
-  tables?: Array<{
-    name: string;
-    rows: number;
-    engine?: string;
-    collation?: string;
-  }>;
+  tables?: string[];
   error?: string;
+  hint?: string;
 }
 
-export interface MySQLSyncResult {
+export interface MysqlSyncResult {
   success: boolean;
   message: string;
-  tablesCreated?: number;
-  recordsSynced?: {
-    students?: number;
-    spp_bills?: number;
-    savings_transactions?: number;
-    school_identity?: number;
-    homerooms?: number;
-    subject_teachers?: number;
-    schedules?: number;
-    teaching_journals?: number;
-    spmb_registrations?: number;
-    attendance?: number;
-    misc_bills?: number;
-    [key: string]: number | undefined;
+  syncedAt: string;
+  stats: {
+    students: number;
+    transactions: number;
+    sppBills: number;
+    salaries: number;
+    savings: number;
+    miscBills: number;
   };
-  durationMs?: number;
+  durationMs: number;
   error?: string;
 }
 
-export interface MySQLQueryResult {
-  success: boolean;
-  message: string;
-  query?: string;
-  rows?: any[];
-  fields?: string[];
-  affectedRows?: number;
-  executionTimeMs?: number;
-  error?: string;
-}
+
+

@@ -3,12 +3,14 @@
   "port": 3306,
   "database": "u604170242_spp_db",
   "user": "u604170242_spp_user",
-  "password": "",
+  "password": "Sparifda@92",
+  "hasPassword": true,
   "ssl": false,
-  "phpmyadminUrl": "https://portal.smpmaarifpdn.sch.id:8443",
+  "phpmyadminUrl": "https://auth-db1393.hstgr.io/index.php?db=u604170242_spp_db",
   "charset": "utf8mb4",
   "connectionLimit": 10,
   "connectTimeout": 10000,
   "autoSyncEnabled": false,
-  "status": "disconnected"
+  "status": "connected",
+  "lastConnectedAt": "2026-08-28T18:23:21.404Z"
 }

@@ -4,6 +4,7 @@ import {
   saveMysqlConfig, 
   testMysqlConnection, 
   syncDataToMysql, 
+  pullDataFromMysql,
   generateFullPhpMyAdminSql,
   COMPLETE_TABLES_SQL 
 } from '../mysqlService';
@@ -16,6 +17,7 @@ export interface MysqlRouteDataProviders {
   getSalaries: () => any[];
   getSavings: () => any[];
   getMiscBills: () => any[];
+  applyLoadedData?: (data: any) => Promise<void> | void;
 }
 
 export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
@@ -59,7 +61,7 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
     }
   });
 
-  // Perform full synchronization to MySQL tables
+  // Perform full synchronization to MySQL tables (Push to MySQL)
   router.post('/mysql-sync', async (req, res) => {
     try {
       const result = await syncDataToMysql({
@@ -75,6 +77,23 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
       res.status(500).json({ 
         success: false, 
         message: 'Gagal sinkronisasi data ke MySQL', 
+        error: err.message 
+      });
+    }
+  });
+
+  // Pull / Import full data directly from MySQL tables (Pull from MySQL to App)
+  router.post('/mysql-pull', async (req, res) => {
+    try {
+      const result = await pullDataFromMysql();
+      if (result.success && result.data && providers.applyLoadedData) {
+        await providers.applyLoadedData(result.data);
+      }
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ 
+        success: false, 
+        message: 'Gagal memuat data dari database MySQL', 
         error: err.message 
       });
     }
@@ -135,3 +154,4 @@ COMMIT;
 }
 
 export default createMysqlRouter;
+

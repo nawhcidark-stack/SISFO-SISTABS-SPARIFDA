@@ -1412,3 +1412,765 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
     await pool.end().catch(() => {});
   }
 }
+
+// Pull / Import all live data from MySQL database into application state
+export async function pullDataFromMysql(): Promise<{
+  success: boolean;
+  message: string;
+  data?: any;
+  counts?: Record<string, number>;
+  error?: string;
+  durationMs?: number;
+}> {
+  const startTime = Date.now();
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+
+    // Check existing tables
+    const [tableRows]: any = await connection.query('SHOW TABLES');
+    const existingTables: string[] = tableRows.map((r: any) => Object.values(r)[0] as string);
+
+    const hasTable = (name: string) => existingTables.includes(name);
+
+    const resultData: any = {};
+    const counts: Record<string, number> = {};
+
+    // 1. Students
+    if (hasTable('students')) {
+      const [rows]: any = await connection.query('SELECT * FROM `students`');
+      resultData.students = rows.map((r: any) => ({
+        id: r.id,
+        nis: r.nis || '',
+        nisn: r.nisn || undefined,
+        name: r.name,
+        class: r.class,
+        gender: r.gender || 'Laki-laki',
+        email: r.email || undefined,
+        phone: r.phone || undefined,
+        savingsBalance: Number(r.savings_balance) || 0,
+        status: r.status || 'Aktif',
+        password: r.password || (r.nis ? String(r.nis).trim() : undefined),
+        nickname: r.nickname || undefined,
+        nik: r.nik || undefined,
+        birthPlace: r.birth_place || undefined,
+        birthDate: r.birth_date || undefined,
+        kkNumber: r.kk_number || undefined,
+        birthCertNumber: r.birth_cert_number || undefined,
+        livingWith: r.living_with || undefined,
+        childOrder: r.child_order || undefined,
+        siblingsCount: r.siblings_count || undefined,
+        stepSiblingsCount: r.step_siblings_count || undefined,
+        address: r.address || undefined,
+        photoUrl: r.photo_url || undefined,
+        parentName: r.parent_name || undefined,
+        googleDriveLink: r.google_drive_link || undefined,
+        fatherName: r.father_name || undefined,
+        fatherNik: r.father_nik || undefined,
+        fatherBirthPlace: r.father_birth_place || undefined,
+        fatherBirthDate: r.father_birth_date || undefined,
+        fatherEducation: r.father_education || undefined,
+        fatherOccupation: r.father_occupation || undefined,
+        fatherIncome: r.father_income || undefined,
+        fatherAddress: r.father_address || undefined,
+        fatherPhone: r.father_phone || undefined,
+        fatherStatus: r.father_status || undefined,
+        motherName: r.mother_name || undefined,
+        motherNik: r.mother_nik || undefined,
+        motherBirthPlace: r.mother_birth_place || undefined,
+        motherBirthDate: r.mother_birth_date || undefined,
+        motherEducation: r.mother_education || undefined,
+        motherOccupation: r.mother_occupation || undefined,
+        motherIncome: r.mother_income || undefined,
+        motherAddress: r.mother_address || undefined,
+        motherPhone: r.mother_phone || undefined,
+        motherStatus: r.mother_status || undefined,
+        guardianName: r.guardian_name || undefined,
+        guardianNik: r.guardian_nik || undefined,
+        guardianBirthPlace: r.guardian_birth_place || undefined,
+        guardianBirthDate: r.guardian_birth_date || undefined,
+        guardianEducation: r.guardian_education || undefined,
+        guardianOccupation: r.guardian_occupation || undefined,
+        guardianIncome: r.guardian_income || undefined,
+        guardianAddress: r.guardian_address || undefined,
+        guardianPhone: r.guardian_phone || undefined,
+        guardianStatus: r.guardian_status || undefined,
+        isSppExempt: Boolean(r.is_spp_exempt),
+        sppExemptionReason: r.spp_exemption_reason || undefined,
+        sppExemptionType: r.spp_exemption_type || undefined,
+        customSppRate: r.custom_spp_rate !== null ? Number(r.custom_spp_rate) : undefined,
+        mutationDate: r.mutation_date || undefined,
+        mutationReason: r.mutation_reason || undefined,
+        mutationDestination: r.mutation_destination || undefined
+      }));
+      counts.students = resultData.students.length;
+    }
+
+    // 2. SPP Bills
+    if (hasTable('spp_bills')) {
+      const [rows]: any = await connection.query('SELECT * FROM `spp_bills`');
+      resultData.sppBills = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        month: r.month,
+        year: Number(r.year) || 2026,
+        amount: Number(r.amount) || 0,
+        status: r.status || 'unpaid',
+        paidAt: r.paid_at || undefined,
+        paymentMethod: r.payment_method || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        achievementType: r.achievement_type || undefined,
+        achievementDetail: r.achievement_detail || undefined
+      }));
+      counts.sppBills = resultData.sppBills.length;
+    }
+
+    // 3. Misc Bills
+    if (hasTable('misc_bills')) {
+      const [rows]: any = await connection.query('SELECT * FROM `misc_bills`');
+      resultData.miscBills = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        title: r.title,
+        amount: Number(r.amount) || 0,
+        status: r.status || 'unpaid',
+        createdAt: r.created_at || new Date().toISOString(),
+        paidAt: r.paid_at || undefined,
+        paymentMethod: r.payment_method || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        isMonthly: Boolean(r.is_monthly),
+        month: r.month || undefined
+      }));
+      counts.miscBills = resultData.miscBills.length;
+    }
+
+    // 4. Savings Transactions
+    if (hasTable('savings_transactions')) {
+      const [rows]: any = await connection.query('SELECT * FROM `savings_transactions`');
+      resultData.savingsTransactions = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentNis: r.student_nis || undefined,
+        type: r.type,
+        amount: Number(r.amount) || 0,
+        status: r.status || 'success',
+        createdAt: r.created_at || new Date().toISOString(),
+        paymentMethod: r.payment_method || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        notes: r.notes || undefined
+      }));
+      counts.savingsTransactions = resultData.savingsTransactions.length;
+    }
+
+    // 5. Treasurer Transactions (Buku Kas Umum)
+    if (hasTable('treasurer_transactions')) {
+      const [rows]: any = await connection.query('SELECT * FROM `treasurer_transactions` ORDER BY `date` DESC, `id` DESC');
+      resultData.treasurerTransactions = rows.map((r: any) => ({
+        id: r.id,
+        type: r.type,
+        category: r.category,
+        amount: Number(r.amount) || 0,
+        description: r.description,
+        date: r.date,
+        source: r.source || 'custom',
+        studentName: r.student_name || undefined,
+        studentId: r.student_id || undefined,
+        nis: r.nis || undefined,
+        createdBy: r.created_by || 'Bendahara',
+        recipientName: r.recipient_name || undefined,
+        fundingSource: r.funding_source || undefined,
+        paymentMethod: r.payment_method === 'bank' ? 'bank' : 'kas',
+        kodeRekening: r.kode_rekening || undefined,
+        noBukti: r.no_bukti || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined
+      }));
+      counts.treasurerTransactions = resultData.treasurerTransactions.length;
+    }
+
+    // 6. Teacher Salaries
+    if (hasTable('teacher_salaries')) {
+      const [rows]: any = await connection.query('SELECT * FROM `teacher_salaries`');
+      resultData.teacherSalaries = rows.map((r: any) => ({
+        id: r.id,
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        teacherType: r.teacher_type,
+        month: r.month,
+        baseSalary: Number(r.base_salary) || 0,
+        homeroomAllowance: Number(r.homeroom_allowance) || 0,
+        journalCount: Number(r.journal_count) || 0,
+        journalRate: Number(r.journal_rate) || 0,
+        journalIncentive: Number(r.journal_incentive) || 0,
+        tunjanganMasaKerja: Number(r.tunjangan_masa_kerja) || 0,
+        vakasi: Number(r.vakasi) || 0,
+        otherAllowance: Number(r.other_allowance) || 0,
+        potonganDanaSosial: Number(r.potongan_dana_sosial) || 0,
+        potonganAbsen: Number(r.potongan_absen) || 0,
+        potonganLain: Number(r.potongan_lain) || 0,
+        deductions: Number(r.deductions) || 0,
+        totalAmount: Number(r.total_amount) || 0,
+        status: r.status || 'unpaid',
+        paymentDate: r.payment_date || undefined,
+        notes: r.notes || undefined
+      }));
+      counts.teacherSalaries = resultData.teacherSalaries.length;
+    }
+
+    // 7. Homeroom Teachers
+    if (hasTable('homeroom_teachers')) {
+      const [rows]: any = await connection.query('SELECT * FROM `homeroom_teachers`');
+      resultData.homeroomTeachers = rows.map((r: any) => ({
+        id: r.id,
+        username: r.username,
+        name: r.name,
+        className: r.class_name,
+        password: r.password || undefined,
+        skUrl: r.sk_url || undefined
+      }));
+      counts.homeroomTeachers = resultData.homeroomTeachers.length;
+    }
+
+    // 8. Subject Teachers
+    if (hasTable('subject_teachers')) {
+      const [rows]: any = await connection.query('SELECT * FROM `subject_teachers`');
+      resultData.subjectTeachers = rows.map((r: any) => ({
+        id: r.id,
+        username: r.username,
+        name: r.name,
+        subject: r.subject,
+        className: r.class_name || 'SEMUA KELAS',
+        password: r.password || undefined,
+        skUrl: r.sk_url || undefined
+      }));
+      counts.subjectTeachers = resultData.subjectTeachers.length;
+    }
+
+    // 9. Teaching Journals
+    if (hasTable('teaching_journals')) {
+      const [rows]: any = await connection.query('SELECT * FROM `teaching_journals`');
+      resultData.teachingJournals = rows.map((r: any) => {
+        let attendanceData = undefined;
+        if (r.attendance_data) {
+          try {
+            attendanceData = typeof r.attendance_data === 'string' ? JSON.parse(r.attendance_data) : r.attendance_data;
+          } catch {}
+        }
+        return {
+          id: r.id,
+          teacherId: r.teacher_id,
+          teacherName: r.teacher_name,
+          teacherType: r.teacher_type || undefined,
+          subject: r.subject,
+          className: r.class_name,
+          date: r.date,
+          topic: r.topic,
+          attendanceData,
+          notes: r.notes || undefined,
+          fase: r.fase || undefined,
+          semester: r.semester || undefined,
+          alokasiWaktu: r.alokasi_waktu || undefined,
+          jamKe: r.jam_ke || undefined,
+          pertemuanKe: r.pertemuan_ke || undefined,
+          tujuanPembelajaran: r.tujuan_pembelajaran || undefined,
+          pencapaianKktp: r.pencapaian_kktp || undefined,
+          createdAt: r.created_at || new Date().toISOString()
+        };
+      });
+      counts.teachingJournals = resultData.teachingJournals.length;
+    }
+
+    // 10. Attendance Logs
+    if (hasTable('attendance_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `attendance_logs`');
+      resultData.attendanceLogs = rows.map((r: any) => {
+        let subjectNotes = undefined;
+        if (r.subject_notes) {
+          try {
+            subjectNotes = typeof r.subject_notes === 'string' ? JSON.parse(r.subject_notes) : r.subject_notes;
+          } catch {}
+        }
+        return {
+          id: r.id,
+          studentId: r.student_id,
+          studentName: r.student_name || undefined,
+          className: r.class_name || undefined,
+          date: r.date,
+          status: r.status,
+          notes: r.notes || undefined,
+          subjectNotes
+        };
+      });
+      counts.attendanceLogs = resultData.attendanceLogs.length;
+    }
+
+    // 11. Merdeka Assessments
+    if (hasTable('merdeka_assessments')) {
+      const [rows]: any = await connection.query('SELECT * FROM `merdeka_assessments`');
+      resultData.merdekaAssessments = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        subject: r.subject,
+        teacherName: r.teacher_name,
+        semester: r.semester,
+        academicYear: r.academic_year,
+        tp1Name: r.tp1_name || undefined,
+        tp1Tugas1: r.tp1_tugas1 || undefined,
+        tp1Tugas2: r.tp1_tugas2 || undefined,
+        tp1Uh: r.tp1_uh || undefined,
+        nilaiTp1: r.nilai_tp1 !== null ? Number(r.nilai_tp1) : undefined,
+        tp2Name: r.tp2_name || undefined,
+        tp2Tugas1: r.tp2_tugas1 || undefined,
+        tp2Tugas2: r.tp2_tugas2 || undefined,
+        tp2Uh: r.tp2_uh || undefined,
+        nilaiTp2: r.nilai_tp2 !== null ? Number(r.nilai_tp2) : undefined,
+        tp3Name: r.tp3_name || undefined,
+        tp3Tugas1: r.tp3_tugas1 || undefined,
+        tp3Tugas2: r.tp3_tugas2 || undefined,
+        tp3Uh: r.tp3_uh || undefined,
+        nilaiTp3: r.nilai_tp3 !== null ? Number(r.nilai_tp3) : undefined,
+        tp4Name: r.tp4_name || undefined,
+        tp4Tugas1: r.tp4_tugas1 || undefined,
+        tp4Tugas2: r.tp4_tugas2 || undefined,
+        tp4Uh: r.tp4_uh || undefined,
+        nilaiTp4: r.nilai_tp4 !== null ? Number(r.nilai_tp4) : undefined,
+        nilaiRataTp: r.nilai_rata_tp !== null ? Number(r.nilai_rata_tp) : undefined,
+        nilaiKokurikuler: r.nilai_kokurikuler !== null ? Number(r.nilai_kokurikuler) : undefined,
+        nilaiPts: r.nilai_pts !== null ? Number(r.nilai_pts) : undefined,
+        nilaiPas: r.nilai_pas !== null ? Number(r.nilai_pas) : undefined,
+        nilaiAkhirMapel: r.nilai_akhir_mapel !== null ? Number(r.nilai_akhir_mapel) : undefined,
+        nilaiFormatif: r.nilai_formatif !== null ? Number(r.nilai_formatif) : undefined,
+        nilaiSumatifLm: r.nilai_sumatif_lm !== null ? Number(r.nilai_sumatif_lm) : undefined,
+        nilaiSas: r.nilai_sas !== null ? Number(r.nilai_sas) : undefined,
+        nilaiRapor: r.nilai_rapor !== null ? Number(r.nilai_rapor) : undefined,
+        deskripsiCapaian: r.deskripsi_capaian || undefined,
+        createdAt: r.created_at || new Date().toISOString(),
+        updatedAt: r.updated_at || undefined
+      }));
+      counts.merdekaAssessments = resultData.merdekaAssessments.length;
+    }
+
+    // 12. Class Schedules
+    if (hasTable('class_schedules')) {
+      const [rows]: any = await connection.query('SELECT * FROM `class_schedules`');
+      resultData.classSchedules = rows.map((r: any) => ({
+        id: r.id,
+        day: r.day,
+        className: r.class_name,
+        subject: r.subject,
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        jamKe: r.jam_ke,
+        startTime: r.start_time || undefined,
+        endTime: r.end_time || undefined,
+        alokasiWaktu: r.alokasi_waktu || undefined,
+        academicYear: r.academic_year || undefined,
+        semester: r.semester || undefined,
+        createdAt: r.created_at || undefined
+      }));
+      counts.classSchedules = resultData.classSchedules.length;
+    }
+
+    // 13. Student Development Logs
+    if (hasTable('student_development_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `student_development_logs`');
+      resultData.studentDevelopmentLogs = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        date: r.date,
+        category: r.category,
+        notes: r.notes,
+        createdAt: r.created_at
+      }));
+      counts.studentDevelopmentLogs = resultData.studentDevelopmentLogs.length;
+    }
+
+    // 14. Student Infraction Logs
+    if (hasTable('student_infraction_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `student_infraction_logs`');
+      resultData.studentInfractionLogs = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        date: r.date,
+        time: r.time,
+        location: r.location,
+        infractionType: r.infraction_type,
+        actionTaken: r.action_taken,
+        resolutionStatus: r.resolution_status,
+        points: Number(r.points) || 0,
+        createdAt: r.created_at
+      }));
+      counts.studentInfractionLogs = resultData.studentInfractionLogs.length;
+    }
+
+    // 15. Infraction Rules
+    if (hasTable('infraction_rules')) {
+      const [rows]: any = await connection.query('SELECT * FROM `infraction_rules`');
+      resultData.infractionRules = rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        points: Number(r.points) || 0,
+        category: r.category
+      }));
+      counts.infractionRules = resultData.infractionRules.length;
+    }
+
+    // 16. Student Counseling Logs
+    if (hasTable('student_counseling_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `student_counseling_logs`');
+      resultData.studentCounselingLogs = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id,
+        studentName: r.student_name,
+        className: r.class_name,
+        date: r.date,
+        topic: r.topic,
+        actionPlan: r.action_plan,
+        result: r.result,
+        bkFeedback: r.bk_feedback || undefined,
+        bkFeedbackAt: r.bk_feedback_at || undefined,
+        createdAt: r.created_at
+      }));
+      counts.studentCounselingLogs = resultData.studentCounselingLogs.length;
+    }
+
+    // 17. Class Announcements
+    if (hasTable('class_announcements')) {
+      const [rows]: any = await connection.query('SELECT * FROM `class_announcements`');
+      resultData.classAnnouncements = rows.map((r: any) => ({
+        id: r.id,
+        className: r.class_name,
+        title: r.title,
+        content: r.content,
+        date: r.date,
+        targetRecipient: r.target_recipient,
+        confirmationStatus: r.confirmation_status || 'Belum Dibaca',
+        createdAt: r.created_at
+      }));
+      counts.classAnnouncements = resultData.classAnnouncements.length;
+    }
+
+    // 18. Class Meeting Logs
+    if (hasTable('class_meeting_logs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `class_meeting_logs`');
+      resultData.classMeetingLogs = rows.map((r: any) => ({
+        id: r.id,
+        className: r.class_name,
+        meetingType: r.meeting_type,
+        date: r.date,
+        attendees: r.attendees,
+        agenda: r.agenda,
+        followUp: r.follow_up,
+        createdAt: r.created_at
+      }));
+      counts.classMeetingLogs = resultData.classMeetingLogs.length;
+    }
+
+    // 19. Principal Work Programs
+    if (hasTable('principal_work_programs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `principal_work_programs`');
+      resultData.principalWorkPrograms = rows.map((r: any) => ({
+        id: r.id,
+        title: r.title,
+        description: r.description,
+        targetDate: r.target_date,
+        status: r.status,
+        syncWithStaff: Boolean(r.sync_with_staff),
+        createdAt: r.created_at
+      }));
+      counts.principalWorkPrograms = resultData.principalWorkPrograms.length;
+    }
+
+    // 20. Teacher Evaluations
+    if (hasTable('teacher_evaluations')) {
+      const [rows]: any = await connection.query('SELECT * FROM `teacher_evaluations`');
+      resultData.teacherEvaluations = rows.map((r: any) => ({
+        id: r.id,
+        teacherType: r.teacher_type,
+        teacherId: r.teacher_id,
+        teacherName: r.teacher_name,
+        evaluatorName: r.evaluator_name,
+        date: r.date,
+        academicYear: r.academic_year,
+        pedagogicScore: Number(r.pedagogic_score) || 0,
+        professionalScore: Number(r.professional_score) || 0,
+        personalScore: Number(r.personal_score) || 0,
+        socialScore: Number(r.social_score) || 0,
+        notes: r.notes,
+        createdAt: r.created_at
+      }));
+      counts.teacherEvaluations = resultData.teacherEvaluations.length;
+    }
+
+    // 21. Sarpras Items
+    if (hasTable('sarpras_items')) {
+      const [rows]: any = await connection.query('SELECT * FROM `sarpras_items`');
+      resultData.sarprasItems = rows.map((r: any) => ({
+        id: r.id,
+        name: r.name,
+        code: r.code,
+        category: r.category,
+        conditionStatus: r.condition_status,
+        location: r.location,
+        totalQty: Number(r.total_qty) || 0,
+        availableQty: Number(r.available_qty) || 0,
+        price: r.price !== null ? Number(r.price) : undefined,
+        purchaseYear: r.purchase_year || undefined
+      }));
+      counts.sarprasItems = resultData.sarprasItems.length;
+    }
+
+    // 22. Sarpras Proposals
+    if (hasTable('sarpras_proposals')) {
+      const [rows]: any = await connection.query('SELECT * FROM `sarpras_proposals`');
+      resultData.sarprasProposals = rows.map((r: any) => ({
+        id: r.id,
+        itemName: r.item_name,
+        qty: Number(r.qty) || 1,
+        estimatedPrice: Number(r.estimated_price) || 0,
+        totalPrice: Number(r.total_price) || 0,
+        proposedBy: r.proposed_by,
+        date: r.date,
+        reason: r.reason,
+        status: r.status,
+        notes: r.notes || undefined,
+        imageUrl: r.image_url || undefined,
+        createdAt: r.created_at
+      }));
+      counts.sarprasProposals = resultData.sarprasProposals.length;
+    }
+
+    // 23. Sarpras Loans
+    if (hasTable('sarpras_loans')) {
+      const [rows]: any = await connection.query('SELECT * FROM `sarpras_loans`');
+      resultData.sarprasLoans = rows.map((r: any) => ({
+        id: r.id,
+        itemId: r.item_id,
+        itemName: r.item_name,
+        borrowerId: r.borrower_id,
+        borrowerName: r.borrower_name,
+        qty: Number(r.qty) || 1,
+        loanDate: r.loan_date,
+        returnDate: r.return_date || undefined,
+        status: r.status,
+        notes: r.notes || undefined
+      }));
+      counts.sarprasLoans = resultData.sarprasLoans.length;
+    }
+
+    // 24. SPMB Candidates
+    if (hasTable('spmb_candidates')) {
+      const [rows]: any = await connection.query('SELECT * FROM `spmb_candidates`');
+      resultData.spmbCandidates = rows.map((r: any) => {
+        let transferHistory = undefined;
+        if (r.transfer_history) {
+          try {
+            transferHistory = typeof r.transfer_history === 'string' ? JSON.parse(r.transfer_history) : r.transfer_history;
+          } catch {}
+        }
+        let uniformOrders = undefined;
+        if (r.uniform_orders) {
+          try {
+            uniformOrders = typeof r.uniform_orders === 'string' ? JSON.parse(r.uniform_orders) : r.uniform_orders;
+          } catch {}
+        }
+        return {
+          id: r.id,
+          registrationNo: r.registration_no,
+          nisn: r.nisn,
+          nik: r.nik,
+          fullName: r.full_name,
+          gender: r.gender,
+          birthPlace: r.birth_place,
+          birthDate: r.birth_date,
+          phone: r.phone,
+          schoolOriginType: r.school_origin_type,
+          schoolOrigin: r.school_origin,
+          registrationType: r.registration_type,
+          sessionId: r.session_id,
+          createdAt: r.created_at,
+          originalSessionId: r.original_session_id || undefined,
+          previousSessionId: r.previous_session_id || undefined,
+          isTransferredSession: Boolean(r.is_transferred_session),
+          transferredAt: r.transferred_at || undefined,
+          transferReason: r.transfer_reason || undefined,
+          transferHistory,
+          tokenPaymentStatus: r.token_payment_status || 'unpaid',
+          tokenPaymentOrderId: r.token_payment_order_id || undefined,
+          tokenPaidAt: r.token_paid_at || undefined,
+          tokenPaymentMethod: r.token_payment_method || undefined,
+          tokenAmount: r.token_amount !== null ? Number(r.token_amount) : undefined,
+          collectiveRefundStatus: r.collective_refund_status || 'none',
+          collectiveRefundAmount: r.collective_refund_amount !== null ? Number(r.collective_refund_amount) : undefined,
+          collectiveRefundedAt: r.collective_refunded_at || undefined,
+          collectiveRefundedBy: r.collective_refunded_by || undefined,
+          collectiveRefundRecipient: r.collective_refund_recipient || undefined,
+          collectiveRefundNote: r.collective_refund_note || undefined,
+          collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
+          isFormCompleted: Boolean(r.is_form_completed),
+          formCompletedAt: r.form_completed_at || undefined,
+          nickname: r.nickname || undefined,
+          kkNumber: r.kk_number || undefined,
+          birthCertNumber: r.birth_cert_number || undefined,
+          religion: r.religion || undefined,
+          address: r.address || undefined,
+          dusun: r.dusun || undefined,
+          rt: r.rt || undefined,
+          rw: r.rw || undefined,
+          village: r.village || undefined,
+          district: r.district || undefined,
+          city: r.city || undefined,
+          postalCode: r.postal_code || undefined,
+          livingWith: r.living_with || undefined,
+          childOrder: r.child_order || undefined,
+          siblingsCount: r.siblings_count || undefined,
+          stepSiblingsCount: r.step_siblings_count || undefined,
+          transportation: r.transportation || undefined,
+          specialNeeds: r.special_needs || undefined,
+          height: r.height !== null ? Number(r.height) : undefined,
+          weight: r.weight !== null ? Number(r.weight) : undefined,
+          distanceToSchool: r.distance_to_school || undefined,
+          travelTime: r.travel_time || undefined,
+          fatherName: r.father_name || undefined,
+          fatherNik: r.father_nik || undefined,
+          fatherBirthPlace: r.father_birth_place || undefined,
+          fatherBirthDate: r.father_birth_date || undefined,
+          fatherEducation: r.father_education || undefined,
+          fatherOccupation: r.father_occupation || undefined,
+          fatherIncome: r.father_income || undefined,
+          fatherPhone: r.father_phone || undefined,
+          fatherStatus: r.father_status || undefined,
+          fatherAddress: r.father_address || undefined,
+          motherName: r.mother_name || undefined,
+          motherNik: r.mother_nik || undefined,
+          motherBirthPlace: r.mother_birth_place || undefined,
+          motherBirthDate: r.mother_birth_date || undefined,
+          motherEducation: r.mother_education || undefined,
+          motherOccupation: r.mother_occupation || undefined,
+          motherIncome: r.mother_income || undefined,
+          motherPhone: r.mother_phone || undefined,
+          motherStatus: r.mother_status || undefined,
+          motherAddress: r.mother_address || undefined,
+          guardianName: r.guardian_name || undefined,
+          guardianNik: r.guardian_nik || undefined,
+          guardianBirthPlace: r.guardian_birth_place || undefined,
+          guardianBirthDate: r.guardian_birth_date || undefined,
+          guardianEducation: r.guardian_education || undefined,
+          guardianOccupation: r.guardian_occupation || undefined,
+          guardianIncome: r.guardian_income || undefined,
+          guardianPhone: r.guardian_phone || undefined,
+          guardianStatus: r.guardian_status || undefined,
+          guardianAddress: r.guardian_address || undefined,
+          guardianRelationship: r.guardian_relationship || undefined,
+          guardianIsSameAsFather: Boolean(r.guardian_is_same_as_father),
+          reRegistrationPaidAt: r.re_registration_paid_at || undefined,
+          reRegistrationMethod: r.re_registration_method || undefined,
+          reRegistrationOrderId: r.re_registration_order_id || undefined,
+          reRegistrationStatus: r.re_registration_status || 'unpaid',
+          buildingFeePaid: Number(r.building_fee_paid) || 0,
+          julySppPaid: Number(r.july_spp_paid) || 0,
+          uniformFeePaid: Number(r.uniform_fee_paid) || 0,
+          totalReRegistrationPaid: Number(r.total_re_registration_paid) || 0,
+          uniformOrders
+        };
+      });
+      counts.spmbCandidates = resultData.spmbCandidates.length;
+    }
+
+    // 25. Midtrans Transactions
+    if (hasTable('midtrans_transactions')) {
+      const [rows]: any = await connection.query('SELECT * FROM `midtrans_transactions`');
+      resultData.midtransTransactions = rows.map((r: any) => {
+        let rawResponse = undefined;
+        if (r.raw_response) {
+          try {
+            rawResponse = typeof r.raw_response === 'string' ? JSON.parse(r.raw_response) : r.raw_response;
+          } catch {}
+        }
+        return {
+          id: r.id,
+          orderId: r.order_id,
+          transactionId: r.transaction_id || undefined,
+          studentId: r.student_id || undefined,
+          studentName: r.student_name || undefined,
+          studentNis: r.student_nis || undefined,
+          nisn: r.nisn || undefined,
+          billType: r.bill_type,
+          description: r.description,
+          grossAmount: Number(r.gross_amount) || 0,
+          paymentType: r.payment_type,
+          transactionStatus: r.transaction_status,
+          fraudStatus: r.fraud_status || undefined,
+          settlementTime: r.settlement_time || undefined,
+          transactionTime: r.transaction_time || undefined,
+          createdAt: r.created_at,
+          updatedAt: r.updated_at,
+          snapToken: r.snap_token || undefined,
+          rawResponse
+        };
+      });
+      counts.midtransTransactions = resultData.midtransTransactions.length;
+    }
+
+    // 26. Notifications
+    if (hasTable('notifications')) {
+      const [rows]: any = await connection.query('SELECT * FROM `notifications` ORDER BY `created_at` DESC LIMIT 100');
+      resultData.notifications = rows.map((r: any) => ({
+        id: r.id,
+        studentId: r.student_id || undefined,
+        title: r.title,
+        message: r.message,
+        type: r.type || 'info',
+        category: r.category || 'admin',
+        createdAt: r.created_at
+      }));
+      counts.notifications = resultData.notifications.length;
+    }
+
+    // 27. App Configs
+    if (hasTable('app_configs')) {
+      const [rows]: any = await connection.query('SELECT * FROM `app_configs`');
+      resultData.configs = {};
+      for (const r of rows) {
+        try {
+          resultData.configs[r.id] = typeof r.data === 'string' ? JSON.parse(r.data) : r.data;
+        } catch {}
+      }
+      counts.appConfigs = rows.length;
+    }
+
+    const durationMs = Date.now() - startTime;
+    currentConfig.status = 'connected';
+    currentConfig.lastSyncAt = new Date().toISOString();
+
+    return {
+      success: true,
+      message: `Berhasil memuat seluruh data dari MySQL database "${currentConfig.database}" (${Object.values(counts).reduce((a, b) => a + b, 0)} total records)!`,
+      data: resultData,
+      counts,
+      durationMs
+    };
+  } catch (err: any) {
+    return {
+      success: false,
+      message: 'Gagal menarik data dari database MySQL.',
+      error: err.message || 'Kesalahan koneksi / query MySQL',
+      durationMs: Date.now() - startTime
+    };
+  } finally {
+    if (connection) connection.release();
+    await pool.end().catch(() => {});
+  }
+}
+

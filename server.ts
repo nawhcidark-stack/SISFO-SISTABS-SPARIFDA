@@ -11,7 +11,7 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig } from "./src/server/mysqlService";
+import { loadMysqlConfig, pullDataFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 
@@ -2499,6 +2499,177 @@ function loadState() {
   return false;
 }
 
+function applyDataFromMysql(pulledData: any) {
+  if (!pulledData || typeof pulledData !== "object") return false;
+
+  try {
+    if (Array.isArray(pulledData.students) && pulledData.students.length > 0) {
+      students.length = 0;
+      pulledData.students.forEach((s: Student) => {
+        if (s.email && s.email.includes("example.org")) {
+          s.email = s.email.replace("example.org", "smpmaarifnu.sch.id");
+        }
+        if (!s.password && s.nis) {
+          s.password = s.nis.toString().trim();
+        }
+        students.push(s);
+      });
+    }
+
+    if (Array.isArray(pulledData.sppBills) && pulledData.sppBills.length > 0) {
+      sppBills.length = 0;
+      sppBills.push(...pulledData.sppBills);
+    }
+
+    if (Array.isArray(pulledData.miscBills) && pulledData.miscBills.length > 0) {
+      miscBills.length = 0;
+      miscBills.push(...pulledData.miscBills);
+    }
+
+    if (Array.isArray(pulledData.savingsTransactions) && pulledData.savingsTransactions.length > 0) {
+      savingsTransactions.length = 0;
+      savingsTransactions.push(...pulledData.savingsTransactions);
+    }
+
+    if (Array.isArray(pulledData.midtransTransactions) && pulledData.midtransTransactions.length > 0) {
+      midtransTransactions.length = 0;
+      midtransTransactions.push(...pulledData.midtransTransactions);
+    }
+
+    if (Array.isArray(pulledData.notifications) && pulledData.notifications.length > 0) {
+      notifications.length = 0;
+      notifications.push(...pulledData.notifications);
+    }
+
+    if (Array.isArray(pulledData.attendanceLogs) && pulledData.attendanceLogs.length > 0) {
+      attendanceLogs.length = 0;
+      attendanceLogs.push(...pulledData.attendanceLogs);
+    }
+
+    if (Array.isArray(pulledData.homeroomTeachers) && pulledData.homeroomTeachers.length > 0) {
+      homeroomTeachers.length = 0;
+      homeroomTeachers.push(...pulledData.homeroomTeachers);
+    }
+
+    if (Array.isArray(pulledData.subjectTeachers) && pulledData.subjectTeachers.length > 0) {
+      subjectTeachers.length = 0;
+      subjectTeachers.push(...pulledData.subjectTeachers);
+    }
+
+    if (Array.isArray(pulledData.teachingJournals) && pulledData.teachingJournals.length > 0) {
+      teachingJournals.length = 0;
+      teachingJournals.push(...pulledData.teachingJournals);
+    }
+
+    if (Array.isArray(pulledData.studentDevelopmentLogs) && pulledData.studentDevelopmentLogs.length > 0) {
+      studentDevelopmentLogs.length = 0;
+      studentDevelopmentLogs.push(...pulledData.studentDevelopmentLogs);
+    }
+
+    if (Array.isArray(pulledData.studentInfractionLogs) && pulledData.studentInfractionLogs.length > 0) {
+      studentInfractionLogs.length = 0;
+      studentInfractionLogs.push(...pulledData.studentInfractionLogs);
+    }
+
+    if (Array.isArray(pulledData.studentCounselingLogs) && pulledData.studentCounselingLogs.length > 0) {
+      studentCounselingLogs.length = 0;
+      studentCounselingLogs.push(...pulledData.studentCounselingLogs);
+    }
+
+    if (Array.isArray(pulledData.classAnnouncements) && pulledData.classAnnouncements.length > 0) {
+      classAnnouncements.length = 0;
+      classAnnouncements.push(...pulledData.classAnnouncements);
+    }
+
+    if (Array.isArray(pulledData.classMeetingLogs) && pulledData.classMeetingLogs.length > 0) {
+      classMeetingLogs.length = 0;
+      classMeetingLogs.push(...pulledData.classMeetingLogs);
+    }
+
+    if (Array.isArray(pulledData.merdekaAssessments) && pulledData.merdekaAssessments.length > 0) {
+      merdekaAssessments.length = 0;
+      merdekaAssessments.push(...pulledData.merdekaAssessments);
+    }
+
+    if (Array.isArray(pulledData.classSchedules) && pulledData.classSchedules.length > 0) {
+      classSchedules.length = 0;
+      classSchedules.push(...pulledData.classSchedules);
+    }
+
+    if (Array.isArray(pulledData.principalWorkPrograms) && pulledData.principalWorkPrograms.length > 0) {
+      principalWorkPrograms.length = 0;
+      principalWorkPrograms.push(...pulledData.principalWorkPrograms);
+    }
+
+    if (Array.isArray(pulledData.teacherEvaluations) && pulledData.teacherEvaluations.length > 0) {
+      teacherEvaluations.length = 0;
+      teacherEvaluations.push(...pulledData.teacherEvaluations);
+    }
+
+    if (Array.isArray(pulledData.infractionRules) && pulledData.infractionRules.length > 0) {
+      infractionRules.length = 0;
+      infractionRules.push(...pulledData.infractionRules);
+    }
+
+    if (Array.isArray(pulledData.sarprasItems) && pulledData.sarprasItems.length > 0) {
+      sarprasItems.length = 0;
+      sarprasItems.push(...pulledData.sarprasItems);
+    }
+
+    if (Array.isArray(pulledData.sarprasProposals) && pulledData.sarprasProposals.length > 0) {
+      sarprasProposals.length = 0;
+      sarprasProposals.push(...pulledData.sarprasProposals);
+    }
+
+    if (Array.isArray(pulledData.sarprasLoans) && pulledData.sarprasLoans.length > 0) {
+      sarprasLoans.length = 0;
+      sarprasLoans.push(...pulledData.sarprasLoans);
+    }
+
+    if (Array.isArray(pulledData.teacherSalaries) && pulledData.teacherSalaries.length > 0) {
+      teacherSalaries.length = 0;
+      teacherSalaries.push(...pulledData.teacherSalaries);
+    }
+
+    if (Array.isArray(pulledData.treasurerTransactions) && pulledData.treasurerTransactions.length > 0) {
+      treasurerTransactions.length = 0;
+      treasurerTransactions.push(...pulledData.treasurerTransactions);
+    }
+
+    if (Array.isArray(pulledData.spmbCandidates) && pulledData.spmbCandidates.length > 0) {
+      spmbCandidates.length = 0;
+      spmbCandidates.push(...pulledData.spmbCandidates);
+    }
+
+    // Authoritative savings balance updates
+    applyAuthoritativeSavingsBalances(students);
+
+    // Apply application configs if present
+    if (pulledData.configs) {
+      if (pulledData.configs.sppRates) Object.assign(sppRates, pulledData.configs.sppRates);
+      if (pulledData.configs.salaryConfig) Object.assign(salaryConfig, pulledData.configs.salaryConfig);
+      if (pulledData.configs.schoolIdentity) Object.assign(schoolIdentity, pulledData.configs.schoolIdentity);
+      if (pulledData.configs.midtransConfig) Object.assign(midtransConfig, pulledData.configs.midtransConfig);
+      if (pulledData.configs.whatsappConfig) Object.assign(whatsappConfig, pulledData.configs.whatsappConfig);
+      if (pulledData.configs.treasurerConfig) Object.assign(treasurerConfig, pulledData.configs.treasurerConfig);
+      if (pulledData.configs.principalConfig) Object.assign(principalConfig, pulledData.configs.principalConfig);
+      if (pulledData.configs.sarprasConfig) Object.assign(sarprasConfig, pulledData.configs.sarprasConfig);
+      if (pulledData.configs.bkConfig) Object.assign(bkConfig, pulledData.configs.bkConfig);
+      if (pulledData.configs.curriculumConfig) Object.assign(curriculumConfig, pulledData.configs.curriculumConfig);
+      if (pulledData.configs.adminConfig) Object.assign(adminConfig, pulledData.configs.adminConfig);
+      if (pulledData.configs.spmbConfig) Object.assign(spmbConfig, pulledData.configs.spmbConfig);
+    }
+
+    // Persist locally
+    saveState(true);
+    console.log("[MySQL Sync] Data dari database MySQL berhasil dimuat ke memori dan disimpan ke local cache.");
+    return true;
+  } catch (err) {
+    console.error("Gagal menerapkan data dari MySQL:", err);
+    return false;
+  }
+}
+
 const isLoaded = loadState();
 
 if (isLoaded) {
@@ -2669,6 +2840,19 @@ async function startServer() {
   try {
     loadState();
     isInitialSyncCompleted = true;
+
+    // Automatically pull latest records from MySQL if connected
+    try {
+      console.log("[MySQL Auto-Load] Checking remote MySQL database for updated records...");
+      const mysqlPull = await pullDataFromMysql();
+      if (mysqlPull.success && mysqlPull.data) {
+        console.log(`[MySQL Auto-Load] Berhasil memuat ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.treasurerTransactions || 0} mutasi kas, ${mysqlPull.counts?.sppBills || 0} SPP dari remote MySQL!`);
+        applyDataFromMysql(mysqlPull.data);
+      }
+    } catch (mysqlErr: any) {
+      console.warn("[MySQL Auto-Load] Info:", mysqlErr.message || mysqlErr);
+    }
+
     if (process.env.ENABLE_MONGODB === "true" && process.env.MONGODB_URI) {
       await syncWithFirestore();
     } else {
@@ -6633,6 +6817,23 @@ async function startServer() {
   // Dedicated instant bi-directional sync endpoint for Bendahara
   app.get("/api/treasurer/sync", async (req, res) => {
     try {
+      // Try pulling from MySQL if configured
+      try {
+        const pullRes = await pullDataFromMysql();
+        if (pullRes.success && pullRes.data) {
+          applyDataFromMysql(pullRes.data);
+          return res.json({
+            success: true,
+            status: "connected",
+            count: treasurerTransactions.length,
+            lastSync: new Date().toISOString(),
+            message: `Berhasil sinkronisasi langsung dari database MySQL / phpMyAdmin (${treasurerTransactions.length} mutasi kas, ${students.length} siswa).`
+          });
+        }
+      } catch (mysqlErr) {
+        console.warn("[Treasurer Sync] MySQL pull attempt:", mysqlErr);
+      }
+
       if (mongoDb && isInitialSyncCompleted) {
         const remoteTxs = await mongoDb.collection("treasurerTransactions").find({}).toArray();
         const txMap = new Map<string, TreasurerTransaction>();
@@ -6656,7 +6857,7 @@ async function startServer() {
           status: "connected",
           count: treasurerTransactions.length,
           lastSync: new Date().toISOString(),
-          message: `Berhasil sinkronisasi otomatis dengan MongoDB Atlas (${treasurerTransactions.length} transaksi).`
+          message: `Berhasil sinkronisasi otomatis dengan Cloud (${treasurerTransactions.length} transaksi).`
         });
       }
       res.json({
@@ -7094,7 +7295,8 @@ async function startServer() {
     getSppBills: () => sppBills,
     getSalaries: () => teacherSalaries,
     getSavings: () => savingsTransactions,
-    getMiscBills: () => miscBills
+    getMiscBills: () => miscBills,
+    applyLoadedData: (pulled) => applyDataFromMysql(pulled)
   }));
 
   // Get active students

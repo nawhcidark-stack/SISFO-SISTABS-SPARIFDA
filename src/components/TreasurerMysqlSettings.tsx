@@ -59,6 +59,12 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
 
   const [testResult, setTestResult] = useState<MysqlTestResult | null>(null);
   const [syncResult, setSyncResult] = useState<MysqlSyncResult | null>(null);
+  const [pullResult, setPullResult] = useState<{
+    success: boolean;
+    message: string;
+    counts?: Record<string, number>;
+  } | null>(null);
+  const [isPulling, setIsPulling] = useState(false);
   const [notification, setNotification] = useState<{ type: 'success' | 'error' | 'info'; message: string } | null>(null);
   const [countsData, setCountsData] = useState<Record<string, number>>({});
   const [isLoadingCounts, setIsLoadingCounts] = useState(false);
@@ -244,6 +250,51 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
       });
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handlePullData = async () => {
+    if (!window.confirm('Muat dan tampilkan seluruh data dari database MySQL / phpMyAdmin ke dalam aplikasi?')) {
+      return;
+    }
+
+    setIsPulling(true);
+    setPullResult(null);
+    setNotification(null);
+
+    try {
+      const res = await fetch('/api/treasurer/mysql-pull', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      const data = await res.json();
+      setPullResult(data);
+
+      if (data.success) {
+        setConfig(prev => ({
+          ...prev,
+          status: 'connected',
+          lastSyncAt: new Date().toISOString()
+        }));
+        setNotification({
+          type: 'success',
+          message: data.message || 'Seluruh data berhasil ditarik dari database MySQL dan langsung ditampilkan di aplikasi!'
+        });
+        fetchCounts();
+      } else {
+        setNotification({
+          type: 'error',
+          message: data.message || data.error || 'Gagal memuat data dari database MySQL.'
+        });
+      }
+    } catch (err: any) {
+      setNotification({
+        type: 'error',
+        message: 'Gagal menghubungi server saat memuat data MySQL.'
+      });
+    } finally {
+      setIsPulling(false);
     }
   };
 
@@ -866,24 +917,116 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
       {/* TAB 3: SINKRONISASI DATA */}
       {activeSubTab === 'sync' && (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col gap-6">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-100 pb-4">
-            <div>
-              <h3 className="text-sm font-black text-slate-900">Sinkronisasi Penuh ke Tabel MySQL</h3>
-              <p className="text-xs text-slate-500 mt-0.5">
-                Proses ini akan membuat tabel yang diperlukan secara otomatis dan menyisipkan / memperbarui seluruh data mutasi kas, SPP, tabungan, dan gaji ke database MySQL.
-              </p>
+          {/* Bi-directional Sync Actions */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* Box 1: Pull from MySQL */}
+            <div className="p-5 bg-gradient-to-br from-indigo-50/80 to-sky-50/50 rounded-2xl border border-indigo-150 flex flex-col justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-2 bg-indigo-600 text-white rounded-xl">
+                    <ArrowDownToLine size={16} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Tarik / Muat Data Dari MySQL</h3>
+                    <span className="text-[10px] text-indigo-700 font-bold">MySQL &rarr; Aplikasi SMP Ma'arif</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600 mt-2.5 leading-relaxed">
+                  Mengambil seluruh data terbaru yang tersimpan di database MySQL / phpMyAdmin (560 siswa, 6.687 SPP, 788 transaksi kas, dll.) dan memuatnya langsung ke aplikasi.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handlePullData}
+                disabled={isPulling}
+                className="w-full py-2.5 px-4 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-indigo-600/20 disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={isPulling ? 'animate-spin' : ''} />
+                <span>{isPulling ? 'Sedang Menarik Data...' : '📥 Muat Seluruh Data Dari MySQL'}</span>
+              </button>
             </div>
 
-            <button
-              type="button"
-              onClick={handleSyncData}
-              disabled={isSyncing}
-              className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-emerald-600/20 shrink-0 disabled:opacity-50"
-            >
-              <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
-              <span>{isSyncing ? 'Sedang Menyinkronkan...' : '⚡ Mulai Sinkronisasi Sekarang'}</span>
-            </button>
+            {/* Box 2: Push to MySQL */}
+            <div className="p-5 bg-gradient-to-br from-emerald-50/80 to-teal-50/50 rounded-2xl border border-emerald-150 flex flex-col justify-between gap-4">
+              <div>
+                <div className="flex items-center gap-2">
+                  <span className="p-2 bg-emerald-600 text-white rounded-xl">
+                    <FolderSync size={16} />
+                  </span>
+                  <div>
+                    <h3 className="text-sm font-black text-slate-900">Kirim / Simpan ke MySQL</h3>
+                    <span className="text-[10px] text-emerald-700 font-bold">Aplikasi &rarr; MySQL Database</span>
+                  </div>
+                </div>
+                <p className="text-xs text-slate-600 mt-2.5 leading-relaxed">
+                  Mengirimkan seluruh perubahan data lokal ke database MySQL phpMyAdmin dengan skema <code>ON DUPLICATE KEY UPDATE</code> tanpa risiko duplikasi.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={handleSyncData}
+                disabled={isSyncing}
+                className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl flex items-center justify-center gap-2 cursor-pointer transition-all shadow-md shadow-emerald-600/20 disabled:opacity-50"
+              >
+                <RefreshCw size={14} className={isSyncing ? 'animate-spin' : ''} />
+                <span>{isSyncing ? 'Sedang Menyimpan ke MySQL...' : '⚡ Kirim Data ke MySQL'}</span>
+              </button>
+            </div>
           </div>
+
+          {/* Pull Result Box */}
+          {pullResult && (
+            <div className={`p-5 rounded-2xl border flex flex-col gap-4 ${
+              pullResult.success ? 'bg-indigo-50 border-indigo-200' : 'bg-rose-50 border-rose-200'
+            }`}>
+              <div className="flex items-center gap-2.5">
+                {pullResult.success ? (
+                  <CheckCircle2 size={20} className="text-indigo-600 shrink-0" />
+                ) : (
+                  <AlertTriangle size={20} className="text-rose-600 shrink-0" />
+                )}
+                <div>
+                  <h4 className={`text-xs font-black ${pullResult.success ? 'text-indigo-950' : 'text-rose-950'}`}>
+                    {pullResult.success ? 'Data Berhasil Ditarik Dari Database MySQL!' : 'Gagal Memuat Data Dari MySQL'}
+                  </h4>
+                  <p className="text-[11px] text-slate-600 mt-0.5">
+                    {pullResult.message}
+                  </p>
+                </div>
+              </div>
+
+              {pullResult.success && pullResult.counts && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+                  <div className="p-3 bg-white rounded-xl border border-indigo-150 text-center">
+                    <span className="text-[10px] text-slate-400 block font-bold">Data Siswa</span>
+                    <span className="text-base font-black font-mono text-slate-800">{pullResult.counts.students || 0} siswa</span>
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-indigo-150 text-center">
+                    <span className="text-[10px] text-slate-400 block font-bold">Buku Kas (BKU)</span>
+                    <span className="text-base font-black font-mono text-emerald-700">{pullResult.counts.treasurerTransactions || 0} mutasi</span>
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-indigo-150 text-center">
+                    <span className="text-[10px] text-slate-400 block font-bold">Tagihan SPP</span>
+                    <span className="text-base font-black font-mono text-blue-700">{pullResult.counts.sppBills || 0} tagihan</span>
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-indigo-150 text-center">
+                    <span className="text-[10px] text-slate-400 block font-bold">Gaji Guru</span>
+                    <span className="text-base font-black font-mono text-purple-700">{pullResult.counts.teacherSalaries || 0} berkas</span>
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-indigo-150 text-center">
+                    <span className="text-[10px] text-slate-400 block font-bold">Tabungan Siswa</span>
+                    <span className="text-base font-black font-mono text-amber-700">{pullResult.counts.savingsTransactions || 0} transaksi</span>
+                  </div>
+                  <div className="p-3 bg-white rounded-xl border border-indigo-150 text-center">
+                    <span className="text-[10px] text-slate-400 block font-bold">Tagihan Lain</span>
+                    <span className="text-base font-black font-mono text-slate-700">{pullResult.counts.miscBills || 0} item</span>
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Sync Result Box */}
           {syncResult && (

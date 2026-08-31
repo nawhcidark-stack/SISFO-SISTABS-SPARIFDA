@@ -809,6 +809,12 @@ export interface MysqlDatabaseConfig {
   connectionLimit?: number;
   connectTimeout?: number;
   autoSyncEnabled?: boolean;
+  autoSyncIntervalHours?: number; // 1 s/d 24 Jam
+  autoSyncDirection?: 'push' | 'pull' | 'bidirectional';
+  nextAutoSyncAt?: string;
+  lastAutoSyncAt?: string;
+  lastAutoSyncStatus?: 'success' | 'error' | 'pending';
+  lastAutoSyncMessage?: string;
   lastConnectedAt?: string;
   lastSyncAt?: string;
   status?: 'connected' | 'disconnected' | 'error' | 'unconfigured';

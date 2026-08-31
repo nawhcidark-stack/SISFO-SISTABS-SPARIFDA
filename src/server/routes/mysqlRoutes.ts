@@ -17,7 +17,7 @@ export interface MysqlRouteDataProviders {
   getSalaries: () => any[];
   getSavings: () => any[];
   getMiscBills: () => any[];
-  applyLoadedData?: (data: any) => Promise<void> | void;
+  applyLoadedData?: (data: any) => Promise<any> | any;
 }
 
 export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {

@@ -11,7 +11,7 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, pullDataFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 
@@ -12720,6 +12720,49 @@ async function startServer() {
       }
     }
   }, 10 * 60 * 1000); // Check every 10 minutes
+
+  // Start background automated MySQL synchronization engine (Interval 1 Jam s/d 24 Jam)
+  setInterval(async () => {
+    try {
+      const mysqlCfg = getSanitizedConfig();
+      if (!mysqlCfg.autoSyncEnabled || !mysqlCfg.host || !mysqlCfg.database || !mysqlCfg.user || !mysqlCfg.hasPassword) {
+        return;
+      }
+
+      const intervalHours = Math.min(24, Math.max(1, Number(mysqlCfg.autoSyncIntervalHours) || 1));
+      const intervalMs = intervalHours * 60 * 60 * 1000;
+      const now = Date.now();
+
+      const lastTime = mysqlCfg.lastSyncAt ? new Date(mysqlCfg.lastSyncAt).getTime() : 0;
+      const nextTime = mysqlCfg.nextAutoSyncAt ? new Date(mysqlCfg.nextAutoSyncAt).getTime() : 0;
+
+      // Check if auto-sync is due:
+      // 1. nextAutoSyncAt is set and now >= nextAutoSyncAt
+      // 2. OR nextAutoSyncAt is not set/expired and (lastTime == 0 or now - lastTime >= intervalMs)
+      const isDue = (nextTime > 0 && now >= nextTime) || 
+                    (nextTime === 0 && (lastTime === 0 || (now - lastTime) >= intervalMs));
+
+      if (isDue) {
+        console.log(`[MYSQL AUTO-SYNC ENGINE] Interval ${intervalHours} Jam terpenuhi. Menjalankan sinkronisasi otomatis ke MySQL database "${mysqlCfg.database}"...`);
+        const result = await syncDataToMysql({
+          students,
+          transactions: treasurerTransactions,
+          sppBills,
+          salaries: teacherSalaries,
+          savings: savingsTransactions,
+          miscBills
+        });
+
+        if (result.success) {
+          console.log(`[MYSQL AUTO-SYNC ENGINE] Sinkronisasi otomatis ke MySQL (${mysqlCfg.database}) BERHASIL: ${result.stats.students} siswa, ${result.stats.transactions} kas, ${result.stats.sppBills} SPP. Sinkronisasi berikutnya: ${result.syncedAt}`);
+        } else {
+          console.warn(`[MYSQL AUTO-SYNC ENGINE] Sinkronisasi otomatis ke MySQL GAGAL: ${result.error || result.message}`);
+        }
+      }
+    } catch (err: any) {
+      console.error("[MYSQL AUTO-SYNC ENGINE] Terjadi kesalahan pada proses auto-sync MySQL:", err.message || err);
+    }
+  }, 30 * 1000); // Check every 30 seconds
 }
 
 startServer();

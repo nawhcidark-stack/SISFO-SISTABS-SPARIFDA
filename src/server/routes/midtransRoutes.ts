@@ -27,9 +27,89 @@ export interface MidtransRouterDeps {
 
 // ---------------- Helper Functions ----------------
 
+export const INDONESIAN_MONTHS = [
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni",
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember"
+];
+
+export const ACADEMIC_MONTHS = [
+  "Juli", "Agustus", "September", "Oktober", "November", "Desember",
+  "Januari", "Februari", "Maret", "April", "Mei", "Juni"
+];
+
+export const MONTH_LOOKUP: { [alias: string]: string } = {
+  // Indonesian full
+  "januari": "Januari", "februari": "Februari", "maret": "Maret", "april": "April",
+  "mei": "Mei", "juni": "Juni", "juli": "Juli", "agustus": "Agustus",
+  "september": "September", "oktober": "Oktober", "november": "November", "desember": "Desember",
+  // English full
+  "january": "Januari", "february": "Februari", "march": "Maret", "june": "Juni",
+  "july": "Juli", "august": "Agustus", "october": "Oktober", "december": "Desember",
+  // Abbreviations & aliases
+  "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
+  "jun": "Juni", "jul": "Juli", "agu": "Agustus", "ags": "Agustus", "aug": "Agustus", "agt": "Agustus",
+  "sep": "September", "sept": "September", "okt": "Oktober", "oct": "Oktober",
+  "nov": "November", "des": "Desember", "dec": "Desember"
+};
+
+export function extractMonthAndYear(text: string): { month?: string; year?: number } {
+  if (!text) return {};
+  const clean = text.trim();
+
+  // 1. Check for short month + 2 or 4 digit year like Jul26, Ags26, Agu2026, Sep26, Okt26, Nov26, Des26, Jan27, Feb27
+  const shortMonthYearRegex = /(?:^|[-_ \/\.,])(Jan|Feb|Mar|Apr|Mei|May|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)[-_ \/\.]?(20\d{2}|\d{2})(?:[-_ \/\.,]|$)/i;
+  const match1 = clean.match(shortMonthYearRegex);
+  if (match1) {
+    const rawMonth = match1[1].toLowerCase();
+    const rawYear = match1[2];
+    const month = MONTH_LOOKUP[rawMonth];
+    const year = rawYear.length === 2 ? 2000 + parseInt(rawYear, 10) : parseInt(rawYear, 10);
+    if (month) return { month, year };
+  }
+
+  // 2. Check full or short month name
+  const monthNameRegex = /\b(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)\b/i;
+  const match2 = clean.match(monthNameRegex);
+  let detectedMonth: string | undefined = undefined;
+  if (match2) {
+    detectedMonth = MONTH_LOOKUP[match2[1].toLowerCase()];
+  }
+
+  // Check 4-digit year (2020 - 2035) or 2-digit year preceded by keyword
+  const yearMatch = clean.match(/\b(202[0-9]|203[0-9])\b/) || clean.match(/(?:tahun|thn|year|yr)[-_: ]*(\d{2,4})/i);
+  let detectedYear: number | undefined = undefined;
+  if (yearMatch) {
+    const yStr = yearMatch[1];
+    detectedYear = yStr.length === 2 ? 2000 + parseInt(yStr, 10) : parseInt(yStr, 10);
+  }
+
+  if (detectedMonth) {
+    return { month: detectedMonth, year: detectedYear };
+  }
+
+  // 3. Check 2-digit numerical month with 2 or 4 digit year in order ID (e.g. -0726- or -082026-)
+  const numMonthYearRegex = /(?:^|[-_ \/\.,])(0[1-9]|1[0-2])[-_ \/\.]?(20\d{2}|\d{2})(?:[-_ \/\.,]|$)/;
+  const match3 = clean.match(numMonthYearRegex);
+  if (match3) {
+    const num = match3[1];
+    const numMap: { [k: string]: string } = {
+      "01": "Januari", "02": "Februari", "03": "Maret", "04": "April", "05": "Mei", "06": "Juni",
+      "07": "Juli", "08": "Agustus", "09": "September", "10": "Oktober", "11": "November", "12": "Desember"
+    };
+    const month = numMap[num];
+    const rawYear = match3[2];
+    const year = rawYear.length === 2 ? 2000 + parseInt(rawYear, 10) : parseInt(rawYear, 10);
+    if (month) return { month, year };
+  }
+
+  return { month: undefined, year: detectedYear };
+}
+
 export function decompressBillIdForMidtrans(id: string): string {
   if (!id) return id;
-  if (id.startsWith("B-")) {
+  if (id.startsWith("B-S-")) {
+    return "bill-std-std-" + id.slice(4);
+  } else if (id.startsWith("B-")) {
     const raw = id.slice(2);
     const hyphenIdx = raw.indexOf("-");
     if (hyphenIdx !== -1) {
@@ -46,24 +126,107 @@ export function compressMiscBillIdForMidtrans(id: string): string {
   return id.replace(/^misc-bill-std-/, "M-").replace(/^misc-bill-/, "MB-").replace(/^misc-/, "M-");
 }
 
-export function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targetStudentId?: string): SppBill | undefined {
-  if (!idOrOrderId) return undefined;
-  const cleanKey = idOrOrderId.trim();
-  let bill = sppBillsList.find(b => b.orderId === cleanKey || b.id === cleanKey || b.transactionId === cleanKey);
-  if (bill) return bill;
+export function findSppBillMatching(
+  idOrOrderId: string, 
+  sppBillsList: SppBill[], 
+  targetStudentId?: string,
+  extraHints?: { description?: string; month?: string; year?: number }
+): SppBill | undefined {
+  if (!idOrOrderId && !extraHints?.description && !extraHints?.month) return undefined;
+  const cleanKey = (idOrOrderId || "").trim();
 
-  if (cleanKey.startsWith("SPP-")) {
+  // 1. Direct exact match by orderId, id, or transactionId
+  if (cleanKey) {
+    const directMatch = sppBillsList.find(b => 
+      b.orderId === cleanKey || 
+      b.id === cleanKey || 
+      b.transactionId === cleanKey ||
+      b.id === cleanKey + "-unpaid"
+    );
+    if (directMatch) return directMatch;
+  }
+
+  // 2. Direct match by stripping trailing 4-digit timestamp or random suffix
+  if (cleanKey) {
+    const cleanWithoutSuffix = cleanKey.replace(/-\d{4}$/, "");
+    const suffixMatch = sppBillsList.find(b =>
+      b.id === cleanWithoutSuffix ||
+      b.id === cleanWithoutSuffix + "-unpaid" ||
+      b.orderId === cleanWithoutSuffix
+    );
+    if (suffixMatch) return suffixMatch;
+  }
+
+  // 3. Decompressed Bill ID match
+  if (cleanKey) {
+    const decompressed = decompressBillIdForMidtrans(cleanKey);
+    if (decompressed && decompressed !== cleanKey) {
+      const decompressedMatch = sppBillsList.find(b => 
+        b.id === decompressed || 
+        b.id === decompressed + "-unpaid" || 
+        b.orderId === decompressed
+      );
+      if (decompressedMatch) return decompressedMatch;
+    }
+  }
+
+  // 4. Extract Month & Year from explicit hints or text strings
+  let detectedMonth = extraHints?.month ? MONTH_LOOKUP[extraHints.month.toLowerCase().trim()] : undefined;
+  let detectedYear = extraHints?.year;
+
+  if (!detectedMonth && cleanKey) {
+    const fromOrder = extractMonthAndYear(cleanKey);
+    detectedMonth = fromOrder.month;
+    if (!detectedYear && fromOrder.year) detectedYear = fromOrder.year;
+  }
+
+  if (!detectedMonth && extraHints?.description) {
+    const fromDesc = extractMonthAndYear(extraHints.description);
+    detectedMonth = fromDesc.month;
+    if (!detectedYear && fromDesc.year) detectedYear = fromDesc.year;
+  }
+
+  // 5. Match by Target Student ID + Detected Month (+ Year)
+  if (targetStudentId && detectedMonth) {
+    // If year is detected, first try matching exact month AND year
+    if (detectedYear) {
+      const exactYearMatch = sppBillsList.find(b => 
+        b.studentId === targetStudentId && 
+        b.month.toLowerCase() === detectedMonth!.toLowerCase() && 
+        b.year === detectedYear
+      );
+      if (exactYearMatch) return exactYearMatch;
+    }
+
+    // Fallback match by exact month for this student (regardless of year)
+    const monthMatch = sppBillsList.find(b => 
+      b.studentId === targetStudentId && 
+      b.month.toLowerCase() === detectedMonth!.toLowerCase()
+    );
+    if (monthMatch) return monthMatch;
+  }
+
+  // 6. If cleanKey contains student NIS and month name/code
+  if (cleanKey && cleanKey.startsWith("SPP-")) {
     const withoutPrefix = cleanKey.slice(4);
     const lastHyphen = withoutPrefix.lastIndexOf("-");
     const extractedBillId = lastHyphen === -1 ? withoutPrefix : withoutPrefix.slice(0, lastHyphen);
     
-    bill = sppBillsList.find(b => b.id === extractedBillId || b.id === `bill-std-${extractedBillId}`);
+    let bill = sppBillsList.find(b => b.id === extractedBillId || b.id === `bill-std-${extractedBillId}`);
     if (bill) return bill;
 
-    const decompressed = decompressBillIdForMidtrans(extractedBillId);
-    bill = sppBillsList.find(b => b.id === decompressed);
-    if (bill) return bill;
+    const parts = withoutPrefix.split("-");
+    const rawNis = parts[0];
+    if (rawNis && detectedMonth) {
+      const nisMatch = sppBillsList.find(b => 
+        (b.id.includes(rawNis) || b.studentId.includes(rawNis)) && 
+        b.month.toLowerCase() === detectedMonth!.toLowerCase() &&
+        (!detectedYear || b.year === detectedYear)
+      );
+      if (nisMatch) return nisMatch;
+    }
   }
+
   return undefined;
 }
 
@@ -1248,6 +1411,14 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         const customerEmail = String(item.customerEmail || item.customer_email || "").trim().toLowerCase();
         const rawNis = String(item.studentNis || item.nis || "").trim();
         const rawName = String(item.customerName || item.studentName || item.name || "").trim().toLowerCase();
+        const rawDesc = String(item.description || item.itemName || item.item_name || item.keterangan || item.notes || item.rincian || "").trim();
+        const explicitMonth = item.month || item.bulan || item.periode;
+        const explicitYear = item.year ? Number(item.year) : undefined;
+
+        // Extract month & year from combined text
+        const extracted = extractMonthAndYear(`${cleanOrderId} ${rawDesc} ${explicitMonth || ""}`);
+        const rowMonth = extracted.month || (explicitMonth ? MONTH_LOOKUP[String(explicitMonth).toLowerCase().trim()] : undefined);
+        const rowYear = extracted.year || explicitYear;
 
         // 1. Identify Student
         const emailNis = customerEmail.includes("@") ? customerEmail.split("@")[0].replace(/\D/g, "") : "";
@@ -1286,7 +1457,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               studentName: targetStudent?.name || item.customerName || "-",
               studentNis: targetStudent?.nis || item.studentNis || "-",
               studentClass: targetStudent?.class || "-",
-              category: "Transaksi Online",
+              category: rowMonth ? `SPP ${rowMonth} ${rowYear || ''}` : "Transaksi Online",
               amount: amountVal,
               reportStatus: rawStatus || "pending",
               reportPaymentType: actualPaymentType,
@@ -1302,7 +1473,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               studentName: targetStudent?.name || item.customerName || "-",
               studentNis: targetStudent?.nis || item.studentNis || "-",
               studentClass: targetStudent?.class || "-",
-              category: "Transaksi Online",
+              category: rowMonth ? `SPP ${rowMonth} ${rowYear || ''}` : "Transaksi Online",
               amount: amountVal,
               reportStatus: rawStatus || "failed",
               reportPaymentType: actualPaymentType,
@@ -1334,14 +1505,26 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         };
 
         // A. Check SPP Bills
-        let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id) ||
-                      (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id) : undefined);
+        let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear }) ||
+                      (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear }) : undefined);
 
         if (!sppBill && (cleanOrderId.startsWith("SPP-") || cleanOrderId.includes("SPP-"))) {
           const middle = cleanOrderId.includes("SPP-") ? cleanOrderId.split("SPP-")[1] : cleanOrderId;
           const lastHyphenIndex = middle.lastIndexOf("-");
           const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id);
+          sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear });
+        }
+
+        // If target student is known and rowMonth was detected, search specifically for that month's bill
+        if (!sppBill && targetStudent && rowMonth) {
+          sppBill = sppBills.find(b => 
+            b.studentId === targetStudent!.id && 
+            b.month.toLowerCase() === rowMonth.toLowerCase() &&
+            (!rowYear || b.year === rowYear)
+          ) || sppBills.find(b => 
+            b.studentId === targetStudent!.id && 
+            b.month.toLowerCase() === rowMonth.toLowerCase()
+          );
         }
 
         if (sppBill) {
@@ -1708,53 +1891,139 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           }
         }
 
-        // E. Fallback Heuristic Matching by Student & Amount
+        // E. Fallback Heuristic Matching by Student & Month/Amount
         if (targetStudent) {
-          const fallbackSpp = sppBills.find(b => b.studentId === targetStudent.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal));
-          if (fallbackSpp) {
-            fallbackSpp.status = "paid";
-            fallbackSpp.paidAt = resolvedPaidAt;
-            fallbackSpp.paymentMethod = actualPaymentType;
-            fallbackSpp.orderId = cleanOrderId || fallbackSpp.orderId;
-            if (cleanTxId) fallbackSpp.transactionId = cleanTxId;
+          // If a specific month was detected in order ID, report row, or description:
+          if (rowMonth) {
+            const specificMonthBill = sppBills.find(b => 
+              b.studentId === targetStudent!.id && 
+              b.month.toLowerCase() === rowMonth.toLowerCase() && 
+              (!rowYear || b.year === rowYear)
+            ) || sppBills.find(b => 
+              b.studentId === targetStudent!.id && 
+              b.month.toLowerCase() === rowMonth.toLowerCase()
+            );
 
-            reconciledCount++;
-            totalAmountReconciled += fallbackSpp.amount;
-            stateChanged = true;
+            if (specificMonthBill) {
+              if (specificMonthBill.status === "paid") {
+                alreadyPaidCount++;
+                results.push({
+                  orderId: specificMonthBill.orderId || cleanOrderId,
+                  transactionId: cleanTxId || specificMonthBill.transactionId,
+                  studentName: targetStudent.name,
+                  studentNis: targetStudent.nis,
+                  studentClass: targetStudent.class,
+                  category: `SPP ${specificMonthBill.month} ${specificMonthBill.year}`,
+                  amount: specificMonthBill.amount,
+                  reportStatus: rawStatus,
+                  reportPaymentType: actualPaymentType,
+                  reportTime: resolvedPaidAt,
+                  reconciliationStatus: "already_paid",
+                  message: `SUDAH LUNAS: Tagihan SPP ${specificMonthBill.month} ${specificMonthBill.year} a.n ${targetStudent.name} sebelumnya sudah tercatat LUNAS.`
+                });
+              } else {
+                specificMonthBill.status = "paid";
+                specificMonthBill.paidAt = resolvedPaidAt;
+                specificMonthBill.paymentMethod = actualPaymentType;
+                specificMonthBill.orderId = cleanOrderId || specificMonthBill.orderId;
+                if (cleanTxId) specificMonthBill.transactionId = cleanTxId;
 
-            ensureLedgerEntry("SPP Siswa", fallbackSpp.amount, `Pembayaran SPP ${fallbackSpp.month} ${fallbackSpp.year} (Midtrans Report) - ${targetStudent.name} (${targetStudent.nis || ""})`, "spp");
+                reconciledCount++;
+                totalAmountReconciled += specificMonthBill.amount;
+                stateChanged = true;
 
-            recordOrUpdateMidtransTransaction({
-              orderId: cleanOrderId || `SPP-${Date.now()}`,
-              transactionId: cleanTxId,
-              billType: "spp",
-              grossAmount: fallbackSpp.amount,
-              studentName: targetStudent.name,
-              studentNis: targetStudent.nis,
-              description: `SPP ${fallbackSpp.month} ${fallbackSpp.year}`,
-              transactionStatus: "settlement",
-              paymentType: actualPaymentType,
-              settlementTime: resolvedPaidAt
-            });
+                ensureLedgerEntry("SPP Siswa", specificMonthBill.amount, `Pembayaran SPP ${specificMonthBill.month} ${specificMonthBill.year} (Midtrans Report) - ${targetStudent.name} (${targetStudent.nis || ""})`, "spp");
 
-            results.push({
-              orderId: cleanOrderId || fallbackSpp.orderId || "-",
-              transactionId: cleanTxId,
-              studentName: targetStudent.name,
-              studentNis: targetStudent.nis,
-              studentClass: targetStudent.class,
-              category: `SPP ${fallbackSpp.month} ${fallbackSpp.year}`,
-              amount: fallbackSpp.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime: resolvedPaidAt,
-              reconciliationStatus: "reconciled",
-              message: `BERHASIL DILUNASI! Tagihan SPP ${fallbackSpp.month} ${fallbackSpp.year} a.n ${targetStudent.name} terverifikasi & dicatat ke Buku Kas.`
-            });
-            continue;
+                recordOrUpdateMidtransTransaction({
+                  orderId: cleanOrderId || `SPP-${Date.now()}`,
+                  transactionId: cleanTxId,
+                  billType: "spp",
+                  grossAmount: specificMonthBill.amount,
+                  studentName: targetStudent.name,
+                  studentNis: targetStudent.nis,
+                  description: `SPP ${specificMonthBill.month} ${specificMonthBill.year}`,
+                  transactionStatus: "settlement",
+                  paymentType: actualPaymentType,
+                  settlementTime: resolvedPaidAt
+                });
+
+                results.push({
+                  orderId: cleanOrderId || specificMonthBill.orderId || "-",
+                  transactionId: cleanTxId,
+                  studentName: targetStudent.name,
+                  studentNis: targetStudent.nis,
+                  studentClass: targetStudent.class,
+                  category: `SPP ${specificMonthBill.month} ${specificMonthBill.year}`,
+                  amount: specificMonthBill.amount,
+                  reportStatus: rawStatus,
+                  reportPaymentType: actualPaymentType,
+                  reportTime: resolvedPaidAt,
+                  reconciliationStatus: "reconciled",
+                  message: `BERHASIL DILUNASI! Tagihan SPP ${specificMonthBill.month} ${specificMonthBill.year} a.n ${targetStudent.name} terverifikasi & dicatat ke Buku Kas.`
+                });
+              }
+              continue;
+            }
           }
 
-          const fallbackMisc = miscBills.find(b => b.studentId === targetStudent.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal));
+          // If NO month was detectable from Order ID or Report, allocate to the earliest unpaid bill in academic order
+          if (!rowMonth) {
+            const studentUnpaidBills = sppBills
+              .filter(b => b.studentId === targetStudent!.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal))
+              .sort((a, b) => {
+                const yearDiff = (a.year || 2026) - (b.year || 2026);
+                if (yearDiff !== 0) return yearDiff;
+                const idxA = ACADEMIC_MONTHS.indexOf(a.month);
+                const idxB = ACADEMIC_MONTHS.indexOf(b.month);
+                return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+              });
+
+            const fallbackSpp = studentUnpaidBills[0];
+            if (fallbackSpp) {
+              fallbackSpp.status = "paid";
+              fallbackSpp.paidAt = resolvedPaidAt;
+              fallbackSpp.paymentMethod = actualPaymentType;
+              fallbackSpp.orderId = cleanOrderId || fallbackSpp.orderId;
+              if (cleanTxId) fallbackSpp.transactionId = cleanTxId;
+
+              reconciledCount++;
+              totalAmountReconciled += fallbackSpp.amount;
+              stateChanged = true;
+
+              ensureLedgerEntry("SPP Siswa", fallbackSpp.amount, `Pembayaran SPP ${fallbackSpp.month} ${fallbackSpp.year} (Midtrans Report Tertua) - ${targetStudent.name} (${targetStudent.nis || ""})`, "spp");
+
+              recordOrUpdateMidtransTransaction({
+                orderId: cleanOrderId || `SPP-${Date.now()}`,
+                transactionId: cleanTxId,
+                billType: "spp",
+                grossAmount: fallbackSpp.amount,
+                studentName: targetStudent.name,
+                studentNis: targetStudent.nis,
+                description: `SPP ${fallbackSpp.month} ${fallbackSpp.year}`,
+                transactionStatus: "settlement",
+                paymentType: actualPaymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              results.push({
+                orderId: cleanOrderId || fallbackSpp.orderId || "-",
+                transactionId: cleanTxId,
+                studentName: targetStudent.name,
+                studentNis: targetStudent.nis,
+                studentClass: targetStudent.class,
+                category: `SPP ${fallbackSpp.month} ${fallbackSpp.year}`,
+                amount: fallbackSpp.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: resolvedPaidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Dialokasikan ke tagihan SPP berjalan tertua: SPP ${fallbackSpp.month} ${fallbackSpp.year} a.n ${targetStudent.name}.`
+              });
+              continue;
+            }
+          }
+
+          const fallbackMisc = miscBills.find(b => b.studentId === targetStudent!.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal));
           if (fallbackMisc) {
             fallbackMisc.status = "paid";
             fallbackMisc.paidAt = resolvedPaidAt;

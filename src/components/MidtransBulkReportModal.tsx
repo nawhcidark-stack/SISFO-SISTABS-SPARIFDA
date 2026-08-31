@@ -90,6 +90,9 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       let emailIdx = headers.findIndex(h => h.includes("email") || h.includes("e-mail") || h.includes("mail") || h.includes("customer"));
       let nameIdx = headers.findIndex(h => h.includes("customer_name") || h.includes("customer name") || h.includes("nama") || h.includes("siswa") || h.includes("pembayar"));
       let nisIdx = headers.findIndex(h => h.includes("nis") || h.includes("nisn") || h.includes("no_induk") || h.includes("no induk"));
+      let descIdx = headers.findIndex(h => h.includes("description") || h.includes("keterangan") || h.includes("deskripsi") || h.includes("item") || h.includes("item_name") || h.includes("items") || h.includes("notes") || h.includes("rincian") || h.includes("detail"));
+      let monthIdx = headers.findIndex(h => h.includes("bulan") || h.includes("month") || h.includes("periode"));
+      let yearIdx = headers.findIndex(h => h.includes("tahun") || h.includes("year"));
 
       if (orderIdIdx === -1 && txIdIdx !== -1) orderIdIdx = txIdIdx;
       if (orderIdIdx === -1) orderIdIdx = 0; // fallback first column
@@ -110,7 +113,10 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
             transactionTime: timeIdx !== -1 && row[timeIdx] ? String(row[timeIdx]).trim() : "",
             customerEmail: emailIdx !== -1 && row[emailIdx] ? String(row[emailIdx]).trim() : "",
             customerName: nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : "",
-            studentNis: nisIdx !== -1 && row[nisIdx] ? String(row[nisIdx]).trim() : ""
+            studentNis: nisIdx !== -1 && row[nisIdx] ? String(row[nisIdx]).trim() : "",
+            description: descIdx !== -1 && row[descIdx] ? String(row[descIdx]).trim() : "",
+            month: monthIdx !== -1 && row[monthIdx] ? String(row[monthIdx]).trim() : "",
+            year: yearIdx !== -1 && row[yearIdx] ? String(row[yearIdx]).trim() : ""
           });
         }
       }
@@ -134,6 +140,9 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       const emailVal = findValue(["email", "e-mail", "mail", "customer_email", "customer email"]);
       const nameVal = findValue(["customer_name", "customer name", "nama", "siswa", "pembayar", "name"]);
       const nisVal = findValue(["nis", "nisn", "no_induk", "no induk"]);
+      const descVal = findValue(["description", "keterangan", "deskripsi", "item", "item_name", "items", "notes", "rincian", "detail"]);
+      const monthVal = findValue(["bulan", "month", "periode"]);
+      const yearVal = findValue(["tahun", "year"]);
 
       const cleanOrderId = String(orderIdVal || '').trim();
       const cleanTxId = txIdVal ? String(txIdVal).trim() : undefined;
@@ -146,7 +155,10 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
         transactionTime: String(timeVal || '').trim(),
         customerEmail: emailVal ? String(emailVal).trim() : "",
         customerName: nameVal ? String(nameVal).trim() : "",
-        studentNis: nisVal ? String(nisVal).trim() : ""
+        studentNis: nisVal ? String(nisVal).trim() : "",
+        description: descVal ? String(descVal).trim() : "",
+        month: monthVal ? String(monthVal).trim() : "",
+        year: yearVal ? String(yearVal).trim() : ""
       };
     }).filter(item => (item.orderId && item.orderId.length >= 2 && !item.orderId.toLowerCase().includes("order_id")) || item.transactionId);
   };

@@ -1205,29 +1205,661 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   router.post("/verify-midtrans-bulk-report", async (req, res) => {
     try {
       const { items = [] } = req.body;
-      let parsedCount = 0;
-      let reconciledCount = 0;
+      const parsedItems: any[] = Array.isArray(items) ? items : [];
 
-      for (const it of items) {
-        const orderId = it.orderId || it.order_id || it["Order ID"];
-        if (orderId) {
-          parsedCount++;
-          const result = await processMidtransOrderStatus(orderId);
-          if (result.actionTaken && result.status === "settled") {
-            reconciledCount++;
+      if (parsedItems.length === 0) {
+        return res.status(400).json({ error: "Tidak ada data transaksi yang terbaca dari file report." });
+      }
+
+      let reconciledCount = 0;
+      let alreadyPaidCount = 0;
+      let notFoundCount = 0;
+      let pendingCount = 0;
+      let failedCount = 0;
+      let totalAmountReconciled = 0;
+      let stateChanged = false;
+
+      const results: {
+        orderId: string;
+        transactionId?: string;
+        studentName: string;
+        studentNis: string;
+        studentClass?: string;
+        category: string;
+        amount: number;
+        reportStatus: string;
+        reportPaymentType: string;
+        reportTime: string;
+        reconciliationStatus: 'reconciled' | 'already_paid' | 'not_found' | 'report_pending' | 'report_failed';
+        message: string;
+      }[] = [];
+
+      for (const item of parsedItems) {
+        const cleanOrderId = String(item.orderId || item.order_id || item["Order ID"] || "").trim();
+        const cleanTxId = String(item.transactionId || item.transaction_id || item["Transaction ID"] || "").trim();
+        
+        if (!cleanOrderId && !cleanTxId) continue;
+
+        const amountVal = Number(item.grossAmount || item.amount || item.gross_amount || 0);
+        const rawStatus = String(item.status || item.transaction_status || "settlement").toLowerCase().trim();
+        const actualPaymentType = item.paymentType ? (item.paymentType.toLowerCase().includes("midtrans") ? item.paymentType : `Midtrans (${item.paymentType})`) : "Midtrans Online";
+        const reportTime = item.settlementTime || item.transactionTime || new Date().toISOString();
+        const resolvedPaidAt = parseMidtransTime(reportTime);
+        const customerEmail = String(item.customerEmail || item.customer_email || "").trim().toLowerCase();
+        const rawNis = String(item.studentNis || item.nis || "").trim();
+        const rawName = String(item.customerName || item.studentName || item.name || "").trim().toLowerCase();
+
+        // 1. Identify Student
+        const emailNis = customerEmail.includes("@") ? customerEmail.split("@")[0].replace(/\D/g, "") : "";
+        let targetStudent = students.find(s =>
+          (rawNis && String(s.nis).trim() === rawNis) ||
+          (rawNis && s.id === `std-${rawNis}`) ||
+          (emailNis && String(s.nis).trim() === emailNis) ||
+          (customerEmail && s.email && s.email.toLowerCase().trim() === customerEmail) ||
+          (rawName && s.name && s.name.toLowerCase().trim() === rawName)
+        );
+
+        if (!targetStudent && cleanOrderId) {
+          const parts = cleanOrderId.split("-");
+          for (const p of parts) {
+            if (/^\d{3,12}$/.test(p)) {
+              const matched = students.find(s => String(s.nis).trim() === p || s.id === `std-${p}`);
+              if (matched) {
+                targetStudent = matched;
+                break;
+              }
+            }
           }
+        }
+
+        const isSettled = rawStatus.includes("settlement") || rawStatus.includes("capture") || rawStatus.includes("success") || rawStatus.includes("lunas") || rawStatus.includes("paid") || rawStatus.includes("settled");
+        const isPending = rawStatus.includes("pending") || rawStatus.includes("challenge");
+        const isFailed = rawStatus.includes("expire") || rawStatus.includes("cancel") || rawStatus.includes("deny") || rawStatus.includes("failure") || rawStatus.includes("gagal") || rawStatus.includes("batal");
+
+        // 2. Handle Non-Settled Statuses
+        if (!isSettled) {
+          if (isPending) {
+            pendingCount++;
+            results.push({
+              orderId: cleanOrderId || cleanTxId,
+              transactionId: cleanTxId,
+              studentName: targetStudent?.name || item.customerName || "-",
+              studentNis: targetStudent?.nis || item.studentNis || "-",
+              studentClass: targetStudent?.class || "-",
+              category: "Transaksi Online",
+              amount: amountVal,
+              reportStatus: rawStatus || "pending",
+              reportPaymentType: actualPaymentType,
+              reportTime,
+              reconciliationStatus: "report_pending",
+              message: "Status di report Midtrans masih PENDING (Menunggu pembayaran dari wali murid)."
+            });
+          } else {
+            failedCount++;
+            results.push({
+              orderId: cleanOrderId || cleanTxId,
+              transactionId: cleanTxId,
+              studentName: targetStudent?.name || item.customerName || "-",
+              studentNis: targetStudent?.nis || item.studentNis || "-",
+              studentClass: targetStudent?.class || "-",
+              category: "Transaksi Online",
+              amount: amountVal,
+              reportStatus: rawStatus || "failed",
+              reportPaymentType: actualPaymentType,
+              reportTime,
+              reconciliationStatus: "report_failed",
+              message: `Status di report Midtrans: ${rawStatus.toUpperCase()} (Transaksi dibatalkan/kadaluarsa).`
+            });
+          }
+          continue;
+        }
+
+        // 3. Handle Settled Statuses
+
+        // Helper to record incoming BKU ledger
+        const ensureLedgerEntry = (category: string, amount: number, description: string, source: "spp" | "savings" | "custom" = "spp") => {
+          treasurerTransactions.unshift({
+            id: `tx-midtrans-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "incoming",
+            category,
+            amount,
+            description,
+            date: resolvedPaidAt.substring(0, 10),
+            source,
+            paymentMethod: "bank",
+            fundingSource: "Mandiri",
+            createdBy: "Midtrans Report Reconciler",
+            noBukti: cleanOrderId || cleanTxId
+          });
+        };
+
+        // A. Check SPP Bills
+        let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id) ||
+                      (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id) : undefined);
+
+        if (!sppBill && (cleanOrderId.startsWith("SPP-") || cleanOrderId.includes("SPP-"))) {
+          const middle = cleanOrderId.includes("SPP-") ? cleanOrderId.split("SPP-")[1] : cleanOrderId;
+          const lastHyphenIndex = middle.lastIndexOf("-");
+          const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+          sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id);
+        }
+
+        if (sppBill) {
+          const student = students.find(s => s.id === sppBill.studentId) || targetStudent;
+
+          if (sppBill.status === "paid") {
+            alreadyPaidCount++;
+            results.push({
+              orderId: sppBill.orderId || cleanOrderId,
+              transactionId: cleanTxId || sppBill.transactionId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: `SPP ${sppBill.month} ${sppBill.year}`,
+              amount: sppBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime,
+              reconciliationStatus: "already_paid",
+              message: `SUDAH LUNAS: Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
+            });
+          } else {
+            sppBill.status = "paid";
+            sppBill.paidAt = resolvedPaidAt;
+            sppBill.paymentMethod = actualPaymentType;
+            sppBill.orderId = cleanOrderId || sppBill.orderId;
+            if (cleanTxId) sppBill.transactionId = cleanTxId;
+
+            reconciledCount++;
+            totalAmountReconciled += sppBill.amount;
+            stateChanged = true;
+
+            ensureLedgerEntry("SPP Siswa", sppBill.amount, `Pembayaran SPP ${sppBill.month} ${sppBill.year} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "spp");
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId || `SPP-${Date.now()}`,
+              transactionId: cleanTxId,
+              billType: "spp",
+              grossAmount: sppBill.amount,
+              studentName: student?.name,
+              studentNis: student?.nis,
+              description: `SPP ${sppBill.month} ${sppBill.year}`,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: sppBill.orderId || cleanOrderId,
+              transactionId: cleanTxId || sppBill.transactionId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: `SPP ${sppBill.month} ${sppBill.year}`,
+              amount: sppBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: sppBill.paidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas Bendahara.`
+            });
+          }
+          continue;
+        }
+
+        // B. Check Non-SPP (Misc) Bills
+        let miscBill = miscBills.find(b => b.orderId === cleanOrderId || b.id === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId));
+        if (!miscBill && (cleanOrderId.startsWith("MISC-") || cleanOrderId.includes("MISC-"))) {
+          const middle = cleanOrderId.includes("MISC-") ? cleanOrderId.split("MISC-")[1] : cleanOrderId;
+          const parts = middle.split("-");
+          if (parts.length >= 2) {
+            const shortBillId = parts[1];
+            miscBill = miscBills.find(b => compressMiscBillIdForMidtrans(b.id) === shortBillId || b.id.includes(shortBillId));
+          }
+        }
+
+        if (miscBill) {
+          const student = students.find(s => s.id === miscBill.studentId) || targetStudent;
+
+          if (miscBill.status === "paid") {
+            alreadyPaidCount++;
+            results.push({
+              orderId: miscBill.orderId || cleanOrderId,
+              transactionId: cleanTxId || miscBill.transactionId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: miscBill.title,
+              amount: miscBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime,
+              reconciliationStatus: "already_paid",
+              message: `SUDAH LUNAS: Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
+            });
+          } else {
+            miscBill.status = "paid";
+            miscBill.paidAt = resolvedPaidAt;
+            miscBill.paymentMethod = actualPaymentType;
+            miscBill.orderId = cleanOrderId || miscBill.orderId;
+            if (cleanTxId) miscBill.transactionId = cleanTxId;
+
+            reconciledCount++;
+            totalAmountReconciled += miscBill.amount;
+            stateChanged = true;
+
+            ensureLedgerEntry("Tagihan Non-SPP", miscBill.amount, `Pembayaran ${miscBill.title} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "custom");
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId || `MISC-${Date.now()}`,
+              transactionId: cleanTxId,
+              billType: "misc",
+              grossAmount: miscBill.amount,
+              studentName: student?.name,
+              studentNis: student?.nis,
+              description: miscBill.title,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: miscBill.orderId || cleanOrderId,
+              transactionId: cleanTxId || miscBill.transactionId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: miscBill.title,
+              amount: miscBill.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: miscBill.paidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas.`
+            });
+          }
+          continue;
+        }
+
+        // C. Check Savings Deposits
+        let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId || (cleanTxId && t.transactionId === cleanTxId) || t.id === cleanOrderId);
+        if (!savingsTx && cleanOrderId.startsWith("SAV-") && targetStudent) {
+          savingsTx = savingsTransactions.find(t => t.studentId === targetStudent.id && t.status === "pending");
+        }
+
+        if (savingsTx) {
+          const student = students.find(s => s.id === savingsTx.studentId) || targetStudent;
+
+          if (savingsTx.status === "success") {
+            alreadyPaidCount++;
+            results.push({
+              orderId: savingsTx.orderId || cleanOrderId,
+              transactionId: cleanTxId || savingsTx.transactionId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: "Setoran Tabungan",
+              amount: savingsTx.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime,
+              reconciliationStatus: "already_paid",
+              message: `SUDAH LUNAS: Setoran Tabungan a.n ${student?.name || 'Siswa'} sudah dikonfirmasi LUNAS.`
+            });
+          } else {
+            savingsTx.status = "success";
+            savingsTx.paymentMethod = actualPaymentType;
+            savingsTx.orderId = cleanOrderId;
+            if (cleanTxId) savingsTx.transactionId = cleanTxId;
+
+            if (student) {
+              student.savingsBalance = (Number(student.savingsBalance) || 0) + Number(savingsTx.amount);
+              AUTHORITATIVE_SAVINGS_MAP[student.id] = student.savingsBalance;
+            }
+
+            reconciledCount++;
+            totalAmountReconciled += savingsTx.amount;
+            stateChanged = true;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId || `SAV-${Date.now()}`,
+              transactionId: cleanTxId,
+              billType: "savings",
+              grossAmount: savingsTx.amount,
+              studentName: student?.name,
+              studentNis: student?.nis,
+              description: "Setoran Tabungan",
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: savingsTx.orderId || cleanOrderId,
+              transactionId: cleanTxId || savingsTx.transactionId,
+              studentName: student?.name || "Siswa",
+              studentNis: student?.nis || "-",
+              studentClass: student?.class || "-",
+              category: "Setoran Tabungan",
+              amount: savingsTx.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: savingsTx.createdAt || resolvedPaidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n ${student?.name || 'Siswa'} berhasil ditambahkan ke saldo tabungan.`
+            });
+          }
+          continue;
+        }
+
+        // If SAV- order prefix and target student exists without prior pending record
+        if (cleanOrderId.startsWith("SAV-") && targetStudent && amountVal > 0) {
+          const newSavingsTx: SavingsTransaction = {
+            id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            studentId: targetStudent.id,
+            type: "deposit",
+            amount: amountVal,
+            status: "success",
+            createdAt: resolvedPaidAt,
+            paymentMethod: actualPaymentType,
+            orderId: cleanOrderId,
+            transactionId: cleanTxId,
+            notes: `Setoran Tabungan (Midtrans Report Import)`
+          };
+          savingsTransactions.unshift(newSavingsTx);
+          targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
+          AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+
+          reconciledCount++;
+          totalAmountReconciled += amountVal;
+          stateChanged = true;
+
+          recordOrUpdateMidtransTransaction({
+            orderId: cleanOrderId,
+            transactionId: cleanTxId,
+            billType: "savings",
+            grossAmount: amountVal,
+            studentName: targetStudent.name,
+            studentNis: targetStudent.nis,
+            description: "Setoran Tabungan",
+            transactionStatus: "settlement",
+            paymentType: actualPaymentType,
+            settlementTime: resolvedPaidAt
+          });
+
+          results.push({
+            orderId: cleanOrderId,
+            transactionId: cleanTxId,
+            studentName: targetStudent.name,
+            studentNis: targetStudent.nis,
+            studentClass: targetStudent.class,
+            category: "Setoran Tabungan",
+            amount: amountVal,
+            reportStatus: rawStatus,
+            reportPaymentType: actualPaymentType,
+            reportTime: resolvedPaidAt,
+            reconciliationStatus: "reconciled",
+            message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${amountVal.toLocaleString("id-ID")} a.n ${targetStudent.name} (NIS: ${targetStudent.nis}) berhasil ditambahkan ke saldo tabungan.`
+          });
+          continue;
+        }
+
+        // D. Check Cart Multi-Bills (CART-...)
+        if (cleanOrderId.startsWith("CART-") || cleanOrderId.includes("CART-")) {
+          const matchedSpp = sppBills.filter(b => b.orderId === cleanOrderId);
+          const matchedMisc = miscBills.filter(m => m.orderId === cleanOrderId);
+          const matchedSavings = savingsTransactions.filter(t => t.orderId === cleanOrderId);
+
+          if (matchedSpp.length > 0 || matchedMisc.length > 0 || matchedSavings.length > 0) {
+            let cartSettledCount = 0;
+            let cartTotalAmt = 0;
+
+            matchedSpp.forEach(b => {
+              if (b.status !== "paid") {
+                b.status = "paid";
+                b.paidAt = resolvedPaidAt;
+                b.paymentMethod = actualPaymentType;
+                if (cleanTxId) b.transactionId = cleanTxId;
+                cartSettledCount++;
+                cartTotalAmt += b.amount;
+                const std = students.find(s => s.id === b.studentId);
+                ensureLedgerEntry("SPP Siswa", b.amount, `Pembayaran SPP ${b.month} ${b.year} (Cart Midtrans Report) - ${std?.name || ""}`, "spp");
+              }
+            });
+
+            matchedMisc.forEach(m => {
+              if (m.status !== "paid") {
+                m.status = "paid";
+                m.paidAt = resolvedPaidAt;
+                m.paymentMethod = actualPaymentType;
+                if (cleanTxId) m.transactionId = cleanTxId;
+                cartSettledCount++;
+                cartTotalAmt += m.amount;
+                const std = students.find(s => s.id === m.studentId);
+                ensureLedgerEntry("Tagihan Non-SPP", m.amount, `Pembayaran ${m.title} (Cart Midtrans Report) - ${std?.name || ""}`, "custom");
+              }
+            });
+
+            matchedSavings.forEach(t => {
+              if (t.status !== "success") {
+                t.status = "success";
+                t.paymentMethod = actualPaymentType;
+                if (cleanTxId) t.transactionId = cleanTxId;
+                const std = students.find(s => s.id === t.studentId);
+                if (std) {
+                  std.savingsBalance = (Number(std.savingsBalance) || 0) + Number(t.amount);
+                  AUTHORITATIVE_SAVINGS_MAP[std.id] = std.savingsBalance;
+                }
+                cartSettledCount++;
+                cartTotalAmt += t.amount;
+              }
+            });
+
+            if (cartSettledCount > 0) {
+              reconciledCount++;
+              totalAmountReconciled += (cartTotalAmt || amountVal);
+              stateChanged = true;
+
+              recordOrUpdateMidtransTransaction({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                billType: "cart",
+                grossAmount: amountVal || cartTotalAmt,
+                studentName: targetStudent?.name,
+                studentNis: targetStudent?.nis,
+                description: `Keranjang Multi-Tagihan`,
+                transactionStatus: "settlement",
+                paymentType: actualPaymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: targetStudent?.name || "Siswa",
+                studentNis: targetStudent?.nis || "-",
+                studentClass: targetStudent?.class || "-",
+                category: "Paket Pembayaran (Multi-Bill Cart)",
+                amount: amountVal || cartTotalAmt,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: resolvedPaidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Paket tagihan (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP) terverifikasi LUNAS & dicatat ke Buku Kas.`
+              });
+            } else {
+              alreadyPaidCount++;
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: targetStudent?.name || "Siswa",
+                studentNis: targetStudent?.nis || "-",
+                studentClass: targetStudent?.class || "-",
+                category: "Paket Pembayaran (Multi-Bill Cart)",
+                amount: amountVal,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: resolvedPaidAt,
+                reconciliationStatus: "already_paid",
+                message: `SUDAH LUNAS: Seluruh tagihan pada paket ini sebelumnya sudah berstatus LUNAS.`
+              });
+            }
+            continue;
+          }
+        }
+
+        // E. Fallback Heuristic Matching by Student & Amount
+        if (targetStudent) {
+          const fallbackSpp = sppBills.find(b => b.studentId === targetStudent.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal));
+          if (fallbackSpp) {
+            fallbackSpp.status = "paid";
+            fallbackSpp.paidAt = resolvedPaidAt;
+            fallbackSpp.paymentMethod = actualPaymentType;
+            fallbackSpp.orderId = cleanOrderId || fallbackSpp.orderId;
+            if (cleanTxId) fallbackSpp.transactionId = cleanTxId;
+
+            reconciledCount++;
+            totalAmountReconciled += fallbackSpp.amount;
+            stateChanged = true;
+
+            ensureLedgerEntry("SPP Siswa", fallbackSpp.amount, `Pembayaran SPP ${fallbackSpp.month} ${fallbackSpp.year} (Midtrans Report) - ${targetStudent.name} (${targetStudent.nis || ""})`, "spp");
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId || `SPP-${Date.now()}`,
+              transactionId: cleanTxId,
+              billType: "spp",
+              grossAmount: fallbackSpp.amount,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              description: `SPP ${fallbackSpp.month} ${fallbackSpp.year}`,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: cleanOrderId || fallbackSpp.orderId || "-",
+              transactionId: cleanTxId,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              studentClass: targetStudent.class,
+              category: `SPP ${fallbackSpp.month} ${fallbackSpp.year}`,
+              amount: fallbackSpp.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: resolvedPaidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan SPP ${fallbackSpp.month} ${fallbackSpp.year} a.n ${targetStudent.name} terverifikasi & dicatat ke Buku Kas.`
+            });
+            continue;
+          }
+
+          const fallbackMisc = miscBills.find(b => b.studentId === targetStudent.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal));
+          if (fallbackMisc) {
+            fallbackMisc.status = "paid";
+            fallbackMisc.paidAt = resolvedPaidAt;
+            fallbackMisc.paymentMethod = actualPaymentType;
+            fallbackMisc.orderId = cleanOrderId || fallbackMisc.orderId;
+            if (cleanTxId) fallbackMisc.transactionId = cleanTxId;
+
+            reconciledCount++;
+            totalAmountReconciled += fallbackMisc.amount;
+            stateChanged = true;
+
+            ensureLedgerEntry("Tagihan Non-SPP", fallbackMisc.amount, `Pembayaran ${fallbackMisc.title} (Midtrans Report) - ${targetStudent.name} (${targetStudent.nis || ""})`, "custom");
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId || `MISC-${Date.now()}`,
+              transactionId: cleanTxId,
+              billType: "misc",
+              grossAmount: fallbackMisc.amount,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              description: fallbackMisc.title,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: cleanOrderId || fallbackMisc.orderId || "-",
+              transactionId: cleanTxId,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              studentClass: targetStudent.class,
+              category: fallbackMisc.title,
+              amount: fallbackMisc.amount,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: resolvedPaidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Tagihan Non-SPP "${fallbackMisc.title}" a.n ${targetStudent.name} terverifikasi & dicatat ke Buku Kas.`
+            });
+            continue;
+          }
+        }
+
+        // F. Not Found / Unmatched Settlement
+        notFoundCount++;
+        recordOrUpdateMidtransTransaction({
+          orderId: cleanOrderId || `MT-${Date.now()}`,
+          transactionId: cleanTxId,
+          billType: "other",
+          grossAmount: amountVal,
+          studentName: targetStudent?.name || item.customerName,
+          studentNis: targetStudent?.nis || item.studentNis,
+          description: "Transaksi Midtrans Report (Tanpa Tagihan)",
+          transactionStatus: "settlement",
+          paymentType: actualPaymentType,
+          settlementTime: resolvedPaidAt
+        });
+
+        results.push({
+          orderId: cleanOrderId || cleanTxId || `MID-${Date.now()}`,
+          transactionId: cleanTxId,
+          studentName: targetStudent?.name || item.customerName || "Wali Siswa / Umum",
+          studentNis: targetStudent?.nis || item.studentNis || "-",
+          studentClass: targetStudent?.class || "-",
+          category: "Transaksi Midtrans (Tanpa Tagihan Terkait)",
+          amount: amountVal,
+          reportStatus: rawStatus,
+          reportPaymentType: actualPaymentType,
+          reportTime,
+          reconciliationStatus: "not_found",
+          message: `Transaksi settlement valid sebesar Rp ${amountVal.toLocaleString("id-ID")}, namun tidak ada tagihan lokal yang cocok dengan NIS/Order ID ini.`
+        });
+      }
+
+      if (stateChanged) {
+        saveState();
+        if (reconciledCount > 0) {
+          broadcastNotification({
+            id: `notif-rep-${Date.now()}`,
+            title: "Rekonsiliasi File Report Selesai ✅",
+            message: `Berhasil merekonsiliasi & melunasi ${reconciledCount} tagihan dengan total Rp ${totalAmountReconciled.toLocaleString("id-ID")}.`,
+            type: "success",
+            createdAt: new Date().toISOString()
+          });
         }
       }
 
-      res.json({
+      return res.json({
         success: true,
-        message: `Rekonsiliasi batch selesai. Diproses ${parsedCount} order, ${reconciledCount} tagihan berhasil dilunaskan.`,
-        parsedCount,
-        reconciledCount
+        summary: {
+          totalRows: parsedItems.length,
+          reconciledCount,
+          alreadyPaidCount,
+          notFoundCount,
+          pendingCount,
+          failedCount,
+          totalAmountReconciled
+        },
+        results
       });
     } catch (e) {
       const err = e as Error;
-      res.status(500).json({ error: "Gagal memproses rekonsiliasi batch: " + err.message });
+      console.error("Error processing bulk Midtrans report verification:", err);
+      return res.status(500).json({ error: "Terjadi kesalahan internal saat memproses file report: " + err.message });
     }
   });
 

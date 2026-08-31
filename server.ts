@@ -10155,6 +10155,8 @@ async function startServer() {
     savingsTransactions,
     treasurerTransactions,
     midtransTransactions,
+    spmbCandidates,
+    spmbConfig,
     saveState,
     broadcastNotification,
     sendWhatsappNotification,

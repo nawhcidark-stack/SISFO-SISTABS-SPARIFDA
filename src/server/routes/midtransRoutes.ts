@@ -7,7 +7,8 @@ import {
   TreasurerTransaction, 
   RealtimeNotification, 
   MidtransConfig, 
-  MidtransTransactionRecord 
+  MidtransTransactionRecord,
+  SpmbCandidate
 } from "../../types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "../../savings_map";
 
@@ -19,6 +20,8 @@ export interface MidtransRouterDeps {
   savingsTransactions: SavingsTransaction[];
   treasurerTransactions: TreasurerTransaction[];
   midtransTransactions: MidtransTransactionRecord[];
+  spmbCandidates?: SpmbCandidate[];
+  spmbConfig?: any;
   saveState: (skipRemoteSync?: boolean) => void;
   broadcastNotification: (notif: RealtimeNotification) => void;
   sendWhatsappNotification: (to: string, msg: string) => Promise<any>;
@@ -126,14 +129,182 @@ export function compressMiscBillIdForMidtrans(id: string): string {
   return id.replace(/^misc-bill-std-/, "M-").replace(/^misc-bill-/, "MB-").replace(/^misc-/, "M-");
 }
 
+// Check if an order or description is explicitly a Non-SPP payment (Misc bill)
+export function isExplicitNonSpp(orderId?: string, description?: string, miscBillsList?: MiscBill[]): boolean {
+  const o = (orderId || "").toLowerCase();
+  const d = (description || "").toLowerCase();
+  
+  if (o.startsWith("misc-") || o.startsWith("m-") || o.startsWith("mb-") || o.startsWith("nonspp-") || o.startsWith("non-spp-") || o.startsWith("lain-")) return true;
+  
+  const nonSppKeywords = [
+    "uang gedung", "gedung", "seragam", "infaq", "infak", "pembangunan",
+    "buku", "lks", "kitab", "ujian", "pts", "pas", "pat", "asesmen",
+    "kegiatan", "outing", "studi tour", "study tour", "wisuda", "perpisahan",
+    "sarpras", "osis", "dsp", "dpp", "lain-lain", "lain2", "non spp", "non-spp",
+    "daftar ulang siswa", "formulir", "sumbangan", "ekskul", "pramuka", "mos", "mpls",
+    "studi lapangan", "field trip", "bimbel", "les", "alumni", "kartu pelajar", "raport"
+  ];
+  
+  if (nonSppKeywords.some(kw => o.includes(kw) || d.includes(kw))) return true;
+
+  if (miscBillsList && miscBillsList.length > 0) {
+    if (miscBillsList.some(m => {
+      const titleLower = m.title.toLowerCase();
+      return (d && d.includes(titleLower)) || (o && o.includes(titleLower)) || (m.id && o.includes(m.id.toLowerCase()));
+    })) {
+      return true;
+    }
+  }
+
+  return false;
+}
+
+// Check if an order or description is explicitly a savings deposit
+export function isExplicitSavings(orderId?: string, description?: string): boolean {
+  const o = (orderId || "").toLowerCase();
+  const d = (description || "").toLowerCase();
+  if (o.startsWith("sav-") || o.startsWith("tab-") || o.startsWith("tabungan-") || o.startsWith("deposit-")) return true;
+  if (d.includes("tabungan") || d.includes("setor tabungan") || d.includes("setoran tabungan") || d.includes("deposit tabungan") || d.includes("simpanan")) return true;
+  return false;
+}
+
+// Check if an order or description is explicitly an SPMB candidate transaction
+export function isExplicitSpmb(orderId?: string, description?: string): boolean {
+  const o = (orderId || "").toLowerCase();
+  const d = (description || "").toLowerCase();
+  if (o.startsWith("spmb-") || o.startsWith("ppdb-") || o.startsWith("token-") || o.startsWith("rereg-")) return true;
+  if (d.includes("spmb") || d.includes("ppdb") || d.includes("token pendaftaran") || d.includes("formulir spmb") || d.includes("daftar ulang spmb") || d.includes("penerimaan murid baru") || d.includes("penerimaan siswa baru") || d.includes("token formulir")) return true;
+  return false;
+}
+
+// Check if an order or description is explicitly a Cart multi-bill package
+export function isExplicitCart(orderId?: string, description?: string): boolean {
+  const o = (orderId || "").toLowerCase();
+  const d = (description || "").toLowerCase();
+  if (o.startsWith("cart-") || o.startsWith("paket-") || o.startsWith("collective-cart-")) return true;
+  if (d.includes("keranjang") || d.includes("paket pembayaran") || d.includes("multi tagihan") || d.includes("multi-bill")) return true;
+  return false;
+}
+
+// Check if an order or description is explicitly SPP
+export function isExplicitSpp(orderId?: string, description?: string): boolean {
+  const o = (orderId || "").toLowerCase();
+  const d = (description || "").toLowerCase();
+  if (isExplicitNonSpp(orderId, description) || isExplicitSavings(orderId, description) || isExplicitSpmb(orderId, description) || isExplicitCart(orderId, description)) {
+    return false;
+  }
+  if (o.startsWith("spp-") || o.startsWith("b-") || o.startsWith("bill-std-")) return true;
+  if (d.includes("spp") || d.includes("syahriah") || d.includes("bulanan") || d.includes("spp bulan")) return true;
+  return false;
+}
+
+// Smart Misc Bill Matcher
+export function findMiscBillMatching(
+  idOrOrderId: string,
+  miscBillsList: MiscBill[],
+  targetStudentId?: string,
+  extraHints?: { description?: string; amount?: number }
+): MiscBill | undefined {
+  if (!idOrOrderId && !extraHints?.description && !targetStudentId) return undefined;
+  const cleanKey = (idOrOrderId || "").trim();
+
+  // 1. Direct exact match by orderId, id, or transactionId
+  if (cleanKey) {
+    const directMatch = miscBillsList.find(m =>
+      m.orderId === cleanKey ||
+      m.id === cleanKey ||
+      m.transactionId === cleanKey ||
+      m.id === cleanKey + "-unpaid"
+    );
+    if (directMatch) return directMatch;
+  }
+
+  // 2. Direct match with trailing timestamp/random suffix stripped
+  if (cleanKey) {
+    const cleanWithoutSuffix = cleanKey.replace(/-\d{4,6}$/, "");
+    const suffixMatch = miscBillsList.find(m =>
+      m.id === cleanWithoutSuffix ||
+      m.id === cleanWithoutSuffix + "-unpaid" ||
+      m.orderId === cleanWithoutSuffix
+    );
+    if (suffixMatch) return suffixMatch;
+  }
+
+  // 3. Shortened ID prefix matching (e.g. M-1010-01 matching misc-bill-std-1010-01)
+  if (cleanKey) {
+    const withoutPrefix = cleanKey.replace(/^MISC-/, "").replace(/^M-/, "").replace(/^MB-/, "");
+    const matchShort = miscBillsList.find(m =>
+      m.id.includes(withoutPrefix) ||
+      (m.orderId && m.orderId.includes(withoutPrefix))
+    );
+    if (matchShort) return matchShort;
+  }
+
+  // 4. Match by target student + title keywords in description
+  if (targetStudentId) {
+    const studentMiscBills = miscBillsList.filter(m => m.studentId === targetStudentId);
+    if (studentMiscBills.length > 0) {
+      if (extraHints?.description) {
+        const descLower = extraHints.description.toLowerCase();
+        // Exact title substring match
+        const titleMatch = studentMiscBills.find(m => descLower.includes(m.title.toLowerCase()) || m.title.toLowerCase().includes(descLower));
+        if (titleMatch) return titleMatch;
+
+        // Specific category keyword matching
+        const kwMatch = studentMiscBills.find(m => {
+          const t = m.title.toLowerCase();
+          if (descLower.includes("gedung") && t.includes("gedung")) return true;
+          if (descLower.includes("seragam") && t.includes("seragam")) return true;
+          if ((descLower.includes("infaq") || descLower.includes("infak")) && (t.includes("infaq") || t.includes("infak"))) return true;
+          if (descLower.includes("buku") && t.includes("buku")) return true;
+          if (descLower.includes("lks") && t.includes("lks")) return true;
+          if (descLower.includes("ujian") && (t.includes("ujian") || t.includes("pts") || t.includes("pas") || t.includes("pat"))) return true;
+          if (descLower.includes("wisuda") && (t.includes("wisuda") || t.includes("perpisahan"))) return true;
+          if (descLower.includes("kegiatan") && t.includes("kegiatan")) return true;
+          if (descLower.includes("osis") && t.includes("osis")) return true;
+          return false;
+        });
+        if (kwMatch) return kwMatch;
+      }
+
+      // Match by amount if specified
+      if (extraHints?.amount && extraHints.amount > 0) {
+        const amountMatch = studentMiscBills.find(m => (m.status === "pending" || m.status === "unpaid") && m.amount === extraHints.amount);
+        if (amountMatch) return amountMatch;
+      }
+
+      // If only one unpaid misc bill exists for this student and this is explicitly a Non-SPP order
+      if (isExplicitNonSpp(cleanKey, extraHints?.description)) {
+        const unpaidMisc = studentMiscBills.find(m => m.status === "pending" || m.status === "unpaid");
+        if (unpaidMisc) return unpaidMisc;
+      }
+    }
+  }
+
+  // 5. Global title matching across all misc bills if description contains unique title
+  if (extraHints?.description) {
+    const descLower = extraHints.description.toLowerCase();
+    const globalMatch = miscBillsList.find(m => descLower.includes(m.title.toLowerCase()) && (extraHints.amount ? m.amount === extraHints.amount : true));
+    if (globalMatch) return globalMatch;
+  }
+
+  return undefined;
+}
+
 export function findSppBillMatching(
   idOrOrderId: string, 
   sppBillsList: SppBill[], 
   targetStudentId?: string,
-  extraHints?: { description?: string; month?: string; year?: number }
+  extraHints?: { description?: string; month?: string; year?: number; miscBillsList?: MiscBill[] }
 ): SppBill | undefined {
   if (!idOrOrderId && !extraHints?.description && !extraHints?.month) return undefined;
   const cleanKey = (idOrOrderId || "").trim();
+
+  // Guard: NEVER match as SPP if the order or description is explicitly Non-SPP, Savings, SPMB, or Cart
+  if (isExplicitNonSpp(cleanKey, extraHints?.description, extraHints?.miscBillsList)) return undefined;
+  if (isExplicitSavings(cleanKey, extraHints?.description)) return undefined;
+  if (isExplicitSpmb(cleanKey, extraHints?.description)) return undefined;
+  if (isExplicitCart(cleanKey, extraHints?.description)) return undefined;
 
   // 1. Direct exact match by orderId, id, or transactionId
   if (cleanKey) {
@@ -148,7 +319,7 @@ export function findSppBillMatching(
 
   // 2. Direct match by stripping trailing 4-digit timestamp or random suffix
   if (cleanKey) {
-    const cleanWithoutSuffix = cleanKey.replace(/-\d{4}$/, "");
+    const cleanWithoutSuffix = cleanKey.replace(/-\d{4,6}$/, "");
     const suffixMatch = sppBillsList.find(b =>
       b.id === cleanWithoutSuffix ||
       b.id === cleanWithoutSuffix + "-unpaid" ||
@@ -273,6 +444,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     savingsTransactions,
     treasurerTransactions,
     midtransTransactions,
+    spmbCandidates = [],
+    spmbConfig,
     saveState,
     broadcastNotification,
     sendWhatsappNotification,
@@ -646,6 +819,108 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           matchedMisc.forEach(m => { if (m.status === "pending") { m.status = "unpaid"; m.orderId = undefined; actionTaken = true; } });
           matchedSavings.forEach(t => { if (t.status === "pending") { t.status = "failed"; actionTaken = true; } });
           detailMessage = `Keranjang pembayaran direset karena expired/cancel.`;
+        }
+      }
+    }
+
+    // 5. SPMB TRANSACTIONS (TOKEN & DAFTAR ULANG)
+    else if (targetOrderId.startsWith("SPMB-") || cleanOrderId.startsWith("SPMB-")) {
+      const activeOrderId = targetOrderId.startsWith("SPMB-") ? targetOrderId : cleanOrderId;
+      const isToken = activeOrderId.startsWith("SPMB-TOKEN-");
+      const isRereg = activeOrderId.startsWith("SPMB-REREG-");
+
+      const candidate = spmbCandidates.find(c => 
+        c.tokenPaymentOrderId === activeOrderId || 
+        c.reRegistrationOrderId === activeOrderId ||
+        c.tokenPaymentOrderId === cleanOrderId ||
+        c.reRegistrationOrderId === cleanOrderId
+      );
+
+      if (candidate) {
+        if (isToken) {
+          if (isSettled && candidate.tokenPaymentStatus !== "paid") {
+            candidate.tokenPaymentStatus = "paid";
+            candidate.tokenPaidAt = resolvedPaidAt;
+            candidate.tokenPaymentMethod = actualPaymentType;
+            candidate.tokenPaymentOrderId = targetOrderId;
+            actionTaken = true;
+
+            treasurerTransactions.unshift({
+              id: `tx-midtrans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              type: "incoming",
+              category: "SPMB Siswa Baru",
+              amount: Number(candidate.tokenAmount) || 50000,
+              description: `Pembayaran Token SPMB Online - ${candidate.fullName} (No.Reg: ${candidate.registrationNo || "-"})`,
+              date: resolvedPaidAt.substring(0, 10),
+              source: "custom",
+              paymentMethod: "bank",
+              fundingSource: "Mandiri",
+              createdBy: "Midtrans Online Gateway",
+              noBukti: targetOrderId
+            });
+
+            recordOrUpdateMidtransTransaction({
+              orderId: targetOrderId,
+              transactionId: targetTransactionId,
+              billType: "spmb_token",
+              grossAmount: Number(candidate.tokenAmount) || 50000,
+              studentName: candidate.fullName,
+              studentNis: candidate.nisn || candidate.registrationNo,
+              description: `Token Formulir SPMB (${candidate.registrationNo})`,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            detailMessage = `Token formulir SPMB a.n ${candidate.fullName} (${candidate.registrationNo}) berhasil di-settle LUNAS.`;
+          } else if (isExpired && candidate.tokenPaymentStatus !== "paid") {
+            candidate.tokenPaymentStatus = "unpaid";
+            candidate.tokenPaymentOrderId = undefined;
+            actionTaken = true;
+            detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} dibatalkan karena expired.`;
+          }
+        } else if (isRereg) {
+          if (isSettled && candidate.reRegistrationStatus !== "paid") {
+            candidate.reRegistrationStatus = "paid";
+            candidate.reRegistrationPaidAt = resolvedPaidAt;
+            candidate.reRegistrationPaymentMethod = actualPaymentType;
+            candidate.reRegistrationOrderId = targetOrderId;
+            actionTaken = true;
+
+            treasurerTransactions.unshift({
+              id: `tx-midtrans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              type: "incoming",
+              category: "Daftar Ulang Siswa Baru",
+              amount: Number(candidate.reRegistrationAmount) || 0,
+              description: `Pembayaran Daftar Ulang SPMB - ${candidate.fullName} (No.Reg: ${candidate.registrationNo || "-"})`,
+              date: resolvedPaidAt.substring(0, 10),
+              source: "custom",
+              paymentMethod: "bank",
+              fundingSource: "Mandiri",
+              createdBy: "Midtrans Online Gateway",
+              noBukti: targetOrderId
+            });
+
+            recordOrUpdateMidtransTransaction({
+              orderId: targetOrderId,
+              transactionId: targetTransactionId,
+              billType: "spmb_reregistration",
+              grossAmount: Number(candidate.reRegistrationAmount) || 0,
+              studentName: candidate.fullName,
+              studentNis: candidate.nisn || candidate.registrationNo,
+              description: `Daftar Ulang SPMB (${candidate.registrationNo})`,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            detailMessage = `Daftar Ulang SPMB a.n ${candidate.fullName} (${candidate.registrationNo}) berhasil di-settle LUNAS.`;
+          } else if (isExpired && candidate.reRegistrationStatus === "pending") {
+            candidate.reRegistrationStatus = "unpaid";
+            candidate.reRegistrationOrderId = undefined;
+            actionTaken = true;
+            detailMessage = `Pembayaran daftar ulang SPMB a.n ${candidate.fullName} dibatalkan karena expired.`;
+          }
         }
       }
     }
@@ -1504,291 +1779,194 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           });
         };
 
-        // A. Check SPP Bills
-        let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear }) ||
-                      (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear }) : undefined);
+        const isExplicitMisc = isExplicitNonSpp(cleanOrderId, rawDesc, miscBills);
+        const isExplicitSav = isExplicitSavings(cleanOrderId, rawDesc);
+        const isExplicitSp = isExplicitSpmb(cleanOrderId, rawDesc);
+        const isExplicitCt = isExplicitCart(cleanOrderId, rawDesc);
+        const isExplicitSppBill = isExplicitSpp(cleanOrderId, rawDesc);
 
-        if (!sppBill && (cleanOrderId.startsWith("SPP-") || cleanOrderId.includes("SPP-"))) {
-          const middle = cleanOrderId.includes("SPP-") ? cleanOrderId.split("SPP-")[1] : cleanOrderId;
-          const lastHyphenIndex = middle.lastIndexOf("-");
-          const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-          sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear });
-        }
+        // ----------------------------------------------------
+        // 1. SPMB (PENERIMAAN MURID BARU) TRANSACTIONS
+        // ----------------------------------------------------
+        if (isExplicitSp || cleanOrderId.startsWith("SPMB-") || cleanOrderId.startsWith("PPDB-")) {
+          const isTokenPayment = cleanOrderId.includes("TOKEN") || rawDesc.toLowerCase().includes("token") || cleanOrderId.startsWith("SPMB-TOKEN-");
+          const isReregPayment = cleanOrderId.includes("REREG") || rawDesc.toLowerCase().includes("daftar ulang") || cleanOrderId.startsWith("SPMB-REREG-");
 
-        // If target student is known and rowMonth was detected, search specifically for that month's bill
-        if (!sppBill && targetStudent && rowMonth) {
-          sppBill = sppBills.find(b => 
-            b.studentId === targetStudent!.id && 
-            b.month.toLowerCase() === rowMonth.toLowerCase() &&
-            (!rowYear || b.year === rowYear)
-          ) || sppBills.find(b => 
-            b.studentId === targetStudent!.id && 
-            b.month.toLowerCase() === rowMonth.toLowerCase()
+          // Find candidate in spmbCandidates
+          let matchedCandidate = spmbCandidates.find(c =>
+            c.tokenPaymentOrderId === cleanOrderId ||
+            c.reRegistrationOrderId === cleanOrderId ||
+            (c.registrationNo && cleanOrderId.includes(c.registrationNo)) ||
+            (c.nisn && (cleanOrderId.includes(c.nisn) || rawNis === c.nisn)) ||
+            (c.phone && (cleanOrderId.includes(c.phone) || item.customerPhone === c.phone)) ||
+            (rawName && c.fullName && c.fullName.toLowerCase().trim() === rawName)
           );
-        }
 
-        if (sppBill) {
-          const student = students.find(s => s.id === sppBill.studentId) || targetStudent;
+          if (isTokenPayment) {
+            const tokenAmt = amountVal || matchedCandidate?.tokenAmount || 50000;
+            if (matchedCandidate) {
+              if (matchedCandidate.tokenPaymentStatus === "paid") {
+                alreadyPaidCount++;
+                results.push({
+                  orderId: cleanOrderId,
+                  transactionId: cleanTxId,
+                  studentName: matchedCandidate.fullName,
+                  studentNis: matchedCandidate.nisn || matchedCandidate.registrationNo || "-",
+                  studentClass: "Calon Siswa SPMB",
+                  category: "Token Pendaftaran SPMB",
+                  amount: tokenAmt,
+                  reportStatus: rawStatus,
+                  reportPaymentType: actualPaymentType,
+                  reportTime: matchedCandidate.tokenPaidAt || resolvedPaidAt,
+                  reconciliationStatus: "already_paid",
+                  message: `SUDAH LUNAS: Token Pendaftaran SPMB a.n ${matchedCandidate.fullName} (${matchedCandidate.registrationNo}) sebelumnya sudah tercatat LUNAS.`
+                });
+              } else {
+                matchedCandidate.tokenPaymentStatus = "paid";
+                matchedCandidate.tokenPaymentOrderId = cleanOrderId;
+                matchedCandidate.tokenPaidAt = resolvedPaidAt;
+                matchedCandidate.tokenPaymentMethod = actualPaymentType;
+                matchedCandidate.tokenAmount = tokenAmt;
 
-          if (sppBill.status === "paid") {
-            alreadyPaidCount++;
-            results.push({
-              orderId: sppBill.orderId || cleanOrderId,
-              transactionId: cleanTxId || sppBill.transactionId,
-              studentName: student?.name || "Siswa",
-              studentNis: student?.nis || "-",
-              studentClass: student?.class || "-",
-              category: `SPP ${sppBill.month} ${sppBill.year}`,
-              amount: sppBill.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime,
-              reconciliationStatus: "already_paid",
-              message: `SUDAH LUNAS: Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
-            });
-          } else {
-            sppBill.status = "paid";
-            sppBill.paidAt = resolvedPaidAt;
-            sppBill.paymentMethod = actualPaymentType;
-            sppBill.orderId = cleanOrderId || sppBill.orderId;
-            if (cleanTxId) sppBill.transactionId = cleanTxId;
+                reconciledCount++;
+                totalAmountReconciled += tokenAmt;
+                stateChanged = true;
 
-            reconciledCount++;
-            totalAmountReconciled += sppBill.amount;
-            stateChanged = true;
+                ensureLedgerEntry("SPMB Siswa Baru", tokenAmt, `Pembayaran Token Pendaftaran SPMB - ${matchedCandidate.fullName} (No.Reg: ${matchedCandidate.registrationNo || "-"})`, "custom");
 
-            ensureLedgerEntry("SPP Siswa", sppBill.amount, `Pembayaran SPP ${sppBill.month} ${sppBill.year} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "spp");
+                recordOrUpdateMidtransTransaction({
+                  orderId: cleanOrderId,
+                  transactionId: cleanTxId,
+                  billType: "spmb_token",
+                  grossAmount: tokenAmt,
+                  studentName: matchedCandidate.fullName,
+                  studentNis: matchedCandidate.nisn || matchedCandidate.registrationNo,
+                  description: `Token Formulir SPMB (${matchedCandidate.registrationNo})`,
+                  transactionStatus: "settlement",
+                  paymentType: actualPaymentType,
+                  settlementTime: resolvedPaidAt
+                });
 
-            recordOrUpdateMidtransTransaction({
-              orderId: cleanOrderId || `SPP-${Date.now()}`,
-              transactionId: cleanTxId,
-              billType: "spp",
-              grossAmount: sppBill.amount,
-              studentName: student?.name,
-              studentNis: student?.nis,
-              description: `SPP ${sppBill.month} ${sppBill.year}`,
-              transactionStatus: "settlement",
-              paymentType: actualPaymentType,
-              settlementTime: resolvedPaidAt
-            });
+                results.push({
+                  orderId: cleanOrderId,
+                  transactionId: cleanTxId,
+                  studentName: matchedCandidate.fullName,
+                  studentNis: matchedCandidate.nisn || matchedCandidate.registrationNo || "-",
+                  studentClass: "Calon Siswa SPMB",
+                  category: "Token Pendaftaran SPMB",
+                  amount: tokenAmt,
+                  reportStatus: rawStatus,
+                  reportPaymentType: actualPaymentType,
+                  reportTime: resolvedPaidAt,
+                  reconciliationStatus: "reconciled",
+                  message: `BERHASIL DILUNASI! Token formulir SPMB a.n ${matchedCandidate.fullName} (${matchedCandidate.registrationNo}) terverifikasi LUNAS.`
+                });
+              }
+            } else {
+              // Unregistered SPMB Candidate token purchase
+              reconciledCount++;
+              totalAmountReconciled += tokenAmt;
+              stateChanged = true;
 
-            results.push({
-              orderId: sppBill.orderId || cleanOrderId,
-              transactionId: cleanTxId || sppBill.transactionId,
-              studentName: student?.name || "Siswa",
-              studentNis: student?.nis || "-",
-              studentClass: student?.class || "-",
-              category: `SPP ${sppBill.month} ${sppBill.year}`,
-              amount: sppBill.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime: sppBill.paidAt,
-              reconciliationStatus: "reconciled",
-              message: `BERHASIL DILUNASI! Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas Bendahara.`
-            });
-          }
-          continue;
-        }
+              ensureLedgerEntry("SPMB Siswa Baru", tokenAmt, `Pembayaran Token SPMB Online (Midtrans Report) - ${item.customerName || "Calon Siswa"}`, "custom");
 
-        // B. Check Non-SPP (Misc) Bills
-        let miscBill = miscBills.find(b => b.orderId === cleanOrderId || b.id === cleanOrderId || (cleanTxId && b.transactionId === cleanTxId));
-        if (!miscBill && (cleanOrderId.startsWith("MISC-") || cleanOrderId.includes("MISC-"))) {
-          const middle = cleanOrderId.includes("MISC-") ? cleanOrderId.split("MISC-")[1] : cleanOrderId;
-          const parts = middle.split("-");
-          if (parts.length >= 2) {
-            const shortBillId = parts[1];
-            miscBill = miscBills.find(b => compressMiscBillIdForMidtrans(b.id) === shortBillId || b.id.includes(shortBillId));
-          }
-        }
+              recordOrUpdateMidtransTransaction({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                billType: "spmb_token",
+                grossAmount: tokenAmt,
+                studentName: item.customerName || "Calon Siswa",
+                description: `Token Formulir SPMB`,
+                transactionStatus: "settlement",
+                paymentType: actualPaymentType,
+                settlementTime: resolvedPaidAt
+              });
 
-        if (miscBill) {
-          const student = students.find(s => s.id === miscBill.studentId) || targetStudent;
-
-          if (miscBill.status === "paid") {
-            alreadyPaidCount++;
-            results.push({
-              orderId: miscBill.orderId || cleanOrderId,
-              transactionId: cleanTxId || miscBill.transactionId,
-              studentName: student?.name || "Siswa",
-              studentNis: student?.nis || "-",
-              studentClass: student?.class || "-",
-              category: miscBill.title,
-              amount: miscBill.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime,
-              reconciliationStatus: "already_paid",
-              message: `SUDAH LUNAS: Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
-            });
-          } else {
-            miscBill.status = "paid";
-            miscBill.paidAt = resolvedPaidAt;
-            miscBill.paymentMethod = actualPaymentType;
-            miscBill.orderId = cleanOrderId || miscBill.orderId;
-            if (cleanTxId) miscBill.transactionId = cleanTxId;
-
-            reconciledCount++;
-            totalAmountReconciled += miscBill.amount;
-            stateChanged = true;
-
-            ensureLedgerEntry("Tagihan Non-SPP", miscBill.amount, `Pembayaran ${miscBill.title} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "custom");
-
-            recordOrUpdateMidtransTransaction({
-              orderId: cleanOrderId || `MISC-${Date.now()}`,
-              transactionId: cleanTxId,
-              billType: "misc",
-              grossAmount: miscBill.amount,
-              studentName: student?.name,
-              studentNis: student?.nis,
-              description: miscBill.title,
-              transactionStatus: "settlement",
-              paymentType: actualPaymentType,
-              settlementTime: resolvedPaidAt
-            });
-
-            results.push({
-              orderId: miscBill.orderId || cleanOrderId,
-              transactionId: cleanTxId || miscBill.transactionId,
-              studentName: student?.name || "Siswa",
-              studentNis: student?.nis || "-",
-              studentClass: student?.class || "-",
-              category: miscBill.title,
-              amount: miscBill.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime: miscBill.paidAt,
-              reconciliationStatus: "reconciled",
-              message: `BERHASIL DILUNASI! Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas.`
-            });
-          }
-          continue;
-        }
-
-        // C. Check Savings Deposits
-        let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId || (cleanTxId && t.transactionId === cleanTxId) || t.id === cleanOrderId);
-        if (!savingsTx && cleanOrderId.startsWith("SAV-") && targetStudent) {
-          savingsTx = savingsTransactions.find(t => t.studentId === targetStudent.id && t.status === "pending");
-        }
-
-        if (savingsTx) {
-          const student = students.find(s => s.id === savingsTx.studentId) || targetStudent;
-
-          if (savingsTx.status === "success") {
-            alreadyPaidCount++;
-            results.push({
-              orderId: savingsTx.orderId || cleanOrderId,
-              transactionId: cleanTxId || savingsTx.transactionId,
-              studentName: student?.name || "Siswa",
-              studentNis: student?.nis || "-",
-              studentClass: student?.class || "-",
-              category: "Setoran Tabungan",
-              amount: savingsTx.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime,
-              reconciliationStatus: "already_paid",
-              message: `SUDAH LUNAS: Setoran Tabungan a.n ${student?.name || 'Siswa'} sudah dikonfirmasi LUNAS.`
-            });
-          } else {
-            savingsTx.status = "success";
-            savingsTx.paymentMethod = actualPaymentType;
-            savingsTx.orderId = cleanOrderId;
-            if (cleanTxId) savingsTx.transactionId = cleanTxId;
-
-            if (student) {
-              student.savingsBalance = (Number(student.savingsBalance) || 0) + Number(savingsTx.amount);
-              AUTHORITATIVE_SAVINGS_MAP[student.id] = student.savingsBalance;
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: item.customerName || "Calon Siswa Baru",
+                studentNis: "-",
+                studentClass: "Calon Siswa SPMB",
+                category: "Token Pendaftaran SPMB",
+                amount: tokenAmt,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: resolvedPaidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DIVERIFIKASI! Pembayaran Token SPMB sebesar Rp ${tokenAmt.toLocaleString("id-ID")} dicatat ke Buku Kas.`
+              });
             }
-
-            reconciledCount++;
-            totalAmountReconciled += savingsTx.amount;
-            stateChanged = true;
-
-            recordOrUpdateMidtransTransaction({
-              orderId: cleanOrderId || `SAV-${Date.now()}`,
-              transactionId: cleanTxId,
-              billType: "savings",
-              grossAmount: savingsTx.amount,
-              studentName: student?.name,
-              studentNis: student?.nis,
-              description: "Setoran Tabungan",
-              transactionStatus: "settlement",
-              paymentType: actualPaymentType,
-              settlementTime: resolvedPaidAt
-            });
-
-            results.push({
-              orderId: savingsTx.orderId || cleanOrderId,
-              transactionId: cleanTxId || savingsTx.transactionId,
-              studentName: student?.name || "Siswa",
-              studentNis: student?.nis || "-",
-              studentClass: student?.class || "-",
-              category: "Setoran Tabungan",
-              amount: savingsTx.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime: savingsTx.createdAt || resolvedPaidAt,
-              reconciliationStatus: "reconciled",
-              message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n ${student?.name || 'Siswa'} berhasil ditambahkan ke saldo tabungan.`
-            });
+            continue;
           }
-          continue;
+
+          if (isReregPayment && matchedCandidate) {
+            const reregAmt = amountVal || matchedCandidate.reRegistrationAmount || 0;
+            if (matchedCandidate.reRegistrationStatus === "paid") {
+              alreadyPaidCount++;
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: matchedCandidate.fullName,
+                studentNis: matchedCandidate.nisn || matchedCandidate.registrationNo || "-",
+                studentClass: "Calon Siswa SPMB",
+                category: "Daftar Ulang SPMB",
+                amount: reregAmt,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: matchedCandidate.reRegistrationPaidAt || resolvedPaidAt,
+                reconciliationStatus: "already_paid",
+                message: `SUDAH LUNAS: Daftar Ulang SPMB a.n ${matchedCandidate.fullName} sebelumnya sudah tercatat LUNAS.`
+              });
+            } else {
+              matchedCandidate.reRegistrationStatus = "paid";
+              matchedCandidate.reRegistrationOrderId = cleanOrderId;
+              matchedCandidate.reRegistrationPaidAt = resolvedPaidAt;
+              matchedCandidate.reRegistrationPaymentMethod = actualPaymentType;
+              matchedCandidate.reRegistrationAmount = reregAmt;
+
+              reconciledCount++;
+              totalAmountReconciled += reregAmt;
+              stateChanged = true;
+
+              ensureLedgerEntry("Daftar Ulang Siswa Baru", reregAmt, `Pembayaran Daftar Ulang SPMB - ${matchedCandidate.fullName} (No.Reg: ${matchedCandidate.registrationNo || "-"})`, "custom");
+
+              recordOrUpdateMidtransTransaction({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                billType: "spmb_reregistration",
+                grossAmount: reregAmt,
+                studentName: matchedCandidate.fullName,
+                studentNis: matchedCandidate.nisn || matchedCandidate.registrationNo,
+                description: `Daftar Ulang SPMB (${matchedCandidate.registrationNo})`,
+                transactionStatus: "settlement",
+                paymentType: actualPaymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              results.push({
+                orderId: cleanOrderId,
+                transactionId: cleanTxId,
+                studentName: matchedCandidate.fullName,
+                studentNis: matchedCandidate.nisn || matchedCandidate.registrationNo || "-",
+                studentClass: "Calon Siswa SPMB",
+                category: "Daftar Ulang SPMB",
+                amount: reregAmt,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: resolvedPaidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Biaya Daftar Ulang SPMB a.n ${matchedCandidate.fullName} terverifikasi LUNAS & dicatat ke Buku Kas.`
+              });
+            }
+            continue;
+          }
         }
 
-        // If SAV- order prefix and target student exists without prior pending record
-        if (cleanOrderId.startsWith("SAV-") && targetStudent && amountVal > 0) {
-          const newSavingsTx: SavingsTransaction = {
-            id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            studentId: targetStudent.id,
-            type: "deposit",
-            amount: amountVal,
-            status: "success",
-            createdAt: resolvedPaidAt,
-            paymentMethod: actualPaymentType,
-            orderId: cleanOrderId,
-            transactionId: cleanTxId,
-            notes: `Setoran Tabungan (Midtrans Report Import)`
-          };
-          savingsTransactions.unshift(newSavingsTx);
-          targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
-          AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
-
-          reconciledCount++;
-          totalAmountReconciled += amountVal;
-          stateChanged = true;
-
-          recordOrUpdateMidtransTransaction({
-            orderId: cleanOrderId,
-            transactionId: cleanTxId,
-            billType: "savings",
-            grossAmount: amountVal,
-            studentName: targetStudent.name,
-            studentNis: targetStudent.nis,
-            description: "Setoran Tabungan",
-            transactionStatus: "settlement",
-            paymentType: actualPaymentType,
-            settlementTime: resolvedPaidAt
-          });
-
-          results.push({
-            orderId: cleanOrderId,
-            transactionId: cleanTxId,
-            studentName: targetStudent.name,
-            studentNis: targetStudent.nis,
-            studentClass: targetStudent.class,
-            category: "Setoran Tabungan",
-            amount: amountVal,
-            reportStatus: rawStatus,
-            reportPaymentType: actualPaymentType,
-            reportTime: resolvedPaidAt,
-            reconciliationStatus: "reconciled",
-            message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${amountVal.toLocaleString("id-ID")} a.n ${targetStudent.name} (NIS: ${targetStudent.nis}) berhasil ditambahkan ke saldo tabungan.`
-          });
-          continue;
-        }
-
-        // D. Check Cart Multi-Bills (CART-...)
-        if (cleanOrderId.startsWith("CART-") || cleanOrderId.includes("CART-")) {
+        // ----------------------------------------------------
+        // 2. MULTI-BILL CART (CART-...)
+        // ----------------------------------------------------
+        if (isExplicitCt || cleanOrderId.startsWith("CART-") || cleanOrderId.includes("CART-")) {
           const matchedSpp = sppBills.filter(b => b.orderId === cleanOrderId);
           const matchedMisc = miscBills.filter(m => m.orderId === cleanOrderId);
           const matchedSavings = savingsTransactions.filter(t => t.orderId === cleanOrderId);
@@ -1868,7 +2046,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportPaymentType: actualPaymentType,
                 reportTime: resolvedPaidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DILUNASI! Paket tagihan (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP) terverifikasi LUNAS & dicatat ke Buku Kas.`
+                message: `BERHASIL DILUNASI! Paket tagihan (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP, ${matchedSavings.length} Tabungan) terverifikasi LUNAS & dicatat ke Buku Kas.`
               });
             } else {
               alreadyPaidCount++;
@@ -1891,83 +2069,345 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           }
         }
 
-        // E. Fallback Heuristic Matching by Student & Month/Amount
-        if (targetStudent) {
-          // If a specific month was detected in order ID, report row, or description:
-          if (rowMonth) {
-            const specificMonthBill = sppBills.find(b => 
-              b.studentId === targetStudent!.id && 
-              b.month.toLowerCase() === rowMonth.toLowerCase() && 
-              (!rowYear || b.year === rowYear)
-            ) || sppBills.find(b => 
-              b.studentId === targetStudent!.id && 
-              b.month.toLowerCase() === rowMonth.toLowerCase()
-            );
-
-            if (specificMonthBill) {
-              if (specificMonthBill.status === "paid") {
-                alreadyPaidCount++;
-                results.push({
-                  orderId: specificMonthBill.orderId || cleanOrderId,
-                  transactionId: cleanTxId || specificMonthBill.transactionId,
-                  studentName: targetStudent.name,
-                  studentNis: targetStudent.nis,
-                  studentClass: targetStudent.class,
-                  category: `SPP ${specificMonthBill.month} ${specificMonthBill.year}`,
-                  amount: specificMonthBill.amount,
-                  reportStatus: rawStatus,
-                  reportPaymentType: actualPaymentType,
-                  reportTime: resolvedPaidAt,
-                  reconciliationStatus: "already_paid",
-                  message: `SUDAH LUNAS: Tagihan SPP ${specificMonthBill.month} ${specificMonthBill.year} a.n ${targetStudent.name} sebelumnya sudah tercatat LUNAS.`
-                });
-              } else {
-                specificMonthBill.status = "paid";
-                specificMonthBill.paidAt = resolvedPaidAt;
-                specificMonthBill.paymentMethod = actualPaymentType;
-                specificMonthBill.orderId = cleanOrderId || specificMonthBill.orderId;
-                if (cleanTxId) specificMonthBill.transactionId = cleanTxId;
-
-                reconciledCount++;
-                totalAmountReconciled += specificMonthBill.amount;
-                stateChanged = true;
-
-                ensureLedgerEntry("SPP Siswa", specificMonthBill.amount, `Pembayaran SPP ${specificMonthBill.month} ${specificMonthBill.year} (Midtrans Report) - ${targetStudent.name} (${targetStudent.nis || ""})`, "spp");
-
-                recordOrUpdateMidtransTransaction({
-                  orderId: cleanOrderId || `SPP-${Date.now()}`,
-                  transactionId: cleanTxId,
-                  billType: "spp",
-                  grossAmount: specificMonthBill.amount,
-                  studentName: targetStudent.name,
-                  studentNis: targetStudent.nis,
-                  description: `SPP ${specificMonthBill.month} ${specificMonthBill.year}`,
-                  transactionStatus: "settlement",
-                  paymentType: actualPaymentType,
-                  settlementTime: resolvedPaidAt
-                });
-
-                results.push({
-                  orderId: cleanOrderId || specificMonthBill.orderId || "-",
-                  transactionId: cleanTxId,
-                  studentName: targetStudent.name,
-                  studentNis: targetStudent.nis,
-                  studentClass: targetStudent.class,
-                  category: `SPP ${specificMonthBill.month} ${specificMonthBill.year}`,
-                  amount: specificMonthBill.amount,
-                  reportStatus: rawStatus,
-                  reportPaymentType: actualPaymentType,
-                  reportTime: resolvedPaidAt,
-                  reconciliationStatus: "reconciled",
-                  message: `BERHASIL DILUNASI! Tagihan SPP ${specificMonthBill.month} ${specificMonthBill.year} a.n ${targetStudent.name} terverifikasi & dicatat ke Buku Kas.`
-                });
-              }
-              continue;
-            }
+        // ----------------------------------------------------
+        // 3. SAVINGS DEPOSITS (SAV- / TABUNGAN)
+        // ----------------------------------------------------
+        if (isExplicitSav || cleanOrderId.startsWith("SAV-") || cleanOrderId.startsWith("TAB-")) {
+          let savingsTx = savingsTransactions.find(t => t.orderId === cleanOrderId || (cleanTxId && t.transactionId === cleanTxId) || t.id === cleanOrderId);
+          if (!savingsTx && targetStudent) {
+            savingsTx = savingsTransactions.find(t => t.studentId === targetStudent.id && t.status === "pending");
           }
 
-          // If NO month was detectable from Order ID or Report, allocate to the earliest unpaid bill in academic order
-          if (!rowMonth) {
+          if (savingsTx) {
+            const student = students.find(s => s.id === savingsTx.studentId) || targetStudent;
+
+            if (savingsTx.status === "success") {
+              alreadyPaidCount++;
+              results.push({
+                orderId: savingsTx.orderId || cleanOrderId,
+                transactionId: cleanTxId || savingsTx.transactionId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: "Setoran Tabungan",
+                amount: savingsTx.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime,
+                reconciliationStatus: "already_paid",
+                message: `SUDAH LUNAS: Setoran Tabungan a.n ${student?.name || 'Siswa'} sudah dikonfirmasi LUNAS.`
+              });
+            } else {
+              savingsTx.status = "success";
+              savingsTx.paymentMethod = actualPaymentType;
+              savingsTx.orderId = cleanOrderId;
+              if (cleanTxId) savingsTx.transactionId = cleanTxId;
+
+              if (student) {
+                student.savingsBalance = (Number(student.savingsBalance) || 0) + Number(savingsTx.amount);
+                AUTHORITATIVE_SAVINGS_MAP[student.id] = student.savingsBalance;
+              }
+
+              reconciledCount++;
+              totalAmountReconciled += savingsTx.amount;
+              stateChanged = true;
+
+              recordOrUpdateMidtransTransaction({
+                orderId: cleanOrderId || `SAV-${Date.now()}`,
+                transactionId: cleanTxId,
+                billType: "savings",
+                grossAmount: savingsTx.amount,
+                studentName: student?.name,
+                studentNis: student?.nis,
+                description: "Setoran Tabungan",
+                transactionStatus: "settlement",
+                paymentType: actualPaymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              results.push({
+                orderId: savingsTx.orderId || cleanOrderId,
+                transactionId: cleanTxId || savingsTx.transactionId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: "Setoran Tabungan",
+                amount: savingsTx.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: savingsTx.createdAt || resolvedPaidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${savingsTx.amount.toLocaleString("id-ID")} a.n ${student?.name || 'Siswa'} berhasil ditambahkan ke saldo tabungan.`
+              });
+            }
+            continue;
+          }
+
+          // If no existing transaction record but targetStudent identified:
+          if (targetStudent && amountVal > 0) {
+            const newSavingsTx: SavingsTransaction = {
+              id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              studentId: targetStudent.id,
+              type: "deposit",
+              amount: amountVal,
+              status: "success",
+              createdAt: resolvedPaidAt,
+              paymentMethod: actualPaymentType,
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              notes: `Setoran Tabungan (Midtrans Report Import)`
+            };
+            savingsTransactions.unshift(newSavingsTx);
+            targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
+            AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+
+            reconciledCount++;
+            totalAmountReconciled += amountVal;
+            stateChanged = true;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              billType: "savings",
+              grossAmount: amountVal,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              description: "Setoran Tabungan",
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              studentClass: targetStudent.class,
+              category: "Setoran Tabungan",
+              amount: amountVal,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: resolvedPaidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Setoran Tabungan Rp ${amountVal.toLocaleString("id-ID")} a.n ${targetStudent.name} (NIS: ${targetStudent.nis}) berhasil ditambahkan ke saldo tabungan.`
+            });
+            continue;
+          }
+        }
+
+        // ----------------------------------------------------
+        // 4. NON-SPP (MISC / LAIN-LAIN) BILLS
+        // ----------------------------------------------------
+        let miscBill = findMiscBillMatching(cleanOrderId, miscBills, targetStudent?.id, { description: rawDesc, amount: amountVal }) ||
+                       (cleanTxId ? findMiscBillMatching(cleanTxId, miscBills, targetStudent?.id, { description: rawDesc, amount: amountVal }) : undefined);
+
+        if (miscBill || isExplicitMisc || cleanOrderId.startsWith("MISC-") || cleanOrderId.startsWith("M-") || cleanOrderId.startsWith("MB-") || cleanOrderId.startsWith("NONSPP-") || cleanOrderId.startsWith("LAIN-")) {
+          // If not matched by exact ID, find student's unpaid misc bill matching title or amount
+          if (!miscBill && targetStudent) {
+            miscBill = miscBills.find(b =>
+              b.studentId === targetStudent!.id &&
+              (b.status === "pending" || b.status === "unpaid") &&
+              (amountVal === 0 || b.amount === amountVal || (rawDesc && b.title.toLowerCase().includes(rawDesc.toLowerCase())))
+            );
+          }
+
+          if (miscBill) {
+            const student = students.find(s => s.id === miscBill.studentId) || targetStudent;
+
+            if (miscBill.status === "paid") {
+              alreadyPaidCount++;
+              results.push({
+                orderId: miscBill.orderId || cleanOrderId,
+                transactionId: cleanTxId || miscBill.transactionId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: miscBill.title,
+                amount: miscBill.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime,
+                reconciliationStatus: "already_paid",
+                message: `SUDAH LUNAS: Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
+              });
+            } else {
+              miscBill.status = "paid";
+              miscBill.paidAt = resolvedPaidAt;
+              miscBill.paymentMethod = actualPaymentType;
+              miscBill.orderId = cleanOrderId || miscBill.orderId;
+              if (cleanTxId) miscBill.transactionId = cleanTxId;
+
+              reconciledCount++;
+              totalAmountReconciled += miscBill.amount;
+              stateChanged = true;
+
+              ensureLedgerEntry("Tagihan Non-SPP", miscBill.amount, `Pembayaran ${miscBill.title} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "custom");
+
+              recordOrUpdateMidtransTransaction({
+                orderId: cleanOrderId || `MISC-${Date.now()}`,
+                transactionId: cleanTxId,
+                billType: "misc",
+                grossAmount: miscBill.amount,
+                studentName: student?.name,
+                studentNis: student?.nis,
+                description: miscBill.title,
+                transactionStatus: "settlement",
+                paymentType: actualPaymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              results.push({
+                orderId: miscBill.orderId || cleanOrderId,
+                transactionId: cleanTxId || miscBill.transactionId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: miscBill.title,
+                amount: miscBill.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: miscBill.paidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas.`
+              });
+            }
+            continue;
+          }
+
+          // If explicitly Non-SPP but no specific misc bill record was found:
+          if (isExplicitMisc || cleanOrderId.startsWith("MISC-")) {
+            const billTitle = rawDesc || "Tagihan Non-SPP Lain-lain";
+            const actualAmt = amountVal || 0;
+
+            reconciledCount++;
+            totalAmountReconciled += actualAmt;
+            stateChanged = true;
+
+            ensureLedgerEntry("Tagihan Non-SPP", actualAmt, `Pembayaran ${billTitle} (Midtrans Report) - ${targetStudent?.name || "Siswa"} (NIS: ${targetStudent?.nis || "-"})`, "custom");
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId || `MISC-${Date.now()}`,
+              transactionId: cleanTxId,
+              billType: "misc",
+              grossAmount: actualAmt,
+              studentName: targetStudent?.name,
+              studentNis: targetStudent?.nis,
+              description: billTitle,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              studentName: targetStudent?.name || item.customerName || "Siswa",
+              studentNis: targetStudent?.nis || item.studentNis || "-",
+              studentClass: targetStudent?.class || "-",
+              category: billTitle,
+              amount: actualAmt,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: resolvedPaidAt,
+              reconciliationStatus: "reconciled",
+              message: `BERHASIL DILUNASI! Pembayaran Tagihan Non-SPP "${billTitle}" a.n ${targetStudent?.name || 'Siswa'} terverifikasi & dicatat ke Buku Kas.`
+            });
+            continue;
+          }
+        }
+
+        // ----------------------------------------------------
+        // 5. SPP BILLS (STRICTLY GUARDED FROM NON-SPP)
+        // ----------------------------------------------------
+        if (!isExplicitMisc && !isExplicitSav && !isExplicitSp && !isExplicitCt) {
+          let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills }) ||
+                        (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills }) : undefined);
+
+          if (!sppBill && (cleanOrderId.startsWith("SPP-") || cleanOrderId.includes("SPP-"))) {
+            const middle = cleanOrderId.includes("SPP-") ? cleanOrderId.split("SPP-")[1] : cleanOrderId;
+            const lastHyphenIndex = middle.lastIndexOf("-");
+            const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
+            sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills });
+          }
+
+          // If target student is known and rowMonth was detected, search specifically for that month's bill
+          if (!sppBill && targetStudent && rowMonth) {
+            sppBill = sppBills.find(b =>
+              b.studentId === targetStudent!.id &&
+              b.month.toLowerCase() === rowMonth.toLowerCase() &&
+              (!rowYear || b.year === rowYear)
+            ) || sppBills.find(b =>
+              b.studentId === targetStudent!.id &&
+              b.month.toLowerCase() === rowMonth.toLowerCase()
+            );
+          }
+
+          if (sppBill) {
+            const student = students.find(s => s.id === sppBill.studentId) || targetStudent;
+
+            if (sppBill.status === "paid") {
+              alreadyPaidCount++;
+              results.push({
+                orderId: sppBill.orderId || cleanOrderId,
+                transactionId: cleanTxId || sppBill.transactionId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: `SPP ${sppBill.month} ${sppBill.year}`,
+                amount: sppBill.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime,
+                reconciliationStatus: "already_paid",
+                message: `SUDAH LUNAS: Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
+              });
+            } else {
+              sppBill.status = "paid";
+              sppBill.paidAt = resolvedPaidAt;
+              sppBill.paymentMethod = actualPaymentType;
+              sppBill.orderId = cleanOrderId || sppBill.orderId;
+              if (cleanTxId) sppBill.transactionId = cleanTxId;
+
+              reconciledCount++;
+              totalAmountReconciled += sppBill.amount;
+              stateChanged = true;
+
+              ensureLedgerEntry("SPP Siswa", sppBill.amount, `Pembayaran SPP ${sppBill.month} ${sppBill.year} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "spp");
+
+              recordOrUpdateMidtransTransaction({
+                orderId: cleanOrderId || `SPP-${Date.now()}`,
+                transactionId: cleanTxId,
+                billType: "spp",
+                grossAmount: sppBill.amount,
+                studentName: student?.name,
+                studentNis: student?.nis,
+                description: `SPP ${sppBill.month} ${sppBill.year}`,
+                transactionStatus: "settlement",
+                paymentType: actualPaymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              results.push({
+                orderId: sppBill.orderId || cleanOrderId,
+                transactionId: cleanTxId || sppBill.transactionId,
+                studentName: student?.name || "Siswa",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: `SPP ${sppBill.month} ${sppBill.year}`,
+                amount: sppBill.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime: sppBill.paidAt,
+                reconciliationStatus: "reconciled",
+                message: `BERHASIL DILUNASI! Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas Bendahara.`
+              });
+            }
+            continue;
+          }
+
+          // Fallback: If no explicit month but student is known AND order is explicitly marked SPP:
+          if (targetStudent && (isExplicitSppBill || cleanOrderId.startsWith("SPP-") || rawDesc.toLowerCase().includes("spp"))) {
             const studentUnpaidBills = sppBills
               .filter(b => b.studentId === targetStudent!.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal))
               .sort((a, b) => {
@@ -2022,53 +2462,11 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               continue;
             }
           }
-
-          const fallbackMisc = miscBills.find(b => b.studentId === targetStudent!.id && (b.status === "pending" || b.status === "unpaid") && (amountVal === 0 || b.amount === amountVal));
-          if (fallbackMisc) {
-            fallbackMisc.status = "paid";
-            fallbackMisc.paidAt = resolvedPaidAt;
-            fallbackMisc.paymentMethod = actualPaymentType;
-            fallbackMisc.orderId = cleanOrderId || fallbackMisc.orderId;
-            if (cleanTxId) fallbackMisc.transactionId = cleanTxId;
-
-            reconciledCount++;
-            totalAmountReconciled += fallbackMisc.amount;
-            stateChanged = true;
-
-            ensureLedgerEntry("Tagihan Non-SPP", fallbackMisc.amount, `Pembayaran ${fallbackMisc.title} (Midtrans Report) - ${targetStudent.name} (${targetStudent.nis || ""})`, "custom");
-
-            recordOrUpdateMidtransTransaction({
-              orderId: cleanOrderId || `MISC-${Date.now()}`,
-              transactionId: cleanTxId,
-              billType: "misc",
-              grossAmount: fallbackMisc.amount,
-              studentName: targetStudent.name,
-              studentNis: targetStudent.nis,
-              description: fallbackMisc.title,
-              transactionStatus: "settlement",
-              paymentType: actualPaymentType,
-              settlementTime: resolvedPaidAt
-            });
-
-            results.push({
-              orderId: cleanOrderId || fallbackMisc.orderId || "-",
-              transactionId: cleanTxId,
-              studentName: targetStudent.name,
-              studentNis: targetStudent.nis,
-              studentClass: targetStudent.class,
-              category: fallbackMisc.title,
-              amount: fallbackMisc.amount,
-              reportStatus: rawStatus,
-              reportPaymentType: actualPaymentType,
-              reportTime: resolvedPaidAt,
-              reconciliationStatus: "reconciled",
-              message: `BERHASIL DILUNASI! Tagihan Non-SPP "${fallbackMisc.title}" a.n ${targetStudent.name} terverifikasi & dicatat ke Buku Kas.`
-            });
-            continue;
-          }
         }
 
-        // F. Not Found / Unmatched Settlement
+        // ----------------------------------------------------
+        // 6. UNMATCHED / AMBIGUOUS SETTLEMENT
+        // ----------------------------------------------------
         notFoundCount++;
         recordOrUpdateMidtransTransaction({
           orderId: cleanOrderId || `MT-${Date.now()}`,
@@ -2077,7 +2475,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           grossAmount: amountVal,
           studentName: targetStudent?.name || item.customerName,
           studentNis: targetStudent?.nis || item.studentNis,
-          description: "Transaksi Midtrans Report (Tanpa Tagihan)",
+          description: rawDesc || "Transaksi Midtrans Report (Tanpa Tagihan)",
           transactionStatus: "settlement",
           paymentType: actualPaymentType,
           settlementTime: resolvedPaidAt
@@ -2089,7 +2487,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           studentName: targetStudent?.name || item.customerName || "Wali Siswa / Umum",
           studentNis: targetStudent?.nis || item.studentNis || "-",
           studentClass: targetStudent?.class || "-",
-          category: "Transaksi Midtrans (Tanpa Tagihan Terkait)",
+          category: rawDesc ? `Lainnya: ${rawDesc}` : "Transaksi Midtrans (Tanpa Tagihan Terkait)",
           amount: amountVal,
           reportStatus: rawStatus,
           reportPaymentType: actualPaymentType,

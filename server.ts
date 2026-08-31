@@ -11,7 +11,7 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 
@@ -2282,6 +2282,18 @@ function saveState(skipRemoteSync: boolean = false) {
     // Asynchronously update to MongoDB Cluster via serialized queue
     if (!skipRemoteSync) {
       triggerFirestoreSync();
+      saveConfigToMysql("midtransConfig", midtransConfig).catch(() => {});
+      saveConfigToMysql("schoolIdentity", schoolIdentity).catch(() => {});
+      saveConfigToMysql("sppRates", sppRates).catch(() => {});
+      saveConfigToMysql("salaryConfig", salaryConfig).catch(() => {});
+      saveConfigToMysql("whatsappConfig", whatsappConfig).catch(() => {});
+      saveConfigToMysql("treasurerConfig", treasurerConfig).catch(() => {});
+      saveConfigToMysql("principalConfig", principalConfig).catch(() => {});
+      saveConfigToMysql("sarprasConfig", sarprasConfig).catch(() => {});
+      saveConfigToMysql("bkConfig", bkConfig).catch(() => {});
+      saveConfigToMysql("curriculumConfig", curriculumConfig).catch(() => {});
+      saveConfigToMysql("adminConfig", adminConfig).catch(() => {});
+      saveConfigToMysql("spmbConfig", spmbConfig).catch(() => {});
     }
   } catch (error) {
     console.error("Failed to save state:", error);
@@ -3592,7 +3604,7 @@ async function startServer() {
   });
 
   // Update dynamic midtrans credentials
-  app.post("/api/set-midtrans-config", (req, res) => {
+  app.post("/api/set-midtrans-config", async (req, res) => {
     const { merchantId, clientKey, serverKey, isProduction, isDisabled, pin } = req.body;
     midtransConfig = {
       merchantId: merchantId || "",
@@ -3616,6 +3628,7 @@ async function startServer() {
     broadcastNotification(notif);
 
     saveState();
+    await saveConfigToMysql("midtransConfig", midtransConfig).catch(() => {});
 
     res.json({ success: true, message: "Konfigurasi Midtrans berhasil disimpan!" });
   });
@@ -12725,44 +12738,5 @@ async function startServer() {
   setInterval(async () => {
     try {
       const mysqlCfg = getSanitizedConfig();
-      if (!mysqlCfg.autoSyncEnabled || !mysqlCfg.host || !mysqlCfg.database || !mysqlCfg.user || !mysqlCfg.hasPassword) {
-        return;
-      }
-
-      const intervalHours = Math.min(24, Math.max(1, Number(mysqlCfg.autoSyncIntervalHours) || 1));
-      const intervalMs = intervalHours * 60 * 60 * 1000;
-      const now = Date.now();
-
-      const lastTime = mysqlCfg.lastSyncAt ? new Date(mysqlCfg.lastSyncAt).getTime() : 0;
-      const nextTime = mysqlCfg.nextAutoSyncAt ? new Date(mysqlCfg.nextAutoSyncAt).getTime() : 0;
-
-      // Check if auto-sync is due:
-      // 1. nextAutoSyncAt is set and now >= nextAutoSyncAt
-      // 2. OR nextAutoSyncAt is not set/expired and (lastTime == 0 or now - lastTime >= intervalMs)
-      const isDue = (nextTime > 0 && now >= nextTime) || 
-                    (nextTime === 0 && (lastTime === 0 || (now - lastTime) >= intervalMs));
-
-      if (isDue) {
-        console.log(`[MYSQL AUTO-SYNC ENGINE] Interval ${intervalHours} Jam terpenuhi. Menjalankan sinkronisasi otomatis ke MySQL database "${mysqlCfg.database}"...`);
-        const result = await syncDataToMysql({
-          students,
-          transactions: treasurerTransactions,
-          sppBills,
-          salaries: teacherSalaries,
-          savings: savingsTransactions,
-          miscBills
-        });
-
-        if (result.success) {
-          console.log(`[MYSQL AUTO-SYNC ENGINE] Sinkronisasi otomatis ke MySQL (${mysqlCfg.database}) BERHASIL: ${result.stats.students} siswa, ${result.stats.transactions} kas, ${result.stats.sppBills} SPP. Sinkronisasi berikutnya: ${result.syncedAt}`);
-        } else {
-          console.warn(`[MYSQL AUTO-SYNC ENGINE] Sinkronisasi otomatis ke MySQL GAGAL: ${result.error || result.message}`);
-        }
-      }
-    } catch (err: any) {
-      console.error("[MYSQL AUTO-SYNC ENGINE] Terjadi kesalahan pada proses auto-sync MySQL:", err.message || err);
-    }
-  }, 30 * 1000); // Check every 30 seconds
-}
-
-startServer();
+      if (!mysqlCfg.autoSyncEnabled || !mysqlCfg.host || !mysqlCfg.database || !mysqlCfg.user || !mysqlCfg.haxœœU]OÛ0}ï¯¸ªr¦Z6í¡¨LåcÀD#İš&qILkš:™íPª’ÿ¾ë4I[¦iyHbûsOÎ½vôj=TàÀ²ù¥¸I”<ÌÇi#ñ#©i¸zÆğ"J”†ĞLÜ™ìàS+àë´`˜Ì¸b³…ş<]LLä-¤Y%pàõ:s¸5ÇÀ&¨'ü ŸÛÅ­Ón·ë@Í	qŠ†»ôÊˆ¶¶¢6#1ã³’eç¬¬¾/ ù<C³-Ë;æš9Ğ…õÄüeƒÙÎõó~‡½²‘!O±¿'îOA<‚uqOS8AÂ»eLÇ…µ”¢¹”AæÌQo- Ä¸p}».#c)öùK,2*VÚØƒ6D*#ß+İ=êU*èÔ+«Ok[vD»»U}v:ë‹UCV¯ÙËÒ¶*ÈN”Õ%9kšÊÆ KY&ªº¬Ö(änÙıÏÁ÷ı
+ú?F×{ŞİğÎ†ç—Ã³_P42ì,k=šÂ7œMÄ\&áÂ€Ë'QNQ‚rª")4j‘‰fhÈæ)‡ÁÂf	ĞàjÍåªKŠÉ´éºîıj¯.AKŒõ„J•’µ8Gaà!ağ5	Ãcô§Iìål­¸NB³ÂÙÖ¢ÅQ4°éYA]:öæÙÌÕ‰ïs­«æı«}Şß`Ûpàøìö¢ï]^uÉõBƒA£é\r_=ÇÖúºQ(5úF¸¦¨7"t‹0¤UïæÆ­ë£“LL#XML^ñ oÒjMRà!Õo›sTòÿ9ïŸ÷«ŸÍ•¢­G½gTóº˜Fõ™‚ÆŸ #h—¶ò¢,[!1#eÍw5¸zÂ@*M=¡†1@ˆU¤¹®N™än³DX(³Zi˜Ë³’Ò|,rç°<çø3W»¤9	tƒşAT#e<ÚeôO!Š?   ÿÿ öx

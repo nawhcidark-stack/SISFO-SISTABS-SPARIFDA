@@ -129,11 +129,43 @@ function createPool(overrideConfig?: Partial<MysqlDatabaseConfig>) {
     password: cfg.password || '',
     database: cfg.database,
     waitForConnections: true,
-    connectionLimit: cfg.connectionLimit || 5,
-    connectTimeout: cfg.connectTimeout || 8000,
+    connectionLimit: cfg.connectionLimit || 10,
+    connectTimeout: cfg.connectTimeout || 10000,
     charset: cfg.charset || 'utf8mb4',
+    multipleStatements: true,
     ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined
   });
+}
+
+// Save or update an individual configuration into the app_configs MySQL table immediately
+export async function saveConfigToMysql(configId: string, data: any, overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
+  const pool = createPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`app_configs\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`data\` LONGTEXT NOT NULL,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const jsonStr = typeof data === 'string' ? data : JSON.stringify(data);
+    await connection.query(`
+      INSERT INTO \`app_configs\` (\`id\`, \`data\`)
+      VALUES (?, ?)
+      ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`)
+    `, [configId, jsonStr]);
+    return true;
+  } catch (err: any) {
+    console.warn(`[MySQL Config Sync] Gagal menyimpan config "${configId}" ke MySQL:`, err.message || err);
+    return false;
+  } finally {
+    if (connection) connection.release();
+    await pool.end().catch(() => {});
+  }
 }
 
 // Test MySQL & phpMyAdmin database connection
@@ -1198,231 +1230,49 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
   try {
     connection = await pool.getConnection();
 
-    // 1. Create tables if not existing
-    const statements = COMPLETE_TABLES_SQL.split(';').map(s => s.trim()).filter(Boolean);
-    for (const stmt of statements) {
-      await connection.query(stmt);
-    }
+    // 1. Generate full PHPMyAdmin-compatible SQL script covering all 26+ tables & all app_configs
+    const fullSql = generateFullPhpMyAdminSql(appState);
 
-    let studentsSynced = 0;
-    let transactionsSynced = 0;
-    let sppSynced = 0;
-    let salariesSynced = 0;
-    let savingsSynced = 0;
-    let miscSynced = 0;
-
-    // 2. Sync Students
-    if (appState.students && appState.students.length > 0) {
-      for (const s of appState.students) {
-        await connection.query(`
-          INSERT INTO \`students\` (\`id\`, \`nis\`, \`nisn\`, \`name\`, \`class\`, \`gender\`, \`email\`, \`phone\`, \`savings_balance\`, \`status\`, \`password\`, \`nik\`, \`address\`, \`parent_name\`)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`name\` = VALUES(\`name\`),
-            \`class\` = VALUES(\`class\`),
-            \`savings_balance\` = VALUES(\`savings_balance\`),
-            \`status\` = VALUES(\`status\`),
-            \`phone\` = VALUES(\`phone\`),
-            \`address\` = VALUES(\`address\`)
-        `, [
-          s.id,
-          s.nis || '',
-          s.nisn || null,
-          s.name || 'Siswa',
-          s.class || '7-A',
-          s.gender || 'Laki-laki',
-          s.email || null,
-          s.phone || null,
-          Number(s.savingsBalance) || 0,
-          s.status || 'Aktif',
-          s.password || null,
-          s.nik || null,
-          s.address || null,
-          s.parentName || null
-        ]);
-        studentsSynced++;
-      }
-    }
-
-    // 3. Sync Treasurer Transactions (Buku Kas)
-    if (appState.transactions && appState.transactions.length > 0) {
-      for (const t of appState.transactions) {
-        await connection.query(`
-          INSERT INTO \`treasurer_transactions\` 
-          (\`id\`, \`type\`, \`category\`, \`amount\`, \`description\`, \`date\`, \`source\`, \`created_by\`, \`recipient_name\`, \`funding_source\`, \`kode_rekening\`, \`no_bukti\`, \`payment_method\`)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`amount\` = VALUES(\`amount\`),
-            \`category\` = VALUES(\`category\`),
-            \`description\` = VALUES(\`description\`),
-            \`date\` = VALUES(\`date\`),
-            \`payment_method\` = VALUES(\`payment_method\`),
-            \`recipient_name\` = VALUES(\`recipient_name\`),
-            \`funding_source\` = VALUES(\`funding_source\`),
-            \`kode_rekening\` = VALUES(\`kode_rekening\`),
-            \`no_bukti\` = VALUES(\`no_bukti\`)
-        `, [
-          t.id,
-          t.type,
-          t.category || 'Operasional',
-          Number(t.amount) || 0,
-          t.description || '',
-          t.date || new Date().toISOString().substring(0, 10),
-          t.source || 'custom',
-          t.createdBy || 'Bendahara',
-          t.recipientName || null,
-          t.fundingSource || null,
-          t.kodeRekening || null,
-          t.noBukti || null,
-          t.paymentMethod === 'bank' ? 'bank' : 'kas'
-        ]);
-        transactionsSynced++;
-      }
-    }
-
-    // 4. Sync SPP Bills
-    if (appState.sppBills && appState.sppBills.length > 0) {
-      for (const bill of appState.sppBills) {
-        await connection.query(`
-          INSERT INTO \`spp_bills\` (\`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`, \`order_id\`)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`amount\` = VALUES(\`amount\`),
-            \`status\` = VALUES(\`status\`),
-            \`paid_at\` = VALUES(\`paid_at\`),
-            \`payment_method\` = VALUES(\`payment_method\`),
-            \`order_id\` = VALUES(\`order_id\`)
-        `, [
-          bill.id,
-          bill.studentId,
-          bill.month,
-          bill.year || 2026,
-          Number(bill.amount) || 0,
-          bill.status || 'unpaid',
-          bill.paidAt || null,
-          bill.paymentMethod || null,
-          bill.orderId || null
-        ]);
-        sppSynced++;
-      }
-    }
-
-    // 5. Sync Teacher Salaries
-    if (appState.salaries && appState.salaries.length > 0) {
-      for (const sal of appState.salaries) {
-        await connection.query(`
-          INSERT INTO \`teacher_salaries\`
-          (\`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`month\`, \`base_salary\`, \`homeroom_allowance\`, \`journal_count\`, \`journal_incentive\`, \`tunjangan_masa_kerja\`, \`vakasi\`, \`other_allowance\`, \`potongan_dana_sosial\`, \`potongan_absen\`, \`potongan_lain\`, \`deductions\`, \`total_amount\`, \`status\`, \`payment_date\`, \`notes\`)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`base_salary\` = VALUES(\`base_salary\`),
-            \`homeroom_allowance\` = VALUES(\`homeroom_allowance\`),
-            \`journal_count\` = VALUES(\`journal_count\`),
-            \`journal_incentive\` = VALUES(\`journal_incentive\`),
-            \`tunjangan_masa_kerja\` = VALUES(\`tunjangan_masa_kerja\`),
-            \`vakasi\` = VALUES(\`vakasi\`),
-            \`other_allowance\` = VALUES(\`other_allowance\`),
-            \`potongan_dana_sosial\` = VALUES(\`potongan_dana_sosial\`),
-            \`potongan_absen\` = VALUES(\`potongan_absen\`),
-            \`potongan_lain\` = VALUES(\`potongan_lain\`),
-            \`deductions\` = VALUES(\`deductions\`),
-            \`total_amount\` = VALUES(\`total_amount\`),
-            \`status\` = VALUES(\`status\`),
-            \`payment_date\` = VALUES(\`payment_date\`),
-            \`notes\` = VALUES(\`notes\`)
-        `, [
-          sal.id,
-          sal.teacherId,
-          sal.teacherName,
-          sal.teacherType,
-          sal.month,
-          sal.baseSalary || 0,
-          sal.homeroomAllowance || 0,
-          sal.journalCount || 0,
-          ((sal.journalCount || 0) * (sal.journalRate || 0)),
-          sal.tunjanganMasaKerja || 0,
-          sal.vakasi || 0,
-          sal.otherAllowance || 0,
-          sal.potonganDanaSosial || 0,
-          sal.potonganAbsen || 0,
-          sal.potonganLain || 0,
-          sal.deductions || 0,
-          sal.totalAmount || 0,
-          sal.status || 'unpaid',
-          sal.paymentDate || null,
-          sal.notes || null
-        ]);
-        salariesSynced++;
-      }
-    }
-
-    // 6. Sync Savings Transactions
-    if (appState.savings && appState.savings.length > 0) {
-      for (const sav of appState.savings) {
-        await connection.query(`
-          INSERT INTO \`savings_transactions\` (\`id\`, \`student_id\`, \`type\`, \`amount\`, \`status\`, \`created_at\`)
-          VALUES (?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`amount\` = VALUES(\`amount\`),
-            \`status\` = VALUES(\`status\`)
-        `, [
-          sav.id,
-          sav.studentId,
-          sav.type,
-          Number(sav.amount) || 0,
-          sav.status || 'success',
-          sav.createdAt || new Date().toISOString()
-        ]);
-        savingsSynced++;
-      }
-    }
-
-    // 7. Sync Misc Bills
-    if (appState.miscBills && appState.miscBills.length > 0) {
-      for (const m of appState.miscBills) {
-        await connection.query(`
-          INSERT INTO \`misc_bills\` (\`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`paid_at\`, \`month\`, \`created_at\`)
-          VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`amount\` = VALUES(\`amount\`),
-            \`status\` = VALUES(\`status\`),
-            \`paid_at\` = VALUES(\`paid_at\`)
-        `, [
-          m.id,
-          m.studentId,
-          m.title,
-          Number(m.amount) || 0,
-          m.status || 'unpaid',
-          m.paidAt || null,
-          m.month || null,
-          m.createdAt || new Date().toISOString()
-        ]);
-        miscSynced++;
-      }
-    }
+    // 2. Execute the entire SQL script (with multi-statements enabled)
+    await connection.query('SET FOREIGN_KEY_CHECKS = 0;');
+    await connection.query(fullSql);
+    await connection.query('SET FOREIGN_KEY_CHECKS = 1;');
 
     const durationMs = Date.now() - startTime;
     const nowIso = new Date().toISOString();
+
+    const studentsSynced = Array.isArray(appState.students) ? appState.students.length : 0;
+    const transactionsSynced = Array.isArray(appState.transactions || appState.treasurerTransactions) ? (appState.transactions || appState.treasurerTransactions).length : 0;
+    const sppSynced = Array.isArray(appState.sppBills) ? appState.sppBills.length : 0;
+    const salariesSynced = Array.isArray(appState.salaries || appState.teacherSalaries) ? (appState.salaries || appState.teacherSalaries).length : 0;
+    const savingsSynced = Array.isArray(appState.savings || appState.savingsTransactions) ? (appState.savings || appState.savingsTransactions).length : 0;
+    const miscSynced = Array.isArray(appState.miscBills) ? appState.miscBills.length : 0;
+
+    const configKeys = [
+      'schoolIdentity', 'sppRates', 'salaryConfig', 'midtransConfig',
+      'whatsappConfig', 'treasurerConfig', 'principalConfig', 'sarprasConfig',
+      'bkConfig', 'curriculumConfig', 'adminConfig', 'spmbConfig', 'backupConfig'
+    ];
+    const configsSynced = configKeys.filter(k => appState[k] !== undefined).length;
+    const totalRows = studentsSynced + transactionsSynced + sppSynced + salariesSynced + savingsSynced + miscSynced + configsSynced;
 
     // Update config sync timestamp and calculate next schedule if auto-sync is enabled
     currentConfig.lastSyncAt = nowIso;
     currentConfig.lastAutoSyncAt = nowIso;
     currentConfig.lastAutoSyncStatus = 'success';
-    currentConfig.lastAutoSyncMessage = `Berhasil menyinkronkan ${studentsSynced + transactionsSynced + sppSynced + salariesSynced + savingsSynced + miscSynced} baris data`;
+    currentConfig.lastAutoSyncMessage = `Berhasil menyinkronkan ${totalRows} baris data & konfigurasi lengkap`;
     currentConfig.status = 'connected';
-
     if (currentConfig.autoSyncEnabled) {
       const interval = currentConfig.autoSyncIntervalHours || 1;
       currentConfig.nextAutoSyncAt = new Date(Date.now() + interval * 60 * 60 * 1000).toISOString();
     }
-
     try {
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
     } catch {}
 
     return {
       success: true,
-      message: `Sinkronisasi ke MySQL database "${currentConfig.database}" berhasil selesai dalam ${durationMs}ms!`,
+      message: `Sinkronisasi lengkap (26+ tabel & konfigurasi master) ke MySQL database "${currentConfig.database}" berhasil selesai dalam ${durationMs}ms!`,
       syncedAt: nowIso,
       stats: {
         students: studentsSynced,
@@ -1430,11 +1280,14 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
         sppBills: sppSynced,
         salaries: salariesSynced,
         savings: savingsSynced,
-        miscBills: miscSynced
+        miscBills: miscSynced,
+        configs: configsSynced,
+        totalRows
       },
       durationMs
     };
   } catch (err: any) {
+    console.error('[MySQL Sync Error]:', err);
     currentConfig.lastAutoSyncStatus = 'error';
     currentConfig.lastAutoSyncMessage = err.message || 'Gagal query sinkronisasi';
     try {
@@ -1452,7 +1305,8 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
         sppBills: 0,
         salaries: 0,
         savings: 0,
-        miscBills: 0
+        miscBills: 0,
+        configs: 0
       },
       durationMs: Date.now() - startTime
     };

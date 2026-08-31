@@ -844,6 +844,9 @@ export interface MysqlSyncResult {
     salaries: number;
     savings: number;
     miscBills: number;
+    configs?: number;
+    totalRows?: number;
+    [key: string]: number | undefined;
   };
   durationMs: number;
   error?: string;

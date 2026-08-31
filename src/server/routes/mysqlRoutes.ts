@@ -64,14 +64,16 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
   // Perform full synchronization to MySQL tables (Push to MySQL)
   router.post('/mysql-sync', async (req, res) => {
     try {
-      const result = await syncDataToMysql({
+      const fullSnapshot = await providers.getFullSnapshot();
+      const snapshot = fullSnapshot?.snapshot || fullSnapshot || {
         students: providers.getStudents(),
         transactions: providers.getTransactions(),
         sppBills: providers.getSppBills(),
         salaries: providers.getSalaries(),
         savings: providers.getSavings(),
         miscBills: providers.getMiscBills()
-      });
+      };
+      const result = await syncDataToMysql(snapshot);
       res.json(result);
     } catch (err: any) {
       res.status(500).json({ 

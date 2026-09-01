@@ -595,6 +595,123 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     lastLog: [] as string[]
   };
 
+  // Smart Auto-Allocation Engine: Intelligently allocates online payment to student's oldest unpaid SPP bills, Non-SPP bills, or Savings Balance
+  function autoAllocateStudentPayment(
+    targetStudent: Student,
+    amountVal: number,
+    orderId: string,
+    transactionId: string | undefined,
+    paymentType: string,
+    paidAt: string,
+    options?: {
+      preferredCategory?: string;
+      notes?: string;
+    }
+  ): {
+    reconciled: boolean;
+    amountReconciled: number;
+    paidSppCount: number;
+    paidMiscCount: number;
+    savingsDeposited: number;
+    category: string;
+    itemsDetail: string[];
+    message: string;
+  } {
+    let remainingAmount = amountVal;
+    let paidSppCount = 0;
+    let paidMiscCount = 0;
+    let savingsDeposited = 0;
+    const itemsDetail: string[] = [];
+
+    // 1. Unpaid SPP bills sorted chronologically by academic year
+    const unpaidSpp = sppBills
+      .filter(b => b.studentId === targetStudent.id && (b.status === "unpaid" || b.status === "pending"))
+      .sort((a, b) => {
+        const yearDiff = (a.year || 2026) - (b.year || 2026);
+        if (yearDiff !== 0) return yearDiff;
+        const idxA = ACADEMIC_MONTHS.indexOf(a.month);
+        const idxB = ACADEMIC_MONTHS.indexOf(b.month);
+        return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+      });
+
+    // 2. Unpaid Misc bills
+    const unpaidMisc = miscBills.filter(
+      m => m.studentId === targetStudent.id && (m.status === "unpaid" || m.status === "pending")
+    );
+
+    // Step A: Pay unpaid SPP bills greedily or exact match
+    for (const b of unpaidSpp) {
+      if (remainingAmount >= b.amount && b.amount > 0) {
+        b.status = "paid";
+        b.paidAt = paidAt;
+        b.paymentMethod = paymentType;
+        b.orderId = orderId;
+        if (transactionId) b.transactionId = transactionId;
+
+        remainingAmount -= b.amount;
+        paidSppCount++;
+        itemsDetail.push(`SPP ${b.month} ${b.year}`);
+      }
+    }
+
+    // Step B: Pay unpaid Misc bills if amount remains
+    for (const m of unpaidMisc) {
+      if (remainingAmount >= m.amount && m.amount > 0) {
+        m.status = "paid";
+        m.paidAt = paidAt;
+        m.paymentMethod = paymentType;
+        m.orderId = orderId;
+        if (transactionId) m.transactionId = transactionId;
+
+        remainingAmount -= m.amount;
+        paidMiscCount++;
+        itemsDetail.push(`Non-SPP: ${m.title}`);
+      }
+    }
+
+    // Step C: If still remainingAmount > 0 (or student had no unpaid bills) -> deposit to Savings
+    if (remainingAmount > 0) {
+      const newSavingsTx: SavingsTransaction = {
+        id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        studentId: targetStudent.id,
+        studentNis: targetStudent.nis,
+        type: "deposit",
+        amount: remainingAmount,
+        status: "success",
+        createdAt: paidAt,
+        paymentMethod: paymentType,
+        orderId: orderId,
+        transactionId: transactionId,
+        notes: options?.notes || `Alokasi Otomatis Pembayaran Midtrans (${orderId})`
+      };
+      savingsTransactions.unshift(newSavingsTx);
+      targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + remainingAmount;
+      AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+      savingsDeposited = remainingAmount;
+      itemsDetail.push(`Saldo Tabungan (Rp ${remainingAmount.toLocaleString("id-ID")})`);
+      remainingAmount = 0;
+    }
+
+    const categoryName = itemsDetail.length > 0
+      ? (paidSppCount > 0 && paidMiscCount === 0 && savingsDeposited === 0 
+          ? (paidSppCount === 1 ? itemsDetail[0] : `SPP (${paidSppCount} Bulan)`)
+          : (savingsDeposited > 0 && paidSppCount === 0 && paidMiscCount === 0
+              ? "Setoran Tabungan Siswa"
+              : `Paket Pembayaran (${itemsDetail.length} Item)`))
+      : "Pembayaran Midtrans Terverifikasi";
+
+    return {
+      reconciled: true,
+      amountReconciled: amountVal,
+      paidSppCount,
+      paidMiscCount,
+      savingsDeposited,
+      category: categoryName,
+      itemsDetail,
+      message: `BERHASIL DILUNASI! Otomatis dialokasikan untuk: ${itemsDetail.join(" + ")} a.n ${targetStudent.name} (${targetStudent.class || targetStudent.nis}).`
+    };
+  }
+
   async function processMidtransOrderStatus(orderId: string, customMidtransStatus?: any): Promise<{
     status: "settled" | "expired" | "pending" | "not_found" | "no_change";
     actionTaken: boolean;
@@ -829,6 +946,58 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           matchedMisc.forEach(m => { if (m.status === "pending") { m.status = "unpaid"; m.orderId = undefined; actionTaken = true; } });
           matchedSavings.forEach(t => { if (t.status === "pending") { t.status = "failed"; actionTaken = true; } });
           detailMessage = `Keranjang pembayaran direset karena expired/cancel.`;
+        }
+      } else if (isSettled) {
+        // Smart Allocation fallback for Cart orders without pre-tagged orderId
+        let targetStudent = students.find(s => activeOrderId.includes(s.nis) || s.id === `std-${activeOrderId}`);
+        if (!targetStudent) {
+          const parts = activeOrderId.split("-");
+          for (const p of parts) {
+            if (/^\d{3,12}$/.test(p)) {
+              const matched = students.find(s => String(s.nis).trim() === p || s.id === `std-${p}`);
+              if (matched) {
+                targetStudent = matched;
+                break;
+              }
+            }
+          }
+        }
+
+        if (targetStudent) {
+          const grossAmt = statusData.gross_amount ? Number(statusData.gross_amount) : 0;
+          const alloc = autoAllocateStudentPayment(targetStudent, grossAmt, activeOrderId, targetTransactionId, actualPaymentType, resolvedPaidAt);
+          actionTaken = true;
+
+          recordOrUpdateMidtransTransaction({
+            orderId: activeOrderId,
+            transactionId: targetTransactionId,
+            billType: "cart",
+            grossAmount: grossAmt,
+            studentName: targetStudent.name,
+            studentNis: targetStudent.nis,
+            description: alloc.category,
+            transactionStatus: "settlement",
+            paymentType: actualPaymentType,
+            settlementTime: resolvedPaidAt
+          });
+
+          broadcastNotification({
+            id: `notif-cart-${Date.now()}`,
+            title: "Pembayaran Keranjang Lunas ✅",
+            message: `Pembayaran ${alloc.category} oleh ${targetStudent.name} sebesar Rp ${grossAmt.toLocaleString("id-ID")} berhasil diverifikasi.`,
+            type: "success",
+            studentId: targetStudent.id,
+            createdAt: new Date().toISOString()
+          });
+
+          if (targetStudent.phone) {
+            sendWhatsappNotification(
+              targetStudent.phone,
+              `*KUITANSI PEMBAYARAN ONLINE*\n\nAlhamdulillah, pembayaran untuk siswa *${targetStudent.name}* (NIS: ${targetStudent.nis}) sebesar *Rp ${grossAmt.toLocaleString("id-ID")}* telah LUNAS.\n\nRincian: ${alloc.itemsDetail.join(", ")}\nNomor Order: ${activeOrderId}\nMetode: ${actualPaymentType}\nWaktu: ${new Date(resolvedPaidAt).toLocaleString("id-ID")}\n\nTerima kasih.\n*SMP Maarif NU Pandaan*`
+            ).catch(() => {});
+          }
+
+          detailMessage = alloc.message;
         }
       }
     }
@@ -2098,6 +2267,49 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               });
             }
             continue;
+          } else if (targetStudent && amountVal > 0) {
+            // Cart order without pre-tagged items -> Smart Auto-Allocate to student's unpaid bills / tabungan
+            const alloc = autoAllocateStudentPayment(
+              targetStudent,
+              amountVal,
+              cleanOrderId,
+              cleanTxId,
+              actualPaymentType,
+              resolvedPaidAt
+            );
+
+            reconciledCount++;
+            totalAmountReconciled += amountVal;
+            stateChanged = true;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              billType: "cart",
+              grossAmount: amountVal,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              description: alloc.category,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            results.push({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              studentClass: targetStudent.class || "-",
+              category: alloc.category,
+              amount: amountVal,
+              reportStatus: rawStatus,
+              reportPaymentType: actualPaymentType,
+              reportTime: resolvedPaidAt,
+              reconciliationStatus: "reconciled",
+              message: alloc.message
+            });
+            continue;
           }
         }
 
@@ -2489,16 +2701,61 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         }
 
         // ----------------------------------------------------
-        // 6. UNMATCHED / AMBIGUOUS SETTLEMENT
+        // 6. UNMATCHED / AMBIGUOUS SETTLEMENT -> SMART AUTO-ALLOCATION
         // ----------------------------------------------------
+        if (targetStudent && amountVal > 0) {
+          const alloc = autoAllocateStudentPayment(
+            targetStudent,
+            amountVal,
+            cleanOrderId || `MT-${Date.now()}`,
+            cleanTxId,
+            actualPaymentType,
+            resolvedPaidAt
+          );
+
+          reconciledCount++;
+          totalAmountReconciled += amountVal;
+          stateChanged = true;
+
+          recordOrUpdateMidtransTransaction({
+            orderId: cleanOrderId || `MT-${Date.now()}`,
+            transactionId: cleanTxId,
+            billType: alloc.paidSppCount > 0 ? "spp" : (alloc.paidMiscCount > 0 ? "misc" : "savings"),
+            grossAmount: amountVal,
+            studentName: targetStudent.name,
+            studentNis: targetStudent.nis,
+            description: alloc.category,
+            transactionStatus: "settlement",
+            paymentType: actualPaymentType,
+            settlementTime: resolvedPaidAt
+          });
+
+          results.push({
+            orderId: cleanOrderId || cleanTxId || `MID-${Date.now()}`,
+            transactionId: cleanTxId,
+            studentName: targetStudent.name,
+            studentNis: targetStudent.nis,
+            studentClass: targetStudent.class || "-",
+            category: alloc.category,
+            amount: amountVal,
+            reportStatus: rawStatus,
+            reportPaymentType: actualPaymentType,
+            reportTime: resolvedPaidAt,
+            reconciliationStatus: "reconciled",
+            message: alloc.message
+          });
+          continue;
+        }
+
+        // Only true unmatched if no target student could be resolved:
         notFoundCount++;
         recordOrUpdateMidtransTransaction({
           orderId: cleanOrderId || `MT-${Date.now()}`,
           transactionId: cleanTxId,
           billType: "other",
           grossAmount: amountVal,
-          studentName: targetStudent?.name || item.customerName,
-          studentNis: targetStudent?.nis || item.studentNis,
+          studentName: targetStudent?.name || item.customerName || "Umum / Belum Teridentifikasi",
+          studentNis: targetStudent?.nis || item.studentNis || "-",
           description: rawDesc || "Transaksi Midtrans Report (Tanpa Tagihan)",
           transactionStatus: "settlement",
           paymentType: actualPaymentType,
@@ -2508,7 +2765,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         results.push({
           orderId: cleanOrderId || cleanTxId || `MID-${Date.now()}`,
           transactionId: cleanTxId,
-          studentName: targetStudent?.name || item.customerName || "Wali Siswa / Umum",
+          studentName: targetStudent?.name || item.customerName || "Wali Siswa / Umum (NIS Belum Cocok)",
           studentNis: targetStudent?.nis || item.studentNis || "-",
           studentClass: targetStudent?.class || "-",
           category: rawDesc ? `Lainnya: ${rawDesc}` : "Transaksi Midtrans (Tanpa Tagihan Terkait)",
@@ -2552,6 +2809,272 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       console.error("Error processing bulk Midtrans report verification:", err);
       return res.status(500).json({ error: "Terjadi kesalahan internal saat memproses file report: " + err.message });
     }
+  });
+
+  // 18. Manual Reconcile Midtrans Endpoint (Admin Direct Pairing)
+  router.post("/manual-reconcile-midtrans", async (req, res) => {
+    try {
+      const {
+        orderId,
+        transactionId,
+        amount,
+        studentId,
+        studentNis,
+        allocationType = "auto_spp", // 'auto_spp' | 'savings' | 'specific_bill' | 'treasurer_kas'
+        specificBillId,
+        specificBillType, // 'spp' | 'misc'
+        paymentType = "Midtrans (Manual Reconciled)",
+        settlementTime,
+        notes
+      } = req.body;
+
+      const cleanOrderId = String(orderId || "").trim() || `MT-MANUAL-${Date.now()}`;
+      const cleanTxId = transactionId ? String(transactionId).trim() : undefined;
+      const amountVal = Number(amount) || 0;
+      const resolvedPaidAt = parseMidtransTime(settlementTime || new Date().toISOString());
+
+      let targetStudent = students.find(s => 
+        (studentId && s.id === studentId) || 
+        (studentNis && (String(s.nis).trim() === String(studentNis).trim() || s.id === `std-${studentNis}`))
+      );
+
+      if (!targetStudent && cleanOrderId) {
+        const parts = cleanOrderId.split("-");
+        for (const p of parts) {
+          if (/^\d{3,12}$/.test(p)) {
+            const matched = students.find(s => String(s.nis).trim() === p || s.id === `std-${p}`);
+            if (matched) {
+              targetStudent = matched;
+              break;
+            }
+          }
+        }
+      }
+
+      // Handle allocation based on type
+      if (allocationType === "treasurer_kas" || (!targetStudent && allocationType !== "specific_bill")) {
+        // Record directly into Kas BKU Bendahara (Kas Masuk)
+        const newKas: TreasurerTransaction = {
+          id: `trx-kas-${Date.now()}`,
+          type: "incoming",
+          category: notes || "Penerimaan Midtrans Online (Penyesuaian Manual)",
+          amount: amountVal,
+          description: `Rekonsiliasi Manual Order Midtrans: ${cleanOrderId} ${cleanTxId ? `(TxID: ${cleanTxId})` : ""}`,
+          date: resolvedPaidAt.substring(0, 10),
+          source: "custom",
+          studentName: targetStudent?.name || "Wali Murid / Umum",
+          studentId: targetStudent?.id,
+          nis: targetStudent?.nis,
+          createdBy: "Bendahara (Manual Reconcile)",
+          paymentMethod: "bank",
+          orderId: cleanOrderId,
+          transactionId: cleanTxId
+        };
+        treasurerTransactions.unshift(newKas);
+
+        recordOrUpdateMidtransTransaction({
+          orderId: cleanOrderId,
+          transactionId: cleanTxId,
+          billType: "other",
+          grossAmount: amountVal,
+          studentName: targetStudent?.name,
+          studentNis: targetStudent?.nis,
+          description: newKas.description,
+          transactionStatus: "settlement",
+          paymentType,
+          settlementTime: resolvedPaidAt
+        });
+
+        saveState();
+
+        return res.json({
+          success: true,
+          message: `Transaksi Rp ${amountVal.toLocaleString("id-ID")} berhasil dicatat langsung ke Kas Umum (BKU) Bendahara.`,
+          allocationType: "treasurer_kas"
+        });
+      }
+
+      if (!targetStudent) {
+        return res.status(400).json({ error: "Siswa penerima alokasi tidak ditemukan." });
+      }
+
+      if (allocationType === "savings") {
+        // Force allocate 100% to student's savings account
+        const newSavingsTx: SavingsTransaction = {
+          id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          studentId: targetStudent.id,
+          studentNis: targetStudent.nis,
+          type: "deposit",
+          amount: amountVal,
+          status: "success",
+          createdAt: resolvedPaidAt,
+          paymentMethod: paymentType,
+          orderId: cleanOrderId,
+          transactionId: cleanTxId,
+          notes: notes || `Setoran Tabungan Manual Reconcile (${cleanOrderId})`
+        };
+        savingsTransactions.unshift(newSavingsTx);
+        targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
+        AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+
+        recordOrUpdateMidtransTransaction({
+          orderId: cleanOrderId,
+          transactionId: cleanTxId,
+          billType: "savings",
+          grossAmount: amountVal,
+          studentName: targetStudent.name,
+          studentNis: targetStudent.nis,
+          description: "Setoran Tabungan (Manual Reconcile)",
+          transactionStatus: "settlement",
+          paymentType,
+          settlementTime: resolvedPaidAt
+        });
+
+        saveState();
+
+        return res.json({
+          success: true,
+          message: `Berhasil menambahkan Rp ${amountVal.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}).`,
+          allocationType: "savings",
+          newBalance: targetStudent.savingsBalance
+        });
+      }
+
+      if (allocationType === "specific_bill" && specificBillId) {
+        if (specificBillType === "spp") {
+          const bill = sppBills.find(b => b.id === specificBillId);
+          if (bill) {
+            bill.status = "paid";
+            bill.paidAt = resolvedPaidAt;
+            bill.paymentMethod = paymentType;
+            bill.orderId = cleanOrderId;
+            if (cleanTxId) bill.transactionId = cleanTxId;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              billType: "spp",
+              grossAmount: bill.amount,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              description: `SPP ${bill.month} ${bill.year}`,
+              transactionStatus: "settlement",
+              paymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            saveState();
+
+            return res.json({
+              success: true,
+              message: `Tagihan SPP ${bill.month} ${bill.year} a.n ${targetStudent.name} berhasil dilunasi.`,
+              allocationType: "specific_bill"
+            });
+          }
+        } else {
+          const mBill = miscBills.find(m => m.id === specificBillId);
+          if (mBill) {
+            mBill.status = "paid";
+            mBill.paidAt = resolvedPaidAt;
+            mBill.paymentMethod = paymentType;
+            mBill.orderId = cleanOrderId;
+            if (cleanTxId) mBill.transactionId = cleanTxId;
+
+            recordOrUpdateMidtransTransaction({
+              orderId: cleanOrderId,
+              transactionId: cleanTxId,
+              billType: "misc",
+              grossAmount: mBill.amount,
+              studentName: targetStudent.name,
+              studentNis: targetStudent.nis,
+              description: mBill.title,
+              transactionStatus: "settlement",
+              paymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            saveState();
+
+            return res.json({
+              success: true,
+              message: `Tagihan Non-SPP "${mBill.title}" a.n ${targetStudent.name} berhasil dilunasi.`,
+              allocationType: "specific_bill"
+            });
+          }
+        }
+      }
+
+      // Default: auto_spp (Smart Allocation)
+      const allocResult = autoAllocateStudentPayment(
+        targetStudent,
+        amountVal,
+        cleanOrderId,
+        cleanTxId,
+        paymentType,
+        resolvedPaidAt,
+        { notes }
+      );
+
+      recordOrUpdateMidtransTransaction({
+        orderId: cleanOrderId,
+        transactionId: cleanTxId,
+        billType: allocResult.paidSppCount > 0 ? "spp" : (allocResult.paidMiscCount > 0 ? "misc" : "savings"),
+        grossAmount: amountVal,
+        studentName: targetStudent.name,
+        studentNis: targetStudent.nis,
+        description: allocResult.category,
+        transactionStatus: "settlement",
+        paymentType,
+        settlementTime: resolvedPaidAt
+      });
+
+      saveState();
+
+      return res.json({
+        success: true,
+        message: allocResult.message,
+        allocationType: "auto_spp",
+        allocResult
+      });
+    } catch (err: any) {
+      console.error("Manual reconcile midtrans error:", err);
+      res.status(500).json({ error: "Gagal merekonsiliasi manual: " + (err.message || String(err)) });
+    }
+  });
+
+  // 19. Search Students with Unpaid Bills for Reconcile Pairing
+  router.get("/search-student-for-reconcile", (req, res) => {
+    const q = String(req.query.q || "").toLowerCase().trim();
+    if (!q) {
+      return res.json({ students: [] });
+    }
+
+    const matched = students
+      .filter(s => 
+        (s.name && s.name.toLowerCase().includes(q)) || 
+        (s.nis && String(s.nis).includes(q)) || 
+        (s.class && s.class.toLowerCase().includes(q))
+      )
+      .slice(0, 12)
+      .map(s => {
+        const studentUnpaidSpp = sppBills.filter(b => b.studentId === s.id && (b.status === "unpaid" || b.status === "pending"));
+        const studentUnpaidMisc = miscBills.filter(m => m.studentId === s.id && (m.status === "unpaid" || m.status === "pending"));
+        return {
+          id: s.id,
+          name: s.name,
+          nis: s.nis,
+          class: s.class,
+          savingsBalance: Number(s.savingsBalance) || 0,
+          unpaidSppCount: studentUnpaidSpp.length,
+          unpaidSppTotal: studentUnpaidSpp.reduce((sum, b) => sum + (Number(b.amount) || 0), 0),
+          unpaidSppBills: studentUnpaidSpp.map(b => ({ id: b.id, month: b.month, year: b.year, amount: b.amount })),
+          unpaidMiscCount: studentUnpaidMisc.length,
+          unpaidMiscTotal: studentUnpaidMisc.reduce((sum, m) => sum + (Number(m.amount) || 0), 0),
+          unpaidMiscBills: studentUnpaidMisc.map(m => ({ id: m.id, title: m.title, amount: m.amount }))
+        };
+      });
+
+    res.json({ students: matched });
   });
 
   return router;

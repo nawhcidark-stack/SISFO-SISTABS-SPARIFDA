@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   UploadCloud,
   FileSpreadsheet,
@@ -15,7 +15,14 @@ import {
   FileCode,
   Sparkles,
   ArrowRight,
-  Filter
+  Filter,
+  Link2,
+  UserCheck,
+  Wallet,
+  Landmark,
+  ChevronRight,
+  Loader2,
+  Check
 } from "lucide-react";
 import * as XLSX from "xlsx";
 
@@ -50,6 +57,20 @@ export interface ReconcileSummary {
   totalAmountReconciled: number;
 }
 
+interface StudentSearchResult {
+  id: string;
+  name: string;
+  nis: string;
+  class?: string;
+  savingsBalance: number;
+  unpaidSppCount: number;
+  unpaidSppTotal: number;
+  unpaidSppBills: { id: string; month: string; year: number; amount: number }[];
+  unpaidMiscCount: number;
+  unpaidMiscTotal: number;
+  unpaidMiscBills: { id: string; title: string; amount: number }[];
+}
+
 export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = ({
   isOpen,
   onClose,
@@ -68,6 +89,21 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
   const [results, setResults] = useState<ReconcileResultItem[]>([]);
   const [statusFilter, setStatusFilter] = useState<string>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
+
+  // Pairing Modal State
+  const [pairingItem, setPairingItem] = useState<ReconcileResultItem | null>(null);
+  const [pairingSearchQuery, setPairingSearchQuery] = useState<string>('');
+  const [searchedStudents, setSearchedStudents] = useState<StudentSearchResult[]>([]);
+  const [isSearchingStudents, setIsSearchingStudents] = useState<boolean>(false);
+  const [selectedStudent, setSelectedStudent] = useState<StudentSearchResult | null>(null);
+  const [pairingAllocationType, setPairingAllocationType] = useState<'auto_spp' | 'savings' | 'treasurer_kas' | 'specific_bill'>('auto_spp');
+  const [selectedSpecificBill, setSelectedSpecificBill] = useState<{ id: string; type: 'spp' | 'misc'; title: string } | null>(null);
+  const [isPairingSubmitting, setIsPairingSubmitting] = useState<boolean>(false);
+  const [pairingSuccessMsg, setPairingSuccessMsg] = useState<string | null>(null);
+
+  // Auto-reconcile all state
+  const [isAutoReconcilingAll, setIsAutoReconcilingAll] = useState<boolean>(false);
+  const [autoReconcileMessage, setAutoReconcileMessage] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -108,140 +144,161 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
             orderId: orderId || transactionId || "",
             transactionId,
             status: statusIdx !== -1 && row[statusIdx] ? String(row[statusIdx]).trim() : "settlement",
-            grossAmount: amountIdx !== -1 && row[amountIdx] ? Number(String(row[amountIdx]).replace(/[^0-9.]/g, '')) || 0 : 0,
-            paymentType: paymentIdx !== -1 && row[paymentIdx] ? String(row[paymentIdx]).trim() : "Midtrans Gateway",
-            transactionTime: timeIdx !== -1 && row[timeIdx] ? String(row[timeIdx]).trim() : "",
-            customerEmail: emailIdx !== -1 && row[emailIdx] ? String(row[emailIdx]).trim() : "",
-            customerName: nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : "",
-            studentNis: nisIdx !== -1 && row[nisIdx] ? String(row[nisIdx]).trim() : "",
-            description: descIdx !== -1 && row[descIdx] ? String(row[descIdx]).trim() : "",
-            month: monthIdx !== -1 && row[monthIdx] ? String(row[monthIdx]).trim() : "",
-            year: yearIdx !== -1 && row[yearIdx] ? String(row[yearIdx]).trim() : ""
+            gross_amount: amountIdx !== -1 && row[amountIdx] ? row[amountIdx] : undefined,
+            payment_type: paymentIdx !== -1 && row[paymentIdx] ? String(row[paymentIdx]).trim() : undefined,
+            settlement_time: timeIdx !== -1 && row[timeIdx] ? String(row[timeIdx]).trim() : undefined,
+            customer_email: emailIdx !== -1 && row[emailIdx] ? String(row[emailIdx]).trim() : undefined,
+            customerName: nameIdx !== -1 && row[nameIdx] ? String(row[nameIdx]).trim() : undefined,
+            studentNis: nisIdx !== -1 && row[nisIdx] ? String(row[nisIdx]).trim() : undefined,
+            description: descIdx !== -1 && row[descIdx] ? String(row[descIdx]).trim() : undefined,
+            month: monthIdx !== -1 && row[monthIdx] ? String(row[monthIdx]).trim() : undefined,
+            year: yearIdx !== -1 && row[yearIdx] ? Number(row[yearIdx]) : undefined
           });
         }
       }
       return items;
     }
 
-    // If array of objects (sheet_to_json with headers)
+    // If it's an array of objects (JSON or XLSX sheet_to_json with objects)
     return dataArray.map(obj => {
       const keys = Object.keys(obj);
-      const findValue = (keywords: string[]) => {
-        const matchedKey = keys.find(k => keywords.some(kw => k.toLowerCase().includes(kw)));
-        return matchedKey ? obj[matchedKey] : undefined;
+      const findKey = (candidates: string[]) => {
+        const found = keys.find(k => {
+          const lower = k.toLowerCase();
+          return candidates.some(c => lower.includes(c));
+        });
+        return found ? obj[found] : undefined;
       };
 
-      const orderIdVal = findValue(["order_id", "order id", "orderid", "no. order", "ref", "no order"]) || obj[keys[0]];
-      const txIdVal = findValue(["transaction_id", "transaction id", "trans_id", "id transaksi", "tx_id", "tx id"]);
-      const statusVal = findValue(["status", "transaction_status", "state"]) || "settlement";
-      const amountVal = findValue(["gross_amount", "amount", "gross", "total", "nominal", "jumlah"]) || 0;
-      const paymentVal = findValue(["payment_type", "payment", "channel", "metode"]) || "Midtrans Gateway";
-      const timeVal = findValue(["settlement_time", "transaction_time", "time", "date", "tanggal", "waktu"]) || "";
-      const emailVal = findValue(["email", "e-mail", "mail", "customer_email", "customer email"]);
-      const nameVal = findValue(["customer_name", "customer name", "nama", "siswa", "pembayar", "name"]);
-      const nisVal = findValue(["nis", "nisn", "no_induk", "no induk"]);
-      const descVal = findValue(["description", "keterangan", "deskripsi", "item", "item_name", "items", "notes", "rincian", "detail"]);
-      const monthVal = findValue(["bulan", "month", "periode"]);
-      const yearVal = findValue(["tahun", "year"]);
+      const orderId = findKey(["order_id", "order id", "orderid", "no. order", "ref", "no order", "id"]);
+      const transactionId = findKey(["transaction_id", "transaction id", "trans_id", "id transaksi", "tx id", "tx_id"]);
+      const status = findKey(["status", "transaction_status", "state"]) || "settlement";
+      const gross_amount = findKey(["amount", "gross", "total", "nominal", "jumlah"]);
+      const payment_type = findKey(["payment", "channel", "metode"]);
+      const settlement_time = findKey(["time", "date", "tanggal", "waktu", "settlement"]);
+      const customer_email = findKey(["email", "e-mail", "mail"]);
+      const customerName = findKey(["customer_name", "customer name", "nama", "siswa", "pembayar"]);
+      const studentNis = findKey(["nis", "nisn", "no_induk", "no induk"]);
+      const description = findKey(["description", "keterangan", "deskripsi", "item", "item_name", "items", "notes", "rincian", "detail"]);
+      const month = findKey(["bulan", "month", "periode"]);
+      const year = findKey(["tahun", "year"]);
 
-      const cleanOrderId = String(orderIdVal || '').trim();
-      const cleanTxId = txIdVal ? String(txIdVal).trim() : undefined;
       return {
-        orderId: cleanOrderId || cleanTxId || '',
-        transactionId: cleanTxId,
-        status: String(statusVal || 'settlement').trim(),
-        grossAmount: typeof amountVal === 'number' ? amountVal : Number(String(amountVal).replace(/[^0-9.]/g, '')) || 0,
-        paymentType: String(paymentVal || 'Midtrans Gateway').trim(),
-        transactionTime: String(timeVal || '').trim(),
-        customerEmail: emailVal ? String(emailVal).trim() : "",
-        customerName: nameVal ? String(nameVal).trim() : "",
-        studentNis: nisVal ? String(nisVal).trim() : "",
-        description: descVal ? String(descVal).trim() : "",
-        month: monthVal ? String(monthVal).trim() : "",
-        year: yearVal ? String(yearVal).trim() : ""
+        orderId: orderId ? String(orderId).trim() : (transactionId ? String(transactionId).trim() : ""),
+        transactionId: transactionId ? String(transactionId).trim() : undefined,
+        status: String(status).trim(),
+        gross_amount,
+        payment_type: payment_type ? String(payment_type).trim() : undefined,
+        settlement_time: settlement_time ? String(settlement_time).trim() : undefined,
+        customer_email: customer_email ? String(customer_email).trim() : undefined,
+        customerName: customerName ? String(customerName).trim() : undefined,
+        studentNis: studentNis ? String(studentNis).trim() : undefined,
+        description: description ? String(description).trim() : undefined,
+        month: month ? String(month).trim() : undefined,
+        year: year ? Number(year) : undefined
       };
-    }).filter(item => (item.orderId && item.orderId.length >= 2 && !item.orderId.toLowerCase().includes("order_id")) || item.transactionId);
+    }).filter(item => Boolean(item.orderId || item.transactionId));
   };
 
   const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
+    const files = e.target.files;
+    if (!files || files.length === 0) return;
+    const file = files[0];
     setFileName(file.name);
-    setErrorMessage(null);
     setIsParsing(true);
+    setErrorMessage(null);
 
     const reader = new FileReader();
+    const isBinary = file.name.endsWith(".xlsx") || file.name.endsWith(".xls");
 
-    if (file.name.endsWith('.csv') || file.name.endsWith('.txt') || file.name.endsWith('.tsv')) {
-      reader.onload = (evt) => {
-        try {
-          const text = evt.target?.result as string;
-          const workbook = XLSX.read(text, { type: 'string' });
+    reader.onload = (evt) => {
+      try {
+        const data = evt.target?.result;
+        if (isBinary) {
+          const workbook = XLSX.read(data, { type: "binary" });
           const firstSheetName = workbook.SheetNames[0];
           const worksheet = workbook.Sheets[firstSheetName];
-          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-          const items = normalizeRowsFromData(rawData);
-          setParsedRows(items);
-          if (items.length === 0) {
-            setErrorMessage("Tidak ada kolom Order ID yang valid ditemukan dalam file.");
+          const jsonSheet = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          const rows = normalizeRowsFromData(jsonSheet);
+          if (rows.length === 0) {
+            setErrorMessage("File terbaca, namun tidak ditemukan baris transaksi yang valid dengan kolom Order ID.");
+          } else {
+            setParsedRows(rows);
           }
-        } catch (err: any) {
-          console.error(err);
-          setErrorMessage("Gagal membaca file CSV/TXT. Pastikan format file sesuai.");
-        } finally {
-          setIsParsing(false);
+        } else {
+          const text = String(data);
+          const workbook = XLSX.read(text, { type: "string" });
+          const firstSheetName = workbook.SheetNames[0];
+          const worksheet = workbook.Sheets[firstSheetName];
+          const jsonSheet = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+          const rows = normalizeRowsFromData(jsonSheet);
+          if (rows.length === 0) {
+            setErrorMessage("File CSV terbaca, namun tidak ditemukan data Order ID yang cocok.");
+          } else {
+            setParsedRows(rows);
+          }
         }
-      };
-      reader.readAsText(file);
+      } catch (err: any) {
+        console.error("Parse error:", err);
+        setErrorMessage("Gagal membaca file: format file tidak didukung atau rusak.");
+      } finally {
+        setIsParsing(false);
+      }
+    };
+
+    if (isBinary) {
+      reader.readAsBinaryString(file);
     } else {
-      reader.onload = (evt) => {
-        try {
-          const data = new Uint8Array(evt.target?.result as ArrayBuffer);
-          const workbook = XLSX.read(data, { type: 'array' });
-          const firstSheetName = workbook.SheetNames[0];
-          const worksheet = workbook.Sheets[firstSheetName];
-          const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-          const items = normalizeRowsFromData(rawData);
-          setParsedRows(items);
-          if (items.length === 0) {
-            setErrorMessage("Tidak ada data transaksi yang terbaca di file Excel ini.");
-          }
-        } catch (err: any) {
-          console.error(err);
-          setErrorMessage("Gagal memproses file Excel (.xlsx / .xls).");
-        } finally {
-          setIsParsing(false);
-        }
-      };
-      reader.readAsArrayBuffer(file);
+      reader.readAsText(file);
     }
   };
 
-  const handleTextParse = () => {
+  const handleParseTextManual = () => {
     if (!rawTextInput.trim()) {
-      setErrorMessage("Masukkan atau tempel teks/CSV terlebih dahulu.");
+      setErrorMessage("Silakan tempel teks CSV atau daftar Order ID terlebih dahulu.");
       return;
     }
+    setIsParsing(true);
     setErrorMessage(null);
+
     try {
-      const workbook = XLSX.read(rawTextInput, { type: 'string' });
+      const workbook = XLSX.read(rawTextInput, { type: "string" });
       const firstSheetName = workbook.SheetNames[0];
       const worksheet = workbook.Sheets[firstSheetName];
-      const rawData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
-      const items = normalizeRowsFromData(rawData);
-      setParsedRows(items);
-      if (items.length === 0) {
-        setErrorMessage("Tidak ada Order ID yang terbaca dari teks yang Anda tempelkan.");
+      const jsonSheet = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+      const rows = normalizeRowsFromData(jsonSheet);
+
+      if (rows.length > 0) {
+        setParsedRows(rows);
+        setFileName("Pasted_Text_Data.csv");
+      } else {
+        // Fallback: parse lines directly as order IDs
+        const lines = rawTextInput.split(/\r?\n/).map(l => l.trim()).filter(l => l.length > 3);
+        const manualRows = lines.map(line => {
+          const parts = line.split(/[,\t;]/).map(p => p.trim());
+          return {
+            orderId: parts[0],
+            gross_amount: parts[1] ? Number(parts[1].replace(/[^0-9]/g, '')) : undefined,
+            status: "settlement"
+          };
+        });
+        if (manualRows.length > 0) {
+          setParsedRows(manualRows);
+          setFileName("Pasted_Order_List.txt");
+        } else {
+          setErrorMessage("Tidak ada Order ID valid yang dapat diuraikan dari teks.");
+        }
       }
-    } catch (e: any) {
-      setErrorMessage("Format teks tidak dapat diproses sebagai CSV.");
+    } catch (err: any) {
+      setErrorMessage("Gagal menguraikan teks input.");
+    } finally {
+      setIsParsing(false);
     }
   };
 
   const handleSubmitReconciliation = async () => {
     if (parsedRows.length === 0) {
-      setErrorMessage("Belum ada data transaksi yang siap direkonsiliasi.");
+      setErrorMessage("Belum ada baris transaksi yang diuraikan untuk diverifikasi.");
       return;
     }
 
@@ -282,9 +339,269 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
     setErrorMessage(null);
     setStatusFilter('all');
     setSearchQuery('');
+    setPairingItem(null);
+    setSelectedStudent(null);
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
     }
+  };
+
+  // Search students for manual pairing
+  const searchStudents = async (query: string) => {
+    if (!query.trim()) {
+      setSearchedStudents([]);
+      return;
+    }
+    setIsSearchingStudents(true);
+    try {
+      const res = await fetch(`/api/search-student-for-reconcile?q=${encodeURIComponent(query.trim())}`);
+      const data = await res.json();
+      if (data && Array.isArray(data.students)) {
+        setSearchedStudents(data.students);
+      } else {
+        setSearchedStudents([]);
+      }
+    } catch (e) {
+      console.error("Failed to search students:", e);
+    } finally {
+      setIsSearchingStudents(false);
+    }
+  };
+
+  // Open Pairing Modal for an item
+  const handleOpenPairingModal = (item: ReconcileResultItem) => {
+    setPairingItem(item);
+    setSelectedStudent(null);
+    setSelectedSpecificBill(null);
+    setPairingAllocationType('auto_spp');
+    setPairingSuccessMsg(null);
+
+    // Extract query hint from item
+    let queryHint = "";
+    if (item.studentNis && item.studentNis !== "-") {
+      queryHint = item.studentNis;
+    } else if (item.studentName && !item.studentName.includes("Wali") && !item.studentName.includes("Umum")) {
+      queryHint = item.studentName;
+    } else {
+      // Extract numbers from order ID (e.g. CART-13134-...)
+      const parts = item.orderId.split("-");
+      for (const p of parts) {
+        if (/^\d{3,10}$/.test(p)) {
+          queryHint = p;
+          break;
+        }
+      }
+    }
+
+    setPairingSearchQuery(queryHint);
+    if (queryHint) {
+      searchStudents(queryHint);
+    } else {
+      setSearchedStudents([]);
+    }
+  };
+
+  // Submit Single Manual Pairing
+  const handleSubmitPairing = async () => {
+    if (!pairingItem) return;
+    if (pairingAllocationType !== 'treasurer_kas' && !selectedStudent) {
+      setErrorMessage("Silakan pilih siswa penerima alokasi pembayaran terlebih dahulu.");
+      return;
+    }
+
+    setIsPairingSubmitting(true);
+    try {
+      const payload = {
+        orderId: pairingItem.orderId,
+        transactionId: pairingItem.transactionId,
+        amount: pairingItem.amount,
+        studentId: selectedStudent?.id,
+        studentNis: selectedStudent?.nis,
+        allocationType: pairingAllocationType,
+        specificBillId: selectedSpecificBill?.id,
+        specificBillType: selectedSpecificBill?.type,
+        paymentType: pairingItem.reportPaymentType || "Midtrans Online (Manual Reconciled)",
+        settlementTime: pairingItem.reportTime,
+        notes: `Rekonsiliasi Manual (${pairingItem.orderId})`
+      };
+
+      const res = await fetch("/api/manual-reconcile-midtrans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        // Update local results state
+        setResults(prev => prev.map(r => {
+          if (r.orderId === pairingItem.orderId) {
+            return {
+              ...r,
+              studentName: selectedStudent?.name || (pairingAllocationType === 'treasurer_kas' ? "Kas Umum (BKU)" : r.studentName),
+              studentNis: selectedStudent?.nis || r.studentNis,
+              studentClass: selectedStudent?.class || r.studentClass,
+              category: data.allocResult?.category || (pairingAllocationType === 'savings' ? "Setoran Tabungan" : (pairingAllocationType === 'treasurer_kas' ? "Penerimaan Kas Umum" : r.category)),
+              reconciliationStatus: 'reconciled',
+              message: data.message || "BERHASIL DILUNASI! Berhasil direkonsiliasi secara manual."
+            };
+          }
+          return r;
+        }));
+
+        // Update summary
+        if (summary) {
+          setSummary({
+            ...summary,
+            reconciledCount: summary.reconciledCount + 1,
+            notFoundCount: Math.max(0, summary.notFoundCount - 1),
+            totalAmountReconciled: summary.totalAmountReconciled + pairingItem.amount
+          });
+        }
+
+        if (onSuccessReconciliation) {
+          onSuccessReconciliation();
+        }
+
+        setPairingSuccessMsg(data.message || "Berhasil merekonsiliasi transaksi!");
+        setTimeout(() => {
+          setPairingItem(null);
+          setPairingSuccessMsg(null);
+        }, 1200);
+      } else {
+        setErrorMessage(data.error || "Gagal merekonsiliasi manual.");
+      }
+    } catch (e: any) {
+      console.error(e);
+      setErrorMessage("Gagal terhubung ke server.");
+    } finally {
+      setIsPairingSubmitting(false);
+    }
+  };
+
+  // Quick One-Click Auto Allocate for a specific row
+  const handleQuickAutoAllocate = async (item: ReconcileResultItem) => {
+    setIsPairingSubmitting(true);
+    try {
+      const payload = {
+        orderId: item.orderId,
+        transactionId: item.transactionId,
+        amount: item.amount,
+        studentNis: item.studentNis && item.studentNis !== "-" ? item.studentNis : undefined,
+        allocationType: 'auto_spp',
+        paymentType: item.reportPaymentType || "Midtrans Online",
+        settlementTime: item.reportTime
+      };
+
+      const res = await fetch("/api/manual-reconcile-midtrans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(payload)
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setResults(prev => prev.map(r => {
+          if (r.orderId === item.orderId) {
+            return {
+              ...r,
+              studentName: data.allocResult?.category ? (r.studentName) : r.studentName,
+              category: data.allocResult?.category || "SPP / Tabungan Siswa",
+              reconciliationStatus: 'reconciled',
+              message: data.message || "BERHASIL DILUNASI! Otomatis dialokasikan ke tagihan siswa."
+            };
+          }
+          return r;
+        }));
+
+        if (summary) {
+          setSummary({
+            ...summary,
+            reconciledCount: summary.reconciledCount + 1,
+            notFoundCount: Math.max(0, summary.notFoundCount - 1),
+            totalAmountReconciled: summary.totalAmountReconciled + item.amount
+          });
+        }
+
+        if (onSuccessReconciliation) {
+          onSuccessReconciliation();
+        }
+      } else {
+        handleOpenPairingModal(item);
+      }
+    } catch (e) {
+      handleOpenPairingModal(item);
+    } finally {
+      setIsPairingSubmitting(false);
+    }
+  };
+
+  // Auto Reconcile All Unmatched with detectable NIS
+  const handleAutoReconcileAllUnmatched = async () => {
+    const unmatchedItems = results.filter(r => r.reconciliationStatus === 'not_found');
+    if (unmatchedItems.length === 0) return;
+
+    setIsAutoReconcilingAll(true);
+    setAutoReconcileMessage("Memproses rekonsiliasi otomatis semua order...");
+
+    let successCount = 0;
+    let addedAmount = 0;
+
+    for (const item of unmatchedItems) {
+      try {
+        const payload = {
+          orderId: item.orderId,
+          transactionId: item.transactionId,
+          amount: item.amount,
+          studentNis: item.studentNis && item.studentNis !== "-" ? item.studentNis : undefined,
+          allocationType: 'auto_spp',
+          paymentType: item.reportPaymentType || "Midtrans Online",
+          settlementTime: item.reportTime
+        };
+
+        const res = await fetch("/api/manual-reconcile-midtrans", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (res.ok && data.success) {
+          successCount++;
+          addedAmount += item.amount;
+          setResults(prev => prev.map(r => {
+            if (r.orderId === item.orderId) {
+              return {
+                ...r,
+                category: data.allocResult?.category || "SPP / Tabungan Siswa",
+                reconciliationStatus: 'reconciled',
+                message: data.message || "BERHASIL DILUNASI! Otomatis dialokasikan ke tagihan siswa."
+              };
+            }
+            return r;
+          }));
+        }
+      } catch (e) {}
+    }
+
+    if (summary) {
+      setSummary({
+        ...summary,
+        reconciledCount: summary.reconciledCount + successCount,
+        notFoundCount: Math.max(0, summary.notFoundCount - successCount),
+        totalAmountReconciled: summary.totalAmountReconciled + addedAmount
+      });
+    }
+
+    if (onSuccessReconciliation) {
+      onSuccessReconciliation();
+    }
+
+    setAutoReconcileMessage(`Selesai! Berhasil merekonsiliasi ${successCount} dari ${unmatchedItems.length} order.`);
+    setTimeout(() => {
+      setAutoReconcileMessage(null);
+      setIsAutoReconcilingAll(false);
+    }, 3000);
   };
 
   // Filtered Results
@@ -308,10 +625,6 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
 
     return matchesStatus && matchesSearch;
   });
-
-  const handlePrintReport = () => {
-    window.print();
-  };
 
   const handleDownloadCsvResult = () => {
     if (results.length === 0) return;
@@ -347,7 +660,8 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-xs p-3 sm:p-5 overflow-y-auto animate-fade-in">
-      <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh]">
+      <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-5xl overflow-hidden flex flex-col max-h-[92vh] relative">
+        
         {/* Header */}
         <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between shrink-0">
           <div className="flex items-center gap-3">
@@ -358,11 +672,11 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
               <h3 className="font-extrabold text-base tracking-wide flex items-center gap-2">
                 Bulk Cek &amp; Rekonsiliasi Transaksi Midtrans
                 <span className="px-2 py-0.5 bg-indigo-500/30 text-indigo-200 text-[10px] rounded-full border border-indigo-400/30 font-semibold uppercase">
-                  Upload File Report
+                  Smart Reconcile
                 </span>
               </h3>
               <p className="text-slate-300 text-xs mt-0.5 font-medium">
-                Verifikasi massal status transaksi dari dashboard Midtrans MAP (.csv, .xlsx, .xls)
+                Verifikasi massal file report Midtrans MAP (.csv, .xlsx) dengan pencocokan otomatis &amp; manual alokasi
               </p>
             </div>
           </div>
@@ -377,7 +691,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
 
         {/* Content Body */}
         <div className="p-6 overflow-y-auto flex-1 space-y-6">
-          {/* Step 1: Upload / Input Form (If no summary result yet) */}
+          {/* Step 1: Upload / Input Form */}
           {!summary ? (
             <div className="space-y-5">
               {/* Mode Toggle */}
@@ -454,144 +768,122 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                 </div>
               )}
 
-              {/* Mode 2: Direct Text Input */}
+              {/* Mode 2: Text Paste */}
               {inputMode === 'text' && (
                 <div className="space-y-3">
                   <label className="block text-xs font-bold text-slate-700">
-                    Tempelkan isi CSV atau daftar Order ID beserta statusnya:
+                    Tempel Data CSV / Baris Order ID dari Midtrans
                   </label>
                   <textarea
                     rows={6}
                     value={rawTextInput}
                     onChange={(e) => setRawTextInput(e.target.value)}
-                    placeholder={`Contoh isi CSV:\norder_id,status,gross_amount,payment_type\nSPP-B-S-12345,settlement,150000,qris\nMISC-M-S-67890,settlement,350000,gopay`}
-                    className="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-2xl p-3.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 text-slate-800 placeholder:text-slate-400"
+                    placeholder="order_id,gross_amount,transaction_status&#10;CART-13134-1788267652826,400000,settlement&#10;CART-13326-1788256208221,200000,settlement"
+                    className="w-full p-4 bg-slate-50 border border-slate-300 rounded-2xl text-xs font-mono text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-medium"
                   />
                   <div className="flex justify-end">
                     <button
                       type="button"
-                      onClick={handleTextParse}
-                      className="px-4 py-2 bg-indigo-600 text-white rounded-xl text-xs font-extrabold hover:bg-indigo-700 cursor-pointer transition-all shadow-xs"
+                      onClick={handleParseTextManual}
+                      disabled={isParsing || !rawTextInput.trim()}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-extrabold transition-all cursor-pointer disabled:opacity-50 flex items-center gap-2"
                     >
-                      Proses Teks CSV
+                      <FileCode size={15} />
+                      <span>Uraikan Teks</span>
                     </button>
                   </div>
                 </div>
               )}
 
-              {/* Error Alert */}
+              {/* Error Message */}
               {errorMessage && (
-                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl text-rose-800 text-xs flex items-start gap-3">
-                  <AlertCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-extrabold block">Gagal Memproses File / Teks</span>
-                    <p className="mt-0.5 text-slate-600 font-medium">{errorMessage}</p>
-                  </div>
+                <div className="p-4 bg-rose-50 border border-rose-200 rounded-2xl flex items-center gap-3 text-rose-800 text-xs font-bold animate-shake">
+                  <AlertCircle size={18} className="text-rose-600 shrink-0" />
+                  <span>{errorMessage}</span>
                 </div>
               )}
 
-              {/* Parsed Preview Table */}
+              {/* Preview Rows & Submit Action */}
               {parsedRows.length > 0 && (
-                <div className="space-y-3 border-t border-slate-200 pt-4">
+                <div className="space-y-4 pt-2 border-t border-slate-100">
                   <div className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
-                      <span className="px-2.5 py-1 bg-indigo-100 text-indigo-800 rounded-xl text-xs font-black border border-indigo-200">
+                      <span className="px-3 py-1 bg-indigo-100 text-indigo-800 rounded-xl text-xs font-extrabold border border-indigo-200">
                         {parsedRows.length} Transaksi Terbaca
                       </span>
-                      <span className="text-slate-500 text-xs font-semibold">
-                        Siap untuk diverifikasi dan disinkronkan ke database
+                      <span className="text-xs text-slate-500 font-medium">
+                        Siap diproses dan dicocokkan dengan database sekolah.
                       </span>
                     </div>
                     <button
                       type="button"
-                      onClick={handleResetModal}
-                      className="text-xs text-rose-600 hover:text-rose-800 font-bold cursor-pointer"
+                      onClick={handleSubmitReconciliation}
+                      disabled={isSubmitting}
+                      className="px-6 py-2.5 bg-gradient-to-r from-indigo-600 to-indigo-800 hover:from-indigo-700 hover:to-indigo-900 text-white rounded-xl text-xs font-black shadow-md hover:shadow-lg transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50"
                     >
-                      Batal / Reset File
+                      {isSubmitting ? (
+                        <>
+                          <RefreshCw size={15} className="animate-spin" />
+                          <span>Memproses Rekonsiliasi...</span>
+                        </>
+                      ) : (
+                        <>
+                          <Sparkles size={16} className="text-indigo-200" />
+                          <span>Mulai Rekonsiliasi Massal</span>
+                        </>
+                      )}
                     </button>
                   </div>
 
+                  {/* Preview Table */}
                   <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-56 overflow-y-auto">
                     <table className="w-full text-left text-xs">
                       <thead className="bg-slate-100 text-slate-700 font-extrabold sticky top-0 border-b border-slate-200">
                         <tr>
-                          <th className="px-3.5 py-2.5">No</th>
-                          <th className="px-3.5 py-2.5">Order ID / Ref</th>
-                          <th className="px-3.5 py-2.5">Status Report</th>
-                          <th className="px-3.5 py-2.5">Metode Bayar</th>
+                          <th className="px-3.5 py-2.5">#</th>
+                          <th className="px-3.5 py-2.5">Order ID</th>
+                          <th className="px-3.5 py-2.5">Status</th>
                           <th className="px-3.5 py-2.5">Nominal (Rp)</th>
+                          <th className="px-3.5 py-2.5">Keterangan / NIS</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
-                        {parsedRows.slice(0, 50).map((row, idx) => (
+                        {parsedRows.slice(0, 10).map((row, idx) => (
                           <tr key={idx} className="hover:bg-slate-50">
-                            <td className="px-3.5 py-2 text-slate-400 font-mono text-[11px]">{idx + 1}</td>
-                            <td className="px-3.5 py-2 font-mono text-[11px]">
-                              <span className="font-bold text-indigo-900 block">{row.orderId}</span>
-                              {row.transactionId && (
-                                <span className="text-[10px] text-slate-500 block">TxID: {row.transactionId}</span>
-                              )}
-                            </td>
+                            <td className="px-3.5 py-2 text-slate-400 font-mono">{idx + 1}</td>
+                            <td className="px-3.5 py-2 font-mono font-bold text-indigo-900">{row.orderId}</td>
                             <td className="px-3.5 py-2">
-                              <span className={`px-2 py-0.5 rounded text-[10px] font-extrabold uppercase ${
-                                (row.status || '').toLowerCase().includes('settlement') || (row.status || '').toLowerCase().includes('capture') || (row.status || '').toLowerCase().includes('lunas')
-                                  ? 'bg-emerald-100 text-emerald-800'
-                                  : (row.status || '').toLowerCase().includes('pending')
-                                  ? 'bg-amber-100 text-amber-800'
-                                  : 'bg-rose-100 text-rose-800'
-                              }`}>
-                                {row.status || 'settlement'}
+                              <span className="px-2 py-0.5 rounded text-[10px] font-black uppercase bg-slate-100 text-slate-800">
+                                {row.status || "settlement"}
                               </span>
                             </td>
-                            <td className="px-3.5 py-2 text-slate-600">{row.paymentType || 'Midtrans'}</td>
-                            <td className="px-3.5 py-2 font-bold text-slate-900">
-                              Rp {(row.grossAmount || 0).toLocaleString("id-ID")}
+                            <td className="px-3.5 py-2 font-black text-slate-900">
+                              {row.gross_amount ? `Rp ${Number(row.gross_amount).toLocaleString("id-ID")}` : "-"}
+                            </td>
+                            <td className="px-3.5 py-2 text-slate-500">
+                              {row.customerName || row.studentNis || row.description || "-"}
                             </td>
                           </tr>
                         ))}
                       </tbody>
                     </table>
-                    {parsedRows.length > 50 && (
-                      <div className="p-2 bg-slate-50 text-center text-slate-500 text-[11px] font-bold border-t border-slate-200">
-                        Menampilkan 50 dari {parsedRows.length} transaksi...
-                      </div>
-                    )}
                   </div>
-
-                  {/* Submit Button */}
-                  <div className="pt-2 flex justify-end">
-                    <button
-                      type="button"
-                      onClick={handleSubmitReconciliation}
-                      disabled={isSubmitting}
-                      className={`px-6 py-3 rounded-2xl font-extrabold text-xs uppercase tracking-wider text-white transition-all cursor-pointer flex items-center gap-2 shadow-lg ${
-                        isSubmitting ? 'bg-slate-400 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-700 shadow-emerald-200'
-                      }`}
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <RefreshCw size={16} className="animate-spin" />
-                          <span>Merekonsiliasi Data Massal...</span>
-                        </>
-                      ) : (
-                        <>
-                          <Sparkles size={16} />
-                          <span>Jalankan Rekonsiliasi Bulk ({parsedRows.length} Order)</span>
-                        </>
-                      )}
-                    </button>
-                  </div>
+                  {parsedRows.length > 10 && (
+                    <p className="text-center text-xs text-slate-400 font-medium">
+                      Menampilkan 10 dari {parsedRows.length} baris preview.
+                    </p>
+                  )}
                 </div>
               )}
             </div>
           ) : (
-            /* Step 2: Interactive Reconciliation Results Dashboard */
-            <div className="space-y-5">
+            /* Step 2: Results Dashboard */
+            <div className="space-y-6">
               {/* Summary Metric Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
                 <div className="bg-emerald-50/80 border border-emerald-200 p-4 rounded-2xl">
                   <div className="flex items-center justify-between text-emerald-800 mb-1">
-                    <span className="text-[11px] font-extrabold uppercase tracking-wide">Baru Direkonsiliasi</span>
+                    <span className="text-[11px] font-extrabold uppercase tracking-wide">Berhasil Dilunasi</span>
                     <CheckCircle2 size={16} className="text-emerald-600" />
                   </div>
                   <div className="text-2xl font-black text-emerald-950">
@@ -617,7 +909,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
 
                 <div className="bg-amber-50/80 border border-amber-200 p-4 rounded-2xl">
                   <div className="flex items-center justify-between text-amber-800 mb-1">
-                    <span className="text-[11px] font-extrabold uppercase tracking-wide">Ref Tidak Cocok</span>
+                    <span className="text-[11px] font-extrabold uppercase tracking-wide">Belum Terhubung</span>
                     <HelpCircle size={16} className="text-amber-600" />
                   </div>
                   <div className="text-2xl font-black text-amber-950">
@@ -641,6 +933,50 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                   </div>
                 </div>
               </div>
+
+              {/* Unmatched Helper Banner if any order is not_found */}
+              {summary.notFoundCount > 0 && (
+                <div className="p-4 bg-amber-500/10 border border-amber-300/60 rounded-2xl flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+                  <div className="flex items-center gap-3">
+                    <div className="p-2 bg-amber-500/20 text-amber-800 rounded-xl">
+                      <Sparkles size={18} />
+                    </div>
+                    <div>
+                      <h4 className="text-xs font-black text-amber-950">
+                        Terdapat {summary.notFoundCount} Transaksi dengan Status "Ref Tidak Cocok"
+                      </h4>
+                      <p className="text-[11px] text-amber-800 mt-0.5 font-medium">
+                        Uang sudah valid masuk ke rekening Midtrans. Anda dapat memasangkannya langsung ke tagihan SPP, Tabungan siswa, atau Kas Umum BKU.
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleAutoReconcileAllUnmatched}
+                    disabled={isAutoReconcilingAll}
+                    className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer shrink-0 shadow-xs flex items-center gap-1.5 disabled:opacity-50"
+                  >
+                    {isAutoReconcilingAll ? (
+                      <>
+                        <RefreshCw size={13} className="animate-spin" />
+                        <span>Memproses...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles size={14} />
+                        <span>⚡ Rekonsiliasi Otomatis Semua Unmatched</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+
+              {autoReconcileMessage && (
+                <div className="p-3 bg-indigo-50 border border-indigo-200 text-indigo-800 rounded-xl text-xs font-bold flex items-center gap-2">
+                  <CheckCircle2 size={16} className="text-indigo-600" />
+                  <span>{autoReconcileMessage}</span>
+                </div>
+              )}
 
               {/* Filter Tabs & Search */}
               <div className="flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-3 border-b border-slate-200 pb-3">
@@ -687,7 +1023,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                         : 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
                     }`}
                   >
-                    Tidak Ditemukan ({summary.notFoundCount})
+                    Belum Terhubung ({summary.notFoundCount})
                   </button>
                 </div>
 
@@ -704,7 +1040,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
               </div>
 
               {/* Results Table */}
-              <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-80 overflow-y-auto">
+              <div className="border border-slate-200 rounded-2xl overflow-hidden max-h-96 overflow-y-auto">
                 <table className="w-full text-left text-xs">
                   <thead className="bg-slate-100 text-slate-700 font-extrabold sticky top-0 border-b border-slate-200">
                     <tr>
@@ -712,8 +1048,8 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                       <th className="px-3.5 py-3">Nama Siswa / NIS</th>
                       <th className="px-3.5 py-3">Kategori Tagihan</th>
                       <th className="px-3.5 py-3">Nominal</th>
-                      <th className="px-3.5 py-3">Metode &amp; Status Report</th>
-                      <th className="px-3.5 py-3">Hasil Rekonsiliasi Internal</th>
+                      <th className="px-3.5 py-3">Metode &amp; Status</th>
+                      <th className="px-3.5 py-3">Hasil Rekonsiliasi &amp; Aksi</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 text-slate-700 font-medium">
@@ -766,10 +1102,30 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                               </span>
                             )}
                             {item.reconciliationStatus === 'not_found' && (
-                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-amber-100 text-amber-800 rounded-xl text-[11px] font-extrabold border border-amber-300">
-                                <AlertCircle size={13} className="text-amber-600 shrink-0" />
-                                <span>REF TIDAK DITEMUKAN</span>
-                              </span>
+                              <div className="space-y-1.5">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-amber-100 text-amber-800 rounded-lg text-[10px] font-black border border-amber-300">
+                                  <AlertCircle size={12} className="text-amber-600 shrink-0" />
+                                  <span>REF BELUM TERHUBUNG</span>
+                                </span>
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleQuickAutoAllocate(item)}
+                                    className="px-2.5 py-1 bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg text-[10px] font-black transition-all cursor-pointer flex items-center gap-1 shadow-xs"
+                                  >
+                                    <Sparkles size={11} />
+                                    <span>Auto-Alokasikan</span>
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenPairingModal(item)}
+                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg text-[10px] font-bold transition-all cursor-pointer flex items-center gap-1 border border-slate-300"
+                                  >
+                                    <Link2 size={11} />
+                                    <span>Pasangkan Manual</span>
+                                  </button>
+                                </div>
+                              </div>
                             )}
                             {item.reconciliationStatus === 'report_pending' && (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-slate-100 text-slate-700 rounded-xl text-[11px] font-extrabold">
@@ -825,6 +1181,250 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
             </div>
           )}
         </div>
+
+        {/* ---------------------------------------------------- */}
+        {/* SUB-MODAL: QUICK MANUAL PAIRING / ALLOCATION DRAWER */}
+        {/* ---------------------------------------------------- */}
+        {pairingItem && (
+          <div className="absolute inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+            <div className="bg-white border border-slate-200 rounded-3xl shadow-2xl w-full max-w-xl overflow-hidden flex flex-col max-h-[90vh] animate-scale-in">
+              
+              {/* Drawer Header */}
+              <div className="px-5 py-3.5 bg-gradient-to-r from-indigo-900 to-slate-900 text-white flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="p-2 bg-indigo-500/20 rounded-xl text-indigo-300">
+                    <Link2 size={18} />
+                  </div>
+                  <div>
+                    <h4 className="font-extrabold text-sm">Pasangkan Transaksi Midtrans</h4>
+                    <p className="text-[11px] text-slate-300">Alokasikan nominal pembayaran ke tagihan atau tabungan</p>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setPairingItem(null)}
+                  className="p-1.5 rounded-lg text-slate-300 hover:text-white hover:bg-white/10"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+
+              {/* Drawer Content */}
+              <div className="p-5 overflow-y-auto space-y-4 text-xs">
+                
+                {/* Selected Order Summary Card */}
+                <div className="bg-slate-50 border border-slate-200 rounded-2xl p-3.5 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[10px] font-extrabold uppercase text-slate-500">Order ID:</span>
+                    <span className="font-mono font-bold text-indigo-900">{pairingItem.orderId}</span>
+                  </div>
+                  {pairingItem.transactionId && (
+                    <div className="flex items-center justify-between">
+                      <span className="text-[10px] font-extrabold uppercase text-slate-500">TxID:</span>
+                      <span className="font-mono text-slate-700">{pairingItem.transactionId}</span>
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between pt-1 border-t border-slate-200">
+                    <span className="text-[10px] font-extrabold uppercase text-slate-500">Nominal Lunas:</span>
+                    <span className="font-black text-sm text-emerald-700">
+                      Rp {pairingItem.amount.toLocaleString("id-ID")}
+                    </span>
+                  </div>
+                </div>
+
+                {pairingSuccessMsg ? (
+                  <div className="p-4 bg-emerald-50 border border-emerald-200 rounded-2xl text-center space-y-2">
+                    <CheckCircle2 size={32} className="text-emerald-600 mx-auto" />
+                    <p className="font-black text-emerald-900">{pairingSuccessMsg}</p>
+                  </div>
+                ) : (
+                  <>
+                    {/* Step 1: Select Target Student */}
+                    <div className="space-y-2">
+                      <label className="font-extrabold text-slate-800 flex items-center justify-between">
+                        <span>1. Cari &amp; Pilih Siswa Penerima</span>
+                        {selectedStudent && (
+                          <span className="text-[10px] text-emerald-700 font-bold flex items-center gap-1">
+                            <Check size={12} /> Siswa Terpilih
+                          </span>
+                        )}
+                      </label>
+                      <div className="relative">
+                        <Search size={14} className="absolute left-3 top-3 text-slate-400" />
+                        <input
+                          type="text"
+                          value={pairingSearchQuery}
+                          onChange={(e) => {
+                            setPairingSearchQuery(e.target.value);
+                            searchStudents(e.target.value);
+                          }}
+                          placeholder="Ketik NIS, Nama Siswa, atau Kelas..."
+                          className="w-full pl-9 pr-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs font-medium text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                        />
+                      </div>
+
+                      {/* Search Results List */}
+                      {isSearchingStudents ? (
+                        <div className="p-3 text-center text-slate-400 flex items-center justify-center gap-2">
+                          <Loader2 size={14} className="animate-spin" />
+                          <span>Mencari siswa...</span>
+                        </div>
+                      ) : searchedStudents.length > 0 ? (
+                        <div className="border border-slate-200 rounded-xl max-h-36 overflow-y-auto divide-y divide-slate-100">
+                          {searchedStudents.map((s) => (
+                            <button
+                              key={s.id}
+                              type="button"
+                              onClick={() => {
+                                setSelectedStudent(s);
+                                setPairingSearchQuery(`${s.name} (${s.nis})`);
+                              }}
+                              className={`w-full p-2.5 text-left flex items-center justify-between hover:bg-indigo-50 transition-colors cursor-pointer ${
+                                selectedStudent?.id === s.id ? 'bg-indigo-50/80 border-l-4 border-indigo-600' : ''
+                              }`}
+                            >
+                              <div>
+                                <span className="font-extrabold text-slate-900 block">{s.name}</span>
+                                <span className="text-[10px] text-slate-500 font-mono">
+                                  NIS: {s.nis} | Kelas: {s.class || "-"}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                <span className="text-[10px] font-bold text-amber-700 block">
+                                  {s.unpaidSppCount} SPP Belum Lunas
+                                </span>
+                                <span className="text-[10px] font-medium text-slate-500">
+                                  Saldo Tab: Rp {s.savingsBalance.toLocaleString("id-ID")}
+                                </span>
+                              </div>
+                            </button>
+                          ))}
+                        </div>
+                      ) : null}
+                    </div>
+
+                    {/* Step 2: Choose Allocation Type */}
+                    <div className="space-y-2 pt-1">
+                      <label className="font-extrabold text-slate-800 block">
+                        2. Pilih Metode Alokasi Pembayaran
+                      </label>
+                      <div className="grid grid-cols-1 gap-2">
+                        {/* Option 1: Auto Allocate to SPP */}
+                        <label
+                          className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                            pairingAllocationType === 'auto_spp'
+                              ? 'bg-indigo-50/70 border-indigo-400 ring-1 ring-indigo-400'
+                              : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="allocType"
+                            checked={pairingAllocationType === 'auto_spp'}
+                            onChange={() => setPairingAllocationType('auto_spp')}
+                            className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <div>
+                            <div className="font-black text-slate-900 flex items-center gap-1.5">
+                              <Sparkles size={14} className="text-indigo-600" />
+                              <span>Otomatis Lunasi SPP Tertunggak Siswa (Rekomendasi)</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 mt-0.5">
+                              Sistem otomatis melunasi bulan SPP tertua. Jika ada sisa lebih, otomatis masuk saldo Tabungan siswa.
+                            </p>
+                          </div>
+                        </label>
+
+                        {/* Option 2: Direct to Savings Balance */}
+                        <label
+                          className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                            pairingAllocationType === 'savings'
+                              ? 'bg-indigo-50/70 border-indigo-400 ring-1 ring-indigo-400'
+                              : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="allocType"
+                            checked={pairingAllocationType === 'savings'}
+                            onChange={() => setPairingAllocationType('savings')}
+                            className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <div>
+                            <div className="font-black text-slate-900 flex items-center gap-1.5">
+                              <Wallet size={14} className="text-emerald-600" />
+                              <span>Setorkan Penuh ke Saldo Tabungan Siswa</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 mt-0.5">
+                              Seluruh nominal Rp {pairingItem.amount.toLocaleString("id-ID")} akan masuk sebagai saldo tabungan siswa.
+                            </p>
+                          </div>
+                        </label>
+
+                        {/* Option 3: Record to Treasurer BKU */}
+                        <label
+                          className={`p-3 rounded-xl border flex items-start gap-3 cursor-pointer transition-all ${
+                            pairingAllocationType === 'treasurer_kas'
+                              ? 'bg-indigo-50/70 border-indigo-400 ring-1 ring-indigo-400'
+                              : 'bg-white border-slate-200 hover:bg-slate-50'
+                          }`}
+                        >
+                          <input
+                            type="radio"
+                            name="allocType"
+                            checked={pairingAllocationType === 'treasurer_kas'}
+                            onChange={() => setPairingAllocationType('treasurer_kas')}
+                            className="mt-0.5 text-indigo-600 focus:ring-indigo-500"
+                          />
+                          <div>
+                            <div className="font-black text-slate-900 flex items-center gap-1.5">
+                              <Landmark size={14} className="text-blue-600" />
+                              <span>Catat sebagai Kas Masuk Umum Bendahara (BKU)</span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 mt-0.5">
+                              Dicatat langsung sebagai penerimaan kas umum sekolah tanpa memotong tagihan spesifik siswa.
+                            </p>
+                          </div>
+                        </label>
+                      </div>
+                    </div>
+                  </>
+                )}
+              </div>
+
+              {/* Drawer Footer Actions */}
+              {!pairingSuccessMsg && (
+                <div className="px-5 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
+                  <button
+                    type="button"
+                    onClick={() => setPairingItem(null)}
+                    className="px-4 py-2 bg-slate-200 hover:bg-slate-300 text-slate-700 rounded-xl text-xs font-extrabold cursor-pointer"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleSubmitPairing}
+                    disabled={isPairingSubmitting || (pairingAllocationType !== 'treasurer_kas' && !selectedStudent)}
+                    className="px-6 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-black transition-all cursor-pointer flex items-center gap-2 disabled:opacity-50 shadow-sm"
+                  >
+                    {isPairingSubmitting ? (
+                      <>
+                        <RefreshCw size={14} className="animate-spin" />
+                        <span>Menyimpan Alokasi...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Check size={15} />
+                        <span>Konfirmasi &amp; Lunasi Transaksi</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

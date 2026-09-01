@@ -94,6 +94,8 @@ export interface SppBill {
 export interface SavingsTransaction {
   id: string;
   studentId: string;
+  studentNis?: string;
+  studentName?: string;
   type: 'deposit' | 'withdrawal';
   amount: number;
   status: 'success' | 'pending' | 'failed';

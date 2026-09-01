@@ -238,7 +238,17 @@ export default function TreasurerPanel({
             }
             return { name, type };
           });
-          const cleaned = mapped.filter(c => !c.name.toLowerCase().includes('midtrans') && !c.name.toLowerCase().includes('transaksi online'));
+          const cleaned = mapped.filter(c => {
+            const nl = c.name.toLowerCase().trim();
+            return !nl.includes('midtrans') && 
+                   !nl.includes('transaksi online') &&
+                   nl !== 'spp siswa' &&
+                   nl !== 'tagihan non-spp' &&
+                   nl !== 'spmb siswa baru' &&
+                   nl !== 'daftar ulang siswa baru' &&
+                   nl !== 'spp' &&
+                   nl !== 'tabungan';
+          });
           localStorage.setItem('treasurer_categories', JSON.stringify(cleaned));
           return cleaned;
         }
@@ -759,7 +769,12 @@ export default function TreasurerPanel({
             if (tx.category && typeof tx.category === 'string') {
               const trimmed = tx.category.trim();
               const catLower = trimmed.toLowerCase();
-              if (trimmed && !['spp', 'tabungan'].includes(catLower) && !catLower.includes('midtrans') && !catLower.includes('transaksi online')) {
+              const isExcluded = 
+                ['spp', 'tabungan', 'spp siswa', 'tagihan non-spp', 'spmb siswa baru', 'daftar ulang siswa baru'].includes(catLower) ||
+                catLower.includes('midtrans') || 
+                catLower.includes('transaksi online');
+
+              if (trimmed && !isExcluded) {
                 fetchedCategories.add(trimmed);
               }
             }
@@ -785,7 +800,17 @@ export default function TreasurerPanel({
               });
 
               if (newlyDetected.length > 0) {
-                const updated = [...prev, ...newlyDetected];
+                const updated = [...prev, ...newlyDetected].filter(c => {
+                  const nl = c.name.toLowerCase().trim();
+                  return !nl.includes('midtrans') && 
+                         !nl.includes('transaksi online') &&
+                         nl !== 'spp siswa' &&
+                         nl !== 'tagihan non-spp' &&
+                         nl !== 'spmb siswa baru' &&
+                         nl !== 'daftar ulang siswa baru' &&
+                         nl !== 'spp' &&
+                         nl !== 'tabungan';
+                });
                 localStorage.setItem('treasurer_categories', JSON.stringify(updated));
                 return updated;
               }
@@ -2572,9 +2597,21 @@ export default function TreasurerPanel({
                     <option value="all">Semua Kategori Pos</option>
                     <option value="SPP">SPP</option>
                     <option value="Tabungan">Tabungan</option>
-                    {categories.map(c => (
-                      <option key={c.name} value={c.name}>{c.name}</option>
-                    ))}
+                    {categories
+                      .filter(c => {
+                        const nl = c.name.toLowerCase().trim();
+                        return !nl.includes('midtrans') && 
+                               !nl.includes('transaksi online') &&
+                               nl !== 'spp siswa' &&
+                               nl !== 'tagihan non-spp' &&
+                               nl !== 'spmb siswa baru' &&
+                               nl !== 'daftar ulang siswa baru' &&
+                               nl !== 'spp' &&
+                               nl !== 'tabungan';
+                      })
+                      .map(c => (
+                        <option key={c.name} value={c.name}>{c.name}</option>
+                      ))}
                   </select>
                 </div>
 

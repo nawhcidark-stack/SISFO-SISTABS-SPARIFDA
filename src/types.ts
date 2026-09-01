@@ -117,6 +117,7 @@ export interface MiscBill {
   transactionId?: string;
   isMonthly?: boolean;
   month?: string;
+  category?: string;
 }
 
 export interface RealtimeNotification {

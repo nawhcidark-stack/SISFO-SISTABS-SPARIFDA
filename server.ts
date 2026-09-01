@@ -997,6 +997,7 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
   // 1. Purge auto-recon entries from treasurerTransactions
   for (let i = treasurerTransactions.length - 1; i >= 0; i--) {
     const t = treasurerTransactions[i];
+    const idLower = (t.id || "").toLowerCase();
     const catLower = (t.category || "").toLowerCase();
     const descLower = (t.description || "").toLowerCase();
     const orderId = (t.orderId || "").toUpperCase();
@@ -1004,6 +1005,12 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
     const createdByLower = (t.createdBy || "").toLowerCase();
 
     const isAutoRecon = 
+      idLower.startsWith("tx-midtrans-") ||
+      idLower.startsWith("tx-misc-") ||
+      catLower === "spp siswa" ||
+      catLower === "tagihan non-spp" ||
+      catLower === "spmb siswa baru" ||
+      catLower === "daftar ulang siswa baru" ||
       catLower.includes("pembayaran online midtrans") ||
       catLower.includes("transaksi online") ||
       descLower.includes("(report)") ||
@@ -1016,8 +1023,11 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
       orderId.startsWith("P8") ||
       orderId.startsWith("P6") ||
       orderId.startsWith("P5") ||
+      orderId.startsWith("SPP-") ||
+      orderId.startsWith("MISC-") ||
+      orderId.startsWith("SPMB-") ||
       noBukti.includes("-MAN--") ||
-      createdByLower.includes("midtrans bulk report") ||
+      createdByLower.includes("midtrans") ||
       t.fundingSource === "Kas Bank/Midtrans";
 
     if (isAutoRecon) {
@@ -1074,12 +1084,20 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
     }
   });
 
-  // 3. Clean up treasurerConfig / categories if "Pembayaran Online Midtrans" or "Transaksi Online" exists
+  // 3. Clean up treasurerConfig / categories if "SPP Siswa", "Tagihan Non-SPP", "Pembayaran Online Midtrans" or "Transaksi Online" exists
   if ((treasurerConfig as any).categories && Array.isArray((treasurerConfig as any).categories)) {
     const beforeLen = (treasurerConfig as any).categories.length;
     (treasurerConfig as any).categories = (treasurerConfig as any).categories.filter((c: any) => {
       const name = typeof c === 'string' ? c : c.name || '';
-      return !name.toLowerCase().includes("midtrans") && !name.toLowerCase().includes("transaksi online");
+      const nl = name.toLowerCase().trim();
+      return !nl.includes("midtrans") &&
+             !nl.includes("transaksi online") &&
+             nl !== "spp siswa" &&
+             nl !== "tagihan non-spp" &&
+             nl !== "spmb siswa baru" &&
+             nl !== "daftar ulang siswa baru" &&
+             nl !== "spp" &&
+             nl !== "tabungan";
     });
     categoriesPurged = beforeLen - (treasurerConfig as any).categories.length;
   }
@@ -6386,6 +6404,8 @@ async function startServer() {
           source: 'spp' as const,
           studentName: student?.name || 'Siswa',
           nis: student?.nis || '',
+          orderId: b.orderId,
+          noBukti: b.orderId || undefined,
           createdBy: b.paymentMethod || 'Manual Teller (Sekolah)'
         };
       });
@@ -6406,6 +6426,8 @@ async function startServer() {
           source: 'savings' as const,
           studentName: student?.name || 'Siswa',
           nis: student?.nis || '',
+          orderId: t.orderId,
+          noBukti: t.orderId || undefined,
           createdBy: t.paymentMethod || 'Teller'
         };
       });
@@ -6466,13 +6488,15 @@ async function startServer() {
         return {
           id: `misc-int-${b.id}`,
           type: 'incoming' as const,
-          category: 'Iuran Lain',
+          category: b.category && b.category.trim() ? b.category : 'Iuran Lain',
           amount: b.amount,
           description: `${b.title} - ${student?.name || 'Siswa'} (${student?.nis || ''})`,
           date: getWIBDateString(b.paidAt || new Date()),
           source: 'custom' as const,
           studentName: student?.name || 'Siswa',
           nis: student?.nis || '',
+          orderId: b.orderId,
+          noBukti: b.orderId || undefined,
           createdBy: b.paymentMethod || 'Manual Teller (Sekolah)'
         };
       });
@@ -6490,6 +6514,8 @@ async function startServer() {
         source: 'custom' as const,
         studentName: c.fullName,
         nis: c.nisn || '',
+        orderId: c.tokenPaymentOrderId,
+        noBukti: c.tokenPaymentOrderId || undefined,
         createdBy: c.tokenPaymentMethod || 'Midtrans (Online)'
       }));
 
@@ -6522,17 +6548,48 @@ async function startServer() {
         source: 'custom' as const,
         studentName: c.fullName,
         nis: c.nisn || '',
+        orderId: c.reRegistrationOrderId,
+        noBukti: c.reRegistrationOrderId || undefined,
         createdBy: c.reRegistrationPaymentMethod || 'Midtrans (Online)'
       }));
 
-    // 3. Merged transactions - Filter out any manually logged misc payments under "Operasional" to avoid double counting
-    const filteredTreasurerTransactions = treasurerTransactions.filter(t => 
-      !t.id.startsWith("tx-misc-") && 
-      !(t.category === "Operasional" && t.description.startsWith("Pembayaran "))
-    );
+    // 3. Merged transactions - Filter out any manually logged misc/auto payments to avoid double counting
+    const filteredTreasurerTransactions = treasurerTransactions.filter(t => {
+      const idLower = (t.id || "").toLowerCase();
+      const catLower = (t.category || "").toLowerCase().trim();
+      const descLower = (t.description || "").toLowerCase();
+      const orderId = (t.orderId || "").toUpperCase();
+      const createdByLower = (t.createdBy || "").toLowerCase();
 
-    const merged: TreasurerTransaction[] = [
-      ...filteredTreasurerTransactions,
+      if (idLower.startsWith("tx-misc-") || idLower.startsWith("tx-midtrans-")) return false;
+      if (t.category === "Operasional" && descLower.startsWith("pembayaran ")) return false;
+      if (
+        catLower === "spp siswa" || 
+        catLower === "tagihan non-spp" || 
+        catLower === "spmb siswa baru" || 
+        catLower === "daftar ulang siswa baru" || 
+        catLower === "spp" || 
+        catLower === "tabungan"
+      ) return false;
+      if (catLower.includes("midtrans") || catLower.includes("transaksi online")) return false;
+      if (
+        orderId.startsWith("SPP-") || 
+        orderId.startsWith("MISC-") || 
+        orderId.startsWith("SPMB-") || 
+        orderId.startsWith("MIDTRANS-REPORT") || 
+        orderId.startsWith("P7") || 
+        orderId.startsWith("P8") || 
+        orderId.startsWith("P6") || 
+        orderId.startsWith("P5")
+      ) return false;
+      if (createdByLower.includes("midtrans")) return false;
+      return true;
+    });
+
+    const mergedMap = new Map<string, TreasurerTransaction>();
+    const seenOrderIds = new Set<string>();
+
+    const allIntegrated = [
       ...sppIntegrated,
       ...savingsIntegrated,
       ...miscIntegrated,
@@ -6540,6 +6597,24 @@ async function startServer() {
       ...spmbRefundIntegrated,
       ...spmbReRegIntegrated
     ];
+
+    allIntegrated.forEach(item => {
+      mergedMap.set(item.id, item as any);
+      if (item.orderId) {
+        seenOrderIds.add(item.orderId.toUpperCase());
+      }
+    });
+
+    filteredTreasurerTransactions.forEach(item => {
+      if (item.orderId && seenOrderIds.has(item.orderId.toUpperCase())) {
+        return; // Skip duplicate manual entry
+      }
+      if (!mergedMap.has(item.id)) {
+        mergedMap.set(item.id, item);
+      }
+    });
+
+    const merged = Array.from(mergedMap.values());
 
     // Sort by date descending
     merged.sort((a, b) => b.date.localeCompare(a.date));
@@ -6586,24 +6661,41 @@ async function startServer() {
 
   // Categories synchronization endpoints for Treasurer (POS Budget)
   app.get("/api/treasurer/categories", (req, res) => {
-    const list = Array.isArray(treasurerConfig.categories) && treasurerConfig.categories.length > 0
+    const defaultCats = [
+      { name: 'Operasional', type: 'outgoing' },
+      { name: 'Gaji Guru', type: 'outgoing' },
+      { name: 'SPMB Formulir', type: 'both' },
+      { name: 'SPMB Daftar Ulang', type: 'incoming' },
+      { name: 'Pembangunan', type: 'outgoing' },
+      { name: 'Ujian', type: 'outgoing' },
+      { name: 'HUT RI 81 2026', type: 'both' },
+      { name: 'JARIYAH', type: 'incoming' },
+      { name: 'SPARIFDA MART', type: 'both' },
+      { name: 'MPLS 2026', type: 'both' },
+      { name: 'Lain-lain', type: 'outgoing' },
+      { name: 'Mantenance Aplikasi', type: 'outgoing' },
+      { name: 'Utama', type: 'both' }
+    ];
+
+    const rawList = Array.isArray(treasurerConfig.categories) && treasurerConfig.categories.length > 0
       ? treasurerConfig.categories
-      : [
-          { name: 'Operasional', type: 'outgoing' },
-          { name: 'Gaji Guru', type: 'outgoing' },
-          { name: 'SPMB Formulir', type: 'both' },
-          { name: 'SPMB Daftar Ulang', type: 'incoming' },
-          { name: 'Pembangunan', type: 'outgoing' },
-          { name: 'Ujian', type: 'outgoing' },
-          { name: 'HUT RI 81 2026', type: 'both' },
-          { name: 'JARIYAH', type: 'incoming' },
-          { name: 'SPARIFDA MART', type: 'both' },
-          { name: 'MPLS 2026', type: 'both' },
-          { name: 'Lain-lain', type: 'outgoing' },
-          { name: 'Mantenance Aplikasi', type: 'outgoing' },
-          { name: 'Utama', type: 'both' }
-        ];
-    res.json({ success: true, categories: list });
+      : defaultCats;
+
+    // Filter out any unwanted categories
+    const cleaned = rawList.filter((c: any) => {
+      const name = typeof c === 'string' ? c : c.name || '';
+      const nl = name.toLowerCase().trim();
+      return !nl.includes("midtrans") &&
+             !nl.includes("transaksi online") &&
+             nl !== "spp siswa" &&
+             nl !== "tagihan non-spp" &&
+             nl !== "spmb siswa baru" &&
+             nl !== "daftar ulang siswa baru" &&
+             nl !== "spp" &&
+             nl !== "tabungan";
+    });
+
+    res.json({ success: true, categories: cleaned });
   });
 
   app.post("/api/treasurer/categories", async (req, res) => {
@@ -6611,7 +6703,22 @@ async function startServer() {
     if (!Array.isArray(categories)) {
       return res.status(400).json({ error: "Format daftar kategori POS tidak valid." });
     }
-    treasurerConfig.categories = categories;
+    
+    // Clean categories
+    const cleaned = categories.filter((c: any) => {
+      const name = typeof c === 'string' ? c : c.name || '';
+      const nl = name.toLowerCase().trim();
+      return !nl.includes("midtrans") &&
+             !nl.includes("transaksi online") &&
+             nl !== "spp siswa" &&
+             nl !== "tagihan non-spp" &&
+             nl !== "spmb siswa baru" &&
+             nl !== "daftar ulang siswa baru" &&
+             nl !== "spp" &&
+             nl !== "tabungan";
+    });
+
+    treasurerConfig.categories = cleaned;
     saveState();
     if (mongoDb && isInitialSyncCompleted) {
       try {

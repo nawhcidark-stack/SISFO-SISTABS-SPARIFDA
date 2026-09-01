@@ -638,19 +638,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           actionTaken = true;
 
           const student = students.find(s => s.id === bill.studentId);
-          treasurerTransactions.unshift({
-            id: `tx-midtrans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: "incoming",
-            category: "SPP Siswa",
-            amount: bill.amount,
-            description: `Pembayaran Online SPP ${bill.month} ${bill.year} - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`,
-            date: resolvedPaidAt.substring(0, 10),
-            source: "spp",
-            paymentMethod: "bank",
-            fundingSource: "Mandiri",
-            createdBy: "Midtrans Online Gateway",
-            noBukti: targetOrderId
-          });
 
           recordOrUpdateMidtransTransaction({
             orderId: targetOrderId,
@@ -704,20 +691,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           actionTaken = true;
 
           const student = students.find(s => s.id === bill.studentId);
-          treasurerTransactions.unshift({
-            id: `tx-midtrans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: "incoming",
-            category: "Tagihan Non-SPP",
-            amount: bill.amount,
-            description: `Pembayaran Online ${bill.title} - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`,
-            date: resolvedPaidAt.substring(0, 10),
-            source: "custom",
-            paymentMethod: "bank",
-            fundingSource: "Mandiri",
-            createdBy: "Midtrans Online Gateway",
-            noBukti: targetOrderId
-          });
-
           recordOrUpdateMidtransTransaction({
             orderId: targetOrderId,
             transactionId: targetTransactionId,
@@ -845,20 +818,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             candidate.tokenPaymentOrderId = targetOrderId;
             actionTaken = true;
 
-            treasurerTransactions.unshift({
-              id: `tx-midtrans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              type: "incoming",
-              category: "SPMB Siswa Baru",
-              amount: Number(candidate.tokenAmount) || 50000,
-              description: `Pembayaran Token SPMB Online - ${candidate.fullName} (No.Reg: ${candidate.registrationNo || "-"})`,
-              date: resolvedPaidAt.substring(0, 10),
-              source: "custom",
-              paymentMethod: "bank",
-              fundingSource: "Mandiri",
-              createdBy: "Midtrans Online Gateway",
-              noBukti: targetOrderId
-            });
-
             recordOrUpdateMidtransTransaction({
               orderId: targetOrderId,
               transactionId: targetTransactionId,
@@ -886,20 +845,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             candidate.reRegistrationPaymentMethod = actualPaymentType;
             candidate.reRegistrationOrderId = targetOrderId;
             actionTaken = true;
-
-            treasurerTransactions.unshift({
-              id: `tx-midtrans-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-              type: "incoming",
-              category: "Daftar Ulang Siswa Baru",
-              amount: Number(candidate.reRegistrationAmount) || 0,
-              description: `Pembayaran Daftar Ulang SPMB - ${candidate.fullName} (No.Reg: ${candidate.registrationNo || "-"})`,
-              date: resolvedPaidAt.substring(0, 10),
-              source: "custom",
-              paymentMethod: "bank",
-              fundingSource: "Mandiri",
-              createdBy: "Midtrans Online Gateway",
-              noBukti: targetOrderId
-            });
 
             recordOrUpdateMidtransTransaction({
               orderId: targetOrderId,
@@ -1180,6 +1125,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-snap-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-token-${Date.now()}`,
         orderId,
+        totalAmount: bill.amount,
+        isSimulated: true,
         isMock: true
       });
     }
@@ -1193,12 +1140,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       const payload = {
         transaction_details: {
           order_id: orderId,
-          gross_amount: bill.amount
+          gross_amount: Math.round(bill.amount)
         },
         item_details: [
           {
             id: bill.id.slice(0, 45),
-            price: bill.amount,
+            price: Math.round(bill.amount),
             quantity: 1,
             name: `SPP ${bill.month} ${bill.year} - ${student.name}`.slice(0, 45)
           }
@@ -1236,7 +1183,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         paymentType: "Midtrans Snap"
       });
 
-      res.json({ token: data.token, redirect_url: data.redirect_url, orderId });
+      res.json({ token: data.token, redirect_url: data.redirect_url, orderId, totalAmount: bill.amount, isSimulated: false });
     } catch (err: any) {
       console.error("Midtrans API Error:", err);
       res.status(500).json({ error: err.message || "Gagal menghubungkan ke Midtrans" });
@@ -1256,13 +1203,27 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       studentId: reqStudentId 
     } = req.body;
 
+    const rawBillIds: string[] = Array.isArray(billIds) ? billIds : [];
+
     const allSppIds = [
       ...(Array.isArray(sppBillIds) ? sppBillIds : []),
-      ...(Array.isArray(billIds) ? billIds.filter((id: string) => typeof id === "string" && !id.startsWith("misc-") && !id.startsWith("sav-") && !id.startsWith("cart-savings-") && !id.startsWith("savings-deposit-")) : [])
+      ...rawBillIds.filter((id: string) => 
+        typeof id === "string" && 
+        !id.startsWith("misc-") && 
+        !id.startsWith("sav-") && 
+        !id.startsWith("cart-savings-") && 
+        !id.startsWith("savings-deposit-") &&
+        !id.startsWith("savings-") &&
+        !miscBills.some(m => m.id === id)
+      )
     ];
+    
     const allMiscIds = [
       ...(Array.isArray(miscBillIds) ? miscBillIds : []),
-      ...(Array.isArray(billIds) ? billIds.filter((id: string) => typeof id === "string" && (id.startsWith("misc-") || miscBills.some(m => m.id === id))) : [])
+      ...rawBillIds.filter((id: string) => 
+        typeof id === "string" && 
+        (id.startsWith("misc-") || miscBills.some(m => m.id === id))
+      )
     ];
 
     const selectedSpp = sppBills.filter(b => allSppIds.includes(b.id));
@@ -1278,19 +1239,34 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       });
     }
 
+    // Extract savings from raw bill IDs (e.g. savings-deposit-1725...-50000)
+    rawBillIds.forEach((id: string) => {
+      if (typeof id === "string" && (id.startsWith("savings-deposit-") || id.startsWith("sav-deposit-") || id.startsWith("savings-"))) {
+        const parts = id.split("-");
+        const amt = Number(parts[parts.length - 1]);
+        if (!isNaN(amt) && amt > 0) {
+          selectedSavings.push({ studentId: reqStudentId, amount: amt, notes: "Setoran Tabungan Siswa" });
+        }
+      }
+    });
+
     if (selectedSpp.length === 0 && selectedMisc.length === 0 && selectedSavings.length === 0) {
-      return res.status(400).json({ error: "Tidak ada tagihan atau setoran tabungan yang dipilih." });
+      return res.status(400).json({ error: "Tidak ada tagihan atau setoran tabungan yang valid dalam keranjang." });
     }
 
     const studentId = reqStudentId || selectedSpp[0]?.studentId || selectedMisc[0]?.studentId || selectedSavings[0]?.studentId;
-    const student = students.find(s => s.id === studentId);
+    const student = students.find(s => s.id === studentId) || students[0];
     if (!student) {
       return res.status(404).json({ error: "Data siswa tidak ditemukan." });
     }
 
-    const totalAmount = selectedSpp.reduce((sum, b) => sum + b.amount, 0) +
-                        selectedMisc.reduce((sum, m) => sum + m.amount, 0) +
-                        selectedSavings.reduce((sum, s) => sum + s.amount, 0);
+    const totalAmount = Math.round(
+      selectedSpp.reduce((sum, b) => sum + (Number(b.amount) || 0), 0) +
+      selectedMisc.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) +
+      selectedSavings.reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
+    );
+
+    const itemCount = selectedSpp.length + selectedMisc.length + selectedSavings.length;
 
     const studentNis = (student.nis ? String(student.nis).trim() : student.id.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
     let orderId = `CART-${studentNis}-${Date.now()}`;
@@ -1300,9 +1276,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
     selectedSpp.forEach(b => { b.orderId = orderId; b.status = "pending"; });
     selectedMisc.forEach(m => { m.orderId = orderId; m.status = "pending"; });
-    selectedSavings.forEach(s => {
+    selectedSavings.forEach((s, idx) => {
       const trans: SavingsTransaction = {
-        id: `sav-cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `sav-cart-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
         studentId: s.studentId || student.id,
         type: "deposit",
         amount: s.amount,
@@ -1321,6 +1297,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-cart-snap-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-cart-${Date.now()}`,
         orderId,
+        totalAmount,
+        itemCount,
+        isSimulated: true,
         isMock: true
       });
     }
@@ -1333,20 +1312,38 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
       const itemDetails: any[] = [];
       selectedSpp.forEach(b => {
-        itemDetails.push({ id: b.id.slice(0, 45), price: b.amount, quantity: 1, name: `SPP ${b.month} ${b.year}`.slice(0, 45) });
+        itemDetails.push({ 
+          id: `SPP-${b.id}`.slice(0, 45), 
+          price: Math.round(Number(b.amount) || 0), 
+          quantity: 1, 
+          name: `SPP ${b.month} ${b.year}`.slice(0, 45) 
+        });
       });
       selectedMisc.forEach(m => {
-        itemDetails.push({ id: m.id.slice(0, 45), price: m.amount, quantity: 1, name: m.title.slice(0, 45) });
+        itemDetails.push({ 
+          id: `MISC-${m.id}`.slice(0, 45), 
+          price: Math.round(Number(m.amount) || 0), 
+          quantity: 1, 
+          name: (m.title || "Tagihan Non-SPP").slice(0, 45) 
+        });
       });
-      selectedSavings.forEach(s => {
-        itemDetails.push({ id: `SAV-${Date.now()}`.slice(0, 45), price: s.amount, quantity: 1, name: "Setoran Tabungan".slice(0, 45) });
+      selectedSavings.forEach((s, idx) => {
+        itemDetails.push({ 
+          id: `SAV-${idx + 1}-${Date.now().toString().slice(-4)}`.slice(0, 45), 
+          price: Math.round(Number(s.amount) || 0), 
+          quantity: 1, 
+          name: (s.notes || "Setoran Tabungan").slice(0, 45) 
+        });
       });
 
+      const calculatedGross = itemDetails.reduce((sum, it) => sum + (it.price * it.quantity), 0);
+      const grossAmount = calculatedGross > 0 ? calculatedGross : totalAmount;
+
       const payload = {
-        transaction_details: { order_id: orderId, gross_amount: totalAmount },
+        transaction_details: { order_id: orderId, gross_amount: grossAmount },
         item_details: itemDetails,
         customer_details: {
-          first_name: student.name.slice(0, 45),
+          first_name: (student.name || "Siswa").slice(0, 45),
           email: student.email || `${student.nis || "siswa"}@smpmaarifnu.sch.id`,
           phone: student.phone || "081234567890"
         }
@@ -1369,12 +1366,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         grossAmount: totalAmount,
         studentName: student.name,
         studentNis: student.nis,
-        description: `Paket Pembayaran (${selectedSpp.length} SPP, ${selectedMisc.length} Non-SPP)`,
+        description: `Paket Pembayaran Keranjang (${selectedSpp.length} SPP, ${selectedMisc.length} Non-SPP, ${selectedSavings.length} Tabungan)`,
         transactionStatus: "pending",
         paymentType: "Midtrans Snap Cart"
       });
 
-      res.json({ token: data.token, redirect_url: data.redirect_url, orderId });
+      res.json({ token: data.token, redirect_url: data.redirect_url, orderId, totalAmount, itemCount, isSimulated: false });
     } catch (err: any) {
       console.error("Midtrans Cart API Error:", err);
       res.status(500).json({ error: err.message || "Gagal menghubungkan ke Midtrans" });
@@ -1411,6 +1408,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-misc-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-misc-${Date.now()}`,
         orderId,
+        totalAmount: bill.amount,
+        isSimulated: true,
         isMock: true
       });
     }
@@ -1422,8 +1421,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         : "https://app.sandbox.midtrans.com/snap/v1/transactions";
 
       const payload = {
-        transaction_details: { order_id: orderId, gross_amount: bill.amount },
-        item_details: [{ id: bill.id.slice(0, 45), price: bill.amount, quantity: 1, name: bill.title.slice(0, 45) }],
+        transaction_details: { order_id: orderId, gross_amount: Math.round(bill.amount) },
+        item_details: [{ id: bill.id.slice(0, 45), price: Math.round(bill.amount), quantity: 1, name: bill.title.slice(0, 45) }],
         customer_details: {
           first_name: student.name.slice(0, 45),
           email: student.email || `${student.nis || "siswa"}@smpmaarifnu.sch.id`,
@@ -1453,7 +1452,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         paymentType: "Midtrans Snap"
       });
 
-      res.json({ token: data.token, redirect_url: data.redirect_url, orderId });
+      res.json({ token: data.token, redirect_url: data.redirect_url, orderId, totalAmount: bill.amount, isSimulated: false });
     } catch (err: any) {
       console.error("Midtrans Misc Error:", err);
       res.status(500).json({ error: err.message || "Gagal menghubungkan ke Midtrans" });
@@ -1498,6 +1497,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-sav-snap-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-sav-${Date.now()}`,
         orderId,
+        totalAmount: valAmount,
+        isSimulated: true,
         isMock: true
       });
     }
@@ -1509,8 +1510,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         : "https://app.sandbox.midtrans.com/snap/v1/transactions";
 
       const payload = {
-        transaction_details: { order_id: orderId, gross_amount: valAmount },
-        item_details: [{ id: trans.id.slice(0, 45), price: valAmount, quantity: 1, name: "Setor Tabungan Siswa".slice(0, 45) }],
+        transaction_details: { order_id: orderId, gross_amount: Math.round(valAmount) },
+        item_details: [{ id: trans.id.slice(0, 45), price: Math.round(valAmount), quantity: 1, name: "Setor Tabungan Siswa".slice(0, 45) }],
         customer_details: {
           first_name: student.name.slice(0, 45),
           email: student.email || `${student.nis || "siswa"}@smpmaarifnu.sch.id`,
@@ -1762,23 +1763,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
         // 3. Handle Settled Statuses
 
-        // Helper to record incoming BKU ledger
-        const ensureLedgerEntry = (category: string, amount: number, description: string, source: "spp" | "savings" | "custom" = "spp") => {
-          treasurerTransactions.unshift({
-            id: `tx-midtrans-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-            type: "incoming",
-            category,
-            amount,
-            description,
-            date: resolvedPaidAt.substring(0, 10),
-            source,
-            paymentMethod: "bank",
-            fundingSource: "Mandiri",
-            createdBy: "Midtrans Report Reconciler",
-            noBukti: cleanOrderId || cleanTxId
-          });
-        };
-
         const isExplicitMisc = isExplicitNonSpp(cleanOrderId, rawDesc, miscBills);
         const isExplicitSav = isExplicitSavings(cleanOrderId, rawDesc);
         const isExplicitSp = isExplicitSpmb(cleanOrderId, rawDesc);
@@ -1832,8 +1816,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 totalAmountReconciled += tokenAmt;
                 stateChanged = true;
 
-                ensureLedgerEntry("SPMB Siswa Baru", tokenAmt, `Pembayaran Token Pendaftaran SPMB - ${matchedCandidate.fullName} (No.Reg: ${matchedCandidate.registrationNo || "-"})`, "custom");
-
                 recordOrUpdateMidtransTransaction({
                   orderId: cleanOrderId,
                   transactionId: cleanTxId,
@@ -1868,8 +1850,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               totalAmountReconciled += tokenAmt;
               stateChanged = true;
 
-              ensureLedgerEntry("SPMB Siswa Baru", tokenAmt, `Pembayaran Token SPMB Online (Midtrans Report) - ${item.customerName || "Calon Siswa"}`, "custom");
-
               recordOrUpdateMidtransTransaction({
                 orderId: cleanOrderId,
                 transactionId: cleanTxId,
@@ -1894,7 +1874,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportPaymentType: actualPaymentType,
                 reportTime: resolvedPaidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DIVERIFIKASI! Pembayaran Token SPMB sebesar Rp ${tokenAmt.toLocaleString("id-ID")} dicatat ke Buku Kas.`
+                message: `BERHASIL DIVERIFIKASI! Pembayaran Token SPMB sebesar Rp ${tokenAmt.toLocaleString("id-ID")} dicatat.`
               });
             }
             continue;
@@ -1929,8 +1909,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               totalAmountReconciled += reregAmt;
               stateChanged = true;
 
-              ensureLedgerEntry("Daftar Ulang Siswa Baru", reregAmt, `Pembayaran Daftar Ulang SPMB - ${matchedCandidate.fullName} (No.Reg: ${matchedCandidate.registrationNo || "-"})`, "custom");
-
               recordOrUpdateMidtransTransaction({
                 orderId: cleanOrderId,
                 transactionId: cleanTxId,
@@ -1956,7 +1934,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportPaymentType: actualPaymentType,
                 reportTime: resolvedPaidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DILUNASI! Biaya Daftar Ulang SPMB a.n ${matchedCandidate.fullName} terverifikasi LUNAS & dicatat ke Buku Kas.`
+                message: `BERHASIL DILUNASI! Biaya Daftar Ulang SPMB a.n ${matchedCandidate.fullName} terverifikasi LUNAS.`
               });
             }
             continue;
@@ -1983,8 +1961,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 if (cleanTxId) b.transactionId = cleanTxId;
                 cartSettledCount++;
                 cartTotalAmt += b.amount;
-                const std = students.find(s => s.id === b.studentId);
-                ensureLedgerEntry("SPP Siswa", b.amount, `Pembayaran SPP ${b.month} ${b.year} (Cart Midtrans Report) - ${std?.name || ""}`, "spp");
               }
             });
 
@@ -1996,8 +1972,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 if (cleanTxId) m.transactionId = cleanTxId;
                 cartSettledCount++;
                 cartTotalAmt += m.amount;
-                const std = students.find(s => s.id === m.studentId);
-                ensureLedgerEntry("Tagihan Non-SPP", m.amount, `Pembayaran ${m.title} (Cart Midtrans Report) - ${std?.name || ""}`, "custom");
               }
             });
 
@@ -2046,7 +2020,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportPaymentType: actualPaymentType,
                 reportTime: resolvedPaidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DILUNASI! Paket tagihan (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP, ${matchedSavings.length} Tabungan) terverifikasi LUNAS & dicatat ke Buku Kas.`
+                message: `BERHASIL DILUNASI! Paket tagihan (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP, ${matchedSavings.length} Tabungan) terverifikasi LUNAS.`
               });
             } else {
               alreadyPaidCount++;
@@ -2242,8 +2216,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               totalAmountReconciled += miscBill.amount;
               stateChanged = true;
 
-              ensureLedgerEntry("Tagihan Non-SPP", miscBill.amount, `Pembayaran ${miscBill.title} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "custom");
-
               recordOrUpdateMidtransTransaction({
                 orderId: cleanOrderId || `MISC-${Date.now()}`,
                 transactionId: cleanTxId,
@@ -2269,7 +2241,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportPaymentType: actualPaymentType,
                 reportTime: miscBill.paidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DILUNASI! Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas.`
+                message: `BERHASIL DILUNASI! Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} terverifikasi LUNAS.`
               });
             }
             continue;
@@ -2283,8 +2255,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             reconciledCount++;
             totalAmountReconciled += actualAmt;
             stateChanged = true;
-
-            ensureLedgerEntry("Tagihan Non-SPP", actualAmt, `Pembayaran ${billTitle} (Midtrans Report) - ${targetStudent?.name || "Siswa"} (NIS: ${targetStudent?.nis || "-"})`, "custom");
 
             recordOrUpdateMidtransTransaction({
               orderId: cleanOrderId || `MISC-${Date.now()}`,
@@ -2311,7 +2281,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               reportPaymentType: actualPaymentType,
               reportTime: resolvedPaidAt,
               reconciliationStatus: "reconciled",
-              message: `BERHASIL DILUNASI! Pembayaran Tagihan Non-SPP "${billTitle}" a.n ${targetStudent?.name || 'Siswa'} terverifikasi & dicatat ke Buku Kas.`
+              message: `BERHASIL DILUNASI! Pembayaran Tagihan Non-SPP "${billTitle}" a.n ${targetStudent?.name || 'Siswa'} terverifikasi.`
             });
             continue;
           }
@@ -2373,8 +2343,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               totalAmountReconciled += sppBill.amount;
               stateChanged = true;
 
-              ensureLedgerEntry("SPP Siswa", sppBill.amount, `Pembayaran SPP ${sppBill.month} ${sppBill.year} (Midtrans Report) - ${student?.name || "Siswa"} (NIS: ${student?.nis || "-"})`, "spp");
-
               recordOrUpdateMidtransTransaction({
                 orderId: cleanOrderId || `SPP-${Date.now()}`,
                 transactionId: cleanTxId,
@@ -2400,7 +2368,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportPaymentType: actualPaymentType,
                 reportTime: sppBill.paidAt,
                 reconciliationStatus: "reconciled",
-                message: `BERHASIL DILUNASI! Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} terverifikasi LUNAS & dicatat ke Buku Kas Bendahara.`
+                message: `BERHASIL DILUNASI! Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} terverifikasi LUNAS.`
               });
             }
             continue;
@@ -2429,8 +2397,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               reconciledCount++;
               totalAmountReconciled += fallbackSpp.amount;
               stateChanged = true;
-
-              ensureLedgerEntry("SPP Siswa", fallbackSpp.amount, `Pembayaran SPP ${fallbackSpp.month} ${fallbackSpp.year} (Midtrans Report Tertua) - ${targetStudent.name} (${targetStudent.nis || ""})`, "spp");
 
               recordOrUpdateMidtransTransaction({
                 orderId: cleanOrderId || `SPP-${Date.now()}`,

@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion } from 'motion/react';
-import { Loader2, ShieldCheck, ShieldAlert, CheckCircle2, QrCode, CreditCard, AlertCircle } from 'lucide-react';
+import { Loader2, ShieldCheck, ShieldAlert } from 'lucide-react';
 
 interface MidtransPayModalProps {
   isOpen: boolean;
@@ -18,33 +18,21 @@ export default function MidtransPayModal({
   isOpen,
   token,
   orderId,
-  amount = 0,
-  itemName = 'Tagihan Sekolah',
+  amount,
+  itemName,
   isProduction = false,
   clientKey = '',
   onSuccess,
   onClose
 }: MidtransPayModalProps) {
-  const [status, setStatus] = useState<'loading' | 'error' | 'success' | 'simulated'>('loading');
+  const [status, setStatus] = useState<'loading' | 'error' | 'success'>('loading');
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
-  const [isSimulatingSuccess, setIsSimulatingSuccess] = useState(false);
-
-  const safeAmount = typeof amount === 'number' && !isNaN(amount) ? amount : 0;
-  const safeOrderId = orderId || `TRX-${Date.now()}`;
-  const isMockToken = Boolean(token && (token.startsWith('mock-') || token.includes('mock')));
 
   useEffect(() => {
     if (!isOpen || !token) return;
 
-    setErrorMessage(null);
-
-    // If it's a simulated/mock token, switch to mock sandbox simulation mode
-    if (isMockToken) {
-      setStatus('simulated');
-      return;
-    }
-
     setStatus('loading');
+    setErrorMessage(null);
 
     // Function to initialize payment using client-side Snap SDK
     const initSnapPay = () => {
@@ -64,18 +52,18 @@ export default function MidtransPayModal({
             fetch('/api/simulate-payment-success', {
               method: 'POST',
               headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ orderId: safeOrderId, paymentType: result?.payment_type || 'Midtrans Snap' })
+              body: JSON.stringify({ orderId, paymentType: result?.payment_type || 'Midtrans Snap' })
             })
               .then(() => {
                 setTimeout(() => {
                   onSuccess();
-                }, 1200);
+                }, 1500);
               })
               .catch((err) => {
                 console.error('Local verification sync failed:', err);
                 setTimeout(() => {
                   onSuccess();
-                }, 1200);
+                }, 1500);
               });
           },
           onPending: function (result: any) {
@@ -108,7 +96,7 @@ export default function MidtransPayModal({
       ? 'https://app.sandbox.midtrans.com/snap/snap.js'
       : 'https://app.midtrans.com/snap/snap.js';
 
-    // Remove any alternate snap script to avoid environment pollution
+    // Remove any alternate snap script to avoid environment pollution (e.g., loading sandbox token with production script or vice versa)
     const altScript = document.querySelector(`script[src="${alternateSrc}"]`);
     if (altScript) {
       altScript.remove();
@@ -161,36 +149,7 @@ export default function MidtransPayModal({
         console.warn('Error closing Midtrans snap iframe overlay:', e);
       }
     };
-  }, [isOpen, token, isProduction, clientKey, safeOrderId, isMockToken]);
-
-  const handleSimulatePayment = async () => {
-    setIsSimulatingSuccess(true);
-    try {
-      const res = await fetch('/api/simulate-payment-success', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          orderId: safeOrderId,
-          paymentType: 'Midtrans QRIS (Simulasi Sandbox)'
-        })
-      });
-      if (res.ok) {
-        setStatus('success');
-        setTimeout(() => {
-          onSuccess();
-        }, 1200);
-      } else {
-        const errJson = await res.json().catch(() => ({}));
-        setStatus('error');
-        setErrorMessage(errJson.error || 'Gagal mensimulasikan pembayaran lunas.');
-      }
-    } catch (e: any) {
-      setStatus('error');
-      setErrorMessage(e.message || 'Koneksi ke backend simulasi gagal.');
-    } finally {
-      setIsSimulatingSuccess(false);
-    }
-  };
+  }, [isOpen, token, isProduction, clientKey, orderId]);
 
   if (!isOpen) return null;
 
@@ -210,65 +169,15 @@ export default function MidtransPayModal({
               Membuka panel pembayaran aman. Mohon jangan menutup atau merefresh halaman ini.
             </p>
             <div className="mt-4 pt-3 border-t border-slate-100 w-full flex justify-between items-center text-[10px] text-slate-400 font-mono">
-              <span className="truncate max-w-[140px]">#{safeOrderId}</span>
-              <span className="text-slate-600 font-bold">Rp {safeAmount.toLocaleString('id-ID')}</span>
+              <span>#{orderId}</span>
+              <span className="text-slate-600 font-bold">Rp {amount.toLocaleString('id-ID')}</span>
             </div>
             <button
               onClick={onClose}
-              className="mt-6 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 hover:border-slate-300 rounded-lg px-4 py-2 transition-all font-semibold cursor-pointer"
+              className="mt-6 text-xs text-slate-500 hover:text-slate-800 border border-slate-200 hover:border-slate-300 rounded-lg px-4 py-2 transition-all font-semibold"
             >
               Batalkan Pembayaran
             </button>
-          </div>
-        )}
-
-        {status === 'simulated' && (
-          <div className="flex flex-col items-center py-2">
-            <div className="w-12 h-12 bg-amber-50 rounded-2xl flex items-center justify-center text-amber-600 mb-3 border border-amber-200/60">
-              <QrCode size={24} />
-            </div>
-            <span className="px-2.5 py-0.5 bg-amber-100 text-amber-800 font-black text-[9px] uppercase tracking-wider rounded-full mb-2">
-              Mode Uji Coba Sandbox
-            </span>
-            <h3 className="font-black text-slate-800 text-sm">{itemName || 'Pembayaran Tagihan'}</h3>
-            <p className="text-xs text-slate-400 mt-1">
-              Midtrans Keys belum diisi / berada dalam mode simulasi pengujian.
-            </p>
-
-            <div className="w-full mt-4 p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 text-left text-xs space-y-1.5 font-sans">
-              <div className="flex justify-between text-slate-500 text-[11px]">
-                <span>Order ID:</span>
-                <span className="font-mono font-bold text-slate-700 truncate max-w-[170px]">{safeOrderId}</span>
-              </div>
-              <div className="flex justify-between text-slate-700 font-bold border-t border-slate-200/60 pt-1.5">
-                <span>Total Bayar:</span>
-                <span className="text-emerald-700 font-extrabold">Rp {safeAmount.toLocaleString('id-ID')}</span>
-              </div>
-            </div>
-
-            <div className="mt-5 w-full space-y-2">
-              <button
-                type="button"
-                onClick={handleSimulatePayment}
-                disabled={isSimulatingSuccess}
-                className="w-full py-2.5 px-4 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl transition-all shadow-md shadow-emerald-500/20 flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
-              >
-                {isSimulatingSuccess ? (
-                  <Loader2 className="animate-spin" size={14} />
-                ) : (
-                  <CheckCircle2 size={14} />
-                )}
-                <span>Simulasikan Pembayaran Lunas (QRIS/VA)</span>
-              </button>
-
-              <button
-                type="button"
-                onClick={onClose}
-                className="w-full py-2 text-xs font-semibold text-slate-500 hover:text-slate-800 rounded-xl transition-colors cursor-pointer"
-              >
-                Tutup / Batalkan
-              </button>
-            </div>
           </div>
         )}
 
@@ -285,8 +194,8 @@ export default function MidtransPayModal({
         )}
 
         {status === 'error' && (
-          <div className="flex flex-col items-center py-4">
-            <div className="p-3 bg-red-50 text-red-600 rounded-full mb-3">
+          <div className="flex flex-col items-center py-6">
+            <div className="p-3 bg-red-50 text-red-600 rounded-full mb-3 animate-bounce">
               <ShieldAlert size={36} />
             </div>
             <h3 className="font-bold text-slate-800 text-sm">PENGALIHAN TRANSAKSI GAGAL</h3>
@@ -294,19 +203,10 @@ export default function MidtransPayModal({
               {errorMessage || 'Jaringan ditolak atau respon API Midtrans tidak valid.'}
             </p>
             <p className="text-[10px] text-slate-400 mt-3 text-left">
-              Pastikan konfigurasi Client Key dan Server Key di Pengaturan Admin sudah sesuai dengan tipe lingkungan Midtrans (Sandbox / Production).
+              Pastikan konfigurasi Client Key dan Server Key (Production/Sandbox) di Panel Pengaturan Admin sudah diatur dengan benar dan sesuai lingkungan (Sandbox / Production).
             </p>
-            <div className="mt-4 flex flex-col gap-2 w-full font-sans">
+            <div className="mt-6 flex justify-center gap-2 w-full font-sans">
               <button
-                type="button"
-                onClick={handleSimulatePayment}
-                className="w-full text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 py-2.5 rounded-xl transition-colors cursor-pointer flex items-center justify-center gap-1.5"
-              >
-                <CheckCircle2 size={13} />
-                <span>Simulasikan Sukses (Mode Pengujian)</span>
-              </button>
-              <button
-                type="button"
                 onClick={onClose}
                 className="w-full text-xs font-semibold text-slate-700 bg-slate-100 hover:bg-slate-200 py-2.5 rounded-xl transition-colors cursor-pointer"
               >

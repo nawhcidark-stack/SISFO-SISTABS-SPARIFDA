@@ -1125,8 +1125,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-snap-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-token-${Date.now()}`,
         orderId,
-        totalAmount: bill.amount,
-        isSimulated: true,
         isMock: true
       });
     }
@@ -1140,12 +1138,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       const payload = {
         transaction_details: {
           order_id: orderId,
-          gross_amount: Math.round(bill.amount)
+          gross_amount: bill.amount
         },
         item_details: [
           {
             id: bill.id.slice(0, 45),
-            price: Math.round(bill.amount),
+            price: bill.amount,
             quantity: 1,
             name: `SPP ${bill.month} ${bill.year} - ${student.name}`.slice(0, 45)
           }
@@ -1183,7 +1181,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         paymentType: "Midtrans Snap"
       });
 
-      res.json({ token: data.token, redirect_url: data.redirect_url, orderId, totalAmount: bill.amount, isSimulated: false });
+      res.json({ token: data.token, redirect_url: data.redirect_url, orderId });
     } catch (err: any) {
       console.error("Midtrans API Error:", err);
       res.status(500).json({ error: err.message || "Gagal menghubungkan ke Midtrans" });
@@ -1203,27 +1201,13 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       studentId: reqStudentId 
     } = req.body;
 
-    const rawBillIds: string[] = Array.isArray(billIds) ? billIds : [];
-
     const allSppIds = [
       ...(Array.isArray(sppBillIds) ? sppBillIds : []),
-      ...rawBillIds.filter((id: string) => 
-        typeof id === "string" && 
-        !id.startsWith("misc-") && 
-        !id.startsWith("sav-") && 
-        !id.startsWith("cart-savings-") && 
-        !id.startsWith("savings-deposit-") &&
-        !id.startsWith("savings-") &&
-        !miscBills.some(m => m.id === id)
-      )
+      ...(Array.isArray(billIds) ? billIds.filter((id: string) => typeof id === "string" && !id.startsWith("misc-") && !id.startsWith("sav-") && !id.startsWith("cart-savings-") && !id.startsWith("savings-deposit-")) : [])
     ];
-    
     const allMiscIds = [
       ...(Array.isArray(miscBillIds) ? miscBillIds : []),
-      ...rawBillIds.filter((id: string) => 
-        typeof id === "string" && 
-        (id.startsWith("misc-") || miscBills.some(m => m.id === id))
-      )
+      ...(Array.isArray(billIds) ? billIds.filter((id: string) => typeof id === "string" && (id.startsWith("misc-") || miscBills.some(m => m.id === id))) : [])
     ];
 
     const selectedSpp = sppBills.filter(b => allSppIds.includes(b.id));
@@ -1239,34 +1223,19 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       });
     }
 
-    // Extract savings from raw bill IDs (e.g. savings-deposit-1725...-50000)
-    rawBillIds.forEach((id: string) => {
-      if (typeof id === "string" && (id.startsWith("savings-deposit-") || id.startsWith("sav-deposit-") || id.startsWith("savings-"))) {
-        const parts = id.split("-");
-        const amt = Number(parts[parts.length - 1]);
-        if (!isNaN(amt) && amt > 0) {
-          selectedSavings.push({ studentId: reqStudentId, amount: amt, notes: "Setoran Tabungan Siswa" });
-        }
-      }
-    });
-
     if (selectedSpp.length === 0 && selectedMisc.length === 0 && selectedSavings.length === 0) {
-      return res.status(400).json({ error: "Tidak ada tagihan atau setoran tabungan yang valid dalam keranjang." });
+      return res.status(400).json({ error: "Tidak ada tagihan atau setoran tabungan yang dipilih." });
     }
 
     const studentId = reqStudentId || selectedSpp[0]?.studentId || selectedMisc[0]?.studentId || selectedSavings[0]?.studentId;
-    const student = students.find(s => s.id === studentId) || students[0];
+    const student = students.find(s => s.id === studentId);
     if (!student) {
       return res.status(404).json({ error: "Data siswa tidak ditemukan." });
     }
 
-    const totalAmount = Math.round(
-      selectedSpp.reduce((sum, b) => sum + (Number(b.amount) || 0), 0) +
-      selectedMisc.reduce((sum, m) => sum + (Number(m.amount) || 0), 0) +
-      selectedSavings.reduce((sum, s) => sum + (Number(s.amount) || 0), 0)
-    );
-
-    const itemCount = selectedSpp.length + selectedMisc.length + selectedSavings.length;
+    const totalAmount = selectedSpp.reduce((sum, b) => sum + b.amount, 0) +
+                        selectedMisc.reduce((sum, m) => sum + m.amount, 0) +
+                        selectedSavings.reduce((sum, s) => sum + s.amount, 0);
 
     const studentNis = (student.nis ? String(student.nis).trim() : student.id.replace(/^std-/, '')).replace(/[^a-zA-Z0-9]/g, '');
     let orderId = `CART-${studentNis}-${Date.now()}`;
@@ -1276,9 +1245,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
     selectedSpp.forEach(b => { b.orderId = orderId; b.status = "pending"; });
     selectedMisc.forEach(m => { m.orderId = orderId; m.status = "pending"; });
-    selectedSavings.forEach((s, idx) => {
+    selectedSavings.forEach(s => {
       const trans: SavingsTransaction = {
-        id: `sav-cart-${Date.now()}-${idx}-${Math.random().toString(36).slice(2, 6)}`,
+        id: `sav-cart-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         studentId: s.studentId || student.id,
         type: "deposit",
         amount: s.amount,
@@ -1297,9 +1266,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-cart-snap-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-cart-${Date.now()}`,
         orderId,
-        totalAmount,
-        itemCount,
-        isSimulated: true,
         isMock: true
       });
     }
@@ -1312,38 +1278,20 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
       const itemDetails: any[] = [];
       selectedSpp.forEach(b => {
-        itemDetails.push({ 
-          id: `SPP-${b.id}`.slice(0, 45), 
-          price: Math.round(Number(b.amount) || 0), 
-          quantity: 1, 
-          name: `SPP ${b.month} ${b.year}`.slice(0, 45) 
-        });
+        itemDetails.push({ id: b.id.slice(0, 45), price: b.amount, quantity: 1, name: `SPP ${b.month} ${b.year}`.slice(0, 45) });
       });
       selectedMisc.forEach(m => {
-        itemDetails.push({ 
-          id: `MISC-${m.id}`.slice(0, 45), 
-          price: Math.round(Number(m.amount) || 0), 
-          quantity: 1, 
-          name: (m.title || "Tagihan Non-SPP").slice(0, 45) 
-        });
+        itemDetails.push({ id: m.id.slice(0, 45), price: m.amount, quantity: 1, name: m.title.slice(0, 45) });
       });
-      selectedSavings.forEach((s, idx) => {
-        itemDetails.push({ 
-          id: `SAV-${idx + 1}-${Date.now().toString().slice(-4)}`.slice(0, 45), 
-          price: Math.round(Number(s.amount) || 0), 
-          quantity: 1, 
-          name: (s.notes || "Setoran Tabungan").slice(0, 45) 
-        });
+      selectedSavings.forEach(s => {
+        itemDetails.push({ id: `SAV-${Date.now()}`.slice(0, 45), price: s.amount, quantity: 1, name: "Setoran Tabungan".slice(0, 45) });
       });
-
-      const calculatedGross = itemDetails.reduce((sum, it) => sum + (it.price * it.quantity), 0);
-      const grossAmount = calculatedGross > 0 ? calculatedGross : totalAmount;
 
       const payload = {
-        transaction_details: { order_id: orderId, gross_amount: grossAmount },
+        transaction_details: { order_id: orderId, gross_amount: totalAmount },
         item_details: itemDetails,
         customer_details: {
-          first_name: (student.name || "Siswa").slice(0, 45),
+          first_name: student.name.slice(0, 45),
           email: student.email || `${student.nis || "siswa"}@smpmaarifnu.sch.id`,
           phone: student.phone || "081234567890"
         }
@@ -1366,12 +1314,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         grossAmount: totalAmount,
         studentName: student.name,
         studentNis: student.nis,
-        description: `Paket Pembayaran Keranjang (${selectedSpp.length} SPP, ${selectedMisc.length} Non-SPP, ${selectedSavings.length} Tabungan)`,
+        description: `Paket Pembayaran (${selectedSpp.length} SPP, ${selectedMisc.length} Non-SPP)`,
         transactionStatus: "pending",
         paymentType: "Midtrans Snap Cart"
       });
 
-      res.json({ token: data.token, redirect_url: data.redirect_url, orderId, totalAmount, itemCount, isSimulated: false });
+      res.json({ token: data.token, redirect_url: data.redirect_url, orderId });
     } catch (err: any) {
       console.error("Midtrans Cart API Error:", err);
       res.status(500).json({ error: err.message || "Gagal menghubungkan ke Midtrans" });
@@ -1408,8 +1356,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-misc-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-misc-${Date.now()}`,
         orderId,
-        totalAmount: bill.amount,
-        isSimulated: true,
         isMock: true
       });
     }
@@ -1421,8 +1367,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         : "https://app.sandbox.midtrans.com/snap/v1/transactions";
 
       const payload = {
-        transaction_details: { order_id: orderId, gross_amount: Math.round(bill.amount) },
-        item_details: [{ id: bill.id.slice(0, 45), price: Math.round(bill.amount), quantity: 1, name: bill.title.slice(0, 45) }],
+        transaction_details: { order_id: orderId, gross_amount: bill.amount },
+        item_details: [{ id: bill.id.slice(0, 45), price: bill.amount, quantity: 1, name: bill.title.slice(0, 45) }],
         customer_details: {
           first_name: student.name.slice(0, 45),
           email: student.email || `${student.nis || "siswa"}@smpmaarifnu.sch.id`,
@@ -1452,7 +1398,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         paymentType: "Midtrans Snap"
       });
 
-      res.json({ token: data.token, redirect_url: data.redirect_url, orderId, totalAmount: bill.amount, isSimulated: false });
+      res.json({ token: data.token, redirect_url: data.redirect_url, orderId });
     } catch (err: any) {
       console.error("Midtrans Misc Error:", err);
       res.status(500).json({ error: err.message || "Gagal menghubungkan ke Midtrans" });
@@ -1497,8 +1443,6 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         token: `mock-sav-snap-token-${Date.now()}`,
         redirect_url: `https://app.sandbox.midtrans.com/snap/v2/vtweb/mock-sav-${Date.now()}`,
         orderId,
-        totalAmount: valAmount,
-        isSimulated: true,
         isMock: true
       });
     }
@@ -1510,8 +1454,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         : "https://app.sandbox.midtrans.com/snap/v1/transactions";
 
       const payload = {
-        transaction_details: { order_id: orderId, gross_amount: Math.round(valAmount) },
-        item_details: [{ id: trans.id.slice(0, 45), price: Math.round(valAmount), quantity: 1, name: "Setor Tabungan Siswa".slice(0, 45) }],
+        transaction_details: { order_id: orderId, gross_amount: valAmount },
+        item_details: [{ id: trans.id.slice(0, 45), price: valAmount, quantity: 1, name: "Setor Tabungan Siswa".slice(0, 45) }],
         customer_details: {
           first_name: student.name.slice(0, 45),
           email: student.email || `${student.nis || "siswa"}@smpmaarifnu.sch.id`,

@@ -6488,7 +6488,7 @@ async function startServer() {
         return {
           id: `misc-int-${b.id}`,
           type: 'incoming' as const,
-          category: b.category && b.category.trim() ? b.category : 'Iuran Lain',
+          category: (b as any).category && (b as any).category.trim() ? (b as any).category : 'Iuran Lain',
           amount: b.amount,
           description: `${b.title} - ${student?.name || 'Siswa'} (${student?.nis || ''})`,
           date: getWIBDateString(b.paidAt || new Date()),

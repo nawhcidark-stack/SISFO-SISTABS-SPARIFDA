@@ -987,9 +987,9 @@ export default function App() {
       const payData = await res.json();
       setPayToken(payData.token);
       setPayOrderId(payData.orderId);
-      setPayAmount(payData.totalAmount);
-      setPayItemName(`Pembayaran Keranjang (${payData.itemCount} Tagihan)`);
-      setPayIsSimulated(payData.isSimulated);
+      setPayAmount(Number(payData.totalAmount) || 0);
+      setPayItemName(payData.itemCount ? `Pembayaran Keranjang (${payData.itemCount} Item)` : 'Pembayaran Keranjang');
+      setPayIsSimulated(payData.isSimulated || false);
 
       const targetStudent = currentStudent;
       setPayStudentName(targetStudent?.name || "Siswa");

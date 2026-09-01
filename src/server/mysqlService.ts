@@ -2077,3 +2077,311 @@ export async function pullDataFromMysql(): Promise<{
   }
 }
 
+// ==========================================================
+// DIRECT MYSQL STORAGE & PERSISTENCE ENGINE
+// ==========================================================
+
+// Ensure all 26+ tables and configs exist in MySQL database without wiping existing data
+export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; message: string; error?: string }> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query('SET FOREIGN_KEY_CHECKS = 0;');
+    await connection.query(COMPLETE_TABLES_SQL);
+    await connection.query('SET FOREIGN_KEY_CHECKS = 1;');
+    return {
+      success: true,
+      message: 'Semua struktur tabel MySQL berhasil diverifikasi dan diinisialisasi.'
+    };
+  } catch (err: any) {
+    console.error('[MySQL Init Tables Error]:', err.message || err);
+    return {
+      success: false,
+      message: 'Gagal menginisialisasi struktur tabel MySQL',
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+    await pool.end().catch(() => {});
+  }
+}
+
+// Direct single entity save / upsert into MySQL table with proper UTF8 escaping
+export async function directSaveEntityToMysql(entityType: string, data: any): Promise<{ success: boolean; message: string; error?: string }> {
+  if (!data || typeof data !== 'object') {
+    return { success: false, message: 'Data entitas tidak valid.' };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    // 1. Students
+    if (typeKey === 'student' || typeKey === 'students') {
+      const s = data;
+      await connection.query(`
+        INSERT INTO \`students\` (
+          \`id\`, \`nis\`, \`nisn\`, \`name\`, \`class\`, \`gender\`, \`email\`, \`phone\`, \`savings_balance\`,
+          \`status\`, \`password\`, \`nickname\`, \`nik\`, \`birth_place\`, \`birth_date\`, \`kk_number\`,
+          \`birth_cert_number\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`,
+          \`address\`, \`photo_url\`, \`parent_name\`, \`google_drive_link\`, \`father_name\`, \`father_nik\`,
+          \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`,
+          \`father_address\`, \`father_phone\`, \`father_status\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`,
+          \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_address\`,
+          \`mother_phone\`, \`mother_status\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`,
+          \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_address\`,
+          \`guardian_phone\`, \`guardian_status\`, \`is_spp_exempt\`, \`spp_exemption_reason\`, \`spp_exemption_type\`,
+          \`custom_spp_rate\`, \`mutation_date\`, \`mutation_reason\`, \`mutation_destination\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`), \`class\`=VALUES(\`class\`), \`gender\`=VALUES(\`gender\`), \`email\`=VALUES(\`email\`),
+          \`phone\`=VALUES(\`phone\`), \`savings_balance\`=VALUES(\`savings_balance\`), \`status\`=VALUES(\`status\`),
+          \`password\`=VALUES(\`password\`), \`address\`=VALUES(\`address\`), \`photo_url\`=VALUES(\`photo_url\`),
+          \`is_spp_exempt\`=VALUES(\`is_spp_exempt\`), \`custom_spp_rate\`=VALUES(\`custom_spp_rate\`), \`updated_at\`=NOW()
+      `, [
+        s.id, s.nis || '', s.nisn || null, s.name || '', s.class || '', s.gender || 'Laki-laki', s.email || null,
+        s.phone || null, Number(s.savingsBalance) || 0, s.status || 'Aktif', s.password || null, s.nickname || null,
+        s.nik || null, s.birthPlace || null, s.birthDate || null, s.kkNumber || null, s.birthCertNumber || null,
+        s.livingWith || null, s.childOrder || null, s.siblingsCount || null, s.stepSiblingsCount || null,
+        s.address || null, s.photoUrl || null, s.parentName || null, s.googleDriveLink || null, s.fatherName || null,
+        s.fatherNik || null, s.fatherBirthPlace || null, s.fatherBirthDate || null, s.fatherEducation || null,
+        s.fatherOccupation || null, s.fatherIncome || null, s.fatherAddress || null, s.fatherPhone || null,
+        s.fatherStatus || null, s.motherName || null, s.motherNik || null, s.motherBirthPlace || null,
+        s.motherBirthDate || null, s.motherEducation || null, s.motherOccupation || null, s.motherIncome || null,
+        s.motherAddress || null, s.motherPhone || null, s.motherStatus || null, s.guardianName || null,
+        s.guardianNik || null, s.guardianBirthPlace || null, s.guardianBirthDate || null, s.guardianEducation || null,
+        s.guardianOccupation || null, s.guardianIncome || null, s.guardianAddress || null, s.guardianPhone || null,
+        s.guardianStatus || null, s.isSppExempt ? 1 : 0, s.sppExemptionReason || null, s.sppExemptionType || null,
+        s.customSppRate !== undefined ? Number(s.customSppRate) : null, s.mutationDate || null, s.mutationReason || null,
+        s.mutationDestination || null
+      ]);
+      return { success: true, message: `Data siswa "${s.name}" (${s.nis}) langsung tersimpan ke MySQL.` };
+    }
+
+    // 2. SPP Bills
+    else if (typeKey === 'spp' || typeKey === 'spp_bill' || typeKey === 'sppbills') {
+      const b = data;
+      await connection.query(`
+        INSERT INTO \`spp_bills\` (
+          \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
+          \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
+          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
+      `, [
+        b.id, b.studentId, b.month, Number(b.year) || 2026, Number(b.amount) || 0, b.status || 'unpaid',
+        b.paidAt || null, b.paymentMethod || null, b.orderId || null, b.transactionId || null,
+        b.achievementType || null, b.achievementDetail || null
+      ]);
+      return { success: true, message: `Data tagihan SPP "${b.month} ${b.year}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 3. Misc Bills
+    else if (typeKey === 'misc' || typeKey === 'misc_bill' || typeKey === 'miscbills') {
+      const m = data;
+      await connection.query(`
+        INSERT INTO \`misc_bills\` (
+          \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
+          \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
+          \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`)
+      `, [
+        m.id, m.studentId, m.title || '', Number(m.amount) || 0, m.status || 'unpaid',
+        m.createdAt || new Date().toISOString(), m.paidAt || null, m.paymentMethod || null,
+        m.orderId || null, m.transactionId || null, m.isMonthly ? 1 : 0, m.month || null
+      ]);
+      return { success: true, message: `Data tagihan non-SPP "${m.title}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 4. Savings Transactions
+    else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
+      const s = data;
+      await connection.query(`
+        INSERT INTO \`savings_transactions\` (
+          \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
+          \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`)
+      `, [
+        s.id, s.studentId, s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
+        s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
+        s.orderId || null, s.transactionId || null, s.notes || null
+      ]);
+      return { success: true, message: `Transaksi tabungan Rp ${Number(s.amount).toLocaleString('id-ID')} langsung tersimpan ke MySQL.` };
+    }
+
+    // 5. Treasurer Transactions (Kas Umum)
+    else if (typeKey === 'transaction' || typeKey === 'treasurer_transaction' || typeKey === 'treasurertransactions') {
+      const t = data;
+      await connection.query(`
+        INSERT INTO \`treasurer_transactions\` (
+          \`id\`, \`type\`, \`category\`, \`amount\`, \`description\`, \`date\`, \`source\`,
+          \`student_name\`, \`student_id\`, \`nis\`, \`created_by\`, \`recipient_name\`,
+          \`funding_source\`, \`payment_method\`, \`kode_rekening\`, \`no_bukti\`, \`order_id\`, \`transaction_id\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
+          \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`)
+      `, [
+        t.id, t.type || 'incoming', t.category || 'Lain-lain', Number(t.amount) || 0, t.description || '',
+        t.date || new Date().toISOString().substring(0, 10), t.source || 'custom', t.studentName || null,
+        t.studentId || null, t.nis || null, t.createdBy || 'Bendahara', t.recipientName || null,
+        t.fundingSource || null, t.paymentMethod === 'bank' ? 'bank' : 'kas', t.kodeRekening || null,
+        t.noBukti || null, t.orderId || null, t.transactionId || null
+      ]);
+      return { success: true, message: `Transaksi kas "${t.description}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 6. Teacher Salaries
+    else if (typeKey === 'salary' || typeKey === 'teacher_salary' || typeKey === 'teachersalaries') {
+      const sal = data;
+      await connection.query(`
+        INSERT INTO \`teacher_salaries\` (
+          \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`month\`, \`base_salary\`,
+          \`homeroom_allowance\`, \`journal_count\`, \`journal_rate\`, \`journal_incentive\`,
+          \`tunjangan_masa_kerja\`, \`vakasi\`, \`other_allowance\`, \`potongan_dana_sosial\`,
+          \`potongan_absen\`, \`potongan_lain\`, \`deductions\`, \`total_amount\`, \`status\`,
+          \`payment_date\`, \`notes\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`total_amount\`=VALUES(\`total_amount\`), \`status\`=VALUES(\`status\`), \`payment_date\`=VALUES(\`payment_date\`),
+          \`notes\`=VALUES(\`notes\`)
+      `, [
+        sal.id, sal.teacherId, sal.teacherName || '', sal.teacherType || 'subject', sal.month || '',
+        Number(sal.baseSalary) || 0, Number(sal.homeroomAllowance) || 0, Number(sal.journalCount) || 0,
+        Number(sal.journalRate) || 0, Number(sal.journalIncentive) || 0, Number(sal.tunjanganMasaKerja) || 0,
+        Number(sal.vakasi) || 0, Number(sal.otherAllowance) || 0, Number(sal.potonganDanaSosial) || 0,
+        Number(sal.potonganAbsen) || 0, Number(sal.potonganLain) || 0, Number(sal.deductions) || 0,
+        Number(sal.totalAmount) || 0, sal.status || 'unpaid', sal.paymentDate || null, sal.notes || null,
+        sal.createdAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Data slip gaji "${sal.teacherName}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 7. Configs / Master settings
+    else if (typeKey === 'config' || typeKey === 'app_config' || typeKey === 'appconfigs') {
+      const configId = data.id || data.key || 'config';
+      const configData = data.data !== undefined ? data.data : data;
+      const jsonStr = typeof configData === 'string' ? configData : JSON.stringify(configData);
+      await connection.query(`
+        INSERT INTO \`app_configs\` (\`id\`, \`data\`) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE \`data\`=VALUES(\`data\`)
+      `, [configId, jsonStr]);
+      return { success: true, message: `Konfigurasi "${configId}" langsung tersimpan ke MySQL.` };
+    }
+
+    // Generic fallback into app_configs
+    else {
+      const entityId = data.id || `${typeKey}_${Date.now()}`;
+      await connection.query(`
+        INSERT INTO \`app_configs\` (\`id\`, \`data\`) VALUES (?, ?)
+        ON DUPLICATE KEY UPDATE \`data\`=VALUES(\`data\`)
+      `, [`entity_${typeKey}_${entityId}`, JSON.stringify(data)]);
+      return { success: true, message: `Entitas "${typeKey}" (#${entityId}) langsung tersimpan ke MySQL (app_configs).` };
+    }
+  } catch (err: any) {
+    console.error(`[MySQL Direct Save Error - ${entityType}]:`, err.message || err);
+    return {
+      success: false,
+      message: `Gagal menyimpan entitas "${entityType}" ke MySQL`,
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+    await pool.end().catch(() => {});
+  }
+}
+
+// Direct single entity delete from MySQL table
+export async function directDeleteEntityFromMysql(entityType: string, id: string): Promise<{ success: boolean; message: string; error?: string }> {
+  if (!id) {
+    return { success: false, message: 'ID entitas wajib diisi untuk penghapusan.' };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    const tableMap: Record<string, string> = {
+      student: 'students',
+      students: 'students',
+      spp: 'spp_bills',
+      spp_bill: 'spp_bills',
+      sppbills: 'spp_bills',
+      misc: 'misc_bills',
+      misc_bill: 'misc_bills',
+      miscbills: 'misc_bills',
+      savings: 'savings_transactions',
+      savings_transaction: 'savings_transactions',
+      transaction: 'treasurer_transactions',
+      treasurer_transaction: 'treasurer_transactions',
+      salary: 'teacher_salaries',
+      teacher_salary: 'teacher_salaries',
+      homeroom: 'homeroom_teachers',
+      subject_teacher: 'subject_teachers',
+      journal: 'teaching_journals',
+      attendance: 'attendance_logs',
+      spmb: 'spmb_candidates',
+      spmb_candidate: 'spmb_candidates',
+      notification: 'notifications',
+      config: 'app_configs'
+    };
+
+    const tableName = tableMap[typeKey] || typeKey;
+    await connection.query(`DELETE FROM \`${tableName}\` WHERE \`id\` = ?`, [id]);
+    return {
+      success: true,
+      message: `Data ID "${id}" pada tabel "${tableName}" berhasil dihapus langsung dari MySQL.`
+    };
+  } catch (err: any) {
+    console.error(`[MySQL Direct Delete Error - ${entityType}]:`, err.message || err);
+    return {
+      success: false,
+      message: `Gagal menghapus data dari MySQL`,
+      error: err.message || String(err)
+    };
+  } finally {
+    if (connection) connection.release();
+    await pool.end().catch(() => {});
+  }
+}
+
+// Debounced background direct snapshot sync runner
+let debouncedSyncTimer: NodeJS.Timeout | null = null;
+let isSyncInProgress = false;
+
+export function triggerDebouncedMysqlSync(snapshotProvider: () => Promise<any> | any, delayMs: number = 1500) {
+  if (debouncedSyncTimer) {
+    clearTimeout(debouncedSyncTimer);
+  }
+
+  debouncedSyncTimer = setTimeout(async () => {
+    if (isSyncInProgress) return;
+    try {
+      isSyncInProgress = true;
+      const snapshotData = await snapshotProvider();
+      const snapshot = snapshotData?.snapshot || snapshotData;
+      if (snapshot && currentConfig.hasPassword && currentConfig.host && currentConfig.database) {
+        await syncDataToMysql(snapshot);
+        console.log('[MySQL Direct Background Sync] Berhasil melakukan autosave langsung ke MySQL.');
+      }
+    } catch (err: any) {
+      console.warn('[MySQL Direct Background Sync] Warning:', err.message || err);
+    } finally {
+      isSyncInProgress = false;
+    }
+  }, delayMs);
+}
+
+

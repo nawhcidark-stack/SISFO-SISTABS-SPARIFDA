@@ -6,7 +6,11 @@ import {
   syncDataToMysql, 
   pullDataFromMysql,
   generateFullPhpMyAdminSql,
-  COMPLETE_TABLES_SQL 
+  COMPLETE_TABLES_SQL,
+  ensureAllMysqlTablesExist,
+  directSaveEntityToMysql,
+  directDeleteEntityFromMysql,
+  triggerDebouncedMysqlSync
 } from '../mysqlService';
 
 export interface MysqlRouteDataProviders {
@@ -97,6 +101,107 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
         success: false, 
         message: 'Gagal memuat data dari database MySQL', 
         error: err.message 
+      });
+    }
+  });
+
+  // ==========================================================
+  // DIRECT STORAGE & ENTITY PERSISTENCE ROUTES
+  // ==========================================================
+
+  // Direct single entity save (insert/update) into MySQL database
+  router.post('/mysql-save-entity', async (req, res) => {
+    try {
+      const { entityType, data } = req.body;
+      if (!entityType || !data) {
+        return res.status(400).json({ success: false, message: 'Parameter entityType dan data wajib dikirim.' });
+      }
+      const result = await directSaveEntityToMysql(entityType, data);
+      
+      // Also trigger debounced full-sync in background to ensure database integrity
+      triggerDebouncedMysqlSync(providers.getFullSnapshot, 2000);
+
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Gagal menyimpan entitas langsung ke MySQL',
+        error: err.message
+      });
+    }
+  });
+
+  // Direct single entity delete from MySQL database
+  router.post('/mysql-delete-entity', async (req, res) => {
+    try {
+      const { entityType, id } = req.body;
+      if (!entityType || !id) {
+        return res.status(400).json({ success: false, message: 'Parameter entityType dan id wajib dikirim.' });
+      }
+      const result = await directDeleteEntityFromMysql(entityType, id);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Gagal menghapus entitas dari MySQL',
+        error: err.message
+      });
+    }
+  });
+
+  // Direct full-state snapshot immediate save to MySQL
+  router.post('/mysql-direct-save', async (req, res) => {
+    try {
+      const fullSnapshot = await providers.getFullSnapshot();
+      const snapshot = fullSnapshot?.snapshot || fullSnapshot;
+      const result = await syncDataToMysql(snapshot);
+      res.json({
+        success: result.success,
+        message: result.message || 'Penyimpanan langsung ke MySQL berhasil.',
+        syncedAt: result.syncedAt,
+        stats: result.stats,
+        durationMs: result.durationMs
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Gagal melakukan penyimpanan langsung ke MySQL',
+        error: err.message
+      });
+    }
+  });
+
+  // Verify and initialize all tables in MySQL
+  router.post('/mysql-init-tables', async (req, res) => {
+    try {
+      const result = await ensureAllMysqlTablesExist();
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        message: 'Gagal inisialisasi tabel MySQL',
+        error: err.message
+      });
+    }
+  });
+
+  // Live status of MySQL connection, ping, tables count
+  router.get('/mysql-status', async (req, res) => {
+    try {
+      const config = getSanitizedConfig();
+      let liveTest = null;
+      if (config.hasPassword && config.host && config.database) {
+        liveTest = await testMysqlConnection();
+      }
+      res.json({
+        success: true,
+        config,
+        liveTest
+      });
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        error: err.message
       });
     }
   });

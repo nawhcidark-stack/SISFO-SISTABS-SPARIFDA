@@ -1137,13 +1137,36 @@ export default function AdminPanel({
     });
   };
 
-  const handleCancelSavingsTransactionLocal = async (transactionId: string, type: "deposit" | "withdrawal", amount: number) => {
-    const confirmCancel = window.confirm(
-      `Apakah Anda yakin ingin membatalkan transaksi ${type === "deposit" ? "SETORAN" : "PENARIKAN"} tabungan sebesar Rp ${amount.toLocaleString("id-ID")} ini?\n\n` +
-      `- Saldo tabungan siswa akan disesuaikan kembali.\n` +
-      `- Status transaksi akan diubah menjadi BATAL.\n` +
-      `- Notifikasi pembatalan otomatis akan dikirim ke WhatsApp wali murid.`
+  const handleCancelSavingsTransactionLocal = async (
+    transactionId: string, 
+    type: "deposit" | "withdrawal", 
+    amount: number,
+    status?: string,
+    paymentMethod?: string
+  ) => {
+    const isPending = status === "pending";
+    const isOnline = Boolean(
+      paymentMethod && 
+      (paymentMethod.toLowerCase().includes("midtrans") || 
+       paymentMethod.toLowerCase().includes("qris") || 
+       paymentMethod.toLowerCase().includes("va") || 
+       paymentMethod.toLowerCase().includes("online"))
     );
+
+    let confirmMsg = "";
+    if (isPending) {
+      confirmMsg = `Apakah Anda yakin ingin membatalkan transaksi SETORAN TABUNGAN ONLINE (Menunggu Pembayaran) sebesar Rp ${amount.toLocaleString("id-ID")} ini?\n\n` +
+        `- Status transaksi online akan diubah menjadi DIBATALKAN.\n` +
+        `- Siswa/Wali murid tidak dapat melanjutkan pembayaran invoice ini.\n` +
+        `- Notifikasi pembatalan akan dikirim ke portal siswa.`;
+    } else {
+      confirmMsg = `Apakah Anda yakin ingin membatalkan transaksi ${type === "deposit" ? "SETORAN" : "PENARIKAN"} tabungan ${isOnline ? "Online (Midtrans)" : "Tunai"} sebesar Rp ${amount.toLocaleString("id-ID")} ini?\n\n` +
+        `- Saldo tabungan siswa akan disesuaikan kembali (${type === "deposit" ? "dikurangi" : "ditambah"} Rp ${amount.toLocaleString("id-ID")}).\n` +
+        `- Status transaksi akan diubah menjadi BATAL.\n` +
+        `- Notifikasi pembatalan otomatis akan dikirim ke WhatsApp wali murid & Portal Siswa.`;
+    }
+
+    const confirmCancel = window.confirm(confirmMsg);
     if (!confirmCancel) return;
 
     try {
@@ -1156,7 +1179,7 @@ export default function AdminPanel({
       if (!res.ok) {
         throw new Error(data.error || "Gagal membatalkan transaksi tabungan.");
       }
-      alert("Transaksi tabungan berhasil dibatalkan dan saldo siswa telah diperbarui!");
+      alert(isPending ? "Setoran tabungan online (pending) berhasil dibatalkan!" : "Transaksi tabungan berhasil dibatalkan dan saldo siswa telah diperbarui!");
       onRefresh();
     } catch (err: any) {
       console.error(err);
@@ -5771,7 +5794,7 @@ export default function AdminPanel({
                                   transactions.filter(
                                     (t) =>
                                       t.studentId === selectedStudent.id &&
-                                      t.status === "success",
+                                      t.status !== "failed",
                                   ).length
                                 }{" "}
                                 Transaksi
@@ -5782,13 +5805,10 @@ export default function AdminPanel({
                           <div className="p-3 max-h-[350px] overflow-y-auto">
                             <div className="flex flex-col gap-2">
                               {transactions.filter(
-                                (t) =>
-                                  t.studentId === selectedStudent.id &&
-                                  t.status === "success",
+                                (t) => t.studentId === selectedStudent.id,
                               ).length === 0 ? (
                                 <div className="text-center py-6 text-[11px] text-slate-400">
-                                  Belum ada riwayat mutasi tabungan
-                                  terverifikasi.
+                                  Belum ada riwayat mutasi tabungan siswa ini.
                                 </div>
                               ) : (
                                 <div className="overflow-x-auto">
@@ -5796,25 +5816,24 @@ export default function AdminPanel({
                                     <thead>
                                       <tr className="border-b border-slate-100 text-slate-400 font-bold uppercase text-[9px] tracking-wider">
                                         <th className="pb-2">Waktu/Nota</th>
-                                        <th className="pb-2">Tipe</th>
+                                        <th className="pb-2">Tipe / Status</th>
                                         <th className="pb-2">Nominal</th>
                                         <th className="pb-2 text-right">
-                                          Aksi Kuitansi
+                                          Aksi
                                         </th>
                                       </tr>
                                     </thead>
                                     <tbody className="divide-y divide-slate-100">
-                                      {transactions
-                                        .filter(
-                                          (t) =>
-                                            t.studentId ===
-                                              selectedStudent.id &&
-                                            t.status === "success",
-                                        )
+                                      {[
+                                        ...transactions.filter(
+                                          (t) => t.studentId === selectedStudent.id,
+                                        ),
+                                      ]
+                                        .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
                                         .map((t) => (
                                           <tr
                                             key={t.id}
-                                            className="hover:bg-slate-50/50"
+                                            className={`hover:bg-slate-50/50 ${t.status === "failed" ? "opacity-60 bg-slate-50/30" : ""}`}
                                           >
                                             <td className="py-2.5">
                                               <div className="font-bold text-slate-700">
@@ -5828,13 +5847,31 @@ export default function AdminPanel({
                                               >
                                                 {t.notes || "Mutasi Tabungan"}
                                               </div>
+                                              {t.orderId && (
+                                                <div className="text-[8.5px] font-mono text-indigo-500 truncate" title={`Order ID: ${t.orderId}`}>
+                                                  {t.orderId}
+                                                </div>
+                                              )}
                                             </td>
                                             <td className="py-2.5">
-                                              {t.type === "deposit" ? (
-                                                <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold">
-                                                  <ArrowDownLeft size={10} />{" "}
-                                                  Setor
+                                              {t.status === "pending" ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[9px] font-black uppercase tracking-wide">
+                                                  ⏳ Online Pending
                                                 </span>
+                                              ) : t.status === "failed" ? (
+                                                <span className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-rose-50 text-rose-600 border border-rose-200 rounded text-[9px] font-bold line-through">
+                                                  Dibatalkan ✕
+                                                </span>
+                                              ) : t.type === "deposit" ? (
+                                                <div className="flex flex-col">
+                                                  <span className="inline-flex items-center gap-0.5 text-emerald-700 font-bold">
+                                                    <ArrowDownLeft size={10} />{" "}
+                                                    Setor
+                                                  </span>
+                                                  {t.paymentMethod && (t.paymentMethod.toLowerCase().includes("midtrans") || t.paymentMethod.toLowerCase().includes("online")) && (
+                                                    <span className="text-[8.5px] text-indigo-600 font-medium">Online Midtrans</span>
+                                                  )}
+                                                </div>
                                               ) : (
                                                 <span className="inline-flex items-center gap-0.5 text-rose-700 font-bold">
                                                   <ArrowUpRight size={10} />{" "}
@@ -5842,41 +5879,61 @@ export default function AdminPanel({
                                                 </span>
                                               )}
                                             </td>
-                                            <td className="py-2.5 font-mono text-slate-700 font-bold">
-                                              Rp{" "}
-                                              {t.amount.toLocaleString("id-ID")}
+                                            <td className="py-2.5 font-mono font-bold">
+                                              <span className={t.status === "failed" ? "line-through text-slate-400" : t.status === "pending" ? "text-amber-700" : "text-slate-700"}>
+                                                Rp {t.amount.toLocaleString("id-ID")}
+                                              </span>
                                             </td>
                                             <td className="py-2.5 text-right">
                                               <div className="flex items-center justify-end gap-1.5">
-                                                <button
-                                                  type="button"
-                                                  onClick={() => {
-                                                    setReceiptToPrint({
-                                                      type: "savings",
-                                                      detail: t,
-                                                      student: selectedStudent,
-                                                    });
-                                                    setPrintId(
-                                                      "print-receipt-section",
-                                                    );
-                                                  }}
-                                                  className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-705 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 ml-auto cursor-pointer"
-                                                >
-                                                  <Printer
-                                                    size={10}
-                                                    className="text-indigo-650"
-                                                  />{" "}
-                                                  Cetak 🖨
-                                                </button>
-                                                {(!t.paymentMethod || !t.paymentMethod.toLowerCase().includes("midtrans")) && (
+                                                {t.status === "success" && (
                                                   <button
                                                     type="button"
-                                                    onClick={() => handleCancelSavingsTransactionLocal(t.id, t.type, t.amount)}
+                                                    onClick={() => {
+                                                      setReceiptToPrint({
+                                                        type: "savings",
+                                                        detail: t,
+                                                        student: selectedStudent,
+                                                      });
+                                                      setPrintId(
+                                                        "print-receipt-section",
+                                                      );
+                                                    }}
+                                                    className="px-2 py-1 bg-slate-100 hover:bg-slate-205 border border-slate-200 text-slate-705 font-bold rounded text-[9px] uppercase tracking-wider flex items-center justify-center gap-1 ml-auto cursor-pointer"
+                                                    title="Cetak Kuitansi"
+                                                  >
+                                                    <Printer
+                                                      size={10}
+                                                      className="text-indigo-650"
+                                                    />{" "}
+                                                    Cetak 🖨
+                                                  </button>
+                                                )}
+
+                                                {t.status === "pending" && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleCancelSavingsTransactionLocal(t.id, t.type, t.amount, t.status, t.paymentMethod)}
+                                                    className="px-2 py-1 bg-rose-600 hover:bg-rose-700 text-white font-black rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer shadow-xs"
+                                                    title="Batalkan setoran online yang masih menunggu pembayaran"
+                                                  >
+                                                    <Trash2 size={10} /> Batalkan Setoran
+                                                  </button>
+                                                )}
+
+                                                {t.status === "success" && (
+                                                  <button
+                                                    type="button"
+                                                    onClick={() => handleCancelSavingsTransactionLocal(t.id, t.type, t.amount, t.status, t.paymentMethod)}
                                                     className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer"
-                                                    title="Batalkan transaksi tabungan ini"
+                                                    title="Batalkan / koreksi transaksi tabungan ini"
                                                   >
                                                     <Trash2 size={10} className="text-rose-600" /> Batal ✕
                                                   </button>
+                                                )}
+
+                                                {t.status === "failed" && (
+                                                  <span className="text-[9px] text-slate-400 italic">Telah dibatalkan</span>
                                                 )}
                                               </div>
                                             </td>
@@ -12112,16 +12169,14 @@ export default function AdminPanel({
                                               />{" "}
                                               Cetak
                                             </button>
-                                            {(!tx.paymentMethod || !tx.paymentMethod.toLowerCase().includes("midtrans")) && (
-                                              <button
-                                                type="button"
-                                                onClick={() => handleCancelSavingsTransactionLocal(tx.id, tx.type, tx.amount)}
-                                                className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer leading-none"
-                                                title="Batalkan transaksi tabungan ini"
-                                              >
-                                                <Trash2 size={10} className="text-rose-600" /> Batal ✕
-                                              </button>
-                                            )}
+                                            <button
+                                              type="button"
+                                              onClick={() => handleCancelSavingsTransactionLocal(tx.id, tx.type, tx.amount, tx.status, tx.paymentMethod)}
+                                              className="px-2 py-1 bg-rose-50 hover:bg-rose-100 border border-rose-200 text-rose-700 font-bold rounded text-[9px] uppercase tracking-wider flex items-center gap-1 cursor-pointer leading-none"
+                                              title="Batalkan transaksi tabungan ini"
+                                            >
+                                              <Trash2 size={10} className="text-rose-600" /> Batal ✕
+                                            </button>
                                           </div>
                                         </td>
                                       </tr>

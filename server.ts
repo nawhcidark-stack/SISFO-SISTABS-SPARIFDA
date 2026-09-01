@@ -8394,15 +8394,12 @@ async function startServer() {
     res.json({ success: true, student, transaction });
   });
 
-  // Admin Cancel/Void Savings Transaction (Deposit or Withdrawal)
+  // Admin Cancel/Void Savings Transaction (Deposit or Withdrawal, Manual or Online)
   app.post("/api/admin/cancel-savings-transaction", (req, res) => {
     const { transactionId } = req.body;
     const transaction = savingsTransactions.find(t => t.id === transactionId);
     if (!transaction) {
       return res.status(404).json({ error: "Transaksi tabungan tidak ditemukan." });
-    }
-    if (transaction.status !== "success") {
-      return res.status(400).json({ error: "Hanya transaksi berstatus sukses yang dapat dibatalkan." });
     }
 
     const student = students.find(s => s.id === transaction.studentId);
@@ -8410,7 +8407,51 @@ async function startServer() {
       return res.status(404).json({ error: "Siswa tidak ditemukan untuk transaksi ini." });
     }
 
-    // Rollback student's balance
+    // Handle Pending transaction cancellation (e.g. pending online deposit)
+    if (transaction.status === "pending") {
+      transaction.status = "failed";
+      transaction.notes = transaction.notes 
+        ? `${transaction.notes.replace(/\s*\(Dibatalkan.*?\)/gi, "")} (Dibatalkan Admin)` 
+        : "Setoran Tabungan Online (Dibatalkan Admin)";
+
+      if (transaction.orderId) {
+        const mtTx = midtransTransactions.find(m => m.orderId === transaction.orderId);
+        if (mtTx && (mtTx.transactionStatus === "pending" || !mtTx.transactionStatus)) {
+          mtTx.transactionStatus = "cancel";
+          mtTx.description = `${(mtTx.description || "Setoran Tabungan").replace(/\s*\(Dibatalkan.*?\)/gi, "")} (Dibatalkan Admin)`;
+        }
+      }
+
+      // Create a notification for real-time update
+      const notification: RealtimeNotification = {
+        id: `notif-sav-cancel-${Date.now()}`,
+        studentId: student.id,
+        title: "Pembatalan Setoran Tabungan Online",
+        message: `Setoran Tabungan Online (Pending) sebesar Rp ${transaction.amount.toLocaleString("id-ID")} telah DIBATALKAN oleh Admin.`,
+        type: "info",
+        createdAt: new Date().toISOString()
+      };
+      notifications.unshift(notification);
+      try {
+        broadcastNotification(notification);
+      } catch (err) {
+        console.warn("Failed to broadcast SSE:", err);
+      }
+
+      saveState();
+      return res.json({ 
+        success: true, 
+        message: "Setoran tabungan online yang berstatus pending berhasil dibatalkan.", 
+        student, 
+        transaction 
+      });
+    }
+
+    if (transaction.status !== "success") {
+      return res.status(400).json({ error: "Transaksi tabungan ini sudah dibatalkan atau tidak dalam status sukses." });
+    }
+
+    // Rollback student's balance for successful transaction
     if (transaction.type === "deposit") {
       if (student.savingsBalance < transaction.amount) {
         return res.status(400).json({
@@ -8425,6 +8466,14 @@ async function startServer() {
     // Mark transaction as failed/cancelled
     transaction.status = "failed";
     transaction.notes = `[DIBATALKAN ADMIN] ${transaction.notes || ""}`;
+
+    if (transaction.orderId) {
+      const mtTx = midtransTransactions.find(m => m.orderId === transaction.orderId);
+      if (mtTx) {
+        mtTx.transactionStatus = "cancel";
+        mtTx.description = `${(mtTx.description || "Setoran Tabungan").replace(/\s*\(Dibatalkan.*?\)/gi, "")} (Dibatalkan Admin)`;
+      }
+    }
 
     // Create a notification for real-time update
     const notification: RealtimeNotification = {
@@ -8446,7 +8495,7 @@ async function startServer() {
     if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
       const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
         `⚠️ *PEMBATALAN TRANSAKSI TABUNGAN SISWA*\n` +
-        `Transaksi *${transaction.type === "deposit" ? "SETOR TUNAI (DEPOSIT)" : "TARIK TUNAI (WITHDRAWAL)"}* sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* telah *DIBATALKAN / DIKOREKSI* oleh Admin Sekolah.\n\n` +
+        `Transaksi *${transaction.type === "deposit" ? "SETORAN (DEPOSIT)" : "TARIK TUNAI (WITHDRAWAL)"}* sebesar *Rp ${transaction.amount.toLocaleString("id-ID")}* telah *DIBATALKAN / DIKOREKSI* oleh Admin Sekolah.\n\n` +
         `• *SALDO AKHIR TABUNGAN SISWA*: *Rp ${student.savingsBalance.toLocaleString("id-ID")}*\n\n` +
         `Terima kasih atas perhatian Anda.\n` +
         `-- SEKOLAH INSPIRATIF SMP MAARIF NU PANDAAN --`;

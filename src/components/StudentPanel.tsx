@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill, ClassSchedule, HomeroomTeacher, SubjectTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone } from 'lucide-react';
+import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
@@ -1047,6 +1047,39 @@ export default function StudentPanel({
       alert(err.message || 'Gagal memproses pembayaran.');
     } finally {
       setMiscSavingsPayingId(null);
+    }
+  };
+
+  const [cancellingSavingsTxId, setCancellingSavingsTxId] = useState<string | null>(null);
+
+  const handleCancelSavingsDeposit = async (tx: SavingsTransaction) => {
+    if (!window.confirm(`Batalkan setoran tabungan online sebesar Rp ${tx.amount.toLocaleString('id-ID')}?`)) {
+      return;
+    }
+    setCancellingSavingsTxId(tx.id);
+    try {
+      const res = await fetch('/api/cancel-savings-deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionId: tx.id,
+          orderId: tx.orderId,
+          studentId: currentStudent?.id
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal membatalkan transaksi setoran tabungan.');
+      }
+      alert('Setoran tabungan online berhasil dibatalkan.');
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err: any) {
+      console.error(err);
+      alert(err.message || 'Terjadi kesalahan saat membatalkan transaksi.');
+    } finally {
+      setCancellingSavingsTxId(null);
     }
   };
 
@@ -2233,6 +2266,17 @@ export default function StudentPanel({
                                     <span className={`font-bold font-mono text-[11px] ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
                                       {isDeposit ? '+' : '-'} Rp {tx.amount.toLocaleString('id-ID')}
                                     </span>
+                                    {tx.status === 'pending' && (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCancelSavingsDeposit(tx)}
+                                        disabled={cancellingSavingsTxId === tx.id}
+                                        className="p-1 px-2 hover:bg-rose-50 text-rose-600 hover:text-rose-800 rounded border border-rose-200 shadow-xs transition-colors cursor-pointer flex items-center gap-1 shrink-0 text-[10px] font-bold"
+                                        title="Batalkan Setoran Tabungan Online Ini"
+                                      >
+                                        <XCircle size={11} /> {cancellingSavingsTxId === tx.id ? '...' : 'Batal'}
+                                      </button>
+                                    )}
                                     <button
                                       type="button"
                                       onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent! })}
@@ -2298,14 +2342,27 @@ export default function StudentPanel({
                                 )}
                               </div>
 
-                              <button
-                                type="button"
-                                onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent! })}
-                                className="px-3 py-1.5 bg-white text-indigo-600 hover:text-indigo-850 hover:bg-slate-50 border border-slate-200 hover:border-slate-350 font-bold rounded-lg text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                                title="Cetak & Unduh Bukti Transaksi"
-                              >
-                                <Printer size={11} className="shrink-0" /> Cetak Bukti
-                              </button>
+                              <div className="flex items-center gap-1.5">
+                                {tx.status === 'pending' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelSavingsDeposit(tx)}
+                                    disabled={cancellingSavingsTxId === tx.id}
+                                    className="px-2.5 py-1 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 font-bold rounded-lg text-[10px] uppercase tracking-wider flex items-center gap-1 shadow-xs transition-all cursor-pointer"
+                                    title="Batalkan Setoran Tabungan Online Ini"
+                                  >
+                                    <XCircle size={10} className="shrink-0" /> {cancellingSavingsTxId === tx.id ? '...' : 'Batal'}
+                                  </button>
+                                )}
+                                <button
+                                  type="button"
+                                  onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent! })}
+                                  className="px-3 py-1.5 bg-white text-indigo-600 hover:text-indigo-850 hover:bg-slate-50 border border-slate-200 hover:border-slate-350 font-bold rounded-lg text-[10px] uppercase tracking-wider flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
+                                  title="Cetak & Unduh Bukti Transaksi"
+                                >
+                                  <Printer size={11} className="shrink-0" /> Cetak Bukti
+                                </button>
+                              </div>
                             </div>
                           </div>
                         );
@@ -4007,17 +4064,33 @@ export default function StudentPanel({
                                 </div>
                                 <div className="flex flex-col gap-0.5">
                                   <span className="font-bold text-slate-800 leading-tight block">{tx.notes || 'Penyesuaian Saldo'}</span>
-                                  <div className="flex items-center gap-1.5 text-[9px] text-slate-400 mt-0.5 font-medium">
+                                  <div className="flex items-center gap-1.5 text-[9px] text-slate-400 mt-0.5 font-medium flex-wrap">
                                     <span className="font-mono">{new Date(tx.createdAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                                     <span>&bull;</span>
                                     <span>{tx.paymentMethod || 'Teller'}</span>
+                                    {tx.status === 'pending' && (
+                                      <span className="inline-flex px-1 py-0.5 bg-amber-50 text-amber-700 border border-amber-200 rounded text-[8px] font-bold uppercase">
+                                        Pending
+                                      </span>
+                                    )}
                                   </div>
                                 </div>
                               </div>
-                              <div className="flex items-center gap-2">
+                              <div className="flex items-center gap-1.5">
                                 <span className={`font-black font-mono text-[12px] ${isDeposit ? 'text-emerald-600' : 'text-rose-600'}`}>
                                   {isDeposit ? '+' : '-'}Rp{tx.amount.toLocaleString('id-ID')}
                                 </span>
+                                {tx.status === 'pending' && (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleCancelSavingsDeposit(tx)}
+                                    disabled={cancellingSavingsTxId === tx.id}
+                                    className="p-1 px-1.5 bg-rose-50 text-rose-700 hover:bg-rose-100 border border-rose-200 font-bold rounded text-[9px] uppercase flex items-center gap-0.5 shadow-xs transition-all cursor-pointer"
+                                    title="Batalkan Setoran Tabungan Online Ini"
+                                  >
+                                    <XCircle size={10} /> {cancellingSavingsTxId === tx.id ? '...' : 'Batal'}
+                                  </button>
+                                )}
                                 <button
                                   type="button"
                                   onClick={() => setReceiptToPrint({ type: 'savings', detail: tx, student: currentStudent })}

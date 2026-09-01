@@ -595,7 +595,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     lastLog: [] as string[]
   };
 
-  // Smart Auto-Allocation Engine: Intelligently allocates online payment to student's oldest unpaid SPP bills, Non-SPP bills, or Savings Balance
+  // Strict Allocation Engine: Allocates payment strictly according to the designated bill.
+  // No cross-allocation / spillover of excess funds to unrelated bills (SPP pays SPP only, Non-SPP pays Non-SPP only).
   function autoAllocateStudentPayment(
     targetStudent: Student,
     amountVal: number,
@@ -623,92 +624,126 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     let savingsDeposited = 0;
     const itemsDetail: string[] = [];
 
-    // 1. Unpaid SPP bills sorted chronologically by academic year
-    const unpaidSpp = sppBills
-      .filter(b => b.studentId === targetStudent.id && (b.status === "unpaid" || b.status === "pending"))
-      .sort((a, b) => {
-        const yearDiff = (a.year || 2026) - (b.year || 2026);
-        if (yearDiff !== 0) return yearDiff;
-        const idxA = ACADEMIC_MONTHS.indexOf(a.month);
-        const idxB = ACADEMIC_MONTHS.indexOf(b.month);
-        return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
-      });
+    const isExplicitMisc = options?.preferredCategory === "misc" || 
+      orderId.toUpperCase().startsWith("MISC-") || 
+      orderId.toUpperCase().startsWith("NONSPP-") || 
+      orderId.toUpperCase().startsWith("LAIN-");
 
-    // 2. Unpaid Misc bills
-    const unpaidMisc = miscBills.filter(
-      m => m.studentId === targetStudent.id && (m.status === "unpaid" || m.status === "pending")
-    );
+    const isExplicitSavings = options?.preferredCategory === "savings" || 
+      orderId.toUpperCase().startsWith("SAV-") || 
+      orderId.toUpperCase().startsWith("TAB-");
 
-    // Step A: Pay unpaid SPP bills greedily or exact match
-    for (const b of unpaidSpp) {
-      if (remainingAmount >= b.amount && b.amount > 0) {
-        b.status = "paid";
-        b.paidAt = paidAt;
-        b.paymentMethod = paymentType;
-        b.orderId = orderId;
-        if (transactionId) b.transactionId = transactionId;
+    // 1. Non-SPP (Misc) Allocation: Strictly for matching Non-SPP bill(s), no spillover to other bills
+    if (isExplicitMisc) {
+      const unpaidMisc = miscBills.filter(
+        m => m.studentId === targetStudent.id && (m.status === "unpaid" || m.status === "pending")
+      );
+      const exactMisc = unpaidMisc.find(m => m.amount === amountVal) || unpaidMisc[0];
+      if (exactMisc && remainingAmount >= exactMisc.amount) {
+        exactMisc.status = "paid";
+        exactMisc.paidAt = paidAt;
+        exactMisc.paymentMethod = paymentType;
+        exactMisc.orderId = orderId;
+        if (transactionId) exactMisc.transactionId = transactionId;
 
-        remainingAmount -= b.amount;
-        paidSppCount++;
-        itemsDetail.push(`SPP ${b.month} ${b.year}`);
-      }
-    }
-
-    // Step B: Pay unpaid Misc bills if amount remains
-    for (const m of unpaidMisc) {
-      if (remainingAmount >= m.amount && m.amount > 0) {
-        m.status = "paid";
-        m.paidAt = paidAt;
-        m.paymentMethod = paymentType;
-        m.orderId = orderId;
-        if (transactionId) m.transactionId = transactionId;
-
-        remainingAmount -= m.amount;
+        remainingAmount -= exactMisc.amount;
         paidMiscCount++;
-        itemsDetail.push(`Non-SPP: ${m.title}`);
+        itemsDetail.push(`Non-SPP: ${exactMisc.title}`);
       }
     }
-
-    // Step C: If still remainingAmount > 0 (or student had no unpaid bills) -> deposit to Savings
-    if (remainingAmount > 0) {
+    // 2. Savings Explicit Allocation: Strictly for Savings
+    else if (isExplicitSavings) {
       const newSavingsTx: SavingsTransaction = {
         id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
         studentId: targetStudent.id,
         studentNis: targetStudent.nis,
         type: "deposit",
-        amount: remainingAmount,
+        amount: amountVal,
         status: "success",
         createdAt: paidAt,
         paymentMethod: paymentType,
         orderId: orderId,
         transactionId: transactionId,
-        notes: options?.notes || `Alokasi Otomatis Pembayaran Midtrans (${orderId})`
+        notes: options?.notes || `Setoran Tabungan Midtrans (${orderId})`
       };
       savingsTransactions.unshift(newSavingsTx);
-      targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + remainingAmount;
+      targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + amountVal;
       AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
-      savingsDeposited = remainingAmount;
-      itemsDetail.push(`Saldo Tabungan (Rp ${remainingAmount.toLocaleString("id-ID")})`);
+      savingsDeposited = amountVal;
       remainingAmount = 0;
+      itemsDetail.push(`Saldo Tabungan (Rp ${amountVal.toLocaleString("id-ID")})`);
+    }
+    // 3. SPP Allocation: Strictly for SPP bills matching the amounts (no cross-allocation to Non-SPP)
+    else {
+      // 1. Unpaid SPP bills sorted chronologically by academic year
+      const unpaidSpp = sppBills
+        .filter(b => b.studentId === targetStudent.id && (b.status === "unpaid" || b.status === "pending"))
+        .sort((a, b) => {
+          const yearDiff = (a.year || 2026) - (b.year || 2026);
+          if (yearDiff !== 0) return yearDiff;
+          const idxA = ACADEMIC_MONTHS.indexOf(a.month);
+          const idxB = ACADEMIC_MONTHS.indexOf(b.month);
+          return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+        });
+
+      // Check if student has no unpaid SPP but has an exact matching Non-SPP bill
+      const unpaidMisc = miscBills.filter(
+        m => m.studentId === targetStudent.id && (m.status === "unpaid" || m.status === "pending")
+      );
+      const exactMisc = unpaidMisc.find(m => m.amount === amountVal);
+
+      if (unpaidSpp.length === 0 && exactMisc) {
+        // If there are no unpaid SPP bills and amount matches exact Non-SPP bill
+        exactMisc.status = "paid";
+        exactMisc.paidAt = paidAt;
+        exactMisc.paymentMethod = paymentType;
+        exactMisc.orderId = orderId;
+        if (transactionId) exactMisc.transactionId = transactionId;
+
+        remainingAmount -= exactMisc.amount;
+        paidMiscCount++;
+        itemsDetail.push(`Non-SPP: ${exactMisc.title}`);
+      } else {
+        // Pay unpaid SPP bills that fit the exact bill amounts
+        for (const b of unpaidSpp) {
+          if (remainingAmount >= b.amount && b.amount > 0) {
+            b.status = "paid";
+            b.paidAt = paidAt;
+            b.paymentMethod = paymentType;
+            b.orderId = orderId;
+            if (transactionId) b.transactionId = transactionId;
+
+            remainingAmount -= b.amount;
+            paidSppCount++;
+            itemsDetail.push(`SPP ${b.month} ${b.year}`);
+          }
+        }
+      }
     }
 
     const categoryName = itemsDetail.length > 0
       ? (paidSppCount > 0 && paidMiscCount === 0 && savingsDeposited === 0 
           ? (paidSppCount === 1 ? itemsDetail[0] : `SPP (${paidSppCount} Bulan)`)
-          : (savingsDeposited > 0 && paidSppCount === 0 && paidMiscCount === 0
-              ? "Setoran Tabungan Siswa"
-              : `Paket Pembayaran (${itemsDetail.length} Item)`))
+          : (paidMiscCount > 0 && paidSppCount === 0 && savingsDeposited === 0
+              ? itemsDetail[0]
+              : (savingsDeposited > 0 && paidSppCount === 0 && paidMiscCount === 0
+                  ? "Setoran Tabungan Siswa"
+                  : `Paket Pembayaran (${itemsDetail.length} Item)`)))
       : "Pembayaran Midtrans Terverifikasi";
 
+    const amountReconciled = amountVal - remainingAmount;
+
     return {
-      reconciled: true,
-      amountReconciled: amountVal,
+      reconciled: itemsDetail.length > 0,
+      amountReconciled: amountReconciled > 0 ? amountReconciled : amountVal,
       paidSppCount,
       paidMiscCount,
       savingsDeposited,
       category: categoryName,
       itemsDetail,
-      message: `BERHASIL DILUNASI! Otomatis dialokasikan untuk: ${itemsDetail.join(" + ")} a.n ${targetStudent.name} (${targetStudent.class || targetStudent.nis}).`
+      message: itemsDetail.length > 0
+        ? `BERHASIL DILUNASI! Pembayaran sesuai tagihan: ${itemsDetail.join(" + ")} a.n ${targetStudent.name} (${targetStudent.class || targetStudent.nis}).`
+        : `Pembayaran Rp ${amountVal.toLocaleString("id-ID")} a.n ${targetStudent.name} telah diverifikasi.`
     };
   }
 
@@ -1772,6 +1807,59 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     } catch (err: any) {
       console.error("Midtrans Savings Error:", err);
       res.status(500).json({ error: err.message || "Gagal menghubungkan ke Midtrans" });
+    }
+  });
+
+  // 13b. Cancel Online Savings Deposit (Batalkan Setoran Tabungan Online yang masih Pending)
+  router.post(["/cancel-savings-deposit", "/student/cancel-savings-deposit"], async (req, res) => {
+    try {
+      const { transactionId, orderId, studentId } = req.body;
+      if (!transactionId && !orderId) {
+        return res.status(400).json({ error: "ID Transaksi atau Order ID harus disertakan untuk membatalkan transaksi." });
+      }
+
+      // Find the savings transaction
+      const transIndex = savingsTransactions.findIndex(t => 
+        (transactionId && t.id === transactionId) ||
+        (orderId && t.orderId === orderId)
+      );
+
+      if (transIndex === -1) {
+        return res.status(404).json({ error: "Transaksi setoran tabungan tidak ditemukan." });
+      }
+
+      const tx = savingsTransactions[transIndex];
+
+      if (tx.status === "success") {
+        return res.status(400).json({ error: "Transaksi tabungan yang telah berhasil/lunas tidak dapat dibatalkan melalui fitur ini." });
+      }
+
+      // Mark status as failed / cancelled
+      tx.status = "failed";
+      tx.notes = tx.notes ? `${tx.notes.replace(/\s*\(Dibatalkan\)/g, '')} (Dibatalkan)` : "Setoran Tabungan Online (Dibatalkan)";
+
+      // Also update record in midtransTransactions if tracked
+      const activeOrderId = tx.orderId || orderId;
+      if (activeOrderId) {
+        const mtTx = midtransTransactions.find(m => m.orderId === activeOrderId);
+        if (mtTx && (mtTx.transactionStatus === "pending" || !mtTx.transactionStatus)) {
+          mtTx.transactionStatus = "cancel";
+          mtTx.description = `${(mtTx.description || 'Setoran Tabungan').replace(/\s*\(Dibatalkan\)/g, '')} (Dibatalkan)`;
+        }
+      }
+
+      saveState();
+
+      return res.json({
+        success: true,
+        message: "Setoran tabungan online berhasil dibatalkan.",
+        transactionId: tx.id,
+        orderId: tx.orderId,
+        status: "failed"
+      });
+    } catch (err: any) {
+      console.error("Cancel savings deposit error:", err);
+      return res.status(500).json({ error: err?.message || "Gagal membatalkan transaksi setoran tabungan." });
     }
   });
 

@@ -10,7 +10,7 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -1365,6 +1365,16 @@ async function removeEntity(type: string, id: string) {
   } catch (err: any) {
     console.error(`[MySQL Direct Delete Error - ${type}]:`, err?.message || err);
     return { success: false, message: err?.message || String(err) };
+  }
+}
+
+// Helper to write multiple entities in batch directly to MySQL table
+async function persistEntities(type: string, items: any[]) {
+  try {
+    return await directSaveEntitiesBatchToMysql(type, items);
+  } catch (err: any) {
+    console.error(`[MySQL Direct Batch Write Error - ${type}]:`, err?.message || err);
+    return { success: false, count: 0, error: err?.message || String(err) };
   }
 }
 
@@ -7508,6 +7518,8 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("students", student).catch(err => console.error("Error persisting student savings to MySQL:", err));
+    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting savings tx to MySQL:", err));
     res.json({ success: true, student, transaction });
   });
 
@@ -7620,6 +7632,8 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("students", student).catch(err => console.error("Error persisting student balance to MySQL:", err));
+    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting cancelled tx to MySQL:", err));
     res.json({ success: true, student, transaction });
   });
 
@@ -7647,11 +7661,13 @@ async function startServer() {
       const tx = savingsTransactions[i];
       if (tx.studentId === sId || ((tx as any).studentNis && String((tx as any).studentNis).trim() === sNis)) {
         savingsTransactions.splice(i, 1);
+        removeEntity("savingsTransactions", tx.id).catch(err => console.error(err));
         removedCount++;
       }
     }
 
     saveState();
+    persistEntity("students", student).catch(err => console.error("Error persisting cleared student savings to MySQL:", err));
 
     return res.json({
       success: true,
@@ -7690,6 +7706,7 @@ async function startServer() {
     let successCount = 0;
     let skippedCount = 0;
     let totalDeducted = 0;
+    const bulkTxs: SavingsTransaction[] = [];
 
     for (const student of targetStudents) {
       let deductVal = valAmount;
@@ -7711,6 +7728,7 @@ async function startServer() {
         notes: customNotes
       };
       savingsTransactions.push(transaction);
+      bulkTxs.push(transaction);
 
       // Create dynamic notification for this specific student/parents
       const studentNotification: RealtimeNotification = {
@@ -7750,6 +7768,10 @@ async function startServer() {
     broadcastNotification(schoolNotification);
 
     saveState();
+    persistEntities("students", targetStudents).catch(err => console.error("Error persisting bulk withdraw students to MySQL:", err));
+    if (bulkTxs.length > 0) {
+      persistEntities("savingsTransactions", bulkTxs).catch(err => console.error("Error persisting bulk withdraw txs to MySQL:", err));
+    }
 
     res.json({
       success: true,
@@ -7761,7 +7783,7 @@ async function startServer() {
   });
 
   // 1. Create Student (with initial savings & automatic SPP bills)
-  app.post("/api/admin/students", (req, res) => {
+  app.post("/api/admin/students", async (req, res) => {
     const { nis, name, class: className, email, phone, initialSavings, gender, password, customSppRate } = req.body;
     
     if (!nis || !name || !className) {
@@ -7807,13 +7829,14 @@ async function startServer() {
     }
 
     // Pre-populate SPP bills for all active student academic years
+    const newStudentBills: SppBill[] = [];
     startYears.forEach(startYear => {
       months.forEach((month, mIdx) => {
         const billYear = mIdx < 6 ? startYear : startYear + 1;
         const isGrade7 = className.trim().startsWith("7") || className.trim().toUpperCase().startsWith("VII");
         const isJuly = month === "Juli";
         const isPaid = isGrade7 && isJuly;
-        sppBills.push({
+        const billObj: SppBill = {
           id: `bill-${newStudentId}-${startYear}-${mIdx}`,
           studentId: newStudentId,
           month: month,
@@ -7823,13 +7846,16 @@ async function startServer() {
           paidAt: isPaid ? new Date().toISOString() : undefined,
           paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
           orderId: isPaid ? `ORD-REGISTRATION-${newStudentId}` : undefined
-        });
+        };
+        sppBills.push(billObj);
+        newStudentBills.push(billObj);
       });
     });
 
     // If initial savings balance is provided, record a savings transaction
+    let initialSavingsTx: SavingsTransaction | null = null;
     if (parsedSavings !== 0) {
-      savingsTransactions.push({
+      initialSavingsTx = {
         id: `sav-${newStudentId}-init`,
         studentId: newStudentId,
         type: parsedSavings > 0 ? "deposit" : "withdrawal",
@@ -7838,7 +7864,8 @@ async function startServer() {
         createdAt: new Date().toISOString(),
         paymentMethod: "Manual Teller",
         notes: parsedSavings > 0 ? "Setoran Awal saat Pendaftaran" : "Tarik Saldo Awal (Saldo Minus) saat Pendaftaran"
-      });
+      };
+      savingsTransactions.push(initialSavingsTx);
     }
 
     // Broadcast SSE notification
@@ -7852,11 +7879,27 @@ async function startServer() {
     };
     broadcastNotification(notification);
 
+    // Save local state cache immediately
+    saveState();
+
+    // Directly persist student to MySQL table immediately
+    try {
+      await persistEntity("students", newStudent);
+      if (newStudentBills.length > 0) {
+        persistEntities("sppBills", newStudentBills).catch(err => console.error("Error persisting new student SPP bills to MySQL:", err));
+      }
+      if (initialSavingsTx) {
+        persistEntity("savingsTransactions", initialSavingsTx).catch(err => console.error("Error persisting initial savings to MySQL:", err));
+      }
+    } catch (err: any) {
+      console.error("[MySQL Student Direct Persistence Error]:", err?.message || err);
+    }
+
     res.json({ success: true, student: newStudent });
   });
 
   // 2. Update Student
-  app.put("/api/admin/students/:id", (req, res) => {
+  app.put("/api/admin/students/:id", async (req, res) => {
     const { nis, name, class: className, email, phone, password, gender, mutationDate, mutationReason, mutationDestination } = req.body;
     const student = students.find(s => s.id === req.params.id);
     
@@ -7955,6 +7998,7 @@ async function startServer() {
 
     // Sync student unpaid bills with the SPP rate corresponding to their new class grade or custom rate
     let updatedBillsCount = 0;
+    const modifiedBills: SppBill[] = [];
     if (previousClass !== className || previousCustomSppRate !== student.customSppRate) {
       const newRate = getSppAmountForStudent(student, className);
       sppBills.forEach(bill => {
@@ -7962,6 +8006,7 @@ async function startServer() {
           if (bill.amount !== newRate) {
             bill.amount = newRate;
             updatedBillsCount++;
+            modifiedBills.push(bill);
           }
         }
       });
@@ -7971,6 +8016,16 @@ async function startServer() {
     const purgedCount = purgeMutatedStudentUnpaidBills();
 
     saveState();
+
+    // Directly persist updated student to MySQL immediately
+    try {
+      await persistEntity("students", student);
+      if (modifiedBills.length > 0) {
+        persistEntities("sppBills", modifiedBills).catch(err => console.error("Error persisting updated student bills to MySQL:", err));
+      }
+    } catch (err: any) {
+      console.error("[MySQL Student Direct Update Error]:", err?.message || err);
+    }
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
@@ -7987,32 +8042,35 @@ async function startServer() {
   });
 
   // 3. Delete Student (with safe cascading)
-  app.delete("/api/admin/students/:id", (req, res) => {
+  app.delete("/api/admin/students/:id", async (req, res) => {
     const studentIndex = students.findIndex(s => s.id === req.params.id);
     if (studentIndex === -1) {
       return res.status(404).json({ error: "Siswa tidak ditemukan." });
     }
 
+    const studentId = req.params.id;
     const studentName = students[studentIndex].name;
     const studentNIS = students[studentIndex].nis;
 
     // Filter out student
     students.splice(studentIndex, 1);
-    deleteDocFromFirestore("students", req.params.id).catch(err => console.error(err));
+    await removeEntity("students", studentId).catch(err => console.error(err));
 
     // Cascading delete the student's bills & transactions
     for (let i = sppBills.length - 1; i >= 0; i--) {
-      if (sppBills[i].studentId === req.params.id) {
+      if (sppBills[i].studentId === studentId) {
         const removedBill = sppBills.splice(i, 1)[0];
-        deleteDocFromFirestore("sppBills", removedBill.id).catch(err => console.error(err));
+        removeEntity("sppBills", removedBill.id).catch(err => console.error(err));
       }
     }
     for (let i = savingsTransactions.length - 1; i >= 0; i--) {
-      if (savingsTransactions[i].studentId === req.params.id) {
+      if (savingsTransactions[i].studentId === studentId) {
         const removedTx = savingsTransactions.splice(i, 1)[0];
-        deleteDocFromFirestore("savingsTransactions", removedTx.id).catch(err => console.error(err));
+        removeEntity("savingsTransactions", removedTx.id).catch(err => console.error(err));
       }
     }
+
+    saveState();
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
@@ -8092,6 +8150,12 @@ async function startServer() {
       });
 
       saveState();
+
+      // Persist updated students to MySQL immediately
+      const modifiedStudents = updates.map(u => students.find(s => s.id === u.studentId)).filter(Boolean);
+      if (modifiedStudents.length > 0) {
+        persistEntities("students", modifiedStudents).catch(err => console.error("Error persisting bulk NIS updates to MySQL:", err));
+      }
 
       // Broadcast notification
       const notification: RealtimeNotification = {
@@ -8236,6 +8300,12 @@ async function startServer() {
     // Save changes
     saveState();
 
+    // Persist all promoted students and newly created SPP bills to MySQL
+    persistEntities("students", students).catch(err => console.error("Error persisting promoted students to MySQL:", err));
+    if (autoBillsGenerated > 0) {
+      persistEntities("sppBills", sppBills).catch(err => console.error("Error persisting generated bills to MySQL:", err));
+    }
+
     // Broadcast SSE notification
     let sseMsg = `Prosedur Kenaikan Kelas & Aktivasi Tahun Ajaran ${nextStartYear}/${nextStartYear + 1} berhasil dijalankan secara otomatis. ${promotedCount} siswa naik kelas, ${graduatedCount} siswa lulus.`;
     if (shouldGenerate) {
@@ -8359,6 +8429,11 @@ async function startServer() {
 
     // Save changes
     saveState();
+
+    // Persist new bills to MySQL
+    if (billsGenerated > 0) {
+      persistEntities("sppBills", sppBills).catch(err => console.error("Error persisting activated academic year bills to MySQL:", err));
+    }
 
     // Broadcast SSE notification
     let sseMsg = `Tahun Ajaran ${yearNum}/${yearNum + 1} berhasil diaktifkan.`;
@@ -8484,6 +8559,9 @@ async function startServer() {
 
     let updatedCount = 0;
     let addedCount = 0;
+    const touchedStudents: Student[] = [];
+    const newImportBills: SppBill[] = [];
+    const newImportSavings: SavingsTransaction[] = [];
 
     studentsList.forEach((inputStd: any) => {
       const { nis, name, class: className, email, phone, initialSavings, gender, password } = inputStd;
@@ -8560,7 +8638,7 @@ async function startServer() {
           if (existingStudent.savingsBalance !== targetBalance) {
             const diff = targetBalance - (existingStudent.savingsBalance || 0);
             if (diff !== 0) {
-              savingsTransactions.push({
+              const adjustTx: SavingsTransaction = {
                 id: `sav-adjust-${existingStudent.id}-${Date.now()}`,
                 studentId: existingStudent.id,
                 type: diff > 0 ? "deposit" : "withdrawal",
@@ -8569,12 +8647,15 @@ async function startServer() {
                 createdAt: new Date().toISOString(),
                 paymentMethod: "Manual Teller",
                 notes: `Penyesuaian Saldo via Import Kolektif (ke Rp ${targetBalance.toLocaleString('id-ID')} dengan saldo awal Rp ${parsedSavings.toLocaleString('id-ID')})`
-              });
+              };
+              savingsTransactions.push(adjustTx);
+              newImportSavings.push(adjustTx);
             }
             existingStudent.savingsBalance = targetBalance;
           }
         }
 
+        touchedStudents.push(existingStudent);
         updatedCount++;
       } else {
         // Add new student
@@ -8614,6 +8695,7 @@ async function startServer() {
         });
 
         students.push(newStudent);
+        touchedStudents.push(newStudent);
 
         // Find all distinct start years in the existing SPP bills database
         const startYears = Array.from(new Set(sppBills.map(b => {
@@ -8634,7 +8716,7 @@ async function startServer() {
             const isJuly = month === "Juli";
             const isPaid = isGrade7 && isJuly;
 
-            sppBills.push({
+            const billItem: SppBill = {
               id: `bill-${newStudentId}-${startYear}-${mIdx}`,
               studentId: newStudentId,
               month: month,
@@ -8644,13 +8726,15 @@ async function startServer() {
               paidAt: isPaid ? new Date().toISOString() : undefined,
               paymentMethod: isPaid ? "Lunas Pendaftaran" : undefined,
               orderId: isPaid ? `ORD-REGISTRATION-${newStudentId}` : undefined
-            });
+            };
+            sppBills.push(billItem);
+            newImportBills.push(billItem);
           });
         });
 
         // Record savings transactions if parsedSavings !== 0
         if (parsedSavings !== 0) {
-          savingsTransactions.push({
+          const initSavTx: SavingsTransaction = {
             id: `sav-${newStudentId}-init-import`,
             studentId: newStudentId,
             type: parsedSavings > 0 ? "deposit" : "withdrawal",
@@ -8659,7 +8743,9 @@ async function startServer() {
             createdAt: new Date().toISOString(),
             paymentMethod: "Manual Teller",
             notes: parsedSavings > 0 ? "Setoran Awal via Import Kolektif" : "Penarikan Awal (Saldo Minus) via Import Kolektif"
-          });
+          };
+          savingsTransactions.push(initSavTx);
+          newImportSavings.push(initSavTx);
         }
 
         addedCount++;
@@ -8667,6 +8753,19 @@ async function startServer() {
     });
 
     if (addedCount > 0 || updatedCount > 0) {
+      saveState();
+
+      // Persist imported students, bills, and savings directly to MySQL
+      if (touchedStudents.length > 0) {
+        persistEntities("students", touchedStudents).catch(err => console.error("Error persisting imported students to MySQL:", err));
+      }
+      if (newImportBills.length > 0) {
+        persistEntities("sppBills", newImportBills).catch(err => console.error("Error persisting imported bills to MySQL:", err));
+      }
+      if (newImportSavings.length > 0) {
+        persistEntities("savingsTransactions", newImportSavings).catch(err => console.error("Error persisting imported savings to MySQL:", err));
+      }
+
       // Broadcast SSE notification
       const notification: RealtimeNotification = {
         id: `notif-import-std-${Date.now()}`,

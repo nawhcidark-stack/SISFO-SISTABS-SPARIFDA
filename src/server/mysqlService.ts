@@ -2152,10 +2152,31 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
           \`custom_spp_rate\`, \`mutation_date\`, \`mutation_reason\`, \`mutation_destination\`
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`name\`=VALUES(\`name\`), \`class\`=VALUES(\`class\`), \`gender\`=VALUES(\`gender\`), \`email\`=VALUES(\`email\`),
-          \`phone\`=VALUES(\`phone\`), \`savings_balance\`=VALUES(\`savings_balance\`), \`status\`=VALUES(\`status\`),
-          \`password\`=VALUES(\`password\`), \`address\`=VALUES(\`address\`), \`photo_url\`=VALUES(\`photo_url\`),
-          \`is_spp_exempt\`=VALUES(\`is_spp_exempt\`), \`custom_spp_rate\`=VALUES(\`custom_spp_rate\`), \`updated_at\`=NOW()
+          \`nis\`=VALUES(\`nis\`), \`nisn\`=VALUES(\`nisn\`), \`name\`=VALUES(\`name\`), \`class\`=VALUES(\`class\`),
+          \`gender\`=VALUES(\`gender\`), \`email\`=VALUES(\`email\`), \`phone\`=VALUES(\`phone\`),
+          \`savings_balance\`=VALUES(\`savings_balance\`), \`status\`=VALUES(\`status\`), \`password\`=VALUES(\`password\`),
+          \`nickname\`=VALUES(\`nickname\`), \`nik\`=VALUES(\`nik\`), \`birth_place\`=VALUES(\`birth_place\`),
+          \`birth_date\`=VALUES(\`birth_date\`), \`kk_number\`=VALUES(\`kk_number\`), \`birth_cert_number\`=VALUES(\`birth_cert_number\`),
+          \`living_with\`=VALUES(\`living_with\`), \`child_order\`=VALUES(\`child_order\`), \`siblings_count\`=VALUES(\`siblings_count\`),
+          \`step_siblings_count\`=VALUES(\`step_siblings_count\`), \`address\`=VALUES(\`address\`), \`photo_url\`=VALUES(\`photo_url\`),
+          \`parent_name\`=VALUES(\`parent_name\`), \`google_drive_link\`=VALUES(\`google_drive_link\`),
+          \`father_name\`=VALUES(\`father_name\`), \`father_nik\`=VALUES(\`father_nik\`), \`father_birth_place\`=VALUES(\`father_birth_place\`),
+          \`father_birth_date\`=VALUES(\`father_birth_date\`), \`father_education\`=VALUES(\`father_education\`),
+          \`father_occupation\`=VALUES(\`father_occupation\`), \`father_income\`=VALUES(\`father_income\`),
+          \`father_address\`=VALUES(\`father_address\`), \`father_phone\`=VALUES(\`father_phone\`), \`father_status\`=VALUES(\`father_status\`),
+          \`mother_name\`=VALUES(\`mother_name\`), \`mother_nik\`=VALUES(\`mother_nik\`), \`mother_birth_place\`=VALUES(\`mother_birth_place\`),
+          \`mother_birth_date\`=VALUES(\`mother_birth_date\`), \`mother_education\`=VALUES(\`mother_education\`),
+          \`mother_occupation\`=VALUES(\`mother_occupation\`), \`mother_income\`=VALUES(\`mother_income\`),
+          \`mother_address\`=VALUES(\`mother_address\`), \`mother_phone\`=VALUES(\`mother_phone\`), \`mother_status\`=VALUES(\`mother_status\`),
+          \`guardian_name\`=VALUES(\`guardian_name\`), \`guardian_nik\`=VALUES(\`guardian_nik\`),
+          \`guardian_birth_place\`=VALUES(\`guardian_birth_place\`), \`guardian_birth_date\`=VALUES(\`guardian_birth_date\`),
+          \`guardian_education\`=VALUES(\`guardian_education\`), \`guardian_occupation\`=VALUES(\`guardian_occupation\`),
+          \`guardian_income\`=VALUES(\`guardian_income\`), \`guardian_address\`=VALUES(\`guardian_address\`),
+          \`guardian_phone\`=VALUES(\`guardian_phone\`), \`guardian_status\`=VALUES(\`guardian_status\`),
+          \`is_spp_exempt\`=VALUES(\`is_spp_exempt\`), \`spp_exemption_reason\`=VALUES(\`spp_exemption_reason\`),
+          \`spp_exemption_type\`=VALUES(\`spp_exemption_type\`), \`custom_spp_rate\`=VALUES(\`custom_spp_rate\`),
+          \`mutation_date\`=VALUES(\`mutation_date\`), \`mutation_reason\`=VALUES(\`mutation_reason\`),
+          \`mutation_destination\`=VALUES(\`mutation_destination\`), \`updated_at\`=NOW()
       `, [
         s.id, s.nis || '', s.nisn || null, s.name || '', s.class || '', s.gender || 'Laki-laki', s.email || null,
         s.phone || null, Number(s.savingsBalance) || 0, s.status || 'Aktif', s.password || null, s.nickname || null,
@@ -2468,6 +2489,133 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       message: `Gagal menyimpan entitas "${entityType}" ke MySQL`,
       error: err.message || String(err)
     };
+  } finally {
+    if (connection) connection.release();
+    await pool.end().catch(() => {});
+  }
+}
+
+// Batch entity save into MySQL table using a single database connection
+export async function directSaveEntitiesBatchToMysql(entityType: string, items: any[]): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!Array.isArray(items) || items.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  let savedCount = 0;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    for (const item of items) {
+      if (!item || typeof item !== 'object') continue;
+
+      if (typeKey === 'student' || typeKey === 'students') {
+        const s = item;
+        await connection.query(`
+          INSERT INTO \`students\` (
+            \`id\`, \`nis\`, \`nisn\`, \`name\`, \`class\`, \`gender\`, \`email\`, \`phone\`, \`savings_balance\`,
+            \`status\`, \`password\`, \`nickname\`, \`nik\`, \`birth_place\`, \`birth_date\`, \`kk_number\`,
+            \`birth_cert_number\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`,
+            \`address\`, \`photo_url\`, \`parent_name\`, \`google_drive_link\`, \`father_name\`, \`father_nik\`,
+            \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`,
+            \`father_address\`, \`father_phone\`, \`father_status\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`,
+            \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_address\`,
+            \`mother_phone\`, \`mother_status\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`,
+            \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_address\`,
+            \`guardian_phone\`, \`guardian_status\`, \`is_spp_exempt\`, \`spp_exemption_reason\`, \`spp_exemption_type\`,
+            \`custom_spp_rate\`, \`mutation_date\`, \`mutation_reason\`, \`mutation_destination\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`nis\`=VALUES(\`nis\`), \`nisn\`=VALUES(\`nisn\`), \`name\`=VALUES(\`name\`), \`class\`=VALUES(\`class\`),
+            \`gender\`=VALUES(\`gender\`), \`email\`=VALUES(\`email\`), \`phone\`=VALUES(\`phone\`),
+            \`savings_balance\`=VALUES(\`savings_balance\`), \`status\`=VALUES(\`status\`), \`password\`=VALUES(\`password\`),
+            \`nickname\`=VALUES(\`nickname\`), \`nik\`=VALUES(\`nik\`), \`birth_place\`=VALUES(\`birth_place\`),
+            \`birth_date\`=VALUES(\`birth_date\`), \`kk_number\`=VALUES(\`kk_number\`), \`birth_cert_number\`=VALUES(\`birth_cert_number\`),
+            \`living_with\`=VALUES(\`living_with\`), \`child_order\`=VALUES(\`child_order\`), \`siblings_count\`=VALUES(\`siblings_count\`),
+            \`step_siblings_count\`=VALUES(\`step_siblings_count\`), \`address\`=VALUES(\`address\`), \`photo_url\`=VALUES(\`photo_url\`),
+            \`parent_name\`=VALUES(\`parent_name\`), \`google_drive_link\`=VALUES(\`google_drive_link\`),
+            \`father_name\`=VALUES(\`father_name\`), \`father_nik\`=VALUES(\`father_nik\`), \`father_birth_place\`=VALUES(\`father_birth_place\`),
+            \`father_birth_date\`=VALUES(\`father_birth_date\`), \`father_education\`=VALUES(\`father_education\`),
+            \`father_occupation\`=VALUES(\`father_occupation\`), \`father_income\`=VALUES(\`father_income\`),
+            \`father_address\`=VALUES(\`father_address\`), \`father_phone\`=VALUES(\`father_phone\`), \`father_status\`=VALUES(\`father_status\`),
+            \`mother_name\`=VALUES(\`mother_name\`), \`mother_nik\`=VALUES(\`mother_nik\`), \`mother_birth_place\`=VALUES(\`mother_birth_place\`),
+            \`mother_birth_date\`=VALUES(\`mother_birth_date\`), \`mother_education\`=VALUES(\`mother_education\`),
+            \`mother_occupation\`=VALUES(\`mother_occupation\`), \`mother_income\`=VALUES(\`mother_income\`),
+            \`mother_address\`=VALUES(\`mother_address\`), \`mother_phone\`=VALUES(\`mother_phone\`), \`mother_status\`=VALUES(\`mother_status\`),
+            \`guardian_name\`=VALUES(\`guardian_name\`), \`guardian_nik\`=VALUES(\`guardian_nik\`),
+            \`guardian_birth_place\`=VALUES(\`guardian_birth_place\`), \`guardian_birth_date\`=VALUES(\`guardian_birth_date\`),
+            \`guardian_education\`=VALUES(\`guardian_education\`), \`guardian_occupation\`=VALUES(\`guardian_occupation\`),
+            \`guardian_income\`=VALUES(\`guardian_income\`), \`guardian_address\`=VALUES(\`guardian_address\`),
+            \`guardian_phone\`=VALUES(\`guardian_phone\`), \`guardian_status\`=VALUES(\`guardian_status\`),
+            \`is_spp_exempt\`=VALUES(\`is_spp_exempt\`), \`spp_exemption_reason\`=VALUES(\`spp_exemption_reason\`),
+            \`spp_exemption_type\`=VALUES(\`spp_exemption_type\`), \`custom_spp_rate\`=VALUES(\`custom_spp_rate\`),
+            \`mutation_date\`=VALUES(\`mutation_date\`), \`mutation_reason\`=VALUES(\`mutation_reason\`),
+            \`mutation_destination\`=VALUES(\`mutation_destination\`), \`updated_at\`=NOW()
+        `, [
+          s.id, s.nis || '', s.nisn || null, s.name || '', s.class || '', s.gender || 'Laki-laki', s.email || null,
+          s.phone || null, Number(s.savingsBalance) || 0, s.status || 'Aktif', s.password || null, s.nickname || null,
+          s.nik || null, s.birthPlace || null, s.birthDate || null, s.kkNumber || null, s.birthCertNumber || null,
+          s.livingWith || null, s.childOrder || null, s.siblingsCount || null, s.stepSiblingsCount || null,
+          s.address || null, s.photoUrl || null, s.parentName || null, s.googleDriveLink || null, s.fatherName || null,
+          s.fatherNik || null, s.fatherBirthPlace || null, s.fatherBirthDate || null, s.fatherEducation || null,
+          s.fatherOccupation || null, s.fatherIncome || null, s.fatherAddress || null, s.fatherPhone || null,
+          s.fatherStatus || null, s.motherName || null, s.motherNik || null, s.motherBirthPlace || null,
+          s.motherBirthDate || null, s.motherEducation || null, s.motherOccupation || null, s.motherIncome || null,
+          s.motherAddress || null, s.motherPhone || null, s.motherStatus || null, s.guardianName || null,
+          s.guardianNik || null, s.guardianBirthPlace || null, s.guardianBirthDate || null, s.guardianEducation || null,
+          s.guardianOccupation || null, s.guardianIncome || null, s.guardianAddress || null, s.guardianPhone || null,
+          s.guardianStatus || null, s.isSppExempt ? 1 : 0, s.sppExemptionReason || null, s.sppExemptionType || null,
+          s.customSppRate !== undefined ? Number(s.customSppRate) : null, s.mutationDate || null, s.mutationReason || null,
+          s.mutationDestination || null
+        ]);
+        savedCount++;
+      } else if (typeKey === 'spp' || typeKey === 'spp_bill' || typeKey === 'sppbills') {
+        const b = item;
+        await connection.query(`
+          INSERT INTO \`spp_bills\` (
+            \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
+            \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
+            \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+            \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
+        `, [
+          b.id, b.studentId, b.month, Number(b.year) || 2026, Number(b.amount) || 0, b.status || 'unpaid',
+          b.paidAt || null, b.paymentMethod || null, b.orderId || null, b.transactionId || null,
+          b.achievementType || null, b.achievementDetail || null
+        ]);
+        savedCount++;
+      } else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
+        const s = item;
+        await connection.query(`
+          INSERT INTO \`savings_transactions\` (
+            \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
+            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
+            \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
+        `, [
+          s.id, s.studentId, s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
+          s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
+          s.orderId || null, s.transactionId || null, s.notes || null
+        ]);
+        savedCount++;
+      } else {
+        // Fallback to directSaveEntityToMysql
+        await directSaveEntityToMysql(entityType, item);
+        savedCount++;
+      }
+    }
+
+    return { success: true, count: savedCount };
+  } catch (err: any) {
+    console.error(`[MySQL Batch Save Error - ${entityType}]:`, err.message || err);
+    return { success: false, count: savedCount, error: err.message || String(err) };
   } finally {
     if (connection) connection.release();
     await pool.end().catch(() => {});

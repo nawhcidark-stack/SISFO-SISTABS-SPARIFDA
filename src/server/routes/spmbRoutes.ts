@@ -1,6 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { SpmbCandidate, SpmbConfig, Student, RealtimeNotification, MidtransConfig } from "../../types";
+import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql } from "../mysqlService";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -1096,6 +1097,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       saveState();
+
+      // Persist promoted students and updated candidates immediately to MySQL
+      if (promotedStudents.length > 0) {
+        directSaveEntitiesBatchToMysql("students", promotedStudents).catch(err => console.error("Error persisting promoted students to MySQL:", err));
+      }
+      if (updatedCandidates.length > 0) {
+        directSaveEntitiesBatchToMysql("spmbCandidates", updatedCandidates).catch(err => console.error("Error persisting updated candidates to MySQL:", err));
+      }
 
       // Broadcast notification
       const notification: RealtimeNotification = {

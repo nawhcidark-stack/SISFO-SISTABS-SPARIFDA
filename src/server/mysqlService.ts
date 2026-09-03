@@ -101,6 +101,9 @@ export function saveMysqlConfig(newConfig: Partial<MysqlDatabaseConfig>): MysqlD
     console.error('Gagal menulis file konfigurasi MySQL:', err);
   }
 
+  // Reset any cached pool when configuration changes so the new parameters are used
+  closeSharedPool();
+
   return getSanitizedConfig();
 }
 
@@ -114,7 +117,7 @@ export function getSanitizedConfig(): MysqlDatabaseConfig {
     ssl: currentConfig.ssl,
     phpmyadminUrl: currentConfig.phpmyadminUrl,
     charset: currentConfig.charset || 'utf8mb4',
-    connectionLimit: currentConfig.connectionLimit || 10,
+    connectionLimit: currentConfig.connectionLimit || 4,
     connectTimeout: currentConfig.connectTimeout || 8000,
     autoSyncEnabled: currentConfig.autoSyncEnabled || false,
     autoSyncIntervalHours: currentConfig.autoSyncIntervalHours || 1,
@@ -129,31 +132,65 @@ export function getSanitizedConfig(): MysqlDatabaseConfig {
   };
 }
 
-// Create MySQL connection pool
-function createPool(overrideConfig?: Partial<MysqlDatabaseConfig>) {
+// ==========================================================
+// PERSISTENT CONNECTION POOLING ENGINE
+// Preserves sockets across queries to avoid exceeding hosting limits (e.g., max_connections_per_hour = 500)
+// ==========================================================
+let sharedPool: mysql.Pool | null = null;
+let sharedPoolKey = '';
+
+export function getSharedPool(overrideConfig?: Partial<MysqlDatabaseConfig>): mysql.Pool {
   const cfg = {
     ...currentConfig,
     ...overrideConfig
   };
 
-  return mysql.createPool({
-    host: cfg.host,
-    port: Number(cfg.port) || 3306,
-    user: cfg.user,
-    password: cfg.password || '',
-    database: cfg.database,
-    waitForConnections: true,
-    connectionLimit: cfg.connectionLimit || 10,
-    connectTimeout: cfg.connectTimeout || 10000,
-    charset: cfg.charset || 'utf8mb4',
-    multipleStatements: true,
-    ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined
-  });
+  const key = `${cfg.host}:${cfg.port}:${cfg.user}:${cfg.database}:${cfg.password || ''}:${cfg.ssl ? '1' : '0'}`;
+
+  if (!sharedPool || sharedPoolKey !== key) {
+    if (sharedPool) {
+      sharedPool.end().catch(() => {});
+    }
+    sharedPoolKey = key;
+    sharedPool = mysql.createPool({
+      host: cfg.host,
+      port: Number(cfg.port) || 3306,
+      user: cfg.user,
+      password: cfg.password || '',
+      database: cfg.database,
+      waitForConnections: true,
+      // Keep low connection limit for shared hosting (Hostinger / cPanel)
+      connectionLimit: 4,
+      maxIdle: 2,
+      idleTimeout: 300000, // 5 minutes idle socket reuse
+      enableKeepAlive: true,
+      keepAliveInitialDelay: 10000,
+      connectTimeout: cfg.connectTimeout || 10000,
+      charset: cfg.charset || 'utf8mb4',
+      multipleStatements: true,
+      ssl: cfg.ssl ? { rejectUnauthorized: false } : undefined
+    });
+  }
+
+  return sharedPool;
 }
 
-// Save or update an individual configuration into the app_configs MySQL table immediately
+export function closeSharedPool(): void {
+  if (sharedPool) {
+    sharedPool.end().catch(() => {});
+    sharedPool = null;
+    sharedPoolKey = '';
+  }
+}
+
+// Backward-compatibility wrapper for pool creation
+function createPool(overrideConfig?: Partial<MysqlDatabaseConfig>) {
+  return getSharedPool(overrideConfig);
+}
+
+// Save or update an individual configuration into the app_configs MySQL table
 export async function saveConfigToMysql(configId: string, data: any, overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
-  const pool = createPool(overrideConfig);
+  const pool = getSharedPool(overrideConfig);
   let connection: mysql.PoolConnection | null = null;
   try {
     connection = await pool.getConnection();
@@ -178,7 +215,39 @@ export async function saveConfigToMysql(configId: string, data: any, overrideCon
     return false;
   } finally {
     if (connection) connection.release();
-    await pool.end().catch(() => {});
+    // Do NOT end pool here - persistent connection pooling reuses the connection!
+  }
+}
+
+// Save or update multiple configurations into the app_configs MySQL table in a SINGLE query
+export async function saveConfigsBatchToMysql(configs: { id: string; data: any }[], overrideConfig?: Partial<MysqlDatabaseConfig>): Promise<boolean> {
+  if (!Array.isArray(configs) || configs.length === 0) return true;
+  const pool = getSharedPool(overrideConfig);
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    await connection.query(`
+      CREATE TABLE IF NOT EXISTS \`app_configs\` (
+        \`id\` VARCHAR(64) NOT NULL,
+        \`data\` LONGTEXT NOT NULL,
+        \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        PRIMARY KEY (\`id\`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+    `);
+
+    const values = configs.map(c => [c.id, typeof c.data === 'string' ? c.data : JSON.stringify(c.data)]);
+    await connection.query(`
+      INSERT INTO \`app_configs\` (\`id\`, \`data\`)
+      VALUES ?
+      ON DUPLICATE KEY UPDATE \`data\` = VALUES(\`data\`)
+    `, [values]);
+    return true;
+  } catch (err: any) {
+    console.warn(`[MySQL Config Batch Sync] Gagal menyimpan batch configs ke MySQL:`, err.message || err);
+    return false;
+  } finally {
+    if (connection) connection.release();
+    // Do NOT end pool here - reuse connection
   }
 }
 
@@ -202,7 +271,7 @@ export async function testMysqlConnection(customConfig?: Partial<MysqlDatabaseCo
   }
 
   let connection: mysql.PoolConnection | null = null;
-  const pool = createPool(cfgToUse);
+  const pool = getSharedPool(cfgToUse);
 
   try {
     connection = await pool.getConnection();
@@ -246,7 +315,9 @@ export async function testMysqlConnection(customConfig?: Partial<MysqlDatabaseCo
     const code = err.code || '';
     const errMessage = err.message || 'Gagal tersambung ke database.';
 
-    if (code === 'ECONNREFUSED') {
+    if (code === 'ER_USER_LIMIT_REACHED' || errMessage.includes('max_connections_per_hour')) {
+      hint = `Batas koneksi per jam MySQL pada hosting Hostinger/cPanel telah tercapai (max_connections_per_hour = 500).\n\nSOLUSI CEPAT:\n1. Buat MySQL User baru di Hostinger hPanel (misal: ${cfgToUse.user}_2) dan berikan All Privileges ke database "${cfgToUse.database}", lalu ubah nama User di form ini agar langsung aktif tanpa menunggu!\n2. ATAU tunggu sekitar 30–60 menit hingga server hosting mereset hitungan kuota jamannya.\n\nSistem saat ini telah dioptimalkan dengan Persistent Connection Pooling (Connection Reuse) sehingga ke depannya tidak akan lagi memboroskan koneksi.`;
+    } else if (code === 'ECONNREFUSED') {
       hint = `Tidak dapat terhubung ke ${cfgToUse.host}:${cfgToUse.port}. Pastikan service MySQL/MariaDB aktif di XAMPP/cPanel/VPS dan port 3306 terbuka.`;
     } else if (code === 'ER_ACCESS_DENIED_ERROR') {
       hint = `Akses ditolak untuk user "${cfgToUse.user}". Pastikan kata sandi (password) dan hak akses (Privileges) user di phpMyAdmin sudah benar.`;
@@ -267,7 +338,7 @@ export async function testMysqlConnection(customConfig?: Partial<MysqlDatabaseCo
     if (connection) {
       connection.release();
     }
-    await pool.end().catch(() => {});
+    // Do NOT end pool here - persistent connection pooling reuses the connection!
   }
 }
 
@@ -1326,7 +1397,6 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
     };
   } finally {
     if (connection) connection.release();
-    await pool.end().catch(() => {});
   }
 }
 
@@ -2087,7 +2157,6 @@ export async function pullDataFromMysql(): Promise<{
     };
   } finally {
     if (connection) connection.release();
-    await pool.end().catch(() => {});
   }
 }
 
@@ -2117,7 +2186,6 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
     };
   } finally {
     if (connection) connection.release();
-    await pool.end().catch(() => {});
   }
 }
 
@@ -2491,7 +2559,6 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     };
   } finally {
     if (connection) connection.release();
-    await pool.end().catch(() => {});
   }
 }
 
@@ -2618,7 +2685,6 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
     return { success: false, count: savedCount, error: err.message || String(err) };
   } finally {
     if (connection) connection.release();
-    await pool.end().catch(() => {});
   }
 }
 
@@ -2716,7 +2782,6 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
     };
   } finally {
     if (connection) connection.release();
-    await pool.end().catch(() => {});
   }
 }
 

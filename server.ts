@@ -10,7 +10,7 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -1505,24 +1505,37 @@ function saveState(skipRemoteSync: boolean = false) {
     const tempPath = DATA_FILE + ".tmp";
     fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
     fs.renameSync(tempPath, DATA_FILE);
-    // Persist configuration changes directly to MySQL app_configs table
+    // Persist configuration changes directly to MySQL app_configs table using debounced batch
     if (!skipRemoteSync) {
-      saveConfigToMysql("midtransConfig", midtransConfig).catch(() => {});
-      saveConfigToMysql("schoolIdentity", schoolIdentity).catch(() => {});
-      saveConfigToMysql("sppRates", sppRates).catch(() => {});
-      saveConfigToMysql("salaryConfig", salaryConfig).catch(() => {});
-      saveConfigToMysql("whatsappConfig", whatsappConfig).catch(() => {});
-      saveConfigToMysql("treasurerConfig", treasurerConfig).catch(() => {});
-      saveConfigToMysql("principalConfig", principalConfig).catch(() => {});
-      saveConfigToMysql("sarprasConfig", sarprasConfig).catch(() => {});
-      saveConfigToMysql("bkConfig", bkConfig).catch(() => {});
-      saveConfigToMysql("curriculumConfig", curriculumConfig).catch(() => {});
-      saveConfigToMysql("adminConfig", adminConfig).catch(() => {});
-      saveConfigToMysql("spmbConfig", spmbConfig).catch(() => {});
+      debouncedSyncConfigsToMysql();
     }
   } catch (error) {
     console.error("Failed to save state:", error);
   }
+}
+
+// Debounced helper to save application configs to MySQL app_configs in a single query
+let configBatchTimer: NodeJS.Timeout | null = null;
+function debouncedSyncConfigsToMysql() {
+  if (configBatchTimer) clearTimeout(configBatchTimer);
+  configBatchTimer = setTimeout(() => {
+    saveConfigsBatchToMysql([
+      { id: "midtransConfig", data: midtransConfig },
+      { id: "schoolIdentity", data: schoolIdentity },
+      { id: "sppRates", data: sppRates },
+      { id: "salaryConfig", data: salaryConfig },
+      { id: "whatsappConfig", data: whatsappConfig },
+      { id: "treasurerConfig", data: treasurerConfig },
+      { id: "principalConfig", data: principalConfig },
+      { id: "sarprasConfig", data: sarprasConfig },
+      { id: "bkConfig", data: bkConfig },
+      { id: "curriculumConfig", data: curriculumConfig },
+      { id: "adminConfig", data: adminConfig },
+      { id: "spmbConfig", data: spmbConfig }
+    ]).catch(err => {
+      console.warn("[MySQL Debounced Config Sync] Gagal menyimpan configs ke MySQL:", err?.message || err);
+    });
+  }, 3000);
 }
 
 function loadState() {

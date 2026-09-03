@@ -880,8 +880,9 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
                   )}
 
                   {testResult.hint && (
-                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[10px] text-amber-900 leading-normal">
-                      <strong>💡 Solusi / Petunjuk:</strong> {testResult.hint}
+                    <div className="p-2.5 bg-amber-50 border border-amber-200 rounded-xl text-[10px] text-amber-900 leading-normal whitespace-pre-line">
+                      <strong>💡 Solusi / Petunjuk:</strong>
+                      <div className="mt-1">{testResult.hint}</div>
                     </div>
                   )}
                 </div>

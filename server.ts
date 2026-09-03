@@ -4,14 +4,13 @@ dotenv.config();
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { MongoClient } from "mongodb";
 import multer from "multer";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -976,10 +975,7 @@ function purgeMutatedStudentUnpaidBills(): number {
         if (billScore >= mutationScore) {
           const [removedBill] = sppBills.splice(i, 1);
           purgedCount++;
-          deleteDocFromFirestore("sppBills", removedBill.id).catch(err => console.error(err));
-          if (mongoDb) {
-            mongoDb.collection("sppBills").deleteOne({ id: removedBill.id }).catch(err => console.error(err));
-          }
+          directDeleteEntityFromMysql("spp_bills", removedBill.id).catch(err => console.error(err));
         }
       }
     }
@@ -1033,10 +1029,7 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
     if (isAutoRecon) {
       const [removed] = treasurerTransactions.splice(i, 1);
       treasurerPurged++;
-      deleteDocFromFirestore("treasurerTransactions", removed.id).catch(err => console.error(err));
-      if (mongoDb) {
-        mongoDb.collection("treasurerTransactions").deleteOne({ id: removed.id }).catch(err => console.error(err));
-      }
+      directDeleteEntityFromMysql("treasurer_transactions", removed.id).catch(err => console.error(err));
     }
   }
 
@@ -1062,10 +1055,7 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
       const [removed] = savingsTransactions.splice(i, 1);
       savingsPurged++;
       affectedStudentIds.add(removed.studentId);
-      deleteDocFromFirestore("savingsTransactions", removed.id).catch(err => console.error(err));
-      if (mongoDb) {
-        mongoDb.collection("savingsTransactions").deleteOne({ id: removed.id }).catch(err => console.error(err));
-      }
+      directDeleteEntityFromMysql("savings_transactions", removed.id).catch(err => console.error(err));
     }
   }
 
@@ -1080,7 +1070,7 @@ function purgeMidtransAutoReconciliation(): { treasurerPurged: number; savingsPu
         else if (st.type === "withdrawal") newBal -= st.amount;
       });
       student.savingsBalance = Math.max(0, newBal);
-      upsertDocToMongoDB("students", student).catch(err => console.error(err));
+      persistEntity("students", student).catch(err => console.error(err));
     }
   });
 
@@ -1349,137 +1339,54 @@ function autoSyncHistoricalMidtransTransactions() {
 
 const DATA_FILE = path.join(process.cwd(), "data_store.json");
 
-// MongoDB Database connection state & disconnection control
-let mongoClient: MongoClient | null = null;
-let mongoDb: any = null;
-let dbSyncStatus = "Terputus (Disconnected)";
+// MySQL Database Primary Authoritative State
+let mysqlDatabaseStatus: "ONLINE" | "OFFLINE" | "DISCONNECTED" = "OFFLINE";
+let mysqlDatabaseError: string | null = null;
+let lastMysqlSyncTime: string | null = null;
+let dbSyncStatus = "MySQL Primary Online";
 let dbSyncError: string | null = null;
 let lastSyncTime: string | null = new Date().toISOString();
 let isInitialSyncCompleted = true;
 
-async function disconnectMongoDB() {
-  if (mongoClient) {
-    try {
-      await mongoClient.close();
-    } catch (e) {
-      console.warn("Failed to close existing MongoClient:", e);
-    }
-    mongoClient = null;
-    mongoDb = null;
+// Helper to write an entity directly to MySQL table
+async function persistEntity(type: string, data: any) {
+  try {
+    return await directSaveEntityToMysql(type, data);
+  } catch (err: any) {
+    console.error(`[MySQL Direct Write Error - ${type}]:`, err?.message || err);
+    return { success: false, message: err?.message || String(err) };
   }
-  dbSyncStatus = "Terputus (Disconnected)";
-  dbSyncError = null;
-  lastSyncTime = new Date().toISOString();
-  console.log("[MongoDB] Connection explicitly disconnected. Using Local Disk & MySQL.");
+}
+
+// Helper to delete an entity directly from MySQL table
+async function removeEntity(type: string, id: string) {
+  try {
+    return await directDeleteEntityFromMysql(type, id);
+  } catch (err: any) {
+    console.error(`[MySQL Direct Delete Error - ${type}]:`, err?.message || err);
+    return { success: false, message: err?.message || String(err) };
+  }
+}
+
+// Backward-compatible stubs for legacy functions
+async function disconnectMongoDB() {
+  console.log("[Database] Pure MySQL Primary Mode. MongoDB is disabled.");
 }
 
 async function reconnectMongoClient() {
-  if (process.env.ENABLE_MONGODB !== "true") {
-    await disconnectMongoDB();
-    return;
-  }
-  try {
-    const rawUri = process.env.MONGODB_URI;
-    if (!rawUri) {
-      await disconnectMongoDB();
-      return;
-    }
-    if (mongoClient) {
-      try {
-        await mongoClient.close();
-      } catch (e) {}
-      mongoClient = null;
-      mongoDb = null;
-    }
-    const cleanUri = sanitizeMongoUri(rawUri);
-    mongoClient = new MongoClient(cleanUri, {
-      retryWrites: true,
-      retryReads: true,
-      serverSelectionTimeoutMS: 10000,
-    });
-    await mongoClient.connect();
-    mongoDb = mongoClient.db("spp_maarif");
-    console.log("[MongoDB] Connection refreshed successfully after stale topology/election switch.");
-  } catch (err: any) {
-    console.warn("[MongoDB] Failed to refresh connection:", err?.message || err);
-  }
+  // No-op: MongoDB disabled
 }
 
-async function executeMongoOperationWithRetry<T>(fn: () => Promise<T>, retries = 2): Promise<T> {
-  for (let attempt = 0; attempt <= retries; attempt++) {
-    try {
-      return await fn();
-    } catch (err: any) {
-      const msg = err?.message || String(err);
-      const isStaleTopology = msg.includes("stale") || msg.includes("electionId") || msg.includes("setVersion") || msg.includes("topology") || msg.includes("pool") || msg.includes("connection") || msg.includes("reset");
-      if (isStaleTopology && attempt < retries) {
-        console.warn(`[MongoDB Retry] Topology/Election error detected (attempt ${attempt + 1}/${retries}): ${msg}. Reconnecting MongoClient...`);
-        await reconnectMongoClient();
-      } else {
-        throw err;
-      }
-    }
-  }
-  throw new Error("Mongo operation failed after retries.");
-}
-
-// Track last synced signatures of individual documents & configs to avoid redundant writes to MongoDB
-const lastSyncedDocSignatures = new Map<string, string>(); // `${colName}:${docId}` -> JSON string
-const lastSyncedConfigSignatures = new Map<string, string>(); // configId -> JSON string
-
-function recordDocumentSignature(colName: string, doc: any) {
-  if (!doc) return;
-  const docId = String(doc.id || doc._id || '');
-  if (!docId) return;
-  const docCopy = { ...doc, _id: docId, id: docId };
-  lastSyncedDocSignatures.set(`${colName}:${docId}`, JSON.stringify(docCopy));
-}
-
-function recordConfigSignature(configId: string, configData: any) {
-  if (!configData) return;
-  const { _id, ...cleaned } = configData;
-  lastSyncedConfigSignatures.set(configId, JSON.stringify({ ...cleaned, id: configId }));
+async function executeMongoOperationWithRetry<T>(fn: () => Promise<T>): Promise<T> {
+  return await fn();
 }
 
 async function deleteDocFromFirestore(colName: string, docId: string) {
-  if (!mongoDb) return;
-  try {
-    const sigKey = `${colName}:${docId}`;
-    lastSyncedDocSignatures.delete(sigKey);
-    await executeMongoOperationWithRetry(async () => {
-      const col = mongoDb.collection(colName);
-      await col.deleteOne({ $or: [{ _id: docId }, { id: docId }] });
-    });
-    console.log(`[MongoDB Direct] Deleted document ${docId} from ${colName}`);
-  } catch (err) {
-    console.error(`[MongoDB Direct] Failed to delete document ${docId} from ${colName}:`, err);
-  }
+  return removeEntity(colName, docId);
 }
 
 async function upsertDocToMongoDB(colName: string, doc: any) {
-  if (!mongoDb || !isInitialSyncCompleted) return;
-  try {
-    const docCopy = { ...doc };
-    const docId = String(docCopy.id || docCopy._id || `id-${Math.random()}`);
-    docCopy._id = docId;
-    docCopy.id = docId;
-    const docSig = JSON.stringify(docCopy);
-    const sigKey = `${colName}:${docId}`;
-
-    // Skip if document signature is identical to what is already stored
-    if (lastSyncedDocSignatures.get(sigKey) === docSig) {
-      return;
-    }
-
-    await executeMongoOperationWithRetry(async () => {
-      const col = mongoDb.collection(colName);
-      await col.replaceOne({ _id: docId }, docCopy, { upsert: true });
-    });
-    lastSyncedDocSignatures.set(sigKey, docSig);
-    console.log(`[MongoDB Direct] Upserted document ${docId} in ${colName}`);
-  } catch (err) {
-    console.error(`[MongoDB Direct] Failed to upsert document in ${colName}:`, err);
-  }
+  return persistEntity(colName, doc);
 }
 
 function applyAuthoritativeSavingsBalances(studentList: Student[]) {
@@ -1529,726 +1436,16 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
 }
 
 async function saveStateToFirestore(forceAll: boolean = false) {
-  if (!mongoDb || !isInitialSyncCompleted) return;
-  try {
-    let totalWrites = 0;
-    let totalDeletes = 0;
-
-    const collectionsToSync: [string, any[]][] = [
-      ["students", students],
-      ["sppBills", sppBills],
-      ["miscBills", miscBills],
-      ["savingsTransactions", savingsTransactions],
-      ["midtransTransactions", midtransTransactions],
-      ["realtimeNotifications", notifications.slice(0, 100)],
-      ["attendanceLogs", attendanceLogs],
-      ["homeroomTeachers", homeroomTeachers],
-      ["subjectTeachers", subjectTeachers],
-      ["teachingJournals", teachingJournals],
-      ["treasurerTransactions", treasurerTransactions],
-      ["studentDevelopmentLogs", studentDevelopmentLogs],
-      ["studentInfractionLogs", studentInfractionLogs],
-      ["studentCounselingLogs", studentCounselingLogs],
-      ["classAnnouncements", classAnnouncements],
-      ["classMeetingLogs", classMeetingLogs],
-      ["merdekaAssessments", merdekaAssessments],
-      ["classSchedules", classSchedules],
-      ["principalWorkPrograms", principalWorkPrograms],
-      ["teacherEvaluations", teacherEvaluations],
-      ["infractionRules", infractionRules],
-      ["sarprasItems", sarprasItems],
-      ["sarprasProposals", sarprasProposals],
-      ["sarprasLoans", sarprasLoans],
-      ["teacherSalaries", teacherSalaries],
-      ["spmbCandidates", spmbCandidates],
-    ];
-
-    // Differential List Saver: only sends operations for docs that actually changed or were deleted
-    for (const [colName, list] of collectionsToSync) {
-      if (!Array.isArray(list)) continue;
-
-      const currentIds = new Set<string>();
-      const operations: any[] = [];
-      const updatedSigs: [string, string][] = [];
-
-      for (const item of list) {
-        const docCopy = { ...item };
-        const docId = String(docCopy.id || docCopy._id || `id-${Math.random()}`);
-        docCopy._id = docId;
-        docCopy.id = docId;
-        currentIds.add(docId);
-
-        const sigKey = `${colName}:${docId}`;
-        const docSig = JSON.stringify(docCopy);
-        const lastSig = lastSyncedDocSignatures.get(sigKey);
-
-        if (forceAll || lastSig !== docSig) {
-          operations.push({
-            replaceOne: {
-              filter: { _id: docId },
-              replacement: docCopy,
-              upsert: true
-            }
-          });
-          updatedSigs.push([sigKey, docSig]);
-        }
-      }
-
-      // Check for deleted items (only if we have tracked signatures for this collection)
-      const deletedKeys: string[] = [];
-      for (const [key] of lastSyncedDocSignatures.entries()) {
-        if (key.startsWith(`${colName}:`)) {
-          const docId = key.substring(colName.length + 1);
-          if (!currentIds.has(docId)) {
-            operations.push({
-              deleteOne: {
-                filter: { $or: [{ _id: docId }, { id: docId }] }
-              }
-            });
-            deletedKeys.push(key);
-          }
-        }
-      }
-
-      if (operations.length > 0) {
-        await executeMongoOperationWithRetry(async () => {
-          const col = mongoDb.collection(colName);
-          await col.bulkWrite(operations, { ordered: false });
-        });
-
-        // Update signature cache upon successful write
-        updatedSigs.forEach(([k, s]) => lastSyncedDocSignatures.set(k, s));
-        deletedKeys.forEach(k => lastSyncedDocSignatures.delete(k));
-
-        totalWrites += (operations.length - deletedKeys.length);
-        totalDeletes += deletedKeys.length;
-      }
-    }
-
-    // Save configurations only if changed
-    const configCol = mongoDb.collection("configs");
-    const configsToSync: [string, any][] = [
-      ["sppRates", sppRates],
-      ["schoolIdentity", schoolIdentity],
-      ["midtransConfig", midtransConfig],
-      ["whatsappConfig", whatsappConfig],
-      ["treasurerConfig", treasurerConfig],
-      ["principalConfig", principalConfig],
-      ["sarprasConfig", sarprasConfig],
-      ["bkConfig", bkConfig],
-      ["curriculumConfig", curriculumConfig],
-      ["adminConfig", adminConfig],
-      ["spmbConfig", spmbConfig],
-      ["salaryConfig", salaryConfig],
-      ["backupConfig", backupConfig],
-      ["systemMetadata", { seeded: true }],
-    ];
-
-    for (const [configId, configData] of configsToSync) {
-      const { _id, ...cleanedData } = configData;
-      const fullDoc = { ...cleanedData, id: configId };
-      const configSig = JSON.stringify(fullDoc);
-      const lastSig = lastSyncedConfigSignatures.get(configId);
-
-      if (forceAll || lastSig !== configSig) {
-        await executeMongoOperationWithRetry(async () => {
-          await configCol.replaceOne({ id: configId }, fullDoc, { upsert: true });
-        });
-        lastSyncedConfigSignatures.set(configId, configSig);
-        totalWrites++;
-      }
-    }
-
-    if (totalWrites > 0 || totalDeletes > 0) {
-      console.log(`[MongoDB Differential Sync] Safely synced ${totalWrites} updated document(s), ${totalDeletes} deleted document(s) to MongoDB Atlas.`);
-    }
-  } catch (err) {
-    console.error("Failed executing differential state sync to MongoDB:", err);
-  }
+  // MongoDB is deprecated. All entities are written directly to MySQL.
 }
-
-let isSavingToFirestore = false;
-let hasPendingFirestoreSave = false;
-let firestoreSyncTimeout: NodeJS.Timeout | null = null;
 
 function triggerFirestoreSync() {
-  if (!mongoDb || !isInitialSyncCompleted) return;
-
-  if (firestoreSyncTimeout) {
-    clearTimeout(firestoreSyncTimeout);
-  }
-
-  // Debounce sync execution by 5000ms (5 seconds) to avoid intense MongoDB writes while keeping data completely safe
-  firestoreSyncTimeout = setTimeout(async () => {
-    firestoreSyncTimeout = null;
-
-    if (isSavingToFirestore) {
-      hasPendingFirestoreSave = true;
-      return;
-    }
-
-    isSavingToFirestore = true;
-    hasPendingFirestoreSave = false;
-
-    try {
-      await saveStateToFirestore(false);
-    } catch (err) {
-      console.error("[SYNC ENGINE] Background state sync failed:", err);
-    } finally {
-      isSavingToFirestore = false;
-      if (hasPendingFirestoreSave) {
-        // Trigger next sync loop
-        triggerFirestoreSync();
-      }
-    }
-  }, 5000);
-}
-
-function sanitizeMongoUri(uriString: string): string {
-  if (!uriString) return uriString;
-  try {
-    let processed = uriString.trim();
-    if ((processed.startsWith('"') && processed.endsWith('"')) || (processed.startsWith("'") && processed.endsWith("'"))) {
-      processed = processed.slice(1, -1);
-    }
-    
-    // Replace angle brackets if wrapped
-    processed = processed.replace(/<([^>]+)>/g, "$1");
-
-    // Parse scheme, credentials, host, options
-    const match = processed.match(/^(mongodb(?:\+srv)?:\/\/)([^:]+):(.*)@([^/]+)(.*)$/);
-    if (!match) {
-      return processed;
-    }
-
-    const scheme = match[1];
-    const username = match[2];
-    let password = match[3];
-    const host = match[4];
-    const rest = match[5];
-
-    const decodedPassword = decodeURIComponent(password);
-    const encodedPassword = encodeURIComponent(decodedPassword);
-
-    // Ensure database name spp_maarif with retryWrites
-    let pathAndOptions = rest || "/spp_maarif?retryWrites=true&w=majority";
-    if (pathAndOptions === "" || pathAndOptions === "/" || pathAndOptions === "/?" || pathAndOptions.startsWith("/?")) {
-      const query = pathAndOptions.startsWith("/?") ? pathAndOptions.slice(2) : (pathAndOptions === "/?" ? "" : pathAndOptions.slice(1));
-      pathAndOptions = "/spp_maarif" + (query ? "?" + query : "?retryWrites=true&w=majority");
-    }
-
-    const sanitized = `${scheme}${username}:${encodedPassword}@${host}${pathAndOptions}`;
-    console.log(`Sanitized MongoDB URI: ${scheme}${username}:***@${host}${pathAndOptions}`);
-    return sanitized;
-  } catch (e) {
-    console.warn("Failed to sanitize MongoDB URI:", e);
-    return uriString;
-  }
+  // Deprecated stub
 }
 
 async function syncWithFirestore(forcePush: boolean = false, forceDisconnect: boolean = false) {
-  if (forceDisconnect || process.env.ENABLE_MONGODB !== "true" || !process.env.MONGODB_URI) {
-    await disconnectMongoDB();
-    return;
-  }
-  const rawUri = process.env.MONGODB_URI;
-  
-  // Build a distinct pool of Connection Candidate URIs to attempt
-  const candidates: string[] = [];
-
-  // 1. Initial Candidate: exact sanitized rawUri from the active environment
-  const firstSanitized = sanitizeMongoUri(rawUri);
-  if (firstSanitized) candidates.push(firstSanitized);
-
-  // Parse rawUri to generate alternate password password variations
-  try {
-    let urlToParse = rawUri.trim().replace(/<([^>]+)>/g, "$1");
-    if ((urlToParse.startsWith('"') && urlToParse.endsWith('"')) || (urlToParse.startsWith("'") && urlToParse.endsWith("'"))) {
-      urlToParse = urlToParse.slice(1, -1);
-    }
-    const match = urlToParse.match(/^(mongodb(?:\+srv)?:\/\/)([^:]+):(.*)@([^/]+)(.*)$/);
-    if (match) {
-      const scheme = match[1];
-      const username = match[2];
-      const host = match[4];
-      const rest = match[5];
-
-      // Try these password variations:
-      const alternatePasswords = [
-        "Sparifda20519113",
-        "Sparifda%4020519113",  // Sparifda@20519113 encoded
-        "Sparifda@20519113",    // Sparifda@20519113 raw (gets auto-encoded in sanitize)
-        "Sparifda92"
-      ];
-
-      for (const pass of alternatePasswords) {
-        const candidateUri = sanitizeMongoUri(`${scheme}${username}:${pass}@${host}${rest}`);
-        if (candidateUri && !candidates.includes(candidateUri)) {
-          candidates.push(candidateUri);
-        }
-      }
-    }
-  } catch (e) {
-    console.warn("Error generating password candidates:", e);
-  }
-
-  // Fallback defaults if they aren't already included
-  const def1 = "mongodb+srv://portalinspiratif_db_user:Sparifda%4020519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
-  const def2 = "mongodb+srv://portalinspiratif_db_user:Sparifda20519113@cluster0.0hekxl2.mongodb.net/spp_maarif?retryWrites=true&w=majority";
-  if (!candidates.includes(def1)) candidates.push(def1);
-  if (!candidates.includes(def2)) candidates.push(def2);
-
-  let connectSuccess = false;
-  let connectionError: any = null;
-  let resolvedUri = "";
-
-  for (let i = 0; i < candidates.length; i++) {
-    const uriCandidate = candidates[i];
-    try {
-      if (mongoClient) {
-        try {
-          await mongoClient.close();
-        } catch (e) {
-          console.warn("Failed to close existing MongoClient:", e);
-        }
-        mongoClient = null;
-        mongoDb = null;
-      }
-
-      console.log(`Connecting database with MongoDB Candidate URI #${i + 1}/${candidates.length}...`);
-      dbSyncStatus = `Connecting (Try #${i + 1})...`;
-      
-      mongoClient = new MongoClient(uriCandidate);
-      await mongoClient.connect();
-      mongoDb = mongoClient.db("spp_maarif");
-      console.log(`MongoDB connection verified on candidate #${i + 1}.`);
-      resolvedUri = uriCandidate;
-      connectSuccess = true;
-      break;
-    } catch (err: any) {
-      connectionError = err;
-      const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`Connection Candidate #${i + 1} failed: ${msg.substring(0, 150)}`);
-    }
-  }
-
-  if (!connectSuccess) {
-    throw connectionError || new Error("Failed connecting to MongoDB after trying all password candidate streams");
-  }
-
-  const uri = resolvedUri;
-
-  if (forcePush) {
-    console.log("Force push requested. Overwriting remote MongoDB database with current local in-memory state...");
-    dbSyncStatus = "Syncing (Uploading Local State)...";
-    isInitialSyncCompleted = true; // Ensure saveStateToFirestore doesn't bypass
-    await saveStateToFirestore();
-    dbSyncStatus = "Synced (Manual Push Completed)";
-    lastSyncTime = new Date().toISOString();
-    dbSyncError = null;
-    return;
-  }
-
-  try {
-    const studentCol = mongoDb.collection("students");
-    const count = await studentCol.countDocuments();
-
-    // Check if configuration collection already has documents to detect as seeded
-    const configCol = mongoDb.collection("configs");
-    const configCount = await configCol.countDocuments();
-    const isSeeded = configCount > 0 || count > 0;
-
-    if (isSeeded) {
-      console.log("MongoDB is previously seeded. Pulling state from MongoDB...");
-      dbSyncStatus = "Syncing (Loading state)...";
-      
-      // Load Students (100% Authoritative from MongoDB)
-      const loadedStudents = await studentCol.find({}).toArray();
-
-      students.length = 0;
-      loadedStudents.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const s = rest as Student;
-        if (!s.password && s.nis) {
-          s.password = s.nis.toString().trim();
-        }
-        students.push(s);
-        recordDocumentSignature("students", s);
-      });
-
-      // Load SPP Bills (100% Authoritative from MongoDB)
-      const loadedBills = await mongoDb.collection("sppBills").find({}).toArray();
-      sppBills.length = 0;
-      loadedBills.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const bill = rest as SppBill;
-        sppBills.push(bill);
-        recordDocumentSignature("sppBills", bill);
-      });
-
-      // Purge unpaid/pending bills for mutated students on/after mutation month
-      const initialPurged = purgeMutatedStudentUnpaidBills();
-      if (initialPurged > 0) {
-        console.log(`[MUTATION PURGE] Cleared ${initialPurged} unpaid SPP bills for mutated students on/after mutation date.`);
-      }
-
-      // Load Misc Bills (100% Authoritative from MongoDB)
-      try {
-        const loadedMiscBills = await mongoDb.collection("miscBills").find({}).toArray();
-        miscBills.length = 0;
-        loadedMiscBills.forEach((d: any) => {
-          const { _id, ...rest } = d;
-          const b = rest as MiscBill;
-          miscBills.push(b);
-          recordDocumentSignature("miscBills", b);
-        });
-      } catch (err) {
-        console.warn("Failed loading miscBills collection:", err);
-      }
-
-      // Load Savings Transactions (100% Authoritative from MongoDB)
-      const loadedSav = await mongoDb.collection("savingsTransactions").find({}).toArray();
-      savingsTransactions.length = 0;
-      loadedSav.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const t = rest as SavingsTransaction;
-        savingsTransactions.push(t);
-        recordDocumentSignature("savingsTransactions", t);
-      });
-
-      // Apply authoritative savings balances for all loaded students
-      applyAuthoritativeSavingsBalances(students);
-
-      // Load Notifications
-      const loadedNotif = await mongoDb.collection("realtimeNotifications").find({}).toArray();
-      notifications.length = 0;
-      loadedNotif.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const n = rest as RealtimeNotification;
-        notifications.push(n);
-        recordDocumentSignature("realtimeNotifications", n);
-      });
-      notifications.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
-
-      // Load Attendance Logs
-      const loadedAtt = await mongoDb.collection("attendanceLogs").find({}).toArray();
-      attendanceLogs.length = 0;
-      loadedAtt.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const l = rest as AttendanceLog;
-        attendanceLogs.push(l);
-        recordDocumentSignature("attendanceLogs", l);
-      });
-
-      // Load Homeroom Teachers
-      const loadedHt = await mongoDb.collection("homeroomTeachers").find({}).toArray();
-      homeroomTeachers.length = 0;
-      loadedHt.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const ht = rest as HomeroomTeacher;
-        homeroomTeachers.push(ht);
-        recordDocumentSignature("homeroomTeachers", ht);
-      });
-
-      // Load Subject Teachers
-      const loadedSt = await mongoDb.collection("subjectTeachers").find({}).toArray();
-      subjectTeachers.length = 0;
-      loadedSt.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const st = rest as SubjectTeacher;
-        subjectTeachers.push(st);
-        recordDocumentSignature("subjectTeachers", st);
-      });
-
-      // Load Teaching Journals
-      const loadedTj = await mongoDb.collection("teachingJournals").find({}).toArray();
-      const loadedTjMap = new Map<string, TeachingJournal>();
-      // Preserve any local journals in memory/data_store.json (e.g. Aug 5, Aug 6, Aug 7 2026 data)
-      teachingJournals.forEach((tj) => {
-        if (tj && tj.id) loadedTjMap.set(tj.id, tj);
-      });
-      loadedTj.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        if (rest && rest.id) loadedTjMap.set(rest.id, rest as TeachingJournal);
-      });
-      teachingJournals.length = 0;
-      teachingJournals.push(...Array.from(loadedTjMap.values()));
-      teachingJournals.forEach(tj => recordDocumentSignature("teachingJournals", tj));
-
-      // Load Treasurer Transactions (Safely merge so Dev & Public instances retain all records)
-      const loadedBnd = await mongoDb.collection("treasurerTransactions").find({}).toArray();
-      const loadedBndMap = new Map<string, TreasurerTransaction>();
-      treasurerTransactions.forEach((tx) => {
-        if (tx && tx.id) loadedBndMap.set(tx.id, tx);
-      });
-      loadedBnd.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        if (rest && rest.id) loadedBndMap.set(rest.id, rest as TreasurerTransaction);
-      });
-      treasurerTransactions.length = 0;
-      treasurerTransactions.push(...Array.from(loadedBndMap.values()));
-      treasurerTransactions.forEach(tx => recordDocumentSignature("treasurerTransactions", tx));
-      console.log(`[BOOT] Loaded and synchronized ${treasurerTransactions.length} treasurer transactions.`);
-
-      // Load other logs
-      const loadedDev = await mongoDb.collection("studentDevelopmentLogs").find({}).toArray();
-      studentDevelopmentLogs.length = 0;
-      loadedDev.forEach((d: any) => { const { _id, ...rest } = d; studentDevelopmentLogs.push(rest as any); recordDocumentSignature("studentDevelopmentLogs", rest); });
-
-      const loadedInf = await mongoDb.collection("studentInfractionLogs").find({}).toArray();
-      studentInfractionLogs.length = 0;
-      loadedInf.forEach((d: any) => { const { _id, ...rest } = d; studentInfractionLogs.push(rest as any); recordDocumentSignature("studentInfractionLogs", rest); });
-
-      const loadedCouns = await mongoDb.collection("studentCounselingLogs").find({}).toArray();
-      studentCounselingLogs.length = 0;
-      loadedCouns.forEach((d: any) => { const { _id, ...rest } = d; studentCounselingLogs.push(rest as any); recordDocumentSignature("studentCounselingLogs", rest); });
-
-      const loadedAnn = await mongoDb.collection("classAnnouncements").find({}).toArray();
-      classAnnouncements.length = 0;
-      loadedAnn.forEach((d: any) => { const { _id, ...rest } = d; classAnnouncements.push(rest as any); recordDocumentSignature("classAnnouncements", rest); });
-
-      const loadedMtg = await mongoDb.collection("classMeetingLogs").find({}).toArray();
-      classMeetingLogs.length = 0;
-      loadedMtg.forEach((d: any) => { const { _id, ...rest } = d; classMeetingLogs.push(rest as any); recordDocumentSignature("classMeetingLogs", rest); });
-
-      const loadedAss = await mongoDb.collection("merdekaAssessments").find({}).toArray();
-      merdekaAssessments.length = 0;
-      loadedAss.forEach((d: any) => { const { _id, ...rest } = d; merdekaAssessments.push(rest as any); recordDocumentSignature("merdekaAssessments", rest); });
-
-      // Load Class Schedules (Jadwal Pelajaran / Mengajar Waka Kurikulum)
-      const loadedSch = await mongoDb.collection("classSchedules").find({}).toArray();
-      if (loadedSch.length > 0) {
-        classSchedules.length = 0;
-        loadedSch.forEach((d: any) => {
-          const { _id, ...rest } = d;
-          const sch = rest as ClassSchedule;
-          classSchedules.push(sch);
-          recordDocumentSignature("classSchedules", sch);
-        });
-        console.log(`[BOOT] Loaded ${classSchedules.length} class schedules from MongoDB.`);
-      } else {
-        classSchedules.forEach(sch => recordDocumentSignature("classSchedules", sch));
-      }
-
-      const loadedProg = await mongoDb.collection("principalWorkPrograms").find({}).toArray();
-      principalWorkPrograms.length = 0;
-      loadedProg.forEach((d: any) => { const { _id, ...rest } = d; principalWorkPrograms.push(rest as any); recordDocumentSignature("principalWorkPrograms", rest); });
-
-      const loadedEval = await mongoDb.collection("teacherEvaluations").find({}).toArray();
-      teacherEvaluations.length = 0;
-      loadedEval.forEach((d: any) => { const { _id, ...rest } = d; teacherEvaluations.push(rest as any); recordDocumentSignature("teacherEvaluations", rest); });
-
-      const loadedRules = await mongoDb.collection("infractionRules").find({}).toArray();
-      infractionRules.length = 0;
-      loadedRules.forEach((d: any) => { const { _id, ...rest } = d; infractionRules.push(rest as any); recordDocumentSignature("infractionRules", rest); });
-
-      const loadedSItems = await mongoDb.collection("sarprasItems").find({}).toArray();
-      sarprasItems.length = 0;
-      loadedSItems.forEach((d: any) => { const { _id, ...rest } = d; sarprasItems.push(rest as any); recordDocumentSignature("sarprasItems", rest); });
-
-      const loadedSProp = await mongoDb.collection("sarprasProposals").find({}).toArray();
-      sarprasProposals.length = 0;
-      loadedSProp.forEach((d: any) => { const { _id, ...rest } = d; sarprasProposals.push(rest as any); recordDocumentSignature("sarprasProposals", rest); });
-
-      const loadedSLoans = await mongoDb.collection("sarprasLoans").find({}).toArray();
-      sarprasLoans.length = 0;
-      loadedSLoans.forEach((d: any) => { const { _id, ...rest } = d; sarprasLoans.push(rest as any); recordDocumentSignature("sarprasLoans", rest); });
-
-      const loadedSalaries = await mongoDb.collection("teacherSalaries").find({}).toArray();
-      teacherSalaries.length = 0;
-      loadedSalaries.forEach((d: any) => { const { _id, ...rest } = d; teacherSalaries.push(rest as any); recordDocumentSignature("teacherSalaries", rest); });
-
-      // Load SPMB Candidates safely (2-way non-destructive merge between local file & MongoDB cloud)
-      const loadedCandidates = await mongoDb.collection("spmbCandidates").find({}).toArray();
-      const candMap = new Map<string, SpmbCandidate>();
-      
-      // Preserve any candidate present in local data_store.json
-      spmbCandidates.forEach(cand => {
-        const key = String(cand.id || cand.nisn || '').trim();
-        if (key) candMap.set(key, cand);
-      });
-
-      // Merge MongoDB cloud records
-      loadedCandidates.forEach((d: any) => {
-        const { _id, ...rest } = d;
-        const cand = rest as SpmbCandidate;
-        const key = String(cand.id || cand.nisn || '').trim();
-        if (key) {
-          const existing = candMap.get(key);
-          if (!existing) {
-            candMap.set(key, cand);
-          } else {
-            // Keep the more complete or recently updated record
-            const remoteTime = new Date(cand.updatedAt || cand.createdAt || 0).getTime();
-            const localTime = new Date(existing.updatedAt || existing.createdAt || 0).getTime();
-            if (remoteTime >= localTime || (!existing.tokenPaid && cand.tokenPaid) || (!existing.reRegistrationPaid && cand.reRegistrationPaid)) {
-              candMap.set(key, { ...existing, ...cand });
-            } else {
-              candMap.set(key, { ...cand, ...existing });
-            }
-          }
-        }
-      });
-
-      spmbCandidates.length = 0;
-      spmbCandidates.push(...Array.from(candMap.values()));
-      spmbCandidates.forEach(cand => recordDocumentSignature("spmbCandidates", cand));
-      console.log(`[BOOT] Loaded & safely synchronized ${spmbCandidates.length} SPMB candidates from MongoDB & Local storage.`);
-
-      // Load Midtrans Transactions
-      try {
-        const loadedMtx = await mongoDb.collection("midtransTransactions").find({}).toArray();
-        const loadedMtxMap = new Map<string, MidtransTransactionRecord>();
-        midtransTransactions.forEach((tx) => {
-          if (tx && tx.orderId) loadedMtxMap.set(tx.orderId, tx);
-        });
-        loadedMtx.forEach((d: any) => {
-          const { _id, ...rest } = d;
-          if (rest && rest.orderId) loadedMtxMap.set(rest.orderId, rest as MidtransTransactionRecord);
-        });
-        midtransTransactions.length = 0;
-        midtransTransactions.push(...Array.from(loadedMtxMap.values()));
-        midtransTransactions.forEach(tx => recordDocumentSignature("midtransTransactions", tx));
-        console.log(`[BOOT] Loaded & synchronized ${midtransTransactions.length} Midtrans transactions from MongoDB.`);
-      } catch (errMtx) {
-        console.warn("Failed loading midtransTransactions collection:", errMtx);
-      }
-
-      // Auto sync any historical transactions from other collections
-      autoSyncHistoricalMidtransTransactions();
-
-      // Load configurations
-      const loadedConfigs = await mongoDb.collection("configs").find({}).toArray();
-      loadedConfigs.forEach((d: any) => {
-        const id = d.id;
-        const { _id, ...cleaned } = d;
-        if (id === "sppRates") Object.assign(sppRates, cleaned);
-        else if (id === "schoolIdentity") Object.assign(schoolIdentity, cleaned);
-        else if (id === "midtransConfig") Object.assign(midtransConfig, cleaned);
-        else if (id === "whatsappConfig") Object.assign(whatsappConfig, cleaned);
-        else if (id === "treasurerConfig") Object.assign(treasurerConfig, cleaned);
-        else if (id === "principalConfig") Object.assign(principalConfig, cleaned);
-        else if (id === "sarprasConfig") Object.assign(sarprasConfig, cleaned);
-        else if (id === "bkConfig") Object.assign(bkConfig, cleaned);
-        else if (id === "curriculumConfig") Object.assign(curriculumConfig, cleaned);
-        else if (id === "adminConfig") Object.assign(adminConfig, cleaned);
-        else if (id === "spmbConfig") Object.assign(spmbConfig, cleaned);
-        else if (id === "salaryConfig") Object.assign(salaryConfig, cleaned);
-        else if (id === "backupConfig") Object.assign(backupConfig, cleaned);
-        recordConfigSignature(id, cleaned);
-      });
-
-      // Load database backups
-      try {
-        const loadedBackups = await mongoDb.collection("databaseBackups").find({}).toArray();
-        databaseBackups.length = 0;
-        loadedBackups.forEach((d: any) => {
-          const { _id, ...rest } = d;
-          databaseBackups.push(rest);
-        });
-        console.log(`[BOOT] Loaded ${databaseBackups.length} database backups from MongoDB.`);
-      } catch (errBk) {
-        console.warn("Failed loading databaseBackups collection:", errBk);
-      }
-
-      // Reconstruct missing uploaded files back onto physical disk from MongoDB backup
-      try {
-        const uploadDir = path.join(process.cwd(), "uploads");
-        if (!fs.existsSync(uploadDir)) {
-          fs.mkdirSync(uploadDir, { recursive: true });
-        }
-        const filesCol = mongoDb.collection("uploadedFiles");
-        const storedFiles = await filesCol.find({}).toArray();
-        console.log(`[BOOT] Found ${storedFiles.length} backed-up files in MongoDB. Verifying local disk files...`);
-        storedFiles.forEach((fileDoc: any) => {
-          if (fileDoc.filename && fileDoc.base64Data) {
-            const destPath = path.join(uploadDir, fileDoc.filename);
-            if (!fs.existsSync(destPath)) {
-              try {
-                const fileBuffer = Buffer.from(fileDoc.base64Data, "base64");
-                fs.writeFileSync(destPath, fileBuffer);
-                console.log(`[BOOT] Successfully restored missing file onto disk: ${fileDoc.filename} (${fileDoc.size} bytes)`);
-              } catch (writeErr: any) {
-                console.error(`[BOOT] Failed to write file ${fileDoc.filename} back to disk:`, writeErr.message || writeErr);
-              }
-            }
-          }
-        });
-      } catch (errFile: any) {
-        console.error("[BOOT] Failed to query and reconstruct backed-up files from MongoDB:", errFile.message || errFile);
-      }
-
-      dbSyncStatus = "Synced (Loaded from MongoDB)";
-      lastSyncTime = new Date().toISOString();
-      dbSyncError = null;
-      isInitialSyncCompleted = true;
-      console.log("Connected successfully. State has been loaded from MongoDB.");
-      
-      // Save loaded MongoDB state to local data_store.json file as well
-      saveState(true);
-      purgeMidtransAutoReconciliation();
-    } else {
-      console.log("No remote database documents. Performing initial MongoDB seeding...");
-      dbSyncStatus = "Syncing (Uploading Seed)";
-      isInitialSyncCompleted = true;
-      await saveStateToFirestore();
-      purgeMidtransAutoReconciliation();
-      dbSyncStatus = "Synced (Initial Seed Completed)";
-      lastSyncTime = new Date().toISOString();
-      dbSyncError = null;
-      console.log("Initial MongoDB seed completed.");
-    }
-  } catch (err: any) {
-    const rawError = err instanceof Error ? err.message : String(err);
-    
-    // Create a masked version of the URI we attempted
-    let maskedUri = "unknown";
-    try {
-      const match = uri.match(/^(mongodb(?:\+srv)?:\/\/)([^:]+):(.*)@([^/]+)(.*)$/);
-      if (match) {
-        const scheme = match[1];
-        const username = match[2];
-        const pass = match[3];
-        const host = match[4];
-        const rest = match[5];
-        const maskedPass = pass.substring(0, Math.min(3, pass.length)) + "*".repeat(Math.max(0, pass.length - 4)) + pass.substring(Math.max(0, pass.length - 1));
-        maskedUri = `${scheme}${username}:${maskedPass}@${host}${rest}`;
-      }
-    } catch (_) {}
-
-    if (rawError.includes("bad auth") || rawError.includes("authentication failed") || rawError.includes("auth failed")) {
-      dbSyncStatus = "Blocked (Bad Credentials)";
-      dbSyncError = "Koneksi ke MongoDB Atlas gagal karena autentikasi (username/password) ditolak oleh basis data Anda.\n\n" +
-                    `URI yang dicoba (Masked): ${maskedUri}\n\n` +
-                    "⚠️ CARA MEMPERBAIKI:\n" +
-                    "1. Buka Settings -> Secrets di panel sebelah kanan AI Studio Anda.\n" +
-                    "2. Cari variabel bernama MONGODB_URI.\n" +
-                    "3. Jika ada, edit nilainya dengan string koneksi baru Anda, pastikan password ditulis dengan benar (contoh: Sparifda20519113).\n" +
-                    "4. Jika tidak ada, tambahkan MONGODB_URI baru atau periksa apakah konfigurasi di server.ts sudah benar.\n" +
-                    "5. Setelah itu, klik tombol 'SINKRONISASI DATABASES' di menu konfigurasi Admin untuk mencoba kembali.";
-    } else if (
-      rawError.includes("alert internal error") ||
-      rawError.includes("SSL routines") ||
-      rawError.includes("MongoServerSelectionError") ||
-      rawError.includes("MongoNetworkError") ||
-      rawError.includes("SSL alert")
-    ) {
-      dbSyncStatus = "Blocked (Firewall/IP Whitelist)";
-      dbSyncError = "Koneksi ke MongoDB Atlas gagal karena IP server aplikasi ini diblokir (Firewall / IP Access List di MongoDB Atlas).\n\n" +
-                    `URI yang dicoba (Masked): ${maskedUri}\n\n` +
-                    "⚠️ CARA MEMPERBAIKI:\n" +
-                    "1. Buka dashboard MongoDB Atlas Anda di https://cloud.mongodb.com\n" +
-                    "2. Pada menu kiri, pilih 'Network Access' di bawah kategori 'Security'.\n" +
-                    "3. Klik tombol '+ Add IP Address'.\n" +
-                    "4. Pilih opsi 'Allow Access From Anywhere' (menambahkan IP '0.0.0.0/0') lalu klik 'Confirm'.\n" +
-                    "5. Setelah statusnya 'Active' (kurang dari 1 menit), klik tombol 'SINKRONISASI DATABASES' di menu konfigurasi Admin untuk menyinkronkan kembali.";
-    } else {
-      dbSyncStatus = "Failed";
-      dbSyncError = `Error: ${rawError}\nURI: ${maskedUri}`;
-    }
-    console.error("MongoDB starting sync error:", err);
-    isInitialSyncCompleted = true; // Allow local operations if sync fails fallback
-  }
+  // MongoDB is deprecated. Purely MySQL Primary Authoritative Database.
+  return { success: true, message: "Sistem beroperasi murni dengan MySQL sebagai Primary Authoritative Database." };
 }
 
 function saveState(skipRemoteSync: boolean = false) {
@@ -2298,9 +1495,8 @@ function saveState(skipRemoteSync: boolean = false) {
     const tempPath = DATA_FILE + ".tmp";
     fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
     fs.renameSync(tempPath, DATA_FILE);
-    // Asynchronously update to MongoDB Cluster via serialized queue
+    // Persist configuration changes directly to MySQL app_configs table
     if (!skipRemoteSync) {
-      triggerFirestoreSync();
       saveConfigToMysql("midtransConfig", midtransConfig).catch(() => {});
       saveConfigToMysql("schoolIdentity", schoolIdentity).catch(() => {});
       saveConfigToMysql("sppRates", sppRates).catch(() => {});
@@ -2867,33 +2063,75 @@ async function sendWhatsappNotification(phoneNumber: string, message: string): P
 }
 
 async function startServer() {
-  console.log("Loading local database state from JSON store...");
+  console.log("=================================================");
+  console.log(" [STARTUP] SMP MA'ARIF NU PANDAAN - START SERVER");
+  console.log("=================================================");
+  
+  // 1. Load initial local backup/cache first as safe baseline
   try {
     loadState();
-    isInitialSyncCompleted = true;
-
-    // Automatically pull latest records from MySQL if connected
-    try {
-      console.log("[MySQL Auto-Load] Checking remote MySQL database for updated records...");
-      const mysqlPull = await pullDataFromMysql();
-      if (mysqlPull.success && mysqlPull.data) {
-        console.log(`[MySQL Auto-Load] Berhasil memuat ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.treasurerTransactions || 0} mutasi kas, ${mysqlPull.counts?.sppBills || 0} SPP dari remote MySQL!`);
-        applyDataFromMysql(mysqlPull.data);
-      }
-    } catch (mysqlErr: any) {
-      console.warn("[MySQL Auto-Load] Info:", mysqlErr.message || mysqlErr);
-    }
-
-    if (process.env.ENABLE_MONGODB === "true" && process.env.MONGODB_URI) {
-      await syncWithFirestore();
-    } else {
-      await disconnectMongoDB();
-      console.log("[MongoDB] Connection is disconnected. Server running seamlessly on Local Storage & MySQL.");
-    }
-  } catch (err) {
-    console.error("Initial database load warning:", err);
-    isInitialSyncCompleted = true;
+  } catch (e) {
+    console.warn("Local state load warning:", e);
   }
+
+  // 2. Connect MySQL & Test Connection
+  try {
+    loadMysqlConfig();
+    const mysqlCfg = getSanitizedConfig();
+    const hasConfig = !!(mysqlCfg.host && mysqlCfg.database && mysqlCfg.user);
+
+    if (hasConfig) {
+      console.log(`[STARTUP] Menghubungkan ke MySQL database "${mysqlCfg.database}" di ${mysqlCfg.host}:${mysqlCfg.port}...`);
+      const testRes = await testMysqlConnection();
+      
+      if (testRes.success) {
+        mysqlDatabaseStatus = "ONLINE";
+        mysqlDatabaseError = null;
+        dbSyncStatus = "DATABASE MYSQL ONLINE";
+        dbSyncError = null;
+        lastMysqlSyncTime = new Date().toISOString();
+        console.log(`[STARTUP] ✅ Test connection BERHASIL. MySQL Server: ${testRes.serverVersion}, Database: ${testRes.databaseName}`);
+        
+        // Pastikan tabel siap
+        await ensureAllMysqlTablesExist();
+
+        // 3. SELECT data dari MySQL -> 4. Isi memory/cache
+        console.log("[STARTUP] Mengambil data langsung dari MySQL (Primary Database)...");
+        const mysqlPull = await pullDataFromMysql();
+        if (mysqlPull.success && mysqlPull.data) {
+          applyDataFromMysql(mysqlPull.data);
+          console.log(`[STARTUP] ✅ Memory/cache berhasil diisi dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.treasurerTransactions || 0} kas, ${mysqlPull.counts?.sppBills || 0} SPP.`);
+        } else {
+          console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
+        }
+      } else {
+        // Perlindungan jika MySQL gagal konek
+        mysqlDatabaseStatus = "OFFLINE";
+        mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
+        dbSyncStatus = "DATABASE MYSQL OFFLINE";
+        dbSyncError = mysqlDatabaseError;
+        console.error("=================================================");
+        console.error(" [PERINGATAN KRUSIAL] DATABASE MYSQL OFFLINE");
+        console.error(" Alasan:", mysqlDatabaseError);
+        console.error(" Server tetap berjalan dalam status OFFLINE untuk mencegah penimpaan data.");
+        console.error("=================================================");
+      }
+    } else {
+      console.log("[STARTUP] Konfigurasi MySQL belum diatur di .env / sistem. Menjalankan dalam mode lokal.");
+      mysqlDatabaseStatus = "DISCONNECTED";
+      dbSyncStatus = "MYSQL BELUM DIKONFIGURASI";
+    }
+  } catch (err: any) {
+    console.error("[STARTUP ERROR] Kesalahan inisialisasi MySQL:", err.message || err);
+    mysqlDatabaseStatus = "OFFLINE";
+    mysqlDatabaseError = err.message || String(err);
+    dbSyncStatus = "DATABASE MYSQL OFFLINE";
+    dbSyncError = mysqlDatabaseError;
+  }
+
+  isInitialSyncCompleted = true;
+  console.log(" [STARTUP] ✅ Server siap.");
+  console.log("=================================================");
 
   const app = express();
   app.use(express.json({ limit: '100mb' }));
@@ -2964,35 +2202,6 @@ async function startServer() {
     const host = req.get("host");
     const fileUrl = `${protocol}://${host}/uploads/${uploadedFile.filename}`;
 
-    try {
-      // Save file binary as base64 to MongoDB for permanent persistent recovery across ephemeral restarts
-      if (mongoDb) {
-        const filePath = path.join(uploadDir, uploadedFile.filename);
-        if (fs.existsSync(filePath)) {
-          const fileBuffer = fs.readFileSync(filePath);
-          const base64Data = fileBuffer.toString("base64");
-          
-          const filesCol = mongoDb.collection("uploadedFiles");
-          await filesCol.replaceOne(
-            { id: uploadedFile.filename },
-            {
-              id: uploadedFile.filename,
-              filename: uploadedFile.filename,
-              originalName: uploadedFile.originalname,
-              size: uploadedFile.size,
-              mimetype: uploadedFile.mimetype,
-              base64Data: base64Data,
-              createdAt: new Date().toISOString()
-            },
-            { upsert: true }
-          );
-          console.log(`Successfully backed up uploaded file to MongoDB: ${uploadedFile.filename}`);
-        }
-      }
-    } catch (err: any) {
-      console.error("Failed to back up uploaded file to MongoDB:", err.message || err);
-    }
-
     res.json({
       success: true,
       url: fileUrl,
@@ -3054,17 +2263,10 @@ async function startServer() {
         fs.unlinkSync(filePath);
       }
 
-      // Explicitly clean from MongoDB of any backup as well
-      if (mongoDb) {
-        const filesCol = mongoDb.collection("uploadedFiles");
-        await filesCol.deleteOne({ id: safeFilename });
-        console.log(`Successfully removed uploaded file backup from MongoDB: ${safeFilename}`);
-      }
-
       if (fileExistsOnDisk) {
         res.json({ success: true, message: "File berhasil dihapus" });
       } else {
-        res.json({ success: true, message: "File dibersihkan dari backup basis data" });
+        res.json({ success: true, message: "File tidak ditemukan di disk" });
       }
     } catch (err) {
       console.error("Error deleting file:", err);
@@ -3072,45 +2274,25 @@ async function startServer() {
     }
   });
 
-  // Force database synchronization / disconnection with MongoDB
+  // Force database synchronization / status check for MySQL
   app.post("/api/admin/force-firestore-sync", async (req, res) => {
-    try {
-      const direction = req.body?.direction || "disconnect";
-      if (direction === "disconnect") {
-        console.log("Admin requested MongoDB disconnection...");
-        await disconnectMongoDB();
-      } else if (direction === "push") {
-        console.log("Admin triggered manual MongoDB synchronization (Force Push Local -> Remote)...");
-        await syncWithFirestore(true);
-      } else {
-        console.log("Admin triggered manual MongoDB synchronization (Force Pull Remote -> Local)...");
-        await syncWithFirestore(false);
-      }
-      res.json({
-        success: true,
-        status: dbSyncStatus,
-        lastSync: lastSyncTime,
-        error: dbSyncError
-      });
-    } catch (err: any) {
-      console.error("Manual MongoDB operation failed:", err);
-      res.status(500).json({ success: false, error: err.message || String(err) });
-    }
+    res.json({
+      success: true,
+      status: mysqlDatabaseStatus === "ONLINE" ? "DATABASE MYSQL ONLINE" : "DATABASE MYSQL OFFLINE",
+      lastSync: lastMysqlSyncTime || new Date().toISOString(),
+      error: mysqlDatabaseError,
+      message: "Sistem beroperasi murni dengan MySQL sebagai Primary Database."
+    });
   });
 
-  // Dedicated explicit endpoint to disconnect MongoDB
+  // Dedicated endpoint indicating MongoDB is decommissioned
   app.post("/api/admin/mongodb/disconnect", async (req, res) => {
-    try {
-      await disconnectMongoDB();
-      res.json({
-        success: true,
-        message: "Koneksi MongoDB berhasil diputuskan. Sistem saat ini beroperasi dengan Penyimpanan Lokal (data_store.json) dan Integrasi MySQL.",
-        status: dbSyncStatus,
-        lastSync: lastSyncTime
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || String(err) });
-    }
+    res.json({
+      success: true,
+      message: "Sistem telah sepenuhnya menggunakan MySQL sebagai Primary Database. MongoDB dinonaktifkan.",
+      status: "MYSQL PRIMARY",
+      lastSync: lastMysqlSyncTime || new Date().toISOString()
+    });
   });
 
   // Database Backups - Get Backups List and Config
@@ -3142,9 +2324,7 @@ async function startServer() {
 
       backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
 
-      if (mongoDb) {
-        await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
-      }
+      saveConfigToMysql("backupConfig", backupConfig).catch(() => {});
       saveState();
 
       res.json({ success: true, config: backupConfig });
@@ -3472,13 +2652,6 @@ async function startServer() {
         data: snapshotStr
       };
 
-      if (mongoDb) {
-        await executeMongoOperationWithRetry(async () => {
-          const col = mongoDb.collection("databaseBackups");
-          await col.insertOne({ ...newBackup, _id: backupId });
-        });
-      }
-
       databaseBackups.push(newBackup);
 
       // Enforce max count
@@ -3488,26 +2661,13 @@ async function startServer() {
         for (const item of toRemove) {
           const idx = databaseBackups.findIndex(b => b.id === item.id);
           if (idx > -1) databaseBackups.splice(idx, 1);
-          if (mongoDb) {
-            try {
-              await executeMongoOperationWithRetry(async () => {
-                await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: item.id }, { id: item.id }] });
-              });
-            } catch (delErr) {
-              console.warn("Failed to prune old backup from MongoDB:", delErr);
-            }
-          }
         }
       }
 
       backupConfig.lastBackupTime = createdAt;
       backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
 
-      if (mongoDb) {
-        await executeMongoOperationWithRetry(async () => {
-          await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
-        });
-      }
+      saveConfigToMysql("backupConfig", backupConfig).catch(() => {});
       saveState();
 
       res.json({ success: true, backup: { id: backupId, createdAt, sizeBytes, description: newBackup.description } });
@@ -3581,15 +2741,6 @@ async function startServer() {
 
       databaseBackups.splice(idx, 1);
 
-      if (mongoDb) {
-        try {
-          await executeMongoOperationWithRetry(async () => {
-            await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: id }, { id: id }] });
-          });
-        } catch (dbErr: any) {
-          console.warn("MongoDB backup deletion warning (in-memory deleted):", dbErr?.message || dbErr);
-        }
-      }
       saveState();
 
       res.json({ success: true, message: "Backup data berhasil dihapus." });
@@ -4366,10 +3517,9 @@ async function startServer() {
     }
 
     saveState();
-    await saveStateToFirestore();
 
-    if (mongoDb && logToDelete) {
-      deleteDocFromFirestore("attendanceLogs", id).catch(() => {});
+    if (logToDelete) {
+      removeEntity("attendanceLogs", id).catch(() => {});
     }
 
     res.json({ success: true, message: "Data presensi berhasil dihapus", removedCount: initialLen - attendanceLogs.length });
@@ -4411,12 +3561,9 @@ async function startServer() {
     });
 
     saveState();
-    await saveStateToFirestore();
 
-    if (mongoDb) {
-      for (const log of logsToRemove) {
-        deleteDocFromFirestore("attendanceLogs", log.id).catch(() => {});
-      }
+    for (const log of logsToRemove) {
+      removeEntity("attendanceLogs", log.id).catch(() => {});
     }
 
     res.json({ 
@@ -6730,76 +5877,35 @@ async function startServer() {
     });
 
     treasurerConfig.categories = cleaned;
+    saveConfigToMysql("treasurerConfig", treasurerConfig).catch(() => {});
     saveState();
-    if (mongoDb && isInitialSyncCompleted) {
-      try {
-        await mongoDb.collection("configs").replaceOne(
-          { id: "treasurerConfig" },
-          { id: "treasurerConfig", ...treasurerConfig },
-          { upsert: true }
-        );
-      } catch (e) {
-        console.error("Failed saving treasurer categories to Mongo config:", e);
-      }
-    }
     res.json({ success: true, categories: treasurerConfig.categories });
   });
 
   // Dedicated instant bi-directional sync endpoint for Bendahara
   app.get("/api/treasurer/sync", async (req, res) => {
     try {
-      // Try pulling from MySQL if configured
-      try {
-        const pullRes = await pullDataFromMysql();
-        if (pullRes.success && pullRes.data) {
-          applyDataFromMysql(pullRes.data);
-          return res.json({
-            success: true,
-            status: "connected",
-            count: treasurerTransactions.length,
-            lastSync: new Date().toISOString(),
-            message: `Berhasil sinkronisasi langsung dari database MySQL / phpMyAdmin (${treasurerTransactions.length} mutasi kas, ${students.length} siswa).`
-          });
-        }
-      } catch (mysqlErr) {
-        console.warn("[Treasurer Sync] MySQL pull attempt:", mysqlErr);
-      }
-
-      if (mongoDb && isInitialSyncCompleted) {
-        const remoteTxs = await mongoDb.collection("treasurerTransactions").find({}).toArray();
-        const txMap = new Map<string, TreasurerTransaction>();
-        treasurerTransactions.forEach(t => { if (t && t.id) txMap.set(t.id, t); });
-        remoteTxs.forEach((d: any) => {
-          const { _id, ...rest } = d;
-          if (rest && rest.id) txMap.set(rest.id, rest as TreasurerTransaction);
-        });
-        treasurerTransactions.length = 0;
-        treasurerTransactions.push(...Array.from(txMap.values()));
-        saveState();
-
-        // Also sync categories config from MongoDB if present
-        const remoteConfig = await mongoDb.collection("configs").findOne({ id: "treasurerConfig" });
-        if (remoteConfig && Array.isArray(remoteConfig.categories) && remoteConfig.categories.length > 0) {
-          treasurerConfig.categories = remoteConfig.categories;
-        }
-
+      // Pull latest from MySQL
+      const pullRes = await pullDataFromMysql();
+      if (pullRes.success && pullRes.data) {
+        applyDataFromMysql(pullRes.data);
         return res.json({
           success: true,
           status: "connected",
           count: treasurerTransactions.length,
           lastSync: new Date().toISOString(),
-          message: `Berhasil sinkronisasi otomatis dengan Cloud (${treasurerTransactions.length} transaksi).`
+          message: `Berhasil sinkronisasi langsung dari database MySQL (${treasurerTransactions.length} mutasi kas, ${students.length} siswa).`
         });
       }
       res.json({
         success: true,
-        status: "local",
+        status: mysqlDatabaseStatus === "ONLINE" ? "connected" : "local",
         count: treasurerTransactions.length,
-        lastSync: new Date().toISOString(),
-        message: `Tersimpan di local cache (${treasurerTransactions.length} transaksi).`
+        lastSync: lastMysqlSyncTime || new Date().toISOString(),
+        message: `Status database MySQL: ${mysqlDatabaseStatus}`
       });
     } catch (err: any) {
-      res.status(500).json({ success: false, error: err.message || String(err) });
+      res.status(500).json({ error: err.message || "Gagal sinkronisasi data bendahara" });
     }
   });
 
@@ -6844,8 +5950,8 @@ async function startServer() {
 
     treasurerTransactions.push(sourceTx, targetTx);
     saveState();
-    upsertDocToMongoDB("treasurerTransactions", sourceTx).catch(() => {});
-    upsertDocToMongoDB("treasurerTransactions", targetTx).catch(() => {});
+    persistEntity("treasurerTransactions", sourceTx).catch(() => {});
+    persistEntity("treasurerTransactions", targetTx).catch(() => {});
     res.json({ success: true, sourceTransaction: sourceTx, targetTransaction: targetTx });
   });
 
@@ -6893,7 +5999,7 @@ async function startServer() {
 
     treasurerTransactions.push(newTx);
     saveState();
-    upsertDocToMongoDB("treasurerTransactions", newTx).catch(() => {});
+    persistEntity("treasurerTransactions", newTx).catch(() => {});
     res.json({ success: true, transaction: newTx });
   });
 
@@ -6934,7 +6040,7 @@ async function startServer() {
 
     treasurerTransactions[txIndex] = updatedTx;
     saveState();
-    upsertDocToMongoDB("treasurerTransactions", updatedTx).catch(() => {});
+    persistEntity("treasurerTransactions", updatedTx).catch(() => {});
     res.json({ success: true, transaction: updatedTx });
   });
 
@@ -6948,7 +6054,7 @@ async function startServer() {
 
     treasurerTransactions.splice(txIndex, 1);
     saveState();
-    deleteDocFromFirestore("treasurerTransactions", id).catch(() => {});
+    removeEntity("treasurerTransactions", id).catch(() => {});
     res.json({ success: true, message: "Transaksi berhasil dihapus." });
   });
 
@@ -10437,13 +9543,6 @@ async function startServer() {
           data: snapshotStr
         };
 
-        if (mongoDb) {
-          await executeMongoOperationWithRetry(async () => {
-            const col = mongoDb.collection("databaseBackups");
-            await col.insertOne({ ...newBackup, _id: backupId });
-          });
-        }
-
         databaseBackups.push(newBackup);
 
         // Enforce max count
@@ -10453,24 +9552,12 @@ async function startServer() {
           for (const item of toRemove) {
             const idx = databaseBackups.findIndex(b => b.id === item.id);
             if (idx > -1) databaseBackups.splice(idx, 1);
-            if (mongoDb) {
-              try {
-                await executeMongoOperationWithRetry(async () => {
-                  await mongoDb.collection("databaseBackups").deleteOne({ $or: [{ _id: item.id }, { id: item.id }] });
-                });
-              } catch (delErr) {
-                console.warn("Failed to prune auto backup from MongoDB:", delErr);
-              }
-            }
           }
         }
 
         backupConfig.lastBackupTime = createdAt;
         backupConfig.nextBackupTime = new Date(Date.now() + backupConfig.intervalHours * 60 * 60 * 1000).toISOString();
 
-        if (mongoDb) {
-          await mongoDb.collection("configs").replaceOne({ id: "backupConfig" }, { ...backupConfig, id: "backupConfig" }, { upsert: true });
-        }
         saveState();
         console.log(`[AUTO-BACKUP ENGINE] Automated database backup successful: ${backupId}`);
       } catch (err: any) {
@@ -10478,43 +9565,6 @@ async function startServer() {
       }
     }
   }, 10 * 60 * 1000); // Check every 10 minutes
-
-  // Start background automated MySQL synchronization engine (Interval 1 Jam s/d 24 Jam)
-  setInterval(async () => {
-    try {
-      const mysqlCfg = getSanitizedConfig();
-      if (!mysqlCfg.autoSyncEnabled || !mysqlCfg.host || !mysqlCfg.database || !mysqlCfg.user || !mysqlCfg.hasPassword) {
-        return;
-      }
-
-      const intervalHours = Math.min(24, Math.max(1, Number(mysqlCfg.autoSyncIntervalHours) || 1));
-      const intervalMs = intervalHours * 60 * 60 * 1000;
-      const now = Date.now();
-
-      const lastTime = mysqlCfg.lastSyncAt ? new Date(mysqlCfg.lastSyncAt).getTime() : 0;
-      const nextTime = mysqlCfg.nextAutoSyncAt ? new Date(mysqlCfg.nextAutoSyncAt).getTime() : 0;
-
-      // Check if auto-sync is due:
-      // 1. nextAutoSyncAt is set and now >= nextAutoSyncAt
-      // 2. OR nextAutoSyncAt is not set/expired and (lastTime == 0 or now - lastTime >= intervalMs)
-      const isDue = (nextTime > 0 && now >= nextTime) || 
-                    (nextTime === 0 && (lastTime === 0 || (now - lastTime) >= intervalMs));
-
-      if (isDue) {
-        console.log(`[MYSQL AUTO-SYNC ENGINE] Interval ${intervalHours} Jam terpenuhi. Menjalankan sinkronisasi otomatis ke MySQL database "${mysqlCfg.database}"...`);
-        const { snapshot } = await buildFullBackupSnapshot();
-        const result = await syncDataToMysql(snapshot);
-
-        if (result.success) {
-          console.log(`[MYSQL AUTO-SYNC ENGINE] Sinkronisasi otomatis ke MySQL (${mysqlCfg.database}) BERHASIL: ${result.stats.students} siswa, ${result.stats.transactions} kas, ${result.stats.sppBills} SPP. Sinkronisasi berikutnya: ${result.syncedAt}`);
-        } else {
-          console.warn(`[MYSQL AUTO-SYNC ENGINE] Sinkronisasi otomatis ke MySQL GAGAL: ${result.error || result.message}`);
-        }
-      }
-    } catch (err: any) {
-      console.error("[MYSQL AUTO-SYNC ENGINE] Terjadi kesalahan pada proses auto-sync MySQL:", err.message || err);
-    }
-  }, 30 * 1000); // Check every 30 seconds
 }
 
 startServer();

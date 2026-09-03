@@ -11,6 +11,9 @@
   "connectionLimit": 10,
   "connectTimeout": 10000,
   "autoSyncEnabled": false,
+  "autoSyncIntervalHours": 1,
+  "autoSyncDirection": "push",
   "status": "connected",
-  "lastConnectedAt": "2026-08-28T18:23:21.404Z"
+  "lastConnectedAt": "2026-09-03T16:21:24.604Z",
+  "lastSyncAt": "2026-09-03T16:21:05.861Z"
 }

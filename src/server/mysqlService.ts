@@ -38,6 +38,20 @@ export function loadMysqlConfig(): MysqlDatabaseConfig {
         hasPassword: Boolean(parsed.password && parsed.password.length > 0)
       };
     }
+
+    // Environment variables take precedence if explicitly provided
+    if (process.env.MYSQL_HOST) currentConfig.host = process.env.MYSQL_HOST;
+    if (process.env.MYSQL_PORT) currentConfig.port = parseInt(process.env.MYSQL_PORT, 10);
+    if (process.env.MYSQL_DATABASE) currentConfig.database = process.env.MYSQL_DATABASE;
+    if (process.env.MYSQL_USER) currentConfig.user = process.env.MYSQL_USER;
+    if (process.env.MYSQL_PASSWORD !== undefined) {
+      currentConfig.password = process.env.MYSQL_PASSWORD;
+      currentConfig.hasPassword = Boolean(process.env.MYSQL_PASSWORD.length > 0);
+    }
+    if (process.env.MYSQL_PHPMYADMIN_URL) currentConfig.phpmyadminUrl = process.env.MYSQL_PHPMYADMIN_URL;
+    if (process.env.MYSQL_PRIMARY === 'true' || process.env.MYSQL_AUTO_SYNC === 'true') {
+      currentConfig.autoSyncEnabled = true;
+    }
   } catch (err) {
     console.error('Gagal membaca file konfigurasi MySQL:', err);
   }
@@ -2266,7 +2280,167 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       return { success: true, message: `Data slip gaji "${sal.teacherName}" langsung tersimpan ke MySQL.` };
     }
 
-    // 7. Configs / Master settings
+    // 7. Teaching Journals
+    else if (typeKey === 'journal' || typeKey === 'teaching_journal' || typeKey === 'teachingjournals') {
+      const j = data;
+      await connection.query(`
+        INSERT INTO \`teaching_journals\` (
+          \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`subject\`, \`class_name\`,
+          \`date\`, \`topic\`, \`attendance_data\`, \`notes\`, \`fase\`, \`semester\`,
+          \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`topic\`=VALUES(\`topic\`), \`attendance_data\`=VALUES(\`attendance_data\`),
+          \`notes\`=VALUES(\`notes\`), \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
+          \`pencapaian_kktp\`=VALUES(\`pencapaian_kktp\`)
+      `, [
+        j.id, j.teacherId || '', j.teacherName || '', j.teacherType || null, j.subject || '', j.className || '',
+        j.date || new Date().toISOString().substring(0, 10), j.topic || '',
+        typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || []),
+        j.notes || null, j.fase || null, j.semester || null, j.alokasiWaktu || null, j.jamKe || null,
+        j.pertemuanKe || null, j.tujuanPembelajaran || null, j.pencapaianKktp || null,
+        j.createdAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Jurnal mengajar "${j.topic}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 8. Attendance Logs
+    else if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
+      const att = data;
+      await connection.query(`
+        INSERT INTO \`attendance_logs\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`status\`=VALUES(\`status\`), \`notes\`=VALUES(\`notes\`), \`subject_notes\`=VALUES(\`subject_notes\`)
+      `, [
+        att.id, att.studentId || '', att.studentName || null, att.className || null,
+        att.date || new Date().toISOString().substring(0, 10), att.status || 'Hadir',
+        att.notes || null, att.subjectNotes ? JSON.stringify(att.subjectNotes) : null
+      ]);
+      return { success: true, message: `Log absensi siswa langsung tersimpan ke MySQL.` };
+    }
+
+    // 9. SPMB Candidates
+    else if (typeKey === 'spmb' || typeKey === 'spmb_candidate' || typeKey === 'spmbcandidates') {
+      const c = data;
+      await connection.query(`
+        INSERT INTO \`spmb_candidates\` (
+          \`id\`, \`nisn\`, \`nik\`, \`full_name\`, \`gender\`, \`birth_place\`, \`birth_date\`,
+          \`school_origin\`, \`address\`, \`parent_name\`, \`parent_phone\`, \`chosen_major\`,
+          \`status\`, \`registration_date\`, \`test_score\`, \`interview_notes\`,
+          \`token_paid\`, \`re_registration_paid\`, \`documents_verified\`, \`created_at\`, \`updated_at\`,
+          \`uniform_size\`, \`uniform_details\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`full_name\`=VALUES(\`full_name\`), \`status\`=VALUES(\`status\`),
+          \`token_paid\`=VALUES(\`token_paid\`), \`re_registration_paid\`=VALUES(\`re_registration_paid\`),
+          \`documents_verified\`=VALUES(\`documents_verified\`), \`updated_at\`=NOW()
+      `, [
+        c.id, c.nisn || '', c.nik || null, c.fullName || '', c.gender || 'Laki-laki',
+        c.birthPlace || null, c.birthDate || null, c.schoolOrigin || '', c.address || '',
+        c.parentName || '', c.parentPhone || '', c.chosenMajor || 'Reguler',
+        c.status || 'submitted', c.registrationDate || new Date().toISOString(),
+        c.testScore !== undefined ? Number(c.testScore) : null, c.interviewNotes || null,
+        c.tokenPaid ? 1 : 0, c.reRegistrationPaid ? 1 : 0, c.documentsVerified ? 1 : 0,
+        c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString(),
+        c.uniformSize || null, c.uniformDetails ? JSON.stringify(c.uniformDetails) : null
+      ]);
+      return { success: true, message: `Calon siswa SPMB "${c.fullName}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 10. Merdeka Assessments (Nilai Rapor)
+    else if (typeKey === 'assessment' || typeKey === 'merdeka' || typeKey === 'merdeka_assessment' || typeKey === 'merdekaassessments') {
+      const a = data;
+      await connection.query(`
+        INSERT INTO \`merdeka_assessments\` (
+          \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`subject\`, \`teacher_name\`,
+          \`semester\`, \`academic_year\`, \`tp1_name\`, \`tp1_tugas1\`, \`tp1_tugas2\`, \`tp1_uh\`, \`nilai_tp1\`,
+          \`tp2_name\`, \`tp2_tugas1\`, \`tp2_tugas2\`, \`tp2_uh\`, \`nilai_tp2\`,
+          \`tp3_name\`, \`tp3_tugas1\`, \`tp3_tugas2\`, \`tp3_uh\`, \`nilai_tp3\`,
+          \`tp4_name\`, \`tp4_tugas1\`, \`tp4_tugas2\`, \`tp4_uh\`, \`nilai_tp4\`,
+          \`nilai_rata_tp\`, \`nilai_kokurikuler\`, \`nilai_pts\`, \`nilai_pas\`, \`nilai_akhir_mapel\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`tp1_uh\`=VALUES(\`tp1_uh\`), \`nilai_tp1\`=VALUES(\`nilai_tp1\`),
+          \`nilai_rata_tp\`=VALUES(\`nilai_rata_tp\`), \`nilai_akhir_mapel\`=VALUES(\`nilai_akhir_mapel\`)
+      `, [
+        a.id, a.studentId || '', a.studentName || '', a.className || '', a.subject || '', a.teacherName || '',
+        a.semester || 'Ganjil', a.academicYear || '2026/2027',
+        a.tp1Name || null, a.tp1Tugas1 || null, a.tp1Tugas2 || null, a.tp1Uh || null, Number(a.nilaiTp1) || null,
+        a.tp2Name || null, a.tp2Tugas1 || null, a.tp2Tugas2 || null, a.tp2Uh || null, Number(a.nilaiTp2) || null,
+        a.tp3Name || null, a.tp3Tugas1 || null, a.tp3Tugas2 || null, a.tp3Uh || null, Number(a.nilaiTp3) || null,
+        a.tp4Name || null, a.tp4Tugas1 || null, a.tp4Tugas2 || null, a.tp4Uh || null, Number(a.nilaiTp4) || null,
+        Number(a.nilaiRataTp) || null, Number(a.nilaiKokurikuler) || null, Number(a.nilaiPts) || null,
+        Number(a.nilaiPas) || null, Number(a.nilaiAkhirMapel) || null
+      ]);
+      return { success: true, message: `Nilai rapor Merdeka langsung tersimpan ke MySQL.` };
+    }
+
+    // 11. Class Schedules (Jadwal Pelajaran)
+    else if (typeKey === 'schedule' || typeKey === 'class_schedule' || typeKey === 'classschedules') {
+      const sch = data;
+      await connection.query(`
+        INSERT INTO \`class_schedules\` (
+          \`id\`, \`class_name\`, \`academic_year\`, \`semester\`, \`created_at\`, \`schedule_data\`
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`schedule_data\`=VALUES(\`schedule_data\`)
+      `, [
+        sch.id, sch.className || '', sch.academicYear || '2026/2027', sch.semester || 'Ganjil',
+        sch.createdAt || new Date().toISOString(),
+        typeof sch.schedule === 'string' ? sch.schedule : JSON.stringify(sch.schedule || sch)
+      ]);
+      return { success: true, message: `Jadwal pelajaran kelas "${sch.className}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 12. Homeroom Teachers
+    else if (typeKey === 'homeroom' || typeKey === 'homeroom_teacher' || typeKey === 'homeroomteachers') {
+      const hr = data;
+      await connection.query(`
+        INSERT INTO \`homeroom_teachers\` (
+          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`
+        ) VALUES (?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
+      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null]);
+      return { success: true, message: `Wali kelas "${hr.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 13. Subject Teachers
+    else if (typeKey === 'subject_teacher' || typeKey === 'subjectteachers') {
+      const st = data;
+      await connection.query(`
+        INSERT INTO \`subject_teachers\` (
+          \`id\`, \`username\`, \`name\`, \`subject\`, \`class_name\`, \`password\`, \`sk_url\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`), \`subject\`=VALUES(\`subject\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
+      `, [st.id, st.username || '', st.name || '', st.subject || '', st.className || 'SEMUA KELAS', st.password || null, st.skUrl || null]);
+      return { success: true, message: `Guru mapel "${st.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 14. Sarpras Items
+    else if (typeKey === 'sarpras_item' || typeKey === 'sarprasitems') {
+      const s = data;
+      await connection.query(`
+        INSERT INTO \`sarpras_items\` (
+          \`id\`, \`name\`, \`code\`, \`category\`, \`room\`, \`condition_status\`,
+          \`quantity\`, \`unit\`, \`source\`, \`acquisition_date\`, \`price\`,
+          \`description\`, \`photo_url\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`name\`=VALUES(\`name\`), \`room\`=VALUES(\`room\`), \`condition_status\`=VALUES(\`condition_status\`),
+          \`quantity\`=VALUES(\`quantity\`), \`description\`=VALUES(\`description\`)
+      `, [
+        s.id, s.name || '', s.code || '', s.category || '', s.room || '', s.conditionStatus || 'Baik',
+        Number(s.quantity) || 0, s.unit || 'unit', s.source || '', s.acquisitionDate || '',
+        Number(s.price) || 0, s.description || null, s.photoUrl || null, s.createdAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Inventaris Sarpras "${s.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 15. Configs / Master settings
     else if (typeKey === 'config' || typeKey === 'app_config' || typeKey === 'appconfigs') {
       const configId = data.id || data.key || 'config';
       const configData = data.data !== undefined ? data.data : data;
@@ -2324,17 +2498,58 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
       miscbills: 'misc_bills',
       savings: 'savings_transactions',
       savings_transaction: 'savings_transactions',
+      savingstransactions: 'savings_transactions',
       transaction: 'treasurer_transactions',
       treasurer_transaction: 'treasurer_transactions',
+      treasurertransactions: 'treasurer_transactions',
       salary: 'teacher_salaries',
       teacher_salary: 'teacher_salaries',
+      teachersalaries: 'teacher_salaries',
       homeroom: 'homeroom_teachers',
+      homeroom_teacher: 'homeroom_teachers',
+      homeroomteachers: 'homeroom_teachers',
       subject_teacher: 'subject_teachers',
+      subjectteachers: 'subject_teachers',
       journal: 'teaching_journals',
+      teaching_journal: 'teaching_journals',
+      teachingjournals: 'teaching_journals',
       attendance: 'attendance_logs',
+      attendance_log: 'attendance_logs',
+      attendancelogs: 'attendance_logs',
+      assessment: 'merdeka_assessments',
+      merdeka: 'merdeka_assessments',
+      merdeka_assessment: 'merdeka_assessments',
+      merdekaassessments: 'merdeka_assessments',
+      schedule: 'class_schedules',
+      class_schedule: 'class_schedules',
+      classschedules: 'class_schedules',
       spmb: 'spmb_candidates',
       spmb_candidate: 'spmb_candidates',
+      spmbcandidates: 'spmb_candidates',
+      sarpras_item: 'sarpras_items',
+      sarprasitems: 'sarpras_items',
+      sarpras_proposal: 'sarpras_proposals',
+      sarprasproposals: 'sarpras_proposals',
+      sarpras_loan: 'sarpras_loans',
+      sarprasloans: 'sarpras_loans',
+      student_development_log: 'student_development_logs',
+      studentdevelopmentlogs: 'student_development_logs',
+      student_infraction_log: 'student_infraction_logs',
+      studentinfractionlogs: 'student_infraction_logs',
+      student_counseling_log: 'student_counseling_logs',
+      studentcounselinglogs: 'student_counseling_logs',
+      infraction_rule: 'infraction_rules',
+      infractionrules: 'infraction_rules',
+      class_announcement: 'class_announcements',
+      classannouncements: 'class_announcements',
+      class_meeting_log: 'class_meeting_logs',
+      classmeetinglogs: 'class_meeting_logs',
+      principal_work_program: 'principal_work_programs',
+      principalworkprograms: 'principal_work_programs',
+      teacher_evaluation: 'teacher_evaluations',
+      teacherevaluations: 'teacher_evaluations',
       notification: 'notifications',
+      notifications: 'notifications',
       config: 'app_configs'
     };
 
@@ -2361,7 +2576,7 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
 let debouncedSyncTimer: NodeJS.Timeout | null = null;
 let isSyncInProgress = false;
 
-export function triggerDebouncedMysqlSync(snapshotProvider: () => Promise<any> | any, delayMs: number = 1500) {
+export function triggerDebouncedMysqlSync(snapshotProvider: () => Promise<any> | any, delayMs: number = 1000) {
   if (debouncedSyncTimer) {
     clearTimeout(debouncedSyncTimer);
   }
@@ -2372,7 +2587,13 @@ export function triggerDebouncedMysqlSync(snapshotProvider: () => Promise<any> |
       isSyncInProgress = true;
       const snapshotData = await snapshotProvider();
       const snapshot = snapshotData?.snapshot || snapshotData;
-      if (snapshot && currentConfig.hasPassword && currentConfig.host && currentConfig.database) {
+      const isConfigured = Boolean(
+        currentConfig.host &&
+        currentConfig.database &&
+        currentConfig.user &&
+        (currentConfig.hasPassword || (currentConfig.password !== undefined && currentConfig.password !== '') || Boolean(process.env.MYSQL_PASSWORD))
+      );
+      if (snapshot && isConfigured) {
         await syncDataToMysql(snapshot);
         console.log('[MySQL Direct Background Sync] Berhasil melakukan autosave langsung ke MySQL.');
       }

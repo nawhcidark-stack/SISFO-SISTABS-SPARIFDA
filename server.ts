@@ -4725,6 +4725,17 @@ async function startServer() {
           j.teacherId = targetId;
           changed = true;
         }
+
+        // Normalize attendance array (handle legacy attendanceData or undefined)
+        if (!Array.isArray(j.attendance)) {
+          if (Array.isArray((j as any).attendanceData)) {
+            j.attendance = (j as any).attendanceData;
+            changed = true;
+          } else {
+            j.attendance = [];
+            changed = true;
+          }
+        }
       });
 
       if (changed) {

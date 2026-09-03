@@ -516,15 +516,19 @@ export default function SubjectTeacherPanel({
   };
 
   const filteredJournals = useMemo(() => {
-    let list = journals;
+    let list = Array.isArray(journals) ? journals : [];
     if (startDate) {
-      list = list.filter(journal => journal.date >= startDate);
+      list = list.filter(journal => journal.date && journal.date >= startDate);
     }
     if (endDate) {
-      list = list.filter(journal => journal.date <= endDate);
+      list = list.filter(journal => journal.date && journal.date <= endDate);
     }
     // Sort chronological (oldest to newest) for school logs printable order (No. 1 is earliest date)
-    return [...list].sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime() || new Date(a.createdAt || 0).getTime() - new Date(b.createdAt || 0).getTime());
+    return [...list].sort((a, b) => {
+      const timeA = a.date ? new Date(a.date).getTime() : (a.createdAt ? new Date(a.createdAt).getTime() : 0);
+      const timeB = b.date ? new Date(b.date).getTime() : (b.createdAt ? new Date(b.createdAt).getTime() : 0);
+      return (isNaN(timeA) ? 0 : timeA) - (isNaN(timeB) ? 0 : timeB);
+    });
   }, [journals, startDate, endDate]);
 
   // Load journals history
@@ -533,13 +537,23 @@ export default function SubjectTeacherPanel({
     try {
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
-        const data: TeachingJournal[] = await res.json();
-        setAllJournals(data);
+        const rawData = await res.json();
+        const data: TeachingJournal[] = Array.isArray(rawData) ? rawData : [];
+        const normalized = data.map((j: any) => ({
+          ...j,
+          attendance: Array.isArray(j.attendance)
+            ? j.attendance
+            : Array.isArray(j.attendanceData)
+              ? j.attendanceData
+              : []
+        }));
+        setAllJournals(normalized);
         // Filter journals belonging to current teacher (by teacherId, teacherName, or username)
-        const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
-        const cUser = currentTeacher.username ? currentTeacher.username.trim().toLowerCase() : '';
-        const filtered = data.filter(j => {
-          if (j.teacherId === currentTeacher.id) return true;
+        const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
+        const cUser = (currentTeacher as any)?.username ? (currentTeacher as any).username.trim().toLowerCase() : '';
+        const cId = currentTeacher?.id;
+        const filtered = normalized.filter(j => {
+          if (cId && j.teacherId === cId) return true;
           if (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName) return true;
           if (cUser && (j as any).username && (j as any).username.trim().toLowerCase() === cUser) return true;
           return false;
@@ -547,7 +561,7 @@ export default function SubjectTeacherPanel({
         setJournals(filtered);
       }
     } catch (err) {
-      console.error(err);
+      console.error("Gagal mengambil data riwayat jurnal:", err);
     } finally {
       setLoadingJournals(false);
     }
@@ -573,14 +587,17 @@ export default function SubjectTeacherPanel({
     setEditPencapaianKktp(journal.pencapaianKktp || 'Tercapai');
 
     const statusMap: Record<string, { status: string; notes: string }> = {};
-    if (Array.isArray(journal.attendance)) {
-      journal.attendance.forEach((att: any) => {
-        statusMap[att.studentId] = {
-          status: att.status || 'Hadir',
-          notes: att.notes || ''
-        };
-      });
-    }
+    const attList = Array.isArray(journal.attendance) 
+      ? journal.attendance 
+      : Array.isArray(journal.attendanceData) 
+        ? journal.attendanceData 
+        : [];
+    attList.forEach((att: any) => {
+      statusMap[att.studentId] = {
+        status: att.status || 'Hadir',
+        notes: att.notes || ''
+      };
+    });
     setEditDailyStatusMap(statusMap);
     setIsEditModalOpen(true);
   };
@@ -1992,12 +2009,27 @@ export default function SubjectTeacherPanel({
           ) : (
             <div className="divide-y divide-slate-100">
               {[...filteredJournals].reverse().map((journal) => {
-                const totalSiswa = journal.attendance.length;
-                const hadirCount = journal.attendance.filter(a => a.status === 'Hadir').length;
-                const terlambatCount = journal.attendance.filter(a => a.status === 'Terlambat').length;
-                const sakitCount = journal.attendance.filter(a => a.status === 'Sakit').length;
-                const izinCount = journal.attendance.filter(a => a.status === 'Izin').length;
-                const alpaCount = journal.attendance.filter(a => a.status === 'Alpa').length;
+                const attList = Array.isArray(journal.attendance) 
+                  ? journal.attendance 
+                  : Array.isArray((journal as any).attendanceData) 
+                    ? (journal as any).attendanceData 
+                    : [];
+                const totalSiswa = attList.length;
+                const hadirCount = attList.filter((a: any) => a.status === 'Hadir').length;
+                const terlambatCount = attList.filter((a: any) => a.status === 'Terlambat').length;
+                const sakitCount = attList.filter((a: any) => a.status === 'Sakit').length;
+                const izinCount = attList.filter((a: any) => a.status === 'Izin').length;
+                const alpaCount = attList.filter((a: any) => a.status === 'Alpa').length;
+
+                const formattedDate = (() => {
+                  if (!journal.date) return '-';
+                  try {
+                    const d = new Date(journal.date);
+                    return isNaN(d.getTime()) ? journal.date : d.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                  } catch {
+                    return journal.date;
+                  }
+                })();
 
                 return (
                   <div key={journal.id} className="p-5 hover:bg-slate-50/40 transition-all flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -2011,7 +2043,7 @@ export default function SubjectTeacherPanel({
                         </span>
                         <span className="text-xs text-slate-400 font-semibold flex items-center gap-1 font-sans">
                           <Calendar size={12} />
-                          {new Date(journal.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}
+                          {formattedDate}
                         </span>
                       </div>
 
@@ -2055,7 +2087,7 @@ export default function SubjectTeacherPanel({
 
                       {/* Display of non-present student names */}
                       {(() => {
-                        const nonPresent = (journal.attendance || []).filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+                        const nonPresent = attList.filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
                         if (nonPresent.length > 0) {
                           return (
                             <div className="mt-2 text-xs text-slate-700 leading-relaxed bg-rose-50/20 border border-slate-150 rounded-xl p-2.5 max-w-xl">
@@ -3146,67 +3178,85 @@ export default function SubjectTeacherPanel({
                   {historyDetailJournal.topic}
                 </p>
                 <div className="flex gap-4 items-center text-[11px] font-semibold text-slate-500 mt-3 border-t border-slate-150 pt-3">
-                  <span>Tanggal: <strong className="text-slate-800">{new Date(historyDetailJournal.date).toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' })}</strong></span>
+                  <span>Tanggal: <strong className="text-slate-800">{(() => {
+                    if (!historyDetailJournal.date) return '-';
+                    try {
+                      const d = new Date(historyDetailJournal.date);
+                      return isNaN(d.getTime()) ? historyDetailJournal.date : d.toLocaleDateString('id-ID', { year: 'numeric', month: 'long', day: 'numeric' });
+                    } catch {
+                      return historyDetailJournal.date;
+                    }
+                  })()}</strong></span>
                   <span className="w-1.5 h-1.5 rounded-full bg-slate-300" />
-                  <span>Total Absensi: <strong className="text-slate-800">{historyDetailJournal.attendance.length} Siswa</strong></span>
+                  <span>Total Absensi: <strong className="text-slate-800">{
+                    (Array.isArray(historyDetailJournal.attendance) 
+                      ? historyDetailJournal.attendance 
+                      : Array.isArray((historyDetailJournal as any).attendanceData) 
+                        ? (historyDetailJournal as any).attendanceData 
+                        : []
+                    ).length
+                  } Siswa</strong></span>
                 </div>
               </div>
 
               {/* Rekap Absensi (Cukup Rekap Saja) */}
               <div className="p-6 bg-slate-50 border-b border-slate-100 flex flex-col gap-4">
                 <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider block">REKAPITULASI PRESENSI KBM</span>
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                  <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-emerald-800 uppercase">Hadir</span>
-                    <span className="block text-xl font-extrabold text-emerald-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length}
-                    </span>
-                  </div>
-                  <div className="bg-sky-50 border border-sky-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-sky-800 uppercase">Sakit</span>
-                    <span className="block text-xl font-extrabold text-sky-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Sakit').length}
-                    </span>
-                  </div>
-                  <div className="bg-indigo-50 border border-indigo-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-indigo-800 uppercase">Izin</span>
-                    <span className="block text-xl font-extrabold text-indigo-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Izin').length}
-                    </span>
-                  </div>
-                  <div className="bg-rose-50 border border-rose-150 rounded-2xl p-3 text-center">
-                    <span className="block text-[10px] font-bold text-rose-800 uppercase">Alpa</span>
-                    <span className="block text-xl font-extrabold text-rose-900 mt-1">
-                      {historyDetailJournal.attendance.filter(a => a.status === 'Alpa').length}
-                    </span>
-                  </div>
-                </div>
-
-                {/* List of non-present students */}
                 {(() => {
-                  const nonPresent = historyDetailJournal.attendance.filter(a => a.status !== 'Hadir' && a.status !== 'Terlambat');
-                  if (nonPresent.length > 0) {
-                    return (
-                      <div className="bg-white border border-slate-150 rounded-xl p-3 text-xs leading-relaxed text-slate-700">
-                        <span className="font-extrabold text-slate-800 block mb-1">Rincian Siswa Tidak Hadir / Keterangan Khusus KBM:</span>
-                        <div className="flex flex-col gap-1">
-                          {nonPresent.map((a, i) => (
-                            <div key={i} className="flex justify-between border-b border-dashed border-slate-100 pb-1">
-                              <span>{a.studentName}</span>
-                              <span className="font-bold uppercase tracking-wider text-[10px]">
-                                {a.status === 'Sakit' ? 'Sakit' : a.status === 'Izin' ? 'Izin' : 'Alpa'}
-                                {a.notes ? ` (${a.notes})` : ''}
-                              </span>
-                            </div>
-                          ))}
+                  const detailAtt = Array.isArray(historyDetailJournal.attendance) 
+                    ? historyDetailJournal.attendance 
+                    : Array.isArray((historyDetailJournal as any).attendanceData) 
+                      ? (historyDetailJournal as any).attendanceData 
+                      : [];
+                  const hadir = detailAtt.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                  const sakit = detailAtt.filter((a: any) => a.status === 'Sakit').length;
+                  const izin = detailAtt.filter((a: any) => a.status === 'Izin').length;
+                  const alpa = detailAtt.filter((a: any) => a.status === 'Alpa').length;
+                  const nonPresent = detailAtt.filter((a: any) => a.status !== 'Hadir' && a.status !== 'Terlambat');
+
+                  return (
+                    <>
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        <div className="bg-emerald-50 border border-emerald-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-emerald-800 uppercase">Hadir</span>
+                          <span className="block text-xl font-extrabold text-emerald-900 mt-1">{hadir}</span>
+                        </div>
+                        <div className="bg-sky-50 border border-sky-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-sky-800 uppercase">Sakit</span>
+                          <span className="block text-xl font-extrabold text-sky-900 mt-1">{sakit}</span>
+                        </div>
+                        <div className="bg-indigo-50 border border-indigo-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-indigo-800 uppercase">Izin</span>
+                          <span className="block text-xl font-extrabold text-indigo-900 mt-1">{izin}</span>
+                        </div>
+                        <div className="bg-rose-50 border border-rose-150 rounded-2xl p-3 text-center">
+                          <span className="block text-[10px] font-bold text-rose-800 uppercase">Alpa</span>
+                          <span className="block text-xl font-extrabold text-rose-900 mt-1">{alpa}</span>
                         </div>
                       </div>
-                    );
-                  }
-                  return (
-                    <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 text-xs text-center text-emerald-800 font-semibold select-none">
-                      Semua siswa hadir (Nihil Absensi).
-                    </div>
+
+                      {/* List of non-present students */}
+                      {nonPresent.length > 0 ? (
+                        <div className="bg-white border border-slate-150 rounded-xl p-3 text-xs leading-relaxed text-slate-700">
+                          <span className="font-extrabold text-slate-800 block mb-1">Rincian Siswa Tidak Hadir / Keterangan Khusus KBM:</span>
+                          <div className="flex flex-col gap-1">
+                            {nonPresent.map((a: any, i: number) => (
+                              <div key={i} className="flex justify-between border-b border-dashed border-slate-100 pb-1">
+                                <span>{a.studentName}</span>
+                                <span className="font-bold uppercase tracking-wider text-[10px]">
+                                  {a.status === 'Sakit' ? 'Sakit' : a.status === 'Izin' ? 'Izin' : 'Alpa'}
+                                  {a.notes ? ` (${a.notes})` : ''}
+                                </span>
+                              </div>
+                            ))}
+                          </div>
+                        </div>
+                      ) : (
+                        <div className="bg-emerald-50/40 border border-emerald-100 rounded-xl p-3 text-xs text-center text-emerald-800 font-semibold select-none">
+                          Semua siswa hadir (Nihil Absensi).
+                        </div>
+                      )}
+                    </>
                   );
                 })()}
 
@@ -3812,7 +3862,15 @@ export default function SubjectTeacherPanel({
                       <tbody>
                         <tr className="align-top">
                           <td className="border border-slate-900 text-center px-1.5 py-2.5 font-bold" style={{ border: '1px solid #000' }}>
-                            {new Date(selectedJournalToPrint.date).toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' })}
+                            {(() => {
+                              if (!selectedJournalToPrint.date) return '-';
+                              try {
+                                const d = new Date(selectedJournalToPrint.date);
+                                return isNaN(d.getTime()) ? selectedJournalToPrint.date : d.toLocaleDateString('id-ID', { weekday: 'long', day: 'numeric', month: 'short', year: 'numeric' });
+                              } catch {
+                                return selectedJournalToPrint.date;
+                              }
+                            })()}
                           </td>
                           <td className="border border-slate-900 text-center px-1 py-2.5 font-mono" style={{ border: '1px solid #000' }}>
                             {selectedJournalToPrint.jamKe || "-"}
@@ -3836,11 +3894,16 @@ export default function SubjectTeacherPanel({
                           {/* Absensi sub-table renderer reconstituted as a recap summary */}
                           <td className="border border-slate-900 px-2 py-2.5 text-center font-mono" style={{ border: '1px solid #000' }}>
                             {(() => {
-                              const total = selectedJournalToPrint.attendance.length;
-                              const h = selectedJournalToPrint.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length;
-                              const s = selectedJournalToPrint.attendance.filter(a => a.status === 'Sakit').length;
-                              const i = selectedJournalToPrint.attendance.filter(a => a.status === 'Izin').length;
-                              const a = selectedJournalToPrint.attendance.filter(a => a.status === 'Alpa').length;
+                              const printAtt = Array.isArray(selectedJournalToPrint.attendance) 
+                                ? selectedJournalToPrint.attendance 
+                                : Array.isArray((selectedJournalToPrint as any).attendanceData) 
+                                  ? (selectedJournalToPrint as any).attendanceData 
+                                  : [];
+                              const total = printAtt.length;
+                              const h = printAtt.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                              const s = printAtt.filter((a: any) => a.status === 'Sakit').length;
+                              const i = printAtt.filter((a: any) => a.status === 'Izin').length;
+                              const a = printAtt.filter((a: any) => a.status === 'Alpa').length;
 
                               return (
                                 <div className="text-[8px] leading-tight flex flex-col items-center">
@@ -4214,7 +4277,15 @@ export default function SubjectTeacherPanel({
                               {index + 1}
                             </td>
                             <td className="border border-slate-900 text-center px-1.5 py-2.5 font-bold" style={{ border: '1px solid #000' }}>
-                              <div>{new Date(journalToPrint.date).toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' })}</div>
+                              <div>{(() => {
+                                if (!journalToPrint.date) return '-';
+                                try {
+                                  const d = new Date(journalToPrint.date);
+                                  return isNaN(d.getTime()) ? journalToPrint.date : d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+                                } catch {
+                                  return journalToPrint.date;
+                                }
+                              })()}</div>
                               <div className="text-[9px] bg-slate-100 rounded px-1 py-0.5 mt-1 text-slate-705 select-none inline-block font-sans font-black uppercase">{journalToPrint.className}</div>
                             </td>
                             <td className="border border-slate-900 text-center px-1 py-2.5 font-mono" style={{ border: '1px solid #000' }}>
@@ -4239,11 +4310,17 @@ export default function SubjectTeacherPanel({
                             {/* Absensi sub-table renderer reconstituted as a recap summary */}
                             <td className="border border-slate-900 px-2 py-2.5 text-center font-mono" style={{ border: '1px solid #000' }}>
                               {(() => {
-                                const total = journalToPrint.attendance.length;
-                                const h = journalToPrint.attendance.filter(a => a.status === 'Hadir' || a.status === 'Terlambat').length;
-                                const s = journalToPrint.attendance.filter(a => a.status === 'Sakit').length;
-                                const i = journalToPrint.attendance.filter(a => a.status === 'Izin').length;
-                                const a = journalToPrint.attendance.filter(a => a.status === 'Alpa').length;
+                                const collAtt = Array.isArray(journalToPrint.attendance) 
+                                  ? journalToPrint.attendance 
+                                  : Array.isArray((journalToPrint as any).attendanceData) 
+                                    ? (journalToPrint as any).attendanceData 
+                                    : [];
+                                const total = collAtt.length;
+                                const h = collAtt.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length;
+                                const s = collAtt.filter((a: any) => a.status === 'Sakit').length;
+                                const i = collAtt.filter((a: any) => a.status === 'Izin').length;
+                                const a = collAtt.filter((a: any) => a.status === 'Alpa').length;
+                                const absentList = collAtt.filter((st: any) => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa');
 
                                 return (
                                   <div className="text-[8px] leading-tight flex flex-col items-center">
@@ -4252,11 +4329,10 @@ export default function SubjectTeacherPanel({
                                     {s > 0 && <span className="text-amber-600 font-medium">S: {s}</span>}
                                     {i > 0 && <span className="text-blue-600 font-medium">I: {i}</span>}
                                     {a > 0 && <span className="text-rose-600 font-black">A: {a}</span>}
-                                    {journalToPrint.attendance.filter(st => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa').length > 0 && (
+                                    {absentList.length > 0 && (
                                       <div className="text-[7.5px] leading-tight text-slate-500 mt-1 pb-0.5 font-sans border-t border-slate-200/40 pt-1 text-center font-normal">
-                                        {journalToPrint.attendance
-                                          .filter(st => st.status === 'Sakit' || st.status === 'Izin' || st.status === 'Alpa')
-                                          .map(st => `${st.studentName} (${st.status.substring(0, 1)})`)
+                                        {absentList
+                                          .map((st: any) => `${st.studentName} (${st.status.substring(0, 1)})`)
                                           .join(', ')
                                         }
                                       </div>

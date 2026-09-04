@@ -10,7 +10,7 @@ import multer from "multer";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -1378,6 +1378,16 @@ async function persistEntities(type: string, items: any[]) {
   }
 }
 
+// Helper to delete multiple entities in batch directly from MySQL table
+async function removeEntities(type: string, ids: string[]) {
+  try {
+    return await directDeleteEntitiesBatchFromMysql(type, ids);
+  } catch (err: any) {
+    console.error(`[MySQL Direct Batch Delete Error - ${type}]:`, err?.message || err);
+    return { success: false, count: 0, error: err?.message || String(err) };
+  }
+}
+
 // Backward-compatible stubs for legacy functions
 async function disconnectMongoDB() {
   console.log("[Database] Pure MySQL Primary Mode. MongoDB is disabled.");
@@ -2299,13 +2309,54 @@ async function startServer() {
 
   // Force database synchronization / status check for MySQL
   app.post("/api/admin/force-firestore-sync", async (req, res) => {
-    res.json({
-      success: true,
-      status: mysqlDatabaseStatus === "ONLINE" ? "DATABASE MYSQL ONLINE" : "DATABASE MYSQL OFFLINE",
-      lastSync: lastMysqlSyncTime || new Date().toISOString(),
-      error: mysqlDatabaseError,
-      message: "Sistem beroperasi murni dengan MySQL sebagai Primary Database."
-    });
+    try {
+      console.log("[SYNC] Permintaan sinkronisasi manual database MySQL dari Admin Panel...");
+      const testRes = await testMysqlConnection();
+      if (testRes.success) {
+        mysqlDatabaseStatus = "ONLINE";
+        mysqlDatabaseError = null;
+        dbSyncStatus = "DATABASE MYSQL ONLINE";
+        dbSyncError = null;
+        lastMysqlSyncTime = new Date().toISOString();
+        lastSyncTime = lastMysqlSyncTime;
+
+        // Pastikan tabel siap & sinkronisasikan snapshot terkini
+        await ensureAllMysqlTablesExist();
+        const fullSnapshot = await buildFullBackupSnapshot();
+        const syncRes = await syncDataToMysql(fullSnapshot.snapshot || fullSnapshot);
+
+        res.json({
+          success: true,
+          status: "DATABASE MYSQL ONLINE",
+          lastSync: lastMysqlSyncTime,
+          message: syncRes.success
+            ? "Sinkronisasi ke MySQL database berhasil! Semua data terbaru tersimpan."
+            : `Koneksi MySQL terhubung (${syncRes.message || "Tersimpan"}).`,
+          details: syncRes
+        });
+      } else {
+        mysqlDatabaseStatus = "OFFLINE";
+        mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
+        dbSyncStatus = "DATABASE MYSQL OFFLINE";
+        dbSyncError = mysqlDatabaseError;
+        res.json({
+          success: false,
+          status: "DATABASE MYSQL OFFLINE",
+          lastSync: lastMysqlSyncTime,
+          error: mysqlDatabaseError
+        });
+      }
+    } catch (err: any) {
+      mysqlDatabaseStatus = "OFFLINE";
+      mysqlDatabaseError = err.message || String(err);
+      dbSyncStatus = "DATABASE MYSQL OFFLINE";
+      dbSyncError = mysqlDatabaseError;
+      res.json({
+        success: false,
+        status: "DATABASE MYSQL OFFLINE",
+        error: mysqlDatabaseError
+      });
+    }
   });
 
   // Dedicated endpoint indicating MongoDB is decommissioned
@@ -6356,7 +6407,17 @@ async function startServer() {
     getSalaries: () => teacherSalaries,
     getSavings: () => savingsTransactions,
     getMiscBills: () => miscBills,
-    applyLoadedData: (pulled) => applyDataFromMysql(pulled)
+    applyLoadedData: (pulled) => applyDataFromMysql(pulled),
+    onStatusChange: (status, err) => {
+      mysqlDatabaseStatus = status;
+      mysqlDatabaseError = err || null;
+      dbSyncStatus = status === "ONLINE" ? "DATABASE MYSQL ONLINE" : "DATABASE MYSQL OFFLINE";
+      dbSyncError = mysqlDatabaseError;
+      if (status === "ONLINE") {
+        lastMysqlSyncTime = new Date().toISOString();
+        lastSyncTime = lastMysqlSyncTime;
+      }
+    }
   }));
 
   // Get active students
@@ -6490,6 +6551,9 @@ async function startServer() {
     }
 
     saveState();
+    if (newBills.length > 0) {
+      persistEntities("miscBills", newBills).catch(err => console.error("Error persisting new miscBills to MySQL:", err));
+    }
     res.json({ success: true, count: newBills.length, bills: newBills });
   });
 
@@ -6506,6 +6570,7 @@ async function startServer() {
     }
     miscBills.splice(index, 1);
     saveState();
+    removeEntity("miscBills", billId).catch(err => console.error("Error deleting miscBill from MySQL:", err));
     res.json({ success: true });
   });
 
@@ -6519,6 +6584,7 @@ async function startServer() {
 
     let deletedCount = 0;
     let skippedPaidCount = 0;
+    const deletedIds: string[] = [];
 
     if (title) {
       // Delete all UNPAID/PENDING bills with the specified exact title
@@ -6526,7 +6592,13 @@ async function startServer() {
       const paidBillsToDelete = billsToDelete.filter(b => b.status === "paid");
       skippedPaidCount = paidBillsToDelete.length;
 
-      const remainingBills = miscBills.filter(b => !(b.title === title && b.status !== "paid"));
+      const remainingBills = miscBills.filter(b => {
+        if (b.title === title && b.status !== "paid") {
+          deletedIds.push(b.id);
+          return false;
+        }
+        return true;
+      });
       const removedCount = miscBills.length - remainingBills.length;
       
       miscBills.length = 0;
@@ -6542,6 +6614,7 @@ async function startServer() {
             return true; // Keep paid bills
           } else {
             deletedCount++;
+            deletedIds.push(b.id);
             return false; // Remove
           }
         }
@@ -6553,6 +6626,9 @@ async function startServer() {
     }
 
     saveState();
+    if (deletedIds.length > 0) {
+      removeEntities("miscBills", deletedIds).catch(err => console.error("Error bulk deleting miscBills from MySQL:", err));
+    }
 
     let message = `Berhasil menghapus massal ${deletedCount} tagihan.`;
     if (skippedPaidCount > 0) {
@@ -6595,6 +6671,7 @@ async function startServer() {
       // Bulk update all bills sharing the same original title
       let unpaidCount = 0;
       let paidCount = 0;
+      const updatedBills: MiscBill[] = [];
 
       miscBills.forEach(b => {
         if (b.title === originalTitle) {
@@ -6604,17 +6681,22 @@ async function startServer() {
             if (isMonthly !== undefined) b.isMonthly = isMonthly;
             if (month !== undefined) b.month = month;
             unpaidCount++;
+            updatedBills.push(b);
           } else if (b.status === "paid") {
             // For paid bills, we ONLY update the title for consistency, never change the amount already paid
             b.title = newTitleClean;
             if (isMonthly !== undefined) b.isMonthly = isMonthly;
             if (month !== undefined) b.month = month;
             paidCount++;
+            updatedBills.push(b);
           }
         }
       });
 
       saveState();
+      if (updatedBills.length > 0) {
+        persistEntities("miscBills", updatedBills).catch(err => console.error("Error updating miscBills batch in MySQL:", err));
+      }
       return res.json({
         success: true,
         message: `Berhasil memperbarui ${unpaidCount + paidCount} tagihan dengan judul "${originalTitle}" (Unpaid: ${unpaidCount}, Paid: ${paidCount}).`,
@@ -6627,6 +6709,7 @@ async function startServer() {
       if (isMonthly !== undefined) bill.isMonthly = isMonthly;
       if (month !== undefined) bill.month = month;
       saveState();
+      persistEntity("miscBills", bill).catch(err => console.error("Error updating miscBill in MySQL:", err));
       return res.json({ success: true, bill });
     }
   });
@@ -6689,6 +6772,7 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("miscBills", bill).catch(err => console.error("Error persisting paid miscBill to MySQL:", err));
     res.json({ success: true, bill });
   });
 
@@ -6745,6 +6829,7 @@ async function startServer() {
     }
 
     saveState();
+    persistEntities("miscBills", updatedBills).catch(err => console.error("Error persisting bulk paid miscBills to MySQL:", err));
     res.json({ success: true, count: updatedBills.length, bills: updatedBills });
   });
 
@@ -6769,12 +6854,13 @@ async function startServer() {
     delete bill.paymentMethod;
     delete bill.orderId;
 
+    let refundSavTx: SavingsTransaction | null = null;
     // Refund student savings if payment method was Potong Tabungan
     if (oldMethod === "Potong Tabungan" && student) {
       student.savingsBalance += bill.amount;
 
       // Log compensatory savings transaction
-      const refundSavTx: SavingsTransaction = {
+      refundSavTx = {
         id: `sav-tx-misc-refund-${Date.now()}`,
         studentId: student.id,
         type: "deposit",
@@ -6813,6 +6899,13 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("miscBills", bill).catch(err => console.error("Error persisting cancelled miscBill to MySQL:", err));
+    if (student) {
+      persistEntity("students", student).catch(err => console.error("Error persisting student balance to MySQL:", err));
+    }
+    if (refundSavTx) {
+      persistEntity("savingsTransactions", refundSavTx).catch(err => console.error("Error persisting refund savings tx to MySQL:", err));
+    }
     res.json({ success: true, bill });
   });
 
@@ -6888,6 +6981,9 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("miscBills", bill).catch(err => console.error("Error persisting paid miscBill to MySQL:", err));
+    persistEntity("students", student).catch(err => console.error("Error persisting student savings to MySQL:", err));
+    persistEntity("savingsTransactions", savTx).catch(err => console.error("Error persisting misc savings tx to MySQL:", err));
     res.json({ success: true, student, bill });
   });
 
@@ -7003,6 +7099,7 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("sppBills", bill).catch(err => console.error("Error persisting paid sppBill to MySQL:", err));
     res.json({ success: true, bill });
   });
 
@@ -7074,6 +7171,7 @@ async function startServer() {
       }
 
       saveState();
+      persistEntities("sppBills", paidBills).catch(err => console.error("Error persisting bulk paid sppBills to MySQL:", err));
     }
 
     res.json({ success: true, paidBills, count: paidBills.length });
@@ -7087,6 +7185,11 @@ async function startServer() {
     const nowIso = now.toISOString();
     const batchOrderId = `CART-BULK-${Date.now()}`;
     const executedItems: { name: string; amount: number; desc: string }[] = [];
+    const paidSppBills: SppBill[] = [];
+    const paidMiscBills: MiscBill[] = [];
+    const newSavingsTxs: SavingsTransaction[] = [];
+    const affectedStudents: Student[] = [];
+
     const MONTH_MAP: Record<string, number> = {
       Januari: 0, Februari: 1, Maret: 2, April: 3, Mei: 4, Juni: 5,
       Juli: 6, Agustus: 7, September: 8, Oktober: 9, November: 10, Desember: 11
@@ -7107,6 +7210,7 @@ async function startServer() {
         bill.paidAt = nowIso;
         bill.paymentMethod = "Manual Teller (Kolektif)";
         bill.orderId = batchOrderId;
+        paidSppBills.push(bill);
         const student = students.find(s => s.id === bill.studentId);
         executedItems.push({
           name: `SPP Bulanan - ${bill.month} ${bill.year}`,
@@ -7125,6 +7229,7 @@ async function startServer() {
         bill.paidAt = nowIso;
         bill.paymentMethod = "Manual Teller (Kolektif)";
         bill.orderId = batchOrderId;
+        paidMiscBills.push(bill);
         const student = students.find(s => s.id === bill.studentId);
         executedItems.push({
           name: `Lain-lain: ${bill.title}`,
@@ -7142,6 +7247,9 @@ async function startServer() {
         const valAmount = Number(amount);
         if (student && !isNaN(valAmount) && valAmount > 0) {
           student.savingsBalance += valAmount;
+          if (!affectedStudents.some(s => s.id === student.id)) {
+            affectedStudents.push(student);
+          }
           const transaction: SavingsTransaction = {
             id: `sav-${Date.now()}-${Math.random().toString(36).substring(2, 6)}`,
             studentId,
@@ -7153,6 +7261,7 @@ async function startServer() {
             notes: notes || "Setoran Tabungan (Kolektif)"
           };
           savingsTransactions.push(transaction);
+          newSavingsTxs.push(transaction);
           executedItems.push({
             name: `Setoran Tabungan Manual`,
             amount: valAmount,
@@ -7177,6 +7286,19 @@ async function startServer() {
       broadcastNotification(notification);
 
       saveState();
+      if (paidSppBills.length > 0) {
+        persistEntities("sppBills", paidSppBills).catch(err => console.error("Error persisting cart sppBills to MySQL:", err));
+      }
+      if (paidMiscBills.length > 0) {
+        persistEntities("miscBills", paidMiscBills).catch(err => console.error("Error persisting cart miscBills to MySQL:", err));
+      }
+      if (newSavingsTxs.length > 0) {
+        persistEntities("savingsTransactions", newSavingsTxs).catch(err => console.error("Error persisting cart savings to MySQL:", err));
+      }
+      if (affectedStudents.length > 0) {
+        persistEntities("students", affectedStudents).catch(err => console.error("Error persisting cart students to MySQL:", err));
+      }
+
       return res.json({ success: true, executedItems, totalAmount, orderId: batchOrderId });
     }
 
@@ -7227,6 +7349,7 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("sppBills", bill).catch(err => console.error("Error persisting cancelled sppBill to MySQL:", err));
     res.json({ success: true, bill });
   });
 
@@ -7314,6 +7437,7 @@ async function startServer() {
     }
 
     saveState();
+    persistEntities("sppBills", waivedBills).catch(err => console.error("Error persisting waived sppBills to MySQL:", err));
     res.json({ success: true, count: waivedBills.length });
   });
 
@@ -7349,6 +7473,7 @@ async function startServer() {
     broadcastNotification(notification);
 
     saveState();
+    persistEntity("sppBills", bill).catch(err => console.error("Error persisting cancelled waived sppBill to MySQL:", err));
     res.json({ success: true, bill });
   });
 
@@ -7394,6 +7519,7 @@ async function startServer() {
     broadcastNotification(notification);
 
     saveState();
+    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting withdraw request to MySQL:", err));
     res.json({ success: true, transaction });
   });
 
@@ -7418,6 +7544,7 @@ async function startServer() {
       if (student.savingsBalance < transaction.amount) {
         transaction.status = "failed";
         saveState();
+        persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting failed savings tx to MySQL:", err));
         return res.status(400).json({ error: "Gagal menyetujui. Saldo tabungan siswa saat ini tidak mencukupi." });
       }
 
@@ -7466,6 +7593,10 @@ async function startServer() {
     }
 
     saveState();
+    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting confirmed savings tx to MySQL:", err));
+    if (action === "approve") {
+      persistEntity("students", student).catch(err => console.error("Error persisting student savings balance to MySQL:", err));
+    }
     res.json({ success: true, student, transaction });
   });
 
@@ -7581,6 +7712,7 @@ async function startServer() {
       }
 
       saveState();
+      persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting cancelled pending savings tx to MySQL:", err));
       return res.json({ 
         success: true, 
         message: "Setoran tabungan online yang berstatus pending berhasil dibatalkan.", 
@@ -8939,6 +9071,7 @@ async function startServer() {
             bill.orderId = targetOrderId;
             if (targetTransactionId) bill.transactionId = targetTransactionId;
             actionTaken = true;
+            persistEntity("sppBills", bill).catch(err => console.error("Error persisting SPP to MySQL:", err));
 
             const student = students.find(s => s.id === bill.studentId);
             detailMessage = `SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
@@ -8969,6 +9102,7 @@ async function startServer() {
           if (bill.status === "pending") {
             bill.status = "unpaid";
             actionTaken = true;
+            persistEntity("sppBills", bill).catch(err => console.error("Error persisting reset SPP to MySQL:", err));
             detailMessage = `SPP ${bill.month} ${bill.year} kedaluwarsa/batal, dikembalikan ke status Belum Bayar.`;
           }
         }
@@ -8991,6 +9125,7 @@ async function startServer() {
             bill.orderId = targetOrderId;
             if (targetTransactionId) bill.transactionId = targetTransactionId;
             actionTaken = true;
+            persistEntity("miscBills", bill).catch(err => console.error("Error persisting Misc to MySQL:", err));
 
             const student = students.find(s => s.id === bill.studentId);
             detailMessage = `Tagihan ${bill.title} (${student?.name || "Siswa"}) - Rp ${bill.amount.toLocaleString("id-ID")}` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
@@ -9021,6 +9156,7 @@ async function startServer() {
           if (bill.status === "pending") {
             bill.status = "unpaid";
             actionTaken = true;
+            persistEntity("miscBills", bill).catch(err => console.error("Error persisting reset Misc to MySQL:", err));
             detailMessage = `Tagihan ${bill.title} kedaluwarsa/batal, dikembalikan ke status Belum Bayar.`;
           }
         }
@@ -9150,6 +9286,11 @@ async function startServer() {
             const student = students.find(s => s.id === targetStudentId);
             detailMessage = `Keranjang ${countSettled} Item (${student?.name || "Siswa"})` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
 
+            if (matchedSpp.length > 0) persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting cart SPP to MySQL:", err));
+            if (matchedMisc.length > 0) persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting cart Misc to MySQL:", err));
+            if (matchedSavings.length > 0) persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting cart Savings to MySQL:", err));
+            if (student) persistEntity("students", student).catch(err => console.error("Error persisting cart student to MySQL:", err));
+
             const notification: RealtimeNotification = {
               id: `notif-cart-auto-${Date.now()}`,
               studentId: targetStudentId || "",
@@ -9165,6 +9306,9 @@ async function startServer() {
           matchedMisc.forEach(b => { if (b.status === "pending") b.status = "unpaid"; });
           matchedSavings.forEach(t => { if (t.status === "pending") t.status = "failed"; });
           actionTaken = true;
+          if (matchedSpp.length > 0) persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting expired cart SPP to MySQL:", err));
+          if (matchedMisc.length > 0) persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting expired cart Misc to MySQL:", err));
+          if (matchedSavings.length > 0) persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting expired cart Savings to MySQL:", err));
           detailMessage = `Keranjang ${activeOrderId} kedaluwarsa/batal, item dikembalikan ke status Belum Bayar.`;
         }
       }
@@ -9291,6 +9435,8 @@ async function startServer() {
               ensureStudentSavingsBalanceAccurate(student.id);
             }
             actionTaken = true;
+            persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting savings tx to MySQL:", err));
+            if (student) persistEntity("students", student).catch(err => console.error("Error persisting student balance to MySQL:", err));
             detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} (Rp ${transaction.amount.toLocaleString("id-ID")}) berhasil diverifikasi LUNAS & saldo bertambah.` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
 
             const notification: RealtimeNotification = {
@@ -9329,6 +9475,7 @@ async function startServer() {
         } else if (isExpired && transaction.status === "pending") {
           transaction.status = "failed";
           actionTaken = true;
+          persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting expired savings tx to MySQL:", err));
           detailMessage = `Setoran Tabungan ${activeOrderId} kedaluwarsa/batal.`;
         }
       }
@@ -9383,6 +9530,8 @@ async function startServer() {
             ensureStudentSavingsBalanceAccurate(student.id);
           }
           actionTaken = true;
+          persistEntity("savingsTransactions", matchedSav).catch(err => console.error("Error persisting matched savings tx to MySQL:", err));
+          if (student) persistEntity("students", student).catch(err => console.error("Error persisting student balance to MySQL:", err));
           detailMessage = `Setoran Tabungan ${student?.name || "Siswa"} (Rp ${matchedSav.amount.toLocaleString("id-ID")}) berhasil diverifikasi & saldo bertambah.` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
         } else {
           if (targetTransactionId && !matchedSav.transactionId) matchedSav.transactionId = targetTransactionId;
@@ -9409,6 +9558,8 @@ async function startServer() {
           student.savingsBalance = (student.savingsBalance || 0) + amt;
           ensureStudentSavingsBalanceAccurate(student.id);
           actionTaken = true;
+          persistEntity("savingsTransactions", newTx).catch(err => console.error("Error persisting recovered new savings tx to MySQL:", err));
+          persistEntity("students", student).catch(err => console.error("Error persisting student balance to MySQL:", err));
           detailMessage = `Setoran Tabungan ${student.name} (NIS: ${student.nis}) sebesar Rp ${amt.toLocaleString("id-ID")} berhasil diproses & ditambahkan ke saldo tabungan.` + (targetTransactionId ? ` [TxID: ${targetTransactionId}]` : "");
         }
       }
@@ -9511,7 +9662,36 @@ async function startServer() {
   // Manual reconciliation can be executed on-demand via /api/midtrans-autopoller-run button
 
   // Integration validation status checker
-  app.get("/api/system-status", (req, res) => {
+  let lastAutoStatusCheck = 0;
+  app.get("/api/system-status", async (req, res) => {
+    // If status is not ONLINE, auto-retry connection check (throttled to once every 10s)
+    const now = Date.now();
+    if (mysqlDatabaseStatus !== "ONLINE" && (now - lastAutoStatusCheck > 10000)) {
+      lastAutoStatusCheck = now;
+      try {
+        const testRes = await testMysqlConnection();
+        if (testRes.success) {
+          mysqlDatabaseStatus = "ONLINE";
+          mysqlDatabaseError = null;
+          dbSyncStatus = "DATABASE MYSQL ONLINE";
+          dbSyncError = null;
+          lastMysqlSyncTime = new Date().toISOString();
+          lastSyncTime = lastMysqlSyncTime;
+        } else {
+          mysqlDatabaseStatus = "OFFLINE";
+          mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
+          dbSyncStatus = "DATABASE MYSQL OFFLINE";
+          dbSyncError = mysqlDatabaseError;
+        }
+      } catch (e: any) {
+        mysqlDatabaseStatus = "OFFLINE";
+        mysqlDatabaseError = e.message || String(e);
+        dbSyncStatus = "DATABASE MYSQL OFFLINE";
+        dbSyncError = mysqlDatabaseError;
+      }
+    }
+
+    const cfg = getSanitizedConfig();
     res.json({
       status: "online",
       time: new Date().toISOString(),
@@ -9519,9 +9699,16 @@ async function startServer() {
       configured: !!(midtransConfig.clientKey && midtransConfig.serverKey),
       version: "1.0.0",
       sseConnectedClients: sseClients.length,
+      mysql: {
+        status: mysqlDatabaseStatus,
+        host: cfg.host,
+        database: cfg.database,
+        port: cfg.port,
+        lastSync: lastMysqlSyncTime || lastSyncTime
+      },
       firestore: {
         status: dbSyncStatus,
-        lastSync: lastSyncTime,
+        lastSync: lastMysqlSyncTime || lastSyncTime,
         error: dbSyncError
       }
     });
@@ -9545,7 +9732,9 @@ async function startServer() {
     saveState,
     broadcastNotification,
     sendWhatsappNotification,
-    saveConfigToMysql
+    saveConfigToMysql,
+    persistEntity,
+    persistEntities
   }));
 
   app.use("/api/spmb", createSpmbRouter({

@@ -26,6 +26,8 @@ export interface MidtransRouterDeps {
   broadcastNotification: (notif: RealtimeNotification) => void;
   sendWhatsappNotification: (to: string, msg: string) => Promise<any>;
   saveConfigToMysql: (configId: string, data: any) => Promise<boolean>;
+  persistEntity?: (type: string, data: any) => Promise<any>;
+  persistEntities?: (type: string, items: any[]) => Promise<any>;
 }
 
 // ---------------- Helper Functions ----------------
@@ -449,7 +451,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     saveState,
     broadcastNotification,
     sendWhatsappNotification,
-    saveConfigToMysql
+    saveConfigToMysql,
+    persistEntity,
+    persistEntities
   } = deps;
 
   function recordOrUpdateMidtransTransaction(data: {
@@ -819,11 +823,18 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             ).catch(() => {});
           }
 
+          if (persistEntity) {
+            persistEntity("sppBills", bill).catch(err => console.error("Error persisting settled SPP to MySQL:", err));
+          }
+
           detailMessage = `Tagihan SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) berhasil di-settle LUNAS.`;
         } else if (isExpired && bill.status === "pending") {
           bill.status = "unpaid";
           bill.orderId = undefined;
           actionTaken = true;
+          if (persistEntity) {
+            persistEntity("sppBills", bill).catch(err => console.error("Error persisting reset SPP to MySQL:", err));
+          }
           detailMessage = `Tagihan SPP ${bill.month} ${bill.year} direset menjadi belum bayar karena expired/cancel.`;
         }
       }
@@ -856,11 +867,18 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             settlementTime: resolvedPaidAt
           });
 
+          if (persistEntity) {
+            persistEntity("miscBills", bill).catch(err => console.error("Error persisting settled Misc to MySQL:", err));
+          }
+
           detailMessage = `Tagihan Non-SPP "${bill.title}" berhasil di-settle LUNAS.`;
         } else if (isExpired && bill.status === "pending") {
           bill.status = "unpaid";
           bill.orderId = undefined;
           actionTaken = true;
+          if (persistEntity) {
+            persistEntity("miscBills", bill).catch(err => console.error("Error persisting reset Misc to MySQL:", err));
+          }
           detailMessage = `Tagihan Non-SPP "${bill.title}" direset menjadi belum bayar karena expired.`;
         }
       }
@@ -891,10 +909,21 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             paymentType: actualPaymentType,
             settlementTime: resolvedPaidAt
           });
+
+          if (persistEntity) {
+            persistEntity("savingsTransactions", trans).catch(err => console.error("Error persisting settled Savings tx to MySQL:", err));
+            if (student) {
+              persistEntity("students", student).catch(err => console.error("Error persisting student savings balance to MySQL:", err));
+            }
+          }
+
           detailMessage = `Setoran tabungan sebesar Rp ${trans.amount.toLocaleString("id-ID")} berhasil masuk ke saldo siswa.`;
         } else if (isExpired && trans.status === "pending") {
           trans.status = "failed";
           actionTaken = true;
+          if (persistEntity) {
+            persistEntity("savingsTransactions", trans).catch(err => console.error("Error persisting expired Savings tx to MySQL:", err));
+          }
           detailMessage = `Setoran tabungan dibatalkan karena expired.`;
         }
       }
@@ -975,11 +1004,25 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             ).catch(() => {});
           }
 
+          if (persistEntities) {
+            if (matchedSpp.length > 0) persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting cart SPP to MySQL:", err));
+            if (matchedMisc.length > 0) persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting cart Misc to MySQL:", err));
+            if (matchedSavings.length > 0) persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting cart Savings to MySQL:", err));
+          }
+          if (persistEntity && student) {
+            persistEntity("students", student).catch(err => console.error("Error persisting cart student balance to MySQL:", err));
+          }
+
           detailMessage = `Keranjang pembayaran (${matchedSpp.length} SPP, ${matchedMisc.length} Non-SPP, ${matchedSavings.length} Tabungan) berhasil di-settle LUNAS.`;
         } else if (isExpired) {
           matchedSpp.forEach(b => { if (b.status === "pending") { b.status = "unpaid"; b.orderId = undefined; actionTaken = true; } });
           matchedMisc.forEach(m => { if (m.status === "pending") { m.status = "unpaid"; m.orderId = undefined; actionTaken = true; } });
           matchedSavings.forEach(t => { if (t.status === "pending") { t.status = "failed"; actionTaken = true; } });
+          if (persistEntities) {
+            if (matchedSpp.length > 0) persistEntities("sppBills", matchedSpp).catch(err => console.error("Error persisting expired cart SPP to MySQL:", err));
+            if (matchedMisc.length > 0) persistEntities("miscBills", matchedMisc).catch(err => console.error("Error persisting expired cart Misc to MySQL:", err));
+            if (matchedSavings.length > 0) persistEntities("savingsTransactions", matchedSavings).catch(err => console.error("Error persisting expired cart Savings to MySQL:", err));
+          }
           detailMessage = `Keranjang pembayaran direset karena expired/cancel.`;
         }
       } else if (isSettled) {
@@ -1107,6 +1150,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             actionTaken = true;
             detailMessage = `Pembayaran daftar ulang SPMB a.n ${candidate.fullName} dibatalkan karena expired.`;
           }
+        }
+        if (actionTaken && persistEntity) {
+          persistEntity("spmbCandidates", candidate).catch(err => console.error("Error persisting SPMB candidate to MySQL:", err));
         }
       }
     }
@@ -2974,6 +3020,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         });
 
         saveState();
+        if (persistEntity) {
+          persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting Kas to MySQL:", err));
+        }
 
         return res.json({
           success: true,
@@ -3019,6 +3068,10 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         });
 
         saveState();
+        if (persistEntity) {
+          persistEntity("savingsTransactions", newSavingsTx).catch(err => console.error("Error persisting savings to MySQL:", err));
+          persistEntity("students", targetStudent).catch(err => console.error("Error persisting student balance to MySQL:", err));
+        }
 
         return res.json({
           success: true,
@@ -3052,6 +3105,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             });
 
             saveState();
+            if (persistEntity) {
+              persistEntity("sppBills", bill).catch(err => console.error("Error persisting SPP to MySQL:", err));
+            }
 
             return res.json({
               success: true,
@@ -3082,6 +3138,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             });
 
             saveState();
+            if (persistEntity) {
+              persistEntity("miscBills", mBill).catch(err => console.error("Error persisting Misc to MySQL:", err));
+            }
 
             return res.json({
               success: true,
@@ -3117,6 +3176,17 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       });
 
       saveState();
+      if (persistEntities) {
+        const updatedSpp = sppBills.filter(b => b.orderId === cleanOrderId);
+        if (updatedSpp.length > 0) persistEntities("sppBills", updatedSpp).catch(err => console.error("Error persisting auto SPP to MySQL:", err));
+        const updatedMisc = miscBills.filter(m => m.orderId === cleanOrderId);
+        if (updatedMisc.length > 0) persistEntities("miscBills", updatedMisc).catch(err => console.error("Error persisting auto Misc to MySQL:", err));
+        const updatedSav = savingsTransactions.filter(s => s.orderId === cleanOrderId);
+        if (updatedSav.length > 0) persistEntities("savingsTransactions", updatedSav).catch(err => console.error("Error persisting auto Savings to MySQL:", err));
+      }
+      if (persistEntity) {
+        persistEntity("students", targetStudent).catch(err => console.error("Error persisting student balance to MySQL:", err));
+      }
 
       return res.json({
         success: true,

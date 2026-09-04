@@ -2275,7 +2275,8 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
-          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
+          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+          \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
       `, [
         b.id, b.studentId, b.month, Number(b.year) || 2026, Number(b.amount) || 0, b.status || 'unpaid',
         b.paidAt || null, b.paymentMethod || null, b.orderId || null, b.transactionId || null,
@@ -2294,7 +2295,8 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
-          \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`)
+          \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
+          \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
       `, [
         m.id, m.studentId, m.title || '', Number(m.amount) || 0, m.status || 'unpaid',
         m.createdAt || new Date().toISOString(), m.paidAt || null, m.paymentMethod || null,
@@ -2312,7 +2314,8 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
           \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`)
+          \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
+          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
       `, [
         s.id, s.studentId, s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
         s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
@@ -2656,6 +2659,23 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
           b.achievementType || null, b.achievementDetail || null
         ]);
         savedCount++;
+      } else if (typeKey === 'misc' || typeKey === 'misc_bill' || typeKey === 'miscbills') {
+        const m = item;
+        await connection.query(`
+          INSERT INTO \`misc_bills\` (
+            \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
+            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
+            \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
+            \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
+        `, [
+          m.id, m.studentId, m.title || '', Number(m.amount) || 0, m.status || 'unpaid',
+          m.createdAt || new Date().toISOString(), m.paidAt || null, m.paymentMethod || null,
+          m.orderId || null, m.transactionId || null, m.isMonthly ? 1 : 0, m.month || null
+        ]);
+        savedCount++;
       } else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
         const s = item;
         await connection.query(`
@@ -2780,6 +2800,64 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
       message: `Gagal menghapus data dari MySQL`,
       error: err.message || String(err)
     };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Direct batch entities delete from MySQL table
+export async function directDeleteEntitiesBatchFromMysql(entityType: string, ids: string[]): Promise<{ success: boolean; count: number; error?: string }> {
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return { success: true, count: 0 };
+  }
+
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityType.toLowerCase().trim();
+
+    const tableMap: Record<string, string> = {
+      student: 'students',
+      students: 'students',
+      spp: 'spp_bills',
+      spp_bill: 'spp_bills',
+      sppbills: 'spp_bills',
+      misc: 'misc_bills',
+      misc_bill: 'misc_bills',
+      miscbills: 'misc_bills',
+      savings: 'savings_transactions',
+      savings_transaction: 'savings_transactions',
+      savingstransactions: 'savings_transactions',
+      transaction: 'treasurer_transactions',
+      treasurer_transaction: 'treasurer_transactions',
+      treasurertransactions: 'treasurer_transactions',
+      salary: 'teacher_salaries',
+      teacher_salary: 'teacher_salaries',
+      teachersalaries: 'teacher_salaries',
+      spmb: 'spmb_candidates',
+      spmb_candidate: 'spmb_candidates',
+      spmbcandidates: 'spmb_candidates',
+      notification: 'notifications',
+      notifications: 'notifications'
+    };
+
+    const tableName = tableMap[typeKey] || typeKey;
+    let totalDeleted = 0;
+    const chunkSize = 200;
+
+    for (let i = 0; i < ids.length; i += chunkSize) {
+      const chunk = ids.slice(i, i + chunkSize);
+      const placeholders = chunk.map(() => '?').join(',');
+      const [res]: any = await connection.query(`DELETE FROM \`${tableName}\` WHERE \`id\` IN (${placeholders})`, chunk);
+      totalDeleted += (res?.affectedRows || 0);
+    }
+
+    return { success: true, count: totalDeleted };
+  } catch (err: any) {
+    console.error(`[MySQL Batch Delete Error - ${entityType}]:`, err.message || err);
+    return { success: false, count: 0, error: err.message || String(err) };
   } finally {
     if (connection) connection.release();
   }

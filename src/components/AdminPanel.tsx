@@ -2104,7 +2104,7 @@ export default function AdminPanel({
       const data = await res.json();
       if (data.success) {
         setSyncFeedback(
-          "✔️ Sinkronisasi sukses! Semua koleksi terbaru telah disalin ke Firebase Firestore.",
+          data.message || "✔️ Sinkronisasi sukses! Semua data terbaru telah terhubung dan tersimpan ke MySQL / phpMyAdmin.",
         );
         fetchSystemStatus();
         onRefresh();
@@ -8274,9 +8274,9 @@ export default function AdminPanel({
         {/* Tab 3: Config Status Viewer */}
         {adminTab === "config" && (
           <div className="flex flex-col gap-6 w-full">
-            {/* Firebase Database Sync Status Card */}
+            {/* Cloud Database Integration Section (MySQL / MariaDB Remote Hostinger) */}
             <motion.div
-              initial={{ opacity: 0, y: 15 }}
+              initial={{ opacity: 0, y: 10 }}
               animate={{ opacity: 1, y: 0 }}
               className="bg-slate-900 text-white p-6 rounded-xl border border-slate-800 shadow-xl flex flex-col gap-5 text-xs text-left relative overflow-hidden"
             >
@@ -8286,61 +8286,63 @@ export default function AdminPanel({
               <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 border-b border-slate-800 pb-4">
                 <div>
                   <h3 className="font-bold text-slate-100 text-sm flex items-center gap-2">
-                    <UploadCloud className="text-emerald-400" size={18} /> Cloud
-                    Database-Sync Integration (MongoDB Atlas)
+                    <Database className="text-emerald-400" size={18} /> Cloud
+                    Database-Sync Integration (MySQL / phpMyAdmin)
                   </h3>
                   <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed font-medium">
-                    Sistem ini terintegrasi langsung dengan database awan
-                    MongoDB Atlas Cluster Anda agar setiap perubahan data
-                    tersimpan secara permanen.
+                    Sistem ini terintegrasi langsung dengan database awan MySQL (Hostinger Remote / phpMyAdmin) agar setiap data tersimpan secara permanen dan aman.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 self-start md:self-center">
                   <span className="text-[10px] uppercase font-bold text-slate-400">
                     Status Gateway:
                   </span>
-                  <span
-                    className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold ${
-                      systemStatus?.firestore?.status?.includes("Synced") ||
-                      systemStatus?.firestore?.status ===
-                        "Synced (Loaded from MongoDB)"
-                        ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
-                        : systemStatus?.firestore?.status === "Connecting..." ||
-                            systemStatus?.firestore?.status?.includes("Syncing")
-                          ? "bg-amber-500/10 border border-amber-500/30 text-amber-400 animate-pulse"
-                          : "bg-red-500/10 border border-red-500/30 text-red-400"
-                    }`}
-                  >
-                    <span
-                      className={`w-1.5 h-1.5 rounded-full ${
-                        systemStatus?.firestore?.status?.includes("Synced") ||
-                        systemStatus?.firestore?.status ===
-                          "Synced (Loaded from MongoDB)"
-                          ? "bg-emerald-450"
-                          : systemStatus?.firestore?.status ===
-                                "Connecting..." ||
-                              systemStatus?.firestore?.status?.includes(
-                                "Syncing",
-                              )
-                            ? "bg-amber-400"
-                            : "bg-red-400"
-                      }`}
-                    ></span>
-                    {systemStatus?.firestore?.status ||
-                      "Sedang memuat status..."}
-                  </span>
+                  {(() => {
+                    const statusStr = String(systemStatus?.firestore?.status || systemStatus?.mysql?.status || "");
+                    const isOnline = 
+                      statusStr.toLowerCase().includes("online") || 
+                      statusStr.toLowerCase().includes("synced") || 
+                      statusStr.toLowerCase().includes("connected") ||
+                      systemStatus?.mysql?.status === "ONLINE";
+                    const isConnecting = 
+                      statusStr === "Connecting..." || 
+                      statusStr.toLowerCase().includes("syncing");
+
+                    return (
+                      <span
+                        className={`inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-bold ${
+                          isOnline
+                            ? "bg-emerald-500/10 border border-emerald-500/30 text-emerald-400"
+                            : isConnecting
+                              ? "bg-amber-500/10 border border-amber-500/30 text-amber-400 animate-pulse"
+                              : "bg-rose-500/10 border border-rose-500/30 text-rose-400"
+                        }`}
+                      >
+                        <span
+                          className={`w-1.5 h-1.5 rounded-full ${
+                            isOnline
+                              ? "bg-emerald-400"
+                              : isConnecting
+                                ? "bg-amber-400"
+                                : "bg-rose-400"
+                          }`}
+                        ></span>
+                        {systemStatus?.firestore?.status || (isOnline ? "DATABASE MYSQL ONLINE" : "DATABASE MYSQL OFFLINE")}
+                      </span>
+                    );
+                  })()}
                 </div>
               </div>
 
               {syncFeedback && (
                 <div
                   className={`p-3 rounded-lg font-bold text-xs flex items-center gap-2 ${
-                    syncFeedback.includes("sukses")
+                    syncFeedback.includes("sukses") || syncFeedback.includes("berhasil") || syncFeedback.includes("✔️")
                       ? "bg-emerald-500/10 border border-emerald-500/20 text-emerald-300"
                       : "bg-red-500/10 border border-red-500/20 text-red-300"
                   }`}
                 >
-                  <span>{syncFeedback.includes("sukses") ? "✔️" : "⚠️"}</span>
+                  <span>{syncFeedback.includes("sukses") || syncFeedback.includes("berhasil") || syncFeedback.includes("✔️") ? "✔️" : "⚠️"}</span>
                   <span>{syncFeedback}</span>
                 </div>
               )}
@@ -8351,15 +8353,15 @@ export default function AdminPanel({
                     DATABASE ENGINE
                   </span>
                   <span className="font-mono text-[11px] text-emerald-400 truncate font-semibold">
-                    MongoDB Atlas Cluster (vSrv)
+                    MySQL / MariaDB Remote Hostinger
                   </span>
                 </div>
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                    CLUSTER HOSTNAME
+                    DATABASE & HOST
                   </span>
                   <span className="font-mono text-[11px] text-slate-200 truncate font-semibold">
-                    cluster0.0hekxl2.mongodb.net
+                    {systemStatus?.mysql?.database || "u604170242_spp_db"} @ {systemStatus?.mysql?.host || "srv1393.hstgr.io"}
                   </span>
                 </div>
                 <div className="p-3 bg-slate-950/60 border border-slate-800 rounded-lg flex flex-col gap-1">
@@ -8371,7 +8373,7 @@ export default function AdminPanel({
                       ? new Date(
                           systemStatus.firestore.lastSync,
                         ).toLocaleString("id-ID")
-                      : "Belum di sinkronisasikan"}
+                      : "Tersinkronisasi Real-Time"}
                   </span>
                 </div>
               </div>
@@ -8395,11 +8397,9 @@ export default function AdminPanel({
                   </span>
                   <div className="text-[11px] text-slate-300 leading-relaxed font-medium">
                     Setiap pembaruan data murid, pembayaran tagihan SPP,
-                    transaksi tabungan, maupun jurnal absensi,{" "}
+                    transaksi tabungan, maupun jurnal absensi{" "}
                     <strong>otomatis langsung tersinkronkan</strong> ke database
-                    awan MongoDB secara real-time. Jika Anda mendapati basis
-                    data awan kosong, tekan tombol sinkronkan untuk memigrasikan
-                    database memori server secara instan.
+                    MySQL secara real-time. Jika Anda mendapati status offline atau ingin memastikan database terupdate, tekan tombol sinkronkan untuk memvalidasi koneksi dan menyinkronkan database secara instan.
                   </div>
                 </div>
                 <button

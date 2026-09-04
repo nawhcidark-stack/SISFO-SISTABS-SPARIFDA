@@ -22,6 +22,7 @@ export interface MysqlRouteDataProviders {
   getSavings: () => any[];
   getMiscBills: () => any[];
   applyLoadedData?: (data: any) => Promise<any> | any;
+  onStatusChange?: (status: "ONLINE" | "OFFLINE", error?: string | null) => void;
 }
 
 export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
@@ -55,8 +56,14 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
   router.post('/mysql-test', async (req, res) => {
     try {
       const result = await testMysqlConnection(req.body);
+      if (providers.onStatusChange) {
+        providers.onStatusChange(result.success ? "ONLINE" : "OFFLINE", result.success ? null : (result.message + (result.hint ? ` (${result.hint})` : "")));
+      }
       res.json(result);
     } catch (err: any) {
+      if (providers.onStatusChange) {
+        providers.onStatusChange("OFFLINE", err.message);
+      }
       res.status(500).json({ 
         success: false, 
         message: 'Terjadi kesalahan saat menguji koneksi database', 
@@ -78,8 +85,14 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
         miscBills: providers.getMiscBills()
       };
       const result = await syncDataToMysql(snapshot);
+      if (providers.onStatusChange && result.success) {
+        providers.onStatusChange("ONLINE", null);
+      }
       res.json(result);
     } catch (err: any) {
+      if (providers.onStatusChange) {
+        providers.onStatusChange("OFFLINE", err.message);
+      }
       res.status(500).json({ 
         success: false, 
         message: 'Gagal sinkronisasi data ke MySQL', 
@@ -95,8 +108,14 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
       if (result.success && result.data && providers.applyLoadedData) {
         await providers.applyLoadedData(result.data);
       }
+      if (providers.onStatusChange && result.success) {
+        providers.onStatusChange("ONLINE", null);
+      }
       res.json(result);
     } catch (err: any) {
+      if (providers.onStatusChange) {
+        providers.onStatusChange("OFFLINE", err.message);
+      }
       res.status(500).json({ 
         success: false, 
         message: 'Gagal memuat data dari database MySQL', 

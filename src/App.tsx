@@ -1,22 +1,24 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense, lazy } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, SchoolIdentity, HomeroomTeacher, AttendanceLog, SubjectTeacher, TeachingJournal, MiscBill, MerdekaAssessment, ClassSchedule } from './types';
-import StudentPanel from './components/StudentPanel';
-import AdminPanel from './components/AdminPanel';
-import HomeroomPanel from './components/HomeroomPanel';
-import SubjectTeacherPanel from './components/SubjectTeacherPanel';
-import TreasurerPanel from './components/TreasurerPanel';
-import PrincipalPanel from './components/PrincipalPanel';
-import WakaSarprasPanel from './components/WakaSarprasPanel';
-import CounselorPanel from './components/CounselorPanel';
-import WakaKurikulumPanel from './components/WakaKurikulumPanel';
-import ScheduleView from './components/ScheduleView';
 import Login from './components/Login';
-import SpmbLandingPage from './components/SpmbLandingPage';
+
+// Code-split heavy panels with React.lazy to drastically accelerate initial page load
+const StudentPanel = lazy(() => import('./components/StudentPanel'));
+const AdminPanel = lazy(() => import('./components/AdminPanel'));
+const HomeroomPanel = lazy(() => import('./components/HomeroomPanel'));
+const SubjectTeacherPanel = lazy(() => import('./components/SubjectTeacherPanel'));
+const TreasurerPanel = lazy(() => import('./components/TreasurerPanel'));
+const PrincipalPanel = lazy(() => import('./components/PrincipalPanel'));
+const WakaSarprasPanel = lazy(() => import('./components/WakaSarprasPanel'));
+const CounselorPanel = lazy(() => import('./components/CounselorPanel'));
+const WakaKurikulumPanel = lazy(() => import('./components/WakaKurikulumPanel'));
+const SpmbLandingPage = lazy(() => import('./components/SpmbLandingPage'));
+
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
-import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone } from 'lucide-react';
+import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone, Loader2 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
@@ -484,71 +486,79 @@ export default function App() {
     }
   };
 
-  // 1. Initial Load of students and global system configurations
+  // 1. Optimized parallel load of essential data
   const initSystemData = async () => {
     try {
       setIsLoading(true);
-      
-      // Load Students
-      try {
-        const stdRes = await fetchNoCache('/api/students');
-        if (stdRes.ok) {
-          const stdData = await stdRes.json();
-          setStudentsList(stdData);
-          // Default select first student or the stored logged-in student ID
-          if (stdData.length > 0) {
-            const storedStudentId = localStorage.getItem('smp_maarif_student_id');
-            const targetId = storedStudentId || stdData[0].id;
-            fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
+      const isUserLoggedIn = localStorage.getItem('smp_maarif_logged_in') === 'true';
+      const userRole = (localStorage.getItem('smp_maarif_role') as any) || 'student';
+      const storedStudentId = localStorage.getItem('smp_maarif_student_id');
+
+      // 1. Fetch core essentials in parallel immediately
+      const coreTasks = [
+        // School Identity
+        fetchNoCache('/api/school-identity').then(async (res) => {
+          if (res.ok) {
+            const sData = await res.json();
+            if (sData.success && sData.schoolIdentity) {
+              setSchoolIdentity(sData.schoolIdentity);
+            }
           }
-        }
-      } catch (e) {
-        console.error("Gagal memuat data siswa", e);
-      }
+        }).catch(e => console.error("Gagal memuat identitas sekolah", e)),
 
-      // Load Recent notifications history
-      try {
-        const notifRes = await fetchNoCache('/api/notifications');
-        if (notifRes.ok) {
-          const notifData = await notifRes.json();
-          setGlobalNotifications(notifData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat notifikasi", e);
-      }
-
-      // Load School Identity configuration
-      try {
-        const schoolRes = await fetchNoCache('/api/school-identity');
-        if (schoolRes.ok) {
-          const sData = await schoolRes.json();
-          if (sData.success && sData.schoolIdentity) {
-            setSchoolIdentity(sData.schoolIdentity);
+        // Students list
+        fetchNoCache('/api/students').then(async (res) => {
+          if (res.ok) {
+            const stdData = await res.json();
+            setStudentsList(stdData);
+            if (isUserLoggedIn) {
+              const targetId = storedStudentId || (stdData.length > 0 ? stdData[0].id : '');
+              if (targetId) {
+                fetchStudentFullData(targetId, userRole === 'admin' || userRole === 'homeroom');
+              }
+            }
           }
-        }
-      } catch (e) {
-        console.error("Gagal memuat identitas sekolah", e);
+        }).catch(e => console.error("Gagal memuat data siswa", e)),
+
+        // Midtrans Config
+        fetchNoCache('/api/midtrans-config').then(async (res) => {
+          if (res.ok) {
+            const keysData = await res.json();
+            setSysStatus(keysData);
+          }
+        }).catch(e => console.error("Gagal memuat konfigurasi midtrans", e)),
+
+        // Notifications
+        fetchNoCache('/api/notifications').then(async (res) => {
+          if (res.ok) {
+            const notifData = await res.json();
+            setGlobalNotifications(notifData);
+          }
+        }).catch(e => console.error("Gagal memuat notifikasi", e)),
+      ];
+
+      // If user is already authenticated, also kick off their operational data immediately
+      if (isUserLoggedIn) {
+        coreTasks.push(
+          fetchAttendance(),
+          fetchHomerooms(),
+          fetchSubjectTeachers(),
+          fetchMerdekaAssessments(),
+          fetchSchedules(),
+          fetchMiscBills()
+        );
+      } else {
+        // If not logged in, prefetch homerooms and schedules in background without blocking login
+        setTimeout(() => {
+          Promise.allSettled([
+            fetchHomerooms(),
+            fetchSubjectTeachers(),
+            fetchSchedules()
+          ]);
+        }, 800);
       }
 
-      // Load Midtrans integration keys metadata
-      try {
-        const keysRes = await fetchNoCache('/api/midtrans-config');
-        if (keysRes.ok) {
-          const keysData = await keysRes.json();
-          setSysStatus(keysData);
-        }
-      } catch (e) {
-        console.error("Gagal memuat konfigurasi midtrans", e);
-      }
-
-      await Promise.allSettled([
-        fetchAttendance(),
-        fetchHomerooms(),
-        fetchSubjectTeachers(),
-        fetchMerdekaAssessments(),
-        fetchSchedules(),
-        fetchMiscBills()
-      ]);
+      await Promise.allSettled(coreTasks);
     } catch (err) {
       console.error('Failed to boot initial data', err);
     } finally {
@@ -1613,16 +1623,25 @@ export default function App() {
 
   if (isSpmbView) {
     return (
-      <SpmbLandingPage
-        schoolIdentity={schoolIdentity}
-        isProduction={sysStatus?.isProduction || false}
-        midtransClientKey={sysStatus?.clientKey || ""}
-        onBackToLogin={() => {
-          setIsSpmbView(false);
-          const cleanUrl = window.location.origin + '/';
-          window.history.pushState({}, document.title, cleanUrl);
-        }}
-      />
+      <Suspense fallback={
+        <div className="min-h-screen flex items-center justify-center bg-slate-50">
+          <div className="flex flex-col items-center gap-3">
+            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+            <p className="text-xs font-bold text-slate-600">Memuat Portal SPMB...</p>
+          </div>
+        </div>
+      }>
+        <SpmbLandingPage
+          schoolIdentity={schoolIdentity}
+          isProduction={sysStatus?.isProduction || false}
+          midtransClientKey={sysStatus?.clientKey || ""}
+          onBackToLogin={() => {
+            setIsSpmbView(false);
+            const cleanUrl = window.location.origin + '/';
+            window.history.pushState({}, document.title, cleanUrl);
+          }}
+        />
+      </Suspense>
     );
   }
 
@@ -2461,6 +2480,13 @@ export default function App() {
 
       {/* Core Stage Frame */}
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        <Suspense fallback={
+          <div className="flex flex-col items-center justify-center min-h-[380px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-3" />
+            <h3 className="font-extrabold text-sm text-slate-800">Menyiapkan Panel...</h3>
+            <p className="text-xs text-slate-500 mt-1 max-w-sm">Memuat modul antarmuka sesuai hak akses sesi Anda.</p>
+          </div>
+        }>
         {!isLoggedIn ? (
           <Login
             students={studentsList}
@@ -2652,6 +2678,7 @@ export default function App() {
             classSchedules={schedulesList}
           />
         )}
+        </Suspense>
       </main>
 
       {/* Bottom Footer block */}

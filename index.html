@@ -139,7 +139,7 @@
         </div>
       </div>
       <script>
-        // If React does not mount within 6 seconds, show manual refresh option
+        // If React does not mount within 12 seconds (fallback for ultra-slow networks), show manual refresh option
         setTimeout(function() {
           var timeoutBox = document.getElementById('preloader-timeout');
           if (timeoutBox) {
@@ -149,7 +149,7 @@
           if (statusText) {
             statusText.innerText = 'Menghubungkan ke server...';
           }
-        }, 6000);
+        }, 12000);
       </script>
     </div>
     <script type="module" src="/src/main.tsx"></script>

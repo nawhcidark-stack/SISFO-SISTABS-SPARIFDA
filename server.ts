@@ -5,6 +5,7 @@ import express from "express";
 import path from "path";
 import fs from "fs";
 import multer from "multer";
+import compression from "compression";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
@@ -2167,6 +2168,15 @@ async function startServer() {
   console.log("=================================================");
 
   const app = express();
+  app.use(compression({
+    filter: (req, res) => {
+      // Do not compress Server-Sent Events (SSE) stream to prevent stream buffering
+      if (req.headers.accept === 'text/event-stream' || req.path.includes('/notifications/stream')) {
+        return false;
+      }
+      return compression.filter(req, res);
+    }
+  }));
   app.use(express.json({ limit: '100mb' }));
   app.use(express.urlencoded({ limit: '100mb', extended: true }));
 
@@ -9790,11 +9800,15 @@ async function startServer() {
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath, {
+      maxAge: '1y',
       setHeaders: (res, filePath) => {
         if (filePath.endsWith('.html')) {
           res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
           res.setHeader('Pragma', 'no-cache');
           res.setHeader('Expires', '0');
+        } else if (filePath.includes('/assets/') || filePath.includes('\\assets\\')) {
+          // Hashed Vite assets are immutable and can be safely cached for 1 year
+          res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
         }
       }
     }));

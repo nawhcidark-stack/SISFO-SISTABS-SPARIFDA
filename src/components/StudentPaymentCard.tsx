@@ -15,7 +15,8 @@ export default function StudentPaymentCard({ student, schoolIdentity, isPreview 
 
   useEffect(() => {
     let isMounted = true;
-    QRCode.toDataURL(student.nis, {
+    if (!student?.nis) return;
+    QRCode.toDataURL(String(student.nis), {
       margin: 1,
       width: 140, // standard clean QR size
       color: {
@@ -31,7 +32,9 @@ export default function StudentPaymentCard({ student, schoolIdentity, isPreview 
     return () => {
       isMounted = false;
     };
-  }, [student.nis]);
+  }, [student?.nis]);
+
+  if (!student) return null;
 
   // Standard dimensions of ID card ID-1 (85.6mm x 53.98mm)
   const cardStyle: React.CSSProperties = {

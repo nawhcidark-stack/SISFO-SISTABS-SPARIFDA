@@ -541,15 +541,17 @@ export default function App() {
         console.error("Gagal memuat konfigurasi midtrans", e);
       }
 
-      await fetchAttendance();
-      await fetchHomerooms();
-      await fetchSubjectTeachers();
-      await fetchMerdekaAssessments();
-      await fetchSchedules();
-      await fetchMiscBills();
-      setIsLoading(false);
+      await Promise.allSettled([
+        fetchAttendance(),
+        fetchHomerooms(),
+        fetchSubjectTeachers(),
+        fetchMerdekaAssessments(),
+        fetchSchedules(),
+        fetchMiscBills()
+      ]);
     } catch (err) {
       console.error('Failed to boot initial data', err);
+    } finally {
       setIsLoading(false);
     }
   };
@@ -2497,38 +2499,66 @@ export default function App() {
             homerooms={homeroomsList}
           />
         ) : role === 'homeroom' ? (
-          <HomeroomPanel
-            currentTeacher={homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom!}
-            students={studentsList}
-            attendanceLogs={attendanceList}
-            bills={studentBills}
-            schoolIdentity={schoolIdentity}
-            onLogout={handleLogout}
-            onSaveBatchAttendance={handleSaveBatchAttendance}
-            onRefresh={handleReload}
-            isLoading={isLoading}
-            onUpdateStudent={handleUpdateStudent}
-            scannedStudentNis={scannedStudentNis}
-            scannedStudentAt={scannedStudentAt}
-            miscBills={miscBillsList}
-            classSchedules={schedulesList}
-            subjectTeachers={subjectTeachersList}
-            homerooms={homeroomsList}
-            transactions={studentTransactions}
-          />
+          (homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom) ? (
+            <HomeroomPanel
+              currentTeacher={homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom!}
+              students={studentsList}
+              attendanceLogs={attendanceList}
+              bills={studentBills}
+              schoolIdentity={schoolIdentity}
+              onLogout={handleLogout}
+              onSaveBatchAttendance={handleSaveBatchAttendance}
+              onRefresh={handleReload}
+              isLoading={isLoading}
+              onUpdateStudent={handleUpdateStudent}
+              scannedStudentNis={scannedStudentNis}
+              scannedStudentAt={scannedStudentAt}
+              miscBills={miscBillsList}
+              classSchedules={schedulesList}
+              subjectTeachers={subjectTeachersList}
+              homerooms={homeroomsList}
+              transactions={studentTransactions}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+              <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Akun Wali Kelas...</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, sistem sedang memverifikasi profil kelas Anda dari server.</p>
+              <button
+                onClick={handleLogout}
+                className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Kembali ke Halaman Masuk
+              </button>
+            </div>
+          )
         ) : role === 'subject_teacher' ? (
-          <SubjectTeacherPanel
-            currentTeacher={subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher!}
-            students={studentsList}
-            attendanceLogs={attendanceList}
-            schoolIdentity={schoolIdentity}
-            onLogout={handleLogout}
-            onRefresh={handleReload}
-            isLoading={isLoading}
-            classSchedules={schedulesList}
-            subjectTeachers={subjectTeachersList}
-            homerooms={homeroomsList}
-          />
+          (subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher) ? (
+            <SubjectTeacherPanel
+              currentTeacher={subjectTeachersList.find(st => st.id === loggedSubjectTeacher?.id) || loggedSubjectTeacher!}
+              students={studentsList}
+              attendanceLogs={attendanceList}
+              schoolIdentity={schoolIdentity}
+              onLogout={handleLogout}
+              onRefresh={handleReload}
+              isLoading={isLoading}
+              classSchedules={schedulesList}
+              subjectTeachers={subjectTeachersList}
+              homerooms={homeroomsList}
+            />
+          ) : (
+            <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+              <div className="w-8 h-8 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin mb-3"></div>
+              <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Profil Guru Mapel...</h3>
+              <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, profil dan jadwal mengajar Anda sedang dimuat dari server.</p>
+              <button
+                onClick={handleLogout}
+                className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Kembali ke Halaman Masuk
+              </button>
+            </div>
+          )
         ) : role === 'treasurer' ? (
           <TreasurerPanel
             schoolIdentity={schoolIdentity}

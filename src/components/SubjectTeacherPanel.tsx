@@ -109,8 +109,8 @@ export default function SubjectTeacherPanel({
       if (res.ok) {
         const data = await res.json();
         const filtered = data.filter((e: any) => 
-          e.teacherId === currentTeacher.id ||
-          (currentTeacher.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
+          e.teacherId === currentTeacher?.id ||
+          (currentTeacher?.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
         );
         setEvaluations(filtered);
       }
@@ -1240,6 +1240,22 @@ export default function SubjectTeacherPanel({
       (s.nis && s.nis.includes(q))
     );
   }, [classStudents, searchQuery]);
+
+  if (!currentTeacher) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <Loader2 className="w-8 h-8 text-indigo-600 animate-spin mb-3" />
+        <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Profil Guru Mapel...</h3>
+        <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, profil dan jadwal mengajar Anda sedang dimuat dari server.</p>
+        <button
+          onClick={onLogout}
+          className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+        >
+          Kembali ke Halaman Masuk
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div id="subject-teacher-panel-container" className="flex flex-col gap-6 pb-24 md:pb-0">

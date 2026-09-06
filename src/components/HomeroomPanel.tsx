@@ -793,7 +793,7 @@ export default function HomeroomPanel({
 
   const handleAutoFillAllTpsFromJournals = () => {
     const norm = (s?: string) => (s || '').toLowerCase().trim();
-    const targetClass = selectedGradingClass || currentTeacher.className;
+    const targetClass = selectedGradingClass || currentTeacher?.className || '';
     const sourceJournals = allTeachingJournalsList.length > 0 ? allTeachingJournalsList : teachingJournalsList;
 
     let relevant = sourceJournals.filter((j: any) => {
@@ -860,13 +860,13 @@ export default function HomeroomPanel({
   }, [schoolIdentity?.activeAcademicYear]);
 
   // Selected class for grading & rapor (defaults to homeroom class but can be changed to any class)
-  const [selectedGradingClass, setSelectedGradingClass] = useState<string>(currentTeacher.className || '');
+  const [selectedGradingClass, setSelectedGradingClass] = useState<string>(currentTeacher?.className || '');
 
   useEffect(() => {
-    if (currentTeacher.className && !selectedGradingClass) {
+    if (currentTeacher?.className && !selectedGradingClass) {
       setSelectedGradingClass(currentTeacher.className);
     }
-  }, [currentTeacher.className]);
+  }, [currentTeacher?.className]);
 
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
@@ -1159,8 +1159,8 @@ export default function HomeroomPanel({
       if (res.ok) {
         const data = await res.json();
         const filtered = data.filter((e: any) => 
-          e.teacherId === currentTeacher.id ||
-          (currentTeacher.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
+          e.teacherId === currentTeacher?.id ||
+          (currentTeacher?.name && e.teacherName && e.teacherName.trim().toLowerCase() === currentTeacher.name.trim().toLowerCase())
         );
         setEvaluations(filtered);
       }
@@ -1298,10 +1298,10 @@ export default function HomeroomPanel({
   }, [teachingJournalsList, currentTeacher.className, kbmJournalStartDate, kbmJournalEndDate]);
 
   const kelasLainJournals = useMemo(() => {
-    const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
+    const cName = currentTeacher?.name ? currentTeacher.name.trim().toLowerCase() : '';
     return teachingJournalsList.filter((j: any) => {
-      const isTeacher = (j.teacherId === currentTeacher.id || (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName));
-      const isOtherClass = j.className && j.className.toLowerCase() !== currentTeacher.className.toLowerCase();
+      const isTeacher = (j.teacherId === currentTeacher?.id || (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName));
+      const isOtherClass = j.className && j.className.toLowerCase() !== (currentTeacher?.className || '').toLowerCase();
       if (!isTeacher || !isOtherClass) return false;
       let jDate = j.date ? j.date.substring(0, 10) : '';
       if (jDate.includes('/')) {
@@ -1314,7 +1314,7 @@ export default function HomeroomPanel({
       if (kbmJournalEndDate && jDate > kbmJournalEndDate) return false;
       return true;
     });
-  }, [teachingJournalsList, currentTeacher.id, currentTeacher.name, currentTeacher.className, kbmJournalStartDate, kbmJournalEndDate]);
+  }, [teachingJournalsList, currentTeacher?.id, currentTeacher?.name, currentTeacher?.className, kbmJournalStartDate, kbmJournalEndDate]);
 
   // Create Journal For Homeroom state
   const [isAddJournalOpen, setIsAddJournalOpen] = useState(false);
@@ -3165,6 +3165,22 @@ Wassalamualaikum Wr. Wb.
       totalInArrearsMiscCount
     };
   }, [classStudents, bills, miscBills]);
+
+  if (!currentTeacher) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-[400px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
+        <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-3" />
+        <h3 className="font-extrabold text-sm text-slate-800">Menyinkronkan Akun Wali Kelas...</h3>
+        <p className="text-xs text-slate-500 mt-1 max-w-sm">Mohon tunggu sebentar, sistem sedang memverifikasi data kelas dari server.</p>
+        <button
+          onClick={onLogout}
+          className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all"
+        >
+          Kembali ke Halaman Masuk
+        </button>
+      </div>
+    );
+  }
 
   return (
     <div id="homeroom-dashboard-root" className="flex flex-col gap-6 pb-24 md:pb-0 animate-fade-in">

@@ -411,15 +411,23 @@ export function exportSppChecklistToExcel(params: {
   XLSX.writeFile(wb, fileName);
 }
 
-// 3. Export Savings Recap (Rekap Tabungan) to Excel
-export function exportSavingsRecapToExcel(params: {
+// 3. Export Savings Recap (Rekap Tabungan) to Excel (Lengkap dengan Mutasi & Memo)
+export interface ExportSavingsRecapOptions {
   rekapTabunganGradeFilter: string;
   rekapTabunganClassFilter: string;
   orderedStudentsBySavings: any[];
   totalGlobalSavings: number;
   countActiveAccounts: number;
   filteredTabunganStudentsLength: number;
-}) {
+  transactions?: any[];
+  includeMutations?: boolean;
+  onlyMutations?: boolean;
+  startDate?: string;
+  endDate?: string;
+  schoolName?: string;
+}
+
+export function exportSavingsRecapToExcel(params: ExportSavingsRecapOptions) {
   const {
     rekapTabunganGradeFilter,
     rekapTabunganClassFilter,
@@ -427,44 +435,494 @@ export function exportSavingsRecapToExcel(params: {
     totalGlobalSavings,
     countActiveAccounts,
     filteredTabunganStudentsLength,
+    transactions = [],
+    includeMutations = false,
+    onlyMutations = false,
+    startDate,
+    endDate,
+    schoolName = "SMP MAARIF NU PANDAAN",
   } = params;
 
   const wb = XLSX.utils.book_new();
 
-  const headers = ["No", "NIS", "Nama Siswa", "Kelas", "Saldo Tabungan Saat Ini (IDR)"];
-  const rows = orderedStudentsBySavings.map((student, idx) => [
-    idx + 1,
-    student.nis,
-    student.name,
-    student.class ? `Kelas ${student.class}` : "-",
-    student.savingsBalance,
-  ]);
+  // Create fast lookup maps for students
+  const studentMap = new Map<string, any>();
+  const studentNisMap = new Map<string, any>();
+  orderedStudentsBySavings.forEach((s) => {
+    if (s.id) studentMap.set(String(s.id), s);
+    if (s.nis) studentNisMap.set(String(s.nis).trim(), s);
+  });
 
-  const rate = filteredTabunganStudentsLength > 0 ? Math.round(totalGlobalSavings / filteredTabunganStudentsLength) : 0;
-  const pctActive = filteredTabunganStudentsLength > 0 ? Math.round((countActiveAccounts / filteredTabunganStudentsLength) * 100) : 0;
+  // Track per-student mutation statistics
+  const studentStats = new Map<
+    string,
+    { deposits: number; withdrawals: number; count: number; lastDate: string }
+  >();
+  orderedStudentsBySavings.forEach((s) => {
+    studentStats.set(String(s.id), {
+      deposits: 0,
+      withdrawals: 0,
+      count: 0,
+      lastDate: "-",
+    });
+  });
+
+  // Filter transactions for relevant students and date range
+  const relevantTxs: any[] = [];
+  let totalMutasiSetor = 0;
+  let totalMutasiTarik = 0;
+
+  transactions.forEach((tx) => {
+    if (
+      tx.status &&
+      tx.status !== "success" &&
+      tx.status !== "completed" &&
+      tx.status !== "settlement"
+    ) {
+      return;
+    }
+
+    const matchedStudent =
+      (tx.studentId && studentMap.get(String(tx.studentId))) ||
+      (tx.studentNis && studentNisMap.get(String(tx.studentNis).trim())) ||
+      (tx.studentId && studentNisMap.get(String(tx.studentId).trim()));
+
+    if (!matchedStudent) return;
+
+    if (startDate && tx.createdAt && tx.createdAt.substring(0, 10) < startDate)
+      return;
+    if (endDate && tx.createdAt && tx.createdAt.substring(0, 10) > endDate)
+      return;
+
+    const isDeposit = tx.type === "deposit";
+    const amount = Number(tx.amount) || 0;
+    if (isDeposit) {
+      totalMutasiSetor += amount;
+    } else {
+      totalMutasiTarik += amount;
+    }
+
+    const stat = studentStats.get(String(matchedStudent.id));
+    if (stat) {
+      if (isDeposit) stat.deposits += amount;
+      else stat.withdrawals += amount;
+      stat.count += 1;
+      if (
+        !stat.lastDate ||
+        stat.lastDate === "-" ||
+        new Date(tx.createdAt).getTime() > new Date(stat.lastDate).getTime()
+      ) {
+        stat.lastDate = tx.createdAt;
+      }
+    }
+
+    relevantTxs.push({
+      ...tx,
+      student: matchedStudent,
+    });
+  });
+
+  // Sort transactions chronologically (oldest to newest for proper ledger)
+  relevantTxs.sort(
+    (a, b) =>
+      new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+  );
+
+  const gradeName =
+    rekapTabunganGradeFilter === "all"
+      ? "SemuaTingkat"
+      : `Tingkat${rekapTabunganGradeFilter}`;
+  const className =
+    rekapTabunganClassFilter === "all"
+      ? "SemuaKelas"
+      : `Kelas${rekapTabunganClassFilter}`;
+  const dateStamp = new Date().toISOString().split("T")[0];
+
+  const rate =
+    filteredTabunganStudentsLength > 0
+      ? Math.round(totalGlobalSavings / filteredTabunganStudentsLength)
+      : 0;
+  const pctActive =
+    filteredTabunganStudentsLength > 0
+      ? Math.round(
+          (countActiveAccounts / filteredTabunganStudentsLength) * 100,
+        )
+      : 0;
+
+  // -------------------------------------------------------------
+  // SHEET 1: RINGKASAN SALDO TABUNGAN (Jika bukan mode onlyMutations)
+  // -------------------------------------------------------------
+  if (!onlyMutations) {
+    const headers = [
+      "No",
+      "NIS",
+      "Nama Siswa",
+      "Kelas",
+      "Total Akumulasi Setor (IDR)",
+      "Total Akumulasi Tarik (IDR)",
+      "Saldo Tabungan Akhir (IDR)",
+      "Frekuensi Mutasi",
+      "Status Rekening",
+      "Transaksi Terakhir",
+    ];
+
+    const rows = orderedStudentsBySavings.map((student, idx) => {
+      const stat = studentStats.get(String(student.id)) || {
+        deposits: 0,
+        withdrawals: 0,
+        count: 0,
+        lastDate: "-",
+      };
+      const lastDateFormatted =
+        stat.lastDate && stat.lastDate !== "-"
+          ? new Date(stat.lastDate).toLocaleDateString("id-ID", {
+              day: "2-digit",
+              month: "short",
+              year: "numeric",
+            })
+          : "-";
+
+      return [
+        idx + 1,
+        student.nis,
+        student.name,
+        student.class ? `Kelas ${student.class}` : "-",
+        stat.deposits > 0
+          ? stat.deposits
+          : student.savingsBalance > 0
+            ? student.savingsBalance
+            : 0,
+        stat.withdrawals,
+        student.savingsBalance,
+        `${stat.count}x Transaksi`,
+        student.savingsBalance > 0 ? "Aktif (Ada Saldo)" : "Saldo Nol",
+        lastDateFormatted,
+      ];
+    });
+
+    const sheetData = [
+      ["REKAPITULASI SALDO TABUNGAN SISWA"],
+      [schoolName],
+      [
+        `Tingkat: ${rekapTabunganGradeFilter === "all" ? "Semua Tingkat" : `Tingkat ${rekapTabunganGradeFilter}`} | Kelas: ${rekapTabunganClassFilter === "all" ? "Semua Kelas" : `Kelas ${rekapTabunganClassFilter}`}`,
+      ],
+      [
+        `Dicetak Pada: ${new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`,
+      ],
+      [],
+      ["RINGKASAN TABUNGAN FILTERED"],
+      ["Total Tabungan Global Siswa (IDR)", totalGlobalSavings],
+      [
+        "Rekening Terisi / Aktif Memiliki Saldo",
+        `${countActiveAccounts} Siswa (${pctActive}%)`,
+      ],
+      [
+        "Total Akumulasi Setoran Tercatat (IDR)",
+        totalMutasiSetor > 0 ? totalMutasiSetor : totalGlobalSavings,
+      ],
+      ["Total Akumulasi Penarikan Tercatat (IDR)", totalMutasiTarik],
+      ["Rata-rata Saldo Tabungan Per Siswa (IDR)", rate],
+      [
+        "Total Riwayat Transaksi Mutasi",
+        `${relevantTxs.length} Baris Transaksi`,
+      ],
+      [],
+      headers,
+      ...rows,
+      [],
+      [
+        "",
+        "",
+        "",
+        "TOTAL SALDO TABUNGAN:",
+        "",
+        "",
+        totalGlobalSavings,
+        `${relevantTxs.length}x`,
+        "",
+        "",
+      ],
+    ];
+
+    const ws = XLSX.utils.aoa_to_sheet(sheetData);
+    ws["!cols"] = [
+      { wch: 6 },
+      { wch: 14 },
+      { wch: 30 },
+      { wch: 14 },
+      { wch: 26 },
+      { wch: 26 },
+      { wch: 26 },
+      { wch: 20 },
+      { wch: 18 },
+      { wch: 20 },
+    ];
+    XLSX.utils.book_append_sheet(wb, ws, "Ringkasan Saldo");
+  }
+
+  // -------------------------------------------------------------
+  // SHEET 2: BUKU BESAR MUTASI & MEMO LENGKAP
+  // -------------------------------------------------------------
+  if (includeMutations || onlyMutations) {
+    const mutasiHeaders = [
+      "No",
+      "Waktu Mutasi (Tgl & Jam)",
+      "NIS",
+      "Nama Siswa",
+      "Kelas",
+      "Jenis Mutasi",
+      "Nominal Setor / Masuk (IDR)",
+      "Nominal Tarik / Keluar (IDR)",
+      "Saldo Akhir Siswa (IDR)",
+      "Metode Pembayaran / Saluran",
+      "No. Order / Ref Transaksi",
+      "Keterangan / Memo Mutasi",
+      "Status Verifikasi",
+    ];
+
+    const mutasiRows = relevantTxs.map((tx, idx) => {
+      const isDeposit = tx.type === "deposit";
+      const d = tx.createdAt ? new Date(tx.createdAt) : null;
+      const timeFormatted = d
+        ? `${d.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" })} ${d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`
+        : "-";
+
+      let memo = tx.notes ? String(tx.notes).trim() : "";
+      if (!memo) {
+        memo = isDeposit
+          ? "Setoran Tabungan Siswa"
+          : "Penarikan Dana Tabungan";
+      }
+
+      let method = tx.paymentMethod || "Loket Teller";
+      if (tx.orderId && tx.orderId.toLowerCase().includes("midtrans")) {
+        method = "Midtrans Online";
+      } else if (tx.orderId && tx.orderId.startsWith("SAV-")) {
+        method = "Loket Teller Sekolah";
+      }
+
+      return [
+        idx + 1,
+        timeFormatted,
+        tx.student?.nis || tx.studentNis || "-",
+        tx.student?.name || tx.studentName || "Siswa",
+        tx.student?.class ? `Kelas ${tx.student.class}` : "-",
+        isDeposit ? "SETORAN (MASUK)" : "PENARIKAN (KELUAR)",
+        isDeposit ? tx.amount : 0,
+        !isDeposit ? tx.amount : 0,
+        tx.student?.savingsBalance ?? "-",
+        method,
+        tx.orderId || tx.transactionId || tx.id || "-",
+        memo,
+        tx.status === "success" || !tx.status || tx.status === "completed"
+          ? "BERHASIL / VALID"
+          : String(tx.status).toUpperCase(),
+      ];
+    });
+
+    const dateFilterNote =
+      startDate || endDate
+        ? ` | Periode: ${startDate || "Awal"} s.d. ${endDate || "Sekarang"}`
+        : " | Periode: Seluruh Riwayat";
+
+    const mutasiSheetData = [
+      ["BUKU BESAR MUTASI & MEMO TRANSAKSI TABUNGAN SISWA"],
+      [schoolName],
+      [
+        `Tingkat: ${rekapTabunganGradeFilter === "all" ? "Semua Tingkat" : `Tingkat ${rekapTabunganGradeFilter}`} | Kelas: ${rekapTabunganClassFilter === "all" ? "Semua Kelas" : `Kelas ${rekapTabunganClassFilter}`}${dateFilterNote}`,
+      ],
+      [
+        `Tanggal Unduh: ${new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "long", year: "numeric" })}`,
+      ],
+      [],
+      ["REKAPITULASI ARUS MUTASI KAS TABUNGAN"],
+      ["Total Frekuensi Transaksi Mutasi", `${relevantTxs.length} Transaksi`],
+      ["Total Nominal Setoran / Masuk (IDR)", totalMutasiSetor],
+      ["Total Nominal Penarikan / Keluar (IDR)", totalMutasiTarik],
+      [
+        "Net Arus Bersih Kas Tabungan (IDR)",
+        totalMutasiSetor - totalMutasiTarik,
+      ],
+      [],
+      mutasiHeaders,
+      ...mutasiRows,
+      [],
+      [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "TOTAL KESELURUHAN MUTASI:",
+        totalMutasiSetor,
+        totalMutasiTarik,
+        "",
+        "",
+        "",
+        `Selisih Bersih: Rp ${(totalMutasiSetor - totalMutasiTarik).toLocaleString("id-ID")}`,
+        "",
+      ],
+    ];
+
+    const wsMutasi = XLSX.utils.aoa_to_sheet(mutasiSheetData);
+    wsMutasi["!cols"] = [
+      { wch: 6 },
+      { wch: 20 },
+      { wch: 14 },
+      { wch: 28 },
+      { wch: 12 },
+      { wch: 22 },
+      { wch: 26 },
+      { wch: 26 },
+      { wch: 22 },
+      { wch: 22 },
+      { wch: 26 },
+      { wch: 45 },
+      { wch: 20 },
+    ];
+    XLSX.utils.book_append_sheet(wb, wsMutasi, "Buku Mutasi & Memo");
+  }
+
+  let fileName = `Rekap_Tabungan_${gradeName}_${className}.xlsx`;
+  if (onlyMutations) {
+    fileName = `Mutasi_Tabungan_Lengkap_${gradeName}_${className}_${dateStamp}.xlsx`;
+  } else if (includeMutations) {
+    fileName = `Rekap_Tabungan_Lengkap_Mutasi_Memo_${gradeName}_${className}_${dateStamp}.xlsx`;
+  }
+
+  XLSX.writeFile(wb, fileName);
+}
+
+// 3b. Export Individual Student Savings Passbook (Buku Rekening Per Siswa) to Excel
+export function exportStudentSavingsPassbookToExcel(params: {
+  student: any;
+  transactions: any[];
+  schoolName?: string;
+}) {
+  const {
+    student,
+    transactions,
+    schoolName = "SMP MAARIF NU PANDAAN",
+  } = params;
+
+  const wb = XLSX.utils.book_new();
+
+  // Filter student transactions
+  const studentTxs = transactions
+    .filter(
+      (t) =>
+        (t.studentId === student.id ||
+          (student.nis &&
+            String(t.studentId).trim() === String(student.nis).trim())) &&
+        (t.status === "success" || !t.status || t.status === "completed"),
+    )
+    .sort(
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+    );
+
+  let currentBalance = 0;
+  let totalDeposit = 0;
+  let totalWithdrawal = 0;
+
+  const headers = [
+    "No",
+    "Tanggal & Jam",
+    "Jenis Transaksi",
+    "Setoran / Masuk (IDR)",
+    "Penarikan / Keluar (IDR)",
+    "Saldo Akhir (IDR)",
+    "Metode Pembayaran",
+    "No. Order / Ref",
+    "Memo & Keterangan Transaksi",
+    "Petugas / Teller",
+  ];
+
+  const rows = studentTxs.map((tx, idx) => {
+    const isDeposit = tx.type === "deposit";
+    const amount = Number(tx.amount) || 0;
+    if (isDeposit) {
+      currentBalance += amount;
+      totalDeposit += amount;
+    } else {
+      currentBalance -= amount;
+      totalWithdrawal += amount;
+    }
+
+    const d = tx.createdAt ? new Date(tx.createdAt) : null;
+    const timeFormatted = d
+      ? `${d.toLocaleDateString("id-ID", { day: "2-digit", month: "2-digit", year: "numeric" })} ${d.toLocaleTimeString("id-ID", { hour: "2-digit", minute: "2-digit" })}`
+      : "-";
+
+    let memo = tx.notes ? String(tx.notes).trim() : "";
+    if (!memo) {
+      memo = isDeposit ? "Setoran Tabungan" : "Penarikan Tunai";
+    }
+
+    return [
+      idx + 1,
+      timeFormatted,
+      isDeposit ? "SETORAN" : "PENARIKAN",
+      isDeposit ? amount : 0,
+      !isDeposit ? amount : 0,
+      currentBalance,
+      tx.paymentMethod || (tx.orderId?.startsWith("SAV-") ? "Teller Sekolah" : "Cash / Tunai"),
+      tx.orderId || tx.transactionId || "-",
+      memo,
+      "Teller Sekolah",
+    ];
+  });
+
+  const finalBal = student.savingsBalance ?? currentBalance;
 
   const sheetData = [
-    ["REKAPITULASI SALDO TABUNGAN SISWA"],
-    ["SMP MAARIF NU PANDAAN"],
-    [`Tingkat: ${rekapTabunganGradeFilter === "all" ? "Semua" : `Tingkat ${rekapTabunganGradeFilter}`}`],
-    [`Kelas: ${rekapTabunganClassFilter === "all" ? "Semua" : `Kelas ${rekapTabunganClassFilter}`}`],
+    ["BUKU TABUNGAN & REKENING MUTASI SISWA"],
+    [schoolName],
     [],
-    ["Ringkasan Tabungan"],
-    ["Total Tabungan Global", totalGlobalSavings],
-    ["Rekening Terisi / Aktif Setor", `${countActiveAccounts} Siswa (${pctActive}%)`],
-    ["Rata-rata Saldo Tabungan", rate],
+    ["IDENTITAS REKENING SISWA"],
+    ["Nomor Induk Siswa (NIS)", student.nis || "-"],
+    ["Nama Lengkap Siswa", student.name || "-"],
+    ["Kelas / Rombel", student.class ? `Kelas ${student.class}` : "-"],
+    ["Saldo Tabungan Saat Ini", `Rp ${finalBal.toLocaleString("id-ID")}`],
+    ["Total Akumulasi Setoran", `Rp ${totalDeposit.toLocaleString("id-ID")}`],
+    ["Total Akumulasi Penarikan", `Rp ${totalWithdrawal.toLocaleString("id-ID")}`],
+    ["Total Transaksi Mutasi", `${studentTxs.length} Transaksi`],
     [],
     headers,
     ...rows,
+    [],
+    [
+      "",
+      "",
+      "TOTAL AKUMULASI:",
+      totalDeposit,
+      totalWithdrawal,
+      finalBal,
+      "",
+      "",
+      `Saldo Akhir Bersih: Rp ${finalBal.toLocaleString("id-ID")}`,
+      "",
+    ],
   ];
 
   const ws = XLSX.utils.aoa_to_sheet(sheetData);
-  XLSX.utils.book_append_sheet(wb, ws, "Rekap Tabungan");
+  ws["!cols"] = [
+    { wch: 6 },
+    { wch: 20 },
+    { wch: 18 },
+    { wch: 24 },
+    { wch: 24 },
+    { wch: 24 },
+    { wch: 22 },
+    { wch: 24 },
+    { wch: 45 },
+    { wch: 18 },
+  ];
+  XLSX.utils.book_append_sheet(wb, ws, "Mutasi Rekening");
 
-  const gradeName = rekapTabunganGradeFilter === "all" ? "SemuaTingkat" : `Tingkat${rekapTabunganGradeFilter}`;
-  const className = rekapTabunganClassFilter === "all" ? "SemuaKelas" : `Kelas${rekapTabunganClassFilter}`;
-
-  const fileName = `Rekap_Tabungan_${gradeName}_${className}.xlsx`;
+  const safeNis = (student.nis || "siswa").replace(/[^a-zA-Z0-9]/g, "_");
+  const safeName = (student.name || "siswa").replace(/[^a-zA-Z0-9]/g, "_");
+  const fileName = `Buku_Tabungan_${safeNis}_${safeName}.xlsx`;
   XLSX.writeFile(wb, fileName);
 }
 

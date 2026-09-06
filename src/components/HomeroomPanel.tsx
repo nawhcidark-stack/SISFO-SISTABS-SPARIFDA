@@ -1056,6 +1056,9 @@ export default function HomeroomPanel({
       totalGlobalSavings,
       countActiveAccounts,
       filteredTabunganStudentsLength,
+      transactions,
+      includeMutations: true,
+      schoolName: schoolIdentity?.name || "SMP MAARIF NU PANDAAN",
     });
   };
 

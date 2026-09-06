@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Printer, X, FileText, BookOpen, CheckCircle, ArrowDownLeft, ArrowUpRight, Landmark, Sparkles } from 'lucide-react';
+import { Printer, X, FileText, BookOpen, CheckCircle, ArrowDownLeft, ArrowUpRight, Landmark, Sparkles, Download } from 'lucide-react';
 import { Student, SavingsTransaction, SchoolIdentity } from '../types';
+import { exportStudentSavingsPassbookToExcel } from '../utils/excelExport';
 
 interface SavingsPassbookModalProps {
   isOpen: boolean;
@@ -114,12 +115,27 @@ export const SavingsPassbookModal: React.FC<SavingsPassbookModalProps> = ({
             </button>
           </div>
 
-          <button
-            onClick={handlePrint}
-            className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 shadow-emerald-100"
-          >
-            <Printer size={15} /> Cetak Sekarang (Print / PDF)
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => {
+                exportStudentSavingsPassbookToExcel({
+                  student,
+                  transactions,
+                  schoolName,
+                });
+              }}
+              className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 shadow-blue-100"
+              title="Download Excel Buku Rekening & Mutasi Siswa Lengkap"
+            >
+              <Download size={15} /> Export Excel Mutasi
+            </button>
+            <button
+              onClick={handlePrint}
+              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-xs rounded-xl shadow-md transition-all cursor-pointer flex items-center gap-2 shadow-emerald-100"
+            >
+              <Printer size={15} /> Cetak Sekarang (Print / PDF)
+            </button>
+          </div>
         </div>
 
         {/* PRINTABLE CONTAINER CONTENT */}

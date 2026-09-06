@@ -20,6 +20,7 @@ import {
   exportSppRecapToExcel,
   exportSppChecklistToExcel,
   exportSavingsRecapToExcel,
+  exportStudentSavingsPassbookToExcel,
   exportMiscRecapToExcel,
   exportFilteredMiscBillsToExcel,
 } from "../utils/excelExport";
@@ -76,6 +77,8 @@ import {
   Database,
   HardDrive,
   CheckSquare,
+  FileSpreadsheet,
+  ChevronDown,
 } from "lucide-react";
 import StudentManagement from "./StudentManagement";
 import BukuIndukManagement from "./BukuIndukManagement";
@@ -1248,6 +1251,10 @@ export default function AdminPanel({
   const [rekapSppClassFilter, setRekapSppClassFilter] = useState<string>("all");
   const [rekapTabunganClassFilter, setRekapTabunganClassFilter] = useState<string>("all");
   const [rekapTabunganGradeFilter, setRekapTabunganGradeFilter] = useState<string>("all");
+  const [showSavingsExcelModal, setShowSavingsExcelModal] = useState(false);
+  const [savingsExcelMode, setSavingsExcelMode] = useState<"full" | "mutations" | "summary">("full");
+  const [savingsExcelStartDate, setSavingsExcelStartDate] = useState("");
+  const [savingsExcelEndDate, setSavingsExcelEndDate] = useState("");
   const [rekapMiscClassFilter, setRekapMiscClassFilter] = useState<string>("all");
   const [rekapMiscGradeFilter, setRekapMiscGradeFilter] = useState<string>("all");
   const [alumniSearch, setAlumniSearch] = useState("");
@@ -12060,13 +12067,31 @@ export default function AdminPanel({
                             <h4 className="font-black text-slate-900 uppercase text-[10px] tracking-widest">
                               Histori Tabungan
                             </h4>
-                            <button
-                              type="button"
-                              onClick={() => setPassbookModalStudent(selectedStudent)}
-                              className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1"
-                            >
-                              <Printer size={11} /> Cetak Buku Tabungan
-                            </button>
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (selectedStudent) {
+                                    exportStudentSavingsPassbookToExcel({
+                                      student: selectedStudent,
+                                      transactions,
+                                      schoolName: schoolIdentity?.name || "SMP MAARIF NU PANDAAN",
+                                    });
+                                  }
+                                }}
+                                className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                                title="Download Histori Mutasi & Memo Siswa Ini ke Excel"
+                              >
+                                <Download size={11} /> Export Excel
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => setPassbookModalStudent(selectedStudent)}
+                                className="px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white font-extrabold text-[10px] rounded-lg shadow-2xs transition-all cursor-pointer flex items-center gap-1"
+                              >
+                                <Printer size={11} /> Cetak Buku Tabungan
+                              </button>
+                            </div>
                           </div>
 
                           <div className="overflow-y-auto max-h-[300px] border border-slate-150 rounded-lg">
@@ -15631,13 +15656,204 @@ export default function AdminPanel({
                             totalGlobalSavings,
                             countActiveAccounts,
                             filteredTabunganStudentsLength: filteredTabunganStudents.length,
+                            transactions,
+                            includeMutations: true,
+                            onlyMutations: false,
+                            startDate: savingsExcelStartDate || undefined,
+                            endDate: savingsExcelEndDate || undefined,
+                            schoolName: schoolIdentity?.name || "SMP MAARIF NU PANDAAN",
                           });
                         }}
-                        className="flex items-center gap-1.5 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
+                        className="flex items-center gap-1.5 px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
+                        title="Download Rekap Lengkap Excel: Ringkasan Saldo + Lembar Mutasi & Memo Seluruh Siswa"
                       >
-                        <Download size={12} /> Export Excel 📊
+                        <FileSpreadsheet size={13} /> Export Lengkap + Mutasi & Memo 📗
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setShowSavingsExcelModal(true)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all uppercase tracking-wider font-sans shadow-xs whitespace-nowrap"
+                        title="Buka Opsi Kustomisasi Download Excel (Filter Mutasi, Memo, & Rentang Tanggal)"
+                      >
+                        <Download size={12} /> Opsi Excel <ChevronDown size={11} />
                       </button>
                     </div>
+
+                    {/* MODAL OPSI DOWNLOAD REKAP TABUNGAN EXCEL */}
+                    {showSavingsExcelModal && (
+                      <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-xs">
+                        <div className="bg-white rounded-2xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 animate-in fade-in zoom-in-95 duration-150">
+                          <div className="flex items-center justify-between pb-3.5 border-b border-slate-150">
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-9 h-9 rounded-xl bg-emerald-50 text-emerald-600 flex items-center justify-center font-bold">
+                                <FileSpreadsheet size={20} />
+                              </div>
+                              <div>
+                                <h3 className="font-extrabold text-slate-900 text-sm">Download Rekap Tabungan Excel</h3>
+                                <p className="text-[11px] text-slate-500">Pilih format lembar kerja, mutasi, dan memo/keterangan</p>
+                              </div>
+                            </div>
+                            <button
+                              type="button"
+                              onClick={() => setShowSavingsExcelModal(false)}
+                              className="w-8 h-8 rounded-lg hover:bg-slate-100 flex items-center justify-center text-slate-400 hover:text-slate-700 transition-colors cursor-pointer"
+                            >
+                              <X size={16} />
+                            </button>
+                          </div>
+
+                          <div className="py-4 space-y-4 text-left">
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block mb-2">
+                                Pilih Format Lembar Kerja Excel
+                              </label>
+                              <div className="space-y-2">
+                                <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${savingsExcelMode === "full" ? "border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20" : "border-slate-200 hover:bg-slate-50"}`}>
+                                  <input
+                                    type="radio"
+                                    name="savingsExcelMode"
+                                    value="full"
+                                    checked={savingsExcelMode === "full"}
+                                    onChange={() => setSavingsExcelMode("full")}
+                                    className="mt-1 text-emerald-600 focus:ring-emerald-500"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="font-bold text-xs text-slate-900 block">
+                                      📗 Rekap Lengkap (2 Lembar: Ringkasan Saldo + Buku Mutasi & Memo)
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 block mt-0.5 leading-relaxed">
+                                      Menyertakan Lembar 1 (Ringkasan Saldo Seluruh Siswa) dan Lembar 2 (Buku Besar Mutasi & Memo dengan tanggal, nominal debit/kredit, dan keterangan lengkap).
+                                    </span>
+                                  </div>
+                                </label>
+
+                                <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${savingsExcelMode === "mutations" ? "border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20" : "border-slate-200 hover:bg-slate-50"}`}>
+                                  <input
+                                    type="radio"
+                                    name="savingsExcelMode"
+                                    value="mutations"
+                                    checked={savingsExcelMode === "mutations"}
+                                    onChange={() => setSavingsExcelMode("mutations")}
+                                    className="mt-1 text-emerald-600 focus:ring-emerald-500"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="font-bold text-xs text-slate-900 block">
+                                      📑 Buku Mutasi & Memo Saja (1 Lembar)
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 block mt-0.5 leading-relaxed">
+                                      Hanya mengekspor rincian mutasi transaksi kas tabungan siswa, lengkap dengan jenis setoran/penarikan, memo, dan kanal bayar.
+                                    </span>
+                                  </div>
+                                </label>
+
+                                <label className={`flex items-start gap-3 p-3 rounded-xl border cursor-pointer transition-all ${savingsExcelMode === "summary" ? "border-emerald-500 bg-emerald-50/40 ring-2 ring-emerald-500/20" : "border-slate-200 hover:bg-slate-50"}`}>
+                                  <input
+                                    type="radio"
+                                    name="savingsExcelMode"
+                                    value="summary"
+                                    checked={savingsExcelMode === "summary"}
+                                    onChange={() => setSavingsExcelMode("summary")}
+                                    className="mt-1 text-emerald-600 focus:ring-emerald-500"
+                                  />
+                                  <div className="flex-1">
+                                    <span className="font-bold text-xs text-slate-900 block">
+                                      📊 Ringkasan Saldo Saja (1 Lembar)
+                                    </span>
+                                    <span className="text-[11px] text-slate-500 block mt-0.5 leading-relaxed">
+                                      Hanya mengekspor daftar siswa beserta saldo tabungan terakhir tanpa riwayat mutasi.
+                                    </span>
+                                  </div>
+                                </label>
+                              </div>
+                            </div>
+
+                            <div>
+                              <label className="text-[10px] font-bold text-slate-700 uppercase tracking-wider block mb-1.5">
+                                Filter Rentang Tanggal Mutasi (Opsional)
+                              </label>
+                              <div className="grid grid-cols-2 gap-3">
+                                <div>
+                                  <span className="text-[10px] text-slate-400 block mb-1">Dari Tanggal</span>
+                                  <input
+                                    type="date"
+                                    value={savingsExcelStartDate}
+                                    onChange={(e) => setSavingsExcelStartDate(e.target.value)}
+                                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                                  />
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-slate-400 block mb-1">Sampai Tanggal</span>
+                                  <input
+                                    type="date"
+                                    value={savingsExcelEndDate}
+                                    onChange={(e) => setSavingsExcelEndDate(e.target.value)}
+                                    className="w-full text-xs font-semibold px-3 py-2 border border-slate-200 rounded-lg focus:outline-hidden focus:ring-2 focus:ring-emerald-500"
+                                  />
+                                </div>
+                              </div>
+                              {(savingsExcelStartDate || savingsExcelEndDate) && (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSavingsExcelStartDate("");
+                                    setSavingsExcelEndDate("");
+                                  }}
+                                  className="text-[10px] text-rose-600 hover:underline mt-1 font-semibold block cursor-pointer"
+                                >
+                                  Reset Filter Tanggal
+                                </button>
+                              )}
+                            </div>
+
+                            <div className="bg-slate-50 p-3 rounded-xl border border-slate-150 flex items-center justify-between text-xs">
+                              <div>
+                                <span className="font-bold text-slate-800 block">Cakupan Data Terfilter:</span>
+                                <span className="text-[11px] text-slate-500 block">
+                                  {rekapTabunganGradeFilter === "all" ? "Semua Tingkat" : `Tingkat ${rekapTabunganGradeFilter}`} &bull;{" "}
+                                  {rekapTabunganClassFilter === "all" ? "Semua Kelas" : `Kelas ${rekapTabunganClassFilter}`}
+                                </span>
+                              </div>
+                              <span className="font-mono font-bold text-emerald-700 text-sm">
+                                {filteredTabunganStudents.length} Siswa Terpilih
+                              </span>
+                            </div>
+                          </div>
+
+                          <div className="flex items-center justify-end gap-2.5 pt-4 border-t border-slate-150">
+                            <button
+                              type="button"
+                              onClick={() => setShowSavingsExcelModal(false)}
+                              className="px-4 py-2 text-xs font-bold text-slate-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                            >
+                              Tutup
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => {
+                                exportSavingsRecapToExcel({
+                                  rekapTabunganGradeFilter,
+                                  rekapTabunganClassFilter,
+                                  orderedStudentsBySavings,
+                                  totalGlobalSavings,
+                                  countActiveAccounts,
+                                  filteredTabunganStudentsLength: filteredTabunganStudents.length,
+                                  transactions,
+                                  includeMutations: savingsExcelMode === "full" || savingsExcelMode === "mutations",
+                                  onlyMutations: savingsExcelMode === "mutations",
+                                  startDate: savingsExcelStartDate || undefined,
+                                  endDate: savingsExcelEndDate || undefined,
+                                  schoolName: schoolIdentity?.name || "SMP MAARIF NU PANDAAN",
+                                });
+                                setShowSavingsExcelModal(false);
+                              }}
+                              className="px-5 py-2 bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-bold rounded-lg shadow-sm transition-all cursor-pointer flex items-center gap-1.5"
+                            >
+                              <Download size={13} /> Unduh File Excel Sekarang
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    )}
 
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                       <div className="bg-white p-5 rounded-xl border border-slate-200 flex flex-col gap-1.5">
@@ -15711,6 +15927,9 @@ export default function AdminPanel({
                               <th className="pb-2 text-right">
                                 Saldo Tabungan Saat Ini
                               </th>
+                              <th className="pb-2 text-center">
+                                Aksi / Mutasi
+                              </th>
                             </tr>
                           </thead>
                           <tbody className="divide-y divide-slate-105">
@@ -15736,6 +15955,32 @@ export default function AdminPanel({
                                   {student.savingsBalance.toLocaleString(
                                     "id-ID",
                                   )}
+                                </td>
+                                <td className="py-2.5 text-center">
+                                  <div className="flex items-center justify-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        exportStudentSavingsPassbookToExcel({
+                                          student,
+                                          transactions,
+                                          schoolName: schoolIdentity?.name || "SMP MAARIF NU PANDAAN",
+                                        });
+                                      }}
+                                      className="inline-flex items-center gap-1 px-2 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-[10px] font-bold rounded border border-emerald-200 transition-colors cursor-pointer"
+                                      title="Download Excel Buku Mutasi & Memo Siswa Ini"
+                                    >
+                                      <FileSpreadsheet size={11} /> Excel
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => setPassbookModalStudent(student)}
+                                      className="inline-flex items-center gap-1 px-2 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 text-[10px] font-bold rounded border border-indigo-200 transition-colors cursor-pointer"
+                                      title="Buka Buku Tabungan & Cetak PDF"
+                                    >
+                                      <Printer size={11} /> Buku
+                                    </button>
+                                  </div>
                                 </td>
                               </tr>
                             ))}

@@ -684,22 +684,25 @@ function decompressBillIdForMidtrans(id: string): string {
 // Helper to find SPP bill matching raw ID or decompressed ID or month/year
 function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targetStudentId?: string): SppBill | undefined {
   if (!idOrOrderId) return undefined;
-  const clean = decompressBillIdForMidtrans(idOrOrderId);
+  const cleanKey = idOrOrderId.trim();
+  const clean = decompressBillIdForMidtrans(cleanKey);
 
   // 1. Direct match by orderId or exact bill id
   let matched = sppBillsList.find(b =>
-    b.orderId === idOrOrderId ||
+    b.orderId === cleanKey ||
     b.orderId === clean ||
     b.id === clean ||
     b.id === clean + "-unpaid" ||
-    b.id === idOrOrderId ||
-    b.id === idOrOrderId + "-unpaid" ||
-    (clean.endsWith("-unpaid") && b.id === clean.slice(0, -7))
+    b.id === cleanKey ||
+    b.id === cleanKey + "-unpaid" ||
+    b.transactionId === cleanKey ||
+    (clean.endsWith("-unpaid") && b.id === clean.slice(0, -7)) ||
+    b.id.replace("-unpaid", "") === cleanKey.replace("-unpaid", "")
   );
   if (matched) return matched;
 
   // 1b. Direct match by stripping trailing 4-digit timestamp suffix
-  const cleanWithoutSuffix = clean.replace(/-\d{4}$/, "");
+  const cleanWithoutSuffix = cleanKey.replace(/-\d{4,6}$/, "");
   matched = sppBillsList.find(b =>
     b.id === cleanWithoutSuffix ||
     b.id === cleanWithoutSuffix + "-unpaid" ||
@@ -707,23 +710,43 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
   );
   if (matched) return matched;
 
-  // 2. Match by extracted month & year & student
-  const monthNames = ["Januari", "Februari", "Maret", "April", "Mei", "Juni", "Juli", "Agustus", "September", "Oktober", "November", "Desember"];
-  const shortMonths = ["Jan", "Feb", "Mar", "Apr", "Mei", "Jun", "Jul", "Agu", "Sep", "Okt", "Nov", "Des"];
-  
-  let detectedMonth = "";
-  for (let i = 0; i < monthNames.length; i++) {
-    const full = monthNames[i];
-    const short = shortMonths[i];
-    if (new RegExp(`[-_]${full}(?:[-_]|$)`, "i").test(idOrOrderId) || new RegExp(`[-_]${short}(?:[-_]|$)`, "i").test(idOrOrderId) ||
-        new RegExp(`[-_]${full}(?:[-_]|$)`, "i").test(clean) || new RegExp(`[-_]${short}(?:[-_]|$)`, "i").test(clean)) {
-      detectedMonth = full;
-      break;
+  // 2. Extract Month & Year using robust regex (e.g. Agu26, Ags26, Agustus2026, Jul26, Agu-2026, etc.)
+  const monthMap: { [k: string]: string } = {
+    "januari": "Januari", "februari": "Februari", "maret": "Maret", "april": "April",
+    "mei": "Mei", "juni": "Juni", "juli": "Juli", "agustus": "Agustus",
+    "september": "September", "oktober": "Oktober", "november": "November", "desember": "Desember",
+    "jan": "Januari", "feb": "Februari", "mar": "Maret", "apr": "April",
+    "jun": "Juni", "jul": "Juli", "agu": "Agustus", "ags": "Agustus", "aug": "Agustus", "agt": "Agustus",
+    "sep": "September", "sept": "September", "okt": "Oktober", "oct": "Oktober",
+    "nov": "November", "des": "Desember", "dec": "Desember"
+  };
+
+  let detectedMonth: string | undefined = undefined;
+  let detectedYear: number | undefined = undefined;
+
+  const monthYearCombinedRegex = /(?:^|[-_ \/\.,])(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)[-_ \/\.]?(\d{2,4})(?:[-_ \/\.,]|$)/i;
+  const m1 = cleanKey.match(monthYearCombinedRegex) || clean.match(monthYearCombinedRegex);
+  if (m1) {
+    const rawM = m1[1].toLowerCase();
+    const rawY = m1[2];
+    detectedMonth = monthMap[rawM];
+    detectedYear = rawY.length === 2 ? 2000 + parseInt(rawY, 10) : parseInt(rawY, 10);
+  }
+
+  if (!detectedMonth) {
+    const monthOnlyRegex = /(?:^|[-_ \/\.,\b])(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)(?:[-_ \/\.,\b]|$)/i;
+    const m2 = cleanKey.match(monthOnlyRegex) || clean.match(monthOnlyRegex);
+    if (m2) {
+      detectedMonth = monthMap[m2[1].toLowerCase()];
     }
   }
 
-  const yearMatch = idOrOrderId.match(/(202[4-9]|203[0-9])/) || clean.match(/(202[4-9]|203[0-9])/);
-  const detectedYear = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
+  if (!detectedYear) {
+    const yearMatch = cleanKey.match(/\b(202[0-9]|203[0-9])\b/) || clean.match(/\b(202[0-9]|203[0-9])\b/) || cleanKey.match(/[-_](202\d|203\d)[-_]/);
+    if (yearMatch) {
+      detectedYear = parseInt(yearMatch[1], 10);
+    }
+  }
 
   // Extract student ID/NIS from string if not provided
   let effectiveStudentId = targetStudentId;
@@ -734,23 +757,42 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
       if (stdIdx !== -1) {
         effectiveStudentId = parts.slice(stdIdx, stdIdx + 4).join("-");
       }
-    } else if (idOrOrderId.startsWith("SPP-")) {
-      const parts = idOrOrderId.split("-");
-      const nisOrId = parts[1];
-      if (nisOrId) {
-        const found = students.find(s => String(s.nis).trim() === nisOrId || s.id === nisOrId || s.id === `std-${nisOrId}`);
-        if (found) effectiveStudentId = found.id;
+    } else if (cleanKey.startsWith("SPP-")) {
+      const tokens = cleanKey.replace(/^SPP-/i, "").split(/[-_]/);
+      for (const token of tokens) {
+        const cleanToken = token.trim();
+        if (/^\d{3,12}$/.test(cleanToken)) {
+          const found = students.find(s => String(s.nis).trim() === cleanToken || s.id === cleanToken || s.id === `std-${cleanToken}`);
+          if (found) {
+            effectiveStudentId = found.id;
+            break;
+          }
+        } else if (cleanToken.startsWith("std-")) {
+          const found = students.find(s => s.id === cleanToken || s.id === `std-${cleanToken}`);
+          if (found) {
+            effectiveStudentId = found.id;
+            break;
+          }
+        }
       }
     }
   }
 
-  if (effectiveStudentId && detectedMonth) {
-    matched = sppBillsList.find(b =>
-      b.studentId === effectiveStudentId &&
-      b.month.toLowerCase() === detectedMonth.toLowerCase() &&
-      (!detectedYear || b.year === detectedYear)
-    );
-    if (matched) return matched;
+  if (effectiveStudentId) {
+    if (detectedMonth) {
+      matched = sppBillsList.find(b =>
+        b.studentId === effectiveStudentId &&
+        b.month.toLowerCase() === detectedMonth!.toLowerCase() &&
+        (!detectedYear || b.year === detectedYear)
+      );
+      if (matched) return matched;
+    }
+
+    // Fallback: if student is found and order is SPP, match oldest unpaid/pending SPP bill
+    if (cleanKey.startsWith("SPP-")) {
+      const unpaid = sppBillsList.filter(b => b.studentId === effectiveStudentId && (b.status === "pending" || b.status === "unpaid"));
+      if (unpaid.length > 0) return unpaid[0];
+    }
   }
 
   // 3. Fallback partial ID match - MUST strictly check month if present in bill ID
@@ -759,8 +801,7 @@ function findSppBillMatching(idOrOrderId: string, sppBillsList: SppBill[], targe
     matched = sppBillsList.find(b => {
       const bCore = b.id.replace(/-unpaid$/, "");
       if (bCore === cleanCore) return true;
-      // Only match partial if month is strictly matched
-      if (detectedMonth && b.month.toLowerCase() !== detectedMonth.toLowerCase()) return false;
+      if (detectedMonth && b.month.toLowerCase() !== detectedMonth!.toLowerCase()) return false;
       if (detectedYear && b.year !== detectedYear) return false;
       return bCore.startsWith(cleanCore) || cleanCore.startsWith(bCore);
     });

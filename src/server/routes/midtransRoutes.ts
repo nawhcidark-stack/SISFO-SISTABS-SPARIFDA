@@ -61,19 +61,24 @@ export function extractMonthAndYear(text: string): { month?: string; year?: numb
   if (!text) return {};
   const clean = text.trim();
 
-  // 1. Check for short month + 2 or 4 digit year like Jul26, Ags26, Agu2026, Sep26, Okt26, Nov26, Des26, Jan27, Feb27
-  const shortMonthYearRegex = /(?:^|[-_ \/\.,])(Jan|Feb|Mar|Apr|Mei|May|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)[-_ \/\.]?(20\d{2}|\d{2})(?:[-_ \/\.,]|$)/i;
-  const match1 = clean.match(shortMonthYearRegex);
+  // 1. Check for full or short month name combined with 2 or 4 digit year (e.g. Agu26, Ags26, Agustus2026, Agu2026, Jul26, Juli2026, Sep26, Okt26, Nov26, Des26, Jan27, Feb27)
+  const monthYearCombinedRegex = /(?:^|[-_ \/\.,])(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)[-_ \/\.]?(\d{2,4})(?:[-_ \/\.,]|$)/i;
+  const match1 = clean.match(monthYearCombinedRegex);
   if (match1) {
     const rawMonth = match1[1].toLowerCase();
     const rawYear = match1[2];
     const month = MONTH_LOOKUP[rawMonth];
-    const year = rawYear.length === 2 ? 2000 + parseInt(rawYear, 10) : parseInt(rawYear, 10);
+    let year: number | undefined = undefined;
+    if (rawYear.length === 2) {
+      year = 2000 + parseInt(rawYear, 10);
+    } else if (rawYear.length === 4) {
+      year = parseInt(rawYear, 10);
+    }
     if (month) return { month, year };
   }
 
-  // 2. Check full or short month name
-  const monthNameRegex = /\b(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)\b/i;
+  // 2. Check full or short month name anywhere in string
+  const monthNameRegex = /(?:^|[-_ \/\.,\b])(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)(?:[-_ \/\.,\b]|$)/i;
   const match2 = clean.match(monthNameRegex);
   let detectedMonth: string | undefined = undefined;
   if (match2) {
@@ -81,7 +86,7 @@ export function extractMonthAndYear(text: string): { month?: string; year?: numb
   }
 
   // Check 4-digit year (2020 - 2035) or 2-digit year preceded by keyword
-  const yearMatch = clean.match(/\b(202[0-9]|203[0-9])\b/) || clean.match(/(?:tahun|thn|year|yr)[-_: ]*(\d{2,4})/i);
+  const yearMatch = clean.match(/\b(202[0-9]|203[0-9])\b/) || clean.match(/(?:tahun|thn|year|yr)[-_: ]*(\d{2,4})/i) || clean.match(/[-_](202\d|203\d)[-_]/);
   let detectedYear: number | undefined = undefined;
   if (yearMatch) {
     const yStr = yearMatch[1];
@@ -205,10 +210,16 @@ export function findMiscBillMatching(
   idOrOrderId: string,
   miscBillsList: MiscBill[],
   targetStudentId?: string,
-  extraHints?: { description?: string; amount?: number }
+  extraHints?: { description?: string; amount?: number; studentsList?: Student[] }
 ): MiscBill | undefined {
   if (!idOrOrderId && !extraHints?.description && !targetStudentId) return undefined;
   const cleanKey = (idOrOrderId || "").trim();
+
+  // Guard: NEVER match as Non-SPP if the order is explicitly SPP, Savings, or SPMB
+  if (isExplicitSpp(cleanKey, extraHints?.description)) return undefined;
+  if (isExplicitSavings(cleanKey, extraHints?.description)) return undefined;
+  if (isExplicitSpmb(cleanKey, extraHints?.description)) return undefined;
+  if (isExplicitCart(cleanKey, extraHints?.description)) return undefined;
 
   // 1. Direct exact match by orderId, id, or transactionId
   if (cleanKey) {
@@ -216,7 +227,8 @@ export function findMiscBillMatching(
       m.orderId === cleanKey ||
       m.id === cleanKey ||
       m.transactionId === cleanKey ||
-      m.id === cleanKey + "-unpaid"
+      m.id === cleanKey + "-unpaid" ||
+      m.id.replace("-unpaid", "") === cleanKey.replace("-unpaid", "")
     );
     if (directMatch) return directMatch;
   }
@@ -242,9 +254,32 @@ export function findMiscBillMatching(
     if (matchShort) return matchShort;
   }
 
-  // 4. Match by target student + title keywords in description
-  if (targetStudentId) {
-    const studentMiscBills = miscBillsList.filter(m => m.studentId === targetStudentId);
+  // 4. Resolve effective student ID
+  let effectiveStudentId = targetStudentId;
+  const studentsList = extraHints?.studentsList || [];
+  if (!effectiveStudentId && cleanKey) {
+    const tokens = cleanKey.replace(/^MISC-/i, "").split(/[-_]/);
+    for (const token of tokens) {
+      const cleanToken = token.trim();
+      if (/^\d{3,12}$/.test(cleanToken)) {
+        const found = studentsList.find(s => String(s.nis).trim() === cleanToken || s.id === cleanToken || s.id === `std-${cleanToken}`);
+        if (found) {
+          effectiveStudentId = found.id;
+          break;
+        }
+      } else if (cleanToken.startsWith("std-")) {
+        const found = studentsList.find(s => s.id === cleanToken || s.id === `std-${cleanToken}`);
+        if (found) {
+          effectiveStudentId = found.id;
+          break;
+        }
+      }
+    }
+  }
+
+  // 5. Match by target student + title keywords in description
+  if (effectiveStudentId) {
+    const studentMiscBills = miscBillsList.filter(m => m.studentId === effectiveStudentId);
     if (studentMiscBills.length > 0) {
       if (extraHints?.description) {
         const descLower = extraHints.description.toLowerCase();
@@ -283,7 +318,7 @@ export function findMiscBillMatching(
     }
   }
 
-  // 5. Global title matching across all misc bills if description contains unique title
+  // 6. Global title matching across all misc bills if description contains unique title
   if (extraHints?.description) {
     const descLower = extraHints.description.toLowerCase();
     const globalMatch = miscBillsList.find(m => descLower.includes(m.title.toLowerCase()) && (extraHints.amount ? m.amount === extraHints.amount : true));
@@ -297,7 +332,7 @@ export function findSppBillMatching(
   idOrOrderId: string, 
   sppBillsList: SppBill[], 
   targetStudentId?: string,
-  extraHints?: { description?: string; month?: string; year?: number; miscBillsList?: MiscBill[] }
+  extraHints?: { description?: string; month?: string; year?: number; miscBillsList?: MiscBill[]; studentsList?: Student[] }
 ): SppBill | undefined {
   if (!idOrOrderId && !extraHints?.description && !extraHints?.month) return undefined;
   const cleanKey = (idOrOrderId || "").trim();
@@ -314,7 +349,8 @@ export function findSppBillMatching(
       b.orderId === cleanKey || 
       b.id === cleanKey || 
       b.transactionId === cleanKey ||
-      b.id === cleanKey + "-unpaid"
+      b.id === cleanKey + "-unpaid" ||
+      b.id.replace("-unpaid", "") === cleanKey.replace("-unpaid", "")
     );
     if (directMatch) return directMatch;
   }
@@ -359,27 +395,74 @@ export function findSppBillMatching(
     if (!detectedYear && fromDesc.year) detectedYear = fromDesc.year;
   }
 
-  // 5. Match by Target Student ID + Detected Month (+ Year)
-  if (targetStudentId && detectedMonth) {
-    // If year is detected, first try matching exact month AND year
-    if (detectedYear) {
-      const exactYearMatch = sppBillsList.find(b => 
-        b.studentId === targetStudentId && 
-        b.month.toLowerCase() === detectedMonth!.toLowerCase() && 
-        b.year === detectedYear
-      );
-      if (exactYearMatch) return exactYearMatch;
-    }
+  // 5. Student resolution: either provided or extracted from cleanKey
+  let effectiveStudentId = targetStudentId;
+  const studentsList = extraHints?.studentsList || [];
 
-    // Fallback match by exact month for this student (regardless of year)
-    const monthMatch = sppBillsList.find(b => 
-      b.studentId === targetStudentId && 
-      b.month.toLowerCase() === detectedMonth!.toLowerCase()
-    );
-    if (monthMatch) return monthMatch;
+  if (!effectiveStudentId && cleanKey) {
+    const tokens = cleanKey.replace(/^SPP-/i, "").split(/[-_]/);
+    for (const token of tokens) {
+      const cleanToken = token.trim();
+      if (/^\d{3,12}$/.test(cleanToken)) {
+        const found = studentsList.find(s => String(s.nis).trim() === cleanToken || s.id === cleanToken || s.id === `std-${cleanToken}`);
+        if (found) {
+          effectiveStudentId = found.id;
+          break;
+        }
+      } else if (cleanToken.startsWith("std-")) {
+        const found = studentsList.find(s => s.id === cleanToken || s.id === `std-${cleanToken}`);
+        if (found) {
+          effectiveStudentId = found.id;
+          break;
+        }
+      }
+    }
+    // Also check if whole cleanKey without SPP prefix is a student NIS
+    if (!effectiveStudentId) {
+      const core = cleanKey.replace(/^SPP-/i, "").trim();
+      const found = studentsList.find(s => String(s.nis).trim() === core || s.id === core || s.id === `std-${core}`);
+      if (found) effectiveStudentId = found.id;
+    }
   }
 
-  // 6. If cleanKey contains student NIS and month name/code
+  // 6. Match by Target Student ID + Detected Month (+ Year)
+  if (effectiveStudentId) {
+    if (detectedMonth) {
+      // If year is detected, first try matching exact month AND year
+      if (detectedYear) {
+        const exactYearMatch = sppBillsList.find(b => 
+          b.studentId === effectiveStudentId && 
+          b.month.toLowerCase() === detectedMonth!.toLowerCase() && 
+          b.year === detectedYear
+        );
+        if (exactYearMatch) return exactYearMatch;
+      }
+
+      // Fallback match by exact month for this student (regardless of year)
+      const monthMatch = sppBillsList.find(b => 
+        b.studentId === effectiveStudentId && 
+        b.month.toLowerCase() === detectedMonth!.toLowerCase()
+      );
+      if (monthMatch) return monthMatch;
+    }
+
+    // If cleanKey explicitly targets SPP (e.g. SPP-13011-...) but no month matched or month is not recognized,
+    // match the oldest unpaid / pending SPP bill for this student
+    if (cleanKey.startsWith("SPP-") || cleanKey.includes("SPP") || (extraHints?.description && extraHints.description.toLowerCase().includes("spp"))) {
+      const studentUnpaidBills = sppBillsList
+        .filter(b => b.studentId === effectiveStudentId && (b.status === "pending" || b.status === "unpaid"))
+        .sort((a, b) => {
+          const yearDiff = (a.year || 2026) - (b.year || 2026);
+          if (yearDiff !== 0) return yearDiff;
+          const idxA = ACADEMIC_MONTHS.indexOf(a.month);
+          const idxB = ACADEMIC_MONTHS.indexOf(b.month);
+          return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
+        });
+      if (studentUnpaidBills.length > 0) return studentUnpaidBills[0];
+    }
+  }
+
+  // 7. If cleanKey contains student NIS and month name/code, check legacy partial match
   if (cleanKey && cleanKey.startsWith("SPP-")) {
     const withoutPrefix = cleanKey.slice(4);
     const lastHyphen = withoutPrefix.lastIndexOf("-");
@@ -387,17 +470,12 @@ export function findSppBillMatching(
     
     let bill = sppBillsList.find(b => b.id === extractedBillId || b.id === `bill-std-${extractedBillId}`);
     if (bill) return bill;
+  }
 
-    const parts = withoutPrefix.split("-");
-    const rawNis = parts[0];
-    if (rawNis && detectedMonth) {
-      const nisMatch = sppBillsList.find(b => 
-        (b.id.includes(rawNis) || b.studentId.includes(rawNis)) && 
-        b.month.toLowerCase() === detectedMonth!.toLowerCase() &&
-        (!detectedYear || b.year === detectedYear)
-      );
-      if (nisMatch) return nisMatch;
-    }
+  // 8. Match by bill ID substring (e.g. bill-std-...)
+  if (cleanKey.includes("bill-std-")) {
+    const billMatch = sppBillsList.find(b => cleanKey.includes(b.id) || b.id.includes(cleanKey.replace(/-unpaid$/, "")));
+    if (billMatch) return billMatch;
   }
 
   return undefined;
@@ -783,51 +861,58 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     // 1. SPP BILLS
     if (targetOrderId.startsWith("SPP-") || cleanOrderId.startsWith("SPP-")) {
       const activeOrderId = targetOrderId.startsWith("SPP-") ? targetOrderId : cleanOrderId;
-      const bill = findSppBillMatching(activeOrderId, sppBills) || findSppBillMatching(cleanOrderId, sppBills);
+      const bill = findSppBillMatching(activeOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills }) || 
+                   findSppBillMatching(cleanOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills });
       if (bill) {
-        if (isSettled && bill.status !== "paid") {
-          bill.status = "paid";
-          bill.paidAt = resolvedPaidAt;
-          bill.paymentMethod = actualPaymentType;
-          bill.orderId = targetOrderId;
-          if (targetTransactionId) bill.transactionId = targetTransactionId;
-          actionTaken = true;
+        if (isSettled) {
+          if (bill.status !== "paid") {
+            bill.status = "paid";
+            bill.paidAt = resolvedPaidAt;
+            bill.paymentMethod = actualPaymentType;
+            bill.orderId = targetOrderId;
+            if (targetTransactionId) bill.transactionId = targetTransactionId;
+            actionTaken = true;
 
-          const student = students.find(s => s.id === bill.studentId);
+            const student = students.find(s => s.id === bill.studentId);
 
-          recordOrUpdateMidtransTransaction({
-            orderId: targetOrderId,
-            transactionId: targetTransactionId,
-            billType: "spp",
-            grossAmount: bill.amount,
-            studentName: student?.name,
-            studentNis: student?.nis,
-            description: `SPP ${bill.month} ${bill.year}`,
-            transactionStatus: "settlement",
-            paymentType: actualPaymentType,
-            settlementTime: resolvedPaidAt
-          });
+            recordOrUpdateMidtransTransaction({
+              orderId: targetOrderId,
+              transactionId: targetTransactionId,
+              billType: "spp",
+              grossAmount: bill.amount,
+              studentName: student?.name,
+              studentNis: student?.nis,
+              description: `SPP ${bill.month} ${bill.year}`,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
 
-          broadcastNotification({
-            id: `notif-${Date.now()}`,
-            title: "Pembayaran SPP Lunas ✅",
-            message: `Pembayaran SPP ${bill.month} oleh ${student?.name || "Siswa"} sebesar Rp ${bill.amount.toLocaleString("id-ID")} berhasil diverifikasi.`,
-            type: "success",
-            createdAt: new Date().toISOString()
-          });
+            broadcastNotification({
+              id: `notif-${Date.now()}`,
+              title: "Pembayaran SPP Lunas ✅",
+              message: `Pembayaran SPP ${bill.month} oleh ${student?.name || "Siswa"} sebesar Rp ${bill.amount.toLocaleString("id-ID")} berhasil diverifikasi.`,
+              type: "success",
+              createdAt: new Date().toISOString()
+            });
 
-          if (student?.phone) {
-            sendWhatsappNotification(
-              student.phone,
-              `*KUITANSI PEMBAYARAN SPP ONLINE*\n\nAlhamdulillah, pembayaran SPP bulan *${bill.month} ${bill.year}* untuk siswa *${student.name}* (NIS: ${student.nis}) sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah LUNAS.\n\nNomor Order: ${targetOrderId}\nMetode: ${actualPaymentType}\nWaktu: ${new Date(resolvedPaidAt).toLocaleString("id-ID")}\n\nTerima kasih.\n*SMP Maarif NU Pandaan*`
-            ).catch(() => {});
+            if (student?.phone) {
+              sendWhatsappNotification(
+                student.phone,
+                `*KUITANSI PEMBAYARAN SPP ONLINE*\n\nAlhamdulillah, pembayaran SPP bulan *${bill.month} ${bill.year}* untuk siswa *${student.name}* (NIS: ${student.nis}) sebesar *Rp ${bill.amount.toLocaleString("id-ID")}* telah LUNAS.\n\nNomor Order: ${targetOrderId}\nMetode: ${actualPaymentType}\nWaktu: ${new Date(resolvedPaidAt).toLocaleString("id-ID")}\n\nTerima kasih.\n*SMP Maarif NU Pandaan*`
+              ).catch(() => {});
+            }
+
+            if (persistEntity) {
+              persistEntity("sppBills", bill).catch(err => console.error("Error persisting settled SPP to MySQL:", err));
+            }
+
+            detailMessage = `Tagihan SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) berhasil di-settle LUNAS.`;
+          } else {
+            actionTaken = true;
+            const student = students.find(s => s.id === bill.studentId);
+            detailMessage = `Tagihan SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) sudah berstatus LUNAS.`;
           }
-
-          if (persistEntity) {
-            persistEntity("sppBills", bill).catch(err => console.error("Error persisting settled SPP to MySQL:", err));
-          }
-
-          detailMessage = `Tagihan SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) berhasil di-settle LUNAS.`;
         } else if (isExpired && bill.status === "pending") {
           bill.status = "unpaid";
           bill.orderId = undefined;
@@ -843,35 +928,42 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     // 2. MISC BILLS
     else if (targetOrderId.startsWith("MISC-") || cleanOrderId.startsWith("MISC-")) {
       const activeOrderId = targetOrderId.startsWith("MISC-") ? targetOrderId : cleanOrderId;
-      const bill = miscBills.find(m => m.orderId === activeOrderId || m.orderId === cleanOrderId || m.id === cleanOrderId);
+      const bill = findMiscBillMatching(activeOrderId, miscBills, undefined, { studentsList: students }) ||
+                   findMiscBillMatching(cleanOrderId, miscBills, undefined, { studentsList: students }) ||
+                   miscBills.find(m => m.orderId === activeOrderId || m.orderId === cleanOrderId || m.id === cleanOrderId);
       if (bill) {
-        if (isSettled && bill.status !== "paid") {
-          bill.status = "paid";
-          bill.paidAt = resolvedPaidAt;
-          bill.paymentMethod = actualPaymentType;
-          bill.orderId = targetOrderId;
-          if (targetTransactionId) bill.transactionId = targetTransactionId;
-          actionTaken = true;
+        if (isSettled) {
+          if (bill.status !== "paid") {
+            bill.status = "paid";
+            bill.paidAt = resolvedPaidAt;
+            bill.paymentMethod = actualPaymentType;
+            bill.orderId = targetOrderId;
+            if (targetTransactionId) bill.transactionId = targetTransactionId;
+            actionTaken = true;
 
-          const student = students.find(s => s.id === bill.studentId);
-          recordOrUpdateMidtransTransaction({
-            orderId: targetOrderId,
-            transactionId: targetTransactionId,
-            billType: "misc",
-            grossAmount: bill.amount,
-            studentName: student?.name,
-            studentNis: student?.nis,
-            description: bill.title,
-            transactionStatus: "settlement",
-            paymentType: actualPaymentType,
-            settlementTime: resolvedPaidAt
-          });
+            const student = students.find(s => s.id === bill.studentId);
+            recordOrUpdateMidtransTransaction({
+              orderId: targetOrderId,
+              transactionId: targetTransactionId,
+              billType: "misc",
+              grossAmount: bill.amount,
+              studentName: student?.name,
+              studentNis: student?.nis,
+              description: bill.title,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
 
-          if (persistEntity) {
-            persistEntity("miscBills", bill).catch(err => console.error("Error persisting settled Misc to MySQL:", err));
+            if (persistEntity) {
+              persistEntity("miscBills", bill).catch(err => console.error("Error persisting settled Misc to MySQL:", err));
+            }
+
+            detailMessage = `Tagihan Non-SPP "${bill.title}" berhasil di-settle LUNAS.`;
+          } else {
+            actionTaken = true;
+            detailMessage = `Tagihan Non-SPP "${bill.title}" sudah berstatus LUNAS.`;
           }
-
-          detailMessage = `Tagihan Non-SPP "${bill.title}" berhasil di-settle LUNAS.`;
         } else if (isExpired && bill.status === "pending") {
           bill.status = "unpaid";
           bill.orderId = undefined;
@@ -1153,6 +1245,143 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         }
         if (actionTaken && persistEntity) {
           persistEntity("spmbCandidates", candidate).catch(err => console.error("Error persisting SPMB candidate to MySQL:", err));
+        }
+      }
+    }
+
+    // 6. UNIVERSAL FALLBACK FOR ARBITRARY ORDER IDS (Manual Verifications, Simulators, Reconciliations)
+    if (!actionTaken && isSettled) {
+      // A. Direct check across SPP
+      let fallbackBill = findSppBillMatching(targetOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills }) ||
+                         findSppBillMatching(cleanOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills }) ||
+                         (targetTransactionId ? sppBills.find(b => b.transactionId === targetTransactionId) : undefined);
+
+      if (fallbackBill) {
+        if (fallbackBill.status !== "paid") {
+          fallbackBill.status = "paid";
+          fallbackBill.paidAt = resolvedPaidAt;
+          fallbackBill.paymentMethod = actualPaymentType;
+          fallbackBill.orderId = targetOrderId;
+          if (targetTransactionId) fallbackBill.transactionId = targetTransactionId;
+          actionTaken = true;
+
+          const student = students.find(s => s.id === fallbackBill.studentId);
+          recordOrUpdateMidtransTransaction({
+            orderId: targetOrderId,
+            transactionId: targetTransactionId,
+            billType: "spp",
+            grossAmount: fallbackBill.amount,
+            studentName: student?.name,
+            studentNis: student?.nis,
+            description: `SPP ${fallbackBill.month} ${fallbackBill.year}`,
+            transactionStatus: "settlement",
+            paymentType: actualPaymentType,
+            settlementTime: resolvedPaidAt
+          });
+
+          if (persistEntity) {
+            persistEntity("sppBills", fallbackBill).catch(err => console.error("Error persisting settled fallback SPP:", err));
+          }
+          detailMessage = `Tagihan SPP ${fallbackBill.month} ${fallbackBill.year} (${student?.name || "Siswa"}) berhasil di-settle LUNAS.`;
+        } else {
+          actionTaken = true;
+          const student = students.find(s => s.id === fallbackBill.studentId);
+          detailMessage = `Tagihan SPP ${fallbackBill.month} ${fallbackBill.year} (${student?.name || "Siswa"}) sudah berstatus LUNAS.`;
+        }
+      }
+
+      // B. Direct check across Non-SPP (Misc)
+      if (!actionTaken) {
+        let fallbackMisc = findMiscBillMatching(targetOrderId, miscBills, undefined, { studentsList: students }) ||
+                           findMiscBillMatching(cleanOrderId, miscBills, undefined, { studentsList: students }) ||
+                           (targetTransactionId ? miscBills.find(b => b.transactionId === targetTransactionId) : undefined);
+
+        if (fallbackMisc) {
+          if (fallbackMisc.status !== "paid") {
+            fallbackMisc.status = "paid";
+            fallbackMisc.paidAt = resolvedPaidAt;
+            fallbackMisc.paymentMethod = actualPaymentType;
+            fallbackMisc.orderId = targetOrderId;
+            if (targetTransactionId) fallbackMisc.transactionId = targetTransactionId;
+            actionTaken = true;
+
+            const student = students.find(s => s.id === fallbackMisc.studentId);
+            recordOrUpdateMidtransTransaction({
+              orderId: targetOrderId,
+              transactionId: targetTransactionId,
+              billType: "misc",
+              grossAmount: fallbackMisc.amount,
+              studentName: student?.name,
+              studentNis: student?.nis,
+              description: fallbackMisc.title,
+              transactionStatus: "settlement",
+              paymentType: actualPaymentType,
+              settlementTime: resolvedPaidAt
+            });
+
+            if (persistEntity) {
+              persistEntity("miscBills", fallbackMisc).catch(err => console.error("Error persisting settled fallback Misc:", err));
+            }
+            detailMessage = `Tagihan Non-SPP "${fallbackMisc.title}" berhasil di-settle LUNAS.`;
+          } else {
+            actionTaken = true;
+            detailMessage = `Tagihan Non-SPP "${fallbackMisc.title}" sudah berstatus LUNAS.`;
+          }
+        }
+      }
+
+      // C. Fallback: Identify student from customer details or Order ID tokens and auto-allocate
+      if (!actionTaken) {
+        let targetStudent: Student | undefined;
+        const custEmail = statusData.customer_details?.email || "";
+        const custName = statusData.customer_details?.first_name || "";
+        const custPhone = statusData.customer_details?.phone || "";
+
+        if (custPhone) {
+          const cleanPhone = custPhone.replace(/\D/g, "");
+          if (cleanPhone.length >= 8) {
+            targetStudent = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(cleanPhone));
+          }
+        }
+        if (!targetStudent && custEmail && custEmail.includes("@")) {
+          targetStudent = students.find(s => s.email && s.email.toLowerCase().trim() === custEmail.toLowerCase().trim());
+        }
+        if (!targetStudent && custName && custName.length >= 3) {
+          targetStudent = students.find(s => s.name.toLowerCase().trim() === custName.toLowerCase().trim());
+        }
+
+        if (!targetStudent) {
+          const tokens = (targetOrderId + " " + cleanOrderId).split(/[-_\s]/);
+          for (const token of tokens) {
+            const cleanT = token.trim();
+            if (/^\d{3,12}$/.test(cleanT)) {
+              const matched = students.find(s => String(s.nis).trim() === cleanT || s.id === cleanT || s.id === `std-${cleanT}`);
+              if (matched) {
+                targetStudent = matched;
+                break;
+              }
+            }
+          }
+        }
+
+        if (targetStudent) {
+          const grossAmt = statusData.gross_amount ? Number(statusData.gross_amount) : 0;
+          const alloc = autoAllocateStudentPayment(targetStudent, grossAmt, targetOrderId, targetTransactionId, actualPaymentType, resolvedPaidAt);
+          if (alloc.reconciled) {
+            actionTaken = true;
+            detailMessage = alloc.message;
+            if (persistEntities) {
+              const touchedSpp = sppBills.filter(b => b.orderId === targetOrderId);
+              if (touchedSpp.length > 0) persistEntities("sppBills", touchedSpp).catch(() => {});
+              const touchedMisc = miscBills.filter(m => m.orderId === targetOrderId);
+              if (touchedMisc.length > 0) persistEntities("miscBills", touchedMisc).catch(() => {});
+              const touchedSav = savingsTransactions.filter(t => t.orderId === targetOrderId);
+              if (touchedSav.length > 0) persistEntities("savingsTransactions", touchedSav).catch(() => {});
+            }
+            if (persistEntity) {
+              persistEntity("students", targetStudent).catch(() => {});
+            }
+          }
         }
       }
     }
@@ -1990,7 +2219,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       return res.json({
         success: true,
         type: reconResult.actionTaken ? "reconciled" : "midtrans_only",
-        message: `BERHASIL! ${reconResult.detailMessage || "Transaksi terverifikasi LUNAS di Midtrans."}`,
+        message: reconResult.actionTaken
+          ? `BERHASIL! ${reconResult.detailMessage || "Status pembayaran tagihan telah diperbarui menjadi LUNAS."}`
+          : `PERINGATAN: Transaksi sukses di Midtrans, namun tagihan terkait (${cleanOrderId}) belum berhasil dicocokkan otomatis. Silakan pastikan format Order ID atau NIS sesuai.`,
         midtransStatus,
         reconResult
       });
@@ -2695,14 +2926,14 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         // 5. SPP BILLS (STRICTLY GUARDED FROM NON-SPP)
         // ----------------------------------------------------
         if (!isExplicitMisc && !isExplicitSav && !isExplicitSp && !isExplicitCt) {
-          let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills }) ||
-                        (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills }) : undefined);
+          let sppBill = findSppBillMatching(cleanOrderId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills, studentsList: students }) ||
+                        (cleanTxId ? findSppBillMatching(cleanTxId, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills, studentsList: students }) : undefined);
 
           if (!sppBill && (cleanOrderId.startsWith("SPP-") || cleanOrderId.includes("SPP-"))) {
             const middle = cleanOrderId.includes("SPP-") ? cleanOrderId.split("SPP-")[1] : cleanOrderId;
             const lastHyphenIndex = middle.lastIndexOf("-");
             const billIdPart = lastHyphenIndex === -1 ? middle : middle.slice(0, lastHyphenIndex);
-            sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills });
+            sppBill = findSppBillMatching(billIdPart, sppBills, targetStudent?.id, { description: rawDesc, month: rowMonth, year: rowYear, miscBillsList: miscBills, studentsList: students });
           }
 
           // If target student is known and rowMonth was detected, search specifically for that month's bill

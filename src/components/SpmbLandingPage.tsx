@@ -966,13 +966,13 @@ export default function SpmbLandingPage({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-b from-slate-900 via-slate-800 to-slate-900 text-slate-100 font-sans selection:bg-emerald-500 selection:text-white pb-16">
+    <div className="min-h-screen bg-slate-50 text-slate-800 font-sans selection:bg-emerald-500 selection:text-white pb-16">
       {/* Top Floating Navbar */}
-      <header className="sticky top-0 z-40 bg-slate-900/90 backdrop-blur-md border-b border-slate-800 shadow-md">
+      <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
             {schoolIdentity?.logo ? (
-              <img src={schoolIdentity.logo} alt="Logo" className="w-10 h-10 object-contain rounded-lg bg-white/10 p-1" />
+              <img src={schoolIdentity.logo} alt="Logo" className="w-10 h-10 object-contain rounded-lg bg-slate-100 p-1 border border-slate-200" />
             ) : (
               <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-sm font-black">
                 <GraduationCap size={22} />
@@ -980,14 +980,14 @@ export default function SpmbLandingPage({
             )}
             <div>
               <div className="flex items-center gap-2">
-                <h1 className="text-sm sm:text-base font-black tracking-tight text-white m-0">
+                <h1 className="text-sm sm:text-base font-black tracking-tight text-slate-900 m-0">
                   SPMB 2027/2028
                 </h1>
-                <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="px-2 py-0.5 text-[10px] font-extrabold uppercase tracking-wider rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300">
                   Resmi Terbuka
                 </span>
               </div>
-              <p className="text-[11px] text-slate-400 m-0 hidden sm:block">
+              <p className="text-[11px] text-slate-500 m-0 hidden sm:block">
                 {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"} • {schoolIdentity?.accreditation || 'Terakreditasi A'}
               </p>
             </div>
@@ -998,8 +998,8 @@ export default function SpmbLandingPage({
               onClick={() => setActiveTab('info')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all ${
                 activeTab === 'info' 
-                  ? 'bg-emerald-600 text-white shadow-sm' 
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800'
+                  ? 'bg-emerald-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
               }`}
             >
               Info & Biaya
@@ -1008,8 +1008,8 @@ export default function SpmbLandingPage({
               onClick={() => setActiveTab('register')}
               className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'register' 
-                  ? 'bg-emerald-500 text-slate-950 shadow-md shadow-emerald-500/20' 
-                  : 'bg-emerald-600/30 text-emerald-300 hover:bg-emerald-600/50 border border-emerald-500/30'
+                  ? 'bg-emerald-600 text-white shadow-md shadow-emerald-600/20' 
+                  : 'bg-emerald-50 text-emerald-800 hover:bg-emerald-100 border border-emerald-200'
               }`}
             >
               <Sparkles size={13} />
@@ -1019,8 +1019,8 @@ export default function SpmbLandingPage({
               onClick={() => setActiveTab('portal')}
               className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 activeTab === 'portal' 
-                  ? 'bg-indigo-600 text-white shadow-sm' 
-                  : 'text-slate-300 hover:text-white hover:bg-slate-800 border border-slate-700'
+                  ? 'bg-indigo-600 text-white shadow-xs' 
+                  : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 border border-slate-200'
               }`}
             >
               <Search size={13} />
@@ -1030,7 +1030,7 @@ export default function SpmbLandingPage({
             {handleBack && (
               <button
                 onClick={handleBack}
-                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white rounded-xl text-xs font-semibold border border-slate-700 transition-all cursor-pointer"
+                className="hidden md:flex items-center gap-1.5 px-3 py-1.5 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 rounded-xl text-xs font-semibold border border-slate-300 shadow-2xs transition-all cursor-pointer"
                 title="Kembali ke Portal Administrasi Utama"
               >
                 <ArrowLeft size={13} />
@@ -1047,30 +1047,30 @@ export default function SpmbLandingPage({
         {activeTab === 'info' && (
           <div className="space-y-10">
             {/* Hero Section */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-950/80 via-slate-900 to-indigo-950/80 border border-emerald-500/20 p-6 sm:p-10 shadow-2xl">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-50 via-teal-50/60 to-indigo-50/60 border border-emerald-200/80 p-6 sm:p-10 shadow-xs">
               <div className="relative z-10 max-w-3xl space-y-4">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100/80 border border-emerald-300 text-emerald-800 text-xs font-bold">
                   <Award size={14} />
                   <span>Penerimaan Peserta Didik Baru TA 2027/2028</span>
                 </div>
-                <h2 className="text-2xl sm:text-4xl font-black text-white tracking-tight leading-tight">
-                  Wujudkan Masa Depan Gemilang di <span className="text-transparent bg-clip-text bg-gradient-to-r from-emerald-400 to-teal-200">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-tight">
+                  Wujudkan Masa Depan Gemilang di <span className="text-emerald-700">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
                 </h2>
-                <p className="text-slate-300 text-sm sm:text-base leading-relaxed">
+                <p className="text-slate-700 text-sm sm:text-base leading-relaxed">
                   Sekolah Ramah Anak dengan Kurikulum Merdeka Terintegrasi Pendidikan Karakter Aswaja An-Nahdliyah, Laboratorium Komputer Modern, dan Program Unggulan Tahfidz serta Digital Literacy.
                 </p>
 
                 <div className="pt-2 flex flex-wrap items-center gap-3">
                   <button
                     onClick={() => setActiveTab('register')}
-                    className="px-6 py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-black text-sm rounded-2xl shadow-lg shadow-emerald-500/25 flex items-center gap-2 transition-all transform hover:-translate-y-0.5 cursor-pointer"
+                    className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-md shadow-emerald-600/20 flex items-center gap-2 transition-all transform hover:-translate-y-0.5 cursor-pointer"
                   >
                     <span>Daftar Sekarang (Token Rp 50.000)</span>
                     <ArrowRight size={16} />
                   </button>
                   <button
                     onClick={() => setActiveTab('portal')}
-                    className="px-5 py-3 bg-slate-800/80 hover:bg-slate-700 text-white font-bold text-sm rounded-2xl border border-slate-700 flex items-center gap-2 transition-all cursor-pointer"
+                    className="px-5 py-3 bg-white hover:bg-slate-100 text-slate-800 font-bold text-sm rounded-2xl border border-slate-300 shadow-xs flex items-center gap-2 transition-all cursor-pointer"
                   >
                     <Search size={15} />
                     <span>Sudah Daftar? Cek Status</span>
@@ -1079,15 +1079,15 @@ export default function SpmbLandingPage({
               </div>
 
               {/* Decorative Glow */}
-              <div className="absolute right-0 bottom-0 w-96 h-96 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
-              <div className="absolute -left-20 -top-20 w-80 h-80 bg-indigo-500/10 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute right-0 bottom-0 w-96 h-96 bg-emerald-200/40 rounded-full blur-3xl pointer-events-none" />
+              <div className="absolute -left-20 -top-20 w-80 h-80 bg-teal-200/40 rounded-full blur-3xl pointer-events-none" />
             </div>
 
             {/* 3 Sesi Pendaftaran Cards */}
             <div className="space-y-4">
               <div className="text-center max-w-2xl mx-auto space-y-1.5">
-                <h3 className="text-xl sm:text-2xl font-black text-white">3 Sesi Pendaftaran Siswa Baru 2027/2028</h3>
-                <p className="text-xs sm:text-sm text-slate-400">
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900">3 Sesi Pendaftaran Siswa Baru 2027/2028</h3>
+                <p className="text-xs sm:text-sm text-slate-600">
                   Pilih sesi yang sesuai untuk mendapatkan kuota dan penawaran prioritas ukuran seragam.
                 </p>
               </div>
@@ -1105,67 +1105,67 @@ export default function SpmbLandingPage({
                       key={session.id}
                       className={`relative rounded-3xl p-6 border transition-all ${
                         session.isActive
-                          ? 'bg-slate-800/90 border-emerald-500/40 shadow-xl shadow-emerald-500/5'
-                          : 'bg-slate-800/40 border-slate-700/60 opacity-80'
+                          ? 'bg-white border-2 border-emerald-500 shadow-md shadow-emerald-500/10'
+                          : 'bg-slate-50 border-slate-200 opacity-90'
                       }`}
                     >
                       {session.isActive ? (
-                        <span className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-emerald-500 text-slate-950 font-black text-[10px] uppercase tracking-wider shadow-md flex items-center gap-1">
-                          <span className="w-1.5 h-1.5 rounded-full bg-slate-950 animate-pulse" />
+                        <span className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-emerald-600 text-white font-black text-[10px] uppercase tracking-wider shadow-sm flex items-center gap-1">
+                          <span className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
                           Sesi Dibuka / Aktif
                         </span>
                       ) : (
-                        <span className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-rose-500/20 border border-rose-500/40 text-rose-300 font-extrabold text-[10px] uppercase tracking-wider shadow-md">
+                        <span className="absolute -top-3 right-6 px-3 py-0.5 rounded-full bg-rose-50 border border-rose-200 text-rose-700 font-extrabold text-[10px] uppercase tracking-wider shadow-xs">
                           Jalur Belum Aktif
                         </span>
                       )}
 
                       <div className="space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-black text-emerald-400 uppercase tracking-wider">
+                          <span className="text-xs font-black text-emerald-700 uppercase tracking-wider">
                             Sesi 0{idx + 1}
                           </span>
-                          <span className="text-xs text-slate-400 flex items-center gap-1">
+                          <span className="text-xs text-slate-500 flex items-center gap-1">
                             <Users size={13} />
                             <span>Kuota: {session.quota} Murid</span>
                           </span>
                         </div>
 
-                        <h4 className="text-lg font-black text-white m-0">{session.name}</h4>
+                        <h4 className="text-lg font-black text-slate-900 m-0">{session.name}</h4>
                         
-                        <div className="p-3 rounded-2xl bg-slate-900/60 border border-slate-700/60 space-y-2 text-xs text-slate-300">
-                          <div className="flex items-center gap-2">
-                            <Calendar size={13} className="text-emerald-400 shrink-0" />
+                        <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2 text-xs text-slate-700">
+                          <div className="flex items-center gap-2 text-slate-800">
+                            <Calendar size={13} className="text-emerald-600 shrink-0" />
                             <span>
                               {new Date(session.startDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })} s.d. {new Date(session.endDate).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' })}
                             </span>
                           </div>
 
                           {hasDiscount ? (
-                            <div className="p-2 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 font-bold space-y-0.5">
+                            <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-900 font-bold space-y-0.5">
                               <div className="flex items-center gap-1.5">
-                                <Percent size={13} className="text-emerald-400 shrink-0" />
+                                <Percent size={13} className="text-emerald-700 shrink-0" />
                                 <span>Diskon Uang Gedung: {discountPct}%</span>
                               </div>
-                              <p className="text-[10px] text-emerald-400/80 m-0 pl-4">
+                              <p className="text-[10px] text-emerald-800 m-0 pl-4">
                                 Hemat Rp {discountVal.toLocaleString('id-ID')} dari Uang Gedung
                               </p>
                             </div>
                           ) : (
-                            <div className="text-[11px] text-slate-400">
+                            <div className="text-[11px] text-slate-500">
                               Uang Gedung Standar (Tanpa Potongan)
                             </div>
                           )}
 
-                          <div className="pt-1.5 border-t border-slate-800 text-[11px] flex justify-between text-slate-400">
+                          <div className="pt-1.5 border-t border-slate-200 text-[11px] flex justify-between text-slate-600">
                             <span>Estimasi Total:</span>
-                            <span className="font-bold text-white">
+                            <span className="font-bold text-slate-900">
                               Rp {feeMale.total.toLocaleString('id-ID')} (L) / Rp {feeFemale.total.toLocaleString('id-ID')} (P)
                             </span>
                           </div>
                         </div>
 
-                        <p className="text-xs text-slate-400 leading-relaxed min-h-[36px]">
+                        <p className="text-xs text-slate-600 leading-relaxed min-h-[36px]">
                           {session.description}
                         </p>
 
@@ -1177,8 +1177,8 @@ export default function SpmbLandingPage({
                           disabled={!session.isActive}
                           className={`w-full py-2.5 rounded-xl font-bold text-xs flex items-center justify-center gap-2 transition-all ${
                             session.isActive
-                              ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-md'
-                              : 'bg-slate-700 text-slate-400 cursor-not-allowed'
+                              ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-sm'
+                              : 'bg-slate-200 text-slate-400 cursor-not-allowed'
                           }`}
                         >
                           <span>{session.isActive ? 'Pilih Sesi Ini' : 'Belum Dibuka'}</span>
@@ -1192,14 +1192,14 @@ export default function SpmbLandingPage({
             </div>
 
             {/* Rincian Biaya Daftar Ulang, Uang Gedung & Seragam Berdasarkan Jenis Kelamin & Asal SD */}
-            <div className="bg-slate-800/60 border border-slate-700/80 rounded-3xl p-6 sm:p-8 space-y-6">
-              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-700/80 pb-5">
+            <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-200 pb-5">
                 <div>
-                  <h3 className="text-lg sm:text-xl font-black text-white flex items-center gap-2">
-                    <Receipt size={20} className="text-emerald-400" />
+                  <h3 className="text-lg sm:text-xl font-black text-slate-900 flex items-center gap-2">
+                    <Receipt size={20} className="text-emerald-600" />
                     <span>Struktur & Rincian Biaya Daftar Ulang</span>
                   </h3>
-                  <p className="text-xs text-slate-400 mt-1">
+                  <p className="text-xs text-slate-500 mt-1">
                     Simulasikan rincian biaya pendaftaran sesuai jenis kelamin dan asal sekolah (SD Maarif vs SD Lainnya).
                   </p>
                 </div>
@@ -1207,14 +1207,14 @@ export default function SpmbLandingPage({
                 {/* Filter Controls: Gender & School Origin */}
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Asal SD Switch */}
-                  <div className="flex items-center p-1 bg-slate-900 rounded-2xl border border-slate-700">
+                  <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200">
                     <button
                       type="button"
                       onClick={() => setSelectedSchoolPreview('maarif_jogosari')}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                         selectedSchoolPreview === 'maarif_jogosari'
-                          ? 'bg-emerald-600 text-white shadow-md'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-emerald-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       <Sparkles size={13} />
@@ -1225,8 +1225,8 @@ export default function SpmbLandingPage({
                       onClick={() => setSelectedSchoolPreview('other')}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                         selectedSchoolPreview === 'other'
-                          ? 'bg-slate-700 text-white shadow-md'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       <span>SD Lainnya (Umum)</span>
@@ -1234,14 +1234,14 @@ export default function SpmbLandingPage({
                   </div>
 
                   {/* Gender Switch */}
-                  <div className="flex items-center p-1 bg-slate-900 rounded-2xl border border-slate-700">
+                  <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200">
                     <button
                       type="button"
                       onClick={() => setSelectedGenderPreview('male')}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                         selectedGenderPreview === 'male'
-                          ? 'bg-blue-600 text-white shadow-md'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-blue-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       <span>Putra</span>
@@ -1251,8 +1251,8 @@ export default function SpmbLandingPage({
                       onClick={() => setSelectedGenderPreview('female')}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                         selectedGenderPreview === 'female'
-                          ? 'bg-rose-600 text-white shadow-md'
-                          : 'text-slate-400 hover:text-white'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       <span>Putri</span>
@@ -1263,13 +1263,13 @@ export default function SpmbLandingPage({
 
               {/* Notice for SD Maarif Jogosari */}
               {selectedSchoolPreview === 'maarif_jogosari' && (
-                <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/40 text-xs text-emerald-300 flex items-start gap-3">
-                  <Sparkles size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+                <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-900 flex items-start gap-3">
+                  <Sparkles size={18} className="text-emerald-700 shrink-0 mt-0.5" />
                   <div>
-                    <strong className="text-emerald-200 font-bold block text-sm">
+                    <strong className="text-emerald-900 font-bold block text-sm">
                       🌟 Diskon Spesial Alumni SD MAARIF JOGOSARI Aktif!
                     </strong>
-                    <div className="mt-1 space-y-0.5 text-slate-300">
+                    <div className="mt-1 space-y-0.5 text-slate-700">
                       <p className="m-0">
                         • <strong>Diskon Uang Gedung Tambahan:</strong> Potongan {config?.maarifBuildingDiscountType === 'percent' ? `${config.maarifBuildingDiscount || 0}%` : `Rp ${(config?.maarifBuildingDiscount || 250000).toLocaleString('id-ID')}`}.
                       </p>
@@ -1283,41 +1283,41 @@ export default function SpmbLandingPage({
 
               {/* 3 Komponen Utama Biaya */}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-700/70 space-y-2">
-                  <div className="flex items-center gap-2 text-indigo-400">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center gap-2 text-indigo-700">
                     <Building2 size={16} />
                     <span className="text-xs font-bold uppercase tracking-wider">1. Uang Gedung (Infaq)</span>
                   </div>
-                  <p className="text-base font-black text-white m-0">
+                  <p className="text-base font-black text-slate-900 m-0">
                     Rp {(config?.buildingFee || 1500000).toLocaleString('id-ID')}
                   </p>
-                  <p className="text-[11px] text-emerald-400 font-medium m-0">
+                  <p className="text-[11px] text-emerald-700 font-medium m-0">
                     Dapat diskon gelombang s.d. 50% di Sesi Inden {selectedSchoolPreview === 'maarif_jogosari' ? '+ Diskon SD Maarif' : ''}
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-700/70 space-y-2">
-                  <div className="flex items-center gap-2 text-emerald-400">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center gap-2 text-emerald-700">
                     <Coins size={16} />
                     <span className="text-xs font-bold uppercase tracking-wider">2. SPP Juli 2027</span>
                   </div>
-                  <p className="text-base font-black text-white m-0">
+                  <p className="text-base font-black text-slate-900 m-0">
                     Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')}
                   </p>
-                  <p className="text-[11px] text-slate-400 m-0">
+                  <p className="text-[11px] text-slate-500 m-0">
                     SPP bulan pertama tahun ajaran baru 2027/2028
                   </p>
                 </div>
 
-                <div className="p-4 rounded-2xl bg-slate-900/80 border border-slate-700/70 space-y-2">
-                  <div className="flex items-center gap-2 text-cyan-400">
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center gap-2 text-cyan-700">
                     <Shirt size={16} />
                     <span className="text-xs font-bold uppercase tracking-wider">3. Seragam & Atribut</span>
                   </div>
-                  <p className="text-base font-black text-white m-0">
+                  <p className="text-base font-black text-slate-900 m-0">
                     Rp {getUniformItemsForGender(selectedGenderPreview).reduce((sum, item) => sum + item.price, 0).toLocaleString('id-ID')}
                   </p>
-                  <p className="text-[11px] text-slate-400 m-0">
+                  <p className="text-[11px] text-slate-500 m-0">
                     Paket lengkap ({selectedGenderPreview === 'male' ? 'Putra' : 'Putri'}) {selectedSchoolPreview === 'maarif_jogosari' ? '(Dapat Diskon Khusus SD Maarif)' : ''}
                   </p>
                 </div>
@@ -1325,27 +1325,27 @@ export default function SpmbLandingPage({
 
               {/* Equipment Items Table */}
               <div className="space-y-3 pt-2">
-                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-400">
+                <h4 className="text-xs font-bold uppercase tracking-wider text-slate-500">
                   Rincian Item Seragam & Perlengkapan ({selectedGenderPreview === 'male' ? 'Putra' : 'Putri'}):
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {getUniformItemsForGender(selectedGenderPreview).map((item, idx) => (
                     <div
                       key={item.id}
-                      className="p-3.5 rounded-2xl bg-slate-900/70 border border-slate-700/60 flex items-center justify-between gap-3"
+                      className="p-3.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-between gap-3 shadow-2xs"
                     >
                       <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-xl bg-emerald-500/10 text-emerald-400 flex items-center justify-center font-bold text-xs">
+                        <div className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
                           {idx + 1}
                         </div>
                         <div>
-                          <p className="text-xs font-bold text-white m-0">{item.name}</p>
-                          <p className="text-[10px] text-slate-400 m-0">
+                          <p className="text-xs font-bold text-slate-900 m-0">{item.name}</p>
+                          <p className="text-[10px] text-slate-500 m-0">
                             {item.gender === 'both' ? 'Wajib Semua Siswa' : `Khusus ${item.gender === 'female' ? 'Putri' : 'Putra'}`}
                           </p>
                         </div>
                       </div>
-                      <span className="text-xs font-black text-emerald-400">
+                      <span className="text-xs font-black text-emerald-700">
                         Rp {item.price.toLocaleString('id-ID')}
                       </span>
                     </div>
@@ -1354,14 +1354,14 @@ export default function SpmbLandingPage({
               </div>
 
               {/* Total Calculation Summary */}
-              <div className="p-5 rounded-2xl bg-gradient-to-r from-slate-900 via-emerald-950/40 to-slate-900 border border-emerald-500/30 flex flex-col sm:flex-row items-center justify-between gap-4">
+              <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="space-y-1 text-center sm:text-left">
-                  <p className="text-xs text-slate-400 m-0">
+                  <p className="text-xs text-slate-600 m-0">
                     Estimasi Total Biaya Sesi Inden ({selectedGenderPreview === 'male' ? 'Putra' : 'Putri'} - {selectedSchoolPreview === 'maarif_jogosari' ? 'SD Maarif Jogosari' : 'SD Lainnya'}):
                   </p>
-                  <p className="text-2xl font-black text-white tracking-tight m-0">
+                  <p className="text-2xl font-black text-slate-900 tracking-tight m-0">
                     Rp {calculateTotalReRegFee(selectedGenderPreview, 'inden', selectedSchoolPreview).toLocaleString('id-ID')}
-                    <span className="text-xs font-semibold text-emerald-400 ml-2">
+                    <span className="text-xs font-semibold text-emerald-700 ml-2">
                       {selectedSchoolPreview === 'maarif_jogosari' ? '(Diskon Gelombang + Diskon SD Maarif)' : '(Diskon Gelombang Uang Gedung 50%)'}
                     </span>
                   </p>
@@ -1377,7 +1377,7 @@ export default function SpmbLandingPage({
                     }));
                     setActiveTab('register');
                   }}
-                  className="px-6 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black text-xs rounded-xl shadow-md transition-all cursor-pointer"
+                  className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md transition-all cursor-pointer"
                 >
                   Daftar Calon Murid {selectedGenderPreview === 'male' ? 'Putra' : 'Putri'}
                 </button>
@@ -1386,7 +1386,7 @@ export default function SpmbLandingPage({
 
             {/* Alur Pendaftaran 5 Langkah */}
             <div className="space-y-4">
-              <h3 className="text-xl font-black text-white text-center">Alur Pendaftaran Mudah & Transparan</h3>
+              <h3 className="text-xl font-black text-slate-900 text-center">Alur Pendaftaran Mudah & Transparan</h3>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 {[
                   { step: '1', title: 'Isi Data Singkat', desc: 'Isi identitas diri, NISN, no WhatsApp, dan asal sekolah.' },
@@ -1395,12 +1395,12 @@ export default function SpmbLandingPage({
                   { step: '4', title: 'Upload Berkas', desc: 'Unggah Akte kelahiran, KK, KTP Ayah, KTP Ibu, dan Foto Siswa (auto 1000px).' },
                   { step: '5', title: 'Daftar Ulang & Diterima', desc: 'Pilih ukuran seragam, selesaikan daftar ulang, dan cetak Tanda Terima Resmi.' }
                 ].map((s) => (
-                  <div key={s.step} className="p-4 rounded-2xl bg-slate-800/40 border border-slate-700/60 text-center space-y-2">
-                    <div className="w-8 h-8 rounded-full bg-emerald-500/20 text-emerald-400 font-black text-xs flex items-center justify-center mx-auto border border-emerald-500/40">
+                  <div key={s.step} className="p-4 rounded-2xl bg-white border border-slate-200 text-center space-y-2 shadow-2xs">
+                    <div className="w-8 h-8 rounded-full bg-emerald-100 text-emerald-800 font-black text-xs flex items-center justify-center mx-auto border border-emerald-200">
                       {s.step}
                     </div>
-                    <h5 className="text-xs font-bold text-white m-0">{s.title}</h5>
-                    <p className="text-[11px] text-slate-400 leading-relaxed m-0">{s.desc}</p>
+                    <h5 className="text-xs font-bold text-slate-900 m-0">{s.title}</h5>
+                    <p className="text-[11px] text-slate-600 leading-relaxed m-0">{s.desc}</p>
                   </div>
                 ))}
               </div>
@@ -1412,23 +1412,23 @@ export default function SpmbLandingPage({
         {activeTab === 'register' && (
           <div className="max-w-2xl mx-auto space-y-6">
             <div className="text-center space-y-2">
-              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-300 text-xs font-bold">
+              <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-100 border border-emerald-300 text-emerald-800 text-xs font-bold">
                 <Sparkles size={14} />
                 <span>Formulir Pendaftaran Awal Calon Murid</span>
               </div>
-              <h2 className="text-2xl sm:text-3xl font-black text-white">SPMB Tahun Ajaran 2027/2028</h2>
-              <p className="text-xs sm:text-sm text-slate-400">
-                Isi data awal calon murid di bawah ini. Setelah itu, lakukan pembayaran token pendaftaran <strong className="text-emerald-300">Rp 50.000</strong> via Midtrans online untuk aktivasi akun pendaftaran resmi.
+              <h2 className="text-2xl sm:text-3xl font-black text-slate-900">SPMB Tahun Ajaran 2027/2028</h2>
+              <p className="text-xs sm:text-sm text-slate-600">
+                Isi data awal calon murid di bawah ini. Setelah itu, lakukan pembayaran token pendaftaran <strong className="text-emerald-700 font-bold">Rp 50.000</strong> via Midtrans online untuk aktivasi akun pendaftaran resmi.
               </p>
             </div>
 
             {/* Alert if overall SPMB is closed or all sessions are inactive */}
             {(!config?.isOpen || !config?.sessions?.some(s => s.isActive)) && (
-              <div className="p-4 rounded-2xl bg-amber-950/70 border border-amber-500/40 text-amber-200 text-xs flex items-start gap-3">
-                <AlertTriangle size={18} className="text-amber-400 shrink-0 mt-0.5" />
+              <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-900 text-xs flex items-start gap-3">
+                <AlertTriangle size={18} className="text-amber-600 shrink-0 mt-0.5" />
                 <div>
-                  <p className="font-bold m-0 text-amber-300">Pemberitahuan: Jalur Pendaftaran Belum Aktif</p>
-                  <p className="m-0 text-slate-300 mt-0.5">
+                  <p className="font-bold m-0 text-amber-900">Pemberitahuan: Jalur Pendaftaran Belum Aktif</p>
+                  <p className="m-0 text-slate-700 mt-0.5">
                     Pendaftaran SPMB saat ini belum dibuka atau seluruh jalur pendaftaran sedang tidak aktif. Silakan pantau pengumuman resmi atau hubungi panitia SPMB sekolah.
                   </p>
                 </div>
@@ -1436,20 +1436,20 @@ export default function SpmbLandingPage({
             )}
 
             {regError && (
-              <div className="p-4 rounded-2xl bg-rose-950/60 border border-rose-500/40 text-rose-200 text-xs flex items-start gap-3">
-                <AlertTriangle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+              <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-start gap-3">
+                <AlertTriangle size={18} className="text-rose-600 shrink-0 mt-0.5" />
                 <div>
                   <p className="font-bold m-0">Gagal Memproses Formulir:</p>
-                  <p className="m-0 text-slate-300 mt-0.5">{regError}</p>
+                  <p className="m-0 text-slate-700 mt-0.5">{regError}</p>
                 </div>
               </div>
             )}
 
-            <form onSubmit={handleRegisterTokenPay} className="bg-slate-800/80 border border-slate-700 rounded-3xl p-6 sm:p-8 space-y-5 shadow-xl">
+            <form onSubmit={handleRegisterTokenPay} className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-5 shadow-sm">
               {/* 1. Pilihan Sesi Pendaftaran */}
               <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-300 mb-1">
-                  1. Pilihan Sesi / Gelombang Pendaftaran <span className="text-rose-400">*</span>
+                <label className="block text-xs font-bold text-slate-700 mb-1">
+                  1. Pilihan Sesi / Gelombang Pendaftaran <span className="text-rose-500">*</span>
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {(config?.sessions || []).map((session) => {
@@ -1463,27 +1463,27 @@ export default function SpmbLandingPage({
                         className={`p-3 rounded-2xl border text-left transition-all cursor-pointer relative ${
                           isSelected
                             ? isInactive
-                              ? 'bg-rose-950/40 border-rose-500/60 text-white ring-2 ring-rose-500/20'
-                              : 'bg-emerald-500/20 border-emerald-500 text-white ring-2 ring-emerald-500/20'
+                              ? 'bg-rose-50 border-2 border-rose-500 text-rose-900 ring-2 ring-rose-500/20'
+                              : 'bg-emerald-50 border-2 border-emerald-500 text-emerald-950 ring-2 ring-emerald-500/20'
                             : isInactive
-                              ? 'bg-slate-900/40 border-slate-800 text-slate-500 hover:border-slate-700'
-                              : 'bg-slate-900/60 border-slate-700 text-slate-400 hover:border-slate-600'
+                              ? 'bg-slate-50 border-slate-200 text-slate-400 hover:border-slate-300'
+                              : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <p className="text-xs font-black text-white m-0">{session.name}</p>
+                          <p className="text-xs font-black text-slate-900 m-0">{session.name}</p>
                           {isInactive ? (
-                            <span className="px-2 py-0.5 rounded-full bg-rose-500/20 text-rose-300 border border-rose-500/30 text-[9px] font-black uppercase">
+                            <span className="px-2 py-0.5 rounded-full bg-rose-100 text-rose-700 border border-rose-200 text-[9px] font-black uppercase">
                               Belum Aktif
                             </span>
                           ) : (
-                            <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-[9px] font-black uppercase flex items-center gap-1">
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                            <span className="px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-[9px] font-black uppercase flex items-center gap-1">
+                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600 animate-pulse" />
                               Aktif
                             </span>
                           )}
                         </div>
-                        <p className="text-[10px] text-slate-400 mt-1">
+                        <p className="text-[10px] text-slate-500 mt-1">
                           Kuota: {session.quota} Siswa
                         </p>
                       </button>
@@ -1496,8 +1496,8 @@ export default function SpmbLandingPage({
                   const currentSession = config?.sessions?.find(s => s.id === regForm.sessionId);
                   if (currentSession && currentSession.isActive === false) {
                     return (
-                      <div className="mt-2 p-3 rounded-xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs flex items-center gap-2">
-                        <AlertTriangle size={15} className="text-rose-400 shrink-0" />
+                      <div className="mt-2 p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-900 text-xs flex items-center gap-2">
+                        <AlertTriangle size={15} className="text-rose-600 shrink-0" />
                         <span>
                           <strong>Peringatan:</strong> Jalur pendaftaran <strong>{currentSession.name}</strong> belum aktif. Silakan pilih jalur pendaftaran yang berstatus aktif.
                         </span>
@@ -1510,8 +1510,8 @@ export default function SpmbLandingPage({
 
               {/* 2. Asal Sekolah (SD MAARIF JOGOSARI vs SD Lainnya) */}
               <div className="space-y-2">
-                <label className="block text-xs font-bold text-slate-300">
-                  2. Asal Sekolah (SD / MI) <span className="text-rose-400">*</span>
+                <label className="block text-xs font-bold text-slate-700">
+                  2. Asal Sekolah (SD / MI) <span className="text-rose-500">*</span>
                 </label>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* SD Maarif Jogosari */}
@@ -1524,20 +1524,20 @@ export default function SpmbLandingPage({
                     }))}
                     className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
                       regForm.schoolOriginType === 'maarif_jogosari'
-                        ? 'bg-emerald-950/60 border-emerald-500 shadow-md ring-2 ring-emerald-500/30'
-                        : 'bg-slate-900/60 border-slate-700 text-slate-400 hover:border-slate-600'
+                        ? 'bg-emerald-50 border-2 border-emerald-500 shadow-xs ring-2 ring-emerald-500/20'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-white flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-emerald-400" />
+                      <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <Sparkles size={14} className="text-emerald-600" />
                         <span>1. SD MAARIF JOGOSARI</span>
                       </span>
                       {regForm.schoolOriginType === 'maarif_jogosari' && (
-                        <CheckCircle2 size={14} className="text-emerald-400" />
+                        <CheckCircle2 size={14} className="text-emerald-600" />
                       )}
                     </div>
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
                       ✨ Diskon Khusus Gedung & Seragam
                     </span>
                   </button>
@@ -1552,25 +1552,25 @@ export default function SpmbLandingPage({
                     }))}
                     className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
                       regForm.schoolOriginType === 'other'
-                        ? 'bg-slate-900 border-indigo-500 shadow-md ring-2 ring-indigo-500/30'
-                        : 'bg-slate-900/60 border-slate-700 text-slate-400 hover:border-slate-600'
+                        ? 'bg-indigo-50 border-2 border-indigo-500 shadow-xs ring-2 ring-indigo-500/20'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-white">2. SD Lainnya (Isi Manual)</span>
+                      <span className="text-xs font-black text-slate-900">2. SD Lainnya (Isi Manual)</span>
                       {regForm.schoolOriginType === 'other' && (
-                        <CheckCircle2 size={14} className="text-indigo-400" />
+                        <CheckCircle2 size={14} className="text-indigo-600" />
                       )}
                     </div>
-                    <p className="text-[10px] text-slate-400 mt-1 m-0">Dari SD / MI negeri & swasta lainnya</p>
+                    <p className="text-[10px] text-slate-500 mt-1 m-0">Dari SD / MI negeri & swasta lainnya</p>
                   </button>
                 </div>
 
                 {/* Input Manual jika memilih SD Lainnya */}
                 {regForm.schoolOriginType === 'other' && (
                   <div className="pt-2 animate-in fade-in">
-                    <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                      Nama Lengkap SD / MI Asal <span className="text-rose-400">*</span>
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                      Nama Lengkap SD / MI Asal <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
@@ -1582,7 +1582,7 @@ export default function SpmbLandingPage({
                         manualSchoolName: e.target.value,
                         schoolOrigin: e.target.value
                       })}
-                      className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                      className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
                 )}
@@ -1591,10 +1591,10 @@ export default function SpmbLandingPage({
               {/* Nama Lengkap */}
               <div>
                 <div className="flex items-center justify-between mb-1.5">
-                  <label className="block text-xs font-bold text-slate-300">
-                    3. Nama Lengkap Calon Murid <span className="text-rose-400">*</span>
+                  <label className="block text-xs font-bold text-slate-700">
+                    3. Nama Lengkap Calon Murid <span className="text-rose-500">*</span>
                   </label>
-                  <span className="text-[10px] text-emerald-400 font-medium">Otomatis Huruf Besar (KAPITAL)</span>
+                  <span className="text-[10px] text-emerald-700 font-medium">Otomatis Huruf Besar (KAPITAL)</span>
                 </div>
                 <input
                   type="text"
@@ -1602,15 +1602,15 @@ export default function SpmbLandingPage({
                   placeholder="CONTOH: MUHAMMAD RIZKY PRATAMA"
                   value={regForm.fullName}
                   onChange={(e) => setRegForm({ ...regForm, fullName: e.target.value.toUpperCase() })}
-                  className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white uppercase placeholder:normal-case placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold tracking-wide"
+                  className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase placeholder:normal-case placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold tracking-wide"
                 />
               </div>
 
               {/* NISN & NIK */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    NISN Calon Murid (10 Digit) <span className="text-rose-400">*</span>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    NISN Calon Murid (10 Digit) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1618,13 +1618,13 @@ export default function SpmbLandingPage({
                     placeholder="Contoh: 0123456789"
                     value={regForm.nisn}
                     onChange={(e) => setRegForm({ ...regForm, nisn: e.target.value.replace(/\D/g, '') })}
-                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
-                  <p className="text-[10px] text-slate-400 mt-1">NISN akan digunakan sebagai nomor ID login portal status.</p>
+                  <p className="text-[10px] text-slate-500 mt-1">NISN akan digunakan sebagai nomor ID login portal status.</p>
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
                     NIK Calon Murid (16 Digit)
                   </label>
                   <input
@@ -1632,7 +1632,7 @@ export default function SpmbLandingPage({
                     placeholder="Sesuai Kartu Keluarga (KK)"
                     value={regForm.nik}
                     onChange={(e) => setRegForm({ ...regForm, nik: e.target.value.replace(/\D/g, '') })}
-                    className="w-full px-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>
@@ -1640,8 +1640,8 @@ export default function SpmbLandingPage({
               {/* Jenis Kelamin & WhatsApp */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    Jenis Kelamin <span className="text-rose-400">*</span>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Jenis Kelamin <span className="text-rose-500">*</span>
                   </label>
                   <div className="grid grid-cols-2 gap-2">
                     <button
@@ -1649,8 +1649,8 @@ export default function SpmbLandingPage({
                       onClick={() => setRegForm({ ...regForm, gender: 'L' })}
                       className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                         regForm.gender === 'L'
-                          ? 'bg-blue-600 border-blue-500 text-white shadow-md'
-                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                          ? 'bg-blue-600 border-blue-600 text-white shadow-xs'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
                       Laki-laki (Putra)
@@ -1660,8 +1660,8 @@ export default function SpmbLandingPage({
                       onClick={() => setRegForm({ ...regForm, gender: 'P' })}
                       className={`py-2 px-3 rounded-xl text-xs font-bold border transition-all cursor-pointer ${
                         regForm.gender === 'P'
-                          ? 'bg-rose-600 border-rose-500 text-white shadow-md'
-                          : 'bg-slate-900 border-slate-700 text-slate-400'
+                          ? 'bg-rose-600 border-rose-600 text-white shadow-xs'
+                          : 'bg-white border-slate-300 text-slate-700 hover:bg-slate-50'
                       }`}
                     >
                       Perempuan (Putri)
@@ -1670,8 +1670,8 @@ export default function SpmbLandingPage({
                 </div>
 
                 <div>
-                  <label className="block text-xs font-bold text-slate-300 mb-1.5">
-                    Nomor WhatsApp Aktif (Murid / Ortu) <span className="text-rose-400">*</span>
+                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    Nomor WhatsApp Aktif (Murid / Ortu) <span className="text-rose-500">*</span>
                   </label>
                   <input
                     type="text"
@@ -1679,13 +1679,13 @@ export default function SpmbLandingPage({
                     placeholder="Contoh: 081234567890"
                     value={regForm.phone}
                     onChange={(e) => setRegForm({ ...regForm, phone: e.target.value })}
-                    className="w-full px-4 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
               </div>
 
               {/* Tempat & Tanggal Lahir (Kolom Tersendiri |tgl| |bln| |Tahun| + Otomatis Gabung) */}
-              <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+              <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                 <BirthDateSplitInput
                   idPrefix="reg-student"
                   birthPlace={regForm.birthPlace}
@@ -1697,7 +1697,7 @@ export default function SpmbLandingPage({
                   combinedLabel="Tempat, Tgl Lahir Siswa"
                   required
                   showPlaceInput
-                  theme="dark"
+                  theme="light"
                   minYear={2000}
                   maxYear={new Date().getFullYear()}
                   placeholderPlace="Contoh: Pasuruan"
@@ -1706,12 +1706,12 @@ export default function SpmbLandingPage({
               </div>
 
               {/* Token Fee Summary Box */}
-              <div className="p-4 rounded-2xl bg-emerald-950/40 border border-emerald-500/30 flex items-center justify-between">
+              <div className="p-4 rounded-2xl bg-emerald-50 border border-emerald-200 flex items-center justify-between">
                 <div>
-                  <p className="text-xs font-bold text-emerald-300 m-0">Biaya Token Pendaftaran Online:</p>
-                  <p className="text-[11px] text-slate-400 m-0">Pembayaran aman via QRIS, Transfer Bank, atau E-Wallet (Midtrans)</p>
+                  <p className="text-xs font-bold text-emerald-900 m-0">Biaya Token Pendaftaran Online:</p>
+                  <p className="text-[11px] text-slate-600 m-0">Pembayaran aman via QRIS, Transfer Bank, atau E-Wallet (Midtrans)</p>
                 </div>
-                <span className="text-xl font-black text-emerald-400">
+                <span className="text-xl font-black text-emerald-700">
                   Rp {(config?.registrationTokenFee || 50000).toLocaleString('id-ID')}
                 </span>
               </div>
@@ -1727,12 +1727,12 @@ export default function SpmbLandingPage({
                       <button
                         type="button"
                         disabled
-                        className="w-full py-3.5 bg-slate-800 border-2 border-rose-500/40 text-rose-300 font-bold text-xs rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed opacity-90 shadow-md"
+                        className="w-full py-3.5 bg-slate-100 border-2 border-rose-300 text-rose-700 font-bold text-xs rounded-2xl flex items-center justify-center gap-2 cursor-not-allowed opacity-90 shadow-2xs"
                       >
-                        <Lock size={16} className="text-rose-400" />
+                        <Lock size={16} className="text-rose-500" />
                         <span>Jalur Pendaftaran Belum Aktif (Pendaftaran Ditutup)</span>
                       </button>
-                      <p className="text-[11px] text-rose-300/80 text-center m-0">
+                      <p className="text-[11px] text-rose-600 text-center m-0">
                         Jalur pendaftaran yang dipilih sedang belum dibuka. Silakan pilih gelombang lain yang aktif atau hubungi panitia.
                       </p>
                     </div>
@@ -1743,7 +1743,7 @@ export default function SpmbLandingPage({
                   <button
                     type="submit"
                     disabled={isProcessingTokenPay}
-                    className="w-full py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 disabled:opacity-50 text-slate-950 font-black text-sm rounded-2xl shadow-lg shadow-emerald-500/25 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-sm rounded-2xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
                   >
                     {isProcessingTokenPay ? (
                       <>
@@ -1764,7 +1764,7 @@ export default function SpmbLandingPage({
                 <button
                   type="button"
                   onClick={() => setActiveTab('portal')}
-                  className="text-xs text-slate-400 hover:text-emerald-400 transition-colors cursor-pointer"
+                  className="text-xs text-slate-500 hover:text-emerald-700 transition-colors cursor-pointer"
                 >
                   Sudah mendaftar / bayar token sebelumnya? Klik di sini untuk Cek Status & Login Akun
                 </button>
@@ -1777,10 +1777,10 @@ export default function SpmbLandingPage({
         {activeTab === 'portal' && (
           <div className="space-y-6">
             {/* Search / Lookup Box */}
-            <div className="max-w-xl mx-auto bg-slate-800/80 border border-slate-700 rounded-3xl p-5 sm:p-6 shadow-xl space-y-4">
+            <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
               <div className="text-center space-y-1">
-                <h3 className="text-lg font-black text-white">Portal Status & Akun Sementara Siswa Baru</h3>
-                <p className="text-xs text-slate-400">
+                <h3 className="text-lg font-black text-slate-900">Portal Status & Akun Sementara Siswa Baru</h3>
+                <p className="text-xs text-slate-500">
                   Masukkan NISN calon murid untuk mengecek progres berkas, bayar daftar ulang, dan cetak tanda terima.
                 </p>
               </div>
@@ -1794,14 +1794,14 @@ export default function SpmbLandingPage({
                     value={searchNisn}
                     onChange={(e) => setSearchNisn(e.target.value.replace(/\D/g, ''))}
                     onKeyDown={(e) => e.key === 'Enter' && handleCheckStatus()}
-                    className="w-full pl-10 pr-4 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono placeholder-slate-500 focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                    className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
                 </div>
                 <button
                   type="button"
                   onClick={() => handleCheckStatus()}
                   disabled={isSearchingCandidate}
-                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-md flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5 transition-all cursor-pointer shrink-0"
                 >
                   {isSearchingCandidate ? <RefreshCw size={14} className="animate-spin" /> : <Search size={14} />}
                   <span>Cek Status</span>
@@ -1809,12 +1809,12 @@ export default function SpmbLandingPage({
               </div>
 
               {portalError && (
-                <div className="p-4 rounded-2xl bg-rose-950/70 border border-rose-500/40 text-rose-200 text-xs space-y-2.5">
+                <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-2.5">
                   <div className="flex items-start gap-2.5">
-                    <AlertCircle size={18} className="text-rose-400 shrink-0 mt-0.5" />
+                    <AlertCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
                     <div className="space-y-1">
-                      <p className="font-bold text-rose-300 m-0">Status Pendaftaran Tidak Ditemukan / Belum Selesai</p>
-                      <p className="m-0 text-slate-300 leading-relaxed">{portalError}</p>
+                      <p className="font-bold text-rose-800 m-0">Status Pendaftaran Tidak Ditemukan / Belum Selesai</p>
+                      <p className="m-0 text-slate-700 leading-relaxed">{portalError}</p>
                     </div>
                   </div>
                   <div className="pt-2 flex justify-end">
@@ -1824,7 +1824,7 @@ export default function SpmbLandingPage({
                         setActiveTab('register');
                         setRegError(null);
                       }}
-                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl shadow flex items-center gap-1.5 transition-all cursor-pointer"
+                      className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
                     >
                       <span>Input / Daftar Formulir Baru</span>
                       <ArrowRight size={14} />
@@ -1909,32 +1909,32 @@ export default function SpmbLandingPage({
               return (
               <div className="space-y-6">
                 {/* Status Banner */}
-                <div className="bg-slate-800/90 border border-slate-700 rounded-3xl p-6 shadow-xl flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
                   <div className="flex items-center gap-4">
-                    <div className="w-14 h-14 rounded-2xl bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 flex items-center justify-center font-black text-xl shrink-0">
+                    <div className="w-14 h-14 rounded-2xl bg-emerald-100 text-emerald-800 border border-emerald-300 flex items-center justify-center font-black text-xl shrink-0">
                       {activeCandidate.fullName.charAt(0)}
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
-                        <h3 className="text-lg font-black text-white m-0">{activeCandidate.fullName}</h3>
-                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                        <h3 className="text-lg font-black text-slate-900 m-0">{activeCandidate.fullName}</h3>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-emerald-100 text-emerald-800 border border-emerald-300">
                           {activeCandidate.gender === 'L' ? 'Putra' : 'Putri'}
                         </span>
                       </div>
-                      <p className="text-xs text-slate-400 m-0 mt-0.5">
-                        NISN: <span className="font-mono text-white">{activeCandidate.nisn}</span> • Asal: <span className="text-white">{activeCandidate.schoolOrigin}</span> • Sesi: <span className="text-emerald-400 font-bold uppercase">{activeCandidate.sessionId}</span>
+                      <p className="text-xs text-slate-500 m-0 mt-0.5">
+                        NISN: <span className="font-mono text-slate-900 font-bold">{activeCandidate.nisn}</span> • Asal: <span className="text-slate-900 font-semibold">{activeCandidate.schoolOrigin}</span> • Sesi: <span className="text-emerald-700 font-bold uppercase">{activeCandidate.sessionId}</span>
                       </p>
                     </div>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
                     {activeCandidate.status === 'accepted' ? (
-                      <span className="px-4 py-2 rounded-xl bg-emerald-500 text-slate-950 font-black text-xs shadow-lg shadow-emerald-500/20 flex items-center gap-1.5">
+                      <span className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-md shadow-emerald-600/20 flex items-center gap-1.5">
                         <CheckCircle2 size={16} />
                         <span>DITERIMA / LOLOS SELEKSI</span>
                       </span>
                     ) : (
-                      <span className="px-3 py-1.5 rounded-xl bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 font-bold text-xs">
+                      <span className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-xs">
                         Status: Dalam Proses Verifikasi
                       </span>
                     )}
@@ -1949,12 +1949,12 @@ export default function SpmbLandingPage({
                       }}
                       className={`px-3.5 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition-all ${
                         isStep5Unlocked
-                          ? 'bg-slate-700 hover:bg-slate-600 text-white cursor-pointer'
-                          : 'bg-slate-800/60 text-slate-500 border border-slate-700/50 cursor-not-allowed'
+                          ? 'bg-slate-100 hover:bg-slate-200 text-slate-800 border border-slate-300 cursor-pointer'
+                          : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                       }`}
                       title={isStep5Unlocked ? 'Cetak Bukti Pendaftaran' : 'Selesaikan seluruh tahap pendaftaran untuk membuka bukti resmi'}
                     >
-                      {isStep5Unlocked ? <Printer size={14} /> : <Lock size={14} className="text-amber-400" />}
+                      {isStep5Unlocked ? <Printer size={14} /> : <Lock size={14} className="text-amber-500" />}
                       <span>{isStep5Unlocked ? 'Cetak Bukti' : 'Bukti Terkunci'}</span>
                     </button>
                   </div>
@@ -1977,31 +1977,31 @@ export default function SpmbLandingPage({
                         disabled={!tab.unlocked}
                         className={`p-3 rounded-2xl border text-left transition-all relative ${
                           isCurrent
-                            ? 'bg-emerald-600 text-white border-emerald-400 shadow-lg ring-2 ring-emerald-500/40 cursor-pointer'
+                            ? 'bg-emerald-600 text-white border-emerald-600 shadow-md ring-2 ring-emerald-600/30 cursor-pointer'
                             : tab.done
-                            ? 'bg-slate-800/90 border-emerald-500/40 text-emerald-300 hover:bg-slate-700/80 cursor-pointer'
+                            ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100 cursor-pointer'
                             : tab.unlocked
-                            ? 'bg-slate-800/80 border-slate-700 text-slate-200 hover:bg-slate-700 cursor-pointer'
-                            : 'bg-slate-900/60 border-slate-800/80 text-slate-500 opacity-60 cursor-not-allowed'
+                            ? 'bg-white border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer shadow-2xs'
+                            : 'bg-slate-100 border-slate-200 text-slate-400 opacity-60 cursor-not-allowed'
                         }`}
                       >
                         <div className="flex items-center justify-between">
-                          <tab.icon size={15} className={isCurrent ? 'text-white' : tab.done ? 'text-emerald-400' : tab.unlocked ? 'text-slate-300' : 'text-slate-600'} />
+                          <tab.icon size={15} className={isCurrent ? 'text-white' : tab.done ? 'text-emerald-700' : tab.unlocked ? 'text-slate-600' : 'text-slate-400'} />
                           {tab.done ? (
-                            <span className="px-1.5 py-0.5 rounded-full bg-emerald-400 text-slate-950 flex items-center gap-0.5 text-[9px] font-black">
+                            <span className="px-1.5 py-0.5 rounded-full bg-emerald-600 text-white flex items-center gap-0.5 text-[9px] font-black">
                               ✓ Selesai
                             </span>
                           ) : !tab.unlocked ? (
-                            <span className="px-1.5 py-0.5 rounded-full bg-slate-800 text-slate-400 border border-slate-700 flex items-center gap-0.5 text-[9px] font-bold">
-                              <Lock size={9} className="text-amber-400" />
+                            <span className="px-1.5 py-0.5 rounded-full bg-slate-200 text-slate-500 border border-slate-300 flex items-center gap-0.5 text-[9px] font-bold">
+                              <Lock size={9} className="text-amber-600" />
                               Terkunci
                             </span>
                           ) : (
-                            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse"></span>
+                            <span className="w-2 h-2 rounded-full bg-emerald-600 animate-pulse"></span>
                           )}
                         </div>
                         <p className="text-xs font-bold mt-2 m-0 truncate">{tab.label}</p>
-                        <p className="text-[10px] text-slate-400 m-0 mt-0.5 truncate">{tab.desc}</p>
+                        <p className={`text-[10px] m-0 mt-0.5 truncate ${isCurrent ? 'text-emerald-100' : 'text-slate-500'}`}>{tab.desc}</p>
                       </button>
                     );
                   })}
@@ -2009,44 +2009,44 @@ export default function SpmbLandingPage({
 
                 {/* TAB CONTENT 1: STATUS TOKEN */}
                 {portalTab === 'status' && (
-                  <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-6 space-y-4">
-                    <h4 className="text-base font-black text-white flex items-center gap-2">
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 space-y-4 shadow-sm">
+                    <h4 className="text-base font-black text-slate-900 flex items-center gap-2">
                       {isStep1Done ? (
                         <>
-                          <CheckCircle2 size={18} className="text-emerald-400" />
+                          <CheckCircle2 size={18} className="text-emerald-600" />
                           <span>Pembayaran Token Pendaftaran Awal (Rp 50.000)</span>
                         </>
                       ) : (
                         <>
-                          <AlertTriangle size={18} className="text-amber-400" />
+                          <AlertTriangle size={18} className="text-amber-500" />
                           <span>Status Pembayaran Token Pendaftaran</span>
                         </>
                       )}
                     </h4>
 
                     {isStep1Done ? (
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700/80 space-y-3 text-xs">
-                        <div className="flex justify-between py-1 border-b border-slate-800">
-                          <span className="text-slate-400">Status Pembayaran Token:</span>
-                          <span className="font-bold text-emerald-400 uppercase">LUNAS (PAID)</span>
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+                        <div className="flex justify-between py-1 border-b border-slate-200">
+                          <span className="text-slate-500">Status Pembayaran Token:</span>
+                          <span className="font-bold text-emerald-700 uppercase">LUNAS (PAID)</span>
                         </div>
-                        <div className="flex justify-between py-1 border-b border-slate-800">
-                          <span className="text-slate-400">Nominal Pembayaran:</span>
-                          <span className="font-bold text-white">Rp {(activeCandidate.tokenAmount || 50000).toLocaleString('id-ID')}</span>
+                        <div className="flex justify-between py-1 border-b border-slate-200">
+                          <span className="text-slate-500">Nominal Pembayaran:</span>
+                          <span className="font-bold text-slate-900">Rp {(activeCandidate.tokenAmount || 50000).toLocaleString('id-ID')}</span>
                         </div>
-                        <div className="flex justify-between py-1 border-b border-slate-800">
-                          <span className="text-slate-400">Waktu Pembayaran:</span>
-                          <span className="font-bold text-slate-200">
+                        <div className="flex justify-between py-1 border-b border-slate-200">
+                          <span className="text-slate-500">Waktu Pembayaran:</span>
+                          <span className="font-bold text-slate-700">
                             {activeCandidate.tokenPaidAt ? new Date(activeCandidate.tokenPaidAt).toLocaleString('id-ID') : 'Terkonfirmasi'}
                           </span>
                         </div>
                         <div className="flex justify-between py-1">
-                          <span className="text-slate-400">No Order Transaksi:</span>
-                          <span className="font-mono text-slate-300">{activeCandidate.tokenPaymentOrderId || '-'}</span>
+                          <span className="text-slate-500">No Order Transaksi:</span>
+                          <span className="font-mono text-slate-700">{activeCandidate.tokenPaymentOrderId || '-'}</span>
                         </div>
 
                         {/* Button Cetak Kuitansi Token Resmi */}
-                        <div className="pt-2 border-t border-slate-800 flex justify-end">
+                        <div className="pt-2 border-t border-slate-200 flex justify-end">
                           <button
                             type="button"
                             onClick={() => {
@@ -2054,7 +2054,7 @@ export default function SpmbLandingPage({
                               setReceiptModalType('token');
                               setIsReceiptModalOpen(true);
                             }}
-                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md cursor-pointer transition-all"
+                            className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm cursor-pointer transition-all"
                           >
                             <Printer size={14} />
                             <span>Cetak Kuitansi Token Lunas (KOP Resmi)</span>
@@ -2062,7 +2062,7 @@ export default function SpmbLandingPage({
                         </div>
                       </div>
                     ) : (
-                      <div className="p-4 rounded-2xl bg-amber-950/40 border border-amber-500/40 text-xs text-amber-200 space-y-3">
+                      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-3">
                         <p className="m-0">
                           Token pendaftaran awal (Rp 50.000) belum lunas. Silakan selesaikan pembayaran token terlebih dahulu untuk membuka akses Tahap 2: Pengisian Data Lengkap Siswa.
                         </p>
@@ -2083,7 +2083,7 @@ export default function SpmbLandingPage({
                             }
                             setActiveTab('register');
                           }}
-                          className="px-5 py-2.5 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-md"
+                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-sm"
                         >
                           <CreditCard size={14} />
                           <span>Menuju Halaman Pendaftaran & Bayar Token (Rp 50.000)</span>
@@ -2103,8 +2103,8 @@ export default function SpmbLandingPage({
                         disabled={!isStep2Unlocked}
                         className={`px-5 py-2.5 font-bold text-xs rounded-xl flex items-center gap-1.5 transition-all ${
                           isStep2Unlocked
-                            ? 'bg-emerald-600 hover:bg-emerald-500 text-white cursor-pointer shadow-md'
-                            : 'bg-slate-900/60 text-slate-500 border border-slate-800 cursor-not-allowed'
+                            ? 'bg-emerald-600 hover:bg-emerald-700 text-white cursor-pointer shadow-sm'
+                            : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                         }`}
                       >
                         {isStep2Unlocked ? (
@@ -2114,7 +2114,7 @@ export default function SpmbLandingPage({
                           </>
                         ) : (
                           <>
-                            <Lock size={14} className="text-amber-400" />
+                            <Lock size={14} className="text-amber-500" />
                             <span>Tahap 2 Terkunci (Perlu Bayar Token)</span>
                           </>
                         )}
@@ -2126,31 +2126,31 @@ export default function SpmbLandingPage({
                 {/* TAB CONTENT 2: FORM DATA LENGKAP SISWA */}
                 {portalTab === 'form' && (
                   !isStep2Unlocked ? (
-                    <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-8 text-center space-y-4">
-                      <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+                    <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-4 shadow-sm">
+                      <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
                         <Lock size={32} />
                       </div>
-                      <h4 className="text-lg font-black text-white">Tahap 2: Data Lengkap Siswa Terkunci</h4>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      <h4 className="text-lg font-black text-slate-900">Tahap 2: Data Lengkap Siswa Terkunci</h4>
+                      <p className="text-xs text-slate-600 max-w-md mx-auto">
                         Anda harus menyelesaikan pembayaran Token Pendaftaran (Tahap 1) terlebih dahulu sebelum dapat mengisi dan menyimpan formulir data lengkap siswa.
                       </p>
                       <button
                         onClick={() => setPortalTab('status')}
-                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-md"
+                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm"
                       >
                         <ArrowLeft size={14} />
                         <span>Kembali ke Tahap 1: Status Token</span>
                       </button>
                     </div>
                   ) : (
-                  <form onSubmit={handleSaveFullForm} className="bg-slate-800/80 border border-slate-700 rounded-3xl p-6 sm:p-8 space-y-6">
-                    <div className="flex items-center justify-between border-b border-slate-700 pb-4">
+                  <form onSubmit={handleSaveFullForm} className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                       <div>
-                        <h4 className="text-base font-black text-white">Data Lengkap Siswa</h4>
-                        <p className="text-xs text-slate-400">Pastikan seluruh data pribadi, alamat terperinci, dan orang tua diisi sesuai dokumen resmi KK & Akta.</p>
+                        <h4 className="text-base font-black text-slate-900">Data Lengkap Siswa</h4>
+                        <p className="text-xs text-slate-500">Pastikan seluruh data pribadi, alamat terperinci, dan orang tua diisi sesuai dokumen resmi KK & Akta.</p>
                       </div>
                       {activeCandidate.isFormCompleted && (
-                        <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1">
+                        <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center gap-1">
                           <Check size={13} />
                           <span>Sudah Tersimpan</span>
                         </span>
@@ -2158,19 +2158,19 @@ export default function SpmbLandingPage({
                     </div>
 
                     {fullFormSuccessMsg && (
-                      <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
-                        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                      <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                        <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
                         <span>{fullFormSuccessMsg}</span>
                       </div>
                     )}
 
                     {/* Section 1: Data Pribadi */}
                     <div className="space-y-4">
-                      <h5 className="text-xs font-black text-emerald-400 uppercase tracking-wider">A. Data Pribadi Murid</h5>
+                      <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">A. Data Pribadi Murid</h5>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                            Nama Lengkap Murid (Otomatis Huruf Kapital) <span className="text-rose-400">*</span>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Nama Lengkap Murid (Otomatis Huruf Kapital) <span className="text-rose-500">*</span>
                           </label>
                           <input
                             type="text"
@@ -2178,23 +2178,23 @@ export default function SpmbLandingPage({
                             value={fullForm.fullName || activeCandidate.fullName || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fullName: e.target.value.toUpperCase() })}
                             placeholder="NAMA LENGKAP SISWA"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white uppercase font-bold tracking-wide focus:ring-2 focus:ring-emerald-500"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide focus:ring-2 focus:ring-emerald-500 placeholder-slate-400"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Nama Panggilan</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Panggilan</label>
                           <input
                             type="text"
                             value={fullForm.nickname || ''}
                             onChange={(e) => setFullForm({ ...fullForm, nickname: e.target.value })}
                             placeholder="Contoh: Rizky"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
 
                       {/* Tempat & Tanggal Lahir (Kolom Tersendiri |tgl| |bln| |Tahun| + Otomatis Gabung) */}
-                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                         <BirthDateSplitInput
                           idPrefix="student"
                           birthPlace={fullForm.birthPlace || activeCandidate.birthPlace || ''}
@@ -2206,7 +2206,7 @@ export default function SpmbLandingPage({
                           combinedLabel="Tempat, Tgl Lahir Siswa"
                           required
                           showPlaceInput
-                          theme="dark"
+                          theme="light"
                           minYear={2000}
                           maxYear={new Date().getFullYear()}
                           placeholderPlace="Contoh: Pasuruan"
@@ -2215,34 +2215,34 @@ export default function SpmbLandingPage({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">No. Kartu Keluarga (KK)</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">No. Kartu Keluarga (KK)</label>
                           <input
                             type="text"
                             value={fullForm.kkNumber || ''}
                             onChange={(e) => setFullForm({ ...fullForm, kkNumber: e.target.value.replace(/\D/g, '') })}
                             placeholder="16 Digit No KK"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">No. Akta Kelahiran</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">No. Akta Kelahiran</label>
                           <input
                             type="text"
                             value={fullForm.birthCertNumber || ''}
                             onChange={(e) => setFullForm({ ...fullForm, birthCertNumber: e.target.value })}
                             placeholder="Sesuai Akta Kelahiran"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Agama</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Agama</label>
                           <select
                             value={fullForm.religion || 'Islam'}
                             onChange={(e) => setFullForm({ ...fullForm, religion: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                           >
                             <option value="Islam">Islam</option>
                             <option value="Kristen">Kristen</option>
@@ -2252,160 +2252,160 @@ export default function SpmbLandingPage({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Anak Ke-</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Anak Ke-</label>
                           <input
                             type="number"
                             value={fullForm.childOrder || ''}
                             onChange={(e) => setFullForm({ ...fullForm, childOrder: e.target.value })}
                             placeholder="1"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Jumlah Saudara Kandung</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Jumlah Saudara Kandung</label>
                           <input
                             type="number"
                             value={fullForm.siblingsCount || ''}
                             onChange={(e) => setFullForm({ ...fullForm, siblingsCount: e.target.value })}
                             placeholder="2"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
 
                       {/* RINCIAN PENGISIAN ALAMAT (DUSUN, RT, RW, DESA, KECAMATAN) */}
-                      <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-700 space-y-3">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-emerald-400">Rincian Komponen Alamat Siswa:</span>
-                          <span className="text-[10px] text-slate-400">RT & RW otomatis 3 digit angka (contoh: RT. 001, RW. 007)</span>
+                          <span className="text-xs font-bold text-emerald-800">Rincian Komponen Alamat Siswa:</span>
+                          <span className="text-[10px] text-slate-500">RT & RW otomatis 3 digit angka (contoh: RT. 001, RW. 007)</span>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="sm:col-span-1">
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">Dusun / Jalan / Gang</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Dusun / Jalan / Gang</label>
                             <input
                               type="text"
                               value={fullForm.dusun || ''}
                               onChange={(e) => setFullForm({ ...fullForm, dusun: e.target.value })}
                               placeholder="Contoh: Jabon"
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">RT (3 Digit Angka)</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">RT (3 Digit Angka)</label>
                             <input
                               type="text"
                               maxLength={3}
                               value={fullForm.rt || ''}
                               onChange={(e) => setFullForm({ ...fullForm, rt: e.target.value.replace(/\D/g, '') })}
                               placeholder="001"
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white font-mono text-center"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono text-center placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">RW (3 Digit Angka)</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">RW (3 Digit Angka)</label>
                             <input
                               type="text"
                               maxLength={3}
                               value={fullForm.rw || ''}
                               onChange={(e) => setFullForm({ ...fullForm, rw: e.target.value.replace(/\D/g, '') })}
                               placeholder="007"
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white font-mono text-center"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono text-center placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
                         </div>
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">Desa / Kelurahan</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Desa / Kelurahan</label>
                             <input
                               type="text"
                               value={fullForm.village || ''}
                               onChange={(e) => setFullForm({ ...fullForm, village: e.target.value })}
                               placeholder="Contoh: Jogosari"
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">Kecamatan</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Kecamatan</label>
                             <input
                               type="text"
                               value={fullForm.district || ''}
                               onChange={(e) => setFullForm({ ...fullForm, district: e.target.value })}
                               placeholder="Contoh: Pandaan"
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
                         </div>
 
                         {/* Read-Only Gabung Alamat */}
-                        <div className="pt-2 border-t border-slate-800">
-                          <label className="block text-[11px] font-bold text-emerald-400 mb-1 flex items-center justify-between">
+                        <div className="pt-2 border-t border-slate-200">
+                          <label className="block text-[11px] font-bold text-emerald-800 mb-1 flex items-center justify-between">
                             <span>Alamat Lengkap (Otomatis Menggabungkan Komponen Alamat) [Read-Only]:</span>
-                            <span className="text-[10px] text-slate-400 font-normal">Sesuai Format Resmi</span>
+                            <span className="text-[10px] text-slate-500 font-normal">Sesuai Format Resmi</span>
                           </label>
                           <input
                             type="text"
                             readOnly
                             value={formatCombinedAddress(fullForm.dusun, fullForm.rt, fullForm.rw, fullForm.village, fullForm.district) || fullForm.address || ''}
                             placeholder="Contoh: Jabon RT. 001, RW. 007, Jogosari, Pandaan"
-                            className="w-full px-3 py-2.5 bg-slate-950/80 border border-emerald-500/40 rounded-xl text-xs text-emerald-300 font-medium cursor-not-allowed select-all"
+                            className="w-full px-3 py-2.5 bg-slate-100 border border-slate-300 rounded-xl text-xs text-slate-800 font-medium cursor-not-allowed select-all"
                           />
                         </div>
                       </div>
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Kabupaten / Kota</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Kabupaten / Kota</label>
                           <input
                             type="text"
                             value={fullForm.city || 'Pasuruan'}
                             onChange={(e) => setFullForm({ ...fullForm, city: e.target.value })}
                             placeholder="Pasuruan"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Kode Pos</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Kode Pos</label>
                           <input
                             type="text"
                             value={fullForm.postalCode || ''}
                             onChange={(e) => setFullForm({ ...fullForm, postalCode: e.target.value })}
                             placeholder="67156"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Section 2: Data Ayah Kandung */}
-                    <div className="space-y-4 pt-2 border-t border-slate-700/80">
-                      <h5 className="text-xs font-black text-emerald-400 uppercase tracking-wider">B. Data Ayah Kandung</h5>
+                    <div className="space-y-4 pt-2 border-t border-slate-200">
+                      <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">B. Data Ayah Kandung</h5>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Nama Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Ayah</label>
                           <input
                             type="text"
                             value={fullForm.fatherName || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fatherName: e.target.value })}
                             placeholder="Nama Lengkap Ayah"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">NIK Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">NIK Ayah</label>
                           <input
                             type="text"
                             value={fullForm.fatherNik || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fatherNik: e.target.value.replace(/\D/g, '') })}
                             placeholder="16 Digit NIK"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
 
                       {/* Tempat & Tanggal Lahir Ayah (|tgl| |bln| |Tahun| + Otomatis Gabung) */}
-                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                         <BirthDateSplitInput
                           idPrefix="father"
                           birthPlace={fullForm.fatherBirthPlace || ''}
@@ -2416,7 +2416,7 @@ export default function SpmbLandingPage({
                           dateLabel="Tanggal Lahir Ayah"
                           combinedLabel="Tempat, Tgl Lahir Ayah"
                           showPlaceInput
-                          theme="dark"
+                          theme="light"
                           minYear={1940}
                           maxYear={2015}
                           placeholderPlace="Contoh: Pasuruan"
@@ -2425,31 +2425,31 @@ export default function SpmbLandingPage({
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Pendidikan Terakhir Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pendidikan Terakhir Ayah</label>
                           <input
                             type="text"
                             value={fullForm.fatherEducation || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fatherEducation: e.target.value })}
                             placeholder="SD / SMP / SMA / S1 / S2"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Pekerjaan Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ayah</label>
                           <input
                             type="text"
                             value={fullForm.fatherOccupation || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fatherOccupation: e.target.value })}
                             placeholder="Wiraswasta / Karyawan / PNS"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Status Keberadaan Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Status Keberadaan Ayah</label>
                           <select
                             value={fullForm.fatherStatus || 'Hidup'}
                             onChange={(e) => setFullForm({ ...fullForm, fatherStatus: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                           >
                             <option value="Hidup">Masih Hidup</option>
                             <option value="Meninggal">Sudah Meninggal</option>
@@ -2459,11 +2459,11 @@ export default function SpmbLandingPage({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Penghasilan Bulanan Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Penghasilan Bulanan Ayah</label>
                           <select
                             value={fullForm.fatherIncome || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fatherIncome: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                           >
                             <option value="">-- Pilih Range Penghasilan --</option>
                             <option value="Kurang dari Rp 1.000.000">Kurang dari Rp 1.000.000</option>
@@ -2473,46 +2473,46 @@ export default function SpmbLandingPage({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">No. WhatsApp / HP Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">No. WhatsApp / HP Ayah</label>
                           <input
                             type="text"
                             value={fullForm.fatherPhone || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fatherPhone: e.target.value })}
                             placeholder="081234..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Section 3: Data Ibu Kandung */}
-                    <div className="space-y-4 pt-2 border-t border-slate-700/80">
-                      <h5 className="text-xs font-black text-emerald-400 uppercase tracking-wider">C. Data Ibu Kandung</h5>
+                    <div className="space-y-4 pt-2 border-t border-slate-200">
+                      <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">C. Data Ibu Kandung</h5>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Nama Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Ibu</label>
                           <input
                             type="text"
                             value={fullForm.motherName || ''}
                             onChange={(e) => setFullForm({ ...fullForm, motherName: e.target.value })}
                             placeholder="Nama Lengkap Ibu"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">NIK Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">NIK Ibu</label>
                           <input
                             type="text"
                             value={fullForm.motherNik || ''}
                             onChange={(e) => setFullForm({ ...fullForm, motherNik: e.target.value.replace(/\D/g, '') })}
                             placeholder="16 Digit NIK"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
 
                       {/* Tempat & Tanggal Lahir Ibu (|tgl| |bln| |Tahun| + Otomatis Gabung) */}
-                      <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-700/80">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                         <BirthDateSplitInput
                           idPrefix="mother"
                           birthPlace={fullForm.motherBirthPlace || ''}
@@ -2523,7 +2523,7 @@ export default function SpmbLandingPage({
                           dateLabel="Tanggal Lahir Ibu"
                           combinedLabel="Tempat, Tgl Lahir Ibu"
                           showPlaceInput
-                          theme="dark"
+                          theme="light"
                           minYear={1940}
                           maxYear={2015}
                           placeholderPlace="Contoh: Pasuruan"
@@ -2532,31 +2532,31 @@ export default function SpmbLandingPage({
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Pendidikan Terakhir Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pendidikan Terakhir Ibu</label>
                           <input
                             type="text"
                             value={fullForm.motherEducation || ''}
                             onChange={(e) => setFullForm({ ...fullForm, motherEducation: e.target.value })}
                             placeholder="SD / SMP / SMA / S1 / S2"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Pekerjaan Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ibu</label>
                           <input
                             type="text"
                             value={fullForm.motherOccupation || ''}
                             onChange={(e) => setFullForm({ ...fullForm, motherOccupation: e.target.value })}
                             placeholder="Ibu Rumah Tangga / Guru / Karyawan"
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Status Keberadaan Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Status Keberadaan Ibu</label>
                           <select
                             value={fullForm.motherStatus || 'Hidup'}
                             onChange={(e) => setFullForm({ ...fullForm, motherStatus: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                           >
                             <option value="Hidup">Masih Hidup</option>
                             <option value="Meninggal">Sudah Meninggal</option>
@@ -2566,11 +2566,11 @@ export default function SpmbLandingPage({
 
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">Penghasilan Bulanan Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Penghasilan Bulanan Ibu</label>
                           <select
                             value={fullForm.motherIncome || ''}
                             onChange={(e) => setFullForm({ ...fullForm, motherIncome: e.target.value })}
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                           >
                             <option value="">-- Pilih Range Penghasilan --</option>
                             <option value="Tidak Berpenghasilan">Tidak Berpenghasilan / IRT</option>
@@ -2580,45 +2580,45 @@ export default function SpmbLandingPage({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-300 mb-1">No. WhatsApp / HP Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">No. WhatsApp / HP Ibu</label>
                           <input
                             type="text"
                             value={fullForm.motherPhone || ''}
                             onChange={(e) => setFullForm({ ...fullForm, motherPhone: e.target.value })}
                             placeholder="081234..."
-                            className="w-full px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-xs text-white"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
                     </div>
 
                     {/* Section 4: Data Wali Murid (Opsi Ceklist Ada / Tidak) */}
-                    <div className="space-y-4 pt-2 border-t border-slate-700/80">
+                    <div className="space-y-4 pt-2 border-t border-slate-200">
                       <div className="flex items-center justify-between">
                         <div>
-                          <h5 className="text-xs font-black text-emerald-400 uppercase tracking-wider">D. Data Wali Murid (Opsional)</h5>
-                          <p className="text-[11px] text-slate-400">Centang opsi di bawah jika calon siswa memiliki wali selain orang tua kandung.</p>
+                          <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">D. Data Wali Murid (Opsional)</h5>
+                          <p className="text-[11px] text-slate-500">Centang opsi di bawah jika calon siswa memiliki wali selain orang tua kandung.</p>
                         </div>
                       </div>
 
                       {/* Ceklist Wali Ada / Tidak Ada */}
                       <div className={`p-4 rounded-2xl border transition-all ${
                         hasGuardian 
-                          ? 'bg-emerald-950/30 border-emerald-500/50 shadow-sm' 
-                          : 'bg-slate-900/90 border-slate-700/80'
+                          ? 'bg-emerald-50 border-emerald-300 shadow-2xs' 
+                          : 'bg-slate-50 border-slate-200'
                       }`}>
                         <label className="flex items-center justify-between cursor-pointer">
                           <div className="flex items-center gap-3">
                             <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${
-                              hasGuardian ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'bg-slate-800 text-slate-400'
+                              hasGuardian ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' : 'bg-slate-200 text-slate-600'
                             }`}>
                               <UserCheck size={18} />
                             </div>
                             <div>
-                              <span className="text-xs font-bold text-white block">
+                              <span className="text-xs font-bold text-slate-900 block">
                                 Apakah Calon Siswa Memiliki Wali Murid?
                               </span>
-                              <span className="text-[10px] text-slate-400 block">
+                              <span className="text-[10px] text-slate-500 block">
                                 Centang kotak ini jika ada wali (Paman/Bibi/Kakek/Nenek/Saudara/Lainnya) yang bertanggung jawab atas siswa.
                               </span>
                             </div>
@@ -2629,9 +2629,9 @@ export default function SpmbLandingPage({
                               type="checkbox"
                               checked={hasGuardian}
                               onChange={(e) => setHasGuardian(e.target.checked)}
-                              className="w-5 h-5 accent-emerald-500 rounded cursor-pointer"
+                              className="w-5 h-5 accent-emerald-600 rounded cursor-pointer"
                             />
-                            <span className={`text-xs font-bold ${hasGuardian ? 'text-emerald-400' : 'text-slate-400'}`}>
+                            <span className={`text-xs font-bold ${hasGuardian ? 'text-emerald-800' : 'text-slate-500'}`}>
                               {hasGuardian ? 'Wali Ada' : 'Wali Tidak Ada'}
                             </span>
                           </div>
@@ -2640,21 +2640,21 @@ export default function SpmbLandingPage({
 
                       {/* Jika Ceklist Wali Ada: Form Data Wali Tampil */}
                       {hasGuardian && (
-                        <div className="space-y-4 p-5 rounded-2xl bg-slate-900/90 border border-emerald-500/40">
-                          <div className="flex items-center justify-between border-b border-slate-700/80 pb-2">
-                            <span className="text-xs font-bold text-emerald-300 flex items-center gap-1.5">
+                        <div className="space-y-4 p-5 rounded-2xl bg-white border border-emerald-300 shadow-xs">
+                          <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                            <span className="text-xs font-bold text-emerald-800 flex items-center gap-1.5">
                               <UserPlus size={14} />
                               <span>Formulir Isian Data Lengkap Wali Murid</span>
                             </span>
-                            <span className="text-[10px] text-slate-400 font-mono bg-slate-800 px-2 py-0.5 rounded-md">
+                            <span className="text-[10px] text-slate-600 font-mono bg-slate-100 px-2 py-0.5 rounded-md border border-slate-200">
                               Status: Wali Aktif
                             </span>
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                                Nama Lengkap Wali <span className="text-rose-400">*</span>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                Nama Lengkap Wali <span className="text-rose-500">*</span>
                               </label>
                               <input
                                 type="text"
@@ -2662,17 +2662,17 @@ export default function SpmbLandingPage({
                                 value={fullForm.guardianName || ''}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianName: e.target.value })}
                                 placeholder="Nama Lengkap Wali"
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />
                             </div>
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                                Hubungan dengan Siswa <span className="text-rose-400">*</span>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                                Hubungan dengan Siswa <span className="text-rose-500">*</span>
                               </label>
                               <select
                                 value={fullForm.guardianRelation || 'Paman'}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianRelation: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                               >
                                 <option value="Paman">Paman</option>
                                 <option value="Bibi">Bibi</option>
@@ -2685,7 +2685,7 @@ export default function SpmbLandingPage({
                               </select>
                             </div>
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
                                 NIK Wali (16 Digit)
                               </label>
                               <input
@@ -2693,13 +2693,13 @@ export default function SpmbLandingPage({
                                 value={fullForm.guardianNik || ''}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianNik: e.target.value.replace(/\D/g, '') })}
                                 placeholder="16 Digit NIK Wali"
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white font-mono"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />
                             </div>
                           </div>
 
                           {/* Tempat & Tanggal Lahir Wali (|tgl| |bln| |Tahun| + Otomatis Gabung) */}
-                          <div className="p-4 rounded-2xl bg-slate-950/80 border border-slate-700/80">
+                          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                             <BirthDateSplitInput
                               idPrefix="guardian"
                               birthPlace={fullForm.guardianBirthPlace || ''}
@@ -2710,7 +2710,7 @@ export default function SpmbLandingPage({
                               dateLabel="Tanggal Lahir Wali"
                               combinedLabel="Tempat, Tgl Lahir Wali"
                               showPlaceInput
-                              theme="dark"
+                              theme="light"
                               minYear={1940}
                               maxYear={2015}
                               placeholderPlace="Contoh: Pasuruan"
@@ -2719,31 +2719,31 @@ export default function SpmbLandingPage({
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Pendidikan Terakhir Wali</label>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">Pendidikan Terakhir Wali</label>
                               <input
                                 type="text"
                                 value={fullForm.guardianEducation || ''}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianEducation: e.target.value })}
                                 placeholder="SD / SMP / SMA / S1 / S2"
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />
                             </div>
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Pekerjaan Wali</label>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Wali</label>
                               <input
                                 type="text"
                                 value={fullForm.guardianOccupation || ''}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianOccupation: e.target.value })}
                                 placeholder="Wiraswasta / Karyawan / PNS"
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />
                             </div>
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Status Keberadaan Wali</label>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">Status Keberadaan Wali</label>
                               <select
                                 value={fullForm.guardianStatus || 'Hidup'}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianStatus: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                               >
                                 <option value="Hidup">Masih Hidup</option>
                                 <option value="Meninggal">Sudah Meninggal</option>
@@ -2753,11 +2753,11 @@ export default function SpmbLandingPage({
 
                           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">Penghasilan Bulanan Wali</label>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">Penghasilan Bulanan Wali</label>
                               <select
                                 value={fullForm.guardianIncome || ''}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianIncome: e.target.value })}
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
                               >
                                 <option value="">-- Pilih Range Penghasilan --</option>
                                 <option value="Kurang dari Rp 1.000.000">Kurang dari Rp 1.000.000</option>
@@ -2767,25 +2767,25 @@ export default function SpmbLandingPage({
                               </select>
                             </div>
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-300 mb-1">No. WhatsApp / HP Wali</label>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">No. WhatsApp / HP Wali</label>
                               <input
                                 type="text"
                                 value={fullForm.guardianPhone || ''}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianPhone: e.target.value })}
                                 placeholder="081234..."
-                                className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />
                             </div>
                           </div>
 
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-300 mb-1">Alamat Tinggal Wali</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Alamat Tinggal Wali</label>
                             <input
                               type="text"
                               value={fullForm.guardianAddress || ''}
                               onChange={(e) => setFullForm({ ...fullForm, guardianAddress: e.target.value })}
                               placeholder="Kosongkan jika sama dengan alamat tinggal siswa"
-                              className="w-full px-3 py-2 bg-slate-950 border border-slate-700 rounded-xl text-xs text-white"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
                         </div>
@@ -2793,11 +2793,11 @@ export default function SpmbLandingPage({
                     </div>
 
                     {/* Submit Button */}
-                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-700">
+                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
                       <button
                         type="submit"
                         disabled={isSavingFullForm}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-md"
+                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm"
                       >
                         {isSavingFullForm ? <RefreshCw size={15} className="animate-spin" /> : <Check size={15} />}
                         <span>Simpan Data Lengkap Siswa & Lanjut Upload Berkas</span>
@@ -2810,154 +2810,154 @@ export default function SpmbLandingPage({
                 {/* TAB CONTENT 3: UPLOAD BERKAS (SEBELUM DAFTAR ULANG) */}
                 {portalTab === 'docs' && (
                   !isStep3Unlocked ? (
-                    <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-8 text-center space-y-4">
-                      <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+                    <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-4 shadow-sm">
+                      <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
                         <Lock size={32} />
                       </div>
-                      <h4 className="text-lg font-black text-white">Tahap 3: Unggah Berkas Terkunci</h4>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      <h4 className="text-lg font-black text-slate-900">Tahap 3: Unggah Berkas Terkunci</h4>
+                      <p className="text-xs text-slate-600 max-w-md mx-auto">
                         Silakan lengkapi dan simpan Formulir Data Lengkap Siswa (Tahap 2) terlebih dahulu sebelum mengunggah berkas persyaratan pendaftaran.
                       </p>
                       <button
                         onClick={() => setPortalTab('form')}
-                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-md"
+                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm"
                       >
                         <ArrowLeft size={14} />
                         <span>Buka Tahap 2: Data Lengkap Siswa</span>
                       </button>
                     </div>
                   ) : (
-                  <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-6 sm:p-8 space-y-6">
-                    <div className="flex items-center justify-between border-b border-slate-700 pb-4">
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                       <div>
-                        <h4 className="text-base font-black text-white">Unggah Berkas Persyaratan Pendaftaran</h4>
-                        <p className="text-xs text-slate-400">
+                        <h4 className="text-base font-black text-slate-900">Unggah Berkas Persyaratan Pendaftaran</h4>
+                        <p className="text-xs text-slate-500">
                           Upload 5 berkas resmi pendaftaran: Akte Kelahiran, KK, KTP Ayah, KTP Ibu, dan Foto Siswa.
                         </p>
                       </div>
-                      <span className="px-3 py-1 rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 text-xs font-bold flex items-center gap-1.5">
+                      <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center gap-1.5">
                         <Sparkles size={13} />
                         <span>Auto Kompres Maks 1000px</span>
                       </span>
                     </div>
 
                     {docsSuccessMsg && (
-                      <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/40 text-emerald-300 text-xs flex items-center gap-2">
-                        <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                      <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
+                        <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
                         <span>{docsSuccessMsg}</span>
                       </div>
                     )}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 sm:grid-cols-3 gap-4">
                       {/* 1. Akte Kelahiran */}
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">1. Akte Kelahiran <span className="text-rose-400">*</span></span>
-                          {docUploads.aktaPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
+                          <span className="text-xs font-bold text-slate-900">1. Akte Kelahiran <span className="text-rose-500">*</span></span>
+                          {docUploads.aktaPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.aktaPhoto && (
-                          <img src={docUploads.aktaPhoto} alt="Akta Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
+                          <img src={docUploads.aktaPhoto} alt="Akta Preview" className="w-full h-28 object-cover rounded-xl border border-slate-200" />
                         )}
                         <input
                           type="file"
                           accept="image/*,.pdf"
                           onChange={(e) => handleFileChange('aktaPhoto', e)}
-                          className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
                         />
                       </div>
 
                       {/* 2. Kartu Keluarga */}
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">2. Kartu Keluarga (KK) <span className="text-rose-400">*</span></span>
-                          {docUploads.kkPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
+                          <span className="text-xs font-bold text-slate-900">2. Kartu Keluarga (KK) <span className="text-rose-500">*</span></span>
+                          {docUploads.kkPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.kkPhoto && (
-                          <img src={docUploads.kkPhoto} alt="KK Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
+                          <img src={docUploads.kkPhoto} alt="KK Preview" className="w-full h-28 object-cover rounded-xl border border-slate-200" />
                         )}
                         <input
                           type="file"
                           accept="image/*,.pdf"
                           onChange={(e) => handleFileChange('kkPhoto', e)}
-                          className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
                         />
                       </div>
 
                       {/* 3. KTP Ayah */}
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">3. KTP Ayah <span className="text-rose-400">*</span></span>
-                          {docUploads.ktpAyahPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
+                          <span className="text-xs font-bold text-slate-900">3. KTP Ayah <span className="text-rose-500">*</span></span>
+                          {docUploads.ktpAyahPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.ktpAyahPhoto && (
-                          <img src={docUploads.ktpAyahPhoto} alt="KTP Ayah Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
+                          <img src={docUploads.ktpAyahPhoto} alt="KTP Ayah Preview" className="w-full h-28 object-cover rounded-xl border border-slate-200" />
                         )}
                         <input
                           type="file"
                           accept="image/*,.pdf"
                           onChange={(e) => handleFileChange('ktpAyahPhoto', e)}
-                          className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
                         />
                       </div>
 
                       {/* 4. KTP Ibu */}
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">4. KTP Ibu <span className="text-rose-400">*</span></span>
-                          {docUploads.ktpIbuPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
+                          <span className="text-xs font-bold text-slate-900">4. KTP Ibu <span className="text-rose-500">*</span></span>
+                          {docUploads.ktpIbuPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.ktpIbuPhoto && (
-                          <img src={docUploads.ktpIbuPhoto} alt="KTP Ibu Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
+                          <img src={docUploads.ktpIbuPhoto} alt="KTP Ibu Preview" className="w-full h-28 object-cover rounded-xl border border-slate-200" />
                         )}
                         <input
                           type="file"
                           accept="image/*,.pdf"
                           onChange={(e) => handleFileChange('ktpIbuPhoto', e)}
-                          className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
                         />
                       </div>
 
                       {/* 5. Foto Siswa */}
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">5. Foto Siswa (3x4) <span className="text-rose-400">*</span></span>
-                          {docUploads.pasPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
+                          <span className="text-xs font-bold text-slate-900">5. Foto Siswa (3x4) <span className="text-rose-500">*</span></span>
+                          {docUploads.pasPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.pasPhoto && (
-                          <img src={docUploads.pasPhoto} alt="Foto Preview" className="w-24 h-28 object-cover rounded-xl border border-slate-700 mx-auto" />
+                          <img src={docUploads.pasPhoto} alt="Foto Preview" className="w-24 h-28 object-cover rounded-xl border border-slate-200 mx-auto" />
                         )}
                         <input
                           type="file"
                           accept="image/*"
                           onChange={(e) => handleFileChange('pasPhoto', e)}
-                          className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
                         />
                       </div>
 
                       {/* Opsional: SKL / Ijazah */}
-                      <div className="p-4 rounded-2xl bg-slate-900 border border-slate-700 space-y-3">
+                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-white">6. SKL / Ijazah (Opsional)</span>
-                          {docUploads.sklPhoto && <span className="text-[10px] font-bold text-emerald-400">✓ Terunggah</span>}
+                          <span className="text-xs font-bold text-slate-900">6. SKL / Ijazah (Opsional)</span>
+                          {docUploads.sklPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.sklPhoto && (
-                          <img src={docUploads.sklPhoto} alt="SKL Preview" className="w-full h-28 object-cover rounded-xl border border-slate-700" />
+                          <img src={docUploads.sklPhoto} alt="SKL Preview" className="w-full h-28 object-cover rounded-xl border border-slate-200" />
                         )}
                         <input
                           type="file"
                           accept="image/*,.pdf"
                           onChange={(e) => handleFileChange('sklPhoto', e)}
-                          className="block w-full text-xs text-slate-400 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-800 file:text-slate-200 hover:file:bg-slate-700 cursor-pointer"
+                          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
                         />
                       </div>
                     </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-700">
+                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
                       <button
                         type="button"
                         onClick={handleSaveDocuments}
                         disabled={isUploadingDocs}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-md"
+                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm"
                       >
                         {isUploadingDocs ? <RefreshCw size={15} className="animate-spin" /> : <Upload size={15} />}
                         <span>Simpan Seluruh Berkas & Lanjut ke Pembayaran Daftar Ulang</span>
@@ -2970,35 +2970,35 @@ export default function SpmbLandingPage({
                 {/* TAB CONTENT 4: DAFTAR ULANG & SERAGAM */}
                 {portalTab === 'rereg' && (
                   !isStep4Unlocked ? (
-                    <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-8 text-center space-y-4">
-                      <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+                    <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-4 shadow-sm">
+                      <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
                         <Lock size={32} />
                       </div>
-                      <h4 className="text-lg font-black text-white">Tahap 4: Pembayaran Daftar Ulang Terkunci</h4>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      <h4 className="text-lg font-black text-slate-900">Tahap 4: Pembayaran Daftar Ulang Terkunci</h4>
+                      <p className="text-xs text-slate-600 max-w-md mx-auto">
                         Anda harus melengkapi berkas persyaratan resmi (Akte Kelahiran, KK, dan Pas Foto) pada Tahap 3 terlebih dahulu sebelum dapat melanjutkan ke tahap pembayaran Daftar Ulang & Seragam.
                       </p>
                       <button
                         onClick={() => setPortalTab('docs')}
-                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-md"
+                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm"
                       >
                         <ArrowLeft size={14} />
                         <span>Buka Tahap 3: Unggah Berkas</span>
                       </button>
                     </div>
                   ) : (
-                  <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-6 sm:p-8 space-y-6">
-                    <div className="flex items-center justify-between border-b border-slate-700 pb-4">
+                  <div className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
+                    <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                       <div>
-                        <h4 className="text-base font-black text-white">Pembayaran Daftar Ulang & Seragam Sekolah</h4>
-                        <p className="text-xs text-slate-400">Pilih ukuran seragam dan selesaikan pelunasan via Midtrans Snap.</p>
+                        <h4 className="text-base font-black text-slate-900">Pembayaran Daftar Ulang & Seragam Sekolah</h4>
+                        <p className="text-xs text-slate-500">Pilih ukuran seragam dan selesaikan pelunasan via Midtrans Snap.</p>
                       </div>
                       {activeCandidate.reRegistrationStatus === 'paid' ? (
-                        <span className="px-3.5 py-1 rounded-full bg-emerald-500 text-slate-950 font-black text-xs">
+                        <span className="px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs">
                           LUNAS (PAID)
                         </span>
                       ) : (
-                        <span className="px-3.5 py-1 rounded-full bg-amber-500/20 text-amber-300 border border-amber-500/30 text-xs font-bold">
+                        <span className="px-3.5 py-1 rounded-full bg-amber-50 text-amber-800 border border-amber-300 text-xs font-bold">
                           Belum Lunas
                         </span>
                       )}
@@ -3006,7 +3006,7 @@ export default function SpmbLandingPage({
 
                     {/* Ukuran Seragam Selector */}
                     <div className="space-y-3">
-                      <label className="block text-xs font-bold text-slate-300">
+                      <label className="block text-xs font-bold text-slate-700">
                         Pilih Ukuran Seragam Calon Siswa ({activeCandidate.gender === 'L' ? 'Putra' : 'Putri'}):
                       </label>
                       <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
@@ -3018,8 +3018,8 @@ export default function SpmbLandingPage({
                             onClick={() => setSelectedUniformSize(size)}
                             className={`py-2.5 rounded-xl border text-xs font-black transition-all ${
                               selectedUniformSize === size
-                                ? 'bg-emerald-500 text-slate-950 border-emerald-400 shadow-md'
-                                : 'bg-slate-900 border-slate-700 text-slate-300 hover:border-slate-600'
+                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
+                                : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
                             }`}
                           >
                             Ukuran {size}
@@ -3030,15 +3030,15 @@ export default function SpmbLandingPage({
 
                     {/* Rincian Item Tagihan Daftar Ulang */}
                     <div className="space-y-3">
-                      <h5 className="text-xs font-black text-slate-300">Rincian Paket Biaya Daftar Ulang & Seragam:</h5>
-                      <div className="rounded-2xl bg-slate-900 border border-slate-700/80 divide-y divide-slate-800 text-xs">
+                      <h5 className="text-xs font-black text-slate-800">Rincian Paket Biaya Daftar Ulang & Seragam:</h5>
+                      <div className="rounded-2xl bg-white border border-slate-200 divide-y divide-slate-100 text-xs">
                         {/* 1. Uang Gedung & Diskon */}
-                        <div className="p-3.5 flex justify-between items-center bg-slate-950/60">
+                        <div className="p-3.5 flex justify-between items-center bg-slate-50/70">
                           <div>
-                            <span className="font-bold text-white block">Uang Gedung / Infaq Pembangunan</span>
-                            <span className="text-[11px] text-slate-400">Biaya sarana & prasarana pendidikan</span>
+                            <span className="font-bold text-slate-900 block">Uang Gedung / Infaq Pembangunan</span>
+                            <span className="text-[11px] text-slate-500">Biaya sarana & prasarana pendidikan</span>
                           </div>
-                          <span className="font-bold text-white">Rp {(config?.buildingFee || 1500000).toLocaleString('id-ID')}</span>
+                          <span className="font-bold text-slate-900">Rp {(config?.buildingFee || 1500000).toLocaleString('id-ID')}</span>
                         </div>
 
                         {(() => {
@@ -3051,18 +3051,18 @@ export default function SpmbLandingPage({
                           return (
                             <>
                               {details.discountPercent > 0 && details.buildingDiscount > 0 && (
-                                <div className="p-3.5 flex justify-between items-center text-emerald-400 font-bold bg-emerald-950/30">
+                                <div className="p-3.5 flex justify-between items-center text-emerald-800 font-bold bg-emerald-50">
                                   <div className="flex items-center gap-1.5">
-                                    <Percent size={14} className="text-emerald-400 shrink-0" />
+                                    <Percent size={14} className="text-emerald-700 shrink-0" />
                                     <span>Potongan Gelombang Uang Gedung Sesi {activeCandidate.sessionId.toUpperCase()} ({details.discountPercent}%)</span>
                                   </div>
                                   <span>- Rp {details.buildingDiscount.toLocaleString('id-ID')}</span>
                                 </div>
                               )}
                               {details.maarifBuildingDiscount > 0 && (
-                                <div className="p-3.5 flex justify-between items-center text-emerald-300 font-bold bg-emerald-900/30">
+                                <div className="p-3.5 flex justify-between items-center text-emerald-800 font-bold bg-emerald-100/60">
                                   <div className="flex items-center gap-1.5">
-                                    <Sparkles size={14} className="text-emerald-400 shrink-0" />
+                                    <Sparkles size={14} className="text-emerald-700 shrink-0" />
                                     <span>Diskon Khusus Uang Gedung (SD Maarif Jogosari)</span>
                                   </div>
                                   <span>- Rp {details.maarifBuildingDiscount.toLocaleString('id-ID')}</span>
@@ -3073,29 +3073,29 @@ export default function SpmbLandingPage({
                         })()}
 
                         {/* 2. SPP Juli 2027 */}
-                        <div className="p-3.5 flex justify-between items-center bg-slate-950/60">
+                        <div className="p-3.5 flex justify-between items-center bg-slate-50/70">
                           <div>
-                            <span className="font-bold text-white block">SPP Bulan Juli 2027</span>
-                            <span className="text-[11px] text-slate-400">SPP bulan pertama tahun ajaran baru</span>
+                            <span className="font-bold text-slate-900 block">SPP Bulan Juli 2027</span>
+                            <span className="text-[11px] text-slate-500">SPP bulan pertama tahun ajaran baru</span>
                           </div>
-                          <span className="font-bold text-white">Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')}</span>
+                          <span className="font-bold text-slate-900">Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')}</span>
                         </div>
 
                         {/* 3. Seragam Items Header */}
-                        <div className="p-3 bg-slate-800/60 font-bold text-slate-300 text-[11px] uppercase tracking-wider flex justify-between items-center">
+                        <div className="p-3 bg-slate-100 font-bold text-slate-700 text-[11px] uppercase tracking-wider flex justify-between items-center">
                           <span>Paket Seragam & Atribut Siswa ({activeCandidate.gender === 'L' ? 'Putra' : 'Putri'}):</span>
-                          <span className="text-emerald-400">
+                          <span className="text-emerald-700">
                             Rp {getUniformItemsForGender(activeCandidate.gender === 'L' ? 'male' : 'female').reduce((sum, item) => sum + item.price, 0).toLocaleString('id-ID')}
                           </span>
                         </div>
 
                         {getUniformItemsForGender(activeCandidate.gender === 'L' ? 'male' : 'female').map((item) => (
-                          <div key={item.id} className="p-2.5 px-4 flex justify-between items-center text-slate-300">
+                          <div key={item.id} className="p-2.5 px-4 flex justify-between items-center text-slate-700">
                             <span className="flex items-center gap-2">
-                              <span className="w-1.5 h-1.5 rounded-full bg-slate-500"></span>
+                              <span className="w-1.5 h-1.5 rounded-full bg-slate-400"></span>
                               <span>{item.name}</span>
                             </span>
-                            <span className="font-semibold text-slate-200">Rp {item.price.toLocaleString('id-ID')}</span>
+                            <span className="font-semibold text-slate-900">Rp {item.price.toLocaleString('id-ID')}</span>
                           </div>
                         ))}
 
@@ -3109,9 +3109,9 @@ export default function SpmbLandingPage({
                           );
                           if (details.maarifUniformDiscount > 0) {
                             return (
-                              <div className="p-3.5 flex justify-between items-center text-emerald-300 font-bold bg-emerald-900/30 border-t border-slate-800">
+                              <div className="p-3.5 flex justify-between items-center text-emerald-800 font-bold bg-emerald-100/60 border-t border-slate-200">
                                 <div className="flex items-center gap-1.5">
-                                  <Sparkles size={14} className="text-emerald-400 shrink-0" />
+                                  <Sparkles size={14} className="text-emerald-700 shrink-0" />
                                   <span>Diskon Khusus Seragam / Perlengkapan (SD Maarif Jogosari)</span>
                                 </div>
                                 <span>- Rp {details.maarifUniformDiscount.toLocaleString('id-ID')}</span>
@@ -3122,15 +3122,15 @@ export default function SpmbLandingPage({
                         })()}
 
                         {/* Final Total */}
-                        <div className="p-4 flex justify-between items-center bg-gradient-to-r from-slate-900 via-emerald-950/60 to-slate-900 text-sm font-black border-t border-emerald-500/30">
+                        <div className="p-4 flex justify-between items-center bg-emerald-50 text-sm font-black border-t border-emerald-200">
                           <div>
-                            <span className="text-white block">Total Tagihan Daftar Ulang:</span>
-                            <span className="text-[11px] text-slate-400 font-normal">
+                            <span className="text-slate-900 block">Total Tagihan Daftar Ulang:</span>
+                            <span className="text-[11px] text-slate-600 font-normal">
                               Uang Gedung Net + SPP Juli 2027 + Seragam Net
                               {activeCandidate.schoolOriginType === 'maarif_jogosari' && ' (Termasuk Diskon SD Maarif)'}
                             </span>
                           </div>
-                          <span className="text-emerald-400 text-lg font-black">
+                          <span className="text-emerald-700 text-lg font-black">
                             Rp {calculateTotalReRegFee(activeCandidate.gender, activeCandidate.sessionId, activeCandidate.schoolOriginType, activeCandidate.schoolOrigin).toLocaleString('id-ID')}
                           </span>
                         </div>
@@ -3141,8 +3141,8 @@ export default function SpmbLandingPage({
                     <div className="flex flex-col sm:flex-row items-center justify-between gap-4 pt-2">
                       {activeCandidate.reRegistrationStatus === 'paid' ? (
                         <div className="flex flex-wrap items-center gap-3">
-                          <div className="p-3 rounded-xl bg-emerald-950/60 border border-emerald-500/30 text-xs text-emerald-300 flex items-center gap-2">
-                            <CheckCircle2 size={16} className="text-emerald-400 shrink-0" />
+                          <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+                            <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
                             <span>Daftar Ulang telah Lunas pada {activeCandidate.reRegistrationPaidAt ? new Date(activeCandidate.reRegistrationPaidAt).toLocaleDateString('id-ID') : 'sebelumnya'}.</span>
                           </div>
                           <button
@@ -3152,7 +3152,7 @@ export default function SpmbLandingPage({
                               setReceiptModalType('rereg');
                               setIsReceiptModalOpen(true);
                             }}
-                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md cursor-pointer transition-all"
+                            className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm cursor-pointer transition-all"
                           >
                             <Printer size={14} />
                             <span>Cetak Kuitansi Daftar Ulang (KOP Resmi)</span>
@@ -3163,7 +3163,7 @@ export default function SpmbLandingPage({
                           type="button"
                           onClick={handlePayReRegistrationSnap}
                           disabled={isProcessingReRegPay}
-                          className="w-full sm:w-auto px-8 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-600 hover:to-teal-600 text-slate-950 font-black text-sm rounded-2xl shadow-lg shadow-emerald-500/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                          className="w-full sm:w-auto px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
                         >
                           {isProcessingReRegPay ? (
                             <>
@@ -3189,8 +3189,8 @@ export default function SpmbLandingPage({
                         }}
                         className={`px-5 py-2.5 font-bold text-xs rounded-xl flex items-center gap-1.5 ml-auto transition-all ${
                           isStep5Unlocked
-                            ? 'bg-slate-700 hover:bg-slate-600 text-white cursor-pointer shadow-md'
-                            : 'bg-slate-900/60 text-slate-500 border border-slate-800 cursor-not-allowed'
+                            ? 'bg-slate-800 hover:bg-slate-700 text-white cursor-pointer shadow-sm'
+                            : 'bg-slate-100 text-slate-400 border border-slate-200 cursor-not-allowed'
                         }`}
                       >
                         {isStep5Unlocked ? (
@@ -3200,7 +3200,7 @@ export default function SpmbLandingPage({
                           </>
                         ) : (
                           <>
-                            <Lock size={14} className="text-amber-400" />
+                            <Lock size={14} className="text-amber-500" />
                             <span>Tahap 5 Terkunci (Perlu Lunas Daftar Ulang)</span>
                           </>
                         )}
@@ -3213,17 +3213,17 @@ export default function SpmbLandingPage({
                 {/* TAB CONTENT 5: TANDA TERIMA / KARTU PENDAFTARAN RESMI */}
                 {portalTab === 'card' && (
                   !isStep5Unlocked ? (
-                    <div className="bg-slate-800/80 border border-slate-700 rounded-3xl p-8 text-center space-y-4">
-                      <div className="w-16 h-16 rounded-2xl bg-amber-500/10 text-amber-400 border border-amber-500/20 flex items-center justify-center mx-auto">
+                    <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-4 shadow-sm">
+                      <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
                         <Lock size={32} />
                       </div>
-                      <h4 className="text-lg font-black text-white">Tahap 5: Kartu & Tanda Terima Resmi Terkunci</h4>
-                      <p className="text-xs text-slate-400 max-w-md mx-auto">
+                      <h4 className="text-lg font-black text-slate-900">Tahap 5: Kartu & Tanda Terima Resmi Terkunci</h4>
+                      <p className="text-xs text-slate-600 max-w-md mx-auto">
                         Bukti tanda terima dan kartu pendaftaran resmi hanya dapat diterbitkan dan dicetak setelah calon siswa menyelesaikan pelunasan Daftar Ulang & Seragam (Tahap 4).
                       </p>
                       <button
                         onClick={() => setPortalTab('rereg')}
-                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-md"
+                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm"
                       >
                         <ArrowLeft size={14} />
                         <span>Buka Tahap 4: Pembayaran Daftar Ulang</span>
@@ -3240,7 +3240,7 @@ export default function SpmbLandingPage({
                             setReceiptModalType('token');
                             setIsReceiptModalOpen(true);
                           }}
-                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs rounded-xl flex items-center gap-2 border border-emerald-500/30 shadow-md cursor-pointer transition-colors"
+                          className="px-4 py-2.5 bg-white hover:bg-slate-50 text-emerald-700 font-bold text-xs rounded-xl flex items-center gap-2 border border-emerald-300 shadow-sm cursor-pointer transition-colors"
                         >
                           <Printer size={14} />
                           <span>Cetak Kuitansi Token Lunas</span>
@@ -3252,7 +3252,7 @@ export default function SpmbLandingPage({
                             setReceiptModalType('rereg');
                             setIsReceiptModalOpen(true);
                           }}
-                          className="px-4 py-2.5 bg-slate-800 hover:bg-slate-700 text-cyan-400 font-bold text-xs rounded-xl flex items-center gap-2 border border-cyan-500/30 shadow-md cursor-pointer transition-colors"
+                          className="px-4 py-2.5 bg-white hover:bg-slate-50 text-cyan-700 font-bold text-xs rounded-xl flex items-center gap-2 border border-cyan-300 shadow-sm cursor-pointer transition-colors"
                         >
                           <Printer size={14} />
                           <span>Cetak Kuitansi Daftar Ulang Lunas</span>
@@ -3261,7 +3261,7 @@ export default function SpmbLandingPage({
 
                       <button
                         onClick={handlePrintCard}
-                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-md cursor-pointer"
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm cursor-pointer"
                       >
                         <Printer size={15} />
                         <span>Cetak Bukti Pendaftaran (PDF / Print)</span>
@@ -3400,36 +3400,36 @@ export default function SpmbLandingPage({
 
       {/* Midtrans Snap Integration Modal */}
       {isPayModalOpen && snapToken && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs">
-          <div className="w-full max-w-md bg-slate-900 border border-slate-700 rounded-3xl p-6 space-y-5 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
-            <div className="w-14 h-14 rounded-2xl bg-emerald-500/20 text-emerald-400 flex items-center justify-center mx-auto border border-emerald-500/30">
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 p-4 backdrop-blur-xs">
+          <div className="w-full max-w-md bg-white border border-slate-200 rounded-3xl p-6 space-y-5 text-center shadow-2xl animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-2xl bg-emerald-50 text-emerald-700 flex items-center justify-center mx-auto border border-emerald-200">
               <CreditCard size={28} />
             </div>
 
             <div>
-              <h3 className="text-base font-black text-white">{snapTitle}</h3>
-              <p className="text-xs text-slate-400 mt-1">
-                Silakan selesaikan pembayaran online sebesar <strong className="text-emerald-400 font-bold">Rp {snapAmount.toLocaleString('id-ID')}</strong> melalui Gateway Resmi Midtrans Snap.
+              <h3 className="text-base font-black text-slate-900">{snapTitle}</h3>
+              <p className="text-xs text-slate-600 mt-1">
+                Silakan selesaikan pembayaran online sebesar <strong className="text-emerald-700 font-bold">Rp {snapAmount.toLocaleString('id-ID')}</strong> melalui Gateway Resmi Midtrans Snap.
               </p>
             </div>
 
             {snapError && (
-              <div className="p-3 rounded-xl bg-rose-950/60 border border-rose-800/80 text-rose-300 text-xs text-left">
-                <p className="font-semibold text-rose-200 mb-0.5">Pemberitahuan:</p>
+              <div className="p-3 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 text-xs text-left">
+                <p className="font-semibold text-rose-900 mb-0.5">Pemberitahuan:</p>
                 <p className="text-[11px]">{snapError}</p>
               </div>
             )}
 
-            <div className="p-4 rounded-2xl bg-slate-800 border border-slate-700 text-xs text-left space-y-2 font-mono text-slate-300">
+            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-left space-y-2 font-mono text-slate-700">
               <div className="flex justify-between">
                 <span>Order ID:</span>
-                <span className="text-emerald-400 font-bold">{snapOrderId}</span>
+                <span className="text-emerald-700 font-bold">{snapOrderId}</span>
               </div>
               <div className="flex justify-between">
                 <span>Total Biaya:</span>
-                <span className="text-white font-bold">Rp {snapAmount.toLocaleString('id-ID')}</span>
+                <span className="text-slate-900 font-bold">Rp {snapAmount.toLocaleString('id-ID')}</span>
               </div>
-              <div className="flex justify-between text-[11px] text-slate-400">
+              <div className="flex justify-between text-[11px] text-slate-500">
                 <span>Lingkungan:</span>
                 <span>{midtransConfigState?.isProduction ? 'Production Live' : 'Sandbox Testing'}</span>
               </div>
@@ -3439,7 +3439,7 @@ export default function SpmbLandingPage({
               <button
                 type="button"
                 onClick={() => triggerSnapPayment(snapToken, snapOrderId, snapPayType)}
-                className="w-full py-3 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs rounded-xl shadow-lg shadow-emerald-500/20 cursor-pointer flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+                className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
               >
                 <CreditCard size={15} />
                 Buka / Tampilkan Jendela Midtrans Snap
@@ -3450,7 +3450,7 @@ export default function SpmbLandingPage({
                   href={snapRedirectUrl}
                   target="_blank"
                   rel="noreferrer"
-                  className="block w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 font-bold text-xs rounded-xl border border-emerald-500/30 transition-colors"
+                  className="block w-full py-2.5 bg-slate-100 hover:bg-slate-200 text-emerald-800 font-bold text-xs rounded-xl border border-slate-300 transition-colors"
                 >
                   Buka Halaman Midtrans di Tab Baru (Alternatif)
                 </a>
@@ -3465,7 +3465,7 @@ export default function SpmbLandingPage({
                     setIsPayModalOpen(false);
                   }
                 }}
-                className="w-full py-2 text-xs text-slate-400 hover:text-rose-400 transition-colors cursor-pointer"
+                className="w-full py-2 text-xs text-slate-500 hover:text-rose-600 transition-colors cursor-pointer"
               >
                 {snapPayType === 'token' ? 'Batalkan Pendaftaran (Hapus Draft)' : 'Tutup Jendela Pembayaran'}
               </button>

@@ -591,5 +591,55 @@ if (fs.existsSync(dataFilePath)) {
     });
     fs.writeFileSync(dataFilePath, JSON.stringify(data, null, 2), 'utf8');
     console.log(`Updated data_store.json: matched ${matchCount} students, ${negativeCount} with negative balance.`);
+
+    // Also synchronize directly to MySQL if configured
+    try {
+      const mysqlCfgPath = path.join(process.cwd(), 'mysql_config.json');
+      if (fs.existsSync(mysqlCfgPath)) {
+        const mysqlCfg = JSON.parse(fs.readFileSync(mysqlCfgPath, 'utf8'));
+        const mysql = require('mysql2/promise');
+        mysql.createConnection({
+          host: mysqlCfg.host,
+          user: mysqlCfg.user,
+          password: mysqlCfg.password,
+          database: mysqlCfg.database,
+          port: mysqlCfg.port
+        }).then(async (conn) => {
+          console.log('[MySQL Sync] Updating MySQL students and savings_transactions...');
+          for (const s of data.students) {
+            const studentNis = String(s.nis || '').trim();
+            if (nisBalanceMap.hasOwnProperty(studentNis)) {
+              await conn.query('UPDATE students SET savings_balance = ? WHERE id = ?', [s.savingsBalance, s.id]);
+              
+              // Check if initial tx exists
+              const [txRows] = await conn.query('SELECT id FROM savings_transactions WHERE id = ?', [`sav-init-${s.id}`]);
+              if (txRows.length === 0 && s.savingsBalance > 0) {
+                await conn.query(`
+                  INSERT INTO savings_transactions (
+                    id, student_id, student_nis, type, amount, status, created_at, payment_method, notes
+                  ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                `, [
+                  `sav-init-${s.id}`,
+                  s.id,
+                  s.nis,
+                  'deposit',
+                  s.savingsBalance,
+                  'success',
+                  '2026-07-01 00:00:00',
+                  'Saldo Awal Terverifikasi',
+                  'Saldo Awal Tabungan Terverifikasi'
+                ]);
+              }
+            }
+          }
+          console.log('[MySQL Sync] ✅ Selesai menyinkronkan seluruh tabungan ke MySQL.');
+          await conn.end();
+        }).catch(err => {
+          console.error('[MySQL Sync Error]:', err.message || err);
+        });
+      }
+    } catch (e) {
+      console.error('[MySQL Sync Error]:', e);
+    }
   }
 }

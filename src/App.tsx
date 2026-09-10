@@ -494,71 +494,86 @@ export default function App() {
       const userRole = (localStorage.getItem('smp_maarif_role') as any) || 'student';
       const storedStudentId = localStorage.getItem('smp_maarif_student_id');
 
-      // 1. Fetch core essentials in parallel immediately
-      const coreTasks = [
-        // School Identity
-        fetchNoCache('/api/school-identity').then(async (res) => {
-          if (res.ok) {
-            const sData = await res.json();
-            if (sData.success && sData.schoolIdentity) {
-              setSchoolIdentity(sData.schoolIdentity);
+      // 1. School Identity is the only critical asset needed for initial screen render
+      const identityPromise = fetchNoCache('/api/school-identity').then(async (res) => {
+        if (res.ok) {
+          const sData = await res.json();
+          if (sData.success && sData.schoolIdentity) {
+            setSchoolIdentity(sData.schoolIdentity);
+          }
+        }
+      }).catch(e => console.error("Gagal memuat identitas sekolah", e));
+
+      if (!isUserLoggedIn) {
+        // Fast path for login / SPMB visitors: render UI immediately once identity is ready!
+        await identityPromise;
+        setIsLoading(false);
+
+        // Fetch students & supporting data asynchronously in background
+        Promise.allSettled([
+          fetchNoCache('/api/students').then(async (res) => {
+            if (res.ok) {
+              const stdData = await res.json();
+              setStudentsList(stdData);
             }
-          }
-        }).catch(e => console.error("Gagal memuat identitas sekolah", e)),
-
-        // Students list
-        fetchNoCache('/api/students').then(async (res) => {
-          if (res.ok) {
-            const stdData = await res.json();
-            setStudentsList(stdData);
-            if (isUserLoggedIn) {
-              const targetId = storedStudentId || (stdData.length > 0 ? stdData[0].id : '');
-              if (targetId) {
-                fetchStudentFullData(targetId, userRole === 'admin' || userRole === 'homeroom');
-              }
+          }).catch(() => {}),
+          fetchNoCache('/api/midtrans-config').then(async (res) => {
+            if (res.ok) {
+              const keysData = await res.json();
+              setSysStatus(keysData);
             }
-          }
-        }).catch(e => console.error("Gagal memuat data siswa", e)),
+          }).catch(() => {}),
+          fetchNoCache('/api/notifications').then(async (res) => {
+            if (res.ok) {
+              const notifData = await res.json();
+              setGlobalNotifications(notifData);
+            }
+          }).catch(() => {})
+        ]);
+        return;
+      }
 
-        // Midtrans Config
-        fetchNoCache('/api/midtrans-config').then(async (res) => {
-          if (res.ok) {
-            const keysData = await res.json();
-            setSysStatus(keysData);
+      // 2. For authenticated users: fetch students and essential status
+      const studentPromise = fetchNoCache('/api/students').then(async (res) => {
+        if (res.ok) {
+          const stdData = await res.json();
+          setStudentsList(stdData);
+          const targetId = storedStudentId || (stdData.length > 0 ? stdData[0].id : '');
+          if (targetId) {
+            fetchStudentFullData(targetId, userRole === 'admin' || userRole === 'homeroom', false);
           }
-        }).catch(e => console.error("Gagal memuat konfigurasi midtrans", e)),
+        }
+      }).catch(e => console.error("Gagal memuat data siswa", e));
 
-        // Notifications
-        fetchNoCache('/api/notifications').then(async (res) => {
-          if (res.ok) {
-            const notifData = await res.json();
-            setGlobalNotifications(notifData);
-          }
-        }).catch(e => console.error("Gagal memuat notifikasi", e)),
-      ];
+      const midtransPromise = fetchNoCache('/api/midtrans-config').then(async (res) => {
+        if (res.ok) {
+          const keysData = await res.json();
+          setSysStatus(keysData);
+        }
+      }).catch(() => {});
 
-      // If user is already authenticated, also kick off their operational data immediately
-      if (isUserLoggedIn) {
-        coreTasks.push(
+      const notifPromise = fetchNoCache('/api/notifications').then(async (res) => {
+        if (res.ok) {
+          const notifData = await res.json();
+          setGlobalNotifications(notifData);
+        }
+      }).catch(() => {});
+
+      await Promise.allSettled([identityPromise, studentPromise, midtransPromise, notifPromise]);
+      setIsLoading(false);
+
+      // Operational secondary data can hydrate smoothly in background without blocking
+      setTimeout(() => {
+        Promise.allSettled([
           fetchAttendance(),
           fetchHomerooms(),
           fetchSubjectTeachers(),
           fetchMerdekaAssessments(),
           fetchSchedules(),
           fetchMiscBills()
-        );
-      } else {
-        // If not logged in, prefetch homerooms and schedules in background without blocking login
-        setTimeout(() => {
-          Promise.allSettled([
-            fetchHomerooms(),
-            fetchSubjectTeachers(),
-            fetchSchedules()
-          ]);
-        }, 800);
-      }
+        ]);
+      }, 100);
 
-      await Promise.allSettled(coreTasks);
     } catch (err) {
       console.error('Failed to boot initial data', err);
     } finally {
@@ -639,17 +654,21 @@ export default function App() {
   };
 
   // Auxiliary loader to fetch a specific student profile's bills and history
-  const fetchStudentFullData = async (studentId: string, isAdminOverride?: boolean) => {
+  const fetchStudentFullData = async (studentId: string, isAdminOverride?: boolean, showFullLoader: boolean = false) => {
     try {
-      setIsLoading(true);
+      if (showFullLoader) {
+        setIsLoading(true);
+      }
       const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : (role === 'admin' || role === 'homeroom');
 
       if (checkIsAdmin) {
-        // Fetch all student bills and total transactions for admin bookkeeping roster
-        const bRes = await fetchNoCache('/api/admin/all-bills');
-        const tRes = await fetchNoCache('/api/admin/all-transactions');
-        await fetchMiscBills();
-        if (bRes.ok && tRes.ok) {
+        // Fetch all student bills and total transactions for admin bookkeeping roster in parallel
+        const [bRes, tRes] = await Promise.all([
+          fetchNoCache('/api/admin/all-bills'),
+          fetchNoCache('/api/admin/all-transactions'),
+          fetchMiscBills()
+        ]);
+        if (bRes && bRes.ok && tRes && tRes.ok) {
           const bData = await bRes.json();
           const tData = await tRes.json();
           setStudentBills(bData);
@@ -665,8 +684,10 @@ export default function App() {
           }
         }
       } else {
-        const res = await fetchNoCache(`/api/students/${studentId}`);
-        await fetchMiscBills();
+        const [res] = await Promise.all([
+          fetchNoCache(`/api/students/${studentId}`),
+          fetchMiscBills()
+        ]);
         if (res.ok) {
           const data = await res.json();
           setCurrentStudent(data.student);
@@ -675,10 +696,14 @@ export default function App() {
           setStudentTransactions(data.transactions.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
         }
       }
-      setIsLoading(false);
+      if (showFullLoader) {
+        setIsLoading(false);
+      }
     } catch (err) {
       console.error('Failed to load student details', err);
-      setIsLoading(false);
+      if (showFullLoader) {
+        setIsLoading(false);
+      }
     }
   };
 

@@ -1434,25 +1434,63 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
     const nisStr = String(student.nis || "").trim();
 
     const studentTxs = savingsTransactions.filter(t => 
-      (t.studentId === student.id || (student.nis && String(t.studentId).trim() === String(student.nis).trim())) &&
+      (t.studentId === student.id || (student.nis && (String(t.studentId).trim() === String(student.nis).trim() || String(t.studentNis).trim() === nisStr))) &&
       (t.status === "success" || !t.status || (t.status as any) === "completed")
     );
 
-    if (studentTxs.length > 0) {
-      let netTxAmount = 0;
-      studentTxs.forEach(t => {
-        if (t.type === "deposit") {
-          netTxAmount += t.amount;
-        } else if (t.type === "withdrawal") {
-          netTxAmount -= t.amount;
-        }
-      });
-      student.savingsBalance = netTxAmount;
-    } else {
-      if (student.savingsBalance === undefined || student.savingsBalance === null) {
-        student.savingsBalance = AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr) ? AUTHORITATIVE_SAVINGS_MAP[nisStr] : 0;
+    let netTxAmount = 0;
+    let hasInitialTx = false;
+    studentTxs.forEach(t => {
+      if (t.id?.startsWith("sav-init-") || t.notes?.toLowerCase().includes("saldo awal")) {
+        hasInitialTx = true;
       }
+      if (t.type === "deposit") {
+        netTxAmount += Number(t.amount) || 0;
+      } else if (t.type === "withdrawal") {
+        netTxAmount -= Number(t.amount) || 0;
+      }
+    });
+
+    const authoritativeBaseline = AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr) ? (AUTHORITATIVE_SAVINGS_MAP[nisStr] || 0) : 0;
+    const existingBalance = Number(student.savingsBalance) || 0;
+
+    // If student has a baseline or existing positive balance exceeding recorded transactions,
+    // and no initial balance transaction exists, preserve it by generating an official initial transaction!
+    if (!hasInitialTx && authoritativeBaseline > 0 && authoritativeBaseline > netTxAmount) {
+      const initAmount = authoritativeBaseline - netTxAmount;
+      const initTx: SavingsTransaction = {
+        id: `sav-init-${student.id}`,
+        studentId: student.id,
+        studentNis: student.nis,
+        type: "deposit",
+        amount: initAmount,
+        status: "success",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        paymentMethod: "Saldo Awal Terverifikasi",
+        notes: "Saldo Awal Tabungan Terverifikasi"
+      };
+      savingsTransactions.push(initTx);
+      persistEntity("savingsTransactions", initTx).catch(() => {});
+      netTxAmount += initAmount;
+    } else if (!hasInitialTx && existingBalance > netTxAmount) {
+      const diff = existingBalance - netTxAmount;
+      const initTx: SavingsTransaction = {
+        id: `sav-init-${student.id}`,
+        studentId: student.id,
+        studentNis: student.nis,
+        type: "deposit",
+        amount: diff,
+        status: "success",
+        createdAt: "2026-07-01T00:00:00.000Z",
+        paymentMethod: "Saldo Awal Terverifikasi",
+        notes: "Saldo Awal Tabungan Terverifikasi"
+      };
+      savingsTransactions.push(initTx);
+      persistEntity("savingsTransactions", initTx).catch(() => {});
+      netTxAmount += diff;
     }
+
+    student.savingsBalance = netTxAmount;
   });
 }
 
@@ -2108,63 +2146,71 @@ async function startServer() {
     console.warn("Local state load warning:", e);
   }
 
-  // 2. Connect MySQL & Test Connection
-  try {
-    loadMysqlConfig();
-    const mysqlCfg = getSanitizedConfig();
-    const hasConfig = !!(mysqlCfg.host && mysqlCfg.database && mysqlCfg.user);
+  // 2. Connect MySQL & Synchronize in background so the server and UI start instantly (< 500ms)
+  const syncMysqlBackground = async () => {
+    try {
+      loadMysqlConfig();
+      const mysqlCfg = getSanitizedConfig();
+      const hasConfig = !!(mysqlCfg.host && mysqlCfg.database && mysqlCfg.user);
 
-    if (hasConfig) {
-      console.log(`[STARTUP] Menghubungkan ke MySQL database "${mysqlCfg.database}" di ${mysqlCfg.host}:${mysqlCfg.port}...`);
-      const testRes = await testMysqlConnection();
-      
-      if (testRes.success) {
-        mysqlDatabaseStatus = "ONLINE";
-        mysqlDatabaseError = null;
-        dbSyncStatus = "DATABASE MYSQL ONLINE";
-        dbSyncError = null;
-        lastMysqlSyncTime = new Date().toISOString();
-        console.log(`[STARTUP] ✅ Test connection BERHASIL. MySQL Server: ${testRes.serverVersion}, Database: ${testRes.databaseName}`);
+      if (hasConfig) {
+        console.log(`[STARTUP] Menghubungkan ke MySQL database "${mysqlCfg.database}" di ${mysqlCfg.host}:${mysqlCfg.port}...`);
+        const testRes = await testMysqlConnection();
         
-        // Pastikan tabel siap
-        await ensureAllMysqlTablesExist();
+        if (testRes.success) {
+          mysqlDatabaseStatus = "ONLINE";
+          mysqlDatabaseError = null;
+          dbSyncStatus = "DATABASE MYSQL ONLINE";
+          dbSyncError = null;
+          lastMysqlSyncTime = new Date().toISOString();
+          console.log(`[STARTUP] ✅ Test connection BERHASIL. MySQL Server: ${testRes.serverVersion}, Database: ${testRes.databaseName}`);
+          
+          // Pastikan tabel siap
+          await ensureAllMysqlTablesExist();
 
-        // 3. SELECT data dari MySQL -> 4. Isi memory/cache
-        console.log("[STARTUP] Mengambil data langsung dari MySQL (Primary Database)...");
-        const mysqlPull = await pullDataFromMysql();
-        if (mysqlPull.success && mysqlPull.data) {
-          applyDataFromMysql(mysqlPull.data);
-          console.log(`[STARTUP] ✅ Memory/cache berhasil diisi dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.treasurerTransactions || 0} kas, ${mysqlPull.counts?.sppBills || 0} SPP.`);
+          // 3. SELECT data dari MySQL -> 4. Isi memory/cache
+          console.log("[STARTUP] Mengambil data langsung dari MySQL (Primary Database)...");
+          const mysqlPull = await pullDataFromMysql();
+          if (mysqlPull.success && mysqlPull.data) {
+            applyDataFromMysql(mysqlPull.data);
+            console.log(`[STARTUP] ✅ Memory/cache berhasil diisi dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.treasurerTransactions || 0} kas, ${mysqlPull.counts?.sppBills || 0} SPP.`);
+            applyAuthoritativeSavingsBalances(students);
+          } else {
+            console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
+          }
         } else {
-          console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
+          // Perlindungan jika MySQL gagal konek
+          mysqlDatabaseStatus = "OFFLINE";
+          mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
+          dbSyncStatus = "DATABASE MYSQL OFFLINE";
+          dbSyncError = mysqlDatabaseError;
+          console.error("=================================================");
+          console.error(" [PERINGATAN KRUSIAL] DATABASE MYSQL OFFLINE");
+          console.error(" Alasan:", mysqlDatabaseError);
+          console.error(" Server tetap berjalan dalam status OFFLINE untuk mencegah penimpaan data.");
+          console.error("=================================================");
         }
       } else {
-        // Perlindungan jika MySQL gagal konek
-        mysqlDatabaseStatus = "OFFLINE";
-        mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
-        dbSyncStatus = "DATABASE MYSQL OFFLINE";
-        dbSyncError = mysqlDatabaseError;
-        console.error("=================================================");
-        console.error(" [PERINGATAN KRUSIAL] DATABASE MYSQL OFFLINE");
-        console.error(" Alasan:", mysqlDatabaseError);
-        console.error(" Server tetap berjalan dalam status OFFLINE untuk mencegah penimpaan data.");
-        console.error("=================================================");
+        console.log("[STARTUP] Konfigurasi MySQL belum diatur di .env / sistem. Menjalankan dalam mode lokal.");
+        mysqlDatabaseStatus = "DISCONNECTED";
+        dbSyncStatus = "MYSQL BELUM DIKONFIGURASI";
       }
-    } else {
-      console.log("[STARTUP] Konfigurasi MySQL belum diatur di .env / sistem. Menjalankan dalam mode lokal.");
-      mysqlDatabaseStatus = "DISCONNECTED";
-      dbSyncStatus = "MYSQL BELUM DIKONFIGURASI";
+    } catch (err: any) {
+      console.error("[STARTUP ERROR] Kesalahan inisialisasi MySQL:", err.message || err);
+      mysqlDatabaseStatus = "OFFLINE";
+      mysqlDatabaseError = err.message || String(err);
+      dbSyncStatus = "DATABASE MYSQL OFFLINE";
+      dbSyncError = mysqlDatabaseError;
+    } finally {
+      isInitialSyncCompleted = true;
+      console.log(" [STARTUP] ✅ Inisialisasi latar belakang database MySQL selesai.");
     }
-  } catch (err: any) {
-    console.error("[STARTUP ERROR] Kesalahan inisialisasi MySQL:", err.message || err);
-    mysqlDatabaseStatus = "OFFLINE";
-    mysqlDatabaseError = err.message || String(err);
-    dbSyncStatus = "DATABASE MYSQL OFFLINE";
-    dbSyncError = mysqlDatabaseError;
-  }
+  };
 
-  isInitialSyncCompleted = true;
-  console.log(" [STARTUP] ✅ Server siap.");
+  // Launch background sync without blocking Express listening
+  syncMysqlBackground();
+
+  console.log(" [STARTUP] ✅ Server web siap instan.");
   console.log("=================================================");
 
   const app = express();
@@ -7534,7 +7580,7 @@ async function startServer() {
   });
 
   // Admin confirm/approve or reject pending student withdrawal request
-  app.post("/api/admin/savings-confirm", (req, res) => {
+  app.post("/api/admin/savings-confirm", async (req, res) => {
     const { transactionId, action } = req.body; // action: 'approve' | 'reject'
     const transaction = savingsTransactions.find(t => t.id === transactionId);
     if (!transaction) {
@@ -7554,7 +7600,7 @@ async function startServer() {
       if (student.savingsBalance < transaction.amount) {
         transaction.status = "failed";
         saveState();
-        persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting failed savings tx to MySQL:", err));
+        await persistEntity("savingsTransactions", transaction);
         return res.status(400).json({ error: "Gagal menyetujui. Saldo tabungan siswa saat ini tidak mencukupi." });
       }
 
@@ -7603,15 +7649,15 @@ async function startServer() {
     }
 
     saveState();
-    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting confirmed savings tx to MySQL:", err));
+    await persistEntity("savingsTransactions", transaction);
     if (action === "approve") {
-      persistEntity("students", student).catch(err => console.error("Error persisting student savings balance to MySQL:", err));
+      await persistEntity("students", student);
     }
     res.json({ success: true, student, transaction });
   });
 
   // Admin Manual Savings Transaction (Add/Withdraw manual)
-  app.post("/api/admin/savings-manual", (req, res) => {
+  app.post("/api/admin/savings-manual", async (req, res) => {
     const { studentId, type, amount, notes } = req.body;
     const student = students.find(s => s.id === studentId);
     if (!student) {
@@ -7672,13 +7718,15 @@ async function startServer() {
     }
 
     saveState();
-    persistEntity("students", student).catch(err => console.error("Error persisting student savings to MySQL:", err));
-    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting savings tx to MySQL:", err));
+    await Promise.all([
+      persistEntity("students", student),
+      persistEntity("savingsTransactions", transaction)
+    ]);
     res.json({ success: true, student, transaction });
   });
 
   // Admin Cancel/Void Savings Transaction (Deposit or Withdrawal, Manual or Online)
-  app.post("/api/admin/cancel-savings-transaction", (req, res) => {
+  app.post("/api/admin/cancel-savings-transaction", async (req, res) => {
     const { transactionId } = req.body;
     const transaction = savingsTransactions.find(t => t.id === transactionId);
     if (!transaction) {
@@ -7787,8 +7835,10 @@ async function startServer() {
     }
 
     saveState();
-    persistEntity("students", student).catch(err => console.error("Error persisting student balance to MySQL:", err));
-    persistEntity("savingsTransactions", transaction).catch(err => console.error("Error persisting cancelled tx to MySQL:", err));
+    await Promise.all([
+      persistEntity("students", student),
+      persistEntity("savingsTransactions", transaction)
+    ]);
     res.json({ success: true, student, transaction });
   });
 

@@ -52,7 +52,7 @@ export const SpmbAiAssistantModal: React.FC<SpmbAiAssistantModalProps> = ({
   onNavigateTab
 }) => {
   const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
-  const contactPhone = config?.contactPhone || schoolIdentity?.phone || "0812-3456-7890";
+  const contactPhone = config?.contactPhone || schoolIdentity?.phone || "+6285171151655";
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     return [

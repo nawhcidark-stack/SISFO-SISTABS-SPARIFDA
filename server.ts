@@ -9844,6 +9844,7 @@ async function startServer() {
     students,
     whatsappConfig,
     midtransConfig,
+    schoolIdentity,
     saveState,
     broadcastNotification,
     sendWhatsappNotification,

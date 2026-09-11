@@ -284,7 +284,6 @@ export async function generateTokenReceiptHtml(
             <p class="sig-sub">Bendahara Panitia SPMB,</p>
             <div class="sig-space sig-with-stamp">
               ${schoolIdentity?.treasurerSignature ? `<img src="${schoolIdentity.treasurerSignature}" class="sig-img" alt="Ttd Bendahara" referrerPolicy="no-referrer" />` : ''}
-              ${schoolIdentity?.schoolStamp ? `<img src="${schoolIdentity.schoolStamp}" class="stamp-img" alt="Stempel Sekolah" referrerPolicy="no-referrer" />` : ''}
             </div>
             <p class="sig-name"><u>${schoolIdentity?.treasurer || 'Panitia Penerimaan Murid Baru'}</u></p>
           </div>
@@ -465,7 +464,6 @@ export async function generateReRegReceiptHtml(
             <p class="sig-sub">Kepala Sekolah,</p>
             <div class="sig-space sig-with-stamp">
               ${schoolIdentity?.principalSignature ? `<img src="${schoolIdentity.principalSignature}" class="sig-img" alt="Ttd Kepala Sekolah" referrerPolicy="no-referrer" />` : ''}
-              ${schoolIdentity?.schoolStamp ? `<img src="${schoolIdentity.schoolStamp}" class="stamp-img" alt="Stempel Sekolah" referrerPolicy="no-referrer" />` : ''}
             </div>
             <p class="sig-name"><u>${schoolIdentity?.principal || 'Kepala Sekolah'}</u></p>
           </div>

@@ -277,9 +277,6 @@ export default function SpmbReceiptModal({
                       {schoolIdentity?.treasurerSignature && (
                         <img src={schoolIdentity.treasurerSignature} alt="Ttd" className="h-12 object-contain z-10" referrerPolicy="no-referrer" />
                       )}
-                      {schoolIdentity?.schoolStamp && (
-                        <img src={schoolIdentity.schoolStamp} alt="Stempel" className="h-12 object-contain opacity-80" referrerPolicy="no-referrer" />
-                      )}
                     </div>
                     <p className="font-bold underline text-slate-800 m-0">{schoolIdentity?.treasurer || 'Panitia SPMB'}</p>
                   </div>
@@ -405,9 +402,6 @@ export default function SpmbReceiptModal({
                     <div className="h-12 flex items-center justify-center relative">
                       {schoolIdentity?.principalSignature && (
                         <img src={schoolIdentity.principalSignature} alt="Ttd" className="h-12 object-contain z-10" referrerPolicy="no-referrer" />
-                      )}
-                      {schoolIdentity?.schoolStamp && (
-                        <img src={schoolIdentity.schoolStamp} alt="Stempel" className="h-12 object-contain opacity-80" referrerPolicy="no-referrer" />
                       )}
                     </div>
                     <p className="font-bold underline text-slate-800 m-0">{schoolIdentity?.principal || 'Kepala Sekolah'}</p>

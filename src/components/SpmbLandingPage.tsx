@@ -50,9 +50,13 @@ import {
   Lock,
   Unlock,
   UserPlus,
-  UserCheck
+  UserCheck,
+  Bot,
+  MessageSquare,
+  MessageCircle
 } from 'lucide-react';
 import QRCode from 'qrcode';
+import { SpmbAiAssistantModal } from './SpmbAiAssistantModal';
 
 interface SpmbLandingPageProps {
   schoolIdentity?: SchoolIdentity;
@@ -153,6 +157,9 @@ export default function SpmbLandingPage({
 
   // QR Code data URL for registration proof card
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
+
+  // AI Assistant Modal State
+  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState<boolean>(false);
 
   // Helper: Format Alamat Gabung Otomatis dari Dusun, RT, RW, Desa, Kecamatan
   const formatCombinedAddress = (dusun?: string, rt?: string, rw?: string, village?: string, district?: string) => {
@@ -1075,6 +1082,14 @@ export default function SpmbLandingPage({
                     <Search size={15} />
                     <span>Sudah Daftar? Cek Status</span>
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsAiAssistantOpen(true)}
+                    className="px-5 py-3 bg-gradient-to-r from-emerald-700 to-teal-800 hover:from-emerald-800 hover:to-teal-900 text-white font-bold text-sm rounded-2xl shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                  >
+                    <Sparkles size={16} className="text-amber-300 animate-pulse" />
+                    <span>Tanya Asisten AI SPMB</span>
+                  </button>
                 </div>
               </div>
 
@@ -1403,6 +1418,46 @@ export default function SpmbLandingPage({
                     <p className="text-[11px] text-slate-600 leading-relaxed m-0">{s.desc}</p>
                   </div>
                 ))}
+              </div>
+            </div>
+
+            {/* AI Assistant Callout Banner in Tab 1 */}
+            <div className="rounded-3xl bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-6">
+              <div className="space-y-2 max-w-xl text-center md:text-left">
+                <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold">
+                  <Sparkles size={13} className="text-amber-300" />
+                  <span>Asisten AI SPMB Siaga 24 Jam</span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black m-0 tracking-tight">
+                  Punya Pertanyaan Seputar Pendaftaran & Sekolah?
+                </h3>
+                <p className="text-xs sm:text-sm text-emerald-100/80 m-0 leading-relaxed">
+                  Konsultasikan info jadwal, rincian seragam, diskon alumni SD Ma'arif Jogosari, atau kendala pendaftaran secara otomatis dan instan dengan Asisten AI kami.
+                </p>
+                
+                <div className="pt-2 flex flex-wrap items-center gap-2 justify-center md:justify-start">
+                  {["Rincian Biaya", "Diskon Inden 50%", "Alumni SD Maarif", "Cara Bayar Online"].map((topic, tIdx) => (
+                    <button
+                      key={tIdx}
+                      type="button"
+                      onClick={() => setIsAiAssistantOpen(true)}
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-emerald-200 hover:text-white text-[11px] font-medium transition-colors cursor-pointer border border-white/10"
+                    >
+                      {topic}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="shrink-0">
+                <button
+                  type="button"
+                  onClick={() => setIsAiAssistantOpen(true)}
+                  className="px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs sm:text-sm rounded-2xl shadow-lg transition-all transform hover:-translate-y-0.5 cursor-pointer flex items-center gap-2.5"
+                >
+                  <Bot size={18} />
+                  <span>Tanya Asisten AI Sekarang</span>
+                </button>
               </div>
             </div>
           </div>
@@ -3482,6 +3537,41 @@ export default function SpmbLandingPage({
         config={config}
         schoolIdentity={currentSchoolIdentity}
         defaultType={receiptModalType}
+      />
+
+      {/* Floating AI Assistant Trigger Button */}
+      <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
+        <button
+          type="button"
+          onClick={() => setIsAiAssistantOpen(true)}
+          className="group relative flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-xl hover:shadow-2xl border border-emerald-400/40 transition-all transform hover:-translate-y-1 active:scale-95 cursor-pointer"
+          aria-label="Tanya Asisten AI SPMB"
+        >
+          <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500 border-2 border-white" />
+          </span>
+          <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
+            <Bot size={18} />
+          </div>
+          <div className="text-left hidden sm:block">
+            <p className="text-[10px] text-emerald-100 uppercase tracking-wider font-semibold m-0 leading-none">Tanya Pintar</p>
+            <p className="text-xs font-black m-0 leading-tight">Asisten AI SPMB</p>
+          </div>
+          <span className="sm:hidden text-xs font-bold">Tanya AI</span>
+        </button>
+      </div>
+
+      {/* SPMB AI Assistant Modal */}
+      <SpmbAiAssistantModal
+        isOpen={isAiAssistantOpen}
+        onClose={() => setIsAiAssistantOpen(false)}
+        config={config}
+        schoolIdentity={currentSchoolIdentity}
+        onNavigateTab={(tab) => {
+          setActiveTab(tab);
+          setIsAiAssistantOpen(false);
+        }}
       />
     </div>
   );

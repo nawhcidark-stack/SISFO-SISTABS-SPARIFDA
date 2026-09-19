@@ -137,9 +137,6 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
       }
       const result = await directSaveEntityToMysql(entityType, data);
       
-      // Also trigger debounced full-sync in background to ensure database integrity
-      triggerDebouncedMysqlSync(providers.getFullSnapshot, 2000);
-
       res.json(result);
     } catch (err: any) {
       res.status(500).json({

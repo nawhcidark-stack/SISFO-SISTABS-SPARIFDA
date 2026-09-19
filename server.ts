@@ -2010,12 +2010,14 @@ function applyDataFromMysql(pulledData: any) {
   }
 }
 
+const hasMysqlEnv = Boolean(process.env.MYSQL_HOST && process.env.MYSQL_DATABASE);
 const isLoaded = loadState();
 
 if (isLoaded) {
   // Save state immediately to persist the cleaned deduplicated bills
   saveState(true);
-} else {
+} else if (!hasMysqlEnv) {
+  // Only initialize fallback unpaid bills if MySQL is not configured
   students.forEach((student, sIdx) => {
     months.forEach((month, mIdx) => {
       // All fallback initialization bills should start as unpaid
@@ -2248,10 +2250,27 @@ async function startServer() {
     }
   };
 
-  // Launch background sync without blocking Express listening
-  syncMysqlBackground();
+  // Connect and pull data from authoritative MySQL before accepting requests
+  await syncMysqlBackground();
 
-  console.log(" [STARTUP] ✅ Server web siap instan.");
+  // Periodic Auto-Sync from MySQL (every 2 minutes):
+  // Keeps DEV and PUBLIC in sync automatically whenever payments or changes occur on either side
+  setInterval(async () => {
+    try {
+      if (mysqlDatabaseStatus === "ONLINE") {
+        const pullRes = await pullDataFromMysql();
+        if (pullRes.success && pullRes.data) {
+          applyDataFromMysql(pullRes.data);
+          applyAuthoritativeSavingsBalances(students);
+          lastMysqlSyncTime = new Date().toISOString();
+        }
+      }
+    } catch (e) {
+      // background silent catch
+    }
+  }, 120000);
+
+  console.log(" [STARTUP] ✅ Server web siap dengan data MySQL mutakhir.");
   console.log("=================================================");
 
   const app = express();

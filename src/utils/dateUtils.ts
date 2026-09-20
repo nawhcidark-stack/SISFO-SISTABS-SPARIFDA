@@ -74,10 +74,22 @@ export function formatIndonesianDate(dateStr?: string): string {
 }
 
 /**
+ * Formats a string to Proper Case (Besar Kecil / Title Case per word).
+ * e.g. "pasuruan" -> "Pasuruan", "PASURUAN" -> "Pasuruan", "kota pasuruan" -> "Kota Pasuruan"
+ * Preserves trailing spaces during typing.
+ */
+export function toProperCase(val?: string | null): string {
+  if (!val) return '';
+  return String(val)
+    .toLowerCase()
+    .replace(/(?:^|[\s\-\/\.])([a-z\u00C0-\u017F])/g, (m) => m.toUpperCase());
+}
+
+/**
  * Formats combined Tempat, Tanggal Lahir into e.g. "Pasuruan, 18 Mei 1989"
  */
 export function formatCombinedPlaceAndDate(place?: string, dateStr?: string): string {
-  const cleanPlace = (place || '').trim();
+  const cleanPlace = toProperCase((place || '').trim());
   const dateFormatted = formatIndonesianDate(dateStr);
 
   if (cleanPlace && dateFormatted) {

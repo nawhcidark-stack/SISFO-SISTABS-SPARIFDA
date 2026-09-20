@@ -490,7 +490,7 @@ export default function StudentPanel({
   };
 
   // Invoice/Receipt state & download helpers
-  const [receiptToPrint, setReceiptToPrint] = useState<{ type: 'spp' | 'savings'; detail: any; student: Student } | null>(null);
+  const [receiptToPrint, setReceiptToPrint] = useState<{ type: 'spp' | 'savings' | 'misc'; detail: any; student: Student } | null>(null);
   const [receiptPrintFormat, setReceiptPrintFormat] = useState<'standard' | 'thermal'>('standard');
 
   const wordifyAmount = (nominal: number): string => {
@@ -5141,6 +5141,11 @@ export default function StudentPanel({
                           <>
                             <span className="font-bold text-slate-800 text-xs">Pembayaran Iuran SPP Wajib Bulanan</span>
                             <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">Bulan periodik: {receiptToPrint.detail.month} {receiptToPrint.detail.year} &bull; Metode: {receiptToPrint.detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}</span>
+                          </>
+                        ) : receiptToPrint.type === 'misc' ? (
+                          <>
+                            <span className="font-bold text-slate-800 text-xs">{receiptToPrint.detail.title || 'Pembayaran Tagihan Lainnya'}</span>
+                            <span className="text-[9px] text-slate-500 font-medium leading-none mt-1">Kategori: {receiptToPrint.detail.category || 'Biaya Sekolah'} &bull; Metode: {receiptToPrint.detail.paymentMethod?.toUpperCase() || 'MANUAL'}</span>
                           </>
                         ) : (
                           <>

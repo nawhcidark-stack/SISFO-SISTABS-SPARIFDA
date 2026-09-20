@@ -242,7 +242,7 @@ export default function BukuIndukManagement({
 
     const exampleRow = [
       '0012345678', '0112345678', 'Siswa Contoh', 'Contoh', '35140212040003', 'Laki-laki', 'Pandaan', '2011-04-12',
-      '35140012012001', '40532/DISDUK/2011', '081234567890', 'Jl. Kebon No. 4 Pandaan Pasuruan', 'Orang Tua', '1',
+      '35140012012001', '40532/DISDUK/2011', '', 'Jl. Kebon No. 4 Pandaan Pasuruan', 'Orang Tua', '1',
       '2', '0', '7-A', 'https://drive.google.com/drive/folders/1abc123xyz_example',
       'Fauzi Sr', '351402101072002', 'Malang', '1972-05-18', 'S1', 'Wiraswasta', '4500000', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081255556666', 'Hidup',
       'Siti Aminah', '351402102062002', 'Pasuruan', '1976-06-22', 'SMA', 'Ibu Rumah Tangga', '0', 'Jl. Kebon No. 4 Pandaan Pasuruan', '081277778888', 'Hidup',

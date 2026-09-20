@@ -24,7 +24,7 @@ export const SavingsPassbookModal: React.FC<SavingsPassbookModalProps> = ({
 
   // Filter only successful or completed transactions for the student
   const studentTxs = transactions
-    .filter(t => (t.studentId === student.id || (student.nis && String(t.studentId).trim() === String(student.nis).trim())) && (t.status === 'success' || !t.status || t.status === 'completed'))
+    .filter(t => (t.studentId === student.id || (student.nis && String(t.studentId).trim() === String(student.nis).trim())) && (t.status === 'success' || !t.status || (t.status as string) === 'completed'))
     .sort((a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime());
 
   // Calculate running balance for each transaction

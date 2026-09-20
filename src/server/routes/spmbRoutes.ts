@@ -6,6 +6,14 @@ import { askSpmbAiAssistant, SpmbAiChatMessage } from "../spmbAiAssistant";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
+function toProperCase(val?: string | null): string {
+  if (!val) return "";
+  return String(val)
+    .trim()
+    .toLowerCase()
+    .replace(/(?:^|[\s\-\/\.])([a-z\u00C0-\u017F])/g, (m) => m.toUpperCase());
+}
+
 export interface SpmbRouterDeps {
   spmbConfig: SpmbConfig;
   spmbCandidates: SpmbCandidate[];
@@ -282,7 +290,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           nik: req.body.nik || "",
           fullName: cleanFullName,
           gender: normGender,
-          birthPlace: req.body.birthPlace || "",
+          birthPlace: toProperCase(req.body.birthPlace || ""),
           birthDate: req.body.birthDate || "",
           phone: cleanPhone,
           schoolOrigin: effectiveSchoolOrigin,
@@ -519,10 +527,64 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (incomingData.fullName) {
         incomingData.fullName = String(incomingData.fullName).trim().toUpperCase();
       }
+      if (incomingData.nickname) {
+        incomingData.nickname = String(incomingData.nickname).trim().toUpperCase();
+      }
+      if (incomingData.fatherName) {
+        incomingData.fatherName = String(incomingData.fatherName).trim().toUpperCase();
+      }
+      if (incomingData.motherName) {
+        incomingData.motherName = String(incomingData.motherName).trim().toUpperCase();
+      }
+      if (incomingData.guardianName) {
+        incomingData.guardianName = String(incomingData.guardianName).trim().toUpperCase();
+      }
+      if (incomingData.birthPlace) {
+        incomingData.birthPlace = toProperCase(incomingData.birthPlace);
+      }
+      if (incomingData.fatherBirthPlace) {
+        incomingData.fatherBirthPlace = toProperCase(incomingData.fatherBirthPlace);
+      }
+      if (incomingData.motherBirthPlace) {
+        incomingData.motherBirthPlace = toProperCase(incomingData.motherBirthPlace);
+      }
+      if (incomingData.guardianBirthPlace) {
+        incomingData.guardianBirthPlace = toProperCase(incomingData.guardianBirthPlace);
+      }
+      if (incomingData.phone) {
+        incomingData.phone = String(incomingData.phone).trim();
+      }
+      if (incomingData.studentPhone !== undefined) {
+        incomingData.studentPhone = String(incomingData.studentPhone || '').trim();
+      }
 
       Object.assign(candidate, incomingData);
       if (candidate.fullName) {
         candidate.fullName = String(candidate.fullName).trim().toUpperCase();
+      }
+      if (candidate.nickname) {
+        candidate.nickname = String(candidate.nickname).trim().toUpperCase();
+      }
+      if (candidate.fatherName) {
+        candidate.fatherName = String(candidate.fatherName).trim().toUpperCase();
+      }
+      if (candidate.motherName) {
+        candidate.motherName = String(candidate.motherName).trim().toUpperCase();
+      }
+      if (candidate.guardianName) {
+        candidate.guardianName = String(candidate.guardianName).trim().toUpperCase();
+      }
+      if (candidate.birthPlace) {
+        candidate.birthPlace = toProperCase(candidate.birthPlace);
+      }
+      if (candidate.fatherBirthPlace) {
+        candidate.fatherBirthPlace = toProperCase(candidate.fatherBirthPlace);
+      }
+      if (candidate.motherBirthPlace) {
+        candidate.motherBirthPlace = toProperCase(candidate.motherBirthPlace);
+      }
+      if (candidate.guardianBirthPlace) {
+        candidate.guardianBirthPlace = toProperCase(candidate.guardianBirthPlace);
       }
       candidate.isFormCompleted = true;
       candidate.formCompletedAt = new Date().toISOString();
@@ -1074,7 +1136,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           nisn: permanentNisn, // NISN Asli & Permanen (Tidak Berubah saat NIS diedit masal)
           class: assignedClass,
           gender: candidate.gender === "P" ? "P" : "L",
-          phone: candidate.phone || candidate.fatherPhone || candidate.motherPhone || "",
+          phone: "",
           email: candidate.email || `${candidate.fullName.toLowerCase().replace(/[^a-z0-9]/g, "")}.${temporaryNis}@smpmaarifnu.sch.id`,
           password: temporaryNis,
           savingsBalance: 0,

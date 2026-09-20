@@ -14,7 +14,7 @@ export default function QRScannerModal({ students, onSelectStudentByNis, onClose
   const [cameraPermissionState, setCameraPermissionState] = useState<'prompt' | 'granted' | 'denied' | 'checking'>('checking');
   const [cameraError, setCameraError] = useState<string | null>(null);
   const [isInitializing, setIsInitializing] = useState(true);
-  const [availableCameras, setAvailableCameras] = useState<MediaDeviceInfo[]>([]);
+  const [availableCameras, setAvailableCameras] = useState<any[]>([]);
   const [selectedCameraId, setSelectedCameraId] = useState<string>('');
   const [scannedResult, setScannedResult] = useState<string | null>(null);
   const [scannedStudent, setScannedStudent] = useState<Student | null>(null);

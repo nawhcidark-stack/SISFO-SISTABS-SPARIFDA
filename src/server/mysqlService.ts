@@ -2474,16 +2474,21 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const sch = data;
       await connection.query(`
         INSERT INTO \`class_schedules\` (
-          \`id\`, \`class_name\`, \`academic_year\`, \`semester\`, \`created_at\`, \`schedule_data\`
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          \`id\`, \`day\`, \`class_name\`, \`subject\`, \`teacher_id\`, \`teacher_name\`, \`jam_ke\`,
+          \`start_time\`, \`end_time\`, \`alokasi_waktu\`, \`academic_year\`, \`semester\`, \`created_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`schedule_data\`=VALUES(\`schedule_data\`)
+          \`day\`=VALUES(\`day\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`),
+          \`teacher_id\`=VALUES(\`teacher_id\`), \`teacher_name\`=VALUES(\`teacher_name\`), \`jam_ke\`=VALUES(\`jam_ke\`),
+          \`start_time\`=VALUES(\`start_time\`), \`end_time\`=VALUES(\`end_time\`), \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
+          \`academic_year\`=VALUES(\`academic_year\`), \`semester\`=VALUES(\`semester\`)
       `, [
-        sch.id, sch.className || '', sch.academicYear || '2026/2027', sch.semester || 'Ganjil',
-        sch.createdAt || new Date().toISOString(),
-        typeof sch.schedule === 'string' ? sch.schedule : JSON.stringify(sch.schedule || sch)
+        sch.id, sch.day, sch.className || '', sch.subject || '', sch.teacherId || '',
+        sch.teacherName || '', sch.jamKe || '', sch.startTime || null, sch.endTime || null,
+        sch.alokasiWaktu || null, sch.academicYear || '2025/2026', sch.semester || 'Genap',
+        sch.createdAt || new Date().toISOString()
       ]);
-      return { success: true, message: `Jadwal pelajaran kelas "${sch.className}" langsung tersimpan ke MySQL.` };
+      return { success: true, message: `Jadwal pelajaran kelas "${sch.className}" (${sch.day} Jam ${sch.jamKe}) langsung tersimpan ke MySQL.` };
     }
 
     // 12. Homeroom Teachers
@@ -2839,6 +2844,9 @@ export async function directDeleteEntitiesBatchFromMysql(entityType: string, ids
       spmb: 'spmb_candidates',
       spmb_candidate: 'spmb_candidates',
       spmbcandidates: 'spmb_candidates',
+      schedule: 'class_schedules',
+      class_schedule: 'class_schedules',
+      classschedules: 'class_schedules',
       notification: 'notifications',
       notifications: 'notifications'
     };
@@ -2858,6 +2866,38 @@ export async function directDeleteEntitiesBatchFromMysql(entityType: string, ids
   } catch (err: any) {
     console.error(`[MySQL Batch Delete Error - ${entityType}]:`, err.message || err);
     return { success: false, count: 0, error: err.message || String(err) };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Direct clear / purge all records from a specific MySQL table
+export async function directClearTableInMysql(entityTypeOrTable: string): Promise<{ success: boolean; message: string; error?: string }> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+
+  try {
+    connection = await pool.getConnection();
+    const typeKey = entityTypeOrTable.toLowerCase().trim();
+    const tableMap: Record<string, string> = {
+      schedule: 'class_schedules',
+      class_schedule: 'class_schedules',
+      classschedules: 'class_schedules',
+      class_schedules: 'class_schedules',
+    };
+    const tableName = tableMap[typeKey] || typeKey;
+    await connection.query(`DELETE FROM \`${tableName}\``);
+    return {
+      success: true,
+      message: `Seluruh data pada tabel "${tableName}" berhasil dikosongkan dari MySQL.`
+    };
+  } catch (err: any) {
+    console.error(`[MySQL Clear Table Error - ${entityTypeOrTable}]:`, err.message || err);
+    return {
+      success: false,
+      message: `Gagal mengosongkan tabel MySQL`,
+      error: err.message || String(err)
+    };
   } finally {
     if (connection) connection.release();
   }

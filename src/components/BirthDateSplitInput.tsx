@@ -1,5 +1,5 @@
 import React, { useMemo } from 'react';
-import { INDONESIAN_MONTHS, parseDateParts, buildIsoDate, formatCombinedPlaceAndDate, formatIndonesianDate } from '../utils/dateUtils';
+import { INDONESIAN_MONTHS, parseDateParts, buildIsoDate, formatCombinedPlaceAndDate, formatIndonesianDate, toProperCase } from '../utils/dateUtils';
 import { Calendar, MapPin } from 'lucide-react';
 
 interface BirthDateSplitInputProps {
@@ -18,6 +18,8 @@ interface BirthDateSplitInputProps {
   minYear?: number;
   maxYear?: number;
   helperText?: string;
+  properCasePlace?: boolean;
+  uppercasePlace?: boolean;
 }
 
 export default function BirthDateSplitInput({
@@ -27,7 +29,7 @@ export default function BirthDateSplitInput({
   birthPlace = '',
   onBirthPlaceChange,
   dateLabel = 'Tanggal Lahir',
-  placeLabel = 'Tempat Lahir',
+  placeLabel = 'Tempat Lahir (Besar Kecil / Proper)',
   combinedLabel = 'Tempat, Tgl Lahir (Otomatis)',
   required = false,
   theme = 'dark',
@@ -36,6 +38,8 @@ export default function BirthDateSplitInput({
   minYear = 1940,
   maxYear = new Date().getFullYear(),
   helperText,
+  properCasePlace = true,
+  uppercasePlace = false,
 }: BirthDateSplitInputProps) {
   const isDark = theme === 'dark';
 
@@ -104,8 +108,19 @@ export default function BirthDateSplitInput({
               required={required}
               placeholder={placeholderPlace}
               value={birthPlace}
-              onChange={(e) => onBirthPlaceChange(e.target.value)}
-              className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 ${inputBaseClasses}`}
+              onChange={(e) => {
+                const val = e.target.value;
+                if (onBirthPlaceChange) {
+                  if (properCasePlace) {
+                    onBirthPlaceChange(toProperCase(val));
+                  } else if (uppercasePlace) {
+                    onBirthPlaceChange(val.toUpperCase());
+                  } else {
+                    onBirthPlaceChange(val);
+                  }
+                }
+              }}
+              className={`w-full pl-9 pr-3 py-2.5 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 ${inputBaseClasses} ${uppercasePlace ? 'uppercase font-bold tracking-wide' : ''}`}
             />
           </div>
         </div>

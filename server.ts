@@ -11,7 +11,7 @@ import compression from "compression";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -138,6 +138,37 @@ function parseCsvSchedules(csvStr: string): ClassSchedule[] {
     }
   }
   return result;
+}
+
+export function deduplicateClassSchedules(list: ClassSchedule[]): ClassSchedule[] {
+  if (!Array.isArray(list)) return [];
+  const map = new Map<string, ClassSchedule>();
+  for (const s of list) {
+    if (!s || !s.day || !s.className || !s.jamKe) continue;
+    const normDay = s.day.trim().toLowerCase();
+    const normClass = s.className.trim().toUpperCase();
+    const normJam = s.jamKe.trim().toLowerCase().replace(/\s+/g, "");
+    const key = `${normDay}_${normClass}_${normJam}`;
+    
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, s);
+    } else {
+      const existingIsCsv = existing.id && existing.id.startsWith("sch-csv");
+      const currentIsCsv = s.id && s.id.startsWith("sch-csv");
+      const existingDate = existing.createdAt ? new Date(existing.createdAt).getTime() : 0;
+      const currentDate = s.createdAt ? new Date(s.createdAt).getTime() : 0;
+
+      if (existingIsCsv && !currentIsCsv) {
+        map.set(key, s);
+      } else if (!existingIsCsv && currentIsCsv) {
+        // keep existing
+      } else if (currentDate > existingDate) {
+        map.set(key, s);
+      }
+    }
+  }
+  return Array.from(map.values());
 }
 
 const merdekaAssessments: MerdekaAssessment[] = [];
@@ -1728,7 +1759,7 @@ function loadState() {
       }
       if (Array.isArray(data.classSchedules)) {
         classSchedules.length = 0;
-        classSchedules.push(...data.classSchedules);
+        classSchedules.push(...deduplicateClassSchedules(data.classSchedules));
       }
       if (Array.isArray(data.principalWorkPrograms)) {
         principalWorkPrograms.length = 0;
@@ -1933,7 +1964,7 @@ function applyDataFromMysql(pulledData: any) {
 
     if (Array.isArray(pulledData.classSchedules) && pulledData.classSchedules.length > 0) {
       classSchedules.length = 0;
-      classSchedules.push(...pulledData.classSchedules);
+      classSchedules.push(...deduplicateClassSchedules(pulledData.classSchedules));
     }
 
     if (Array.isArray(pulledData.principalWorkPrograms) && pulledData.principalWorkPrograms.length > 0) {
@@ -5078,6 +5109,12 @@ async function startServer() {
 
   app.get("/api/curriculum/schedules", (req, res) => {
     autoGenerateAbsentJournals();
+    const deduplicated = deduplicateClassSchedules(classSchedules);
+    if (deduplicated.length !== classSchedules.length) {
+      classSchedules.length = 0;
+      classSchedules.push(...deduplicated);
+      saveState();
+    }
     res.json(classSchedules);
   });
 
@@ -5112,6 +5149,7 @@ async function startServer() {
 
     classSchedules.push(newSchedule);
     saveState();
+    directSaveEntityToMysql("schedule", newSchedule).catch(err => console.error("MySQL schedule save error:", err));
     res.json({ success: true, newSchedule, classSchedules });
   });
 
@@ -5148,6 +5186,7 @@ async function startServer() {
 
     classSchedules[index] = updatedSchedule;
     saveState();
+    directSaveEntityToMysql("schedule", updatedSchedule).catch(err => console.error("MySQL schedule update error:", err));
     res.json({ success: true, updatedSchedule, classSchedules });
   });
 
@@ -5205,64 +5244,68 @@ async function startServer() {
     let addedCount = 0;
 
     if (mode === 'replace') {
+      const cleanNewList = deduplicateClassSchedules(formattedSchedules);
       classSchedules.length = 0;
-      classSchedules.push(...formattedSchedules);
-      addedCount = formattedSchedules.length;
-    } else if (mode === 'update' || !mode) {
+      classSchedules.push(...cleanNewList);
+      addedCount = cleanNewList.length;
+      saveState();
+
+      // Clear and re-populate MySQL table
+      (async () => {
+        try {
+          await directClearTableInMysql("schedule");
+          await directSaveEntitiesBatchToMysql("schedule", classSchedules);
+        } catch (e: any) {
+          console.error("MySQL bulk replace schedule error:", e.message);
+        }
+      })();
+    } else {
       // Upsert / Update mode: update if day, className, and jamKe match to prevent duplicates
       for (const newItem of formattedSchedules) {
-        const existingIdx = classSchedules.findIndex(s =>
-          s.day.trim().toLowerCase() === newItem.day.trim().toLowerCase() &&
-          s.className.trim().toLowerCase() === newItem.className.trim().toLowerCase() &&
-          s.jamKe.trim().toLowerCase() === newItem.jamKe.trim().toLowerCase()
-        );
+        const normDay = newItem.day.trim().toLowerCase();
+        const normClass = newItem.className.trim().toUpperCase();
+        const normJam = newItem.jamKe.trim().toLowerCase().replace(/\s+/g, "");
 
-        if (existingIdx !== -1) {
-          classSchedules[existingIdx] = {
-            ...classSchedules[existingIdx],
+        // Remove ALL existing entries that match this slot to guarantee no duplicate
+        const matchingIndices: number[] = [];
+        for (let i = classSchedules.length - 1; i >= 0; i--) {
+          const s = classSchedules[i];
+          if (
+            s.day.trim().toLowerCase() === normDay &&
+            s.className.trim().toUpperCase() === normClass &&
+            s.jamKe.trim().toLowerCase().replace(/\s+/g, "") === normJam
+          ) {
+            matchingIndices.push(i);
+          }
+        }
+
+        if (matchingIndices.length > 0) {
+          const targetIdx = matchingIndices[matchingIndices.length - 1];
+          classSchedules[targetIdx] = {
+            ...classSchedules[targetIdx],
             subject: newItem.subject,
             teacherId: newItem.teacherId,
             teacherName: newItem.teacherName,
-            startTime: newItem.startTime || classSchedules[existingIdx].startTime,
-            endTime: newItem.endTime || classSchedules[existingIdx].endTime,
-            alokasiWaktu: newItem.alokasiWaktu || classSchedules[existingIdx].alokasiWaktu,
-            academicYear: newItem.academicYear || classSchedules[existingIdx].academicYear,
-            semester: newItem.semester || classSchedules[existingIdx].semester
+            startTime: newItem.startTime || classSchedules[targetIdx].startTime,
+            endTime: newItem.endTime || classSchedules[targetIdx].endTime,
+            alokasiWaktu: newItem.alokasiWaktu || classSchedules[targetIdx].alokasiWaktu,
+            academicYear: newItem.academicYear || classSchedules[targetIdx].academicYear,
+            semester: newItem.semester || classSchedules[targetIdx].semester
           };
+          for (let k = 0; k < matchingIndices.length - 1; k++) {
+            classSchedules.splice(matchingIndices[k], 1);
+          }
           updatedCount++;
         } else {
           classSchedules.push(newItem);
           addedCount++;
         }
       }
-    } else {
-      // mode === 'append': add, but update if exact day+class+jam slot exists to prevent duplicates
-      for (const newItem of formattedSchedules) {
-        const existingIdx = classSchedules.findIndex(s =>
-          s.day.trim().toLowerCase() === newItem.day.trim().toLowerCase() &&
-          s.className.trim().toLowerCase() === newItem.className.trim().toLowerCase() &&
-          s.jamKe.trim().toLowerCase() === newItem.jamKe.trim().toLowerCase()
-        );
 
-        if (existingIdx !== -1) {
-          classSchedules[existingIdx] = {
-            ...classSchedules[existingIdx],
-            subject: newItem.subject,
-            teacherId: newItem.teacherId,
-            teacherName: newItem.teacherName,
-            startTime: newItem.startTime || classSchedules[existingIdx].startTime,
-            endTime: newItem.endTime || classSchedules[existingIdx].endTime,
-            alokasiWaktu: newItem.alokasiWaktu || classSchedules[existingIdx].alokasiWaktu,
-          };
-          updatedCount++;
-        } else {
-          classSchedules.push(newItem);
-          addedCount++;
-        }
-      }
+      saveState();
+      directSaveEntitiesBatchToMysql("schedule", formattedSchedules).catch(err => console.error("MySQL bulk update schedule error:", err));
     }
 
-    saveState();
     res.json({
       success: true,
       count: formattedSchedules.length,
@@ -5272,7 +5315,7 @@ async function startServer() {
     });
   });
 
-  app.post("/api/curriculum/schedules/bulk-delete", (req, res) => {
+  app.post("/api/curriculum/schedules/bulk-delete", async (req, res) => {
     const { ids } = req.body;
     if (!Array.isArray(ids) || ids.length === 0) {
       return res.status(400).json({ error: "Daftar ID jadwal yang akan dihapus tidak valid." });
@@ -5284,10 +5327,17 @@ async function startServer() {
     classSchedules.push(...remaining);
     saveState();
     const deletedCount = initialCount - classSchedules.length;
+
+    try {
+      await directDeleteEntitiesBatchFromMysql("schedule", ids);
+    } catch (e: any) {
+      console.error("MySQL bulk-delete schedule error:", e.message);
+    }
+
     res.json({ success: true, deletedCount, classSchedules });
   });
 
-  app.delete("/api/curriculum/schedules/:id", (req, res) => {
+  app.delete("/api/curriculum/schedules/:id", async (req, res) => {
     const { id } = req.params;
     const index = classSchedules.findIndex(s => s.id === id);
     if (index === -1) {
@@ -5295,7 +5345,28 @@ async function startServer() {
     }
     classSchedules.splice(index, 1);
     saveState();
+
+    try {
+      await directDeleteEntityFromMysql("schedule", id);
+    } catch (e: any) {
+      console.error("MySQL delete schedule error:", e.message);
+    }
+
     res.json({ success: true, classSchedules });
+  });
+
+  app.post("/api/curriculum/schedules/clear-all", async (req, res) => {
+    const prevCount = classSchedules.length;
+    classSchedules.length = 0;
+    saveState();
+
+    try {
+      await directClearTableInMysql("schedule");
+    } catch (e: any) {
+      console.error("MySQL clear-all schedule error:", e.message);
+    }
+
+    res.json({ success: true, clearedCount: prevCount, classSchedules: [] });
   });
 
   // --- KEPALA SEKOLAH (PRINCIPAL) ENDPOINTS ---

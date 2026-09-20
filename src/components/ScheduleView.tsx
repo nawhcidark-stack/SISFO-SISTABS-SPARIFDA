@@ -142,6 +142,14 @@ export default function ScheduleView({
   const [selectedScheduleIds, setSelectedScheduleIds] = useState<string[]>([]);
   const [manageSearchQuery, setManageSearchQuery] = useState<string>('');
 
+  // Confirmation Modals for Delete & Clear All
+  const [deleteTargetId, setDeleteTargetId] = useState<string | null>(null);
+  const [isDeletingSingle, setIsDeletingSingle] = useState<boolean>(false);
+  const [isBulkDeleteModalOpen, setIsBulkDeleteModalOpen] = useState<boolean>(false);
+  const [isDeletingBatch, setIsDeletingBatch] = useState<boolean>(false);
+  const [isClearAllModalOpen, setIsClearAllModalOpen] = useState<boolean>(false);
+  const [isClearingAll, setIsClearingAll] = useState<boolean>(false);
+
   // Combined teacher list (Subject Teachers + Homerooms)
   const allTeachersList = useMemo(() => {
     const list: { id: string; username: string; name: string; roleStr: string; mainSubject: string }[] = [];
@@ -212,10 +220,9 @@ export default function ScheduleView({
     );
   };
 
-  const handleBulkDeleteSchedules = async () => {
+  const handleExecuteBulkDelete = async () => {
     if (selectedScheduleIds.length === 0) return;
-    if (!window.confirm(`Apakah Anda yakin ingin menghapus ${selectedScheduleIds.length} jadwal pelajaran yang dipilih?`)) return;
-
+    setIsDeletingBatch(true);
     try {
       const res = await fetch('/api/curriculum/schedules/bulk-delete', {
         method: 'POST',
@@ -227,10 +234,54 @@ export default function ScheduleView({
         throw new Error(data.error || 'Gagal menghapus jadwal terpilih.');
       }
       setSelectedScheduleIds([]);
+      setIsBulkDeleteModalOpen(false);
       onRefreshSchedule();
-      setFeedback({ type: 'success', text: `Berhasil menghapus ${data.deletedCount || selectedScheduleIds.length} jadwal pelajaran.` });
+      setFeedback({ type: 'success', text: `Berhasil menghapus ${data.deletedCount || selectedScheduleIds.length} jadwal pelajaran dari sistem dan database.` });
     } catch (err: any) {
       setFeedback({ type: 'error', text: err.message || 'Gagal menghapus jadwal.' });
+    } finally {
+      setIsDeletingBatch(false);
+    }
+  };
+
+  const handleExecuteClearAll = async () => {
+    setIsClearingAll(true);
+    try {
+      const res = await fetch('/api/curriculum/schedules/clear-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal mengosongkan seluruh jadwal.');
+      }
+      setSelectedScheduleIds([]);
+      setIsClearAllModalOpen(false);
+      onRefreshSchedule();
+      setFeedback({ type: 'success', text: `Berhasil mengosongkan seluruh data jadwal pelajaran (${data.clearedCount} jadwal terhapus). Database dan sistem kini bersih.` });
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Gagal mengosongkan jadwal pelajaran.' });
+    } finally {
+      setIsClearingAll(false);
+    }
+  };
+
+  const handleExecuteSingleDelete = async () => {
+    if (!deleteTargetId) return;
+    setIsDeletingSingle(true);
+    try {
+      const res = await fetch(`/api/curriculum/schedules/${deleteTargetId}`, { method: 'DELETE' });
+      if (!res.ok) {
+        const errData = await res.json();
+        throw new Error(errData.error || 'Gagal menghapus jadwal.');
+      }
+      setDeleteTargetId(null);
+      setFeedback({ type: 'success', text: 'Jadwal berhasil dihapus dari sistem dan database.' });
+      onRefreshSchedule();
+    } catch (e: any) {
+      setFeedback({ type: 'error', text: e.message || 'Gagal menghapus jadwal.' });
+    } finally {
+      setIsDeletingSingle(false);
     }
   };
 
@@ -947,18 +998,9 @@ export default function ScheduleView({
     }
   };
 
-  // Delete Schedule
-  const handleDeleteSchedule = async (id: string) => {
-    if (!window.confirm('Apakah Anda yakin ingin menghapus jadwal ini?')) return;
-
-    try {
-      const res = await fetch(`/api/curriculum/schedules/${id}`, { method: 'DELETE' });
-      if (!res.ok) throw new Error('Gagal menghapus jadwal');
-      setFeedback({ type: 'success', text: 'Jadwal berhasil dihapus.' });
-      onRefreshSchedule();
-    } catch (e: any) {
-      setFeedback({ type: 'error', text: e.message || 'Gagal menghapus jadwal' });
-    }
+  // Delete Schedule Trigger
+  const handleDeleteSchedule = (id: string) => {
+    setDeleteTargetId(id);
   };
 
   return (
@@ -992,7 +1034,7 @@ export default function ScheduleView({
 
             {isEditable && (
               <button
-                onClick={handleOpenAddModal}
+                onClick={() => handleOpenAddModal()}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 shadow-md cursor-pointer"
               >
                 <Plus size={15} />
@@ -1524,11 +1566,20 @@ export default function ScheduleView({
               </button>
 
               <button
-                onClick={handleOpenAddModal}
+                onClick={() => handleOpenAddModal()}
                 className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
               >
                 <Plus size={14} />
                 <span>Tambah Jadwal</span>
+              </button>
+
+              <button
+                onClick={() => setIsClearAllModalOpen(true)}
+                className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                title="Kosongkan seluruh data jadwal pelajaran dari sistem dan database"
+              >
+                <Trash2 size={14} />
+                <span>Kosongkan Seluruh Jadwal</span>
               </button>
             </div>
           </div>
@@ -1559,7 +1610,7 @@ export default function ScheduleView({
                 <CheckSquare size={16} className="text-rose-600 shrink-0" />
                 <span>Terpilih {selectedScheduleIds.length} jadwal</span>
                 <button
-                  onClick={handleBulkDeleteSchedules}
+                  onClick={() => setIsBulkDeleteModalOpen(true)}
                   className="px-3.5 py-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs"
                 >
                   <Trash2 size={13} />
@@ -2136,6 +2187,128 @@ export default function ScheduleView({
                     ? 'Mengimport...'
                     : `Proses Import (${importData.filter(d => d.isValid).length} Jadwal)`}
                 </span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS SINGLE JADWAL */}
+      {deleteTargetId && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-100 rounded-2xl">
+                <Trash2 size={24} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">Hapus Jadwal Pelajaran</h3>
+                <p className="text-xs text-slate-500">Tindakan ini tidak dapat dibatalkan</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+              Apakah Anda yakin ingin menghapus data jadwal pelajaran ini? Data akan langsung terhapus dari sistem dan database MySQL.
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setDeleteTargetId(null)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingSingle}
+                onClick={handleExecuteSingleDelete}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                {isDeletingSingle ? 'Menghapus...' : 'Ya, Hapus Jadwal'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI HAPUS MASSAL TERPILIH */}
+      {isBulkDeleteModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-md w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-100 rounded-2xl">
+                <Trash2 size={24} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">Hapus {selectedScheduleIds.length} Jadwal Terpilih</h3>
+                <p className="text-xs text-slate-500">Hapus massal baris jadwal yang dicentang</p>
+              </div>
+            </div>
+
+            <p className="text-xs text-slate-600 leading-relaxed font-medium">
+              Apakah Anda yakin ingin menghapus <strong className="text-rose-700 font-bold">{selectedScheduleIds.length} jadwal pelajaran</strong> yang dipilih? Data akan dihapus secara permanen dari memori sistem dan tabel database MySQL.
+            </p>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsBulkDeleteModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isDeletingBatch}
+                onClick={handleExecuteBulkDelete}
+                className="px-4 py-2 bg-rose-600 hover:bg-rose-700 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                {isDeletingBatch ? 'Menghapus...' : `Ya, Hapus (${selectedScheduleIds.length})`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* MODAL KONFIRMASI KOSONGKAN SELURUH JADWAL */}
+      {isClearAllModalOpen && (
+        <div className="fixed inset-0 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4 z-50 animate-fade-in">
+          <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl space-y-4 border border-slate-100">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="p-3 bg-rose-100 rounded-2xl">
+                <AlertTriangle size={26} />
+              </div>
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-base">Kosongkan Seluruh Jadwal Pelajaran</h3>
+                <p className="text-xs text-rose-600 font-bold">Peringatan: Reset Total Jadwal Sekolah</p>
+              </div>
+            </div>
+
+            <div className="bg-rose-50 border border-rose-200 rounded-2xl p-4 text-xs text-rose-950 space-y-2">
+              <p className="font-bold">
+                Tindakan ini akan menghapus seluruh data jadwal pelajaran yang saat ini tersimpan ({schedules.length} entri) dari memori sistem dan database MySQL.
+              </p>
+              <p className="text-[11px] text-rose-800">
+                Gunakan fitur ini jika Anda ingin membersihkan seluruh jadwal sebelum mengupload file jadwal baru yang lengkap dari nol, untuk memastikan tidak ada data lama yang tertinggal atau dobel.
+              </p>
+            </div>
+
+            <div className="pt-2 flex items-center justify-end gap-2 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsClearAllModalOpen(false)}
+                className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition-all cursor-pointer"
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                disabled={isClearingAll}
+                onClick={handleExecuteClearAll}
+                className="px-5 py-2 bg-rose-700 hover:bg-rose-800 text-white rounded-xl text-xs font-bold transition-all shadow-md cursor-pointer flex items-center gap-1.5"
+              >
+                {isClearingAll ? 'Sedang Mengosongkan...' : 'Ya, Kosongkan Semua Jadwal'}
               </button>
             </div>
           </div>

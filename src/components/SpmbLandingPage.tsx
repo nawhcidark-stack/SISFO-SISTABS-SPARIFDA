@@ -10,7 +10,7 @@ import {
 import SpmbReceiptModal from './SpmbReceiptModal';
 import BirthDateSplitInput from './BirthDateSplitInput';
 import { printSpmbReceiptDirect } from '../utils/spmbReceiptPrint';
-import { formatCombinedPlaceAndDate, formatIndonesianDate } from '../utils/dateUtils';
+import { formatCombinedPlaceAndDate, formatIndonesianDate, toProperCase } from '../utils/dateUtils';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -57,6 +57,26 @@ import {
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { SpmbAiAssistantModal } from './SpmbAiAssistantModal';
+
+// Opsi Pendidikan Terakhir untuk Formulir Data Lengkap SPMB
+export const SPMB_EDUCATION_OPTIONS = [
+  'tidak bersekolah',
+  'SD/MI Sederajat',
+  'SMP/Mts',
+  'SMA/MA/SMK',
+  'D1',
+  'D2',
+  'D3',
+  'S1/D4',
+  'S2',
+  'S3',
+] as const;
+
+export const getNormalizedEduValue = (val?: string) => {
+  if (!val) return '';
+  const match = SPMB_EDUCATION_OPTIONS.find(o => o.toLowerCase() === val.trim().toLowerCase());
+  return match || val;
+};
 
 interface SpmbLandingPageProps {
   schoolIdentity?: SchoolIdentity;
@@ -413,7 +433,18 @@ export default function SpmbLandingPage({
       if (res.ok) {
         const candidate: SpmbCandidate = await res.json();
         setActiveCandidate(candidate);
-        setFullForm(candidate);
+        setFullForm({
+          ...candidate,
+          studentPhone: candidate.studentPhone || '',
+          nickname: (candidate.nickname || '').toUpperCase(),
+          fatherName: (candidate.fatherName || '').toUpperCase(),
+          motherName: (candidate.motherName || '').toUpperCase(),
+          birthPlace: toProperCase(candidate.birthPlace || ''),
+          fatherBirthPlace: toProperCase(candidate.fatherBirthPlace || ''),
+          motherBirthPlace: toProperCase(candidate.motherBirthPlace || ''),
+          guardianBirthPlace: toProperCase(candidate.guardianBirthPlace || ''),
+          guardianName: (candidate.guardianName || '').toUpperCase(),
+        });
         setHasGuardian(Boolean(candidate.hasGuardian || (candidate.guardianName && candidate.guardianName.trim() !== '')));
         setDocUploads(candidate.documents || {});
         setSelectedUniformSize(candidate.selectedUniformSize || 'L');
@@ -673,7 +704,18 @@ export default function SpmbLandingPage({
       // If already paid previously, direct to portal
       if (resData.alreadyPaid) {
         setActiveCandidate(resData.candidate);
-        setFullForm(resData.candidate);
+        setFullForm({
+          ...resData.candidate,
+          studentPhone: resData.candidate.studentPhone || '',
+          nickname: (resData.candidate.nickname || '').toUpperCase(),
+          fatherName: (resData.candidate.fatherName || '').toUpperCase(),
+          motherName: (resData.candidate.motherName || '').toUpperCase(),
+          birthPlace: toProperCase(resData.candidate.birthPlace || ''),
+          fatherBirthPlace: toProperCase(resData.candidate.fatherBirthPlace || ''),
+          motherBirthPlace: toProperCase(resData.candidate.motherBirthPlace || ''),
+          guardianBirthPlace: toProperCase(resData.candidate.guardianBirthPlace || ''),
+          guardianName: (resData.candidate.guardianName || '').toUpperCase(),
+        });
         setSearchNisn(resData.candidate.nisn);
         
         QRCode.toDataURL(`SPMB-${resData.candidate.nisn}-${resData.candidate.fullName}`, {
@@ -731,7 +773,18 @@ export default function SpmbLandingPage({
         if (res.ok) {
           const verified = await res.json();
           setActiveCandidate(verified.candidate);
-          setFullForm(verified.candidate);
+          setFullForm({
+            ...verified.candidate,
+            studentPhone: verified.candidate.studentPhone || '',
+            nickname: (verified.candidate.nickname || '').toUpperCase(),
+            fatherName: (verified.candidate.fatherName || '').toUpperCase(),
+            motherName: (verified.candidate.motherName || '').toUpperCase(),
+            birthPlace: toProperCase(verified.candidate.birthPlace || ''),
+            fatherBirthPlace: toProperCase(verified.candidate.fatherBirthPlace || ''),
+            motherBirthPlace: toProperCase(verified.candidate.motherBirthPlace || ''),
+            guardianBirthPlace: toProperCase(verified.candidate.guardianBirthPlace || ''),
+            guardianName: (verified.candidate.guardianName || '').toUpperCase(),
+          });
           setSearchNisn(verified.candidate.nisn);
           setActiveTab('portal');
           setPortalTab('form'); // Direct to fill full Data Lengkap Siswa form
@@ -795,6 +848,16 @@ export default function SpmbLandingPage({
     );
     const dataToSave = {
       ...fullForm,
+      studentPhone: (fullForm.studentPhone || '').trim(),
+      phone: activeCandidate.phone || (fullForm as any).phone || '',
+      nickname: (fullForm.nickname || '').toUpperCase(),
+      fatherName: (fullForm.fatherName || '').toUpperCase(),
+      motherName: (fullForm.motherName || '').toUpperCase(),
+      birthPlace: toProperCase(fullForm.birthPlace || activeCandidate.birthPlace || ''),
+      fatherBirthPlace: toProperCase(fullForm.fatherBirthPlace || ''),
+      motherBirthPlace: toProperCase(fullForm.motherBirthPlace || ''),
+      guardianBirthPlace: toProperCase(fullForm.guardianBirthPlace || ''),
+      guardianName: (fullForm.guardianName || '').toUpperCase(),
       hasGuardian,
       address: combinedAddress || fullForm.address,
       ...(!hasGuardian ? {
@@ -825,7 +888,18 @@ export default function SpmbLandingPage({
       if (res.ok) {
         const updated = await res.json();
         setActiveCandidate(updated.candidate);
-        setFullForm(updated.candidate);
+        setFullForm({
+          ...updated.candidate,
+          studentPhone: updated.candidate.studentPhone || '',
+          nickname: (updated.candidate.nickname || '').toUpperCase(),
+          fatherName: (updated.candidate.fatherName || '').toUpperCase(),
+          motherName: (updated.candidate.motherName || '').toUpperCase(),
+          birthPlace: toProperCase(updated.candidate.birthPlace || ''),
+          fatherBirthPlace: toProperCase(updated.candidate.fatherBirthPlace || ''),
+          motherBirthPlace: toProperCase(updated.candidate.motherBirthPlace || ''),
+          guardianBirthPlace: toProperCase(updated.candidate.guardianBirthPlace || ''),
+          guardianName: (updated.candidate.guardianName || '').toUpperCase(),
+        });
         setFullFormSuccessMsg('Data lengkap siswa berhasil disimpan!');
         setTimeout(() => {
           setFullFormSuccessMsg(null);
@@ -1744,10 +1818,10 @@ export default function SpmbLandingPage({
                 <BirthDateSplitInput
                   idPrefix="reg-student"
                   birthPlace={regForm.birthPlace}
-                  onBirthPlaceChange={(val) => setRegForm({ ...regForm, birthPlace: val })}
+                  onBirthPlaceChange={(val) => setRegForm({ ...regForm, birthPlace: toProperCase(val) })}
                   birthDate={regForm.birthDate}
                   onBirthDateChange={(val) => setRegForm({ ...regForm, birthDate: val })}
-                  placeLabel="Tempat Lahir Calon Murid"
+                  placeLabel="Tempat Lahir Calon Murid (Besar Kecil / Proper)"
                   dateLabel="Tanggal Lahir Calon Murid"
                   combinedLabel="Tempat, Tgl Lahir Siswa"
                   required
@@ -1756,6 +1830,7 @@ export default function SpmbLandingPage({
                   minYear={2000}
                   maxYear={new Date().getFullYear()}
                   placeholderPlace="Contoh: Pasuruan"
+                  properCasePlace={true}
                   helperText="Pilih tanggal, bulan, dan masukkan 4 digit tahun (contoh: | 18 | | 05 | | 1989 |)"
                 />
               </div>
@@ -2237,13 +2312,15 @@ export default function SpmbLandingPage({
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Panggilan</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Nama Panggilan (Otomatis Huruf Kapital)
+                          </label>
                           <input
                             type="text"
                             value={fullForm.nickname || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, nickname: e.target.value })}
-                            placeholder="Contoh: Rizky"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
+                            onChange={(e) => setFullForm({ ...fullForm, nickname: e.target.value.toUpperCase() })}
+                            placeholder="NAMA PANGGILAN SISWA"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
@@ -2253,10 +2330,10 @@ export default function SpmbLandingPage({
                         <BirthDateSplitInput
                           idPrefix="student"
                           birthPlace={fullForm.birthPlace || activeCandidate.birthPlace || ''}
-                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, birthPlace: val })}
+                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, birthPlace: toProperCase(val) })}
                           birthDate={fullForm.birthDate || activeCandidate.birthDate || ''}
                           onBirthDateChange={(val) => setFullForm({ ...fullForm, birthDate: val })}
-                          placeLabel="Tempat Lahir Siswa"
+                          placeLabel="Tempat Lahir Siswa (Besar Kecil / Proper)"
                           dateLabel="Tanggal Lahir Siswa"
                           combinedLabel="Tempat, Tgl Lahir Siswa"
                           required
@@ -2265,10 +2342,11 @@ export default function SpmbLandingPage({
                           minYear={2000}
                           maxYear={new Date().getFullYear()}
                           placeholderPlace="Contoh: Pasuruan"
+                          properCasePlace={true}
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">No. Kartu Keluarga (KK)</label>
                           <input
@@ -2287,6 +2365,21 @@ export default function SpmbLandingPage({
                             onChange={(e) => setFullForm({ ...fullForm, birthCertNumber: e.target.value })}
                             placeholder="Sesuai Akta Kelahiran"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-bold text-slate-700">No. HP / WA Siswa</label>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              (Kosongkan jika tidak ada)
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={fullForm.studentPhone || ''}
+                            onChange={(e) => setFullForm({ ...fullForm, studentPhone: e.target.value })}
+                            placeholder="08xxxxxxxxxx (Kosongkan jika belum punya HP)"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
@@ -2438,13 +2531,15 @@ export default function SpmbLandingPage({
                       <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">B. Data Ayah Kandung</h5>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Nama Ayah (Otomatis Huruf Kapital)
+                          </label>
                           <input
                             type="text"
                             value={fullForm.fatherName || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, fatherName: e.target.value })}
-                            placeholder="Nama Lengkap Ayah"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
+                            onChange={(e) => setFullForm({ ...fullForm, fatherName: e.target.value.toUpperCase() })}
+                            placeholder="NAMA LENGKAP AYAH"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
@@ -2464,10 +2559,10 @@ export default function SpmbLandingPage({
                         <BirthDateSplitInput
                           idPrefix="father"
                           birthPlace={fullForm.fatherBirthPlace || ''}
-                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, fatherBirthPlace: val })}
+                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, fatherBirthPlace: toProperCase(val) })}
                           birthDate={fullForm.fatherBirthDate || ''}
                           onBirthDateChange={(val) => setFullForm({ ...fullForm, fatherBirthDate: val })}
-                          placeLabel="Tempat Lahir Ayah"
+                          placeLabel="Tempat Lahir Ayah (Besar Kecil / Proper)"
                           dateLabel="Tanggal Lahir Ayah"
                           combinedLabel="Tempat, Tgl Lahir Ayah"
                           showPlaceInput
@@ -2475,19 +2570,29 @@ export default function SpmbLandingPage({
                           minYear={1940}
                           maxYear={2015}
                           placeholderPlace="Contoh: Pasuruan"
+                          properCasePlace={true}
                         />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Pendidikan Terakhir Ayah</label>
-                          <input
-                            type="text"
-                            value={fullForm.fatherEducation || ''}
+                          <select
+                            value={getNormalizedEduValue(fullForm.fatherEducation)}
                             onChange={(e) => setFullForm({ ...fullForm, fatherEducation: e.target.value })}
-                            placeholder="SD / SMP / SMA / S1 / S2"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                          />
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
+                          >
+                            <option value="">-- Pilih Pendidikan Terakhir --</option>
+                            {SPMB_EDUCATION_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt === 'tidak bersekolah' ? 'Tidak Bersekolah' : opt}
+                              </option>
+                            ))}
+                            {fullForm.fatherEducation &&
+                              !SPMB_EDUCATION_OPTIONS.some(o => o.toLowerCase() === fullForm.fatherEducation?.toLowerCase()) && (
+                              <option value={fullForm.fatherEducation}>{fullForm.fatherEducation}</option>
+                            )}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ayah</label>
@@ -2545,13 +2650,15 @@ export default function SpmbLandingPage({
                       <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">C. Data Ibu Kandung</h5>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Nama Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            Nama Ibu (Otomatis Huruf Kapital)
+                          </label>
                           <input
                             type="text"
                             value={fullForm.motherName || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, motherName: e.target.value })}
-                            placeholder="Nama Lengkap Ibu"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
+                            onChange={(e) => setFullForm({ ...fullForm, motherName: e.target.value.toUpperCase() })}
+                            placeholder="NAMA LENGKAP IBU"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                         <div>
@@ -2571,10 +2678,10 @@ export default function SpmbLandingPage({
                         <BirthDateSplitInput
                           idPrefix="mother"
                           birthPlace={fullForm.motherBirthPlace || ''}
-                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, motherBirthPlace: val })}
+                          onBirthPlaceChange={(val) => setFullForm({ ...fullForm, motherBirthPlace: toProperCase(val) })}
                           birthDate={fullForm.motherBirthDate || ''}
                           onBirthDateChange={(val) => setFullForm({ ...fullForm, motherBirthDate: val })}
-                          placeLabel="Tempat Lahir Ibu"
+                          placeLabel="Tempat Lahir Ibu (Besar Kecil / Proper)"
                           dateLabel="Tanggal Lahir Ibu"
                           combinedLabel="Tempat, Tgl Lahir Ibu"
                           showPlaceInput
@@ -2582,19 +2689,29 @@ export default function SpmbLandingPage({
                           minYear={1940}
                           maxYear={2015}
                           placeholderPlace="Contoh: Pasuruan"
+                          properCasePlace={true}
                         />
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Pendidikan Terakhir Ibu</label>
-                          <input
-                            type="text"
-                            value={fullForm.motherEducation || ''}
+                          <select
+                            value={getNormalizedEduValue(fullForm.motherEducation)}
                             onChange={(e) => setFullForm({ ...fullForm, motherEducation: e.target.value })}
-                            placeholder="SD / SMP / SMA / S1 / S2"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                          />
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
+                          >
+                            <option value="">-- Pilih Pendidikan Terakhir --</option>
+                            {SPMB_EDUCATION_OPTIONS.map((opt) => (
+                              <option key={opt} value={opt}>
+                                {opt === 'tidak bersekolah' ? 'Tidak Bersekolah' : opt}
+                              </option>
+                            ))}
+                            {fullForm.motherEducation &&
+                              !SPMB_EDUCATION_OPTIONS.some(o => o.toLowerCase() === fullForm.motherEducation?.toLowerCase()) && (
+                              <option value={fullForm.motherEducation}>{fullForm.motherEducation}</option>
+                            )}
+                          </select>
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ibu</label>
@@ -2709,15 +2826,15 @@ export default function SpmbLandingPage({
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                               <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Nama Lengkap Wali <span className="text-rose-500">*</span>
+                                Nama Lengkap Wali (Otomatis Huruf Kapital) <span className="text-rose-500">*</span>
                               </label>
                               <input
                                 type="text"
                                 required={hasGuardian}
                                 value={fullForm.guardianName || ''}
-                                onChange={(e) => setFullForm({ ...fullForm, guardianName: e.target.value })}
-                                placeholder="Nama Lengkap Wali"
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
+                                onChange={(e) => setFullForm({ ...fullForm, guardianName: e.target.value.toUpperCase() })}
+                                placeholder="NAMA LENGKAP WALI"
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />
                             </div>
                             <div>
@@ -2758,10 +2875,10 @@ export default function SpmbLandingPage({
                             <BirthDateSplitInput
                               idPrefix="guardian"
                               birthPlace={fullForm.guardianBirthPlace || ''}
-                              onBirthPlaceChange={(val) => setFullForm({ ...fullForm, guardianBirthPlace: val })}
+                              onBirthPlaceChange={(val) => setFullForm({ ...fullForm, guardianBirthPlace: toProperCase(val) })}
                               birthDate={fullForm.guardianBirthDate || ''}
                               onBirthDateChange={(val) => setFullForm({ ...fullForm, guardianBirthDate: val })}
-                              placeLabel="Tempat Lahir Wali"
+                              placeLabel="Tempat Lahir Wali (Besar Kecil / Proper)"
                               dateLabel="Tanggal Lahir Wali"
                               combinedLabel="Tempat, Tgl Lahir Wali"
                               showPlaceInput
@@ -2769,19 +2886,29 @@ export default function SpmbLandingPage({
                               minYear={1940}
                               maxYear={2015}
                               placeholderPlace="Contoh: Pasuruan"
+                              properCasePlace={true}
                             />
                           </div>
 
                           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                             <div>
                               <label className="block text-[11px] font-bold text-slate-700 mb-1">Pendidikan Terakhir Wali</label>
-                              <input
-                                type="text"
-                                value={fullForm.guardianEducation || ''}
+                              <select
+                                value={getNormalizedEduValue(fullForm.guardianEducation)}
                                 onChange={(e) => setFullForm({ ...fullForm, guardianEducation: e.target.value })}
-                                placeholder="SD / SMP / SMA / S1 / S2"
-                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                              />
+                                className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
+                              >
+                                <option value="">-- Pilih Pendidikan Terakhir --</option>
+                                {SPMB_EDUCATION_OPTIONS.map((opt) => (
+                                  <option key={opt} value={opt}>
+                                    {opt === 'tidak bersekolah' ? 'Tidak Bersekolah' : opt}
+                                  </option>
+                                ))}
+                                {fullForm.guardianEducation &&
+                                  !SPMB_EDUCATION_OPTIONS.some(o => o.toLowerCase() === fullForm.guardianEducation?.toLowerCase()) && (
+                                  <option value={fullForm.guardianEducation}>{fullForm.guardianEducation}</option>
+                                )}
+                              </select>
                             </div>
                             <div>
                               <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Wali</label>

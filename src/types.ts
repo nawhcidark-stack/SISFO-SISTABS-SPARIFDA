@@ -714,6 +714,7 @@ export interface SpmbCandidate {
   nickname?: string;
   kkNumber?: string;
   birthCertNumber?: string;
+  studentPhone?: string;
   religion?: string;
   address?: string;
   dusun?: string;

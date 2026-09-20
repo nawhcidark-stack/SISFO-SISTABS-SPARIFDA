@@ -2385,6 +2385,8 @@ export default function AdminSpmbManagement({
                     <div><strong className="text-slate-400">No KK:</strong> {selectedCandidate.kkNumber || '-'}</div>
                     <div><strong className="text-slate-400">Tempat, Tgl Lahir:</strong> {selectedCandidate.birthPlace}, {selectedCandidate.birthDate}</div>
                     <div><strong className="text-slate-400">Agama:</strong> {selectedCandidate.religion || 'Islam'}</div>
+                    <div><strong className="text-slate-400">No HP Siswa:</strong> {selectedCandidate.studentPhone || '-'}</div>
+                    <div><strong className="text-slate-400">No Akta Lahir:</strong> {selectedCandidate.birthCertNumber || '-'}</div>
                     <div className="col-span-2"><strong className="text-slate-400">Alamat:</strong> {selectedCandidate.address || '-'}, Desa {selectedCandidate.village || '-'}, Kec. {selectedCandidate.district || '-'}</div>
                   </div>
                 </div>

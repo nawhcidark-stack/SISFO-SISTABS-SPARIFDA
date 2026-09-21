@@ -4654,7 +4654,7 @@ export default function TreasurerPanel({
                     </div>
                     <div className="flex justify-between py-1 mt-1 border-b border-slate-100 font-mono">
                       <span className="text-slate-400">Tanggal Bayar:</span>
-                      <span className="font-bold text-emerald-800">{receiptGaji.paidAt ? receiptGaji.paidAt.substring(0, 10) : '-'}</span>
+                      <span className="font-bold text-emerald-800">{receiptGaji.paymentDate ? receiptGaji.paymentDate.substring(0, 10) : (receiptGaji as any).paidAt ? (receiptGaji as any).paidAt.substring(0, 10) : '-'}</span>
                     </div>
                   </div>
                 </div>

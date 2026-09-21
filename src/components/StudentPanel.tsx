@@ -7,6 +7,7 @@ import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
 import { SavingsPassbookModal } from './SavingsPassbookModal';
 import { Pagination } from './Pagination';
+import ReceiptFinancialFooter, { getStudentFinancialSummary } from './ReceiptFinancialFooter';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';
 
 // Component for rendering beautifully styled, local QR Codes without API dependency
@@ -522,8 +523,8 @@ export default function StudentPanel({
     return str.substring(0, 1).toUpperCase() + str.substring(1) + " Rupiah";
   };
 
-  const handleDownloadInvoice = (type: 'spp' | 'savings', detail: any, student: Student, sIdentity?: SchoolIdentity) => {
-    const refNum = detail.id.substring(0, 10).toUpperCase();
+  const handleDownloadInvoice = async (type: 'spp' | 'savings' | 'misc' | string, detail: any, student: Student, sIdentity?: SchoolIdentity) => {
+    const refNum = (detail.id || 'INV').substring(0, 10).toUpperCase();
     const dateStr = new Date(detail.paidAt || detail.createdAt || '').toLocaleDateString('id-ID', {day: 'numeric', month: 'long', year: 'numeric'});
     const wordified = indonesianWordsForRupiah(detail.amount);
     
@@ -532,9 +533,31 @@ export default function StudentPanel({
     if (type === 'spp') {
       itemTitle = "Pembayaran Iuran SPP Wajib Bulanan";
       itemSubtitle = `Bulan periodik: ${detail.month} ${detail.year} • Metode: ${detail.paymentMethod?.toUpperCase() || 'ONLINE/MANUAL'}`;
+    } else if (type === 'misc') {
+      itemTitle = detail.title || "Pembayaran Tagihan Lainnya";
+      itemSubtitle = `Kategori: ${detail.category || 'Biaya Sekolah'} • Metode: ${detail.paymentMethod?.toUpperCase() || 'MANUAL'}`;
     } else {
       itemTitle = "Mutasi Keuangan Rekening Tabungan";
       itemSubtitle = `${detail.type === 'deposit' ? 'Penyetoran Saldo Tunai' : 'Penarikan Saldo Tunai'} • Memo: "${detail.notes || 'Transaksi Teller Tabungan'}"`;
+    }
+
+    const finSummary = getStudentFinancialSummary({
+      student,
+      bills,
+      miscBills,
+      allStudents: students,
+      currentReceipt: { type, detail },
+    });
+
+    let qrDataUrl = '';
+    try {
+      qrDataUrl = await QRCode.toDataURL(String(student.nis), {
+        width: 160,
+        margin: 1,
+        color: { dark: '#000000', light: '#ffffff' },
+      });
+    } catch (e) {
+      console.error('Error generating QR for invoice download', e);
     }
 
     const schoolLogoStr = sIdentity?.logo ? `<img src="${sIdentity.logo}" style="width: 50px; height: 50px; object-fit: contain;" alt="Logo" />` : '';
@@ -836,6 +859,33 @@ export default function StudentPanel({
         </td>
       </tr>
     </table>
+
+    <!-- Ringkasan Status Keuangan Siswa & QR Code NIS -->
+    <div style="margin-top: 25px; padding: 12px; background-color: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;">
+      <table style="width: 100%; border-collapse: collapse;">
+        <tr>
+          <td style="vertical-align: top; text-align: left;">
+            <div style="font-size: 10px; font-weight: 800; color: #334155; text-transform: uppercase; margin-bottom: 6px; letter-spacing: 0.5px;">
+              Informasi Status Keuangan Siswa (NIS: ${student.nis})
+            </div>
+            <div style="font-size: 11px; color: #475569; margin-bottom: 4px;">
+              <strong>1. SPP Lunas:</strong> <span style="font-family: monospace; color: #0f172a; font-weight: 600;">${finSummary.paidMonthsText}</span>
+            </div>
+            <div style="font-size: 11px; color: #475569; margin-bottom: 4px;">
+              <strong>2. Saldo Akhir Tabungan:</strong> <span style="font-family: monospace; color: #059669; font-weight: 700;">Rp ${finSummary.endingSavingsBalance.toLocaleString('id-ID')},00</span>
+            </div>
+            <div style="font-size: 11px; color: #475569;">
+              <strong>3. Tunggakan Lain-lain:</strong> <span style="font-family: monospace; color: ${finSummary.totalOutstandingMisc > 0 ? '#dc2626' : '#334155'}; font-weight: 700;">${finSummary.totalOutstandingMisc === 0 ? 'Rp 0,00 (Nihil / Lunas)' : 'Rp ' + finSummary.totalOutstandingMisc.toLocaleString('id-ID') + ',00' + (finSummary.unpaidMiscTitles ? ' (' + finSummary.unpaidMiscTitles + ')' : '')}</span>
+            </div>
+          </td>
+          <td style="width: 100px; text-align: center; vertical-align: middle; border-left: 1px solid #e2e8f0; padding-left: 12px;">
+            ${qrDataUrl ? `<img src="${qrDataUrl}" style="width: 75px; height: 75px; object-fit: contain; display: block; margin: 0 auto;" alt="QR Code NIS" />` : ''}
+            <div style="font-size: 9px; font-family: monospace; font-weight: bold; color: #334155; margin-top: 4px;">NIS: ${student.nis}</div>
+            <div style="font-size: 7.5px; color: #94a3b8; text-transform: uppercase;">QR Code Siswa</div>
+          </td>
+        </tr>
+      </table>
+    </div>
   </div>
 </body>
 </html>`;
@@ -5044,6 +5094,16 @@ export default function StudentPanel({
                     </div>
                   </div>
 
+                  {/* Ringkasan Status Keuangan & QR Code NIS */}
+                  <ReceiptFinancialFooter
+                    student={receiptToPrint.student}
+                    bills={bills}
+                    miscBills={miscBills}
+                    allStudents={students}
+                    currentReceipt={receiptToPrint}
+                    format="thermal"
+                  />
+
                   <div className="text-center text-[7px] leading-none tracking-tight mt-4 text-slate-550 border-t border-dotted border-slate-900 pt-2 uppercase">
                     *** TERIMA KASIH ***
                     <p className="mt-1 font-mono text-[6.5px] tracking-widest text-[6px]">SMP Ma'arif NU Pandaan</p>
@@ -5216,8 +5276,18 @@ export default function StudentPanel({
                     </div>
                   </div>
 
+                  {/* Ringkasan Status Keuangan Siswa & QR Code NIS */}
+                  <ReceiptFinancialFooter
+                    student={receiptToPrint.student}
+                    bills={bills}
+                    miscBills={miscBills}
+                    allStudents={students}
+                    currentReceipt={receiptToPrint}
+                    format="standard"
+                  />
+
                   {/* Footer */}
-                  <div className="text-center text-[8px] text-slate-400 mt-1 font-medium">
+                  <div className="text-center text-[8px] text-slate-400 mt-2 font-medium">
                     Bukti pembayaran sah diterbitkan otomatis oleh {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.
                   </div>
                 </>

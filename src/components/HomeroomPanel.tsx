@@ -2764,8 +2764,8 @@ Wassalamualaikum Wr. Wb.
       let valB: any = b[rekapSortBy];
 
       if (rekapSortBy === 'name') {
-        const classA = a.student?.class || a.student?.className || '';
-        const classB = b.student?.class || b.student?.className || '';
+        const classA = a.student?.class || (a.student as any)?.className || '';
+        const classB = b.student?.class || (b.student as any)?.className || '';
         const classComp = compareClasses(classA, classB);
         if (classComp !== 0) {
           return rekapSortOrder === 'asc' ? classComp : -classComp;
@@ -2781,8 +2781,8 @@ Wassalamualaikum Wr. Wb.
       if (valB === undefined || valB === null) valB = 0;
 
       if (valA === valB) {
-        const classA = a.student?.class || a.student?.className || '';
-        const classB = b.student?.class || b.student?.className || '';
+        const classA = a.student?.class || (a.student as any)?.className || '';
+        const classB = b.student?.class || (b.student as any)?.className || '';
         const classComp = compareClasses(classA, classB);
         if (classComp !== 0) return classComp;
         return (a.student?.name || '').localeCompare(b.student?.name || '', 'id', { sensitivity: 'base' });
@@ -3336,7 +3336,7 @@ Wassalamualaikum Wr. Wb.
             {/* Subtab selection */}
             <div className="flex flex-col gap-1.5 p-1 bg-slate-50 border border-slate-200 rounded-xl">
               <button
-                _id="tab-btn-record"
+                id="tab-btn-record"
                 onClick={() => setActiveSubTab('record')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'record'
@@ -3349,7 +3349,7 @@ Wassalamualaikum Wr. Wb.
                 <span className="inline">Pengisian Absensi</span>
               </button>
               <button
-                _id="tab-btn-jadwal"
+                id="tab-btn-jadwal"
                 onClick={() => setActiveSubTab('jadwal')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'jadwal'
@@ -3362,7 +3362,7 @@ Wassalamualaikum Wr. Wb.
                 <span className="inline">Jadwal Pelajaran</span>
               </button>
               <button
-                _id="tab-btn-history"
+                id="tab-btn-history"
                 onClick={() => setActiveSubTab('history')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'history'
@@ -3375,7 +3375,7 @@ Wassalamualaikum Wr. Wb.
                 <span className="inline">Riwayat Jurnal</span>
               </button>
               <button
-                _id="tab-btn-rekap"
+                id="tab-btn-rekap"
                 onClick={() => setActiveSubTab('rekap_absensi')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'rekap_absensi'
@@ -3388,7 +3388,7 @@ Wassalamualaikum Wr. Wb.
                 <span className="inline">Rekap Absensi</span>
               </button>
               <button
-                _id="tab-btn-finance"
+                id="tab-btn-finance"
                 onClick={() => setActiveSubTab('finance')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'finance'
@@ -3401,7 +3401,7 @@ Wassalamualaikum Wr. Wb.
                 <span className="inline">Tabungan & SPP</span>
               </button>
               <button
-                _id="tab-btn-perkembangan"
+                id="tab-btn-perkembangan"
                 onClick={() => setActiveSubTab('perkembangan')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'perkembangan'
@@ -3414,7 +3414,7 @@ Wassalamualaikum Wr. Wb.
                 <span className="inline">Jurnal Perkembangan</span>
               </button>
               <button
-                _id="tab-btn-profile"
+                id="tab-btn-profile"
                 onClick={() => setActiveSubTab('profile')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'profile'
@@ -3428,7 +3428,7 @@ Wassalamualaikum Wr. Wb.
               </button>
 
               <button
-                _id="tab-btn-rapor"
+                id="tab-btn-rapor"
                 onClick={() => setActiveSubTab('rapor_merdeka')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'rapor_merdeka'
@@ -3442,7 +3442,7 @@ Wassalamualaikum Wr. Wb.
               </button>
 
               <button
-                _id="tab-btn-kokurikuler"
+                id="tab-btn-kokurikuler"
                 onClick={() => setActiveSubTab('kokurikuler')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'kokurikuler'
@@ -3456,7 +3456,7 @@ Wassalamualaikum Wr. Wb.
               </button>
 
               <button
-                _id="tab-btn-pkg"
+                id="tab-btn-pkg"
                 onClick={() => setActiveSubTab('pkg')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'pkg'
@@ -3470,7 +3470,7 @@ Wassalamualaikum Wr. Wb.
               </button>
 
               <button
-                _id="tab-btn-buku-induk"
+                id="tab-btn-buku-induk"
                 onClick={() => setActiveSubTab('buku_induk')}
                 className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
                   activeSubTab === 'buku_induk'
@@ -8820,7 +8820,7 @@ Wassalamualaikum Wr. Wb.
                         </label>
                         <select
                           value={journalSemester}
-                          onChange={(e) => setJournalSemester(e.target.value)}
+                          onChange={(e) => setJournalSemester(e.target.value as "Ganjil" | "Genap")}
                           className="px-3 py-2 border border-slate-200 bg-white text-slate-800 font-extrabold rounded-xl text-xs focus:outline-none focus:border-emerald-600 shadow-2xs cursor-pointer"
                         >
                           <option value="1">Semester 1 (Ganjil)</option>

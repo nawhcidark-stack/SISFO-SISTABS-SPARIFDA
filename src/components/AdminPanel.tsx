@@ -14,6 +14,7 @@ import {
 } from "../types";
 import ScheduleView from "./ScheduleView";
 import { SavingsPassbookModal } from "./SavingsPassbookModal";
+import ReceiptFinancialFooter from "./ReceiptFinancialFooter";
 import { motion, AnimatePresence } from "motion/react";
 import {
   exportDailyReportToExcel,
@@ -17354,6 +17355,16 @@ export default function AdminPanel({
                     </div>
                   </div>
 
+                  {/* Ringkasan Status Keuangan Siswa & QR Code NIS */}
+                  <ReceiptFinancialFooter
+                    student={receiptToPrint.student}
+                    bills={bills}
+                    miscBills={miscBills}
+                    allStudents={students}
+                    currentReceipt={receiptToPrint}
+                    format="thermal"
+                  />
+
                   <div className="text-center text-[7px] leading-none tracking-tight mt-4 text-slate-550 border-t border-dotted border-slate-900 pt-2 uppercase">
                     *** TERIMA KASIH ***
                     <p className="mt-1 font-mono text-[6.5px] tracking-widest text-[6px]">
@@ -17681,6 +17692,16 @@ export default function AdminPanel({
                       </span>
                     </div>
                   </div>
+
+                  {/* Ringkasan Status Keuangan Siswa & QR Code NIS */}
+                  <ReceiptFinancialFooter
+                    student={receiptToPrint.student}
+                    bills={bills}
+                    miscBills={miscBills}
+                    allStudents={students}
+                    currentReceipt={receiptToPrint}
+                    format="standard"
+                  />
 
                   {/* Footer */}
                   <div className="text-center text-[8px] text-slate-400 mt-2 font-medium">

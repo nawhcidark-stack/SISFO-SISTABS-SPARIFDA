@@ -1191,7 +1191,7 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                       type="button"
                       onClick={() => {
                         setActiveTab('peminjaman');
-                        setLoanForm({ itemId: '', borrowerId: '', borrowerName: '', qty: 1, loanDate: new Date().toISOString().split('T')[0], notes: '' });
+                        setLoanForm({ itemId: '', borrowerType: 'manual', borrowerId: '', customBorrowerName: '', qty: 1, loanDate: new Date().toISOString().split('T')[0], notes: '' });
                         setShowLoanForm(true);
                       }}
                       className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-white font-extrabold text-[11px] rounded-xl border border-slate-700 transition-all cursor-pointer"
@@ -1353,7 +1353,9 @@ export default function WakaSarprasPanel({ schoolIdentity, onLogout, homerooms, 
                         category: categories[0] || 'Elektronik / Multimedia',
                         condition: 'Baik',
                         location: locations[0] || 'Gudang Utama',
-                        totalQty: 1
+                        totalQty: 1,
+                        price: 0,
+                        purchaseYear: new Date().getFullYear().toString()
                       });
                       setShowItemForm(!showItemForm);
                       setShowManageCatLoc(false);

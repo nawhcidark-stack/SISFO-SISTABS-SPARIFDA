@@ -105,7 +105,8 @@ export default function PrincipalPanel({
 
   // Additional data fetched from endpoints
   const [journals, setJournals] = useState<TeachingJournal[]>([]);
-  const [journalFilter, setJournalFilter] = useState<'all' | 'subject' | 'homeroom'>('all');
+  const [journalFilter, setJournalFilter] = useState<'all' | 'subject' | 'homeroom' | 'absent'>('all');
+  const [isSyncingAbsentJournals, setIsSyncingAbsentJournals] = useState(false);
   const [selectedSubjectTeacherFilter, setSelectedSubjectTeacherFilter] = useState<string>('all');
   const [selectedHomeroomTeacherFilter, setSelectedHomeroomTeacherFilter] = useState<string>('all');
   const [journalClassFilter, setJournalClassFilter] = useState<string>('all');
@@ -160,8 +161,10 @@ export default function PrincipalPanel({
 
   const filteredJournals = useMemo(() => {
     return journals.filter(j => {
-      if (journalFilter === 'subject' && j.teacherType === 'homeroom') return false;
+      const isAbsent = (j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir';
+      if (journalFilter === 'subject' && (j.teacherType === 'homeroom' || isAbsent)) return false;
       if (journalFilter === 'homeroom' && j.teacherType !== 'homeroom') return false;
+      if (journalFilter === 'absent' && !isAbsent) return false;
 
       // Subject Teacher Filter
       if (selectedSubjectTeacherFilter !== 'all' && j.teacherName !== selectedSubjectTeacherFilter) return false;
@@ -388,6 +391,28 @@ export default function PrincipalPanel({
       console.error("Gagal menjaring data pelengkap monitoring:", e);
     } finally {
       setLoadingSecondaryData(false);
+    }
+  };
+
+  const handleSyncAbsentJournals = async () => {
+    setIsSyncingAbsentJournals(true);
+    try {
+      const res = await fetch('/api/curriculum/restore-missing-data-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate: '2026-09-11', endDate: '2026-09-19' })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || 'Sinkronisasi berhasil dijalankan.');
+        await fetchSecondaryMonitoringData();
+      } else {
+        alert(data.error || 'Gagal melakukan sinkronisasi data.');
+      }
+    } catch (e: any) {
+      alert('Kesalahan koneksi: ' + (e?.message || e));
+    } finally {
+      setIsSyncingAbsentJournals(false);
     }
   };
 
@@ -1526,7 +1551,7 @@ export default function PrincipalPanel({
                 <ResponsiveContainer width="100%" height="100%">
                   <BarChart data={monthlyRevenueData} margin={{ top: 10, right: 10, left: 0, bottom: 5 }}>
                     <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
-                    <XAxis dataKey="Bulan" stroke="#94a3b8" fontSize={9} fontClass="font-semibold" />
+                    <XAxis dataKey="Bulan" stroke="#94a3b8" fontSize={9} className="font-semibold" />
                     <YAxis stroke="#94a3b8" fontSize={9} tickFormatter={(val) => `Rp ${val/1000}k`} />
                     <Tooltip 
                       formatter={(value: any) => [formatIDR(value), "Pendapatan SPP"]} 
@@ -2661,7 +2686,7 @@ export default function PrincipalPanel({
                         : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
                     }`}
                   >
-                    Guru Mapel ({journals.filter(j => j.teacherType === 'subject_teacher' || !j.teacherType).length})
+                    Guru Mapel ({journals.filter(j => (j.teacherType === 'subject_teacher' || !j.teacherType) && !((j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir')).length})
                   </button>
                   <button
                     type="button"
@@ -2674,18 +2699,42 @@ export default function PrincipalPanel({
                   >
                     Wali Kelas ({journals.filter(j => j.teacherType === 'homeroom').length})
                   </button>
+                  <button
+                    type="button"
+                    onClick={() => setJournalFilter('absent')}
+                    className={`px-3 py-1.5 text-xs font-bold rounded-xl transition-all cursor-pointer flex items-center gap-1.5 ${
+                      journalFilter === 'absent'
+                        ? 'bg-rose-600 text-white shadow-xs'
+                        : 'bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200'
+                    }`}
+                  >
+                    <span>⚠️ Guru Tidak Hadir ({journals.filter(j => (j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir').length})</span>
+                  </button>
                 </div>
 
-                {/* Search Box */}
-                <div className="relative flex-1 max-w-xs">
-                  <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
-                  <input
-                    type="text"
-                    placeholder="Cari materi, guru, mapel, kelas..."
-                    value={journalSearchQuery}
-                    onChange={(e) => setJournalSearchQuery(e.target.value)}
-                    className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                  />
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    type="button"
+                    onClick={handleSyncAbsentJournals}
+                    disabled={isSyncingAbsentJournals}
+                    className="px-3 py-1.5 bg-amber-50 hover:bg-amber-100 border border-amber-300 text-amber-900 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-xs disabled:opacity-50"
+                    title="Sinkronkan otomatis guru yang belum mengisi jurnal sesuai jadwal ke database MySQL"
+                  >
+                    <RefreshCw size={12} className={isSyncingAbsentJournals ? 'animate-spin' : ''} />
+                    <span>{isSyncingAbsentJournals ? 'Menyinkronkan...' : 'Sinkronkan Guru Tidak Hadir'}</span>
+                  </button>
+
+                  {/* Search Box */}
+                  <div className="relative flex-1 min-w-[200px] max-w-xs">
+                    <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
+                    <input
+                      type="text"
+                      placeholder="Cari materi, guru, mapel, kelas..."
+                      value={journalSearchQuery}
+                      onChange={(e) => setJournalSearchQuery(e.target.value)}
+                      className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-semibold focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -2795,35 +2844,44 @@ export default function PrincipalPanel({
                   const presentC = j.attendance ? j.attendance.filter((a: any) => a.status === 'Hadir' || a.status === 'Terlambat').length : 0;
                   const totalC = j.attendance ? j.attendance.length : 0;
                   const isHomeroom = j.teacherType === 'homeroom';
+                  const isAbsentTeacher = (j.topic || '').includes('Tidak Hadir') || (j.notes || '') === 'Tidak Hadir';
 
                   return (
-                    <div key={j.id} className="border border-slate-200 rounded-2xl p-4 hover:border-slate-300 transition-colors flex flex-col gap-3 relative overflow-hidden bg-white">
+                    <div key={j.id} className={`border rounded-2xl p-4 transition-colors flex flex-col gap-3 relative overflow-hidden ${
+                      isAbsentTeacher 
+                        ? 'border-rose-200 bg-rose-50/30 hover:border-rose-300' 
+                        : 'border-slate-200 bg-white hover:border-slate-300'
+                    }`}>
                       
                       {/* Left color bar indicator */}
-                      <div className={`absolute top-0 bottom-0 left-0 w-1 ${isHomeroom ? 'bg-emerald-500' : 'bg-indigo-500'}`} />
+                      <div className={`absolute top-0 bottom-0 left-0 w-1.5 ${
+                        isAbsentTeacher ? 'bg-rose-500' : (isHomeroom ? 'bg-emerald-500' : 'bg-indigo-500')
+                      }`} />
 
                       {/* Journal Header meta */}
                       <div className="flex items-start justify-between flex-wrap gap-2 text-xs pl-2.5">
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className={`px-2 py-0.5 rounded-md font-sans text-[8px] font-black tracking-wider uppercase ${
-                              isHomeroom 
-                                ? 'bg-emerald-150 text-emerald-800' 
-                                : 'bg-indigo-50 text-indigo-800'
+                              isAbsentTeacher
+                                ? 'bg-rose-100 text-rose-800'
+                                : (isHomeroom ? 'bg-emerald-150 text-emerald-800' : 'bg-indigo-50 text-indigo-800')
                             }`}>
                               {j.subject}
                             </span>
                             
                             <span className={`px-1.5 py-0.5 rounded-md font-sans text-[8px] font-extrabold ${
-                              isHomeroom
-                                ? 'bg-teal-50 text-teal-800 border border-teal-250 border-teal-200'
-                                : 'bg-blue-50 text-blue-800 border border-blue-200'
+                              isAbsentTeacher
+                                ? 'bg-rose-100 text-rose-800 border border-rose-300'
+                                : (isHomeroom ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-blue-50 text-blue-800 border border-blue-200')
                             }`}>
-                              {isHomeroom ? '📂 Jurnal Wali Kelas' : '📖 Jurnal Guru Mapel'}
+                              {isAbsentTeacher ? '⚠️ Guru Tidak Hadir' : (isHomeroom ? '📂 Jurnal Wali Kelas' : '📖 Jurnal Guru Mapel')}
                             </span>
                           </div>
 
-                          <h4 className="font-extrabold text-slate-900 text-sm leading-tight mt-1.5">Materi: {j.topic}</h4>
+                          <h4 className={`font-extrabold text-sm leading-tight mt-1.5 ${isAbsentTeacher ? 'text-rose-950' : 'text-slate-900'}`}>
+                            Materi: {j.topic}
+                          </h4>
                           <div className="flex items-center gap-2 flex-wrap text-slate-500 text-[10px] mt-1 font-semibold">
                             <span>Nama Guru: {j.teacherName}</span>
                             <span>•</span>

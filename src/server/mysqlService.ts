@@ -1657,7 +1657,8 @@ export async function pullDataFromMysql(): Promise<{
           className: r.class_name,
           date: r.date,
           topic: r.topic,
-          attendanceData,
+          attendance: Array.isArray(attendanceData) ? attendanceData : [],
+          attendanceData: Array.isArray(attendanceData) ? attendanceData : [],
           notes: r.notes || undefined,
           fase: r.fase || undefined,
           semester: r.semester || undefined,
@@ -2382,13 +2383,26 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
           \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`topic\`=VALUES(\`topic\`), \`attendance_data\`=VALUES(\`attendance_data\`),
-          \`notes\`=VALUES(\`notes\`), \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
+          \`teacher_id\`=VALUES(\`teacher_id\`),
+          \`teacher_name\`=VALUES(\`teacher_name\`),
+          \`teacher_type\`=VALUES(\`teacher_type\`),
+          \`subject\`=VALUES(\`subject\`),
+          \`class_name\`=VALUES(\`class_name\`),
+          \`date\`=VALUES(\`date\`),
+          \`topic\`=VALUES(\`topic\`),
+          \`attendance_data\`=VALUES(\`attendance_data\`),
+          \`notes\`=VALUES(\`notes\`),
+          \`fase\`=VALUES(\`fase\`),
+          \`semester\`=VALUES(\`semester\`),
+          \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
+          \`jam_ke\`=VALUES(\`jam_ke\`),
+          \`pertemuan_ke\`=VALUES(\`pertemuan_ke\`),
+          \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
           \`pencapaian_kktp\`=VALUES(\`pencapaian_kktp\`)
       `, [
         j.id, j.teacherId || '', j.teacherName || '', j.teacherType || null, j.subject || '', j.className || '',
         j.date || new Date().toISOString().substring(0, 10), j.topic || '',
-        typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || []),
+        typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || j.attendanceData || []),
         j.notes || null, j.fase || null, j.semester || null, j.alokasiWaktu || null, j.jamKe || null,
         j.pertemuanKe || null, j.tujuanPembelajaran || null, j.pencapaianKktp || null,
         j.createdAt || new Date().toISOString()
@@ -2404,11 +2418,17 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
           \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`status\`=VALUES(\`status\`), \`notes\`=VALUES(\`notes\`), \`subject_notes\`=VALUES(\`subject_notes\`)
+          \`student_id\`=VALUES(\`student_id\`),
+          \`student_name\`=VALUES(\`student_name\`),
+          \`class_name\`=VALUES(\`class_name\`),
+          \`date\`=VALUES(\`date\`),
+          \`status\`=VALUES(\`status\`),
+          \`notes\`=VALUES(\`notes\`),
+          \`subject_notes\`=VALUES(\`subject_notes\`)
       `, [
         att.id, att.studentId || '', att.studentName || null, att.className || null,
-        att.date || new Date().toISOString().substring(0, 10), att.status || 'Hadir',
-        att.notes || null, att.subjectNotes ? JSON.stringify(att.subjectNotes) : null
+        (att.date || new Date().toISOString()).substring(0, 10), att.status || 'Hadir',
+        att.notes || null, att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
       ]);
       return { success: true, message: `Log absensi siswa langsung tersimpan ke MySQL.` };
     }
@@ -2584,6 +2604,93 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
     connection = await pool.getConnection();
     const typeKey = entityType.toLowerCase().trim();
 
+    // High performance chunked multi-row batch insert for Attendance Logs
+    if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
+      const validItems = items.filter(it => it && typeof it === 'object' && it.id);
+      const chunkSize = 100;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const att of chunk) {
+          placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?)');
+          values.push(
+            att.id,
+            att.studentId || '',
+            att.studentName || null,
+            att.className || null,
+            (att.date || new Date().toISOString()).substring(0, 10),
+            att.status || 'Hadir',
+            att.notes || null,
+            att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`attendance_logs\` (
+            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
+          ) VALUES ${placeholders.join(', ')}
+          ON DUPLICATE KEY UPDATE
+            \`student_id\`=VALUES(\`student_id\`),
+            \`student_name\`=VALUES(\`student_name\`),
+            \`class_name\`=VALUES(\`class_name\`),
+            \`date\`=VALUES(\`date\`),
+            \`status\`=VALUES(\`status\`),
+            \`notes\`=VALUES(\`notes\`),
+            \`subject_notes\`=VALUES(\`subject_notes\`)
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
+
+    // High performance chunked multi-row batch insert for Teaching Journals
+    if (typeKey === 'journal' || typeKey === 'teaching_journal' || typeKey === 'teachingjournals') {
+      const validItems = items.filter(it => it && typeof it === 'object' && it.id);
+      const chunkSize = 50;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const j of chunk) {
+          placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          values.push(
+            j.id, j.teacherId || '', j.teacherName || '', j.teacherType || null, j.subject || '', j.className || '',
+            j.date || new Date().toISOString().substring(0, 10), j.topic || '',
+            typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || j.attendanceData || []),
+            j.notes || null, j.fase || null, j.semester || null, j.alokasiWaktu || null, j.jamKe || null,
+            j.pertemuanKe || null, j.tujuanPembelajaran || null, j.pencapaianKktp || null,
+            j.createdAt || new Date().toISOString()
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`teaching_journals\` (
+            \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`subject\`, \`class_name\`,
+            \`date\`, \`topic\`, \`attendance_data\`, \`notes\`, \`fase\`, \`semester\`,
+            \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`
+          ) VALUES ${placeholders.join(', ')}
+          ON DUPLICATE KEY UPDATE
+            \`teacher_id\`=VALUES(\`teacher_id\`),
+            \`teacher_name\`=VALUES(\`teacher_name\`),
+            \`teacher_type\`=VALUES(\`teacher_type\`),
+            \`subject\`=VALUES(\`subject\`),
+            \`class_name\`=VALUES(\`class_name\`),
+            \`date\`=VALUES(\`date\`),
+            \`topic\`=VALUES(\`topic\`),
+            \`attendance_data\`=VALUES(\`attendance_data\`),
+            \`notes\`=VALUES(\`notes\`),
+            \`fase\`=VALUES(\`fase\`),
+            \`semester\`=VALUES(\`semester\`),
+            \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
+            \`jam_ke\`=VALUES(\`jam_ke\`),
+            \`pertemuan_ke\`=VALUES(\`pertemuan_ke\`),
+            \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
+            \`pencapaian_kktp\`=VALUES(\`pencapaian_kktp\`)
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
+
     for (const item of items) {
       if (!item || typeof item !== 'object') continue;
 
@@ -2695,6 +2802,80 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
           s.id, s.studentId, s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
           s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
           s.orderId || null, s.transactionId || null, s.notes || null
+        ]);
+        savedCount++;
+      } else if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
+        const att = item;
+        await connection.query(`
+          INSERT INTO \`attendance_logs\` (
+            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`student_id\`=VALUES(\`student_id\`),
+            \`student_name\`=VALUES(\`student_name\`),
+            \`class_name\`=VALUES(\`class_name\`),
+            \`date\`=VALUES(\`date\`),
+            \`status\`=VALUES(\`status\`),
+            \`notes\`=VALUES(\`notes\`),
+            \`subject_notes\`=VALUES(\`subject_notes\`)
+        `, [
+          att.id, att.studentId || '', att.studentName || null, att.className || null,
+          (att.date || new Date().toISOString()).substring(0, 10), att.status || 'Hadir',
+          att.notes || null, att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
+        ]);
+        savedCount++;
+      } else if (typeKey === 'journal' || typeKey === 'teaching_journal' || typeKey === 'teachingjournals') {
+        const j = item;
+        await connection.query(`
+          INSERT INTO \`teaching_journals\` (
+            \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`subject\`, \`class_name\`,
+            \`date\`, \`topic\`, \`attendance_data\`, \`notes\`, \`fase\`, \`semester\`,
+            \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`teacher_id\`=VALUES(\`teacher_id\`),
+            \`teacher_name\`=VALUES(\`teacher_name\`),
+            \`teacher_type\`=VALUES(\`teacher_type\`),
+            \`subject\`=VALUES(\`subject\`),
+            \`class_name\`=VALUES(\`class_name\`),
+            \`date\`=VALUES(\`date\`),
+            \`topic\`=VALUES(\`topic\`),
+            \`attendance_data\`=VALUES(\`attendance_data\`),
+            \`notes\`=VALUES(\`notes\`),
+            \`fase\`=VALUES(\`fase\`),
+            \`semester\`=VALUES(\`semester\`),
+            \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
+            \`jam_ke\`=VALUES(\`jam_ke\`),
+            \`pertemuan_ke\`=VALUES(\`pertemuan_ke\`),
+            \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
+            \`pencapaian_kktp\`=VALUES(\`pencapaian_kktp\`)
+        `, [
+          j.id, j.teacherId || '', j.teacherName || '', j.teacherType || null, j.subject || '', j.className || '',
+          j.date || new Date().toISOString().substring(0, 10), j.topic || '',
+          typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || j.attendanceData || []),
+          j.notes || null, j.fase || null, j.semester || null, j.alokasiWaktu || null, j.jamKe || null,
+          j.pertemuanKe || null, j.tujuanPembelajaran || null, j.pencapaianKktp || null,
+          j.createdAt || new Date().toISOString()
+        ]);
+        savedCount++;
+      } else if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
+        const att = item;
+        await connection.query(`
+          INSERT INTO \`attendance_logs\` (
+            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`student_id\`=VALUES(\`student_id\`),
+            \`student_name\`=VALUES(\`student_name\`),
+            \`class_name\`=VALUES(\`class_name\`),
+            \`date\`=VALUES(\`date\`),
+            \`status\`=VALUES(\`status\`),
+            \`notes\`=VALUES(\`notes\`),
+            \`subject_notes\`=VALUES(\`subject_notes\`)
+        `, [
+          att.id, att.studentId || '', att.studentName || null, att.className || null,
+          (att.date || new Date().toISOString()).substring(0, 10), att.status || 'Hadir',
+          att.notes || null, att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
         ]);
         savedCount++;
       } else {

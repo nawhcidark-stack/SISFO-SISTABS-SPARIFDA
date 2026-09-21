@@ -128,6 +128,29 @@ export default function ScheduleView({
   const [pendingClashPayload, setPendingClashPayload] = useState<any | null>(null);
   const [isSaving, setIsSaving] = useState<boolean>(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isSyncingAbsent, setIsSyncingAbsent] = useState<boolean>(false);
+
+  const handleSyncAbsentTeachers = async () => {
+    setIsSyncingAbsent(true);
+    try {
+      const res = await fetch('/api/curriculum/restore-missing-data-batch', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ startDate: '2026-09-11', endDate: '2026-09-19' })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        alert(data.message || 'Sinkronisasi berhasil dijalankan.');
+        if (onRefreshSchedule) onRefreshSchedule();
+      } else {
+        alert(data.error || 'Gagal sinkronisasi data.');
+      }
+    } catch (e: any) {
+      alert('Kesalahan koneksi: ' + (e?.message || e));
+    } finally {
+      setIsSyncingAbsent(false);
+    }
+  };
 
   // Excel / CSV Import States
   const [isImportModalOpen, setIsImportModalOpen] = useState<boolean>(false);
@@ -1024,6 +1047,18 @@ export default function ScheduleView({
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            {role === 'waka_kurikulum' && (
+              <button
+                onClick={handleSyncAbsentTeachers}
+                disabled={isSyncingAbsent}
+                className="px-3.5 py-2 bg-amber-500/20 hover:bg-amber-500/30 border border-amber-500/40 text-amber-300 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
+                title="Sinkronkan status guru tidak hadir dan pulihkan absensi siswa ke MySQL"
+              >
+                <RefreshCw size={14} className={isSyncingAbsent ? 'animate-spin' : ''} />
+                <span>{isSyncingAbsent ? 'Menyinkronkan...' : 'Sinkronkan Guru Tidak Hadir'}</span>
+              </button>
+            )}
+
             <button
               onClick={onRefreshSchedule}
               className="px-3.5 py-2 bg-slate-800/80 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm"

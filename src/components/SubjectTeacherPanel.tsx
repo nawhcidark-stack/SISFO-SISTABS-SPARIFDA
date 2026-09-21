@@ -1103,8 +1103,12 @@ export default function SubjectTeacherPanel({
   useEffect(() => {
     if (classStudents.length > 0) {
       const initialMap: Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }> = {};
+      const normDate = (selectedDate || '').substring(0, 10);
       classStudents.forEach(s => {
-        const matchingLog = attendanceLogs.find(log => log.studentId === s.id && log.date === selectedDate);
+        const matchingLog = attendanceLogs.find(log => 
+          (log.studentId === s.id || (s.nis && log.studentId === s.nis)) &&
+          ((log.date || '').substring(0, 10) === normDate)
+        );
         initialMap[s.id] = { 
           status: matchingLog ? matchingLog.status : 'Hadir', 
           notes: matchingLog && matchingLog.notes ? matchingLog.notes : ''

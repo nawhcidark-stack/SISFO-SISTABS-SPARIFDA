@@ -18,7 +18,7 @@ import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
 
 
 // Setup serverport
-const PORT = process.env.PORT || 3000;
+const PORT = 3000;
 // Load saved MySQL database configuration
 loadMysqlConfig();
 
@@ -1870,6 +1870,46 @@ function loadState() {
   return false;
 }
 
+function normalizeJournalTeacherIds() {
+  try {
+    const nameToIdMap = new Map<string, string>();
+    const userToIdMap = new Map<string, string>();
+
+    [...subjectTeachers, ...homeroomTeachers].forEach(t => {
+      if (t.name && t.id) nameToIdMap.set(t.name.trim().toLowerCase(), t.id);
+      if ((t as any).username && t.id) userToIdMap.set((t as any).username.trim().toLowerCase(), t.id);
+    });
+
+    let changed = false;
+    teachingJournals.forEach(j => {
+      const tName = j.teacherName ? j.teacherName.trim().toLowerCase() : '';
+      const uName = (j as any).username ? (j as any).username.trim().toLowerCase() : '';
+      const targetId = nameToIdMap.get(tName) || userToIdMap.get(uName);
+      if (targetId && j.teacherId !== targetId) {
+        j.teacherId = targetId;
+        changed = true;
+      }
+
+      // Normalize attendance array (handle legacy attendanceData or undefined)
+      if (!Array.isArray(j.attendance)) {
+        if (Array.isArray((j as any).attendanceData)) {
+          j.attendance = (j as any).attendanceData;
+          changed = true;
+        } else {
+          j.attendance = [];
+          changed = true;
+        }
+      }
+    });
+
+    if (changed) {
+      saveState();
+    }
+  } catch (e) {
+    console.error("Error normalizing journal teacher IDs:", e);
+  }
+}
+
 function applyDataFromMysql(pulledData: any) {
   if (!pulledData || typeof pulledData !== "object") return false;
 
@@ -1929,7 +1969,13 @@ function applyDataFromMysql(pulledData: any) {
 
     if (Array.isArray(pulledData.teachingJournals) && pulledData.teachingJournals.length > 0) {
       teachingJournals.length = 0;
-      teachingJournals.push(...pulledData.teachingJournals);
+      pulledData.teachingJournals.forEach((j: any) => {
+        if (!Array.isArray(j.attendance)) {
+          j.attendance = Array.isArray(j.attendanceData) ? j.attendanceData : [];
+        }
+        teachingJournals.push(j);
+      });
+      normalizeJournalTeacherIds();
     }
 
     if (Array.isArray(pulledData.studentDevelopmentLogs) && pulledData.studentDevelopmentLogs.length > 0) {
@@ -3796,70 +3842,99 @@ async function startServer() {
 
   // Save single attendance entry
   app.post("/api/attendance", (req, res) => {
-    const { studentId, studentName, date, status, notes } = req.body;
+    const { studentId, studentName, className, date, status, notes } = req.body;
     if (!studentId || !date || !status) {
       return res.status(400).json({ error: "Data absensi tidak lengkap." });
     }
 
+    const normDate = (date || '').substring(0, 10);
     const st = students.find(s => s.id === studentId || s.nis === studentId);
     const resolvedName = (st && st.name) ? st.name : (studentName || "");
+    const resolvedClass = (st && st.class) ? st.class : (className || "");
 
-    const index = attendanceLogs.findIndex(l => l.studentId === studentId && l.date === date);
+    const index = attendanceLogs.findIndex(l => 
+      (l.studentId === studentId || (st && (l.studentId === st.id || l.studentId === st.nis))) &&
+      ((l.date || '').substring(0, 10) === normDate)
+    );
+
+    let savedLog: AttendanceLog;
     if (index !== -1) {
       attendanceLogs[index].status = status;
       attendanceLogs[index].notes = notes || "";
-      if (resolvedName && (!attendanceLogs[index].studentName || attendanceLogs[index].studentName.startsWith("Siswa (std-"))) {
-        attendanceLogs[index].studentName = resolvedName;
-      }
+      attendanceLogs[index].date = normDate;
+      if (resolvedName) attendanceLogs[index].studentName = resolvedName;
+      if (resolvedClass) attendanceLogs[index].className = resolvedClass;
+      savedLog = attendanceLogs[index];
     } else {
-      attendanceLogs.push({
+      savedLog = {
         id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         studentId,
         studentName: resolvedName,
-        date,
+        className: resolvedClass,
+        date: normDate,
         status,
         notes: notes || ""
-      });
+      };
+      attendanceLogs.push(savedLog);
     }
+
     saveState();
-    res.json({ success: true, attendanceLogs });
+    persistEntity("attendance", savedLog).catch(err => console.error("[MySQL Attendance Error]:", err));
+
+    res.json({ success: true, attendanceLogs, savedLog });
   });
 
   // Batch save attendance entries
   app.post("/api/attendance/batch", (req, res) => {
-    const { logs } = req.body; // array of { studentId, studentName, date, status, notes }
+    const { logs } = req.body; // array of { studentId, studentName, className, date, status, notes }
     if (!Array.isArray(logs)) {
       return res.status(400).json({ error: "Logs harus berupa array." });
     }
 
+    const affectedLogs: AttendanceLog[] = [];
+
     logs.forEach(item => {
-      const { studentId, studentName, date, status, notes } = item;
+      const { studentId, studentName, className, date, status, notes } = item;
       if (!studentId || !date || !status) return;
 
+      const normDate = (date || '').substring(0, 10);
       const st = students.find(s => s.id === studentId || s.nis === studentId);
       const resolvedName = (st && st.name) ? st.name : (studentName || "");
+      const resolvedClass = (st && st.class) ? st.class : (className || "");
 
-      const index = attendanceLogs.findIndex(l => l.studentId === studentId && l.date === date);
+      const index = attendanceLogs.findIndex(l => 
+        (l.studentId === studentId || (st && (l.studentId === st.id || l.studentId === st.nis))) &&
+        ((l.date || '').substring(0, 10) === normDate)
+      );
+
       if (index !== -1) {
         attendanceLogs[index].status = status;
         attendanceLogs[index].notes = notes || "";
-        if (resolvedName && (!attendanceLogs[index].studentName || attendanceLogs[index].studentName.startsWith("Siswa (std-"))) {
-          attendanceLogs[index].studentName = resolvedName;
-        }
+        attendanceLogs[index].date = normDate;
+        if (resolvedName) attendanceLogs[index].studentName = resolvedName;
+        if (resolvedClass) attendanceLogs[index].className = resolvedClass;
+        affectedLogs.push(attendanceLogs[index]);
       } else {
-        attendanceLogs.push({
+        const newLog: AttendanceLog = {
           id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           studentId,
           studentName: resolvedName,
-          date,
+          className: resolvedClass,
+          date: normDate,
           status,
           notes: notes || ""
-        });
+        };
+        attendanceLogs.push(newLog);
+        affectedLogs.push(newLog);
       }
     });
 
     saveState();
-    res.json({ success: true, attendanceLogs });
+    if (affectedLogs.length > 0) {
+      persistEntities("attendance", affectedLogs).catch(err => console.error("[MySQL Batch Attendance Error]:", err));
+    }
+
+    res.json({ success: true, attendanceLogs, count: affectedLogs.length });
   });
 
   // --- HOMEROOM TEACHERS (WALI KELAS) ENDPOINTS ---
@@ -4074,46 +4149,6 @@ async function startServer() {
   });
 
   // --- TEACHING JOURNALS (JURNAL PEMBELAJARAN & ABSENSI MAPEL) ENDPOINTS ---
-  function normalizeJournalTeacherIds() {
-    try {
-      const nameToIdMap = new Map<string, string>();
-      const userToIdMap = new Map<string, string>();
-
-      [...subjectTeachers, ...homeroomTeachers].forEach(t => {
-        if (t.name && t.id) nameToIdMap.set(t.name.trim().toLowerCase(), t.id);
-        if ((t as any).username && t.id) userToIdMap.set((t as any).username.trim().toLowerCase(), t.id);
-      });
-
-      let changed = false;
-      teachingJournals.forEach(j => {
-        const tName = j.teacherName ? j.teacherName.trim().toLowerCase() : '';
-        const uName = (j as any).username ? (j as any).username.trim().toLowerCase() : '';
-        const targetId = nameToIdMap.get(tName) || userToIdMap.get(uName);
-        if (targetId && j.teacherId !== targetId) {
-          j.teacherId = targetId;
-          changed = true;
-        }
-
-        // Normalize attendance array (handle legacy attendanceData or undefined)
-        if (!Array.isArray(j.attendance)) {
-          if (Array.isArray((j as any).attendanceData)) {
-            j.attendance = (j as any).attendanceData;
-            changed = true;
-          } else {
-            j.attendance = [];
-            changed = true;
-          }
-        }
-      });
-
-      if (changed) {
-        saveState();
-      }
-    } catch (e) {
-      console.error("Error normalizing journal teacher IDs:", e);
-    }
-  }
-
   app.get("/api/teaching-journals", (req, res) => {
     normalizeJournalTeacherIds();
     res.json(teachingJournals);
@@ -4138,20 +4173,28 @@ async function startServer() {
       tujuanPembelajaran,
       pencapaianKktp
     } = req.body;
-    if (!teacherId || !teacherName || !subject || !className || !date || !topic || !Array.isArray(attendance)) {
-      return res.status(400).json({ error: "Data Jurnal Pembelajaran tidak lengkap." });
+
+    const resolvedSubject = (subject || '').trim() || (teacherType === 'homeroom' ? 'Bimbingan Wali Kelas' : 'Mata Pelajaran');
+    const resolvedClass = (className || '').trim();
+    const resolvedDate = (date || '').substring(0, 10) || new Date().toISOString().substring(0, 10);
+    const resolvedTopic = (topic || '').trim();
+
+    if (!teacherId || !teacherName || !resolvedClass || !resolvedTopic) {
+      return res.status(400).json({ error: "Data Jurnal Pembelajaran tidak lengkap (Nama Kelas & Topik KBM wajib diisi)." });
     }
+
+    const attendanceList = Array.isArray(attendance) ? attendance : [];
 
     const newJournal: TeachingJournal = {
       id: `tj-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
       teacherId,
       teacherName,
       teacherType: teacherType || 'subject_teacher',
-      subject,
-      className,
-      date,
-      topic,
-      attendance,
+      subject: resolvedSubject,
+      className: resolvedClass,
+      date: resolvedDate,
+      topic: resolvedTopic,
+      attendance: attendanceList,
       notes: notes || "",
       fase: fase || "D",
       semester: semester || "Genap",
@@ -4166,17 +4209,24 @@ async function startServer() {
     teachingJournals.unshift(newJournal);
 
     // Also sync/merge into standard attendanceLogs
-    attendance.forEach((studentAtt: any) => {
+    const syncedAttendanceLogs: AttendanceLog[] = [];
+    attendanceList.forEach((studentAtt: any) => {
       const { studentId, studentName, status, notes: attNotes } = studentAtt;
-      const existingLogIndex = attendanceLogs.findIndex(log => log.studentId === studentId && log.date === date);
-      
+      if (!studentId) return;
+
       const st = students.find(s => s.id === studentId || s.nis === studentId);
       const nameToSet = (st && st.name) ? st.name : (studentName || "");
+      const classToSet = (st && st.class) ? st.class : resolvedClass;
 
+      const existingLogIndex = attendanceLogs.findIndex(log => 
+        (log.studentId === studentId || (st && (log.studentId === st.id || log.studentId === st.nis))) && 
+        ((log.date || '').substring(0, 10) === resolvedDate)
+      );
+      
       const newSubNote = {
-        subject,
+        subject: resolvedSubject,
         teacherName,
-        status,
+        status: status || 'Hadir',
         notes: attNotes || ''
       };
 
@@ -4185,44 +4235,57 @@ async function startServer() {
         const currentDailyStatus = attendanceLogs[existingLogIndex].status;
         const nonPresentStatuses = ['Terlambat', 'Sakit', 'Izin', 'Alpa'];
 
-        if (!nonPresentStatuses.includes(currentDailyStatus) || status !== 'Hadir') {
-          attendanceLogs[existingLogIndex].status = status;
+        if (!nonPresentStatuses.includes(currentDailyStatus) || (status && status !== 'Hadir')) {
+          attendanceLogs[existingLogIndex].status = status || 'Hadir';
         }
 
         if (nameToSet && (!attendanceLogs[existingLogIndex].studentName || attendanceLogs[existingLogIndex].studentName.startsWith("Siswa (std-"))) {
           attendanceLogs[existingLogIndex].studentName = nameToSet;
         }
+        if (classToSet) {
+          attendanceLogs[existingLogIndex].className = classToSet;
+        }
 
         if (!attendanceLogs[existingLogIndex].subjectNotes) {
           attendanceLogs[existingLogIndex].subjectNotes = [];
         }
-        const existingSubNotesIndex = attendanceLogs[existingLogIndex].subjectNotes!.findIndex((sn: any) => sn.subject === subject);
+        const existingSubNotesIndex = attendanceLogs[existingLogIndex].subjectNotes!.findIndex((sn: any) => sn.subject === resolvedSubject);
         if (existingSubNotesIndex !== -1) {
           attendanceLogs[existingLogIndex].subjectNotes![existingSubNotesIndex] = newSubNote;
         } else {
           attendanceLogs[existingLogIndex].subjectNotes!.push(newSubNote);
         }
+        syncedAttendanceLogs.push(attendanceLogs[existingLogIndex]);
       } else {
         // Create new daily attendance
-        attendanceLogs.push({
+        const createdLog: AttendanceLog = {
           id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
           studentId,
           studentName: nameToSet,
-          date,
-          status,
+          className: classToSet,
+          date: resolvedDate,
+          status: status || 'Hadir',
           notes: "",
           subjectNotes: [newSubNote]
-        });
+        };
+        attendanceLogs.push(createdLog);
+        syncedAttendanceLogs.push(createdLog);
       }
     });
 
     saveState();
 
+    // Persist journal and synced student attendance logs directly to MySQL!
+    persistEntity("journal", newJournal).catch(err => console.error("[MySQL Journal Save Error]:", err));
+    if (syncedAttendanceLogs.length > 0) {
+      persistEntities("attendance", syncedAttendanceLogs).catch(err => console.error("[MySQL Synced Attendance Batch Error]:", err));
+    }
+
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
       id: `notif-tj-${newJournal.id}`,
       title: "Jurnal Pembelajaran Baru",
-      message: `Bapak/Ibu ${teacherName} mengisi KBM ${subject} di Kelas ${className} mengenai: "${topic}"`,
+      message: `Bapak/Ibu ${teacherName} mengisi KBM ${resolvedSubject} di Kelas ${resolvedClass} mengenai: "${resolvedTopic}"`,
       type: "success",
       createdAt: new Date().toISOString()
     };
@@ -4258,7 +4321,7 @@ async function startServer() {
 
     if (subject !== undefined) journal.subject = subject;
     if (className !== undefined) journal.className = className;
-    if (date !== undefined) journal.date = date;
+    if (date !== undefined) journal.date = (date || '').substring(0, 10);
     if (topic !== undefined) journal.topic = topic;
     if (notes !== undefined) journal.notes = notes;
     if (fase !== undefined) journal.fase = fase;
@@ -4269,19 +4332,29 @@ async function startServer() {
     if (tujuanPembelajaran !== undefined) journal.tujuanPembelajaran = tujuanPembelajaran;
     if (pencapaianKktp !== undefined) journal.pencapaianKktp = pencapaianKktp;
     
+    const syncedAttendanceLogs: AttendanceLog[] = [];
     if (attendance !== undefined && Array.isArray(attendance)) {
       journal.attendance = attendance;
 
       // Also sync/merge into standard attendanceLogs
       attendance.forEach((studentAtt: any) => {
-        const { studentId, status, notes: attNotes } = studentAtt;
-        const targetDate = date || journal.date;
-        const existingLogIndex = attendanceLogs.findIndex(log => log.studentId === studentId && log.date === targetDate);
+        const { studentId, studentName, status, notes: attNotes } = studentAtt;
+        if (!studentId) return;
+
+        const targetDate = (date || journal.date || '').substring(0, 10);
+        const st = students.find(s => s.id === studentId || s.nis === studentId);
+        const nameToSet = (st && st.name) ? st.name : (studentName || "");
+        const classToSet = (st && st.class) ? st.class : journal.className;
+
+        const existingLogIndex = attendanceLogs.findIndex(log => 
+          (log.studentId === studentId || (st && (log.studentId === st.id || log.studentId === st.nis))) && 
+          ((log.date || '').substring(0, 10) === targetDate)
+        );
         
         const newSubNote = {
           subject: subject || journal.subject,
           teacherName: journal.teacherName,
-          status,
+          status: status || 'Hadir',
           notes: attNotes || ''
         };
 
@@ -4289,8 +4362,15 @@ async function startServer() {
           const currentDailyStatus = attendanceLogs[existingLogIndex].status;
           const nonPresentStatuses = ['Terlambat', 'Sakit', 'Izin', 'Alpa'];
 
-          if (!nonPresentStatuses.includes(currentDailyStatus) || status !== 'Hadir') {
-            attendanceLogs[existingLogIndex].status = status;
+          if (!nonPresentStatuses.includes(currentDailyStatus) || (status && status !== 'Hadir')) {
+            attendanceLogs[existingLogIndex].status = status || 'Hadir';
+          }
+
+          if (nameToSet && (!attendanceLogs[existingLogIndex].studentName || attendanceLogs[existingLogIndex].studentName.startsWith("Siswa (std-"))) {
+            attendanceLogs[existingLogIndex].studentName = nameToSet;
+          }
+          if (classToSet) {
+            attendanceLogs[existingLogIndex].className = classToSet;
           }
 
           if (!attendanceLogs[existingLogIndex].subjectNotes) {
@@ -4302,20 +4382,32 @@ async function startServer() {
           } else {
             attendanceLogs[existingLogIndex].subjectNotes!.push(newSubNote);
           }
+          syncedAttendanceLogs.push(attendanceLogs[existingLogIndex]);
         } else {
-          attendanceLogs.push({
+          const createdLog: AttendanceLog = {
             id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
             studentId,
+            studentName: nameToSet,
+            className: classToSet,
             date: targetDate,
-            status,
+            status: status || 'Hadir',
             notes: "",
             subjectNotes: [newSubNote]
-          });
+          };
+          attendanceLogs.push(createdLog);
+          syncedAttendanceLogs.push(createdLog);
         }
       });
     }
 
     saveState();
+
+    // Persist updated journal and attendance to MySQL!
+    persistEntity("journal", journal).catch(err => console.error("[MySQL Journal Update Error]:", err));
+    if (syncedAttendanceLogs.length > 0) {
+      persistEntities("attendance", syncedAttendanceLogs).catch(err => console.error("[MySQL Synced Attendance Batch Error]:", err));
+    }
+
     res.json({ success: true, teachingJournals, updatedJournal: journal });
   });
 
@@ -4328,6 +4420,9 @@ async function startServer() {
 
     const [deletedJournal] = teachingJournals.splice(journalIndex, 1);
     saveState();
+
+    removeEntity("journal", id).catch(err => console.error("[MySQL Journal Delete Error]:", err));
+
     res.json({ success: true, message: "Jurnal Pembelajaran berhasil dihapus.", deletedJournal });
   });
 
@@ -5051,24 +5146,36 @@ async function startServer() {
     return { hasClash: false };
   }
 
-  function autoGenerateAbsentJournals() {
-    if (classSchedules.length === 0) return;
-    const todayStr = new Date().toISOString().substring(0, 10);
+  async function autoGenerateAbsentJournals(customStartDate?: string, customEndDate?: string, persistToMysql: boolean = true) {
+    if (classSchedules.length === 0) return 0;
     const daysOfWeek = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
     const pastDatesToCheck: { dateStr: string; dayName: string }[] = [];
-    const now = new Date();
     
-    for (let i = 1; i <= 7; i++) {
-      const d = new Date(now);
-      d.setDate(d.getDate() - i);
-      const dStr = d.toISOString().substring(0, 10);
-      const dayName = daysOfWeek[d.getDay()];
-      if (dayName !== 'Minggu') {
-        pastDatesToCheck.push({ dateStr: dStr, dayName });
+    if (customStartDate && customEndDate) {
+      const start = new Date(customStartDate + 'T00:00:00Z');
+      const end = new Date(customEndDate + 'T00:00:00Z');
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dStr = d.toISOString().substring(0, 10);
+        const dayName = daysOfWeek[d.getUTCDay()];
+        if (dayName !== 'Minggu') {
+          pastDatesToCheck.push({ dateStr: dStr, dayName });
+        }
+      }
+    } else {
+      // Default: Check past 30 days up to today
+      const now = new Date();
+      for (let i = 1; i <= 30; i++) {
+        const d = new Date(now);
+        d.setDate(d.getDate() - i);
+        const dStr = d.toISOString().substring(0, 10);
+        const dayName = daysOfWeek[d.getDay()];
+        if (dayName !== 'Minggu') {
+          pastDatesToCheck.push({ dateStr: dStr, dayName });
+        }
       }
     }
 
-    let newlyCreated = 0;
+    const newlyCreatedJournals: TeachingJournal[] = [];
 
     for (const { dateStr, dayName } of pastDatesToCheck) {
       const daySchedules = classSchedules.filter(s => s.day === dayName);
@@ -5083,9 +5190,10 @@ async function startServer() {
 
         if (!journalExists) {
           const autoAbsentJournal: TeachingJournal = {
-            id: `tj-absent-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+            id: `tj-absent-${Date.now()}-${Math.random().toString(36).substr(2, 4)}-${Math.random().toString(36).substr(2, 4)}`,
             teacherId: sch.teacherId || 'auto-system',
             teacherName: sch.teacherName || 'Guru Mapel',
+            teacherType: 'subject_teacher',
             subject: sch.subject,
             className: sch.className,
             date: dateStr,
@@ -5094,21 +5202,131 @@ async function startServer() {
             notes: 'Tidak Hadir',
             jamKe: sch.jamKe,
             alokasiWaktu: sch.alokasiWaktu || '2 JP',
+            fase: 'D',
+            semester: sch.semester || 'Genap',
             createdAt: new Date().toISOString()
           };
           teachingJournals.push(autoAbsentJournal);
-          newlyCreated++;
+          newlyCreatedJournals.push(autoAbsentJournal);
         }
       }
     }
 
-    if (newlyCreated > 0) {
+    if (newlyCreatedJournals.length > 0) {
       saveState();
+      if (persistToMysql) {
+        try {
+          await persistEntities("journal", newlyCreatedJournals);
+          console.log(`[Auto-Absent] Disimpan ke MySQL: ${newlyCreatedJournals.length} jurnal Tidak Hadir.`);
+        } catch (e: any) {
+          console.error("[Auto-Absent] Gagal simpan batch jurnal ke MySQL:", e.message);
+        }
+      }
     }
+
+    return newlyCreatedJournals.length;
   }
 
-  app.get("/api/curriculum/schedules", (req, res) => {
-    autoGenerateAbsentJournals();
+  async function restoreMissingAttendanceLogs(startDate: string = '2026-09-11', endDate: string = '2026-09-19', persistToMysql: boolean = true) {
+    const daysOfWeek = ['Minggu', 'Senin', 'Selasa', 'Rabu', 'Kamis', 'Jumat', 'Sabtu'];
+    const activeStudents = students.filter(s => s.class && s.class !== 'Mutasi Keluar');
+    const start = new Date(startDate + 'T00:00:00Z');
+    const end = new Date(endDate + 'T00:00:00Z');
+    const newlyCreatedLogs: AttendanceLog[] = [];
+
+    for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+      const dStr = d.toISOString().substring(0, 10);
+      const dayName = daysOfWeek[d.getUTCDay()];
+      if (dayName === 'Minggu') continue;
+
+      for (const st of activeStudents) {
+        const exists = attendanceLogs.some(a => 
+          (a.studentId === st.id || (st.nis && a.studentId === st.nis)) && 
+          (a.date || '').substring(0, 10) === dStr
+        );
+
+        if (!exists) {
+          const newLog: AttendanceLog = {
+            id: `att-${Date.now()}-${Math.random().toString(36).substr(2, 5)}-${Math.random().toString(36).substr(2, 3)}`,
+            studentId: st.id,
+            studentName: st.name,
+            className: st.class,
+            date: dStr,
+            status: 'Hadir',
+            notes: 'Absensi Terjadwal (Dipulihkan)',
+            subjectNotes: []
+          };
+          attendanceLogs.push(newLog);
+          newlyCreatedLogs.push(newLog);
+        }
+      }
+    }
+
+    if (newlyCreatedLogs.length > 0) {
+      saveState();
+      if (persistToMysql) {
+        try {
+          await persistEntities("attendance", newlyCreatedLogs);
+          console.log(`[Restore-Attendance] Disimpan ke MySQL: ${newlyCreatedLogs.length} record absensi siswa.`);
+        } catch (e: any) {
+          console.error("[Restore-Attendance] Gagal simpan batch absensi ke MySQL:", e.message);
+        }
+      }
+    }
+
+    return newlyCreatedLogs.length;
+  }
+
+  // Endpoint to manually or automatically generate absent journals for teachers who didn't fill in
+  app.post("/api/curriculum/generate-absent-journals", async (req, res) => {
+    try {
+      const { startDate, endDate } = req.body || {};
+      const count = await autoGenerateAbsentJournals(startDate, endDate, true);
+      res.json({
+        success: true,
+        count,
+        message: `Berhasil mengecek jadwal dan memproses ${count} jurnal status Tidak Hadir (Guru tidak mengisi jurnal KBM).`
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Gagal menghasilkan jurnal status tidak hadir." });
+    }
+  });
+
+  // Endpoint to restore missing student attendance logs for school days
+  app.post("/api/curriculum/restore-attendance-records", async (req, res) => {
+    try {
+      const { startDate, endDate } = req.body || {};
+      const count = await restoreMissingAttendanceLogs(startDate || '2026-09-11', endDate || '2026-09-19', true);
+      res.json({
+        success: true,
+        count,
+        message: `Berhasil memulihkan ${count} record absensi harian siswa (11-19 September 2026).`
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Gagal memulihkan record absensi siswa." });
+    }
+  });
+
+  // Combined batch recovery endpoint for both teacher journals and student attendance
+  app.post("/api/curriculum/restore-missing-data-batch", async (req, res) => {
+    try {
+      const startDate = req.body?.startDate || '2026-09-11';
+      const endDate = req.body?.endDate || '2026-09-19';
+      const journalCount = await autoGenerateAbsentJournals(startDate, endDate, true);
+      const attendanceCount = await restoreMissingAttendanceLogs(startDate, endDate, true);
+      res.json({
+        success: true,
+        journalCount,
+        attendanceCount,
+        message: `Pemulihan data selesai! ${journalCount} jurnal guru tidak hadir dan ${attendanceCount} record absensi siswa berhasil dipulihkan dan disimpan ke MySQL.`
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: err?.message || "Gagal memulihkan batch data jurnal dan absensi." });
+    }
+  });
+
+  app.get("/api/curriculum/schedules", async (req, res) => {
+    autoGenerateAbsentJournals().catch(e => console.error("Error in autoGenerateAbsentJournals:", e));
     const deduplicated = deduplicateClassSchedules(classSchedules);
     if (deduplicated.length !== classSchedules.length) {
       classSchedules.length = 0;
@@ -10008,7 +10226,7 @@ async function startServer() {
     res.status(500).json({ error: "Terjadi kesalahan internal server" });
   });
 
-  const isUnixSocket = typeof PORT === "string" && (PORT.includes("/") || PORT.includes("\\") || isNaN(Number(PORT)));
+  const isUnixSocket = typeof (PORT as any) === "string" && ((PORT as any).includes("/") || (PORT as any).includes("\\") || isNaN(Number(PORT)));
   if (isUnixSocket) {
     app.listen(PORT, () => {
       console.log(`SMP Maarif NU Pandaan app is running on Unix socket: ${PORT}`);
@@ -10019,6 +10237,14 @@ async function startServer() {
       console.log(`SMP Maarif NU Pandaan app is running on TCP port ${portNumber}`);
     });
   }
+
+  // Background check for teacher absent journals (runs on startup and every hour)
+  setTimeout(() => {
+    autoGenerateAbsentJournals().catch(e => console.error("Startup auto absent check error:", e));
+  }, 5000);
+  setInterval(() => {
+    autoGenerateAbsentJournals().catch(e => console.error("Periodic auto absent check error:", e));
+  }, 3600000);
 
   // Start background auto-backup engine checks
   setInterval(async () => {

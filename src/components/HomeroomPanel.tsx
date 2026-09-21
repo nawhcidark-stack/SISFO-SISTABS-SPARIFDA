@@ -1590,6 +1590,7 @@ export default function HomeroomPanel({
         setNotifMsg({ type: 'success', text: 'Jurnal KBM & Absensi Wali Kelas berhasil disimpan!' });
         setIsAddJournalOpen(false);
         fetchTeachingJournals();
+        if (onRefresh) onRefresh();
       } else {
         const errData = await response.json();
         setNotifMsg({ type: 'error', text: errData.error || 'Gagal menyimpan Jurnal Pembelajaran.' });
@@ -1607,11 +1608,18 @@ export default function HomeroomPanel({
     try {
       const res = await fetch('/api/teaching-journals');
       if (res.ok) {
-        const data = await res.json();
-        setAllTeachingJournalsList(data);
+        const rawData = await res.json();
+        const dataList = Array.isArray(rawData) ? rawData : [];
+        const normalized = dataList.map((j: any) => ({
+          ...j,
+          attendance: Array.isArray(j.attendance)
+            ? j.attendance
+            : (Array.isArray(j.attendanceData) ? j.attendanceData : [])
+        }));
+        setAllTeachingJournalsList(normalized);
         // Filter journals that belong to current homeroom teacher's class OR are taught by this teacher
         const cName = currentTeacher.name ? currentTeacher.name.trim().toLowerCase() : '';
-        const filtered = data.filter((j: any) => 
+        const filtered = normalized.filter((j: any) => 
           (j.className && j.className.toLowerCase() === currentTeacher.className.toLowerCase()) || 
           j.teacherId === currentTeacher.id ||
           (cName && j.teacherName && j.teacherName.trim().toLowerCase() === cName)
@@ -2139,6 +2147,10 @@ export default function HomeroomPanel({
   };
 
   useEffect(() => {
+    fetchTeachingJournals();
+  }, [currentTeacher.className]);
+
+  useEffect(() => {
     if (activeSubTab === 'history') {
       fetchTeachingJournals();
     } else if (activeSubTab === 'perkembangan') {
@@ -2401,10 +2413,12 @@ export default function HomeroomPanel({
   // Sync state when date changes or logs/students change
   useEffect(() => {
     const statusMap: Record<string, { status: 'Hadir' | 'Sakit' | 'Izin' | 'Alpa' | 'Terlambat'; notes: string }> = {};
+    const normDate = (selectedDate || '').substring(0, 10);
     
     classStudents.forEach((student) => {
       const existing = attendanceLogs.find(
-        (log) => log.studentId === student.id && log.date === selectedDate
+        (log) => (log.studentId === student.id || (student.nis && log.studentId === student.nis)) &&
+          ((log.date || '').substring(0, 10) === normDate)
       );
       if (existing) {
         statusMap[student.id] = {
@@ -2451,6 +2465,8 @@ export default function HomeroomPanel({
 
     const logsToSave = classStudents.map((s) => ({
       studentId: s.id,
+      studentName: s.name,
+      className: currentTeacher.className,
       date: selectedDate,
       status: dailyStatusMap[s.id]?.status || 'Hadir',
       notes: dailyStatusMap[s.id]?.notes || ''
@@ -2461,6 +2477,7 @@ export default function HomeroomPanel({
        if (success) {
          setNotifMsg({ type: 'success', text: `🎉 Berhasil menyimpan absensi Kelas ${currentTeacher.className} tanggal ${selectedDate}!` });
          setShowSuccessCheck(true);
+         if (onRefresh) onRefresh();
        } else {
          setNotifMsg({ type: 'error', text: 'Gagal menghubungkan ke server untuk menyimpan absensi.' });
        }

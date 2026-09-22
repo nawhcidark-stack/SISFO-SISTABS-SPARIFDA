@@ -44,7 +44,18 @@ export function getStudentFinancialSummary({
     Juni: 12,
   };
 
-  const studentSppBills = (bills || []).filter((b) => b.studentId === student.id);
+  const matchedStudent =
+    (allStudents || []).find((s) => s.id === student?.id || (student?.nis && s.nis === student.nis)) || student;
+
+  const studentIds = new Set<string>();
+  if (student?.id) studentIds.add(String(student.id));
+  if (student?.nis) studentIds.add(String(student.nis));
+  if (matchedStudent?.id) studentIds.add(String(matchedStudent.id));
+  if (matchedStudent?.nis) studentIds.add(String(matchedStudent.nis));
+
+  const studentSppBills = (bills || []).filter(
+    (b) => studentIds.has(String(b.studentId)) || b.studentId === student?.id
+  );
 
   // Identify paid bills (or bill in active receipt being printed)
   const paidBills = studentSppBills.filter((b) => {
@@ -96,8 +107,6 @@ export function getStudentFinancialSummary({
     paidMonthStrings.length > 0 ? paidMonthStrings.join(', ') : '- (Belum ada)';
 
   // 2. Saldo akhir tabungan
-  const matchedStudent =
-    (allStudents || []).find((s) => s.id === student.id || s.nis === student.nis) || student;
   let endingSavingsBalance = matchedStudent?.savingsBalance ?? student?.savingsBalance ?? 0;
 
   if (
@@ -108,8 +117,62 @@ export function getStudentFinancialSummary({
   }
 
   // 3. Tunggakan lain-lain belum terbayar
-  const studentMisc = (miscBills || []).filter((b) => b.studentId === student.id);
-  const unpaidMisc = studentMisc.filter((b) => {
+  const studentMisc = (miscBills || []).filter(
+    (b) => studentIds.has(String(b.studentId)) || (b.studentId && b.studentId === student?.id)
+  );
+
+  // Extract receipt payment date / today date (YYYY-MM-DD)
+  const receiptDateStr = (() => {
+    const raw =
+      currentReceipt?.detail?.paidAt ||
+      currentReceipt?.detail?.createdAt ||
+      currentReceipt?.detail?.date ||
+      currentReceipt?.detail?.time;
+    if (raw) {
+      try {
+        const d = new Date(raw);
+        if (!isNaN(d.getTime())) {
+          return d.toISOString().split('T')[0];
+        }
+      } catch {
+        // fallback
+      }
+    }
+    return new Date().toISOString().split('T')[0];
+  })();
+  const todayStr = new Date().toISOString().split('T')[0];
+
+  // Identifikasi apakah pada hari itu (tanggal kuitansi atau hari ini) tunggakan dibayar
+  // 1) Nota yang dicetak bertipe 'misc' (Pembayaran Lain-lain / pelunasan tunggakan)
+  const isMiscReceipt = currentReceipt?.type === 'misc';
+
+  // 2) Nota konsolidasi (keranjang/kolektif) yang memuat pembayaran tagihan lain-lain
+  const isConsolidatedMisc =
+    currentReceipt?.type === 'consolidated' &&
+    Array.isArray(currentReceipt.detail?.items) &&
+    currentReceipt.detail.items.some(
+      (it: any) =>
+        it.type === 'misc' ||
+        (it.billId && String(it.billId).startsWith('misc')) ||
+        (it.title && String(it.title).toLowerCase().includes('lain'))
+    );
+
+  // 3) Siswa memiliki tagihan lain-lain yang lunas dibayar pada hari itu
+  const hasMiscPaidOnThatDay = studentMisc.some((b) => {
+    if (b.status === 'paid' && b.paidAt) {
+      try {
+        const paidDate = new Date(b.paidAt).toISOString().split('T')[0];
+        return paidDate === receiptDateStr || paidDate === todayStr;
+      } catch {
+        return false;
+      }
+    }
+    return false;
+  });
+
+  const isTunggakanPaidToday = isMiscReceipt || isConsolidatedMisc || hasMiscPaidOnThatDay;
+
+  let unpaidMisc = studentMisc.filter((b) => {
     if (
       currentReceipt?.type === 'misc' &&
       (currentReceipt.detail?.id === b.id || currentReceipt.detail?.billId === b.id)
@@ -124,8 +187,16 @@ export function getStudentFinancialSummary({
     return b.status !== 'paid';
   });
 
-  const totalOutstandingMisc = unpaidMisc.reduce((sum, b) => sum + (b.amount || 0), 0);
-  const unpaidMiscTitles = unpaidMisc.map((b) => b.title).join(', ');
+  let totalOutstandingMisc = unpaidMisc.reduce((sum, b) => sum + (b.amount || 0), 0);
+  let unpaidMiscTitles = unpaidMisc.map((b) => b.title).join(', ');
+
+  // Instruksi Pengguna:
+  // "untuk tunggakan pembayaran lain-lain pada nota, jika pada hari itu tunggakan dibayar, maka tunggakan otomatis 0/lunas/nihil"
+  if (isTunggakanPaidToday) {
+    totalOutstandingMisc = 0;
+    unpaidMisc = [];
+    unpaidMiscTitles = '';
+  }
 
   return {
     paidMonthsText,
@@ -134,7 +205,7 @@ export function getStudentFinancialSummary({
     totalOutstandingMisc,
     unpaidMiscCount: unpaidMisc.length,
     unpaidMiscTitles,
-    studentNis: String(student.nis || ''),
+    studentNis: String(student?.nis || matchedStudent?.nis || ''),
   };
 }
 
@@ -246,7 +317,7 @@ export default function ReceiptFinancialFooter({
             </span>
             <span className="font-mono font-bold text-[8.5px]">
               {summary.totalOutstandingMisc === 0
-                ? 'Rp 0 (Lunas)'
+                ? 'Rp 0 (Nihil / Lunas)'
                 : `Rp ${summary.totalOutstandingMisc.toLocaleString('id-ID')}`}
             </span>
           </div>

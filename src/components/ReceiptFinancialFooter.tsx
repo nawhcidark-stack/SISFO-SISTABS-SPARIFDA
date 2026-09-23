@@ -226,64 +226,57 @@ export function getStudentFinancialSummary({
 
   // 3. Tunggakan lain-lain belum terbayar
   const studentMisc = (miscBills || []).filter(
-    (b) => studentIds.has(String(b.studentId)) || (b.studentId && b.studentId === student?.id)
+    (b) =>
+      studentIds.has(String(b.studentId)) ||
+      (b.studentId && b.studentId === student?.id) ||
+      (b.studentId && matchedStudent?.id && b.studentId === matchedStudent.id) ||
+      (student?.nis && String(b.studentId) === String(student.nis)) ||
+      (matchedStudent?.nis && String(b.studentId) === String(matchedStudent.nis))
   );
 
-  // Identifikasi apakah pada hari itu (tanggal kuitansi atau hari ini) tunggakan dibayar
-  // 1) Nota yang dicetak bertipe 'misc' (Pembayaran Lain-lain / pelunasan tunggakan)
-  const isMiscReceipt = currentReceipt?.type === 'misc';
-
-  // 2) Nota konsolidasi (keranjang/kolektif) yang memuat pembayaran tagihan lain-lain
-  const isConsolidatedMisc =
-    currentReceipt?.type === 'consolidated' &&
-    Array.isArray(currentReceipt.detail?.items) &&
-    currentReceipt.detail.items.some(
-      (it: any) =>
-        it.type === 'misc' ||
-        (it.billId && String(it.billId).startsWith('misc')) ||
-        (it.title && String(it.title).toLowerCase().includes('lain'))
-    );
-
-  // 3) Siswa memiliki tagihan lain-lain yang lunas dibayar pada hari itu
-  const hasMiscPaidOnThatDay = studentMisc.some((b) => {
-    if (b.status === 'paid' && b.paidAt) {
-      try {
-        const paidDate = new Date(b.paidAt).toISOString().split('T')[0];
-        return paidDate === receiptDateStr || paidDate === todayStr;
-      } catch {
-        return false;
-      }
+  // Filter tagihan yang benar-benar BELUM terbayar (unpaid)
+  const unpaidMisc = studentMisc.filter((b) => {
+    // A. Jika status sudah 'paid' atau memiliki catatan paidAt, maka tagihan ini sudah lunas
+    if (b.status === 'paid' || !!b.paidAt) {
+      return false;
     }
-    return false;
-  });
 
-  const isTunggakanPaidToday = isMiscReceipt || isConsolidatedMisc || hasMiscPaidOnThatDay;
-
-  let unpaidMisc = studentMisc.filter((b) => {
+    // B. Jika tagihan ini adalah yang sedang dibayar pada kuitansi misc yang sedang dicetak
     if (
       currentReceipt?.type === 'misc' &&
-      (currentReceipt.detail?.id === b.id || currentReceipt.detail?.billId === b.id)
+      (currentReceipt.detail?.id === b.id ||
+        currentReceipt.detail?.billId === b.id ||
+        (currentReceipt.detail?.title &&
+          b.title &&
+          currentReceipt.detail.title.toLowerCase().trim() === b.title.toLowerCase().trim() &&
+          currentReceipt.detail.amount === b.amount))
     ) {
-      return false; // Paid in this receipt
+      return false; // Tagihan ini lunas pada nota saat ini
     }
-    if (currentReceipt?.type === 'consolidated' && currentReceipt.detail?.items) {
-      if (currentReceipt.detail.items.some((it: any) => it.billId === b.id || it.id === b.id)) {
-        return false; // Paid in this consolidated receipt
+
+    // C. Jika tagihan ini termasuk dalam daftar item kuitansi konsolidasi (keranjang)
+    if (currentReceipt?.type === 'consolidated' && Array.isArray(currentReceipt.detail?.items)) {
+      if (
+        currentReceipt.detail.items.some(
+          (it: any) =>
+            it.billId === b.id ||
+            it.id === b.id ||
+            (it.title &&
+              b.title &&
+              String(it.title).toLowerCase().trim() === b.title.toLowerCase().trim() &&
+              it.amount === b.amount)
+        )
+      ) {
+        return false; // Tagihan ini lunas pada nota konsolidasi saat ini
       }
     }
-    return b.status !== 'paid';
+
+    // Masih berstatus belum lunas / tunggakan aktif
+    return true;
   });
 
-  let totalOutstandingMisc = unpaidMisc.reduce((sum, b) => sum + (b.amount || 0), 0);
-  let unpaidMiscTitles = unpaidMisc.map((b) => b.title).join(', ');
-
-  // Instruksi Pengguna:
-  // "untuk tunggakan pembayaran lain-lain pada nota, jika pada hari itu tunggakan dibayar, maka tunggakan otomatis 0/lunas/nihil"
-  if (isTunggakanPaidToday) {
-    totalOutstandingMisc = 0;
-    unpaidMisc = [];
-    unpaidMiscTitles = '';
-  }
+  const totalOutstandingMisc = unpaidMisc.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+  const unpaidMiscTitles = unpaidMisc.map((b) => b.title).filter(Boolean).join(', ');
 
   return {
     paidMonthsText,

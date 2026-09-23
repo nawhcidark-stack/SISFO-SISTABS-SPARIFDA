@@ -2612,6 +2612,22 @@ export default function AdminPanel({
   };
 
   const handleCartMidtransSuccess = () => {
+    const printStudentBase = paymentCart[0]?.student || selectedStudent;
+    const savingsInCart = paymentCart
+      .filter(
+        (item) =>
+          item.type === "savings_deposit" &&
+          (item.student.id === printStudentBase?.id || item.student.nis === printStudentBase?.nis),
+      )
+      .reduce((sum, item) => sum + item.amount, 0);
+
+    const updatedStudent = printStudentBase
+      ? {
+          ...printStudentBase,
+          savingsBalance: (printStudentBase.savingsBalance || 0) + savingsInCart,
+        }
+      : printStudentBase;
+
     const executedItems = paymentCart.map((item) => ({
       name:
         item.type === "spp"
@@ -2621,6 +2637,17 @@ export default function AdminPanel({
           : `Setoran Tabungan (${item.notes || "Setoran"})`,
       amount: item.amount,
       desc: `Siswa: ${item.student.name} (${item.student.nis} - Kelas ${item.student.class})`,
+      type: item.type,
+      billId: item.billId,
+      month: item.month,
+      year: item.year,
+      studentId: item.student.id,
+      studentNis: item.student.nis,
+      notes: item.notes,
+      balanceAfter:
+        item.type === "savings_deposit"
+          ? (item.student.savingsBalance || 0) + item.amount
+          : undefined,
     }));
 
     const totalAmount = paymentCart.reduce((sum, item) => sum + item.amount, 0);
@@ -2633,8 +2660,9 @@ export default function AdminPanel({
         items: executedItems,
         paidAt: new Date().toISOString(),
         paymentMethod: "Midtrans (Online / QRIS)",
+        student: updatedStudent,
       },
-      student: paymentCart[0]?.student || selectedStudent,
+      student: updatedStudent,
     });
     setPrintId("print-receipt-section");
     setPaymentCart([]);
@@ -2650,6 +2678,14 @@ export default function AdminPanel({
         name: string;
         amount: number;
         desc: string;
+        type?: string;
+        billId?: string;
+        month?: string;
+        year?: number;
+        studentId?: string;
+        studentNis?: string;
+        notes?: string;
+        balanceAfter?: number;
       }> = [];
 
       const sppBillIds = paymentCart
@@ -2678,6 +2714,30 @@ export default function AdminPanel({
 
       if (res.ok && data.executedItems && data.executedItems.length > 0) {
         executedItems.push(...data.executedItems);
+      } else if (res.ok) {
+        paymentCart.forEach((item) => {
+          executedItems.push({
+            name:
+              item.type === "spp"
+                ? `SPP Bulanan (${item.month} ${item.year})`
+                : item.type === "misc"
+                ? `Lain-lain (${item.notes})`
+                : `Setoran Tabungan (${item.notes || "Setoran"})`,
+            amount: item.amount,
+            desc: `Siswa: ${item.student.name} (${item.student.nis} - Kelas ${item.student.class})`,
+            type: item.type,
+            billId: item.billId,
+            month: item.month,
+            year: item.year,
+            studentId: item.student.id,
+            studentNis: item.student.nis,
+            notes: item.notes,
+            balanceAfter:
+              item.type === "savings_deposit"
+                ? (item.student.savingsBalance || 0) + item.amount
+                : undefined,
+          });
+        });
       }
 
       if (executedItems.length > 0) {
@@ -2685,7 +2745,24 @@ export default function AdminPanel({
           (sum, item) => sum + item.amount,
           0,
         );
-        const orderId = `COLLECTIVE-CART-${Date.now()}`;
+        const orderId = data.orderId || `COLLECTIVE-CART-${Date.now()}`;
+
+        const firstStudent = paymentCart[0].student;
+        const matchingAffected = data.affectedStudents && data.affectedStudents.find(
+          (s: any) => s.id === firstStudent.id || s.nis === firstStudent.nis
+        );
+        const savingsInCart = paymentCart
+          .filter(
+            (item) =>
+              item.type === "savings_deposit" &&
+              (item.student.id === firstStudent.id || item.student.nis === firstStudent.nis)
+          )
+          .reduce((sum, item) => sum + item.amount, 0);
+
+        const finalPrintStudent = matchingAffected || {
+          ...firstStudent,
+          savingsBalance: (firstStudent.savingsBalance || 0) + savingsInCart,
+        };
 
         setReceiptToPrint({
           type: "consolidated",
@@ -2695,8 +2772,9 @@ export default function AdminPanel({
             items: executedItems,
             paidAt: new Date().toISOString(),
             paymentMethod: "Manual Teller (Kolektif)",
+            student: finalPrintStudent,
           },
-          student: paymentCart[0].student,
+          student: finalPrintStudent,
         });
         setPrintId("print-receipt-section");
         setPaymentCart([]);

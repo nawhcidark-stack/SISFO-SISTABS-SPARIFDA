@@ -117,15 +117,31 @@ export function getStudentFinancialSummary({
     // Jika kuitansi konsolidasi memuat tagihan SPP ini
     if (currentReceipt?.type === 'consolidated' && Array.isArray(currentReceipt.detail?.items)) {
       if (
-        currentReceipt.detail.items.some(
-          (it: any) =>
-            it.billId === b.id ||
-            it.id === b.id ||
-            (it.month &&
-              b.month &&
-              String(it.month).toLowerCase() === b.month.toLowerCase() &&
-              (!it.year || String(it.year) === String(b.year)))
-        )
+        currentReceipt.detail.items.some((it: any) => {
+          if (it.billId && String(it.billId) === String(b.id)) return true;
+          if (it.id && String(it.id) === String(b.id)) return true;
+          if (
+            it.month &&
+            b.month &&
+            String(it.month).toLowerCase() === b.month.toLowerCase() &&
+            (!it.year || String(it.year) === String(b.year))
+          ) {
+            return true;
+          }
+          const text = `${it.name || ''} ${it.title || ''} ${it.desc || ''}`;
+          if (text.toLowerCase().includes('spp') && b.month) {
+            if (new RegExp(`\\b${b.month}\\b`, 'i').test(text)) {
+              if (b.year) {
+                const yearMatch = text.match(/\b(20\d{2})\b/);
+                if (yearMatch) {
+                  return String(yearMatch[1]) === String(b.year);
+                }
+              }
+              return true;
+            }
+          }
+          return false;
+        })
       ) {
         isPaid = true;
       }
@@ -156,6 +172,23 @@ export function getStudentFinancialSummary({
   // 1C. Jika kuitansi konsolidasi memuat item SPP, masukkan bulan-bulan yang dibayar
   if (currentReceipt?.type === 'consolidated' && Array.isArray(currentReceipt.detail?.items)) {
     currentReceipt.detail.items.forEach((it: any) => {
+      // Pastikan item ditujukan untuk siswa ini jika ada atribut studentId/studentNis
+      const itStudentId = it.studentId || it.student?.id;
+      const itStudentNis = it.studentNis || it.student?.nis;
+      if (itStudentId && !studentIds.has(String(itStudentId))) return;
+      if (itStudentNis && !studentIds.has(String(itStudentNis))) return;
+
+      const itemName = String(it.name || it.title || '');
+      const itemDesc = String(it.desc || '');
+      const isSpp =
+        it.type === 'spp' ||
+        Boolean(it.month) ||
+        itemName.toLowerCase().includes('spp') ||
+        itemDesc.toLowerCase().includes('spp') ||
+        (it.billId && String(it.billId).startsWith('spp'));
+
+      if (!isSpp) return;
+
       if (it.month) {
         const rawMonth = String(it.month);
         const months = rawMonth.split(',').map((m) => m.trim()).filter(Boolean);
@@ -165,10 +198,14 @@ export function getStudentFinancialSummary({
         months.forEach((m) => {
           collectedPaid.push({ month: m, year: yr });
         });
-      } else if (it.type === 'spp' && typeof it.title === 'string') {
+      } else {
+        // Ekstrak bulan dan tahun dari nama atau deskripsi item
+        const combinedText = `${itemName} ${itemDesc}`;
         for (const [mName] of Object.entries(ACADEMIC_MONTH_ORDER)) {
-          if (new RegExp(`\\b${mName}\\b`, 'i').test(it.title)) {
-            collectedPaid.push({ month: mName, year: undefined });
+          if (new RegExp(`\\b${mName}\\b`, 'i').test(combinedText)) {
+            const yearMatch = combinedText.match(/\b(20\d{2})\b/);
+            const yr = yearMatch ? parseInt(yearMatch[1], 10) : undefined;
+            collectedPaid.push({ month: mName, year: yr });
           }
         }
       }
@@ -222,6 +259,58 @@ export function getStudentFinancialSummary({
     typeof currentReceipt.detail?.balanceAfter === 'number'
   ) {
     endingSavingsBalance = currentReceipt.detail.balanceAfter;
+  } else if (currentReceipt?.type === 'consolidated' && Array.isArray(currentReceipt.detail?.items)) {
+    // A. Cek apakah ada item tabungan dalam keranjang yang memiliki balanceAfter eksplisit
+    const savingsWithBalance = currentReceipt.detail.items.find(
+      (it: any) =>
+        (it.type === 'savings_deposit' ||
+          it.type === 'savings' ||
+          String(it.name || it.title || '').toLowerCase().includes('tabungan')) &&
+        typeof it.balanceAfter === 'number' &&
+        (!it.studentId || studentIds.has(String(it.studentId)))
+    );
+
+    if (savingsWithBalance && typeof savingsWithBalance.balanceAfter === 'number') {
+      endingSavingsBalance = savingsWithBalance.balanceAfter;
+    } else {
+      // B. Hitung seluruh setoran tabungan di dalam keranjang untuk siswa ini
+      const cartSavingsDeposits = currentReceipt.detail.items
+        .filter((it: any) => {
+          const isSav =
+            it.type === 'savings_deposit' ||
+            it.type === 'savings' ||
+            String(it.name || it.title || '').toLowerCase().includes('tabungan');
+          if (!isSav) return false;
+          const itStudentId = it.studentId || it.student?.id;
+          const itStudentNis = it.studentNis || it.student?.nis;
+          if (itStudentId && !studentIds.has(String(itStudentId))) return false;
+          if (itStudentNis && !studentIds.has(String(itStudentNis))) return false;
+          return true;
+        })
+        .reduce((sum: number, it: any) => sum + (Number(it.amount) || 0), 0);
+
+      const receiptStudentBal =
+        currentReceipt.detail?.student?.savingsBalance ??
+        (currentReceipt as any)?.student?.savingsBalance;
+
+      if (typeof receiptStudentBal === 'number' && receiptStudentBal > endingSavingsBalance) {
+        endingSavingsBalance = receiptStudentBal;
+      } else if (cartSavingsDeposits > 0) {
+        endingSavingsBalance =
+          Math.max(matchedStudent?.savingsBalance ?? 0, student?.savingsBalance ?? 0) + cartSavingsDeposits;
+      }
+    }
+  }
+
+  // Jika objek student pada kuitansi membawa saldo tabungan lebih tinggi (setelah mutasi/setoran), pakai yang tertinggi
+  const directReceiptStudentBal =
+    currentReceipt?.detail?.student?.savingsBalance ??
+    (currentReceipt as any)?.student?.savingsBalance;
+  if (typeof directReceiptStudentBal === 'number' && directReceiptStudentBal > endingSavingsBalance) {
+    endingSavingsBalance = directReceiptStudentBal;
+  }
+  if (typeof student?.savingsBalance === 'number' && student.savingsBalance > endingSavingsBalance) {
+    endingSavingsBalance = student.savingsBalance;
   }
 
   // 3. Tunggakan lain-lain belum terbayar

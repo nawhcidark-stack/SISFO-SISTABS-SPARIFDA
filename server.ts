@@ -7589,7 +7589,17 @@ async function startServer() {
     const now = new Date();
     const nowIso = now.toISOString();
     const batchOrderId = `CART-BULK-${Date.now()}`;
-    const executedItems: { name: string; amount: number; desc: string }[] = [];
+    const executedItems: Array<{
+      name: string;
+      amount: number;
+      desc: string;
+      type?: string;
+      billId?: string;
+      month?: string;
+      year?: number;
+      studentId?: string;
+      balanceAfter?: number;
+    }> = [];
     const paidSppBills: SppBill[] = [];
     const paidMiscBills: MiscBill[] = [];
     const newSavingsTxs: SavingsTransaction[] = [];
@@ -7620,7 +7630,12 @@ async function startServer() {
         executedItems.push({
           name: `SPP Bulanan - ${bill.month} ${bill.year}`,
           amount: bill.amount,
-          desc: `Siswa: ${student?.name || "Siswa"} (Kelas ${student?.class || "-"})`
+          desc: `Siswa: ${student?.name || "Siswa"} (Kelas ${student?.class || "-"})`,
+          type: "spp",
+          billId: bill.id,
+          month: bill.month,
+          year: bill.year,
+          studentId: bill.studentId
         });
       }
     }
@@ -7639,7 +7654,10 @@ async function startServer() {
         executedItems.push({
           name: `Lain-lain: ${bill.title}`,
           amount: bill.amount,
-          desc: `Siswa: ${student?.name || "Siswa"} (Kelas ${student?.class || "-"})`
+          desc: `Siswa: ${student?.name || "Siswa"} (Kelas ${student?.class || "-"})`,
+          type: "misc",
+          billId: bill.id,
+          studentId: bill.studentId
         });
       }
     }
@@ -7651,7 +7669,7 @@ async function startServer() {
         const student = students.find(s => s.id === studentId);
         const valAmount = Number(amount);
         if (student && !isNaN(valAmount) && valAmount > 0) {
-          student.savingsBalance += valAmount;
+          student.savingsBalance = (Number(student.savingsBalance) || 0) + valAmount;
           if (!affectedStudents.some(s => s.id === student.id)) {
             affectedStudents.push(student);
           }
@@ -7670,7 +7688,10 @@ async function startServer() {
           executedItems.push({
             name: `Setoran Tabungan Manual`,
             amount: valAmount,
-            desc: `Siswa: ${student.name} • Memo: "${notes || "Setoran"}"`
+            desc: `Siswa: ${student.name} • Memo: "${notes || "Setoran"}"`,
+            type: "savings_deposit",
+            studentId,
+            balanceAfter: student.savingsBalance
           });
         }
       }
@@ -7704,7 +7725,7 @@ async function startServer() {
         persistEntities("students", affectedStudents).catch(err => console.error("Error persisting cart students to MySQL:", err));
       }
 
-      return res.json({ success: true, executedItems, totalAmount, orderId: batchOrderId });
+      return res.json({ success: true, executedItems, totalAmount, orderId: batchOrderId, affectedStudents });
     }
 
     return res.status(400).json({ error: "Tidak ada item transaksi valid yang diproses." });

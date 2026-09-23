@@ -52,7 +52,18 @@ export const SpmbAiAssistantModal: React.FC<SpmbAiAssistantModalProps> = ({
   onNavigateTab
 }) => {
   const schoolName = schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN";
-  const contactPhone = config?.contactPhone || schoolIdentity?.phone || "+6285171151655";
+  const contactPhone = config?.contactPhone || schoolIdentity?.phone || "085171151655";
+
+  const getWaLinkNumber = (num: string) => {
+    const digits = (num || "").replace(/\D/g, "");
+    if (digits.startsWith("0")) {
+      return "62" + digits.slice(1);
+    }
+    if (digits.startsWith("62")) {
+      return digits;
+    }
+    return digits || "6285171151655";
+  };
 
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
     return [
@@ -453,7 +464,7 @@ export const SpmbAiAssistantModal: React.FC<SpmbAiAssistantModalProps> = ({
           <div className="flex items-center justify-between text-[10px] text-slate-500 mt-2 px-1">
             <span>Didukung AI & Basis Pengetahuan Resmi SPMB</span>
             <a
-              href={`https://wa.me/${contactPhone.replace(/\D/g, "")}?text=${encodeURIComponent("Halo Panitia SPMB SMP Maarif NU Pandaan, saya ingin bertanya...")}`}
+              href={`https://wa.me/${getWaLinkNumber(contactPhone)}?text=${encodeURIComponent(`Halo Panitia SPMB ${schoolName}, saya ingin bertanya mengenai pendaftaran...`)}`}
               target="_blank"
               rel="noreferrer"
               className="text-emerald-700 hover:underline flex items-center gap-1 font-semibold"

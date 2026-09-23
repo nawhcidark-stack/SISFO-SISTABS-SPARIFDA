@@ -12816,7 +12816,13 @@ export default function AdminPanel({
                                                 onRefresh();
                                                 setReceiptToPrint({
                                                   type: "spp",
-                                                  detail: b,
+                                                  detail: {
+                                                    ...b,
+                                                    status: "paid",
+                                                    paidAt: new Date().toISOString(),
+                                                    paymentMethod: "Manual Teller (Sekolah)",
+                                                    orderId: (typeof success === 'object' && success?.orderId) ? success.orderId : `ORD-MANUAL-${Date.now()}`,
+                                                  },
                                                   student: selectedStudent,
                                                 });
                                                 setPrintId(

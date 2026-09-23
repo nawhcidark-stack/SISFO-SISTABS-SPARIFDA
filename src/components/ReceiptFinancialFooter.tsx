@@ -52,74 +52,9 @@ export function getStudentFinancialSummary({
   if (student?.nis) studentIds.add(String(student.nis));
   if (matchedStudent?.id) studentIds.add(String(matchedStudent.id));
   if (matchedStudent?.nis) studentIds.add(String(matchedStudent.nis));
-
-  const studentSppBills = (bills || []).filter(
-    (b) => studentIds.has(String(b.studentId)) || b.studentId === student?.id
-  );
-
-  // Identify paid bills (or bill in active receipt being printed)
-  const paidBills = studentSppBills.filter((b) => {
-    if (b.status === 'paid' || b.paidAt) return true;
-    if (
-      currentReceipt?.type === 'spp' &&
-      (currentReceipt.detail?.id === b.id ||
-        (currentReceipt.detail?.month === b.month && currentReceipt.detail?.year === b.year))
-    ) {
-      return true;
-    }
-    if (currentReceipt?.type === 'consolidated' && currentReceipt.detail?.items) {
-      if (currentReceipt.detail.items.some((it: any) => it.billId === b.id || it.id === b.id)) {
-        return true;
-      }
-    }
-    return false;
-  });
-
-  // Sort paid bills chronologically by academic cycle
-  paidBills.sort((a, b) => {
-    if (a.year !== b.year) return (a.year || 0) - (b.year || 0);
-    const orderA = ACADEMIC_MONTH_ORDER[a.month] || 0;
-    const orderB = ACADEMIC_MONTH_ORDER[b.month] || 0;
-    return orderA - orderB;
-  });
-
-  const uniqueYears = Array.from(new Set(paidBills.map((b) => b.year).filter(Boolean)));
-  const multipleYears = uniqueYears.length > 1;
-
-  let paidMonthStrings: string[] = paidBills.map((b) =>
-    multipleYears && b.year ? `${b.month} ${b.year}` : b.month
-  );
-
-  // If current receipt is SPP and contains month not yet recorded
-  if (currentReceipt?.type === 'spp' && currentReceipt.detail?.month) {
-    const receiptMonthStr =
-      multipleYears && currentReceipt.detail.year
-        ? `${currentReceipt.detail.month} ${currentReceipt.detail.year}`
-        : currentReceipt.detail.month;
-    if (!paidMonthStrings.includes(receiptMonthStr)) {
-      paidMonthStrings.push(receiptMonthStr);
-    }
-  }
-
-  // Deduplicate while preserving chronological order
-  paidMonthStrings = Array.from(new Set(paidMonthStrings));
-  const paidMonthsText =
-    paidMonthStrings.length > 0 ? paidMonthStrings.join(', ') : '- (Belum ada)';
-
-  // 2. Saldo akhir tabungan
-  let endingSavingsBalance = matchedStudent?.savingsBalance ?? student?.savingsBalance ?? 0;
-
-  if (
-    currentReceipt?.type === 'savings' &&
-    typeof currentReceipt.detail?.balanceAfter === 'number'
-  ) {
-    endingSavingsBalance = currentReceipt.detail.balanceAfter;
-  }
-
-  // 3. Tunggakan lain-lain belum terbayar
-  const studentMisc = (miscBills || []).filter(
-    (b) => studentIds.has(String(b.studentId)) || (b.studentId && b.studentId === student?.id)
-  );
+  if (currentReceipt?.detail?.studentId) studentIds.add(String(currentReceipt.detail.studentId));
+  if (currentReceipt?.detail?.student?.id) studentIds.add(String(currentReceipt.detail.student.id));
+  if (currentReceipt?.detail?.student?.nis) studentIds.add(String(currentReceipt.detail.student.nis));
 
   // Extract receipt payment date / today date (YYYY-MM-DD)
   const receiptDateStr = (() => {
@@ -141,6 +76,158 @@ export function getStudentFinancialSummary({
     return new Date().toISOString().split('T')[0];
   })();
   const todayStr = new Date().toISOString().split('T')[0];
+
+  const studentSppBills = (bills || []).filter(
+    (b) => studentIds.has(String(b.studentId)) || b.studentId === student?.id
+  );
+
+  interface PaidMonthItem {
+    month: string;
+    year?: number;
+  }
+
+  const collectedPaid: PaidMonthItem[] = [];
+
+  // 1A. Kumpulkan dari studentSppBills
+  studentSppBills.forEach((b) => {
+    let isPaid = b.status === 'paid' || !!b.paidAt;
+
+    // Jika dibayar pada hari ini atau tanggal kuitansi
+    if (!isPaid && b.paidAt) {
+      try {
+        const pd = new Date(b.paidAt).toISOString().split('T')[0];
+        if (pd === receiptDateStr || pd === todayStr) isPaid = true;
+      } catch {
+        // ignore
+      }
+    }
+
+    // Jika kuitansi yang sedang dicetak adalah SPP untuk bulan/bill ini
+    if (
+      currentReceipt?.type === 'spp' &&
+      (currentReceipt.detail?.id === b.id ||
+        (currentReceipt.detail?.month &&
+          b.month &&
+          String(currentReceipt.detail.month).toLowerCase() === b.month.toLowerCase() &&
+          (!currentReceipt.detail?.year || String(currentReceipt.detail.year) === String(b.year))))
+    ) {
+      isPaid = true;
+    }
+
+    // Jika kuitansi konsolidasi memuat tagihan SPP ini
+    if (currentReceipt?.type === 'consolidated' && Array.isArray(currentReceipt.detail?.items)) {
+      if (
+        currentReceipt.detail.items.some(
+          (it: any) =>
+            it.billId === b.id ||
+            it.id === b.id ||
+            (it.month &&
+              b.month &&
+              String(it.month).toLowerCase() === b.month.toLowerCase() &&
+              (!it.year || String(it.year) === String(b.year)))
+        )
+      ) {
+        isPaid = true;
+      }
+    }
+
+    if (isPaid && b.month) {
+      collectedPaid.push({
+        month: b.month,
+        year: typeof b.year === 'number' ? b.year : (b.year ? parseInt(String(b.year), 10) : undefined),
+      });
+    }
+  });
+
+  // 1B. Jika kuitansi SPP sedang dicetak, pastikan bulan pada kuitansi otomatis masuk
+  // (termasuk jika state bills belum sempat re-render setelah pembayaran diproses)
+  if (currentReceipt?.type === 'spp' && currentReceipt.detail?.month) {
+    const rawMonth = String(currentReceipt.detail.month);
+    const months = rawMonth.split(',').map((m) => m.trim()).filter(Boolean);
+    const yr = typeof currentReceipt.detail.year === 'number'
+      ? currentReceipt.detail.year
+      : (currentReceipt.detail.year ? parseInt(String(currentReceipt.detail.year), 10) : undefined);
+    
+    months.forEach((m) => {
+      collectedPaid.push({ month: m, year: yr });
+    });
+  }
+
+  // 1C. Jika kuitansi konsolidasi memuat item SPP, masukkan bulan-bulan yang dibayar
+  if (currentReceipt?.type === 'consolidated' && Array.isArray(currentReceipt.detail?.items)) {
+    currentReceipt.detail.items.forEach((it: any) => {
+      if (it.month) {
+        const rawMonth = String(it.month);
+        const months = rawMonth.split(',').map((m) => m.trim()).filter(Boolean);
+        const yr = typeof it.year === 'number'
+          ? it.year
+          : (it.year ? parseInt(String(it.year), 10) : undefined);
+        months.forEach((m) => {
+          collectedPaid.push({ month: m, year: yr });
+        });
+      } else if (it.type === 'spp' && typeof it.title === 'string') {
+        for (const [mName] of Object.entries(ACADEMIC_MONTH_ORDER)) {
+          if (new RegExp(`\\b${mName}\\b`, 'i').test(it.title)) {
+            collectedPaid.push({ month: mName, year: undefined });
+          }
+        }
+      }
+    });
+  }
+
+  // Deduplikasi bulan & tahun
+  const uniqueKeyMap = new Map<string, PaidMonthItem>();
+  collectedPaid.forEach((item) => {
+    const cleanMonth = item.month.trim();
+    if (!cleanMonth) return;
+    const capitalizedMonth =
+      cleanMonth.charAt(0).toUpperCase() + cleanMonth.slice(1).toLowerCase();
+    const key = `${capitalizedMonth}-${item.year || ''}`;
+    if (!uniqueKeyMap.has(key)) {
+      uniqueKeyMap.set(key, { month: capitalizedMonth, year: item.year });
+    }
+  });
+
+  const uniquePaidItems = Array.from(uniqueKeyMap.values());
+
+  // Urutkan secara kronologis (Tahun dan Siklus Kalender Akademik: Juli -> Juni)
+  uniquePaidItems.sort((a, b) => {
+    const yrA = a.year || 0;
+    const yrB = b.year || 0;
+    if (yrA !== yrB && yrA !== 0 && yrB !== 0) {
+      return yrA - yrB;
+    }
+    const orderA = ACADEMIC_MONTH_ORDER[a.month] || 99;
+    const orderB = ACADEMIC_MONTH_ORDER[b.month] || 99;
+    return orderA - orderB;
+  });
+
+  const distinctYears = Array.from(
+    new Set(uniquePaidItems.map((it) => it.year).filter((y): y is number => typeof y === 'number' && !isNaN(y)))
+  );
+  const multipleYears = distinctYears.length > 1;
+
+  let paidMonthStrings: string[] = uniquePaidItems.map((it) =>
+    multipleYears && it.year ? `${it.month} ${it.year}` : it.month
+  );
+
+  const paidMonthsText =
+    paidMonthStrings.length > 0 ? paidMonthStrings.join(', ') : '- (Belum ada)';
+
+  // 2. Saldo akhir tabungan
+  let endingSavingsBalance = matchedStudent?.savingsBalance ?? student?.savingsBalance ?? 0;
+
+  if (
+    currentReceipt?.type === 'savings' &&
+    typeof currentReceipt.detail?.balanceAfter === 'number'
+  ) {
+    endingSavingsBalance = currentReceipt.detail.balanceAfter;
+  }
+
+  // 3. Tunggakan lain-lain belum terbayar
+  const studentMisc = (miscBills || []).filter(
+    (b) => studentIds.has(String(b.studentId)) || (b.studentId && b.studentId === student?.id)
+  );
 
   // Identifikasi apakah pada hari itu (tanggal kuitansi atau hari ini) tunggakan dibayar
   // 1) Nota yang dicetak bertipe 'misc' (Pembayaran Lain-lain / pelunasan tunggakan)

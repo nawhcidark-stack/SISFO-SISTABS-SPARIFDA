@@ -3478,7 +3478,7 @@ export default function SpmbLandingPage({
                               PANITIA SISTEM PENERIMAAN MURID BARU (SPMB) T.A. {config?.academicYear || '2027/2028'}
                             </p>
                             <p className="text-[10px] text-slate-600 m-0">
-                              {currentSchoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} • Telp: {currentSchoolIdentity?.phone || '(0343) 631234'}
+                              {currentSchoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} • Telp: {config?.contactPhone || currentSchoolIdentity?.phone || '(0343) 631234'}
                             </p>
                           </div>
                           {qrCodeDataUrl && (

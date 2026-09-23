@@ -822,7 +822,7 @@ export default function AdminSpmbManagement({
           }`}
         >
           <Coins size={15} />
-          <span>Setting Biaya & Tahun Ajaran SPMB</span>
+          <span>Setting Biaya, Kontak & Tahun Ajaran SPMB</span>
         </button>
       </div>
 
@@ -1589,6 +1589,42 @@ export default function AdminSpmbManagement({
                 </div>
                 <p className="text-xs text-slate-400">
                   Tahun ajaran ini otomatis disinkronkan ke seluruh halaman portal SPMB, nomor registrasi calon siswa, kuitansi pendaftaran, hingga kuitansi pengembalian token cash.
+                </p>
+              </div>
+            </div>
+
+            {/* SETTING NOMOR KONTAK WHATSAPP / TELEPON PANITIA SPMB */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/40 via-slate-900 to-indigo-950/40 border-2 border-emerald-500/40 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center gap-2 text-emerald-300 font-black text-sm">
+                  <Phone size={18} />
+                  <span>Nomor Kontak WhatsApp / HP Panitia SPMB</span>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold uppercase border border-emerald-500/30">
+                  Helpdesk & Asisten AI
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 items-center">
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                    Nomor WhatsApp / HP Panitia (Contoh: 085171151655 atau 081234567890)
+                  </label>
+                  <div className="relative">
+                    <span className="absolute left-3 top-2.5 text-xs text-slate-400 font-bold">
+                      <Phone size={14} className="text-emerald-400 inline mr-1" />
+                    </span>
+                    <input
+                      type="text"
+                      value={config.contactPhone || ''}
+                      onChange={(e) => setConfig({ ...config, contactPhone: e.target.value })}
+                      placeholder="085171151655"
+                      className="w-full pl-9 pr-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white font-bold font-mono focus:border-emerald-500"
+                    />
+                  </div>
+                </div>
+                <p className="text-xs text-slate-400">
+                  Nomor ini otomatis disinkronkan ke tombol WhatsApp di pop-up Asisten AI SPMB, rujukan konsultasi pendaftaran wali murid, dan helpdesk pendaftaran sekolah.
                 </p>
               </div>
             </div>

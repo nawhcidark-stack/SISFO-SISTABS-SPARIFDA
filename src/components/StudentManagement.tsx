@@ -1,7 +1,7 @@
 import React, { useState, useRef, useMemo, useEffect } from 'react';
 import { Student } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
-import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers, Hash } from 'lucide-react';
+import { Plus, Edit, Trash2, Search, Filter, Check, X, GraduationCap, ChevronRight, RefreshCw, UserPlus, Upload, Download, FileSpreadsheet, FileUp, AlertTriangle, Users, Layers, Hash, RotateCcw, CheckCircle2 } from 'lucide-react';
 import { Pagination } from './Pagination';
 import BulkNisEditorModal from './BulkNisEditorModal';
 
@@ -22,6 +22,7 @@ interface StudentManagementProps {
       password?: string;
     }>,
   ) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
+  onUndoLastImport?: () => Promise<{ success: boolean; message: string }>;
   onRefresh: () => void;
 }
 
@@ -31,6 +32,7 @@ export default function StudentManagement({
   onUpdateStudent,
   onDeleteStudent,
   onImportStudents,
+  onUndoLastImport,
   onRefresh
 }: StudentManagementProps) {
   // Search & Filter
@@ -318,11 +320,38 @@ export default function StudentManagement({
     }
   };
 
+  const [isUndoingImport, setIsUndoingImport] = useState(false);
+  const [undoMessage, setUndoMessage] = useState<string | null>(null);
+
   const handleResetImportModal = () => {
     setImportError('');
     setPreviewImportData([]);
     setImportResult(null);
+    setUndoMessage(null);
     if (fileInputRef.current) fileInputRef.current.value = '';
+  };
+
+  const handleUndoImport = async () => {
+    if (!onUndoLastImport) return;
+    if (!window.confirm("Apakah Anda yakin ingin membatalkan import data kolektif CSV terakhir? Seluruh mutasi dan perubahan saldo dari import akan dipulihkan.")) {
+      return;
+    }
+    setIsUndoingImport(true);
+    setUndoMessage(null);
+    setImportError('');
+    try {
+      const res = await onUndoLastImport();
+      if (res.success) {
+        setUndoMessage(res.message);
+        onRefresh();
+      } else {
+        setImportError(res.message);
+      }
+    } catch (err: any) {
+      setImportError(err?.message || 'Gagal membatalkan import.');
+    } finally {
+      setIsUndoingImport(false);
+    }
   };
 
   // Handle inputs
@@ -1376,6 +1405,35 @@ export default function StudentManagement({
                     </button>
                   </div>
                 </div>
+
+                {/* Undo Last Import Section */}
+                <div className="bg-amber-50/80 border border-amber-200 rounded-lg p-3 flex flex-col sm:flex-row sm:items-center justify-between gap-3 shadow-xs">
+                  <div className="flex items-start gap-2.5 text-amber-950">
+                    <RotateCcw size={15} className="text-amber-700 mt-0.5 shrink-0" />
+                    <div>
+                      <div className="font-bold text-xs">Batalkan Import Kolektif Terakhir</div>
+                      <div className="text-[10.5px] text-amber-800 leading-snug">
+                        Ingin mengembalikan data jika file CSV yang diimpor keliru? Klik tombol ini untuk membatalkan proses import terakhir dan memulihkan saldo/data siswa.
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    disabled={isUndoingImport}
+                    onClick={handleUndoImport}
+                    className="shrink-0 px-3 py-1.5 bg-white border border-amber-300 hover:bg-amber-100 text-amber-900 font-bold rounded-lg text-[11px] flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-colors disabled:opacity-50"
+                  >
+                    <RotateCcw size={12} className={isUndoingImport ? "animate-spin" : ""} />
+                    <span>{isUndoingImport ? "Membatalkan..." : "Batalkan Import Terakhir"}</span>
+                  </button>
+                </div>
+
+                {undoMessage && (
+                  <div className="p-3 bg-emerald-50 border border-emerald-300 text-emerald-950 rounded-lg font-bold text-xs flex items-center gap-2">
+                    <CheckCircle2 size={15} className="text-emerald-700 shrink-0" />
+                    <span>{undoMessage}</span>
+                  </div>
+                )}
 
                 {importError && (
                   <div className="p-2.5 bg-rose-50 border border-rose-250 text-rose-700 rounded-lg font-bold flex items-center gap-1.5 animate-pulse">

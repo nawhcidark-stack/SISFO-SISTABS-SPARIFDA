@@ -9125,6 +9125,14 @@ async function startServer() {
     });
   });
 
+  let lastStudentImportBatch: {
+    timestamp: number;
+    addedStudentIds: string[];
+    addedBillIds: string[];
+    addedSavingsTxIds: string[];
+    previousStudents: Array<{ id: string; state: any }>;
+  } | null = null;
+
   // 4. Batch Import Students via JSON data parsed from CSV
   app.post("/api/admin/students/import", (req, res) => {
     const { studentsList } = req.body;
@@ -9137,6 +9145,7 @@ async function startServer() {
     const touchedStudents: Student[] = [];
     const newImportBills: SppBill[] = [];
     const newImportSavings: SavingsTransaction[] = [];
+    const previousSnapshots: Array<{ id: string; state: any }> = [];
 
     studentsList.forEach((inputStd: any) => {
       const { nis, name, class: className, email, phone, initialSavings, gender, password } = inputStd;
@@ -9148,6 +9157,12 @@ async function startServer() {
       const existingStudent = students.find(s => s.nis.toString().trim() === nis.toString().trim());
 
       if (existingStudent) {
+        if (!previousSnapshots.some(p => p.id === existingStudent.id)) {
+          previousSnapshots.push({
+            id: existingStudent.id,
+            state: JSON.parse(JSON.stringify(existingStudent))
+          });
+        }
         // Update details
         existingStudent.name = name;
         existingStudent.class = className;
@@ -9341,6 +9356,15 @@ async function startServer() {
         persistEntities("savingsTransactions", newImportSavings).catch(err => console.error("Error persisting imported savings to MySQL:", err));
       }
 
+      // Record snapshot for easy rollback/undo
+      lastStudentImportBatch = {
+        timestamp: Date.now(),
+        addedStudentIds: touchedStudents.filter(s => !previousSnapshots.some(p => p.id === s.id)).map(s => s.id),
+        addedBillIds: newImportBills.map(b => b.id),
+        addedSavingsTxIds: newImportSavings.map(t => t.id),
+        previousStudents: previousSnapshots
+      };
+
       // Broadcast SSE notification
       const notification: RealtimeNotification = {
         id: `notif-import-std-${Date.now()}`,
@@ -9353,6 +9377,168 @@ async function startServer() {
     }
 
     res.json({ success: true, addedCount, updatedCount });
+  });
+
+  // 4b. Batalkan (Rollback) Import Siswa Kolektif Terakhir
+  app.post("/api/admin/students/undo-last-import", async (req, res) => {
+    try {
+      if (lastStudentImportBatch) {
+        const { addedStudentIds, addedBillIds, addedSavingsTxIds, previousStudents } = lastStudentImportBatch;
+
+        // 1. Revert previous students state
+        const revertedStudents: Student[] = [];
+        for (const snap of previousStudents) {
+          const idx = students.findIndex(s => s.id === snap.id);
+          if (idx !== -1) {
+            students[idx] = snap.state;
+            revertedStudents.push(students[idx]);
+          }
+        }
+
+        // 2. Remove added students
+        if (addedStudentIds.length > 0) {
+          const toRemoveIds = new Set(addedStudentIds);
+          for (let i = students.length - 1; i >= 0; i--) {
+            if (toRemoveIds.has(students[i].id)) {
+              students.splice(i, 1);
+            }
+          }
+        }
+
+        // 3. Remove added bills
+        if (addedBillIds.length > 0) {
+          const toRemoveBills = new Set(addedBillIds);
+          for (let i = sppBills.length - 1; i >= 0; i--) {
+            if (toRemoveBills.has(sppBills[i].id)) {
+              sppBills.splice(i, 1);
+            }
+          }
+        }
+
+        // 4. Remove added savings txs
+        if (addedSavingsTxIds.length > 0) {
+          const toRemoveTx = new Set(addedSavingsTxIds);
+          for (let i = savingsTransactions.length - 1; i >= 0; i--) {
+            if (toRemoveTx.has(savingsTransactions[i].id)) {
+              savingsTransactions.splice(i, 1);
+            }
+          }
+        }
+
+        saveState();
+
+        // MySQL synchronization
+        try {
+          if (revertedStudents.length > 0) {
+            persistEntities("students", revertedStudents).catch(() => {});
+          }
+          if (addedStudentIds.length > 0) {
+            for (const sid of addedStudentIds) {
+              directDeleteEntityFromMysql("students", sid).catch(() => {});
+            }
+          }
+          if (addedBillIds.length > 0) {
+            for (const bid of addedBillIds) {
+              directDeleteEntityFromMysql("sppBills", bid).catch(() => {});
+            }
+          }
+          if (addedSavingsTxIds.length > 0) {
+            for (const tid of addedSavingsTxIds) {
+              directDeleteEntityFromMysql("savingsTransactions", tid).catch(() => {});
+            }
+          }
+        } catch (e) {
+          console.error("Error syncing rollback to MySQL:", e);
+        }
+
+        const countReverted = revertedStudents.length;
+        const countDeleted = addedStudentIds.length;
+        lastStudentImportBatch = null;
+
+        const notif: RealtimeNotification = {
+          id: `notif-undo-import-${Date.now()}`,
+          title: "Import Kolektif Dibatalkan",
+          message: `Berhasil membatalkan import kolektif: ${countReverted} data siswa dikembalikan ke posisi semula, ${countDeleted} siswa baru dihapus.`,
+          type: "warning",
+          category: "admin",
+          createdAt: new Date().toISOString()
+        };
+        broadcastNotification(notif);
+
+        return res.json({
+          success: true,
+          message: `Berhasil membatalkan import kolektif: ${countReverted} data siswa dipulihkan, ${countDeleted} siswa baru dibatalkan.`
+        });
+      }
+
+      // Check fallback: if there are recent adjustment transactions with notes containing "Import Kolektif"
+      const recentImportTxs = savingsTransactions.filter(t => 
+        (t.notes && t.notes.includes("Import Kolektif")) ||
+        (t.id && (t.id.includes("-init-import") || t.id.includes("sav-adjust-")))
+      );
+
+      if (recentImportTxs.length > 0) {
+        recentImportTxs.sort((a, b) => (b.createdAt || "").localeCompare(a.createdAt || ""));
+        const latestTime = recentImportTxs[0].createdAt;
+        const batchTxs = recentImportTxs.filter(t => 
+          t.createdAt === latestTime || 
+          Math.abs(new Date(t.createdAt).getTime() - new Date(latestTime).getTime()) < 120000
+        );
+
+        const revertedStudents: Student[] = [];
+        const txIdsToRemove = new Set<string>();
+
+        for (const tx of batchTxs) {
+          txIdsToRemove.add(tx.id);
+          const student = students.find(s => s.id === tx.studentId);
+          if (student) {
+            if (tx.type === "withdrawal") {
+              student.savingsBalance = (Number(student.savingsBalance) || 0) + tx.amount;
+            } else if (tx.type === "deposit") {
+              student.savingsBalance = (Number(student.savingsBalance) || 0) - tx.amount;
+            }
+            if (!revertedStudents.some(s => s.id === student.id)) {
+              revertedStudents.push(student);
+            }
+          }
+        }
+
+        for (let i = savingsTransactions.length - 1; i >= 0; i--) {
+          if (txIdsToRemove.has(savingsTransactions[i].id)) {
+            savingsTransactions.splice(i, 1);
+          }
+        }
+
+        saveState();
+
+        if (revertedStudents.length > 0) {
+          persistEntities("students", revertedStudents).catch(() => {});
+        }
+        for (const tid of txIdsToRemove) {
+          directDeleteEntityFromMysql("savingsTransactions", tid).catch(() => {});
+        }
+
+        const notif: RealtimeNotification = {
+          id: `notif-undo-import-${Date.now()}`,
+          title: "Import Kolektif Dibatalkan",
+          message: `Berhasil membatalkan penyesuaian import kolektif: ${batchTxs.length} mutasi saldo dihapus dan saldo ${revertedStudents.length} siswa dipulihkan.`,
+          type: "warning",
+          category: "admin",
+          createdAt: new Date().toISOString()
+        };
+        broadcastNotification(notif);
+
+        return res.json({
+          success: true,
+          message: `Berhasil membatalkan ${batchTxs.length} mutasi saldo import dan memulihkan saldo tabungan ${revertedStudents.length} siswa.`
+        });
+      }
+
+      return res.status(404).json({ error: "Tidak ada riwayat import data kolektif yang dapat dibatalkan saat ini." });
+    } catch (err: any) {
+      console.error("Gagal membatalkan import:", err);
+      return res.status(500).json({ error: "Terjadi kesalahan server saat membatalkan import." });
+    }
   });
 
 

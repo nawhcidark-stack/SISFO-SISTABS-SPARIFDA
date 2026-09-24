@@ -249,6 +249,7 @@ interface AdminPanelProps {
       password?: string;
     }>,
   ) => Promise<{ success: boolean; addedCount: number; updatedCount: number }>;
+  onUndoLastImport?: () => Promise<{ success: boolean; message: string }>;
   onImportTeachers?: (
     homerooms: Array<{
       username: string;
@@ -344,6 +345,7 @@ export default function AdminPanel({
   onUpdateStudent,
   onDeleteStudent,
   onImportStudents,
+  onUndoLastImport,
   onImportTeachers,
   schoolIdentity,
   onUpdateSchoolIdentity,
@@ -11468,6 +11470,7 @@ export default function AdminPanel({
               onUpdateStudent={onUpdateStudent}
               onDeleteStudent={onDeleteStudent}
               onImportStudents={onImportStudents}
+              onUndoLastImport={onUndoLastImport}
               onRefresh={onRefresh}
             />
           </motion.div>

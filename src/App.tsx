@@ -1383,6 +1383,25 @@ export default function App() {
     }
   };
 
+  // Batalkan Import Kolektif Siswa Terakhir
+  const handleUndoLastImport = async (): Promise<{ success: boolean; message: string }> => {
+    try {
+      const res = await fetch('/api/admin/students/undo-last-import', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        initSystemData();
+        return { success: true, message: data.message || 'Import kolektif berhasil dibatalkan.' };
+      }
+      return { success: false, message: data.error || 'Gagal membatalkan import data.' };
+    } catch (err: any) {
+      console.error(err);
+      return { success: false, message: err?.message || 'Terjadi kesalahan koneksi saat membatalkan import.' };
+    }
+  };
+
   // Batch Import Teachers (Wali Kelas & Guru Mapel)
   const handleImportTeachers = async (
     homerooms: Array<{ username: string; name: string; className: string; password?: string }>,
@@ -2685,6 +2704,7 @@ export default function App() {
             onUpdateStudent={handleUpdateStudent}
             onDeleteStudent={handleDeleteStudent}
             onImportStudents={handleImportStudents}
+            onUndoLastImport={handleUndoLastImport}
             onImportTeachers={handleImportTeachers}
             schoolIdentity={schoolIdentity}
             onUpdateSchoolIdentity={handleUpdateSchoolIdentity}

@@ -28,7 +28,6 @@ import {
 import { MidtransBulkReportModal } from "./MidtransBulkReportModal";
 import { SingleMidtransReconcileModal } from "./SingleMidtransReconcileModal";
 import MidtransPayModal from "./MidtransPayModal";
-import { notifyFinancialUpdateLocally } from "../utils/syncEvents";
 import {
   ShieldAlert,
   BookOpen,
@@ -578,7 +577,6 @@ export default function AdminPanel({
       if (!res.ok) {
         throw new Error(data.error || "Gagal memproses pembayaran manual.");
       }
-      notifyFinancialUpdateLocally();
       onRefresh();
       
       const paidBill = data.bill;
@@ -612,7 +610,6 @@ export default function AdminPanel({
         throw new Error(data.error || "Gagal menghapus tagihan.");
       }
       alert("Tagihan berhasil dihapus.");
-      notifyFinancialUpdateLocally();
       onRefresh();
     } catch (err: any) {
       console.error(err);
@@ -695,7 +692,6 @@ export default function AdminPanel({
       alert(`Berhasil! ${data.count} tagihan pembayaran lain-lain telah dilunaskan.`);
       setSelectedMiscBillIds([]);
       setIsPayMiscBulkOpen(false);
-      notifyFinancialUpdateLocally();
       onRefresh();
     } catch (err: any) {
       console.error(err);
@@ -725,7 +721,6 @@ export default function AdminPanel({
         throw new Error(data.error || "Gagal membatalkan pembayaran.");
       }
       alert("Pembayaran berhasil dibatalkan dan status tagihan dikembalikan menjadi Belum Lunas!");
-      notifyFinancialUpdateLocally();
       onRefresh();
     } catch (err: any) {
       console.error(err);

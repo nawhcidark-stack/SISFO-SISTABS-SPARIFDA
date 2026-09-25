@@ -20,7 +20,6 @@ import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
 import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone, Loader2 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
-import { notifyFinancialUpdateLocally, subscribeToFinancialUpdates } from './utils/syncEvents';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
 export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -660,12 +659,10 @@ export default function App() {
       if (showFullLoader) {
         setIsLoading(true);
       }
-      const currentRole = roleRef.current || (localStorage.getItem('smp_maarif_role') as any) || role;
-      const isStaffRole = currentRole !== 'student';
-      const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : isStaffRole;
+      const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : (role === 'admin' || role === 'homeroom');
 
       if (checkIsAdmin) {
-        // Fetch all student bills and total transactions for staff roster (admin, walas, bendahara) in parallel
+        // Fetch all student bills and total transactions for admin bookkeeping roster in parallel
         const [bRes, tRes] = await Promise.all([
           fetchNoCache('/api/admin/all-bills'),
           fetchNoCache('/api/admin/all-transactions'),
@@ -713,10 +710,8 @@ export default function App() {
   // Reload current views
   const handleReload = () => {
     initSystemData();
-    if (role === 'student' && currentStudent) {
-      fetchStudentFullData(currentStudent.id, false);
-    } else {
-      fetchStudentFullData('', true);
+    if (currentStudent) {
+      fetchStudentFullData(currentStudent.id, role === 'admin');
     }
   };
 
@@ -872,27 +867,6 @@ export default function App() {
         fetchMiscBills();
         fetchAttendance();
 
-        // For staff roles (admin, homeroom/walas, treasurer, principal), immediately fetch latest bills & transactions
-        const staffRoleCheck = localStorage.getItem('smp_maarif_role') || currentRole;
-        if (staffRoleCheck && staffRoleCheck !== 'student') {
-          fetchNoCache('/api/admin/all-bills')
-            .then(res => res.ok ? res.json() : null)
-            .then(bData => {
-              if (Array.isArray(bData)) {
-                setStudentBills(bData);
-              }
-            })
-            .catch(() => {});
-          fetchNoCache('/api/admin/all-transactions')
-            .then(res => res.ok ? res.json() : null)
-            .then(tData => {
-              if (Array.isArray(tData)) {
-                setStudentTransactions(tData.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
-              }
-            })
-            .catch(() => {});
-        }
-
       } catch (err) {
         console.error('Error handling push SSE message', err);
       }
@@ -908,41 +882,9 @@ export default function App() {
       setTimeStr(now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB');
     }, 1000);
 
-    // Cross-tab and local financial event bus subscription for 0ms instant sync
-    const unsubFinancial = subscribeToFinancialUpdates(() => {
-      const currentRole = roleRef.current || (localStorage.getItem('smp_maarif_role') as any) || role;
-      if (currentRole !== 'student') {
-        fetchNoCache('/api/admin/all-bills')
-          .then(res => res.ok ? res.json() : null)
-          .then(bData => {
-            if (Array.isArray(bData)) {
-              setStudentBills(bData);
-            }
-          })
-          .catch(() => {});
-        fetchNoCache('/api/misc-bills')
-          .then(res => res.ok ? res.json() : null)
-          .then(mData => {
-            if (Array.isArray(mData)) {
-              setMiscBillsList(mData);
-            }
-          })
-          .catch(() => {});
-        fetchNoCache('/api/students')
-          .then(res => res.ok ? res.json() : null)
-          .then(sData => {
-            if (Array.isArray(sData)) {
-              setStudentsList(sData);
-            }
-          })
-          .catch(() => {});
-      }
-    });
-
     return () => {
       sse.close();
       clearInterval(clockInterval);
-      unsubFinancial();
     };
   }, []);
 
@@ -1256,10 +1198,6 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.bill) {
-          setStudentBills(prev => prev.map(b => b.id === data.bill.id ? { ...b, ...data.bill, status: 'paid' } : b));
-        }
-        notifyFinancialUpdateLocally();
         initSystemData();
         return data.bill || true;
       }
@@ -1280,10 +1218,6 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
-        if (data.bill) {
-          setStudentBills(prev => prev.map(b => b.id === data.bill.id ? { ...b, ...data.bill, status: 'unpaid' } : b));
-        }
-        notifyFinancialUpdateLocally();
         handleReload();
         return { success: true, bill: data.bill };
       } else {

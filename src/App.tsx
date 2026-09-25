@@ -659,10 +659,11 @@ export default function App() {
       if (showFullLoader) {
         setIsLoading(true);
       }
-      const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : (role === 'admin' || role === 'homeroom');
+      const isStaffRole = role !== 'student';
+      const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : isStaffRole;
 
       if (checkIsAdmin) {
-        // Fetch all student bills and total transactions for admin bookkeeping roster in parallel
+        // Fetch all student bills and total transactions for staff roster (admin, walas, bendahara) in parallel
         const [bRes, tRes] = await Promise.all([
           fetchNoCache('/api/admin/all-bills'),
           fetchNoCache('/api/admin/all-transactions'),
@@ -710,8 +711,10 @@ export default function App() {
   // Reload current views
   const handleReload = () => {
     initSystemData();
-    if (currentStudent) {
-      fetchStudentFullData(currentStudent.id, role === 'admin');
+    if (role === 'student' && currentStudent) {
+      fetchStudentFullData(currentStudent.id, false);
+    } else {
+      fetchStudentFullData('', true);
     }
   };
 
@@ -866,6 +869,27 @@ export default function App() {
         fetchMerdekaAssessments();
         fetchMiscBills();
         fetchAttendance();
+
+        // For staff roles (admin, homeroom/walas, treasurer, principal), immediately fetch latest bills & transactions
+        const staffRoleCheck = localStorage.getItem('smp_maarif_role') || currentRole;
+        if (staffRoleCheck && staffRoleCheck !== 'student') {
+          fetchNoCache('/api/admin/all-bills')
+            .then(res => res.ok ? res.json() : null)
+            .then(bData => {
+              if (Array.isArray(bData)) {
+                setStudentBills(bData);
+              }
+            })
+            .catch(() => {});
+          fetchNoCache('/api/admin/all-transactions')
+            .then(res => res.ok ? res.json() : null)
+            .then(tData => {
+              if (Array.isArray(tData)) {
+                setStudentTransactions(tData.sort((a: any, b: any) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()));
+              }
+            })
+            .catch(() => {});
+        }
 
       } catch (err) {
         console.error('Error handling push SSE message', err);

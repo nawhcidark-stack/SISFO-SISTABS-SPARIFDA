@@ -868,12 +868,114 @@ export default function HomeroomPanel({
     }
   }, [currentTeacher?.className]);
 
+  // Real-time reactive financial sync states for Wali Kelas
+  const [liveBills, setLiveBills] = useState<SppBill[]>(bills || []);
+  const [liveMiscBills, setLiveMiscBills] = useState<MiscBill[]>(miscBills || []);
+  const [liveStudents, setLiveStudents] = useState<Student[]>(students || []);
+  const [isFinanceSyncing, setIsFinanceSyncing] = useState<boolean>(false);
+  const [lastFinanceSyncTime, setLastFinanceSyncTime] = useState<Date | null>(null);
+  const [financeSyncToast, setFinanceSyncToast] = useState<{ type: 'success' | 'info' | 'error'; message: string } | null>(null);
+
+  // Sync props to live state when parent re-renders with fresh data
+  useEffect(() => {
+    if (bills && bills.length > 0) {
+      setLiveBills(bills);
+    }
+  }, [bills]);
+
+  useEffect(() => {
+    if (miscBills) {
+      setLiveMiscBills(miscBills);
+    }
+  }, [miscBills]);
+
+  useEffect(() => {
+    if (students && students.length > 0) {
+      setLiveStudents(students);
+    }
+  }, [students]);
+
+  const effectiveBills = liveBills && liveBills.length > 0 ? liveBills : (bills || []);
+  const effectiveMiscBills = liveMiscBills && liveMiscBills.length > 0 ? liveMiscBills : (miscBills || []);
+  const effectiveStudents = liveStudents && liveStudents.length > 0 ? liveStudents : (students || []);
+
+  // Robust real-time sync function: fetches freshest data directly from server with cache-busting
+  const syncFinanceRealtime = async (showToast: boolean = true) => {
+    setIsFinanceSyncing(true);
+    try {
+      const [billsRes, miscRes, studentsRes] = await Promise.all([
+        fetch(`/api/admin/all-bills?_t=${Date.now()}`),
+        fetch(`/api/misc-bills?_t=${Date.now()}`),
+        fetch(`/api/students?_t=${Date.now()}`)
+      ]);
+
+      if (billsRes.ok) {
+        const freshBills = await billsRes.json();
+        if (Array.isArray(freshBills)) {
+          setLiveBills(freshBills);
+        }
+      }
+
+      if (miscRes.ok) {
+        const freshMisc = await miscRes.json();
+        if (Array.isArray(freshMisc)) {
+          setLiveMiscBills(freshMisc);
+        }
+      }
+
+      if (studentsRes.ok) {
+        const freshStudents = await studentsRes.json();
+        if (Array.isArray(freshStudents)) {
+          setLiveStudents(freshStudents);
+        }
+      }
+
+      setLastFinanceSyncTime(new Date());
+
+      if (showToast) {
+        setFinanceSyncToast({
+          type: 'success',
+          message: 'Data tagihan SPP & status lunas berhasil disinkronkan real-time dengan Admin!'
+        });
+        setTimeout(() => setFinanceSyncToast(null), 3500);
+      }
+
+      if (onRefresh) {
+        onRefresh();
+      }
+    } catch (err) {
+      console.error('Error syncing finance in homeroom:', err);
+      if (showToast) {
+        setFinanceSyncToast({
+          type: 'error',
+          message: 'Gagal menghubungi server. Silakan coba kembali.'
+        });
+        setTimeout(() => setFinanceSyncToast(null), 3500);
+      }
+    } finally {
+      setIsFinanceSyncing(false);
+    }
+  };
+
+  // Auto-sync when teacher enters 'finance' tab & background polling every 10s while on finance tab
+  useEffect(() => {
+    if (activeSubTab === 'finance') {
+      syncFinanceRealtime(false);
+
+      const pollInterval = setInterval(() => {
+        syncFinanceRealtime(false);
+      }, 10000);
+
+      return () => clearInterval(pollInterval);
+    }
+  }, [activeSubTab]);
+
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
     if (!currentTeacher?.className) return [];
     const targetClass = currentTeacher.className.trim().toLowerCase();
     const targetClean = targetClass.replace(/[^a-zA-Z0-9]/g, '');
-    return (students || [])
+    return (effectiveStudents || [])
       .filter((s) => {
         if (!s || isMutationStudent(s) || !s.class) return false;
         const sClass = s.class.trim().toLowerCase();
@@ -881,7 +983,7 @@ export default function HomeroomPanel({
         return sClass === targetClass || (targetClean.length > 0 && sClean === targetClean);
       })
       .sort((a, b) => (a.name || '').localeCompare(b.name || ''));
-  }, [students, currentTeacher?.className]);
+  }, [effectiveStudents, currentTeacher?.className]);
 
   // Filter students for grading & rapor based on selectedGradingClass
   const gradingStudents = useMemo(() => {
@@ -944,14 +1046,14 @@ export default function HomeroomPanel({
     };
 
     const summaryMatrix = classStudents.map((student) => {
-      const sBills = bills.filter(
+      const sBills = effectiveBills.filter(
         (b) =>
           b.studentId === student.id &&
           (rekapSppYearFilter === "all" ||
             getAcademicYearOfBill(b) === rekapSppYearFilter),
       );
       const paid = sBills.filter((b) => b.status === "paid");
-      const unpaid = sBills.filter((b) => b.status === "unpaid" && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
+      const unpaid = sBills.filter((b) => b.status === "unpaid" && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, effectiveBills, effectiveStudents)));
       const totalPaidNominal = paid.reduce((sum, b) => sum + b.amount, 0);
       const totalUnpaidNominal = unpaid.reduce((sum, b) => sum + b.amount, 0);
       const pct = sBills.length > 0 ? Math.round((paid.length / sBills.length) * 100) : 0;
@@ -984,7 +1086,7 @@ export default function HomeroomPanel({
     const rekapMiscClassFilter = currentTeacher.className;
 
     const studentIdsSet = new Set(classStudents.map(s => s.id));
-    const activeMiscBills = (miscBills || []).filter(b => studentIdsSet.has(b.studentId));
+    const activeMiscBills = (effectiveMiscBills || []).filter(b => studentIdsSet.has(b.studentId));
 
     const totalMiscTarget = activeMiscBills.reduce((sum, b) => sum + b.amount, 0);
     const totalMiscPaid = activeMiscBills.filter(b => b.status === "paid").reduce((sum, b) => sum + b.amount, 0);
@@ -3159,14 +3261,14 @@ Wassalamualaikum Wr. Wb.
     classStudents.forEach(student => {
       totalSavings += student.savingsBalance || 0;
       
-      const sBills = bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills)));
+      const sBills = effectiveBills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, effectiveBills, effectiveStudents)));
       const unpaidSum = sBills.reduce((acc, curr) => acc + curr.amount, 0);
       totalUnpaidSpp += unpaidSum;
       if (sBills.length > 0) {
         totalInArrearsCount++;
       }
 
-      const sMiscBills = (miscBills || []).filter(b => b.studentId === student.id && b.status !== 'paid');
+      const sMiscBills = (effectiveMiscBills || []).filter(b => b.studentId === student.id && b.status !== 'paid');
       const unpaidMiscSum = sMiscBills.reduce((acc, curr) => acc + curr.amount, 0);
       totalUnpaidMisc += unpaidMiscSum;
       if (sMiscBills.length > 0) {
@@ -3181,7 +3283,7 @@ Wassalamualaikum Wr. Wb.
       totalUnpaidMisc,
       totalInArrearsMiscCount
     };
-  }, [classStudents, bills, miscBills]);
+  }, [classStudents, effectiveBills, effectiveMiscBills, effectiveStudents]);
 
   if (!currentTeacher) {
     return (
@@ -4691,17 +4793,65 @@ Wassalamualaikum Wr. Wb.
 
           {activeSubTab === 'finance' && (
             <div className="bg-white border border-slate-200 rounded-2xl shadow-xs overflow-hidden text-left p-6">
+              {financeSyncToast && (
+                <div className={`mb-5 px-4 py-3 rounded-xl border text-xs flex items-center justify-between gap-3 shadow-xs animate-fade-in ${
+                  financeSyncToast.type === 'success' 
+                    ? 'bg-emerald-50 text-emerald-900 border-emerald-250' 
+                    : 'bg-rose-50 text-rose-900 border-rose-250'
+                }`}>
+                  <div className="flex items-center gap-2.5">
+                    {financeSyncToast.type === 'success' ? (
+                      <CheckCircle size={16} className="text-emerald-600 shrink-0" />
+                    ) : (
+                      <AlertTriangle size={16} className="text-rose-600 shrink-0" />
+                    )}
+                    <span className="font-semibold leading-relaxed">{financeSyncToast.message}</span>
+                  </div>
+                  <button 
+                    onClick={() => setFinanceSyncToast(null)} 
+                    className="text-slate-400 hover:text-slate-700 text-xs font-bold px-1.5 py-0.5 rounded cursor-pointer"
+                  >
+                    ✕
+                  </button>
+                </div>
+              )}
+
               <div className="mb-6 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
                 <div>
-                  <h3 className="text-slate-900 font-extrabold text-sm">Monitoring Administrasi & Keuangan Kelas</h3>
-                  <p className="text-slate-450 text-xs mt-0.5">Informasi rincian saldo tabungan, tunggakan tagihan SPP, dan iuran lain-lain murid untuk sinkronisasi pengingat (Reminder).</p>
+                  <div className="flex items-center gap-2.5">
+                    <h3 className="text-slate-900 font-extrabold text-sm">Monitoring Administrasi & Keuangan Kelas</h3>
+                    <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-black bg-emerald-50 text-emerald-700 border border-emerald-200/80">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                      Real-time Sinkron Admin
+                    </span>
+                  </div>
+                  <p className="text-slate-450 text-xs mt-0.5">
+                    Informasi rincian saldo tabungan, status pembayaran LUNAS SPP, dan tunggakan iuran tersinkron langsung dengan teller kasir Admin & Midtrans.
+                    {lastFinanceSyncTime && (
+                      <span className="ml-1 text-slate-500 font-medium">
+                        (Terakhir disinkronkan: {lastFinanceSyncTime.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' })} WIB)
+                      </span>
+                    )}
+                  </p>
                 </div>
-                <div className="flex flex-wrap items-center gap-3">
-                  <div className="flex flex-wrap gap-2">
+                <div className="flex flex-wrap items-center gap-2.5">
+                  <button
+                    type="button"
+                    onClick={() => syncFinanceRealtime(true)}
+                    disabled={isFinanceSyncing}
+                    className={`inline-flex items-center gap-1.5 px-3.5 py-1.5 bg-indigo-650 hover:bg-indigo-750 text-white font-extrabold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider ${
+                      isFinanceSyncing ? 'opacity-70 cursor-not-allowed bg-slate-600' : ''
+                    }`}
+                    title="Sinkronkan status lunas terbaru langsung dari database Admin dan Midtrans"
+                  >
+                    <RotateCcw size={13} className={isFinanceSyncing ? 'animate-spin' : ''} />
+                    <span>{isFinanceSyncing ? 'Menyinkronkan...' : 'Sinkronkan Realtime'}</span>
+                  </button>
+                  <div className="flex flex-wrap gap-1.5">
                     <button
                       type="button"
                       onClick={handleExportSppExcel}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
                       title="Export Rekap SPP Kelas ke Excel"
                     >
                       <Download size={12} /> Rekap SPP 📊
@@ -4709,18 +4859,18 @@ Wassalamualaikum Wr. Wb.
                     <button
                       type="button"
                       onClick={handleExportMiscExcel}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-slate-700 hover:bg-slate-800 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
                       title="Export Rekap Iuran Lain-lain ke Excel"
                     >
-                      <Download size={12} /> Rekap Iuran 📊
+                      <Download size={12} /> Iuran 📊
                     </button>
                     <button
                       type="button"
                       onClick={handleExportSavingsExcel}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
+                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-lg text-xs cursor-pointer transition-all shadow-xs uppercase tracking-wider font-sans"
                       title="Export Rekap Tabungan Kelas ke Excel"
                     >
-                      <Download size={12} /> Rekap Tabungan 📊
+                      <Download size={12} /> Tabungan 📊
                     </button>
                   </div>
                   {/* Search input inside Tab */}
@@ -4731,7 +4881,7 @@ Wassalamualaikum Wr. Wb.
                       placeholder="Cari nama atau NIS siswa..."
                       value={financeSearch}
                       onChange={(e) => setFinanceSearch(e.target.value)}
-                      className="w-full sm:w-56 pl-9 pr-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:bg-white"
+                      className="w-full sm:w-52 pl-9 pr-3 py-1.5 text-xs font-semibold bg-slate-50 border border-slate-200 rounded-lg text-slate-700 placeholder:text-slate-400 focus:outline-none focus:ring-2 focus:ring-slate-200 focus:bg-white"
                     />
                   </div>
                 </div>
@@ -4812,11 +4962,11 @@ Wassalamualaikum Wr. Wb.
                         </thead>
                         <tbody className="divide-y divide-slate-100">
                           {filteredClassStudents.map((student) => {
-                            const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
+                            const overdueBills = sortSppBills(effectiveBills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, effectiveBills, effectiveStudents))));
                             const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
-                            const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
+                            const paidBills = sortSppBills(effectiveBills.filter(b => b.studentId === student.id && b.status === 'paid'));
 
-                            const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
+                            const studentMiscBills = (effectiveMiscBills || []).filter(b => b.studentId === student.id);
                             const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');
                             const totalUnpaidMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
 
@@ -4925,11 +5075,11 @@ Wassalamualaikum Wr. Wb.
                     {/* Mobile View (Bento Cards to avoid scroll completely) */}
                     <div className="block md:hidden space-y-4">
                       {filteredClassStudents.map((student) => {
-                        const overdueBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, bills))));
+                        const overdueBills = sortSppBills(effectiveBills.filter(b => b.studentId === student.id && b.status === 'unpaid' && isSppBillOverdue(b) && (!isMutationStudent(student) || checkIsBillActiveInHomeroom(b, student.id, effectiveBills, effectiveStudents))));
                         const totalUnpaid = overdueBills.reduce((sum, b) => sum + b.amount, 0);
-                        const paidBills = sortSppBills(bills.filter(b => b.studentId === student.id && b.status === 'paid'));
+                        const paidBills = sortSppBills(effectiveBills.filter(b => b.studentId === student.id && b.status === 'paid'));
 
-                        const studentMiscBills = (miscBills || []).filter(b => b.studentId === student.id);
+                        const studentMiscBills = (effectiveMiscBills || []).filter(b => b.studentId === student.id);
                         const unpaidMisc = studentMiscBills.filter(b => b.status !== 'paid');
                         const totalUnpaidMisc = unpaidMisc.reduce((sum, b) => sum + b.amount, 0);
 

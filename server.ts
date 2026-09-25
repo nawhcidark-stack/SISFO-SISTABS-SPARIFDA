@@ -2154,11 +2154,30 @@ function broadcastNotification(notification: RealtimeNotification) {
   sseClients.forEach(client => {
     try {
       client.res.write(`data: ${JSON.stringify(notification)}\n\n`);
+      if (typeof client.res.flush === "function") {
+        client.res.flush();
+      }
     } catch (err) {
       console.error("SSE broadcast client write failed", err);
     }
   });
 }
+
+// Global SSE heartbeat interval every 15 seconds to prevent browser/proxy timeouts
+setInterval(() => {
+  if (sseClients.length === 0) return;
+  const pingPayload = `data: ${JSON.stringify({ type: "heartbeat", time: Date.now() })}\n\n`;
+  sseClients.forEach(client => {
+    try {
+      client.res.write(pingPayload);
+      if (typeof client.res.flush === "function") {
+        client.res.flush();
+      }
+    } catch (err) {
+      // client disconnected
+    }
+  });
+}, 15000);
 
 // Global WhatsApp Notification Dispatching Helper
 async function sendWhatsappNotification(phoneNumber: string, message: string): Promise<boolean> {
@@ -5960,17 +5979,23 @@ async function startServer() {
 
   // Real-time Event Streaming Endpoint (SSE)
   app.get("/api/notifications/stream", (req, res) => {
-    res.writeHead(200, {
-      "Content-Type": "text/event-stream",
-      "Cache-Control": "no-cache",
-      "Connection": "keep-alive"
-    });
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache, no-transform, no-store, must-revalidate");
+    res.setHeader("Connection", "keep-alive");
+    res.setHeader("X-Accel-Buffering", "no");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    if (typeof res.flushHeaders === "function") {
+      res.flushHeaders();
+    }
 
     const client = { id: Date.now(), res };
     sseClients.push(client);
 
     // Initial heartbeat
     res.write(`data: ${JSON.stringify({ type: "heartbeat", system: "online" })}\n\n`);
+    if (typeof (res as any).flush === "function") {
+      (res as any).flush();
+    }
 
     req.on("close", () => {
       sseClients = sseClients.filter(c => c.id !== client.id);

@@ -10,6 +10,7 @@ import {
   exportMiscRecapToExcel, 
   exportSavingsRecapToExcel 
 } from '../utils/excelExport';
+import { subscribeToFinancialUpdates } from '../utils/syncEvents';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
@@ -878,7 +879,7 @@ export default function HomeroomPanel({
 
   // Sync props to live state when parent re-renders with fresh data
   useEffect(() => {
-    if (bills && bills.length > 0) {
+    if (bills) {
       setLiveBills(bills);
     }
   }, [bills]);
@@ -903,10 +904,20 @@ export default function HomeroomPanel({
   const syncFinanceRealtime = async (showToast: boolean = true) => {
     setIsFinanceSyncing(true);
     try {
+      const fetchOpts: RequestInit = {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache',
+          'Expires': '0'
+        }
+      };
+
+      const timestamp = Date.now();
       const [billsRes, miscRes, studentsRes] = await Promise.all([
-        fetch(`/api/admin/all-bills?_t=${Date.now()}`),
-        fetch(`/api/misc-bills?_t=${Date.now()}`),
-        fetch(`/api/students?_t=${Date.now()}`)
+        fetch(`/api/admin/all-bills?_t=${timestamp}`, fetchOpts),
+        fetch(`/api/misc-bills?_t=${timestamp}`, fetchOpts),
+        fetch(`/api/students?_t=${timestamp}`, fetchOpts)
       ]);
 
       if (billsRes.ok) {
@@ -938,10 +949,9 @@ export default function HomeroomPanel({
           message: 'Data tagihan SPP & status lunas berhasil disinkronkan real-time dengan Admin!'
         });
         setTimeout(() => setFinanceSyncToast(null), 3500);
-      }
-
-      if (onRefresh) {
-        onRefresh();
+        if (onRefresh) {
+          onRefresh();
+        }
       }
     } catch (err) {
       console.error('Error syncing finance in homeroom:', err);
@@ -957,14 +967,37 @@ export default function HomeroomPanel({
     }
   };
 
-  // Auto-sync when teacher enters 'finance' tab & background polling every 10s while on finance tab
+  // Instant Inter-Tab & Window-focus Sync:
+  // Listens to local custom events, BroadcastChannel, and localStorage changes triggered by Admin
+  useEffect(() => {
+    const unsub = subscribeToFinancialUpdates(() => {
+      syncFinanceRealtime(false);
+    });
+
+    const handleFocusOrVisible = () => {
+      if (document.visibilityState === 'visible' && activeSubTab === 'finance') {
+        syncFinanceRealtime(false);
+      }
+    };
+
+    window.addEventListener('focus', handleFocusOrVisible);
+    document.addEventListener('visibilitychange', handleFocusOrVisible);
+
+    return () => {
+      unsub();
+      window.removeEventListener('focus', handleFocusOrVisible);
+      document.removeEventListener('visibilitychange', handleFocusOrVisible);
+    };
+  }, [activeSubTab]);
+
+  // Fast auto-sync when teacher enters 'finance' tab & fast background polling (every 2.5s) while on finance tab
   useEffect(() => {
     if (activeSubTab === 'finance') {
       syncFinanceRealtime(false);
 
       const pollInterval = setInterval(() => {
         syncFinanceRealtime(false);
-      }, 10000);
+      }, 2500);
 
       return () => clearInterval(pollInterval);
     }

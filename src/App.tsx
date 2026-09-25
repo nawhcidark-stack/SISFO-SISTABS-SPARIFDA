@@ -20,6 +20,7 @@ import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
 import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone, Loader2 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
+import { notifyFinancialUpdateLocally, subscribeToFinancialUpdates } from './utils/syncEvents';
 
 // Helper utility to make fetch requests that strictly bypass any browser, webview or device caching layers
 export async function fetchNoCache(input: RequestInfo | URL, init?: RequestInit): Promise<Response> {
@@ -659,7 +660,8 @@ export default function App() {
       if (showFullLoader) {
         setIsLoading(true);
       }
-      const isStaffRole = role !== 'student';
+      const currentRole = roleRef.current || (localStorage.getItem('smp_maarif_role') as any) || role;
+      const isStaffRole = currentRole !== 'student';
       const checkIsAdmin = isAdminOverride !== undefined ? isAdminOverride : isStaffRole;
 
       if (checkIsAdmin) {
@@ -906,9 +908,41 @@ export default function App() {
       setTimeStr(now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB');
     }, 1000);
 
+    // Cross-tab and local financial event bus subscription for 0ms instant sync
+    const unsubFinancial = subscribeToFinancialUpdates(() => {
+      const currentRole = roleRef.current || (localStorage.getItem('smp_maarif_role') as any) || role;
+      if (currentRole !== 'student') {
+        fetchNoCache('/api/admin/all-bills')
+          .then(res => res.ok ? res.json() : null)
+          .then(bData => {
+            if (Array.isArray(bData)) {
+              setStudentBills(bData);
+            }
+          })
+          .catch(() => {});
+        fetchNoCache('/api/misc-bills')
+          .then(res => res.ok ? res.json() : null)
+          .then(mData => {
+            if (Array.isArray(mData)) {
+              setMiscBillsList(mData);
+            }
+          })
+          .catch(() => {});
+        fetchNoCache('/api/students')
+          .then(res => res.ok ? res.json() : null)
+          .then(sData => {
+            if (Array.isArray(sData)) {
+              setStudentsList(sData);
+            }
+          })
+          .catch(() => {});
+      }
+    });
+
     return () => {
       sse.close();
       clearInterval(clockInterval);
+      unsubFinancial();
     };
   }, []);
 
@@ -1222,6 +1256,10 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        if (data.bill) {
+          setStudentBills(prev => prev.map(b => b.id === data.bill.id ? { ...b, ...data.bill, status: 'paid' } : b));
+        }
+        notifyFinancialUpdateLocally();
         initSystemData();
         return data.bill || true;
       }
@@ -1242,6 +1280,10 @@ export default function App() {
       });
       if (res.ok) {
         const data = await res.json();
+        if (data.bill) {
+          setStudentBills(prev => prev.map(b => b.id === data.bill.id ? { ...b, ...data.bill, status: 'unpaid' } : b));
+        }
+        notifyFinancialUpdateLocally();
         handleReload();
         return { success: true, bill: data.bill };
       } else {

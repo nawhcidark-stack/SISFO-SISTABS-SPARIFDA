@@ -61,6 +61,20 @@ export function extractMonthAndYear(text: string): { month?: string; year?: numb
   if (!text) return {};
   const clean = text.trim();
 
+  // 0. Check YYYYMM or YYYY-MM or YYYY_MM format (e.g. 202410, 202607, 2025-11, 2026_08)
+  const yyyyMmRegex = /(?:^|[-_ \/\.,])(20\d{2})[-_ \/\.]?(0[1-9]|1[0-2])(?:[-_ \/\.,]|$)/;
+  const match0 = clean.match(yyyyMmRegex);
+  if (match0) {
+    const rawYear = parseInt(match0[1], 10);
+    const num = match0[2];
+    const numMap: { [k: string]: string } = {
+      "01": "Januari", "02": "Februari", "03": "Maret", "04": "April", "05": "Mei", "06": "Juni",
+      "07": "Juli", "08": "Agustus", "09": "September", "10": "Oktober", "11": "November", "12": "Desember"
+    };
+    const month = numMap[num];
+    if (month) return { month, year: rawYear };
+  }
+
   // 1. Check for full or short month name combined with 2 or 4 digit year (e.g. Agu26, Ags26, Agustus2026, Agu2026, Jul26, Juli2026, Sep26, Okt26, Nov26, Des26, Jan27, Feb27)
   const monthYearCombinedRegex = /(?:^|[-_ \/\.,])(Januari|Februari|Maret|April|Mei|Juni|Juli|Agustus|September|Oktober|November|Desember|January|February|March|June|July|August|September|October|November|December|Jan|Feb|Mar|Apr|Jun|Jul|Agu|Ags|Aug|Agt|Sep|Sept|Okt|Oct|Nov|Des|Dec)[-_ \/\.]?(\d{2,4})(?:[-_ \/\.,]|$)/i;
   const match1 = clean.match(monthYearCombinedRegex);
@@ -332,7 +346,7 @@ export function findSppBillMatching(
   idOrOrderId: string, 
   sppBillsList: SppBill[], 
   targetStudentId?: string,
-  extraHints?: { description?: string; month?: string; year?: number; miscBillsList?: MiscBill[]; studentsList?: Student[] }
+  extraHints?: { description?: string; month?: string; year?: number; amount?: number; miscBillsList?: MiscBill[]; studentsList?: Student[] }
 ): SppBill | undefined {
   if (!idOrOrderId && !extraHints?.description && !extraHints?.month) return undefined;
   const cleanKey = (idOrOrderId || "").trim();
@@ -343,25 +357,26 @@ export function findSppBillMatching(
   if (isExplicitSpmb(cleanKey, extraHints?.description)) return undefined;
   if (isExplicitCart(cleanKey, extraHints?.description)) return undefined;
 
-  // 1. Direct exact match by orderId, id, or transactionId
+  // 1. Direct exact match by orderId, id, or transactionId (case-insensitive)
   if (cleanKey) {
+    const cleanLower = cleanKey.toLowerCase();
     const directMatch = sppBillsList.find(b => 
-      b.orderId === cleanKey || 
-      b.id === cleanKey || 
-      b.transactionId === cleanKey ||
-      b.id === cleanKey + "-unpaid" ||
-      b.id.replace("-unpaid", "") === cleanKey.replace("-unpaid", "")
+      (b.orderId && b.orderId.toLowerCase() === cleanLower) || 
+      (b.id && b.id.toLowerCase() === cleanLower) || 
+      (b.transactionId && b.transactionId.toLowerCase() === cleanLower) ||
+      (b.id && b.id.toLowerCase() === cleanLower + "-unpaid") ||
+      (b.id && b.id.toLowerCase().replace("-unpaid", "") === cleanLower.replace("-unpaid", ""))
     );
     if (directMatch) return directMatch;
   }
 
   // 2. Direct match by stripping trailing 4-digit timestamp or random suffix
   if (cleanKey) {
-    const cleanWithoutSuffix = cleanKey.replace(/-\d{4,6}$/, "");
+    const cleanWithoutSuffix = cleanKey.replace(/-\d{4,6}$/, "").toLowerCase();
     const suffixMatch = sppBillsList.find(b =>
-      b.id === cleanWithoutSuffix ||
-      b.id === cleanWithoutSuffix + "-unpaid" ||
-      b.orderId === cleanWithoutSuffix
+      (b.id && b.id.toLowerCase() === cleanWithoutSuffix) ||
+      (b.id && b.id.toLowerCase() === cleanWithoutSuffix + "-unpaid") ||
+      (b.orderId && b.orderId.toLowerCase() === cleanWithoutSuffix)
     );
     if (suffixMatch) return suffixMatch;
   }
@@ -402,15 +417,13 @@ export function findSppBillMatching(
   if (!effectiveStudentId && cleanKey) {
     const tokens = cleanKey.replace(/^SPP-/i, "").split(/[-_]/);
     for (const token of tokens) {
-      const cleanToken = token.trim();
-      if (/^\d{3,12}$/.test(cleanToken)) {
-        const found = studentsList.find(s => String(s.nis).trim() === cleanToken || s.id === cleanToken || s.id === `std-${cleanToken}`);
-        if (found) {
-          effectiveStudentId = found.id;
-          break;
-        }
-      } else if (cleanToken.startsWith("std-")) {
-        const found = studentsList.find(s => s.id === cleanToken || s.id === `std-${cleanToken}`);
+      const cleanToken = token.trim().toLowerCase();
+      if (cleanToken.length >= 2) {
+        const found = studentsList.find(s => 
+          String(s.nis).trim().toLowerCase() === cleanToken || 
+          s.id.toLowerCase() === cleanToken || 
+          s.id.toLowerCase() === `std-${cleanToken}`
+        );
         if (found) {
           effectiveStudentId = found.id;
           break;
@@ -419,8 +432,12 @@ export function findSppBillMatching(
     }
     // Also check if whole cleanKey without SPP prefix is a student NIS
     if (!effectiveStudentId) {
-      const core = cleanKey.replace(/^SPP-/i, "").trim();
-      const found = studentsList.find(s => String(s.nis).trim() === core || s.id === core || s.id === `std-${core}`);
+      const core = cleanKey.replace(/^SPP-/i, "").trim().toLowerCase();
+      const found = studentsList.find(s => 
+        String(s.nis).trim().toLowerCase() === core || 
+        s.id.toLowerCase() === core || 
+        s.id.toLowerCase() === `std-${core}`
+      );
       if (found) effectiveStudentId = found.id;
     }
   }
@@ -447,8 +464,8 @@ export function findSppBillMatching(
     }
 
     // If cleanKey explicitly targets SPP (e.g. SPP-13011-...) but no month matched or month is not recognized,
-    // match the oldest unpaid / pending SPP bill for this student
-    if (cleanKey.startsWith("SPP-") || cleanKey.includes("SPP") || (extraHints?.description && extraHints.description.toLowerCase().includes("spp"))) {
+    // match by amount if specified, or match the oldest unpaid / pending SPP bill for this student
+    if (cleanKey.toUpperCase().startsWith("SPP-") || cleanKey.toUpperCase().includes("SPP") || (extraHints?.description && extraHints.description.toLowerCase().includes("spp"))) {
       const studentUnpaidBills = sppBillsList
         .filter(b => b.studentId === effectiveStudentId && (b.status === "pending" || b.status === "unpaid"))
         .sort((a, b) => {
@@ -458,6 +475,10 @@ export function findSppBillMatching(
           const idxB = ACADEMIC_MONTHS.indexOf(b.month);
           return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
         });
+      if (extraHints?.amount && extraHints.amount > 0) {
+        const amountMatch = studentUnpaidBills.find(b => b.amount === extraHints.amount || b.amount === (extraHints.amount! - 4000));
+        if (amountMatch) return amountMatch;
+      }
       if (studentUnpaidBills.length > 0) return studentUnpaidBills[0];
     }
   }
@@ -634,16 +655,18 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   }
 
   async function getMidtransStatus(orderId: string): Promise<any> {
-    const serverKey = (midtransConfig.serverKey || "").trim();
+    const serverKey = (midtransConfig.serverKey || process.env.MIDTRANS_SERVER_KEY || "").trim();
     if (!serverKey || !orderId) return null;
+    const cleanId = String(orderId).trim().replace(/^#+/, "").replace(/^["']|["']$/g, "").trim();
+    if (!cleanId) return null;
     const authHeader = Buffer.from(`${serverKey}:`).toString("base64");
     
     const primaryUrl = midtransConfig.isProduction
-      ? `https://api.midtrans.com/v2/${encodeURIComponent(orderId)}/status`
-      : `https://api.sandbox.midtrans.com/v2/${encodeURIComponent(orderId)}/status`;
+      ? `https://api.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`
+      : `https://api.sandbox.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`;
     const fallbackUrl = midtransConfig.isProduction
-      ? `https://api.sandbox.midtrans.com/v2/${encodeURIComponent(orderId)}/status`
-      : `https://api.midtrans.com/v2/${encodeURIComponent(orderId)}/status`;
+      ? `https://api.sandbox.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`
+      : `https://api.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`;
 
     try {
       let res = await fetch(primaryUrl, {
@@ -852,15 +875,18 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     const actualPaymentType = `Midtrans (${paymentType})`;
     const midtransTime = statusData.settlement_time || statusData.transaction_time || "";
     const resolvedPaidAt = parseMidtransTime(midtransTime);
-    const targetOrderId = statusData.order_id || cleanOrderId;
-    const targetTransactionId = statusData.transaction_id || "";
+    const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(cleanOrderId);
+    const targetOrderId = (isUuid && statusData.order_id) ? statusData.order_id : (statusData.order_id || cleanOrderId);
+    const targetTransactionId = statusData.transaction_id || (isUuid ? cleanOrderId : "");
+    const upperTargetOrderId = targetOrderId.toUpperCase();
+    const upperCleanOrderId = cleanOrderId.toUpperCase();
 
     let actionTaken = false;
     let detailMessage = "";
 
     // 1. SPP BILLS
-    if (targetOrderId.startsWith("SPP-") || cleanOrderId.startsWith("SPP-")) {
-      const activeOrderId = targetOrderId.startsWith("SPP-") ? targetOrderId : cleanOrderId;
+    if (upperTargetOrderId.startsWith("SPP-") || upperCleanOrderId.startsWith("SPP-")) {
+      const activeOrderId = upperTargetOrderId.startsWith("SPP-") ? targetOrderId : cleanOrderId;
       const bill = findSppBillMatching(activeOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills }) || 
                    findSppBillMatching(cleanOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills });
       if (bill) {
@@ -887,6 +913,32 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               paymentType: actualPaymentType,
               settlementTime: resolvedPaidAt
             });
+
+            // Automatically record in Kas BKU Bendahara if not already recorded
+            const existingKas = treasurerTransactions.find(t => (t.orderId && t.orderId === targetOrderId) || (targetTransactionId && t.transactionId === targetTransactionId));
+            if (!existingKas) {
+              const newKas: TreasurerTransaction = {
+                id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                type: "incoming",
+                category: `SPP ${bill.month} ${bill.year}`,
+                amount: Number(bill.amount) || 0,
+                description: `Pembayaran Online Midtrans: SPP ${bill.month} ${bill.year} (${student?.name || "Siswa"}) [Order: ${targetOrderId}]`,
+                date: resolvedPaidAt.substring(0, 10),
+                source: "spp",
+                studentName: student?.name,
+                studentId: student?.id,
+                nis: student?.nis,
+                createdBy: "Midtrans Gateway (Online)",
+                paymentMethod: "bank",
+                orderId: targetOrderId,
+                transactionId: targetTransactionId,
+                fundingSource: "Kas Bank/Midtrans"
+              };
+              treasurerTransactions.unshift(newKas);
+              if (persistEntity) {
+                persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting SPP Kas:", err));
+              }
+            }
 
             broadcastNotification({
               id: `notif-${Date.now()}`,
@@ -926,8 +978,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     }
 
     // 2. MISC BILLS
-    else if (targetOrderId.startsWith("MISC-") || cleanOrderId.startsWith("MISC-")) {
-      const activeOrderId = targetOrderId.startsWith("MISC-") ? targetOrderId : cleanOrderId;
+    else if (upperTargetOrderId.startsWith("MISC-") || upperCleanOrderId.startsWith("MISC-")) {
+      const activeOrderId = upperTargetOrderId.startsWith("MISC-") ? targetOrderId : cleanOrderId;
       const bill = findMiscBillMatching(activeOrderId, miscBills, undefined, { studentsList: students }) ||
                    findMiscBillMatching(cleanOrderId, miscBills, undefined, { studentsList: students }) ||
                    miscBills.find(m => m.orderId === activeOrderId || m.orderId === cleanOrderId || m.id === cleanOrderId);
@@ -955,6 +1007,32 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
               settlementTime: resolvedPaidAt
             });
 
+            // Record in Kas BKU Bendahara if not already recorded
+            const existingKas = treasurerTransactions.find(t => (t.orderId && t.orderId === targetOrderId) || (targetTransactionId && t.transactionId === targetTransactionId));
+            if (!existingKas) {
+              const newKas: TreasurerTransaction = {
+                id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                type: "incoming",
+                category: bill.title || "Tagihan Non-SPP",
+                amount: Number(bill.amount) || 0,
+                description: `Pembayaran Online Midtrans: ${bill.title} (${student?.name || "Siswa"}) [Order: ${targetOrderId}]`,
+                date: resolvedPaidAt.substring(0, 10),
+                source: "custom",
+                studentName: student?.name,
+                studentId: student?.id,
+                nis: student?.nis,
+                createdBy: "Midtrans Gateway (Online)",
+                paymentMethod: "bank",
+                orderId: targetOrderId,
+                transactionId: targetTransactionId,
+                fundingSource: "Kas Bank/Midtrans"
+              };
+              treasurerTransactions.unshift(newKas);
+              if (persistEntity) {
+                persistEntity("treasurerTransactions", newKas).catch(err => console.error("Error persisting Misc Kas:", err));
+              }
+            }
+
             if (persistEntity) {
               persistEntity("miscBills", bill).catch(err => console.error("Error persisting settled Misc to MySQL:", err));
             }
@@ -977,8 +1055,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     }
 
     // 3. SAVINGS DEPOSITS
-    else if (targetOrderId.startsWith("SAV-") || cleanOrderId.startsWith("SAV-")) {
-      const activeOrderId = targetOrderId.startsWith("SAV-") ? targetOrderId : cleanOrderId;
+    else if (upperTargetOrderId.startsWith("SAV-") || upperCleanOrderId.startsWith("SAV-")) {
+      const activeOrderId = upperTargetOrderId.startsWith("SAV-") ? targetOrderId : cleanOrderId;
       const trans = savingsTransactions.find(t => t.orderId === activeOrderId || t.orderId === cleanOrderId || t.id === cleanOrderId);
       if (trans) {
         if (isSettled && trans.status !== "success") {
@@ -1022,8 +1100,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     }
 
     // 4. MULTI-BILL CART
-    else if (targetOrderId.startsWith("CART-") || cleanOrderId.startsWith("CART-") || targetOrderId.startsWith("COLLECTIVE-CART-") || cleanOrderId.startsWith("COLLECTIVE-CART-")) {
-      const activeOrderId = targetOrderId.startsWith("CART-") || targetOrderId.startsWith("COLLECTIVE-CART-") ? targetOrderId : cleanOrderId;
+    else if (upperTargetOrderId.startsWith("CART-") || upperCleanOrderId.startsWith("CART-") || upperTargetOrderId.startsWith("COLLECTIVE-CART-") || upperCleanOrderId.startsWith("COLLECTIVE-CART-")) {
+      const activeOrderId = (upperTargetOrderId.startsWith("CART-") || upperTargetOrderId.startsWith("COLLECTIVE-CART-")) ? targetOrderId : cleanOrderId;
       const matchedSpp = sppBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId);
       const matchedMisc = miscBills.filter(m => m.orderId === activeOrderId || m.orderId === cleanOrderId);
       const matchedSavings = savingsTransactions.filter(t => t.orderId === activeOrderId || t.orderId === cleanOrderId);
@@ -1173,10 +1251,10 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     }
 
     // 5. SPMB TRANSACTIONS (TOKEN & DAFTAR ULANG)
-    else if (targetOrderId.startsWith("SPMB-") || cleanOrderId.startsWith("SPMB-")) {
-      const activeOrderId = targetOrderId.startsWith("SPMB-") ? targetOrderId : cleanOrderId;
-      const isToken = activeOrderId.startsWith("SPMB-TOKEN-");
-      const isRereg = activeOrderId.startsWith("SPMB-REREG-");
+    else if (upperTargetOrderId.startsWith("SPMB-") || upperCleanOrderId.startsWith("SPMB-")) {
+      const activeOrderId = upperTargetOrderId.startsWith("SPMB-") ? targetOrderId : cleanOrderId;
+      const isToken = activeOrderId.toUpperCase().startsWith("SPMB-TOKEN-");
+      const isRereg = activeOrderId.toUpperCase().startsWith("SPMB-REREG-");
 
       const candidate = spmbCandidates.find(c => 
         c.tokenPaymentOrderId === activeOrderId || 
@@ -1281,6 +1359,31 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
           if (persistEntity) {
             persistEntity("sppBills", fallbackBill).catch(err => console.error("Error persisting settled fallback SPP:", err));
+          }
+
+          const existingKas = treasurerTransactions.find(t => (t.orderId && t.orderId === targetOrderId) || (targetTransactionId && t.transactionId === targetTransactionId));
+          if (!existingKas) {
+            const newKas: TreasurerTransaction = {
+              id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              type: "incoming",
+              category: `SPP ${fallbackBill.month} ${fallbackBill.year}`,
+              amount: Number(fallbackBill.amount) || 0,
+              description: `Pembayaran Online Midtrans: SPP ${fallbackBill.month} ${fallbackBill.year} (${student?.name || "Siswa"}) [Order: ${targetOrderId}]`,
+              date: resolvedPaidAt.substring(0, 10),
+              source: "spp",
+              studentName: student?.name,
+              studentId: student?.id,
+              nis: student?.nis,
+              createdBy: "Midtrans Gateway (Online)",
+              paymentMethod: "bank",
+              orderId: targetOrderId,
+              transactionId: targetTransactionId,
+              fundingSource: "Kas Bank/Midtrans"
+            };
+            treasurerTransactions.unshift(newKas);
+            if (persistEntity) {
+              persistEntity("treasurerTransactions", newKas).catch(() => {});
+            }
           }
           detailMessage = `Tagihan SPP ${fallbackBill.month} ${fallbackBill.year} (${student?.name || "Siswa"}) berhasil di-settle LUNAS.`;
         } else {
@@ -2142,24 +2245,39 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   router.post("/simulate-payment-success", async (req, res) => {
     const { orderId, paymentType, transactionId } = req.body;
     if (!orderId) return res.status(400).json({ error: "Order ID is required." });
+    const cleanOrderId = String(orderId).trim().replace(/^#+/, "").replace(/^["']|["']$/g, "").trim();
 
     let midtransStatus: any = null;
     try {
-      midtransStatus = await getMidtransStatus(orderId);
+      midtransStatus = await getMidtransStatus(cleanOrderId);
     } catch (e) {}
 
+    const realOrderId = midtransStatus?.order_id || cleanOrderId;
+    const realTxId = transactionId || midtransStatus?.transaction_id || `sim-${Date.now()}`;
     const actualPaymentType = paymentType || midtransStatus?.payment_type || "Midtrans Snap";
 
     try {
-      const reconResult = await processMidtransOrderStatus(orderId, {
-        order_id: orderId,
+      const reconResult = await processMidtransOrderStatus(realOrderId, {
+        order_id: realOrderId,
         transaction_status: "settlement",
         payment_type: actualPaymentType,
         settlement_time: new Date().toISOString(),
-        transaction_id: transactionId || midtransStatus?.transaction_id || `sim-${Date.now()}`
+        transaction_id: realTxId,
+        gross_amount: midtransStatus?.gross_amount
       });
 
-      res.json({ success: true, message: "Pembayaran berhasil disimulasikan sebagai lunas.", reconResult });
+      if (!reconResult.actionTaken) {
+        return res.status(400).json({
+          error: reconResult.detailMessage || `Transaksi ${realOrderId} tidak dapat dicocokkan otomatis ke tagihan internal sekolah.`,
+          reconResult
+        });
+      }
+
+      res.json({
+        success: true,
+        message: reconResult.detailMessage || "Pembayaran berhasil diselaraskan dan berstatus LUNAS.",
+        reconResult
+      });
     } catch (e) {
       const err = e as Error;
       res.status(500).json({ error: "Gagal mensimulasikan pembayaran: " + err.message });
@@ -2192,7 +2310,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     if (!orderId || typeof orderId !== "string" || !orderId.trim()) {
       return res.status(400).json({ error: "Order ID atau nomor referensi wajib diisi." });
     }
-    const cleanOrderId = orderId.trim();
+    const cleanOrderId = orderId.trim().replace(/^#+/, "").replace(/^["']|["']$/g, "").trim();
 
     try {
       const midtransStatus = await getMidtransStatus(cleanOrderId);
@@ -2201,7 +2319,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         const localMisc = miscBills.find(b => b.orderId === cleanOrderId || b.id === cleanOrderId);
         const localSavings = savingsTransactions.find(t => t.orderId === cleanOrderId || t.id === cleanOrderId);
         if (localSpp || localMisc || localSavings) {
-          return res.json({ success: true, message: "Data transaksi ditemukan di sistem internal sekolah.", item: localSpp || localMisc || localSavings });
+          return res.json({
+            success: true,
+            type: "local_only",
+            message: "Data transaksi ditemukan di sistem internal sekolah.",
+            item: localSpp || localMisc || localSavings
+          });
         }
         return res.status(404).json({ error: `Order ID '${cleanOrderId}' tidak ditemukan di Gateway Midtrans maupun database lokal.` });
       }
@@ -2221,7 +2344,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         type: reconResult.actionTaken ? "reconciled" : "midtrans_only",
         message: reconResult.actionTaken
           ? `BERHASIL! ${reconResult.detailMessage || "Status pembayaran tagihan telah diperbarui menjadi LUNAS."}`
-          : `PERINGATAN: Transaksi sukses di Midtrans, namun tagihan terkait (${cleanOrderId}) belum berhasil dicocokkan otomatis. Silakan pastikan format Order ID atau NIS sesuai.`,
+          : `PERINGATAN: Transaksi sukses di Midtrans (Settlement), namun belum berhasil dicocokkan otomatis. Silakan gunakan fitur Rekonsiliasi Satuan untuk memasangkan manual.`,
         midtransStatus,
         reconResult
       });
@@ -2229,6 +2352,609 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       const err = e as Error;
       console.error("Error verifying midtrans order:", err);
       res.status(500).json({ error: "Gagal memproses verifikasi order: " + err.message });
+    }
+  });
+
+  // 16B. Comprehensive Single Midtrans Check & Reconciliation Endpoint
+  router.post("/midtrans/single-check-and-reconcile", async (req, res) => {
+    try {
+      const {
+        query,
+        autoReconcile = false,
+        forceReconcileLocal = false,
+        allocationOverride
+      } = req.body;
+
+      if (!query || typeof query !== "string" || !query.trim()) {
+        return res.status(400).json({ error: "Order ID, Transaction ID Midtrans (UUID), atau NIS Siswa wajib diisi." });
+      }
+
+      const cleanQuery = query.trim().replace(/^#+/, "").replace(/^["']|["']$/g, "").trim();
+
+      // Case A: Manual pairing override requested directly through this endpoint
+      if (allocationOverride) {
+        const {
+          studentId,
+          studentNis,
+          allocationType = "auto_spp",
+          specificBillId,
+          specificBillType,
+          paymentType = "Midtrans (Single Manual Reconciled)",
+          settlementTime,
+          notes,
+          amount,
+          orderId = cleanQuery,
+          transactionId
+        } = allocationOverride;
+
+        const effectiveOrderId = String(orderId || cleanQuery).trim();
+        const effectiveAmount = Number(amount) || 0;
+        const resolvedPaidAt = parseMidtransTime(settlementTime || new Date().toISOString());
+
+        let targetStudent = students.find(s =>
+          (studentId && (s.id === studentId || String(s.nis).trim() === String(studentId).trim())) ||
+          (studentNis && (String(s.nis).trim() === String(studentNis).trim() || s.id === `std-${studentNis}` || s.id === studentNis))
+        );
+
+        if (allocationType === "treasurer_kas" || (!targetStudent && allocationType !== "specific_bill")) {
+          const newKas: TreasurerTransaction = {
+            id: `trx-kas-${Date.now()}`,
+            type: "incoming",
+            category: notes || "Penerimaan Midtrans Online (Single Reconcile)",
+            amount: effectiveAmount,
+            description: `Rekonsiliasi Manual Order Midtrans: ${effectiveOrderId} ${transactionId ? `(TxID: ${transactionId})` : ""}`,
+            date: resolvedPaidAt.substring(0, 10),
+            source: "custom",
+            studentName: targetStudent?.name || "Wali Murid / Umum",
+            studentId: targetStudent?.id,
+            nis: targetStudent?.nis,
+            createdBy: "Admin (Single Reconcile)",
+            paymentMethod: "bank",
+            orderId: effectiveOrderId,
+            transactionId: transactionId ? String(transactionId).trim() : undefined
+          };
+          treasurerTransactions.unshift(newKas);
+
+          recordOrUpdateMidtransTransaction({
+            orderId: effectiveOrderId,
+            transactionId: transactionId ? String(transactionId).trim() : undefined,
+            billType: "other",
+            grossAmount: effectiveAmount,
+            studentName: targetStudent?.name,
+            studentNis: targetStudent?.nis,
+            description: newKas.description,
+            transactionStatus: "settlement",
+            paymentType,
+            settlementTime: resolvedPaidAt
+          });
+
+          saveState();
+          if (persistEntity) {
+            persistEntity("treasurerTransactions", newKas).catch(() => {});
+          }
+
+          return res.json({
+            success: true,
+            actionTaken: true,
+            message: `Transaksi Rp ${effectiveAmount.toLocaleString("id-ID")} berhasil dicatat langsung ke Kas Umum (BKU) Bendahara.`,
+            allocationType: "treasurer_kas"
+          });
+        }
+
+        if (!targetStudent) {
+          return res.status(400).json({ error: "Siswa untuk alokasi pembayaran tidak ditemukan." });
+        }
+
+        if (allocationType === "savings") {
+          const newSavingsTx: SavingsTransaction = {
+            id: `sav-rep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            studentId: targetStudent.id,
+            studentNis: targetStudent.nis,
+            type: "deposit",
+            amount: effectiveAmount,
+            status: "success",
+            createdAt: resolvedPaidAt,
+            paymentMethod: paymentType,
+            orderId: effectiveOrderId,
+            transactionId: transactionId ? String(transactionId).trim() : undefined,
+            notes: notes || `Setoran Tabungan Single Reconcile (${effectiveOrderId})`
+          };
+          savingsTransactions.unshift(newSavingsTx);
+          targetStudent.savingsBalance = (Number(targetStudent.savingsBalance) || 0) + effectiveAmount;
+          AUTHORITATIVE_SAVINGS_MAP[targetStudent.id] = targetStudent.savingsBalance;
+
+          recordOrUpdateMidtransTransaction({
+            orderId: effectiveOrderId,
+            transactionId: transactionId ? String(transactionId).trim() : undefined,
+            billType: "savings",
+            grossAmount: effectiveAmount,
+            studentName: targetStudent.name,
+            studentNis: targetStudent.nis,
+            description: "Setoran Tabungan (Single Reconcile)",
+            transactionStatus: "settlement",
+            paymentType,
+            settlementTime: resolvedPaidAt
+          });
+
+          saveState();
+          if (persistEntity) {
+            persistEntity("savingsTransactions", newSavingsTx).catch(() => {});
+            persistEntity("students", targetStudent).catch(() => {});
+          }
+
+          return res.json({
+            success: true,
+            actionTaken: true,
+            message: `Berhasil menambahkan Rp ${effectiveAmount.toLocaleString("id-ID")} ke Saldo Tabungan a.n ${targetStudent.name} (NIS: ${targetStudent.nis}).`,
+            allocationType: "savings",
+            newBalance: targetStudent.savingsBalance
+          });
+        }
+
+        if (allocationType === "specific_bill" && specificBillId) {
+          if (specificBillType === "spp") {
+            const bill = sppBills.find(b => b.id === specificBillId);
+            if (bill) {
+              bill.status = "paid";
+              bill.paidAt = resolvedPaidAt;
+              bill.paymentMethod = paymentType;
+              bill.orderId = effectiveOrderId;
+              if (transactionId) bill.transactionId = String(transactionId).trim();
+
+              recordOrUpdateMidtransTransaction({
+                orderId: effectiveOrderId,
+                transactionId: transactionId ? String(transactionId).trim() : undefined,
+                billType: "spp",
+                grossAmount: bill.amount,
+                studentName: targetStudent.name,
+                studentNis: targetStudent.nis,
+                description: `SPP ${bill.month} ${bill.year}`,
+                transactionStatus: "settlement",
+                paymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              // Record in Kas BKU Bendahara
+              const newKas: TreasurerTransaction = {
+                id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                type: "incoming",
+                category: `SPP ${bill.month} ${bill.year}`,
+                amount: Number(bill.amount) || 0,
+                description: `Pembayaran Online Midtrans: SPP ${bill.month} ${bill.year} (${targetStudent.name}) [Order: ${effectiveOrderId}]`,
+                date: resolvedPaidAt.substring(0, 10),
+                source: "spp",
+                studentName: targetStudent.name,
+                studentId: targetStudent.id,
+                nis: targetStudent.nis,
+                createdBy: "Admin (Single Reconcile)",
+                paymentMethod: "bank",
+                orderId: effectiveOrderId,
+                transactionId: transactionId ? String(transactionId).trim() : undefined,
+                fundingSource: "Kas Bank/Midtrans"
+              };
+              treasurerTransactions.unshift(newKas);
+
+              saveState();
+              if (persistEntity) {
+                persistEntity("sppBills", bill).catch(() => {});
+                persistEntity("treasurerTransactions", newKas).catch(() => {});
+              }
+
+              return res.json({
+                success: true,
+                actionTaken: true,
+                message: `Tagihan SPP ${bill.month} ${bill.year} a.n ${targetStudent.name} berhasil dilunasi.`,
+                allocationType: "specific_bill"
+              });
+            }
+          } else {
+            const mBill = miscBills.find(m => m.id === specificBillId);
+            if (mBill) {
+              mBill.status = "paid";
+              mBill.paidAt = resolvedPaidAt;
+              mBill.paymentMethod = paymentType;
+              mBill.orderId = effectiveOrderId;
+              if (transactionId) mBill.transactionId = String(transactionId).trim();
+
+              recordOrUpdateMidtransTransaction({
+                orderId: effectiveOrderId,
+                transactionId: transactionId ? String(transactionId).trim() : undefined,
+                billType: "misc",
+                grossAmount: mBill.amount,
+                studentName: targetStudent.name,
+                studentNis: targetStudent.nis,
+                description: mBill.title,
+                transactionStatus: "settlement",
+                paymentType,
+                settlementTime: resolvedPaidAt
+              });
+
+              const newKas: TreasurerTransaction = {
+                id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+                type: "incoming",
+                category: mBill.title || "Tagihan Non-SPP",
+                amount: Number(mBill.amount) || 0,
+                description: `Pembayaran Online Midtrans: ${mBill.title} (${targetStudent.name}) [Order: ${effectiveOrderId}]`,
+                date: resolvedPaidAt.substring(0, 10),
+                source: "custom",
+                studentName: targetStudent.name,
+                studentId: targetStudent.id,
+                nis: targetStudent.nis,
+                createdBy: "Admin (Single Reconcile)",
+                paymentMethod: "bank",
+                orderId: effectiveOrderId,
+                transactionId: transactionId ? String(transactionId).trim() : undefined,
+                fundingSource: "Kas Bank/Midtrans"
+              };
+              treasurerTransactions.unshift(newKas);
+
+              saveState();
+              if (persistEntity) {
+                persistEntity("miscBills", mBill).catch(() => {});
+                persistEntity("treasurerTransactions", newKas).catch(() => {});
+              }
+
+              return res.json({
+                success: true,
+                actionTaken: true,
+                message: `Tagihan Non-SPP "${mBill.title}" a.n ${targetStudent.name} berhasil dilunasi.`,
+                allocationType: "specific_bill"
+              });
+            }
+          }
+        }
+
+        // Default: auto_spp (Smart Allocation)
+        const allocResult = autoAllocateStudentPayment(
+          targetStudent,
+          effectiveAmount,
+          effectiveOrderId,
+          transactionId ? String(transactionId).trim() : undefined,
+          paymentType,
+          resolvedPaidAt,
+          { notes }
+        );
+
+        recordOrUpdateMidtransTransaction({
+          orderId: effectiveOrderId,
+          transactionId: transactionId ? String(transactionId).trim() : undefined,
+          billType: allocResult.paidSppCount > 0 ? "spp" : (allocResult.paidMiscCount > 0 ? "misc" : "savings"),
+          grossAmount: effectiveAmount,
+          studentName: targetStudent.name,
+          studentNis: targetStudent.nis,
+          description: allocResult.category,
+          transactionStatus: "settlement",
+          paymentType,
+          settlementTime: resolvedPaidAt
+        });
+
+        saveState();
+        if (persistEntities) {
+          const updatedSpp = sppBills.filter(b => b.orderId === effectiveOrderId);
+          if (updatedSpp.length > 0) persistEntities("sppBills", updatedSpp).catch(() => {});
+          const updatedMisc = miscBills.filter(m => m.orderId === effectiveOrderId);
+          if (updatedMisc.length > 0) persistEntities("miscBills", updatedMisc).catch(() => {});
+          const updatedSav = savingsTransactions.filter(s => s.orderId === effectiveOrderId);
+          if (updatedSav.length > 0) persistEntities("savingsTransactions", updatedSav).catch(() => {});
+        }
+        if (persistEntity) {
+          persistEntity("students", targetStudent).catch(() => {});
+        }
+
+        return res.json({
+          success: true,
+          actionTaken: true,
+          message: allocResult.message,
+          allocationType: "auto_spp",
+          allocResult
+        });
+      }
+
+      // Step 1: Query Gateway Midtrans API
+      let midtransStatus: any = null;
+      let midtransFetchError: string | null = null;
+      try {
+        midtransStatus = await getMidtransStatus(cleanQuery);
+      } catch (err: any) {
+        midtransFetchError = err?.message || "Gagal menghubungi Gateway Midtrans";
+      }
+
+      // Step 2: Search local system for matching records
+      const cleanLower = cleanQuery.toLowerCase();
+      const localMatchedSpp = sppBills.find(b => 
+        (b.orderId && b.orderId.toLowerCase() === cleanLower) ||
+        (b.id && b.id.toLowerCase() === cleanLower) ||
+        (b.transactionId && b.transactionId.toLowerCase() === cleanLower) ||
+        (b.id && b.id.toLowerCase() === cleanLower + "-unpaid")
+      );
+      const localMatchedMisc = miscBills.find(m =>
+        (m.orderId && m.orderId.toLowerCase() === cleanLower) ||
+        (m.id && m.id.toLowerCase() === cleanLower) ||
+        (m.transactionId && m.transactionId.toLowerCase() === cleanLower)
+      );
+      const localMatchedSavings = savingsTransactions.find(t =>
+        (t.orderId && t.orderId.toLowerCase() === cleanLower) ||
+        (t.id && t.id.toLowerCase() === cleanLower) ||
+        (t.transactionId && t.transactionId.toLowerCase() === cleanLower)
+      );
+      const localMatchedMidtransTx = midtransTransactions.find(t =>
+        (t.orderId && t.orderId.toLowerCase() === cleanLower) ||
+        (t.transactionId && t.transactionId.toLowerCase() === cleanLower)
+      );
+      const localMatchedStudentByNis = students.find(s =>
+        String(s.nis).trim().toLowerCase() === cleanLower ||
+        s.id.toLowerCase() === cleanLower ||
+        s.id.toLowerCase() === `std-${cleanLower}`
+      );
+
+      // Resolve candidate student
+      let candidateStudent: Student | undefined = localMatchedStudentByNis;
+      if (!candidateStudent && localMatchedSpp) candidateStudent = students.find(s => s.id === localMatchedSpp.studentId);
+      if (!candidateStudent && localMatchedMisc) candidateStudent = students.find(s => s.id === localMatchedMisc.studentId);
+      if (!candidateStudent && localMatchedSavings) candidateStudent = students.find(s => s.id === localMatchedSavings.studentId);
+      if (!candidateStudent && localMatchedMidtransTx?.studentNis) {
+        candidateStudent = students.find(s => String(s.nis).trim() === String(localMatchedMidtransTx.studentNis).trim());
+      }
+
+      // If student not found locally, try extracting from Midtrans customer details or order tokens
+      if (!candidateStudent && midtransStatus) {
+        const custEmail = midtransStatus.customer_details?.email || "";
+        const custName = midtransStatus.customer_details?.first_name || "";
+        const custPhone = midtransStatus.customer_details?.phone || "";
+        const targetOrderId = midtransStatus.order_id || cleanQuery;
+
+        if (custPhone) {
+          const cleanP = custPhone.replace(/\D/g, "");
+          if (cleanP.length >= 8) {
+            candidateStudent = students.find(s => s.phone && s.phone.replace(/\D/g, "").includes(cleanP));
+          }
+        }
+        if (!candidateStudent && custEmail && custEmail.includes("@")) {
+          candidateStudent = students.find(s => s.email && s.email.toLowerCase().trim() === custEmail.toLowerCase().trim());
+        }
+        if (!candidateStudent && custName && custName.length >= 3) {
+          candidateStudent = students.find(s => s.name.toLowerCase().trim() === custName.toLowerCase().trim());
+        }
+        if (!candidateStudent) {
+          const tokens = (targetOrderId + " " + cleanQuery).replace(/^SPP-|^MISC-|^SAV-|^CART-/i, "").split(/[-_\s]/);
+          for (const token of tokens) {
+            const cleanT = token.trim().toLowerCase();
+            if (cleanT.length >= 2) {
+              const matched = students.find(s => String(s.nis).trim().toLowerCase() === cleanT || s.id.toLowerCase() === cleanT || s.id.toLowerCase() === `std-${cleanT}`);
+              if (matched) {
+                candidateStudent = matched;
+                break;
+              }
+            }
+          }
+        }
+      }
+
+      // Check student's unpaid bills for pairing assistance
+      const studentUnpaidSpp = candidateStudent
+        ? sppBills.filter(b => b.studentId === candidateStudent!.id && (b.status === "unpaid" || b.status === "pending"))
+        : [];
+      const studentUnpaidMisc = candidateStudent
+        ? miscBills.filter(m => m.studentId === candidateStudent!.id && (m.status === "unpaid" || m.status === "pending"))
+        : [];
+
+      // Determine Midtrans settlement status
+      const ts = midtransStatus?.transaction_status || "";
+      const isSettledInMidtrans = ts === "settlement" || ts === "capture";
+      const isPendingInMidtrans = ts === "pending";
+      const isExpiredInMidtrans = ts === "expire" || ts === "cancel" || ts === "deny";
+
+      // Check whether internal bill is already paid
+      const isAlreadyPaidInLocal = 
+        (localMatchedSpp && localMatchedSpp.status === "paid") ||
+        (localMatchedMisc && localMatchedMisc.status === "paid") ||
+        (localMatchedSavings && localMatchedSavings.status === "success") ||
+        false;
+
+      // Normalized Midtrans status payload for frontend
+      const normalizedMidtransData = midtransStatus ? {
+        orderId: midtransStatus.order_id || cleanQuery,
+        transactionId: midtransStatus.transaction_id || "",
+        grossAmount: Number(midtransStatus.gross_amount) || 0,
+        paymentType: midtransStatus.payment_type || "Online Gateway",
+        transactionStatus: midtransStatus.transaction_status,
+        transactionTime: midtransStatus.transaction_time || "",
+        settlementTime: midtransStatus.settlement_time || "",
+        fraudStatus: midtransStatus.fraud_status || "accept",
+        customerDetails: midtransStatus.customer_details || null,
+        isSettled: isSettledInMidtrans,
+        isPending: isPendingInMidtrans,
+        isExpired: isExpiredInMidtrans
+      } : null;
+
+      // Handle Case B: Force Reconcile against Local Pending Bill (when Gateway status 404 or dev/offline)
+      if (forceReconcileLocal) {
+        if (localMatchedSpp && localMatchedSpp.status !== "paid") {
+          localMatchedSpp.status = "paid";
+          localMatchedSpp.paidAt = new Date().toISOString();
+          localMatchedSpp.paymentMethod = "Midtrans (Paksa Rekonsiliasi Internal)";
+          localMatchedSpp.orderId = cleanQuery;
+
+          recordOrUpdateMidtransTransaction({
+            orderId: cleanQuery,
+            billType: "spp",
+            grossAmount: localMatchedSpp.amount,
+            studentName: candidateStudent?.name,
+            studentNis: candidateStudent?.nis,
+            description: `SPP ${localMatchedSpp.month} ${localMatchedSpp.year}`,
+            transactionStatus: "settlement",
+            paymentType: "Midtrans (Paksa Rekonsiliasi)",
+            settlementTime: new Date().toISOString()
+          });
+
+          const newKas: TreasurerTransaction = {
+            id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "incoming",
+            category: `SPP ${localMatchedSpp.month} ${localMatchedSpp.year}`,
+            amount: Number(localMatchedSpp.amount) || 0,
+            description: `Pembayaran Online Midtrans: SPP ${localMatchedSpp.month} ${localMatchedSpp.year} (${candidateStudent?.name || "Siswa"}) [Order: ${cleanQuery}]`,
+            date: new Date().toISOString().substring(0, 10),
+            source: "spp",
+            studentName: candidateStudent?.name,
+            studentId: candidateStudent?.id,
+            nis: candidateStudent?.nis,
+            createdBy: "Admin (Paksa Rekonsiliasi)",
+            paymentMethod: "bank",
+            orderId: cleanQuery,
+            fundingSource: "Kas Bank/Midtrans"
+          };
+          treasurerTransactions.unshift(newKas);
+
+          saveState();
+          if (persistEntity) {
+            persistEntity("sppBills", localMatchedSpp).catch(() => {});
+            persistEntity("treasurerTransactions", newKas).catch(() => {});
+          }
+
+          return res.json({
+            success: true,
+            actionTaken: true,
+            message: `Tagihan SPP ${localMatchedSpp.month} ${localMatchedSpp.year} a.n ${candidateStudent?.name || "Siswa"} berhasil dipaksa LUNAS secara internal.`,
+            midtransData: normalizedMidtransData,
+            matchedStudent: candidateStudent ? { id: candidateStudent.id, name: candidateStudent.name, nis: candidateStudent.nis, class: candidateStudent.class } : null
+          });
+        }
+
+        if (localMatchedMisc && localMatchedMisc.status !== "paid") {
+          localMatchedMisc.status = "paid";
+          localMatchedMisc.paidAt = new Date().toISOString();
+          localMatchedMisc.paymentMethod = "Midtrans (Paksa Rekonsiliasi Internal)";
+          localMatchedMisc.orderId = cleanQuery;
+
+          recordOrUpdateMidtransTransaction({
+            orderId: cleanQuery,
+            billType: "misc",
+            grossAmount: localMatchedMisc.amount,
+            studentName: candidateStudent?.name,
+            studentNis: candidateStudent?.nis,
+            description: localMatchedMisc.title,
+            transactionStatus: "settlement",
+            paymentType: "Midtrans (Paksa Rekonsiliasi)",
+            settlementTime: new Date().toISOString()
+          });
+
+          const newKas: TreasurerTransaction = {
+            id: `trx-kas-mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+            type: "incoming",
+            category: localMatchedMisc.title || "Tagihan Non-SPP",
+            amount: Number(localMatchedMisc.amount) || 0,
+            description: `Pembayaran Online Midtrans: ${localMatchedMisc.title} (${candidateStudent?.name || "Siswa"}) [Order: ${cleanQuery}]`,
+            date: new Date().toISOString().substring(0, 10),
+            source: "custom",
+            studentName: candidateStudent?.name,
+            studentId: candidateStudent?.id,
+            nis: candidateStudent?.nis,
+            createdBy: "Admin (Paksa Rekonsiliasi)",
+            paymentMethod: "bank",
+            orderId: cleanQuery,
+            fundingSource: "Kas Bank/Midtrans"
+          };
+          treasurerTransactions.unshift(newKas);
+
+          saveState();
+          if (persistEntity) {
+            persistEntity("miscBills", localMatchedMisc).catch(() => {});
+            persistEntity("treasurerTransactions", newKas).catch(() => {});
+          }
+
+          return res.json({
+            success: true,
+            actionTaken: true,
+            message: `Tagihan Non-SPP "${localMatchedMisc.title}" a.n ${candidateStudent?.name || "Siswa"} berhasil dipaksa LUNAS secara internal.`,
+            midtransData: normalizedMidtransData,
+            matchedStudent: candidateStudent ? { id: candidateStudent.id, name: candidateStudent.name, nis: candidateStudent.nis, class: candidateStudent.class } : null
+          });
+        }
+      }
+
+      // Case C: Auto-reconciliation requested and transaction is settled
+      if (autoReconcile && isSettledInMidtrans) {
+        const effectiveOrderId = midtransStatus.order_id || cleanQuery;
+        const reconResult = await processMidtransOrderStatus(effectiveOrderId, midtransStatus);
+
+        return res.json({
+          success: true,
+          actionTaken: reconResult.actionTaken,
+          needsPairing: !reconResult.actionTaken,
+          message: reconResult.actionTaken
+            ? `BERHASIL! ${reconResult.detailMessage || "Status pembayaran tagihan telah diselaraskan menjadi LUNAS."}`
+            : `Transaksi berstatus SETTLEMENT di Midtrans, namun tagihan internal belum berhasil dipasangkan otomatis. Silakan gunakan panel pemasangan manual di bawah.`,
+          midtransData: normalizedMidtransData,
+          matchedStudent: candidateStudent ? {
+            id: candidateStudent.id,
+            name: candidateStudent.name,
+            nis: candidateStudent.nis,
+            class: candidateStudent.class,
+            phone: candidateStudent.phone,
+            savingsBalance: candidateStudent.savingsBalance
+          } : null,
+          unpaidBills: {
+            spp: studentUnpaidSpp.map(b => ({ id: b.id, month: b.month, year: b.year, amount: b.amount })),
+            misc: studentUnpaidMisc.map(m => ({ id: m.id, title: m.title, amount: m.amount }))
+          },
+          reconResult
+        });
+      }
+
+      // Case D: Diagnostic / Preview check response
+      return res.json({
+        success: true,
+        isCheckOnly: true,
+        foundInMidtrans: !!midtransStatus,
+        midtransData: normalizedMidtransData,
+        foundInLocal: !!(localMatchedSpp || localMatchedMisc || localMatchedSavings || localMatchedMidtransTx || localMatchedStudentByNis),
+        localMatchedItem: localMatchedSpp ? {
+          type: "spp",
+          title: `SPP ${localMatchedSpp.month} ${localMatchedSpp.year}`,
+          amount: localMatchedSpp.amount,
+          status: localMatchedSpp.status,
+          orderId: localMatchedSpp.orderId,
+          transactionId: localMatchedSpp.transactionId
+        } : (localMatchedMisc ? {
+          type: "misc",
+          title: localMatchedMisc.title,
+          amount: localMatchedMisc.amount,
+          status: localMatchedMisc.status,
+          orderId: localMatchedMisc.orderId,
+          transactionId: localMatchedMisc.transactionId
+        } : (localMatchedSavings ? {
+          type: "savings",
+          title: "Setoran Tabungan",
+          amount: localMatchedSavings.amount,
+          status: localMatchedSavings.status,
+          orderId: localMatchedSavings.orderId,
+          transactionId: localMatchedSavings.transactionId
+        } : null)),
+        matchedStudent: candidateStudent ? {
+          id: candidateStudent.id,
+          name: candidateStudent.name,
+          nis: candidateStudent.nis,
+          class: candidateStudent.class,
+          phone: candidateStudent.phone,
+          savingsBalance: candidateStudent.savingsBalance
+        } : null,
+        unpaidBills: {
+          spp: studentUnpaidSpp.map(b => ({ id: b.id, month: b.month, year: b.year, amount: b.amount })),
+          misc: studentUnpaidMisc.map(m => ({ id: m.id, title: m.title, amount: m.amount }))
+        },
+        isAlreadyPaidInLocal,
+        canAutoReconcile: isSettledInMidtrans && !isAlreadyPaidInLocal,
+        message: midtransStatus
+          ? (isSettledInMidtrans 
+              ? (isAlreadyPaidInLocal ? "Transaksi LUNAS di Midtrans dan SUDAH LUNAS di database sekolah." : "Transaksi LUNAS di Midtrans. Siap direkonsiliasikan ke database sekolah.")
+              : (isPendingInMidtrans ? "Transaksi masih PENDING di Midtrans (menunggu pembayaran oleh wali murid)." : `Status transaksi di Midtrans: ${ts.toUpperCase()}`))
+          : (localMatchedSpp || localMatchedMisc || localMatchedSavings 
+              ? "Transaksi tidak tercatat di Gateway Midtrans, namun ada di database lokal sekolah."
+              : "Transaksi tidak ditemukan di Gateway Midtrans maupun database lokal sekolah.")
+      });
+    } catch (err: any) {
+      console.error("Single check and reconcile error:", err);
+      res.status(500).json({ error: "Gagal memproses pemeriksaan rekonsiliasi: " + (err.message || String(err)) });
     }
   });
 

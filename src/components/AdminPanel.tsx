@@ -26,6 +26,7 @@ import {
   exportFilteredMiscBillsToExcel,
 } from "../utils/excelExport";
 import { MidtransBulkReportModal } from "./MidtransBulkReportModal";
+import { SingleMidtransReconcileModal } from "./SingleMidtransReconcileModal";
 import MidtransPayModal from "./MidtransPayModal";
 import {
   ShieldAlert,
@@ -437,8 +438,10 @@ export default function AdminPanel({
   const [payMiscBulkSearch, setPayMiscBulkSearch] = useState<string>("");
   const [isSubmittingPayMiscBulk, setIsSubmittingPayMiscBulk] = useState(false);
 
-  // State for Midtrans Bulk Report Modal
+  // State for Midtrans Report Modals (Bulk & Single)
   const [isMidtransBulkReportModalOpen, setIsMidtransBulkReportModalOpen] = useState(false);
+  const [isSingleMidtransReconcileModalOpen, setIsSingleMidtransReconcileModalOpen] = useState(false);
+  const [singleReconcileInitialId, setSingleReconcileInitialId] = useState("");
 
   // Helper to extract grade level
   const getGradeLevel = (className: string): string => {
@@ -3220,19 +3223,31 @@ export default function AdminPanel({
     setIsAdminManualVerifying(true);
     setAdminManualVerifyStatus(null);
     try {
-      const response = await fetch('/api/simulate-payment-success', {
+      const response = await fetch('/api/midtrans/single-check-and-reconcile', {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
         },
-        body: JSON.stringify({ orderId: adminManualOrderId.trim() }),
+        body: JSON.stringify({
+          query: adminManualOrderId.trim(),
+          autoReconcile: true
+        }),
       });
       const data = await response.json();
       if (!response.ok || data.error) {
         setAdminManualVerifyStatus({
           type: 'error',
-          message: data.error || 'Gagal menyinkronkan transaksi. Pastikan ID Transaksi/Order ID benar dan sudah diselesaikan di Midtrans.',
+          message: data.error || 'Gagal menyinkronkan transaksi. Membuka panel rekonsiliasi manual...',
         });
+        setSingleReconcileInitialId(adminManualOrderId.trim());
+        setIsSingleMidtransReconcileModalOpen(true);
+      } else if (data.needsPairing) {
+        setAdminManualVerifyStatus({
+          type: 'error',
+          message: data.message || 'Transaksi terdeteksi di Midtrans tetapi memerlukan penentuan siswa/tagihan. Membuka panel rekonsiliasi...',
+        });
+        setSingleReconcileInitialId(adminManualOrderId.trim());
+        setIsSingleMidtransReconcileModalOpen(true);
       } else {
         setAdminManualVerifyStatus({
           type: 'success',
@@ -10227,45 +10242,73 @@ export default function AdminPanel({
                 </div>
               </div>
 
-              <div className="flex flex-col sm:flex-row gap-3">
-                <input
-                  type="text"
-                  placeholder="Masukkan No. Order ID (e.g. SPP-B-...) or ID Transaksi Midtrans (UUID)"
-                  className="flex-1 text-xs bg-slate-50 text-slate-800 placeholder-slate-400 border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
-                  value={adminManualOrderId}
-                  onChange={(e) => setAdminManualOrderId(e.target.value)}
-                />
-                <button
-                  type="button"
-                  onClick={handleAdminManualVerify}
-                  disabled={isAdminManualVerifying || !adminManualOrderId.trim()}
-                  className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition-all cursor-pointer flex items-center justify-center gap-2 ${
-                    isAdminManualVerifying || !adminManualOrderId.trim()
-                      ? 'bg-slate-400 cursor-not-allowed'
-                      : 'bg-indigo-600 hover:bg-indigo-750 shadow-md shadow-indigo-100'
-                  }`}
-                >
-                  {isAdminManualVerifying ? (
-                    <>
-                      <RefreshCw className="w-4 h-4 animate-spin" />
-                      <span>Memproses...</span>
-                    </>
-                  ) : (
-                    <>
-                      <Send className="w-4 h-4" />
-                      <span>Sinkronkan Transaksi</span>
-                    </>
-                  )}
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setIsMidtransBulkReportModalOpen(true)}
-                  className="px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-md shadow-emerald-100 flex items-center justify-center gap-2 border border-emerald-500/30 shrink-0"
-                  title="Upload file report CSV/Excel dari Midtrans MAP untuk verifikasi status transaksi massal secara otomatis"
-                >
-                  <UploadCloud className="w-4 h-4" />
-                  <span>Upload Report Midtrans (Bulk Cek)</span>
-                </button>
+              <div className="flex flex-col gap-3">
+                <div className="flex flex-col sm:flex-row gap-2.5">
+                  <input
+                    type="text"
+                    placeholder="Masukkan No. Order ID (e.g. SPP-...) atau ID Transaksi Midtrans (UUID)"
+                    className="flex-1 text-xs bg-slate-50 text-slate-800 placeholder-slate-400 border border-slate-300 rounded-xl px-4 py-2.5 focus:outline-none focus:ring-2 focus:ring-indigo-500 font-mono"
+                    value={adminManualOrderId}
+                    onChange={(e) => setAdminManualOrderId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && adminManualOrderId.trim()) {
+                        handleAdminManualVerify();
+                      }
+                    }}
+                  />
+                  <button
+                    type="button"
+                    onClick={handleAdminManualVerify}
+                    disabled={isAdminManualVerifying || !adminManualOrderId.trim()}
+                    className={`px-5 py-2.5 rounded-xl font-bold text-xs uppercase tracking-wider text-white transition-all cursor-pointer flex items-center justify-center gap-2 ${
+                      isAdminManualVerifying || !adminManualOrderId.trim()
+                        ? 'bg-slate-400 cursor-not-allowed'
+                        : 'bg-indigo-600 hover:bg-indigo-750 shadow-md shadow-indigo-100'
+                    }`}
+                  >
+                    {isAdminManualVerifying ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>Memproses...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Send className="w-4 h-4" />
+                        <span>Sinkronkan Lunas</span>
+                      </>
+                    )}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setSingleReconcileInitialId(adminManualOrderId.trim());
+                      setIsSingleMidtransReconcileModalOpen(true);
+                    }}
+                    className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-sm flex items-center justify-center gap-2 shrink-0 border border-slate-700"
+                    title="Buka panel lengkap rekonsiliasi satuan untuk preview status, cek siswa, dan pairing alokasi dana manual"
+                  >
+                    <Search className="w-4 h-4 text-indigo-300" />
+                    <span>Portal Rekonsiliasi Satuan</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsMidtransBulkReportModalOpen(true)}
+                    className="px-4 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-700 hover:from-emerald-700 hover:to-teal-800 text-white font-black text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all shadow-md shadow-emerald-100 flex items-center justify-center gap-2 border border-emerald-500/30 shrink-0"
+                    title="Upload file report CSV/Excel dari Midtrans MAP untuk verifikasi status transaksi massal secara otomatis"
+                  >
+                    <UploadCloud className="w-4 h-4" />
+                    <span>Upload Report (Bulk Cek)</span>
+                  </button>
+                </div>
+                <div className="flex flex-wrap items-center gap-2 text-[10px] text-slate-500">
+                  <span className="font-semibold text-slate-600">Opsi Rekonsiliasi:</span>
+                  <span className="bg-indigo-50 text-indigo-700 font-medium px-2 py-0.5 rounded border border-indigo-100">
+                    Satuan/Single: Langsung verifikasi via Order ID/UUID tanpa berkas
+                  </span>
+                  <span className="bg-emerald-50 text-emerald-700 font-medium px-2 py-0.5 rounded border border-emerald-100">
+                    Massal/Bulk: Rekonsiliasi puluhan order sekaligus melalui file CSV/Excel Midtrans
+                  </span>
+                </div>
               </div>
 
               {adminManualVerifyStatus && (
@@ -20095,6 +20138,14 @@ export default function AdminPanel({
       <MidtransBulkReportModal
         isOpen={isMidtransBulkReportModalOpen}
         onClose={() => setIsMidtransBulkReportModalOpen(false)}
+        onSuccessReconciliation={() => {
+          if (onRefresh) onRefresh();
+        }}
+      />
+      <SingleMidtransReconcileModal
+        isOpen={isSingleMidtransReconcileModalOpen}
+        onClose={() => setIsSingleMidtransReconcileModalOpen(false)}
+        initialOrderId={singleReconcileInitialId}
         onSuccessReconciliation={() => {
           if (onRefresh) onRefresh();
         }}

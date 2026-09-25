@@ -13,6 +13,7 @@ import {
 } from 'recharts';
 import { SchoolIdentity, TreasurerTransaction, TeacherSalary, SalaryConfig, HomeroomTeacher, SubjectTeacher } from '../types';
 import { MidtransBulkReportModal } from './MidtransBulkReportModal';
+import { SingleMidtransReconcileModal } from './SingleMidtransReconcileModal';
 import { Pagination } from './Pagination';
 import TreasurerMysqlSettings from './TreasurerMysqlSettings';
 
@@ -38,6 +39,8 @@ export default function TreasurerPanel({
   // Modal configurations
   const [showFormModal, setShowFormModal] = useState(false);
   const [isBulkReportModalOpen, setIsBulkReportModalOpen] = useState(false);
+  const [isSingleReconcileModalOpen, setIsSingleReconcileModalOpen] = useState(false);
+  const [singleReconcileInitialId, setSingleReconcileInitialId] = useState('');
   const [editingTransaction, setEditingTransaction] = useState<TreasurerTransaction | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   
@@ -734,13 +737,20 @@ export default function TreasurerPanel({
           type: 'success',
           text: `✅ ${data.message}`
         });
+        if (data.type === "midtrans_only") {
+          // Open single reconcile modal for manual pairing
+          setSingleReconcileInitialId(manualOrderIdInput.trim());
+          setIsSingleReconcileModalOpen(true);
+        }
         setManualOrderIdInput('');
         await fetchTransactions();
       } else {
         setReconcileStatus({
           type: 'error',
-          text: data.error || data.message || 'Verifikasi Order ID gagal.'
+          text: data.error || data.message || 'Verifikasi Order ID gagal. Membuka portal rekonsiliasi...'
         });
+        setSingleReconcileInitialId(manualOrderIdInput.trim());
+        setIsSingleReconcileModalOpen(true);
       }
     } catch (err: any) {
       console.error(err);
@@ -2405,6 +2415,18 @@ export default function TreasurerPanel({
                     >
                       <UploadCloud size={14} />
                       <span>Upload Report CSV</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setSingleReconcileInitialId(manualOrderIdInput.trim());
+                        setIsSingleReconcileModalOpen(true);
+                      }}
+                      className="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-indigo-300 font-extrabold text-xs uppercase tracking-wider rounded-xl cursor-pointer transition-all border border-slate-700 flex items-center gap-1.5"
+                      title="Buka portal rekonsiliasi satuan (single) untuk cek rincian & pairing manual"
+                    >
+                      <Search size={14} />
+                      <span>Rekonsiliasi Satuan</span>
                     </button>
                   </div>
                 </div>
@@ -4805,6 +4827,15 @@ export default function TreasurerPanel({
       <MidtransBulkReportModal
         isOpen={isBulkReportModalOpen}
         onClose={() => setIsBulkReportModalOpen(false)}
+        onSuccessReconciliation={() => {
+          fetchTransactions();
+        }}
+      />
+
+      <SingleMidtransReconcileModal
+        isOpen={isSingleReconcileModalOpen}
+        onClose={() => setIsSingleReconcileModalOpen(false)}
+        initialOrderId={singleReconcileInitialId}
         onSuccessReconciliation={() => {
           fetchTransactions();
         }}

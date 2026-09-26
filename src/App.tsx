@@ -710,8 +710,9 @@ export default function App() {
   // Reload current views
   const handleReload = () => {
     initSystemData();
-    if (currentStudent) {
-      fetchStudentFullData(currentStudent.id, role === 'admin');
+    const targetId = currentStudent?.id || loggedStudentId || (studentsList.length > 0 ? studentsList[0].id : '');
+    if (targetId) {
+      fetchStudentFullData(targetId, role === 'admin' || role === 'homeroom');
     }
   };
 
@@ -2635,6 +2636,7 @@ export default function App() {
             homerooms={homeroomsList}
             subjectTeachers={subjectTeachersList}
             onLogout={handleLogout}
+            onRefresh={handleReload}
           />
         ) : role === 'principal' ? (
           <PrincipalPanel

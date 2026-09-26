@@ -2269,40 +2269,93 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     // 2. SPP Bills
     else if (typeKey === 'spp' || typeKey === 'spp_bill' || typeKey === 'sppbills') {
       const b = data;
-      await connection.query(`
-        INSERT INTO \`spp_bills\` (
-          \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
-          \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
-          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
-          \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
+      const bStudentId = b.studentId || (b as any).student_id || '';
+      const bMonth = b.month;
+      const bYear = Number(b.year) || 2026;
+      const bAmount = Number(b.amount) || 0;
+      const bStatus = b.status || 'unpaid';
+      const bPaidAt = b.paidAt || (b as any).paid_at || null;
+      const bPaymentMethod = b.paymentMethod || (b as any).payment_method || null;
+      const bOrderId = b.orderId || (b as any).order_id || null;
+      const bTransactionId = b.transactionId || (b as any).transaction_id || null;
+      const bAchType = b.achievementType || (b as any).achievement_type || null;
+      const bAchDetail = b.achievementDetail || (b as any).achievement_detail || null;
+
+      // Try updating existing row matching ID or student_id + month + year
+      const [updateResult]: any = await connection.query(`
+        UPDATE \`spp_bills\`
+        SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?
+        WHERE \`id\`=? OR (
+          (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+          AND LOWER(\`month\`)=LOWER(?) AND \`year\`=?
+        )
       `, [
-        b.id, b.studentId, b.month, Number(b.year) || 2026, Number(b.amount) || 0, b.status || 'unpaid',
-        b.paidAt || null, b.paymentMethod || null, b.orderId || null, b.transactionId || null,
-        b.achievementType || null, b.achievementDetail || null
+        bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail,
+        b.id, bStudentId, bStudentId, bStudentId, bMonth, bYear
       ]);
+
+      if (updateResult && updateResult.affectedRows === 0) {
+        await connection.query(`
+          INSERT INTO \`spp_bills\` (
+            \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
+            \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
+            \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+            \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
+        `, [
+          b.id, bStudentId, bMonth, bYear, bAmount, bStatus,
+          bPaidAt, bPaymentMethod, bOrderId, bTransactionId,
+          bAchType, bAchDetail
+        ]);
+      }
       return { success: true, message: `Data tagihan SPP "${b.month} ${b.year}" langsung tersimpan ke MySQL.` };
     }
 
     // 3. Misc Bills
     else if (typeKey === 'misc' || typeKey === 'misc_bill' || typeKey === 'miscbills') {
       const m = data;
-      await connection.query(`
-        INSERT INTO \`misc_bills\` (
-          \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
-          \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
-          \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
-          \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
+      const mStudentId = m.studentId || (m as any).student_id || '';
+      const mTitle = m.title || '';
+      const mAmount = Number(m.amount) || 0;
+      const mStatus = m.status || 'unpaid';
+      const mCreatedAt = m.createdAt || (m as any).created_at || new Date().toISOString();
+      const mPaidAt = m.paidAt || (m as any).paid_at || null;
+      const mPaymentMethod = m.paymentMethod || (m as any).payment_method || null;
+      const mOrderId = m.orderId || (m as any).order_id || null;
+      const mTransactionId = m.transactionId || (m as any).transaction_id || null;
+      const mIsMonthly = m.isMonthly || (m as any).is_monthly ? 1 : 0;
+      const mMonth = m.month || null;
+
+      const [updateResult]: any = await connection.query(`
+        UPDATE \`misc_bills\`
+        SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?
+        WHERE \`id\`=? OR (
+          (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+          AND LOWER(\`title\`)=LOWER(?)
+        )
       `, [
-        m.id, m.studentId, m.title || '', Number(m.amount) || 0, m.status || 'unpaid',
-        m.createdAt || new Date().toISOString(), m.paidAt || null, m.paymentMethod || null,
-        m.orderId || null, m.transactionId || null, m.isMonthly ? 1 : 0, m.month || null
+        mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth,
+        m.id, mStudentId, mStudentId, mStudentId, mTitle
       ]);
+
+      if (updateResult && updateResult.affectedRows === 0) {
+        await connection.query(`
+          INSERT INTO \`misc_bills\` (
+            \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
+            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON DUPLICATE KEY UPDATE
+            \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
+            \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
+            \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
+        `, [
+          m.id, mStudentId, mTitle, mAmount, mStatus,
+          mCreatedAt, mPaidAt, mPaymentMethod,
+          mOrderId, mTransactionId, mIsMonthly, mMonth
+        ]);
+      }
       return { success: true, message: `Data tagihan non-SPP "${m.title}" langsung tersimpan ke MySQL.` };
     }
 
@@ -2336,7 +2389,8 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
-          \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`)
+          \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`),
+          \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`funding_source\`=VALUES(\`funding_source\`)
       `, [
         t.id, t.type || 'incoming', t.category || 'Lain-lain', Number(t.amount) || 0, t.description || '',
         t.date || new Date().toISOString().substring(0, 10), t.source || 'custom', t.studentName || null,
@@ -2557,6 +2611,45 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       return { success: true, message: `Inventaris Sarpras "${s.name}" langsung tersimpan ke MySQL.` };
     }
 
+    // 14B. Midtrans Transactions
+    else if (typeKey === 'midtrans' || typeKey === 'midtrans_transaction' || typeKey === 'midtranstransactions') {
+      const md = data;
+      await connection.query(`
+        INSERT INTO \`midtrans_transactions\` (
+          \`id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`student_name\`, \`student_nis\`, \`nisn\`,
+          \`bill_type\`, \`description\`, \`gross_amount\`, \`payment_type\`, \`transaction_status\`,
+          \`fraud_status\`, \`settlement_time\`, \`transaction_time\`, \`created_at\`, \`updated_at\`, \`snap_token\`, \`raw_response\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`transaction_status\`=VALUES(\`transaction_status\`),
+          \`transaction_id\`=VALUES(\`transaction_id\`),
+          \`settlement_time\`=VALUES(\`settlement_time\`),
+          \`payment_type\`=VALUES(\`payment_type\`),
+          \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        md.id || `mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        md.orderId || '',
+        md.transactionId || null,
+        md.studentId || null,
+        md.studentName || null,
+        md.studentNis || null,
+        md.nisn || null,
+        md.billType || 'other',
+        md.description || null,
+        Number(md.grossAmount) || 0,
+        md.paymentType || 'Midtrans',
+        md.transactionStatus || 'settlement',
+        md.fraudStatus || null,
+        md.settlementTime || null,
+        md.transactionTime || null,
+        md.createdAt || new Date().toISOString(),
+        md.updatedAt || new Date().toISOString(),
+        md.snapToken || null,
+        md.rawResponse ? (typeof md.rawResponse === 'string' ? md.rawResponse : JSON.stringify(md.rawResponse)) : null
+      ]);
+      return { success: true, message: `Transaksi Midtrans "${md.orderId}" langsung tersimpan ke MySQL.` };
+    }
+
     // 15. Configs / Master settings
     else if (typeKey === 'config' || typeKey === 'app_config' || typeKey === 'appconfigs') {
       const configId = data.id || data.key || 'config';
@@ -2756,126 +2849,176 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
         savedCount++;
       } else if (typeKey === 'spp' || typeKey === 'spp_bill' || typeKey === 'sppbills') {
         const b = item;
-        await connection.query(`
-          INSERT INTO \`spp_bills\` (
-            \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
-            \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
-            \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
-            \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
-        `, [
-          b.id, b.studentId, b.month, Number(b.year) || 2026, Number(b.amount) || 0, b.status || 'unpaid',
-          b.paidAt || null, b.paymentMethod || null, b.orderId || null, b.transactionId || null,
-          b.achievementType || null, b.achievementDetail || null
-        ]);
-        savedCount++;
+        try {
+          const bStudentId = b.studentId || (b as any).student_id || '';
+          const bMonth = b.month;
+          const bYear = Number(b.year) || 2026;
+          const bAmount = Number(b.amount) || 0;
+          const bStatus = b.status || 'unpaid';
+          const bPaidAt = b.paidAt || (b as any).paid_at || null;
+          const bPaymentMethod = b.paymentMethod || (b as any).payment_method || null;
+          const bOrderId = b.orderId || (b as any).order_id || null;
+          const bTransactionId = b.transactionId || (b as any).transaction_id || null;
+          const bAchType = b.achievementType || (b as any).achievement_type || null;
+          const bAchDetail = b.achievementDetail || (b as any).achievement_detail || null;
+
+          const [updateResult]: any = await connection.query(`
+            UPDATE \`spp_bills\`
+            SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?
+            WHERE \`id\`=? OR (
+              (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+              AND LOWER(\`month\`)=LOWER(?) AND \`year\`=?
+            )
+          `, [
+            bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail,
+            b.id, bStudentId, bStudentId, bStudentId, bMonth, bYear
+          ]);
+
+          if (updateResult && updateResult.affectedRows === 0) {
+            await connection.query(`
+              INSERT INTO \`spp_bills\` (
+                \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
+                \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE
+                \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
+                \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+                \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
+            `, [
+              b.id, bStudentId, bMonth, bYear, bAmount, bStatus,
+              bPaidAt, bPaymentMethod, bOrderId, bTransactionId,
+              bAchType, bAchDetail
+            ]);
+          }
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch SPP Error] ${b?.id}:`, itemErr?.message || itemErr);
+        }
       } else if (typeKey === 'misc' || typeKey === 'misc_bill' || typeKey === 'miscbills') {
         const m = item;
-        await connection.query(`
-          INSERT INTO \`misc_bills\` (
-            \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
-            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
-            \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
-            \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
-        `, [
-          m.id, m.studentId, m.title || '', Number(m.amount) || 0, m.status || 'unpaid',
-          m.createdAt || new Date().toISOString(), m.paidAt || null, m.paymentMethod || null,
-          m.orderId || null, m.transactionId || null, m.isMonthly ? 1 : 0, m.month || null
-        ]);
-        savedCount++;
+        try {
+          const mStudentId = m.studentId || (m as any).student_id || '';
+          const mTitle = m.title || '';
+          const mAmount = Number(m.amount) || 0;
+          const mStatus = m.status || 'unpaid';
+          const mCreatedAt = m.createdAt || (m as any).created_at || new Date().toISOString();
+          const mPaidAt = m.paidAt || (m as any).paid_at || null;
+          const mPaymentMethod = m.paymentMethod || (m as any).payment_method || null;
+          const mOrderId = m.orderId || (m as any).order_id || null;
+          const mTransactionId = m.transactionId || (m as any).transaction_id || null;
+          const mIsMonthly = m.isMonthly || (m as any).is_monthly ? 1 : 0;
+          const mMonth = m.month || null;
+
+          const [updateResult]: any = await connection.query(`
+            UPDATE \`misc_bills\`
+            SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?
+            WHERE \`id\`=? OR (
+              (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
+              AND LOWER(\`title\`)=LOWER(?)
+            )
+          `, [
+            mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth,
+            m.id, mStudentId, mStudentId, mStudentId, mTitle
+          ]);
+
+          if (updateResult && updateResult.affectedRows === 0) {
+            await connection.query(`
+              INSERT INTO \`misc_bills\` (
+                \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
+                \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              ON DUPLICATE KEY UPDATE
+                \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
+                \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
+                \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
+            `, [
+              m.id, mStudentId, mTitle, mAmount, mStatus,
+              mCreatedAt, mPaidAt, mPaymentMethod,
+              mOrderId, mTransactionId, mIsMonthly, mMonth
+            ]);
+          }
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Misc Error] ${m?.id}:`, itemErr?.message || itemErr);
+        }
       } else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
         const s = item;
+        try {
+          await connection.query(`
+            INSERT INTO \`savings_transactions\` (
+              \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
+              \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
+              \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
+          `, [
+            s.id, s.studentId || (s as any).student_id || '', s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
+            s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
+            s.orderId || null, s.transactionId || null, s.notes || null
+          ]);
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Savings Error] ${s?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'transaction' || typeKey === 'treasurer_transaction' || typeKey === 'treasurertransactions') {
+        const t = item;
+        try {
+          await connection.query(`
+            INSERT INTO \`treasurer_transactions\` (
+              \`id\`, \`type\`, \`category\`, \`amount\`, \`description\`, \`date\`, \`source\`,
+              \`student_name\`, \`student_id\`, \`nis\`, \`created_by\`, \`recipient_name\`,
+              \`funding_source\`, \`payment_method\`, \`kode_rekening\`, \`no_bukti\`, \`order_id\`, \`transaction_id\`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              \`amount\`=VALUES(\`amount\`), \`description\`=VALUES(\`description\`), \`category\`=VALUES(\`category\`),
+              \`date\`=VALUES(\`date\`), \`payment_method\`=VALUES(\`payment_method\`), \`no_bukti\`=VALUES(\`no_bukti\`),
+              \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`funding_source\`=VALUES(\`funding_source\`)
+          `, [
+            t.id, t.type || 'incoming', t.category ? String(t.category).slice(0, 100) : 'Lain-lain', Number(t.amount) || 0, t.description || '',
+            t.date || new Date().toISOString().substring(0, 10), t.source || 'custom', t.studentName ? String(t.studentName).slice(0, 150) : null,
+            t.studentId || null, t.nis || null, t.createdBy || 'Bendahara', t.recipientName ? String(t.recipientName).slice(0, 150) : null,
+            t.fundingSource || null, t.paymentMethod === 'bank' ? 'bank' : 'kas', t.kodeRekening || null,
+            t.noBukti || null, t.orderId || null, t.transactionId || null
+          ]);
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Kas Error] ${t?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'midtrans' || typeKey === 'midtrans_transaction' || typeKey === 'midtranstransactions') {
+        const md = item;
         await connection.query(`
-          INSERT INTO \`savings_transactions\` (
-            \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
-            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          INSERT INTO \`midtrans_transactions\` (
+            \`id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`student_name\`, \`student_nis\`, \`nisn\`,
+            \`bill_type\`, \`description\`, \`gross_amount\`, \`payment_type\`, \`transaction_status\`,
+            \`fraud_status\`, \`settlement_time\`, \`transaction_time\`, \`created_at\`, \`updated_at\`, \`snap_token\`, \`raw_response\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
-            \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
-            \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
+            \`transaction_status\`=VALUES(\`transaction_status\`),
+            \`transaction_id\`=VALUES(\`transaction_id\`),
+            \`settlement_time\`=VALUES(\`settlement_time\`),
+            \`payment_type\`=VALUES(\`payment_type\`),
+            \`updated_at\`=VALUES(\`updated_at\`)
         `, [
-          s.id, s.studentId, s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
-          s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
-          s.orderId || null, s.transactionId || null, s.notes || null
-        ]);
-        savedCount++;
-      } else if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
-        const att = item;
-        await connection.query(`
-          INSERT INTO \`attendance_logs\` (
-            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`student_id\`=VALUES(\`student_id\`),
-            \`student_name\`=VALUES(\`student_name\`),
-            \`class_name\`=VALUES(\`class_name\`),
-            \`date\`=VALUES(\`date\`),
-            \`status\`=VALUES(\`status\`),
-            \`notes\`=VALUES(\`notes\`),
-            \`subject_notes\`=VALUES(\`subject_notes\`)
-        `, [
-          att.id, att.studentId || '', att.studentName || null, att.className || null,
-          (att.date || new Date().toISOString()).substring(0, 10), att.status || 'Hadir',
-          att.notes || null, att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
-        ]);
-        savedCount++;
-      } else if (typeKey === 'journal' || typeKey === 'teaching_journal' || typeKey === 'teachingjournals') {
-        const j = item;
-        await connection.query(`
-          INSERT INTO \`teaching_journals\` (
-            \`id\`, \`teacher_id\`, \`teacher_name\`, \`teacher_type\`, \`subject\`, \`class_name\`,
-            \`date\`, \`topic\`, \`attendance_data\`, \`notes\`, \`fase\`, \`semester\`,
-            \`alokasi_waktu\`, \`jam_ke\`, \`pertemuan_ke\`, \`tujuan_pembelajaran\`, \`pencapaian_kktp\`, \`created_at\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`teacher_id\`=VALUES(\`teacher_id\`),
-            \`teacher_name\`=VALUES(\`teacher_name\`),
-            \`teacher_type\`=VALUES(\`teacher_type\`),
-            \`subject\`=VALUES(\`subject\`),
-            \`class_name\`=VALUES(\`class_name\`),
-            \`date\`=VALUES(\`date\`),
-            \`topic\`=VALUES(\`topic\`),
-            \`attendance_data\`=VALUES(\`attendance_data\`),
-            \`notes\`=VALUES(\`notes\`),
-            \`fase\`=VALUES(\`fase\`),
-            \`semester\`=VALUES(\`semester\`),
-            \`alokasi_waktu\`=VALUES(\`alokasi_waktu\`),
-            \`jam_ke\`=VALUES(\`jam_ke\`),
-            \`pertemuan_ke\`=VALUES(\`pertemuan_ke\`),
-            \`tujuan_pembelajaran\`=VALUES(\`tujuan_pembelajaran\`),
-            \`pencapaian_kktp\`=VALUES(\`pencapaian_kktp\`)
-        `, [
-          j.id, j.teacherId || '', j.teacherName || '', j.teacherType || null, j.subject || '', j.className || '',
-          j.date || new Date().toISOString().substring(0, 10), j.topic || '',
-          typeof j.attendance === 'string' ? j.attendance : JSON.stringify(j.attendance || j.attendanceData || []),
-          j.notes || null, j.fase || null, j.semester || null, j.alokasiWaktu || null, j.jamKe || null,
-          j.pertemuanKe || null, j.tujuanPembelajaran || null, j.pencapaianKktp || null,
-          j.createdAt || new Date().toISOString()
-        ]);
-        savedCount++;
-      } else if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {
-        const att = item;
-        await connection.query(`
-          INSERT INTO \`attendance_logs\` (
-            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`date\`, \`status\`, \`notes\`, \`subject_notes\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-          ON DUPLICATE KEY UPDATE
-            \`student_id\`=VALUES(\`student_id\`),
-            \`student_name\`=VALUES(\`student_name\`),
-            \`class_name\`=VALUES(\`class_name\`),
-            \`date\`=VALUES(\`date\`),
-            \`status\`=VALUES(\`status\`),
-            \`notes\`=VALUES(\`notes\`),
-            \`subject_notes\`=VALUES(\`subject_notes\`)
-        `, [
-          att.id, att.studentId || '', att.studentName || null, att.className || null,
-          (att.date || new Date().toISOString()).substring(0, 10), att.status || 'Hadir',
-          att.notes || null, att.subjectNotes ? (typeof att.subjectNotes === 'string' ? att.subjectNotes : JSON.stringify(att.subjectNotes)) : null
+          md.id || `mt-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          md.orderId || '',
+          md.transactionId || null,
+          md.studentId || null,
+          md.studentName || null,
+          md.studentNis || null,
+          md.nisn || null,
+          md.billType || 'other',
+          md.description || null,
+          Number(md.grossAmount) || 0,
+          md.paymentType || 'Midtrans',
+          md.transactionStatus || 'settlement',
+          md.fraudStatus || null,
+          md.settlementTime || null,
+          md.transactionTime || null,
+          md.createdAt || new Date().toISOString(),
+          md.updatedAt || new Date().toISOString(),
+          md.snapToken || null,
+          md.rawResponse ? (typeof md.rawResponse === 'string' ? md.rawResponse : JSON.stringify(md.rawResponse)) : null
         ]);
         savedCount++;
       } else {

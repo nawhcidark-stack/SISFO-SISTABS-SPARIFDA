@@ -1928,18 +1928,98 @@ function applyDataFromMysql(pulledData: any) {
     }
 
     if (Array.isArray(pulledData.sppBills) && pulledData.sppBills.length > 0) {
+      // Build index of current in-memory SPP bills that have been reconciled / paid
+      const localPaidSppMap = new Map<string, SppBill>();
+      sppBills.forEach(b => {
+        if (b.status === "paid") {
+          localPaidSppMap.set(b.id, b);
+          if (b.studentId && b.month && b.year) {
+            localPaidSppMap.set(`${b.studentId}_${b.month}_${b.year}`, b);
+          }
+        }
+      });
+
+      const sppBillsToHealInMysql: SppBill[] = [];
+      const mergedSppBills = pulledData.sppBills.map((pulledBill: SppBill) => {
+        if (pulledBill.status === "paid") {
+          return pulledBill;
+        }
+        // If pulled bill is unpaid, check if local memory already marked it as paid via reconciliation
+        const localPaid = localPaidSppMap.get(pulledBill.id) ||
+                          localPaidSppMap.get(`${pulledBill.studentId}_${pulledBill.month}_${pulledBill.year}`);
+        if (localPaid && localPaid.status === "paid") {
+          const healedBill: SppBill = {
+            ...pulledBill,
+            status: "paid",
+            paidAt: localPaid.paidAt || new Date().toISOString(),
+            paymentMethod: localPaid.paymentMethod || "Midtrans (Reconciled)",
+            orderId: localPaid.orderId || pulledBill.orderId,
+            transactionId: localPaid.transactionId || pulledBill.transactionId
+          };
+          sppBillsToHealInMysql.push(healedBill);
+          return healedBill;
+        }
+        return pulledBill;
+      });
+
       sppBills.length = 0;
-      sppBills.push(...pulledData.sppBills);
+      sppBills.push(...mergedSppBills);
+
+      if (sppBillsToHealInMysql.length > 0 && typeof persistEntities === "function") {
+        persistEntities("sppBills", sppBillsToHealInMysql).catch(err => {
+          console.error("[applyDataFromMysql] Gagal menyelaraskan tagihan SPP lunas ke MySQL:", err);
+        });
+      }
     }
 
     if (Array.isArray(pulledData.miscBills) && pulledData.miscBills.length > 0) {
+      const localPaidMiscMap = new Map<string, MiscBill>();
+      miscBills.forEach(m => {
+        if (m.status === "paid") {
+          localPaidMiscMap.set(m.id, m);
+          if (m.studentId && m.title) {
+            localPaidMiscMap.set(`${m.studentId}_${m.title}`, m);
+          }
+        }
+      });
+
+      const miscBillsToHealInMysql: MiscBill[] = [];
+      const mergedMiscBills = pulledData.miscBills.map((pulledMisc: MiscBill) => {
+        if (pulledMisc.status === "paid") {
+          return pulledMisc;
+        }
+        const localPaid = localPaidMiscMap.get(pulledMisc.id) ||
+                          localPaidMiscMap.get(`${pulledMisc.studentId}_${pulledMisc.title}`);
+        if (localPaid && localPaid.status === "paid") {
+          const healedMisc: MiscBill = {
+            ...pulledMisc,
+            status: "paid",
+            paidAt: localPaid.paidAt || new Date().toISOString(),
+            paymentMethod: localPaid.paymentMethod || "Midtrans (Reconciled)",
+            orderId: localPaid.orderId || pulledMisc.orderId,
+            transactionId: localPaid.transactionId || pulledMisc.transactionId
+          };
+          miscBillsToHealInMysql.push(healedMisc);
+          return healedMisc;
+        }
+        return pulledMisc;
+      });
+
       miscBills.length = 0;
-      miscBills.push(...pulledData.miscBills);
+      miscBills.push(...mergedMiscBills);
+
+      if (miscBillsToHealInMysql.length > 0 && typeof persistEntities === "function") {
+        persistEntities("miscBills", miscBillsToHealInMysql).catch(err => {
+          console.error("[applyDataFromMysql] Gagal menyelaraskan tagihan Non-SPP lunas ke MySQL:", err);
+        });
+      }
     }
 
     if (Array.isArray(pulledData.savingsTransactions) && pulledData.savingsTransactions.length > 0) {
+      const pulledIds = new Set(pulledData.savingsTransactions.map((t: any) => t.id));
+      const localOnly = savingsTransactions.filter(t => !pulledIds.has(t.id));
       savingsTransactions.length = 0;
-      savingsTransactions.push(...pulledData.savingsTransactions);
+      savingsTransactions.push(...pulledData.savingsTransactions, ...localOnly);
     }
 
     if (Array.isArray(pulledData.midtransTransactions) && pulledData.midtransTransactions.length > 0) {

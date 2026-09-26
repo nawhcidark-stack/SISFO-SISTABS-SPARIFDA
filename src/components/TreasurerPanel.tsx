@@ -22,13 +22,15 @@ interface TreasurerPanelProps {
   homerooms?: HomeroomTeacher[];
   subjectTeachers?: SubjectTeacher[];
   onLogout: () => void;
+  onRefresh?: () => void;
 }
 
 export default function TreasurerPanel({ 
   schoolIdentity, 
   homerooms = [], 
   subjectTeachers = [], 
-  onLogout 
+  onLogout,
+  onRefresh
 }: TreasurerPanelProps) {
   const [activeTab, setActiveTab] = useState<'dashboard' | 'kas_ledger' | 'password' | 'gaji_guru' | 'database_mysql'>('dashboard');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
@@ -4829,6 +4831,7 @@ export default function TreasurerPanel({
         onClose={() => setIsBulkReportModalOpen(false)}
         onSuccessReconciliation={() => {
           fetchTransactions();
+          if (onRefresh) onRefresh();
         }}
       />
 
@@ -4838,6 +4841,7 @@ export default function TreasurerPanel({
         initialOrderId={singleReconcileInitialId}
         onSuccessReconciliation={() => {
           fetchTransactions();
+          if (onRefresh) onRefresh();
         }}
       />
 

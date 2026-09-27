@@ -558,6 +558,9 @@ export default function AdminSpmbManagement({
               <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold">
                 {candidates.length} Calon Siswa
               </span>
+              <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-900 border border-teal-300 text-xs font-bold">
+                {formCompletedCount} Biodata Lengkap
+              </span>
               {needRefundCount > 0 && (
                 <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-xs font-black animate-pulse">
                   ⚠️ {needRefundCount} Perlu Refund Token Cash
@@ -1016,6 +1019,7 @@ export default function AdminSpmbManagement({
                     <th className="py-3.5 px-4">NISN / Asal Sekolah</th>
                     <th className="py-3.5 px-4">Jalur Pendaftaran</th>
                     <th className="py-3.5 px-4">Token Online & Refund Cash</th>
+                    <th className="py-3.5 px-4">Data Formulir & Berkas</th>
                     <th className="py-3.5 px-4">Daftar Ulang</th>
                     <th className="py-3.5 px-4">Status Penerimaan</th>
                     <th className="py-3.5 px-4 text-center">Aksi</th>
@@ -1024,7 +1028,7 @@ export default function AdminSpmbManagement({
                 <tbody className="divide-y divide-slate-100 font-medium">
                   {filteredCandidates.length === 0 ? (
                     <tr>
-                      <td colSpan={7} className="py-12 text-center text-slate-500 text-xs">
+                      <td colSpan={8} className="py-12 text-center text-slate-500 text-xs">
                         Belum ada calon murid terdaftar yang cocok dengan filter pencarian.
                       </td>
                     </tr>
@@ -1196,6 +1200,46 @@ export default function AdminSpmbManagement({
                                   )}
                                 </div>
                               )}
+                            </div>
+                          </td>
+
+                          {/* Status Data Lengkap Formulir & Berkas */}
+                          <td className="py-3.5 px-4">
+                            <div className="space-y-1.5">
+                              <div>
+                                {candidate.isFormCompleted ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                    <CheckCircle2 size={11} className="text-emerald-700" />
+                                    <span>Form Lengkap</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-50 text-amber-900 border border-amber-300">
+                                    <Clock size={10} className="text-amber-600" />
+                                    <span>Belum Lengkap</span>
+                                  </span>
+                                )}
+                              </div>
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                {candidate.documentsUploaded || candidate.documentsUploadedAt || Boolean(candidate.documents?.pasPhoto || candidate.documents?.kkPhoto || candidate.documents?.aktaPhoto) ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                                    <FileText size={10} className="text-blue-700" />
+                                    <span>Berkas Ada</span>
+                                  </span>
+                                ) : (
+                                  <span className="text-[10px] text-slate-400">
+                                    Berkas Kosong
+                                  </span>
+                                )}
+                              </div>
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCandidate(candidate)}
+                                  className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
+                                >
+                                  Lihat Biodata
+                                </button>
+                              </div>
                             </div>
                           </td>
 

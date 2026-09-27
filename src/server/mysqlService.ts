@@ -813,11 +813,14 @@ CREATE TABLE IF NOT EXISTS \`spmb_candidates\` (
   \`birth_place\` VARCHAR(100) NOT NULL,
   \`birth_date\` VARCHAR(32) NOT NULL,
   \`phone\` VARCHAR(32) NOT NULL,
+  \`student_phone\` VARCHAR(32) DEFAULT NULL,
   \`school_origin_type\` VARCHAR(64) DEFAULT 'other',
   \`school_origin\` VARCHAR(150) NOT NULL,
   \`registration_type\` VARCHAR(64) DEFAULT 'online_individual',
   \`session_id\` VARCHAR(64) NOT NULL,
   \`created_at\` VARCHAR(64) NOT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  \`status\` VARCHAR(64) DEFAULT 'registered',
   \`original_session_id\` VARCHAR(64) DEFAULT NULL,
   \`previous_session_id\` VARCHAR(64) DEFAULT NULL,
   \`is_transferred_session\` TINYINT(1) DEFAULT 0,
@@ -896,11 +899,18 @@ CREATE TABLE IF NOT EXISTS \`spmb_candidates\` (
   \`re_registration_method\` VARCHAR(64) DEFAULT NULL,
   \`re_registration_order_id\` VARCHAR(100) DEFAULT NULL,
   \`re_registration_status\` VARCHAR(32) DEFAULT 'unpaid',
+  \`re_registration_amount\` DECIMAL(15,2) DEFAULT 0.00,
   \`building_fee_paid\` DECIMAL(15,2) DEFAULT 0.00,
   \`july_spp_paid\` DECIMAL(15,2) DEFAULT 0.00,
   \`uniform_fee_paid\` DECIMAL(15,2) DEFAULT 0.00,
   \`total_re_registration_paid\` DECIMAL(15,2) DEFAULT 0.00,
+  \`selected_uniform_size\` VARCHAR(32) DEFAULT NULL,
+  \`custom_uniform_note\` TEXT DEFAULT NULL,
   \`uniform_orders\` LONGTEXT DEFAULT NULL,
+  \`uniform_sizes\` LONGTEXT DEFAULT NULL,
+  \`documents\` LONGTEXT DEFAULT NULL,
+  \`documents_uploaded_at\` VARCHAR(64) DEFAULT NULL,
+  \`full_form_data\` LONGTEXT DEFAULT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_spmb_regno\` (\`registration_no\`),
   KEY \`idx_spmb_nisn\` (\`nisn\`),
@@ -1256,7 +1266,13 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (spmbCandidates.length > 0) {
     out += `\n-- Data Calon Siswa Baru / SPMB (${spmbCandidates.length} baris)\n`;
     for (const c of spmbCandidates) {
-      out += `INSERT INTO \`spmb_candidates\` (\`id\`, \`registration_no\`, \`nisn\`, \`nik\`, \`full_name\`, \`gender\`, \`birth_place\`, \`birth_date\`, \`phone\`, \`school_origin_type\`, \`school_origin\`, \`registration_type\`, \`session_id\`, \`created_at\`, \`original_session_id\`, \`previous_session_id\`, \`is_transferred_session\`, \`transferred_at\`, \`transfer_reason\`, \`transfer_history\`, \`token_payment_status\`, \`token_payment_order_id\`, \`token_paid_at\`, \`token_payment_method\`, \`token_amount\`, \`collective_refund_status\`, \`collective_refund_amount\`, \`collective_refunded_at\`, \`collective_refunded_by\`, \`collective_refund_recipient\`, \`collective_refund_note\`, \`collective_refund_receipt_no\`, \`is_form_completed\`, \`form_completed_at\`, \`nickname\`, \`kk_number\`, \`birth_cert_number\`, \`religion\`, \`address\`, \`dusun\`, \`rt\`, \`rw\`, \`village\`, \`district\`, \`city\`, \`postal_code\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`, \`transportation\`, \`special_needs\`, \`height\`, \`weight\`, \`distance_to_school\`, \`travel_time\`, \`father_name\`, \`father_nik\`, \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`, \`father_phone\`, \`father_status\`, \`father_address\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`, \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_phone\`, \`mother_status\`, \`mother_address\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`, \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_phone\`, \`guardian_status\`, \`guardian_address\`, \`guardian_relationship\`, \`guardian_is_same_as_father\`, \`re_registration_paid_at\`, \`re_registration_method\`, \`re_registration_order_id\`, \`re_registration_status\`, \`building_fee_paid\`, \`july_spp_paid\`, \`uniform_fee_paid\`, \`total_re_registration_paid\`, \`uniform_orders\`) VALUES (${sqlEscape(c.id)}, ${sqlEscape(c.registrationNo)}, ${sqlEscape(c.nisn)}, ${sqlEscape(c.nik)}, ${sqlEscape(c.fullName)}, ${sqlEscape(c.gender)}, ${sqlEscape(c.birthPlace)}, ${sqlEscape(c.birthDate)}, ${sqlEscape(c.phone)}, ${sqlEscape(c.schoolOriginType || 'other')}, ${sqlEscape(c.schoolOrigin)}, ${sqlEscape(c.registrationType || 'online_individual')}, ${sqlEscape(c.sessionId)}, ${sqlEscape(c.createdAt)}, ${sqlEscape(c.originalSessionId)}, ${sqlEscape(c.previousSessionId)}, ${sqlEscape(c.isTransferredSession ? 1 : 0)}, ${sqlEscape(c.transferredAt)}, ${sqlEscape(c.transferReason)}, ${sqlEscape(c.transferHistory)}, ${sqlEscape(c.tokenPaymentStatus || 'unpaid')}, ${sqlEscape(c.tokenPaymentOrderId)}, ${sqlEscape(c.tokenPaidAt)}, ${sqlEscape(c.tokenPaymentMethod)}, ${sqlEscape(c.tokenAmount)}, ${sqlEscape(c.collectiveRefundStatus || 'none')}, ${sqlEscape(c.collectiveRefundAmount)}, ${sqlEscape(c.collectiveRefundedAt)}, ${sqlEscape(c.collectiveRefundedBy)}, ${sqlEscape(c.collectiveRefundRecipient)}, ${sqlEscape(c.collectiveRefundNote)}, ${sqlEscape(c.collectiveRefundReceiptNo)}, ${sqlEscape(c.isFormCompleted ? 1 : 0)}, ${sqlEscape(c.formCompletedAt)}, ${sqlEscape(c.nickname)}, ${sqlEscape(c.kkNumber)}, ${sqlEscape(c.birthCertNumber)}, ${sqlEscape(c.religion)}, ${sqlEscape(c.address)}, ${sqlEscape(c.dusun)}, ${sqlEscape(c.rt)}, ${sqlEscape(c.rw)}, ${sqlEscape(c.village)}, ${sqlEscape(c.district)}, ${sqlEscape(c.city)}, ${sqlEscape(c.postalCode)}, ${sqlEscape(c.livingWith)}, ${sqlEscape(c.childOrder)}, ${sqlEscape(c.siblingsCount)}, ${sqlEscape(c.stepSiblingsCount)}, ${sqlEscape(c.transportation)}, ${sqlEscape(c.specialNeeds)}, ${sqlEscape(c.height)}, ${sqlEscape(c.weight)}, ${sqlEscape(c.distanceToSchool)}, ${sqlEscape(c.travelTime)}, ${sqlEscape(c.fatherName)}, ${sqlEscape(c.fatherNik)}, ${sqlEscape(c.fatherBirthPlace)}, ${sqlEscape(c.fatherBirthDate)}, ${sqlEscape(c.fatherEducation)}, ${sqlEscape(c.fatherOccupation)}, ${sqlEscape(c.fatherIncome)}, ${sqlEscape(c.fatherPhone)}, ${sqlEscape(c.fatherStatus)}, ${sqlEscape(c.fatherAddress)}, ${sqlEscape(c.motherName)}, ${sqlEscape(c.motherNik)}, ${sqlEscape(c.motherBirthPlace)}, ${sqlEscape(c.motherBirthDate)}, ${sqlEscape(c.motherEducation)}, ${sqlEscape(c.motherOccupation)}, ${sqlEscape(c.motherIncome)}, ${sqlEscape(c.motherPhone)}, ${sqlEscape(c.motherStatus)}, ${sqlEscape(c.motherAddress)}, ${sqlEscape(c.guardianName)}, ${sqlEscape(c.guardianNik)}, ${sqlEscape(c.guardianBirthPlace)}, ${sqlEscape(c.guardianBirthDate)}, ${sqlEscape(c.guardianEducation)}, ${sqlEscape(c.guardianOccupation)}, ${sqlEscape(c.guardianIncome)}, ${sqlEscape(c.guardianPhone)}, ${sqlEscape(c.guardianStatus)}, ${sqlEscape(c.guardianAddress)}, ${sqlEscape(c.guardianRelationship)}, ${sqlEscape(c.guardianIsSameAsFather ? 1 : 0)}, ${sqlEscape(c.reRegistrationPaidAt)}, ${sqlEscape(c.reRegistrationMethod)}, ${sqlEscape(c.reRegistrationOrderId)}, ${sqlEscape(c.reRegistrationStatus || 'unpaid')}, ${sqlEscape(c.buildingFeePaid || 0)}, ${sqlEscape(c.julySppPaid || 0)}, ${sqlEscape(c.uniformFeePaid || 0)}, ${sqlEscape(c.totalReRegistrationPaid || 0)}, ${sqlEscape(c.uniformOrders)}) ON DUPLICATE KEY UPDATE \`full_name\`=VALUES(\`full_name\`), \`session_id\`=VALUES(\`session_id\`);\n`;
+      const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
+      const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
+      const uniformSizes = c.uniformSizes ? (typeof c.uniformSizes === 'string' ? c.uniformSizes : JSON.stringify(c.uniformSizes)) : null;
+      const documents = c.documents ? (typeof c.documents === 'string' ? c.documents : JSON.stringify(c.documents)) : null;
+      const fullFormData = c.fullFormData ? (typeof c.fullFormData === 'string' ? c.fullFormData : JSON.stringify(c.fullFormData)) : null;
+
+      out += `INSERT INTO \`spmb_candidates\` (\`id\`, \`registration_no\`, \`nisn\`, \`nik\`, \`full_name\`, \`gender\`, \`birth_place\`, \`birth_date\`, \`phone\`, \`student_phone\`, \`school_origin_type\`, \`school_origin\`, \`registration_type\`, \`session_id\`, \`created_at\`, \`updated_at\`, \`status\`, \`original_session_id\`, \`previous_session_id\`, \`is_transferred_session\`, \`transferred_at\`, \`transfer_reason\`, \`transfer_history\`, \`token_payment_status\`, \`token_payment_order_id\`, \`token_paid_at\`, \`token_payment_method\`, \`token_amount\`, \`collective_refund_status\`, \`collective_refund_amount\`, \`collective_refunded_at\`, \`collective_refunded_by\`, \`collective_refund_recipient\`, \`collective_refund_note\`, \`collective_refund_receipt_no\`, \`is_form_completed\`, \`form_completed_at\`, \`nickname\`, \`kk_number\`, \`birth_cert_number\`, \`religion\`, \`address\`, \`dusun\`, \`rt\`, \`rw\`, \`village\`, \`district\`, \`city\`, \`postal_code\`, \`living_with\`, \`child_order\`, \`siblings_count\`, \`step_siblings_count\`, \`transportation\`, \`special_needs\`, \`height\`, \`weight\`, \`distance_to_school\`, \`travel_time\`, \`father_name\`, \`father_nik\`, \`father_birth_place\`, \`father_birth_date\`, \`father_education\`, \`father_occupation\`, \`father_income\`, \`father_phone\`, \`father_status\`, \`father_address\`, \`mother_name\`, \`mother_nik\`, \`mother_birth_place\`, \`mother_birth_date\`, \`mother_education\`, \`mother_occupation\`, \`mother_income\`, \`mother_phone\`, \`mother_status\`, \`mother_address\`, \`guardian_name\`, \`guardian_nik\`, \`guardian_birth_place\`, \`guardian_birth_date\`, \`guardian_education\`, \`guardian_occupation\`, \`guardian_income\`, \`guardian_phone\`, \`guardian_status\`, \`guardian_address\`, \`guardian_relationship\`, \`guardian_is_same_as_father\`, \`re_registration_paid_at\`, \`re_registration_method\`, \`re_registration_order_id\`, \`re_registration_status\`, \`re_registration_amount\`, \`building_fee_paid\`, \`july_spp_paid\`, \`uniform_fee_paid\`, \`total_re_registration_paid\`, \`selected_uniform_size\`, \`custom_uniform_note\`, \`uniform_orders\`, \`uniform_sizes\`, \`documents\`, \`documents_uploaded_at\`, \`full_form_data\`) VALUES (${sqlEscape(c.id)}, ${sqlEscape(c.registrationNo || c.nisn)}, ${sqlEscape(c.nisn)}, ${sqlEscape(c.nik)}, ${sqlEscape(c.fullName)}, ${sqlEscape((c.gender === 'P' || c.gender === 'Perempuan') ? 'P' : 'L')}, ${sqlEscape(c.birthPlace)}, ${sqlEscape(c.birthDate)}, ${sqlEscape(c.phone)}, ${sqlEscape(c.studentPhone)}, ${sqlEscape(c.schoolOriginType || 'other')}, ${sqlEscape(c.schoolOrigin)}, ${sqlEscape(c.registrationType || 'online_individual')}, ${sqlEscape(c.sessionId || 'inden')}, ${sqlEscape(c.createdAt)}, ${sqlEscape(c.updatedAt)}, ${sqlEscape(c.status || 'registered')}, ${sqlEscape(c.originalSessionId)}, ${sqlEscape(c.previousSessionId)}, ${sqlEscape(c.isTransferredSession ? 1 : 0)}, ${sqlEscape(c.transferredAt)}, ${sqlEscape(c.transferReason)}, ${sqlEscape(transferHistory)}, ${sqlEscape(c.tokenPaymentStatus || 'unpaid')}, ${sqlEscape(c.tokenPaymentOrderId)}, ${sqlEscape(c.tokenPaidAt)}, ${sqlEscape(c.tokenPaymentMethod)}, ${sqlEscape(c.tokenAmount)}, ${sqlEscape(c.collectiveRefundStatus || 'none')}, ${sqlEscape(c.collectiveRefundAmount)}, ${sqlEscape(c.collectiveRefundedAt)}, ${sqlEscape(c.collectiveRefundedBy)}, ${sqlEscape(c.collectiveRefundRecipient)}, ${sqlEscape(c.collectiveRefundNote)}, ${sqlEscape(c.collectiveRefundReceiptNo)}, ${sqlEscape(c.isFormCompleted ? 1 : 0)}, ${sqlEscape(c.formCompletedAt)}, ${sqlEscape(c.nickname)}, ${sqlEscape(c.kkNumber)}, ${sqlEscape(c.birthCertNumber)}, ${sqlEscape(c.religion)}, ${sqlEscape(c.address)}, ${sqlEscape(c.dusun)}, ${sqlEscape(c.rt)}, ${sqlEscape(c.rw)}, ${sqlEscape(c.village)}, ${sqlEscape(c.district)}, ${sqlEscape(c.city)}, ${sqlEscape(c.postalCode)}, ${sqlEscape(c.livingWith)}, ${sqlEscape(c.childOrder)}, ${sqlEscape(c.siblingsCount)}, ${sqlEscape(c.stepSiblingsCount)}, ${sqlEscape(c.transportation)}, ${sqlEscape(c.specialNeeds)}, ${sqlEscape(c.height)}, ${sqlEscape(c.weight)}, ${sqlEscape(c.distanceToSchool)}, ${sqlEscape(c.travelTime)}, ${sqlEscape(c.fatherName)}, ${sqlEscape(c.fatherNik)}, ${sqlEscape(c.fatherBirthPlace)}, ${sqlEscape(c.fatherBirthDate)}, ${sqlEscape(c.fatherEducation)}, ${sqlEscape(c.fatherOccupation)}, ${sqlEscape(c.fatherIncome)}, ${sqlEscape(c.fatherPhone)}, ${sqlEscape(c.fatherStatus)}, ${sqlEscape(c.fatherAddress)}, ${sqlEscape(c.motherName)}, ${sqlEscape(c.motherNik)}, ${sqlEscape(c.motherBirthPlace)}, ${sqlEscape(c.motherBirthDate)}, ${sqlEscape(c.motherEducation)}, ${sqlEscape(c.motherOccupation)}, ${sqlEscape(c.motherIncome)}, ${sqlEscape(c.motherPhone)}, ${sqlEscape(c.motherStatus)}, ${sqlEscape(c.motherAddress)}, ${sqlEscape(c.guardianName)}, ${sqlEscape(c.guardianNik)}, ${sqlEscape(c.guardianBirthPlace)}, ${sqlEscape(c.guardianBirthDate)}, ${sqlEscape(c.guardianEducation)}, ${sqlEscape(c.guardianOccupation)}, ${sqlEscape(c.guardianIncome)}, ${sqlEscape(c.guardianPhone)}, ${sqlEscape(c.guardianStatus)}, ${sqlEscape(c.guardianAddress)}, ${sqlEscape(c.guardianRelationship || c.guardianRelation)}, ${sqlEscape(c.guardianIsSameAsFather ? 1 : 0)}, ${sqlEscape(c.reRegistrationPaidAt)}, ${sqlEscape(c.reRegistrationMethod)}, ${sqlEscape(c.reRegistrationOrderId)}, ${sqlEscape(c.reRegistrationStatus || 'unpaid')}, ${sqlEscape(c.reRegistrationAmount || 0)}, ${sqlEscape(c.buildingFeePaid || 0)}, ${sqlEscape(c.julySppPaid || 0)}, ${sqlEscape(c.uniformFeePaid || 0)}, ${sqlEscape(c.totalReRegistrationPaid || 0)}, ${sqlEscape(c.selectedUniformSize)}, ${sqlEscape(c.customUniformNote)}, ${sqlEscape(uniformOrders)}, ${sqlEscape(uniformSizes)}, ${sqlEscape(documents)}, ${sqlEscape(c.documentsUploadedAt)}, ${sqlEscape(fullFormData)}) ON DUPLICATE KEY UPDATE \`full_name\`=VALUES(\`full_name\`), \`is_form_completed\`=VALUES(\`is_form_completed\`), \`form_completed_at\`=VALUES(\`form_completed_at\`), \`nickname\`=VALUES(\`nickname\`), \`kk_number\`=VALUES(\`kk_number\`), \`birth_cert_number\`=VALUES(\`birth_cert_number\`), \`religion\`=VALUES(\`religion\`), \`address\`=VALUES(\`address\`), \`dusun\`=VALUES(\`dusun\`), \`rt\`=VALUES(\`rt\`), \`rw\`=VALUES(\`rw\`), \`village\`=VALUES(\`village\`), \`district\`=VALUES(\`district\`), \`city\`=VALUES(\`city\`), \`postal_code\`=VALUES(\`postal_code\`), \`living_with\`=VALUES(\`living_with\`), \`child_order\`=VALUES(\`child_order\`), \`siblings_count\`=VALUES(\`siblings_count\`), \`step_siblings_count\`=VALUES(\`step_siblings_count\`), \`transportation\`=VALUES(\`transportation\`), \`special_needs\`=VALUES(\`special_needs\`), \`height\`=VALUES(\`height\`), \`weight\`=VALUES(\`weight\`), \`distance_to_school\`=VALUES(\`distance_to_school\`), \`travel_time\`=VALUES(\`travel_time\`), \`father_name\`=VALUES(\`father_name\`), \`father_nik\`=VALUES(\`father_nik\`), \`father_birth_place\`=VALUES(\`father_birth_place\`), \`father_birth_date\`=VALUES(\`father_birth_date\`), \`father_education\`=VALUES(\`father_education\`), \`father_occupation\`=VALUES(\`father_occupation\`), \`father_income\`=VALUES(\`father_income\`), \`father_phone\`=VALUES(\`father_phone\`), \`father_status\`=VALUES(\`father_status\`), \`father_address\`=VALUES(\`father_address\`), \`mother_name\`=VALUES(\`mother_name\`), \`mother_nik\`=VALUES(\`mother_nik\`), \`mother_birth_place\`=VALUES(\`mother_birth_place\`), \`mother_birth_date\`=VALUES(\`mother_birth_date\`), \`mother_education\`=VALUES(\`mother_education\`), \`mother_occupation\`=VALUES(\`mother_occupation\`), \`mother_income\`=VALUES(\`mother_income\`), \`mother_phone\`=VALUES(\`mother_phone\`), \`mother_status\`=VALUES(\`mother_status\`), \`mother_address\`=VALUES(\`mother_address\`), \`guardian_name\`=VALUES(\`guardian_name\`), \`guardian_nik\`=VALUES(\`guardian_nik\`), \`guardian_birth_place\`=VALUES(\`guardian_birth_place\`), \`guardian_birth_date\`=VALUES(\`guardian_birth_date\`), \`guardian_education\`=VALUES(\`guardian_education\`), \`guardian_occupation\`=VALUES(\`guardian_occupation\`), \`guardian_income\`=VALUES(\`guardian_income\`), \`guardian_phone\`=VALUES(\`guardian_phone\`), \`guardian_status\`=VALUES(\`guardian_status\`), \`guardian_address\`=VALUES(\`guardian_address\`), \`guardian_relationship\`=VALUES(\`guardian_relationship\`), \`guardian_is_same_as_father\`=VALUES(\`guardian_is_same_as_father\`), \`re_registration_paid_at\`=VALUES(\`re_registration_paid_at\`), \`re_registration_method\`=VALUES(\`re_registration_method\`), \`re_registration_order_id\`=VALUES(\`re_registration_order_id\`), \`re_registration_status\`=VALUES(\`re_registration_status\`), \`re_registration_amount\`=VALUES(\`re_registration_amount\`), \`building_fee_paid\`=VALUES(\`building_fee_paid\`), \`july_spp_paid\`=VALUES(\`july_spp_paid\`), \`uniform_fee_paid\`=VALUES(\`uniform_fee_paid\`), \`total_re_registration_paid\`=VALUES(\`total_re_registration_paid\`), \`selected_uniform_size\`=VALUES(\`selected_uniform_size\`), \`custom_uniform_note\`=VALUES(\`custom_uniform_note\`), \`uniform_orders\`=VALUES(\`uniform_orders\`), \`uniform_sizes\`=VALUES(\`uniform_sizes\`), \`documents\`=VALUES(\`documents\`), \`documents_uploaded_at\`=VALUES(\`documents_uploaded_at\`), \`full_form_data\`=VALUES(\`full_form_data\`), \`status\`=VALUES(\`status\`), \`updated_at\`=VALUES(\`updated_at\`);\n`;
     }
   }
 
@@ -1395,6 +1411,182 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
       },
       durationMs: Date.now() - startTime
     };
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Helper untuk mapping baris tabel MySQL spmb_candidates ke objek SpmbCandidate
+export function mapMysqlRowToSpmbCandidate(r: any): any {
+  if (!r) return null;
+  let transferHistory = undefined;
+  if (r.transfer_history) {
+    try {
+      transferHistory = typeof r.transfer_history === 'string' ? JSON.parse(r.transfer_history) : r.transfer_history;
+    } catch {}
+  }
+  let uniformOrders = undefined;
+  if (r.uniform_orders) {
+    try {
+      uniformOrders = typeof r.uniform_orders === 'string' ? JSON.parse(r.uniform_orders) : r.uniform_orders;
+    } catch {}
+  }
+  let uniformSizes = undefined;
+  if (r.uniform_sizes) {
+    try {
+      uniformSizes = typeof r.uniform_sizes === 'string' ? JSON.parse(r.uniform_sizes) : r.uniform_sizes;
+    } catch {}
+  }
+  let documents = undefined;
+  if (r.documents) {
+    try {
+      documents = typeof r.documents === 'string' ? JSON.parse(r.documents) : r.documents;
+    } catch {}
+  }
+  let fullFormData: any = undefined;
+  if (r.full_form_data) {
+    try {
+      fullFormData = typeof r.full_form_data === 'string' ? JSON.parse(r.full_form_data) : r.full_form_data;
+    } catch {}
+  }
+
+  const baseCandidate: any = {
+    id: r.id,
+    registrationNo: r.registration_no,
+    registrationNumber: r.registration_no,
+    nisn: r.nisn,
+    nik: r.nik,
+    fullName: r.full_name,
+    gender: r.gender,
+    birthPlace: r.birth_place,
+    birthDate: r.birth_date,
+    phone: r.phone,
+    studentPhone: r.student_phone || undefined,
+    schoolOriginType: r.school_origin_type,
+    schoolOrigin: r.school_origin,
+    registrationType: r.registration_type,
+    sessionId: r.session_id,
+    createdAt: r.created_at,
+    updatedAt: r.updated_at || undefined,
+    status: r.status || (Boolean(r.is_form_completed) ? 'form_submitted' : 'registered'),
+    originalSessionId: r.original_session_id || undefined,
+    previousSessionId: r.previous_session_id || undefined,
+    isTransferredSession: Boolean(r.is_transferred_session),
+    transferredAt: r.transferred_at || undefined,
+    transferReason: r.transfer_reason || undefined,
+    transferHistory,
+    tokenPaid: r.token_payment_status === 'paid' || Boolean(r.token_paid_at),
+    tokenPaymentStatus: r.token_payment_status || 'unpaid',
+    tokenPaymentOrderId: r.token_payment_order_id || undefined,
+    tokenPaidAt: r.token_paid_at || undefined,
+    tokenPaymentMethod: r.token_payment_method || undefined,
+    tokenAmount: r.token_amount !== null && r.token_amount !== undefined ? Number(r.token_amount) : undefined,
+    collectiveRefundStatus: r.collective_refund_status || 'none',
+    collectiveRefundAmount: r.collective_refund_amount !== null && r.collective_refund_amount !== undefined ? Number(r.collective_refund_amount) : undefined,
+    collectiveRefundedAt: r.collective_refunded_at || undefined,
+    collectiveRefundedBy: r.collective_refunded_by || undefined,
+    collectiveRefundRecipient: r.collective_refund_recipient || undefined,
+    collectiveRefundNote: r.collective_refund_note || undefined,
+    collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
+    isFormCompleted: Boolean(r.is_form_completed),
+    formCompletedAt: r.form_completed_at || undefined,
+    nickname: r.nickname || undefined,
+    kkNumber: r.kk_number || undefined,
+    birthCertNumber: r.birth_cert_number || undefined,
+    religion: r.religion || undefined,
+    address: r.address || undefined,
+    dusun: r.dusun || undefined,
+    rt: r.rt || undefined,
+    rw: r.rw || undefined,
+    village: r.village || undefined,
+    district: r.district || undefined,
+    city: r.city || undefined,
+    postalCode: r.postal_code || undefined,
+    livingWith: r.living_with || undefined,
+    childOrder: r.child_order || undefined,
+    siblingsCount: r.siblings_count || undefined,
+    stepSiblingsCount: r.step_siblings_count || undefined,
+    transportation: r.transportation || undefined,
+    specialNeeds: r.special_needs || undefined,
+    height: r.height !== null && r.height !== undefined ? Number(r.height) : undefined,
+    weight: r.weight !== null && r.weight !== undefined ? Number(r.weight) : undefined,
+    distanceToSchool: r.distance_to_school || undefined,
+    travelTime: r.travel_time || undefined,
+    fatherName: r.father_name || undefined,
+    fatherNik: r.father_nik || undefined,
+    fatherBirthPlace: r.father_birth_place || undefined,
+    fatherBirthDate: r.father_birth_date || undefined,
+    fatherEducation: r.father_education || undefined,
+    fatherOccupation: r.father_occupation || undefined,
+    fatherIncome: r.father_income || undefined,
+    fatherPhone: r.father_phone || undefined,
+    fatherStatus: r.father_status || undefined,
+    fatherAddress: r.father_address || undefined,
+    motherName: r.mother_name || undefined,
+    motherNik: r.mother_nik || undefined,
+    motherBirthPlace: r.mother_birth_place || undefined,
+    motherBirthDate: r.mother_birth_date || undefined,
+    motherEducation: r.mother_education || undefined,
+    motherOccupation: r.mother_occupation || undefined,
+    motherIncome: r.mother_income || undefined,
+    motherPhone: r.mother_phone || undefined,
+    motherStatus: r.mother_status || undefined,
+    motherAddress: r.mother_address || undefined,
+    guardianName: r.guardian_name || undefined,
+    guardianNik: r.guardian_nik || undefined,
+    guardianBirthPlace: r.guardian_birth_place || undefined,
+    guardianBirthDate: r.guardian_birth_date || undefined,
+    guardianEducation: r.guardian_education || undefined,
+    guardianOccupation: r.guardian_occupation || undefined,
+    guardianIncome: r.guardian_income || undefined,
+    guardianPhone: r.guardian_phone || undefined,
+    guardianStatus: r.guardian_status || undefined,
+    guardianAddress: r.guardian_address || undefined,
+    guardianRelationship: r.guardian_relationship || undefined,
+    guardianRelation: r.guardian_relationship || undefined,
+    guardianIsSameAsFather: Boolean(r.guardian_is_same_as_father),
+    reRegistrationPaid: r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at),
+    reRegistrationPaidAt: r.re_registration_paid_at || undefined,
+    reRegistrationMethod: r.re_registration_method || undefined,
+    reRegistrationOrderId: r.re_registration_order_id || undefined,
+    reRegistrationStatus: r.re_registration_status || 'unpaid',
+    reRegistrationAmount: r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined,
+    buildingFeePaid: Number(r.building_fee_paid) || 0,
+    julySppPaid: Number(r.july_spp_paid) || 0,
+    uniformFeePaid: Number(r.uniform_fee_paid) || 0,
+    totalReRegistrationPaid: Number(r.total_re_registration_paid) || 0,
+    selectedUniformSize: r.selected_uniform_size || undefined,
+    customUniformNote: r.custom_uniform_note || undefined,
+    uniformOrders,
+    uniformSizes,
+    documents,
+    documentsUploaded: Boolean(documents || r.documents_uploaded_at),
+    documentsUploadedAt: r.documents_uploaded_at || undefined,
+    fullFormData,
+    ...(fullFormData && typeof fullFormData === 'object' ? fullFormData : {})
+  };
+  return baseCandidate;
+}
+
+// Fungsi untuk mencari calon murid langsung dari tabel MySQL spmb_candidates
+export async function findSpmbCandidateInMysql(identifier: string): Promise<any | null> {
+  if (!identifier) return null;
+  const clean = identifier.trim();
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query(
+      "SELECT * FROM `spmb_candidates` WHERE `id` = ? OR `nisn` = ? OR `registration_no` = ? LIMIT 1",
+      [clean, clean, clean]
+    );
+    if (rows && rows.length > 0) {
+      return mapMysqlRowToSpmbCandidate(rows[0]);
+    }
+    return null;
+  } catch (err: any) {
+    console.warn("[MySQL findSpmbCandidate Error]:", err?.message || err);
+    return null;
   } finally {
     if (connection) connection.release();
   }
@@ -1960,119 +2152,7 @@ export async function pullDataFromMysql(): Promise<{
     // 24. SPMB Candidates
     if (hasTable('spmb_candidates')) {
       const [rows]: any = await connection.query('SELECT * FROM `spmb_candidates`');
-      resultData.spmbCandidates = rows.map((r: any) => {
-        let transferHistory = undefined;
-        if (r.transfer_history) {
-          try {
-            transferHistory = typeof r.transfer_history === 'string' ? JSON.parse(r.transfer_history) : r.transfer_history;
-          } catch {}
-        }
-        let uniformOrders = undefined;
-        if (r.uniform_orders) {
-          try {
-            uniformOrders = typeof r.uniform_orders === 'string' ? JSON.parse(r.uniform_orders) : r.uniform_orders;
-          } catch {}
-        }
-        return {
-          id: r.id,
-          registrationNo: r.registration_no,
-          nisn: r.nisn,
-          nik: r.nik,
-          fullName: r.full_name,
-          gender: r.gender,
-          birthPlace: r.birth_place,
-          birthDate: r.birth_date,
-          phone: r.phone,
-          schoolOriginType: r.school_origin_type,
-          schoolOrigin: r.school_origin,
-          registrationType: r.registration_type,
-          sessionId: r.session_id,
-          createdAt: r.created_at,
-          originalSessionId: r.original_session_id || undefined,
-          previousSessionId: r.previous_session_id || undefined,
-          isTransferredSession: Boolean(r.is_transferred_session),
-          transferredAt: r.transferred_at || undefined,
-          transferReason: r.transfer_reason || undefined,
-          transferHistory,
-          tokenPaymentStatus: r.token_payment_status || 'unpaid',
-          tokenPaymentOrderId: r.token_payment_order_id || undefined,
-          tokenPaidAt: r.token_paid_at || undefined,
-          tokenPaymentMethod: r.token_payment_method || undefined,
-          tokenAmount: r.token_amount !== null ? Number(r.token_amount) : undefined,
-          collectiveRefundStatus: r.collective_refund_status || 'none',
-          collectiveRefundAmount: r.collective_refund_amount !== null ? Number(r.collective_refund_amount) : undefined,
-          collectiveRefundedAt: r.collective_refunded_at || undefined,
-          collectiveRefundedBy: r.collective_refunded_by || undefined,
-          collectiveRefundRecipient: r.collective_refund_recipient || undefined,
-          collectiveRefundNote: r.collective_refund_note || undefined,
-          collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
-          isFormCompleted: Boolean(r.is_form_completed),
-          formCompletedAt: r.form_completed_at || undefined,
-          nickname: r.nickname || undefined,
-          kkNumber: r.kk_number || undefined,
-          birthCertNumber: r.birth_cert_number || undefined,
-          religion: r.religion || undefined,
-          address: r.address || undefined,
-          dusun: r.dusun || undefined,
-          rt: r.rt || undefined,
-          rw: r.rw || undefined,
-          village: r.village || undefined,
-          district: r.district || undefined,
-          city: r.city || undefined,
-          postalCode: r.postal_code || undefined,
-          livingWith: r.living_with || undefined,
-          childOrder: r.child_order || undefined,
-          siblingsCount: r.siblings_count || undefined,
-          stepSiblingsCount: r.step_siblings_count || undefined,
-          transportation: r.transportation || undefined,
-          specialNeeds: r.special_needs || undefined,
-          height: r.height !== null ? Number(r.height) : undefined,
-          weight: r.weight !== null ? Number(r.weight) : undefined,
-          distanceToSchool: r.distance_to_school || undefined,
-          travelTime: r.travel_time || undefined,
-          fatherName: r.father_name || undefined,
-          fatherNik: r.father_nik || undefined,
-          fatherBirthPlace: r.father_birth_place || undefined,
-          fatherBirthDate: r.father_birth_date || undefined,
-          fatherEducation: r.father_education || undefined,
-          fatherOccupation: r.father_occupation || undefined,
-          fatherIncome: r.father_income || undefined,
-          fatherPhone: r.father_phone || undefined,
-          fatherStatus: r.father_status || undefined,
-          fatherAddress: r.father_address || undefined,
-          motherName: r.mother_name || undefined,
-          motherNik: r.mother_nik || undefined,
-          motherBirthPlace: r.mother_birth_place || undefined,
-          motherBirthDate: r.mother_birth_date || undefined,
-          motherEducation: r.mother_education || undefined,
-          motherOccupation: r.mother_occupation || undefined,
-          motherIncome: r.mother_income || undefined,
-          motherPhone: r.mother_phone || undefined,
-          motherStatus: r.mother_status || undefined,
-          motherAddress: r.mother_address || undefined,
-          guardianName: r.guardian_name || undefined,
-          guardianNik: r.guardian_nik || undefined,
-          guardianBirthPlace: r.guardian_birth_place || undefined,
-          guardianBirthDate: r.guardian_birth_date || undefined,
-          guardianEducation: r.guardian_education || undefined,
-          guardianOccupation: r.guardian_occupation || undefined,
-          guardianIncome: r.guardian_income || undefined,
-          guardianPhone: r.guardian_phone || undefined,
-          guardianStatus: r.guardian_status || undefined,
-          guardianAddress: r.guardian_address || undefined,
-          guardianRelationship: r.guardian_relationship || undefined,
-          guardianIsSameAsFather: Boolean(r.guardian_is_same_as_father),
-          reRegistrationPaidAt: r.re_registration_paid_at || undefined,
-          reRegistrationMethod: r.re_registration_method || undefined,
-          reRegistrationOrderId: r.re_registration_order_id || undefined,
-          reRegistrationStatus: r.re_registration_status || 'unpaid',
-          buildingFeePaid: Number(r.building_fee_paid) || 0,
-          julySppPaid: Number(r.july_spp_paid) || 0,
-          uniformFeePaid: Number(r.uniform_fee_paid) || 0,
-          totalReRegistrationPaid: Number(r.total_re_registration_paid) || 0,
-          uniformOrders
-        };
-      });
+      resultData.spmbCandidates = rows.map((r: any) => mapMysqlRowToSpmbCandidate(r));
       counts.spmbCandidates = resultData.spmbCandidates.length;
     }
 
@@ -2174,6 +2254,118 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
     await connection.query('SET FOREIGN_KEY_CHECKS = 0;');
     await connection.query(COMPLETE_TABLES_SQL);
     await connection.query('SET FOREIGN_KEY_CHECKS = 1;');
+
+    // Auto-migration: Ensure all columns exist on spmb_candidates if table was created in an older schema
+    try {
+      const [existingCols]: any = await connection.query("SHOW COLUMNS FROM `spmb_candidates`");
+      const existingColNames = new Set((existingCols || []).map((c: any) => c.Field));
+      const requiredColumns: { col: string; def: string }[] = [
+        { col: 'student_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'status', def: 'VARCHAR(64) DEFAULT "registered"' },
+        { col: 'updated_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'is_form_completed', def: 'TINYINT(1) DEFAULT 0' },
+        { col: 'form_completed_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'nickname', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'kk_number', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'birth_cert_number', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'religion', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'address', def: 'TEXT DEFAULT NULL' },
+        { col: 'dusun', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'rt', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'rw', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'village', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'district', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'city', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'postal_code', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'living_with', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'child_order', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'siblings_count', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'step_siblings_count', def: 'VARCHAR(16) DEFAULT NULL' },
+        { col: 'transportation', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'special_needs', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'height', def: 'INT DEFAULT NULL' },
+        { col: 'weight', def: 'INT DEFAULT NULL' },
+        { col: 'distance_to_school', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'travel_time', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'father_name', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'father_nik', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_birth_place', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'father_birth_date', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_education', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'father_occupation', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'father_income', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'father_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_status', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'father_address', def: 'TEXT DEFAULT NULL' },
+        { col: 'mother_name', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'mother_nik', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_birth_place', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'mother_birth_date', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_education', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'mother_occupation', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'mother_income', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'mother_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_status', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'mother_address', def: 'TEXT DEFAULT NULL' },
+        { col: 'guardian_name', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'guardian_nik', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_birth_place', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'guardian_birth_date', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_education', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'guardian_occupation', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'guardian_income', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'guardian_phone', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_status', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'guardian_address', def: 'TEXT DEFAULT NULL' },
+        { col: 'guardian_relationship', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'guardian_is_same_as_father', def: 'TINYINT(1) DEFAULT 0' },
+        { col: 'original_session_id', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'previous_session_id', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'is_transferred_session', def: 'TINYINT(1) DEFAULT 0' },
+        { col: 'transferred_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'transfer_reason', def: 'TEXT DEFAULT NULL' },
+        { col: 'transfer_history', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'token_payment_status', def: 'VARCHAR(32) DEFAULT "unpaid"' },
+        { col: 'token_payment_order_id', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'token_paid_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'token_payment_method', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'token_amount', def: 'DECIMAL(15,2) DEFAULT NULL' },
+        { col: 'collective_refund_status', def: 'VARCHAR(32) DEFAULT "none"' },
+        { col: 'collective_refund_amount', def: 'DECIMAL(15,2) DEFAULT NULL' },
+        { col: 'collective_refunded_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'collective_refunded_by', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 'collective_refund_recipient', def: 'VARCHAR(150) DEFAULT NULL' },
+        { col: 'collective_refund_note', def: 'TEXT DEFAULT NULL' },
+        { col: 'collective_refund_receipt_no', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 're_registration_paid_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 're_registration_method', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 're_registration_order_id', def: 'VARCHAR(100) DEFAULT NULL' },
+        { col: 're_registration_status', def: 'VARCHAR(32) DEFAULT "unpaid"' },
+        { col: 'building_fee_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'july_spp_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'uniform_fee_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'total_re_registration_paid', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'uniform_orders', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'selected_uniform_size', def: 'VARCHAR(32) DEFAULT NULL' },
+        { col: 'custom_uniform_note', def: 'TEXT DEFAULT NULL' },
+        { col: 're_registration_amount', def: 'DECIMAL(15,2) DEFAULT 0.00' },
+        { col: 'uniform_sizes', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'documents', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'documents_uploaded_at', def: 'VARCHAR(64) DEFAULT NULL' },
+        { col: 'full_form_data', def: 'LONGTEXT DEFAULT NULL' }
+      ];
+      for (const item of requiredColumns) {
+        if (!existingColNames.has(item.col)) {
+          try {
+            await connection.query(`ALTER TABLE \`spmb_candidates\` ADD COLUMN \`${item.col}\` ${item.def}`);
+          } catch (colErr: any) {
+            console.warn(`[MySQL Add Column Warning ${item.col}]:`, colErr.message || colErr);
+          }
+        }
+      }
+    } catch (colCheckErr: any) {
+      console.warn('[MySQL Column Check Warning]:', colCheckErr.message || colCheckErr);
+    }
     return {
       success: true,
       message: 'Semua struktur tabel MySQL berhasil diverifikasi dan diinisialisasi.'
@@ -2488,31 +2680,185 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     }
 
     // 9. SPMB Candidates
-    else if (typeKey === 'spmb' || typeKey === 'spmb_candidate' || typeKey === 'spmbcandidates') {
+    // 9. SPMB Candidates
+    else if (typeKey === 'spmb' || typeKey === 'spmb_candidate' || typeKey === 'spmbcandidates' || typeKey === 'spmb_candidates') {
       const c = data;
-      await connection.query(`
-        INSERT INTO \`spmb_candidates\` (
-          \`id\`, \`nisn\`, \`nik\`, \`full_name\`, \`gender\`, \`birth_place\`, \`birth_date\`,
-          \`school_origin\`, \`address\`, \`parent_name\`, \`parent_phone\`, \`chosen_major\`,
-          \`status\`, \`registration_date\`, \`test_score\`, \`interview_notes\`,
-          \`token_paid\`, \`re_registration_paid\`, \`documents_verified\`, \`created_at\`, \`updated_at\`,
-          \`uniform_size\`, \`uniform_details\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-        ON DUPLICATE KEY UPDATE
-          \`full_name\`=VALUES(\`full_name\`), \`status\`=VALUES(\`status\`),
-          \`token_paid\`=VALUES(\`token_paid\`), \`re_registration_paid\`=VALUES(\`re_registration_paid\`),
-          \`documents_verified\`=VALUES(\`documents_verified\`), \`updated_at\`=NOW()
-      `, [
-        c.id, c.nisn || '', c.nik || null, c.fullName || '', c.gender || 'Laki-laki',
-        c.birthPlace || null, c.birthDate || null, c.schoolOrigin || '', c.address || '',
-        c.parentName || '', c.parentPhone || '', c.chosenMajor || 'Reguler',
-        c.status || 'submitted', c.registrationDate || new Date().toISOString(),
-        c.testScore !== undefined ? Number(c.testScore) : null, c.interviewNotes || null,
-        c.tokenPaid ? 1 : 0, c.reRegistrationPaid ? 1 : 0, c.documentsVerified ? 1 : 0,
-        c.createdAt || new Date().toISOString(), c.updatedAt || new Date().toISOString(),
-        c.uniformSize || null, c.uniformDetails ? JSON.stringify(c.uniformDetails) : null
-      ]);
-      return { success: true, message: `Calon siswa SPMB "${c.fullName}" langsung tersimpan ke MySQL.` };
+      const ffd = (c.fullFormData && typeof c.fullFormData === 'object') ? c.fullFormData : {};
+      const id = c.id || `spmb-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const regNo = c.registrationNo || c.registrationNumber || c.nisn || id;
+      const nisn = c.nisn || '';
+      const nik = c.nik || ffd.nik || '';
+      const fullName = c.fullName || ffd.fullName || '';
+      const rawGender = c.gender || ffd.gender;
+      const gender = (rawGender === 'P' || rawGender === 'Perempuan') ? 'P' : 'L';
+      const birthPlace = c.birthPlace || ffd.birthPlace || '';
+      const birthDate = c.birthDate || ffd.birthDate || '';
+      const phone = c.phone || ffd.phone || '';
+      const studentPhone = c.studentPhone || ffd.studentPhone || null;
+      const schoolOriginType = c.schoolOriginType || ffd.schoolOriginType || 'other';
+      const schoolOrigin = c.schoolOrigin || ffd.schoolOrigin || '';
+      const regType = c.registrationType || ffd.registrationType || 'online_individual';
+      const sessionId = c.sessionId || ffd.sessionId || 'inden';
+      const createdAt = c.createdAt || new Date().toISOString();
+      const updatedAt = c.updatedAt || new Date().toISOString();
+      const isCompleted = Boolean(c.isFormCompleted || ffd.isFormCompleted);
+      const status = c.status || (isCompleted ? 'form_submitted' : 'registered');
+
+      const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
+      const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
+      const uniformSizes = (c.uniformSizes || ffd.uniformSizes) ? (typeof (c.uniformSizes || ffd.uniformSizes) === 'string' ? (c.uniformSizes || ffd.uniformSizes) : JSON.stringify(c.uniformSizes || ffd.uniformSizes)) : null;
+      const documents = c.documents ? (typeof c.documents === 'string' ? c.documents : JSON.stringify(c.documents)) : null;
+      const fullFormData = c.fullFormData ? (typeof c.fullFormData === 'string' ? c.fullFormData : JSON.stringify(c.fullFormData)) : (Object.keys(ffd).length > 0 ? JSON.stringify(ffd) : null);
+
+      // Cari ID yang sudah ada di tabel spmb_candidates agar update selalu mengenai baris yang tepat
+      let resolvedId = id;
+      try {
+        const [existingCandidateRows]: any = await connection.query(
+          "SELECT `id` FROM `spmb_candidates` WHERE `id` = ? OR (`nisn` = ? AND `nisn` != '') OR (`registration_no` = ? AND `registration_no` != '') LIMIT 1",
+          [id, nisn, regNo]
+        );
+        if (existingCandidateRows && existingCandidateRows.length > 0 && existingCandidateRows[0]?.id) {
+          resolvedId = existingCandidateRows[0].id;
+        }
+      } catch (checkErr) {
+        // ignore check error
+      }
+
+      const columnMap: Record<string, any> = {
+        id: resolvedId,
+        registration_no: regNo,
+        nisn,
+        nik,
+        full_name: fullName,
+        gender,
+        birth_place: birthPlace,
+        birth_date: birthDate,
+        phone,
+        student_phone: studentPhone,
+        school_origin_type: schoolOriginType,
+        school_origin: schoolOrigin,
+        registration_type: regType,
+        session_id: sessionId,
+        created_at: createdAt,
+        updated_at: updatedAt,
+        status,
+        original_session_id: c.originalSessionId || null,
+        previous_session_id: c.previousSessionId || null,
+        is_transferred_session: c.isTransferredSession ? 1 : 0,
+        transferred_at: c.transferredAt || null,
+        transfer_reason: c.transferReason || null,
+        transfer_history: transferHistory,
+        token_payment_status: c.tokenPaymentStatus || 'unpaid',
+        token_payment_order_id: c.tokenPaymentOrderId || null,
+        token_paid_at: c.tokenPaidAt || null,
+        token_payment_method: c.tokenPaymentMethod || null,
+        token_amount: c.tokenAmount !== undefined && c.tokenAmount !== null ? Number(c.tokenAmount) : null,
+        collective_refund_status: c.collectiveRefundStatus || 'none',
+        collective_refund_amount: c.collectiveRefundAmount !== undefined && c.collectiveRefundAmount !== null ? Number(c.collectiveRefundAmount) : null,
+        collective_refunded_at: c.collectiveRefundedAt || null,
+        collective_refunded_by: c.collectiveRefundedBy || null,
+        collective_refund_recipient: c.collectiveRefundRecipient || null,
+        collective_refund_note: c.collectiveRefundNote || null,
+        collective_refund_receipt_no: c.collectiveRefundReceiptNo || null,
+        is_form_completed: isCompleted ? 1 : 0,
+        form_completed_at: c.formCompletedAt || ffd.formCompletedAt || (isCompleted ? new Date().toISOString() : null),
+        nickname: c.nickname || ffd.nickname || null,
+        kk_number: c.kkNumber || ffd.kkNumber || null,
+        birth_cert_number: c.birthCertNumber || ffd.birthCertNumber || null,
+        religion: c.religion || ffd.religion || null,
+        address: c.address || ffd.address || null,
+        dusun: c.dusun || ffd.dusun || null,
+        rt: c.rt || ffd.rt || null,
+        rw: c.rw || ffd.rw || null,
+        village: c.village || ffd.village || null,
+        district: c.district || ffd.district || null,
+        city: c.city || ffd.city || null,
+        postal_code: c.postalCode || ffd.postalCode || null,
+        living_with: c.livingWith || ffd.livingWith || null,
+        child_order: (c.childOrder !== undefined ? c.childOrder : ffd.childOrder) ? String(c.childOrder || ffd.childOrder) : null,
+        siblings_count: (c.siblingsCount !== undefined ? c.siblingsCount : ffd.siblingsCount) ? String(c.siblingsCount || ffd.siblingsCount) : null,
+        step_siblings_count: (c.stepSiblingsCount !== undefined ? c.stepSiblingsCount : ffd.stepSiblingsCount) ? String(c.stepSiblingsCount || ffd.stepSiblingsCount) : null,
+        transportation: c.transportation || ffd.transportation || null,
+        special_needs: c.specialNeeds || ffd.specialNeeds || null,
+        height: c.height !== undefined && c.height !== null ? Number(c.height) : (ffd.height !== undefined && ffd.height !== null ? Number(ffd.height) : null),
+        weight: c.weight !== undefined && c.weight !== null ? Number(c.weight) : (ffd.weight !== undefined && ffd.weight !== null ? Number(ffd.weight) : null),
+        distance_to_school: c.distanceToSchool || ffd.distanceToSchool || null,
+        travel_time: c.travelTime || ffd.travelTime || null,
+        father_name: c.fatherName || ffd.fatherName || null,
+        father_nik: c.fatherNik || ffd.fatherNik || null,
+        father_birth_place: c.fatherBirthPlace || ffd.fatherBirthPlace || null,
+        father_birth_date: c.fatherBirthDate || ffd.fatherBirthDate || null,
+        father_education: c.fatherEducation || ffd.fatherEducation || null,
+        father_occupation: c.fatherOccupation || ffd.fatherOccupation || null,
+        father_income: c.fatherIncome || ffd.fatherIncome || null,
+        father_phone: c.fatherPhone || ffd.fatherPhone || null,
+        father_status: c.fatherStatus || ffd.fatherStatus || null,
+        father_address: c.fatherAddress || ffd.fatherAddress || null,
+        mother_name: c.motherName || ffd.motherName || null,
+        mother_nik: c.motherNik || ffd.motherNik || null,
+        mother_birth_place: c.motherBirthPlace || ffd.motherBirthPlace || null,
+        mother_birth_date: c.motherBirthDate || ffd.motherBirthDate || null,
+        mother_education: c.motherEducation || ffd.motherEducation || null,
+        mother_occupation: c.motherOccupation || ffd.motherOccupation || null,
+        mother_income: c.motherIncome || ffd.motherIncome || null,
+        mother_phone: c.motherPhone || ffd.motherPhone || null,
+        mother_status: c.motherStatus || ffd.motherStatus || null,
+        mother_address: c.motherAddress || ffd.motherAddress || null,
+        guardian_name: c.guardianName || ffd.guardianName || null,
+        guardian_nik: c.guardianNik || ffd.guardianNik || null,
+        guardian_birth_place: c.guardianBirthPlace || ffd.guardianBirthPlace || null,
+        guardian_birth_date: c.guardianBirthDate || ffd.guardianBirthDate || null,
+        guardian_education: c.guardianEducation || ffd.guardianEducation || null,
+        guardian_occupation: c.guardianOccupation || ffd.guardianOccupation || null,
+        guardian_income: c.guardianIncome || ffd.guardianIncome || null,
+        guardian_phone: c.guardianPhone || ffd.guardianPhone || null,
+        guardian_status: c.guardianStatus || ffd.guardianStatus || null,
+        guardian_address: c.guardianAddress || ffd.guardianAddress || null,
+        guardian_relationship: c.guardianRelationship || c.guardianRelation || ffd.guardianRelationship || ffd.guardianRelation || null,
+        guardian_is_same_as_father: (c.guardianIsSameAsFather ?? ffd.guardianIsSameAsFather) ? 1 : 0,
+        re_registration_paid_at: c.reRegistrationPaidAt || null,
+        re_registration_method: c.reRegistrationMethod || null,
+        re_registration_order_id: c.reRegistrationOrderId || null,
+        re_registration_status: c.reRegistrationStatus || 'unpaid',
+        re_registration_amount: c.reRegistrationAmount !== undefined && c.reRegistrationAmount !== null ? Number(c.reRegistrationAmount) : 0,
+        building_fee_paid: Number(c.buildingFeePaid) || 0,
+        july_spp_paid: Number(c.julySppPaid) || 0,
+        uniform_fee_paid: Number(c.uniformFeePaid) || 0,
+        total_re_registration_paid: Number(c.totalReRegistrationPaid) || 0,
+        selected_uniform_size: c.selectedUniformSize || null,
+        custom_uniform_note: c.customUniformNote || null,
+        uniform_orders: uniformOrders,
+        uniform_sizes: uniformSizes,
+        documents: documents,
+        documents_uploaded_at: c.documentsUploadedAt || null,
+        full_form_data: fullFormData
+      };
+
+      const cols = Object.keys(columnMap);
+      const vals = Object.values(columnMap);
+      const placeholders = cols.map(() => '?').join(', ');
+      const updateCols = cols.filter(col => col !== 'id' && col !== 'registration_no' && col !== 'nisn' && col !== 'nik' && col !== 'created_at');
+      const updateStr = updateCols.map(col => `\`${col}\`=VALUES(\`${col}\`)`).join(', ');
+
+      const querySql = `
+        INSERT INTO \`spmb_candidates\` (${cols.map(col => `\`${col}\``).join(', ')})
+        VALUES (${placeholders})
+        ON DUPLICATE KEY UPDATE ${updateStr}
+      `;
+
+      try {
+        await connection.query(querySql, vals);
+      } catch (insertErr: any) {
+        if (insertErr?.code === 'ER_BAD_FIELD_ERROR' || insertErr?.errno === 1054 || insertErr?.code === 'ER_NO_SUCH_TABLE' || insertErr?.errno === 1146) {
+          console.warn('[MySQL Auto-Migrate] Kolom/tabel spmb_candidates belum lengkap di database, menjalankan migrasi skema...');
+          await ensureAllMysqlTablesExist();
+          await connection.query(querySql, vals);
+        } else {
+          throw insertErr;
+        }
+      }
+      c.id = resolvedId;
+      return { success: true, message: `Calon siswa SPMB "${fullName}" langsung tersimpan permanen ke MySQL.` };
     }
 
     // 10. Merdeka Assessments (Nilai Rapor)
@@ -3089,6 +3435,7 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
       spmb: 'spmb_candidates',
       spmb_candidate: 'spmb_candidates',
       spmbcandidates: 'spmb_candidates',
+      spmb_candidates: 'spmb_candidates',
       sarpras_item: 'sarpras_items',
       sarprasitems: 'sarpras_items',
       sarpras_proposal: 'sarpras_proposals',

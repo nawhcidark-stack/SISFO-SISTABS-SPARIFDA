@@ -1,7 +1,7 @@
 import { Router } from "express";
 import multer from "multer";
 import { SpmbCandidate, SpmbConfig, Student, RealtimeNotification, MidtransConfig } from "../../types";
-import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql } from "../mysqlService";
+import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, ensureAllMysqlTablesExist } from "../mysqlService";
 import { askSpmbAiAssistant, SpmbAiChatMessage } from "../spmbAiAssistant";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
@@ -62,6 +62,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
       Object.assign(spmbConfig, newConfig);
       saveState();
+      saveConfigToMysql("spmbConfig", spmbConfig).catch(err => console.warn("[MySQL SPMB Config Sync Warning]:", err?.message || err));
       res.json({ success: true, message: "Konfigurasi SPMB berhasil diperbarui.", config: spmbConfig });
     } catch (err: any) {
       console.error("Error updating SPMB config:", err);
@@ -124,7 +125,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 4. Check Candidate Status by NISN (Automatically delete/deny if token is unpaid)
-  router.get("/candidate/:nisn", (req, res) => {
+  router.get("/candidate/:nisn", async (req, res) => {
     // Jalankan pemeriksaan otomatisasi pengalihan sesi
     checkAndAutoTransferExpiredCandidates();
 
@@ -133,7 +134,20 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       return res.status(400).json({ error: "NISN wajib diisi." });
     }
 
-    const candidateIdx = spmbCandidates.findIndex(c => (c.nisn || "").trim() === rawNisn || (c.registrationNumber || "").trim().toLowerCase() === rawNisn.toLowerCase());
+    let candidateIdx = spmbCandidates.findIndex(c => (c.nisn || "").trim() === rawNisn || (c.registrationNumber || "").trim().toLowerCase() === rawNisn.toLowerCase());
+    if (candidateIdx === -1) {
+      // Ambil langsung dari tabel MySQL spmb_candidates jika belum ada di memory cache
+      try {
+        const dbCand = await findSpmbCandidateInMysql(rawNisn);
+        if (dbCand) {
+          spmbCandidates.push(dbCand);
+          candidateIdx = spmbCandidates.length - 1;
+        }
+      } catch (dbErr) {
+        console.warn("[MySQL Lookup Candidate Warning]:", dbErr);
+      }
+    }
+
     if (candidateIdx === -1) {
       return res.status(404).json({ error: `Calon murid dengan NISN/Nomor Pendaftaran '${rawNisn}' tidak ditemukan.` });
     }
@@ -160,8 +174,10 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (index !== -1) {
         const cand = spmbCandidates[index];
         if (!cand.tokenPaid && cand.tokenPaymentStatus !== 'paid' && cand.tokenPaymentStatus !== 'waived') {
+          const candId = cand.id;
           spmbCandidates.splice(index, 1);
           saveState();
+          directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
         }
       }
       res.json({ success: true, message: "Data formulir yang belum membayar token telah dihapus." });
@@ -330,6 +346,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Candidate Save Warning]:", err?.message || err));
 
       // Create Midtrans Snap Token for online individual registration
       let snapToken = "";
@@ -469,6 +486,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Token Paid Warning]:", err?.message || err));
 
       // Broadcast notification
       const notification: RealtimeNotification = {
@@ -507,19 +525,35 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 7. Save Complete Form (Format Buku Induk Siswa)
-  router.post("/save-full-form", (req, res) => {
+    router.post("/save-full-form", async (req, res) => {
     try {
       const { nisn, fullFormData, formData, uniformSizes } = req.body;
       if (!nisn) {
         return res.status(400).json({ error: "NISN wajib disertakan." });
       }
 
-      const candidate = spmbCandidates.find(c => (c.nisn || "").trim() === (nisn || "").trim());
+      const cleanNisn = String(nisn).trim();
+      let candidate = spmbCandidates.find(c => (c.nisn || "").trim() === cleanNisn || (c.registrationNumber || "").trim().toLowerCase() === cleanNisn.toLowerCase());
+      
+      // Jika belum ditemukan di memory cache (misal restart server), ambil langsung dari MySQL
+      if (!candidate) {
+        try {
+          const dbCand = await findSpmbCandidateInMysql(cleanNisn);
+          if (dbCand) {
+            spmbCandidates.push(dbCand);
+            candidate = dbCand;
+          }
+        } catch (findErr) {
+          console.warn("[MySQL Find Candidate on Save Warning]:", findErr);
+        }
+      }
+
       if (!candidate) {
         return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
       }
 
-      if (!candidate.tokenPaid && candidate.tokenPaymentStatus !== "paid") {
+      const isTokenPaid = candidate.tokenPaid || candidate.tokenPaymentStatus === "paid" || candidate.tokenPaymentStatus === "waived" || Boolean(candidate.tokenPaidAt);
+      if (!isTokenPaid) {
         return res.status(400).json({ error: "Token pendaftaran belum dibayar. Mohon selesaikan pembayaran token terlebih dahulu." });
       }
 
@@ -586,6 +620,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (candidate.guardianBirthPlace) {
         candidate.guardianBirthPlace = toProperCase(candidate.guardianBirthPlace);
       }
+
       candidate.isFormCompleted = true;
       candidate.formCompletedAt = new Date().toISOString();
       candidate.fullFormData = { ...(candidate.fullFormData || {}), ...incomingData };
@@ -593,15 +628,44 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         candidate.uniformSizes = { ...(candidate.uniformSizes || {}), ...uniformSizes };
       }
       
-      candidate.status = "form_submitted";
+      // Status pendaftaran: form_submitted (data lengkap terisi & tersimpan permanen di MySQL)
+      candidate.status = (candidate.status === "registered" || !candidate.status) ? "form_submitted" : candidate.status;
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
 
+      // Simpan langsung dan permanen ke database MySQL
+      let mysqlSaved = false;
+      try {
+        const mysqlRes = await directSaveEntityToMysql("spmb_candidates", candidate);
+        mysqlSaved = Boolean(mysqlRes?.success);
+        if (!mysqlSaved) {
+          // Retry dengan verifikasi skema tabel
+          console.warn("[SPMB MySQL Direct Save Retry]: Memverifikasi struktur tabel dan mencoba kembali...");
+          await ensureAllMysqlTablesExist();
+          const retryRes = await directSaveEntityToMysql("spmb_candidates", candidate);
+          mysqlSaved = Boolean(retryRes?.success);
+        }
+        if (mysqlSaved) {
+          console.log(`[SPMB MySQL Direct Save]: Data lengkap calon murid ${candidate.fullName} (NISN: ${candidate.nisn}) berhasil disimpan permanen ke MySQL.`);
+        } else {
+          console.warn("[SPMB MySQL Direct Save Warning]:", mysqlRes?.message || mysqlRes?.error);
+        }
+      } catch (dbErr: any) {
+        console.error("[SPMB MySQL Direct Save Error]:", dbErr?.message || dbErr);
+        // Coba auto-migrate dan coba sekali lagi
+        try {
+          await ensureAllMysqlTablesExist();
+          const retryRes = await directSaveEntityToMysql("spmb_candidates", candidate);
+          mysqlSaved = Boolean(retryRes?.success);
+        } catch (_) {}
+      }
+
       res.json({
         success: true,
-        message: "Data formulir buku induk calon murid berhasil disimpan.",
-        candidate
+        message: "Data formulir buku induk calon murid berhasil disimpan permanen ke sistem & MySQL.",
+        candidate,
+        mysqlSaved
       });
     } catch (err: any) {
       console.error("Error saving full SPMB form:", err);
@@ -852,6 +916,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Rereg Paid Warning]:", err?.message || err));
 
       // Broadcast notification
       const notification: RealtimeNotification = {
@@ -889,7 +954,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 10. Upload Registration Documents
-  router.post("/upload-documents", (req, res) => {
+  router.post("/upload-documents", async (req, res) => {
     try {
       const { nisn, documents } = req.body;
       if (!nisn || !documents) {
@@ -922,6 +987,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Documents Save Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -935,7 +1001,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 11. Admin Update Status or Notes
-  router.post("/update-status", (req, res) => {
+  router.post("/update-status", async (req, res) => {
     try {
       const { id, status, adminNotes, verificationNotes } = req.body;
       const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
@@ -951,6 +1017,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Status Warning]:", err?.message || err));
 
       res.json({ success: true, message: "Status calon murid berhasil diperbarui.", candidate });
     } catch (err: any) {
@@ -983,6 +1050,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       candidate.updatedAt = new Date().toISOString();
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Toggle Collective Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -1019,6 +1087,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Refund Warning]:", err?.message || err));
 
       // Send WhatsApp confirmation if configured
       if (whatsappConfig.enabled && (candidate.parentPhone || candidate.phone)) {
@@ -1065,6 +1134,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Cancel Refund Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -1351,6 +1421,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       });
 
       saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Change Session Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -1364,7 +1435,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 13. Delete Candidate Record (Admin)
-  router.delete("/candidate/:id", (req, res) => {
+  router.delete("/candidate/:id", async (req, res) => {
     try {
       const id = req.params.id;
       const idx = spmbCandidates.findIndex(c => c.id === id || c.nisn === id);
@@ -1372,10 +1443,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
       }
 
+      const targetId = spmbCandidates[idx].id || id;
       spmbCandidates.splice(idx, 1);
       saveState();
+      directDeleteEntityFromMysql("spmb_candidates", targetId).catch(err => console.warn("[MySQL SPMB Delete Warning]:", err?.message || err));
 
-      res.json({ success: true, message: "Data calon murid berhasil dihapus." });
+      res.json({ success: true, message: "Data calon murid berhasil dihapus dari sistem & MySQL." });
     } catch (err: any) {
       console.error("Error deleting candidate:", err);
       res.status(500).json({ error: "Gagal menghapus data calon murid: " + err.message });

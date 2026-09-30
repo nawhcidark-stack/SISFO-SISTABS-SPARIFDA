@@ -28,16 +28,22 @@ setTimeout(() => {
 
 // Register Progressive Web App (PWA) Service Worker for Android / Chrome / Mobile installability
 if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
-  window.addEventListener('load', () => {
+  const registerPwaServiceWorker = () => {
     navigator.serviceWorker
-      .register('/sw.js')
+      .register('/sw.js', { scope: '/' })
       .then((registration) => {
         console.log('[PWA] Service Worker registered successfully with scope:', registration.scope);
       })
       .catch((err) => {
         console.warn('[PWA] Service Worker registration failed:', err);
       });
-  });
+  };
+
+  if (document.readyState === 'complete' || document.readyState === 'interactive') {
+    registerPwaServiceWorker();
+  } else {
+    window.addEventListener('load', registerPwaServiceWorker);
+  }
 }
 
 const rootElement = document.getElementById('root');

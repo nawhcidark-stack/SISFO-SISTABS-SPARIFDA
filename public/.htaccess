@@ -15,8 +15,31 @@ Options -Indexes
 
 # Ensure standard mime types
 <IfModule mod_mime.c>
+  AddType application/manifest+json .webmanifest .json
   AddType application/javascript .js .mjs
   AddType text/css .css
   AddType image/svg+xml .svg
-  AddType application/json .json
+  AddType image/png .png
+  AddType image/x-icon .ico
+</IfModule>
+
+# PWA Headers & CORS for WebAPK minting
+<IfModule mod_headers.c>
+  <FilesMatch "\.(json|webmanifest|png|ico|svg|jpg|jpeg|webp)$">
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, OPTIONS"
+  </FilesMatch>
+
+  <Files "manifest.json">
+    Header set Content-Type "application/manifest+json; charset=utf-8"
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Access-Control-Allow-Origin "*"
+  </Files>
+
+  <Files "sw.js">
+    Header set Content-Type "application/javascript; charset=utf-8"
+    Header set Service-Worker-Allowed "/"
+    Header set Cache-Control "no-cache, no-store, must-revalidate"
+    Header set Access-Control-Allow-Origin "*"
+  </Files>
 </IfModule>

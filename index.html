@@ -164,6 +164,11 @@
         }, 12000);
       </script>
     </div>
+    <script>
+      if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+        navigator.serviceWorker.register('/sw.js', { scope: '/' }).catch(function(){});
+      }
+    </script>
     <script type="module" src="/src/main.tsx"></script>
   </body>
 </html>

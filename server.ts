@@ -10448,33 +10448,92 @@ async function startServer() {
     recordOrUpdateMidtransTransaction
   }));
 
-  // Dynamic PWA manifest.json generation synchronized with the current School Identity
-  app.get("/manifest.json", (req, res) => {
-    const pwaIcon = schoolIdentity.favicon || schoolIdentity.logo || "/icon-512.png";
-    const isSvg = pwaIcon.startsWith("data:image/svg") || pwaIcon.toLowerCase().endsWith(".svg");
-    
+  // Dynamic PWA manifest.json generation synchronized with modern PWA standards
+  app.get(["/manifest.json", "/manifest.webmanifest"], (req, res) => {
+    res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, OPTIONS");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+
+    const schoolTitle = schoolIdentity.name || "SMP MA'ARIF NU PANDAAN";
+
     res.json({
-      name: schoolIdentity.name || "SMP MA'ARIF NU PANDAAN",
-      short_name: schoolIdentity.name ? schoolIdentity.name.split(" ").slice(0, 3).join(" ") : "SIPAS Portal",
-      description: `Sistem Informasi Spp & Tabungan Siswa - ${schoolIdentity.name || "SMP MA'ARIF NU PANDAAN"}`,
+      id: "/",
+      name: `${schoolTitle} - Portal Administrasi`,
+      short_name: "SMP Maarif",
+      description: `Portal Administrasi Akademik, Keuangan & SPMB ${schoolTitle}`,
       start_url: "/",
+      scope: "/",
       display: "standalone",
-      background_color: "#0f172a",
-      theme_color: "#4f46e5",
       orientation: "portrait-primary",
+      background_color: "#0f172a",
+      theme_color: "#059669",
+      categories: ["education", "productivity"],
       icons: [
         {
-          src: pwaIcon,
-          type: isSvg ? "image/svg+xml" : "image/png",
-          sizes: "512x512"
+          src: "/pwa-192x192.png",
+          sizes: "192x192",
+          type: "image/png",
+          purpose: "any"
         },
         {
-          src: pwaIcon,
-          type: isSvg ? "image/svg+xml" : "image/png",
-          sizes: "192x192"
+          src: "/pwa-512x512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "any"
+        },
+        {
+          src: "/pwa-maskable-512x512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "maskable"
+        },
+        {
+          src: "/apple-touch-icon.png",
+          sizes: "180x180",
+          type: "image/png",
+          purpose: "any"
+        },
+        {
+          src: "/icon-192.png",
+          sizes: "192x192",
+          type: "image/png",
+          purpose: "any"
+        },
+        {
+          src: "/icon-512.png",
+          sizes: "512x512",
+          type: "image/png",
+          purpose: "any"
         }
       ]
     });
+  });
+
+  // Dedicated Service Worker Route with compliant PWA headers
+  app.get("/sw.js", (req, res) => {
+    res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+    res.setHeader("Service-Worker-Allowed", "/");
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+    const swPath = path.join(process.cwd(), "public", "sw.js");
+    if (fs.existsSync(swPath)) {
+      res.sendFile(swPath);
+    } else {
+      res.status(404).send("// sw.js not found");
+    }
+  });
+
+  // Dedicated routes for PWA icons with CORS headers
+  app.get(["/pwa-192x192.png", "/pwa-512x512.png", "/pwa-maskable-512x512.png", "/apple-touch-icon.png", "/icon-192.png", "/icon-512.png"], (req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Cache-Control", "public, max-age=86400");
+    const iconPath = path.join(process.cwd(), "public", req.path);
+    if (fs.existsSync(iconPath)) {
+      res.sendFile(iconPath);
+    } else {
+      next();
+    }
   });
 
   // Vite development integration or client index serving

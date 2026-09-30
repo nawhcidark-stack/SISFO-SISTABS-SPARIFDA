@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { motion } from 'motion/react';
 import { Student, SchoolIdentity, HomeroomTeacher, SubjectTeacher } from '../types';
 import { User, Key, GraduationCap, ArrowRight, AlertCircle, Sparkles, Smartphone, Apple } from 'lucide-react';
+import PWAInstallButton from './PWAInstallButton';
 
 interface LoginProps {
   students: Student[];
@@ -344,6 +345,9 @@ export default function Login({ students, onLoginSuccess, schoolIdentity, onOpen
               <ArrowRight size={14} className="stroke-[3]" />
             </button>
           </div>
+
+          {/* In-App PWA Install Banner */}
+          <PWAInstallButton variant="banner" />
         </div>
 
         {/* Right Side: Professional interactive login form */}
@@ -445,6 +449,13 @@ export default function Login({ students, onLoginSuccess, schoolIdentity, onOpen
                 )}
               </button>
             </form>
+
+            <div className="pt-3 border-t border-slate-100 flex flex-col items-center gap-2">
+              <PWAInstallButton className="w-full" label="📱 Pasang Aplikasi di HP Android" />
+              <p className="text-[10px] text-slate-400 text-center m-0">
+                PWA Resmi SMP Maarif NU Pandaan • Siap Pasang di Android &amp; iOS
+              </p>
+            </div>
           </div>
         </div>
 

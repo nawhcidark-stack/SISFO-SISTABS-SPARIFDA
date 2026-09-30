@@ -9,6 +9,7 @@ import {
 } from '../types';
 import SpmbReceiptModal from './SpmbReceiptModal';
 import BirthDateSplitInput from './BirthDateSplitInput';
+import PWAInstallButton from './PWAInstallButton';
 import { printSpmbReceiptDirect } from '../utils/spmbReceiptPrint';
 import { formatCombinedPlaceAndDate, formatIndonesianDate, toProperCase } from '../utils/dateUtils';
 import { 
@@ -1107,6 +1108,8 @@ export default function SpmbLandingPage({
               <Search size={13} />
               <span>Cek Status</span>
             </button>
+
+            <PWAInstallButton variant="pill" label="Pasang Aplikasi" className="shrink-0" />
 
             {handleBack && (
               <button

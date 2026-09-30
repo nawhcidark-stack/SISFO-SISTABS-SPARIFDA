@@ -18,6 +18,7 @@ const SpmbLandingPage = lazy(() => import('./components/SpmbLandingPage'));
 import NotificationToast from './components/NotificationToast';
 import MidtransPayModal from './components/MidtransPayModal';
 import SppPaymentReviewModal from './components/SppPaymentReviewModal';
+import PWAInstallButton from './components/PWAInstallButton';
 import { GraduationCap, Bell, Users, Landmark, CreditCard, ShieldCheck, HelpCircle, Activity, ChevronRight, Volume2, LogOut, ClipboardCheck, X, Trash2, ArrowDownLeft, ArrowUpRight, Info, CheckCircle2, AlertTriangle, QrCode, Calendar, BookOpen, ShieldAlert, Megaphone, Loader2 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from './utils/notificationUtils';
 
@@ -500,6 +501,11 @@ export default function App() {
           const sData = await res.json();
           if (sData.success && sData.schoolIdentity) {
             setSchoolIdentity(sData.schoolIdentity);
+            if (sData.schoolIdentity.loadingLogo) {
+              try {
+                localStorage.setItem('app_custom_loading_logo', sData.schoolIdentity.loadingLogo);
+              } catch (_) {}
+            }
           }
         }
       }).catch(e => console.error("Gagal memuat identitas sekolah", e));
@@ -1656,6 +1662,15 @@ export default function App() {
         const data = await res.json();
         if (data.success && data.schoolIdentity) {
           setSchoolIdentity(data.schoolIdentity);
+          if (data.schoolIdentity.loadingLogo) {
+            try {
+              localStorage.setItem('app_custom_loading_logo', data.schoolIdentity.loadingLogo);
+            } catch (_) {}
+          } else {
+            try {
+              localStorage.removeItem('app_custom_loading_logo');
+            } catch (_) {}
+          }
           return true;
         }
       }
@@ -1666,12 +1681,17 @@ export default function App() {
     }
   };
 
+  const activeLoadingLogo = schoolIdentity?.loadingLogo || (typeof window !== 'undefined' ? localStorage.getItem('app_custom_loading_logo') : null) || schoolIdentity?.logo || '/pwa-192x192.png';
+
   if (isSpmbView) {
     return (
       <Suspense fallback={
         <div className="min-h-screen flex items-center justify-center bg-slate-50">
           <div className="flex flex-col items-center gap-3">
-            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin" />
+            <div className="w-16 h-16 rounded-2xl bg-white p-2 shadow-md border border-slate-200 flex items-center justify-center overflow-hidden animate-pulse">
+              <img src={activeLoadingLogo} alt="Logo" className="w-full h-full object-contain" />
+            </div>
+            <Loader2 className="w-6 h-6 text-emerald-600 animate-spin" />
             <p className="text-xs font-bold text-slate-600">Memuat Portal SPMB...</p>
           </div>
         </div>
@@ -2381,7 +2401,10 @@ export default function App() {
           </div>
 
           {/* Time indicator and Toggle Sound */}
-          <div className="flex items-center gap-3 self-end sm:self-center">
+          <div className="flex items-center gap-2.5 sm:gap-3 self-end sm:self-center flex-wrap">
+            {/* PWA Install Button */}
+            <PWAInstallButton variant="pill" label="Pasang Aplikasi" />
+
             {/* Live UTC time converted to WIB */}
             <div className="bg-blue-950/40 border border-teal-500/30 px-3 py-1 rounded-lg text-right font-mono text-[11px] text-teal-100 flex items-center gap-1.5 shadow-inner">
               <Activity size={10} className="text-teal-300 animate-pulse" />
@@ -2527,7 +2550,10 @@ export default function App() {
       <main className="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <Suspense fallback={
           <div className="flex flex-col items-center justify-center min-h-[380px] p-8 text-center bg-white rounded-2xl border border-slate-200 shadow-sm">
-            <Loader2 className="w-8 h-8 text-emerald-600 animate-spin mb-3" />
+            <div className="w-16 h-16 rounded-2xl bg-slate-50 p-2 shadow-inner border border-slate-200 flex items-center justify-center overflow-hidden animate-pulse mb-3">
+              <img src={activeLoadingLogo} alt="Logo" className="w-full h-full object-contain" />
+            </div>
+            <Loader2 className="w-7 h-7 text-emerald-600 animate-spin mb-2" />
             <h3 className="font-extrabold text-sm text-slate-800">Menyiapkan Panel...</h3>
             <p className="text-xs text-slate-500 mt-1 max-w-sm">Memuat modul antarmuka sesuai hak akses sesi Anda.</p>
           </div>

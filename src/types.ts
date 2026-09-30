@@ -178,6 +178,7 @@ export interface SchoolIdentity {
   treasurer: string;
   logo: string;
   logo2?: string;
+  loadingLogo?: string;
   letterhead?: string;
   treasurerSignature?: string;
   schoolStamp?: string;

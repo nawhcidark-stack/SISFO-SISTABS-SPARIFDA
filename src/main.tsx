@@ -26,26 +26,17 @@ setTimeout(() => {
   sessionStorage.removeItem('chunk_reload_attempted');
 }, 5000);
 
-// Unregister Service Worker and Clear Cache dynamically to fix the "blank screen / cache must be cleared" issue
-if ('serviceWorker' in navigator) {
-  navigator.serviceWorker.getRegistrations().then((registrations) => {
-    for (const registration of registrations) {
-      registration.unregister().then((unregistered) => {
-        if (unregistered) {
-          console.log('Successfully unregistered stale service worker to prevent blank screen caching');
-        }
+// Register Progressive Web App (PWA) Service Worker for Android / Chrome / Mobile installability
+if ('serviceWorker' in navigator && (window.location.protocol === 'https:' || window.location.hostname === 'localhost' || window.location.hostname === '127.0.0.1')) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker
+      .register('/sw.js')
+      .then((registration) => {
+        console.log('[PWA] Service Worker registered successfully with scope:', registration.scope);
+      })
+      .catch((err) => {
+        console.warn('[PWA] Service Worker registration failed:', err);
       });
-    }
-  });
-}
-
-if ('caches' in window) {
-  caches.keys().then((names) => {
-    for (const name of names) {
-      caches.delete(name).then(() => {
-        console.log('Cleared static cache:', name);
-      });
-    }
   });
 }
 

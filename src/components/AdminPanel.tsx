@@ -3303,6 +3303,7 @@ export default function AdminPanel({
   const [schoolTreasurer, setSchoolTreasurer] = useState("");
   const [schoolLogo, setSchoolLogo] = useState("");
   const [schoolLogo2, setSchoolLogo2] = useState("");
+  const [schoolLoadingLogo, setSchoolLoadingLogo] = useState("");
   const [schoolLetterhead, setSchoolLetterhead] = useState("");
   const [schoolTreasurerSignature, setSchoolTreasurerSignature] = useState("");
   const [schoolPrincipalSignature, setSchoolPrincipalSignature] = useState("");
@@ -3330,6 +3331,7 @@ export default function AdminPanel({
       setSchoolTreasurer(schoolIdentity.treasurer || "");
       setSchoolLogo(schoolIdentity.logo || "");
       setSchoolLogo2(schoolIdentity.logo2 || "");
+      setSchoolLoadingLogo(schoolIdentity.loadingLogo || "");
       setSchoolLetterhead(schoolIdentity.letterhead || "");
       setSchoolTreasurerSignature(schoolIdentity.treasurerSignature || "");
       setSchoolPrincipalSignature(schoolIdentity.principalSignature || "");
@@ -4223,6 +4225,31 @@ export default function AdminPanel({
     reader.readAsDataURL(file);
   };
 
+  const handleLoadingLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.size > 2 * 1024 * 1024) {
+      setSchoolIdentityMsg({
+        type: "error",
+        text: "Ukuran file logo loading terlalu besar. Maksimal 2MB.",
+      });
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const result = event.target?.result;
+      if (typeof result === "string") {
+        setSchoolLoadingLogo(result);
+        try {
+          localStorage.setItem("app_custom_loading_logo", result);
+        } catch (_) {}
+      }
+    };
+    reader.readAsDataURL(file);
+  };
+
   const handleLetterheadUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -4353,6 +4380,7 @@ export default function AdminPanel({
       treasurer: schoolTreasurer,
       logo: schoolLogo,
       logo2: schoolLogo2,
+      loadingLogo: schoolLoadingLogo,
       letterhead: schoolLetterhead,
       treasurerSignature: schoolTreasurerSignature,
       principalSignature: schoolPrincipalSignature,
@@ -9232,6 +9260,66 @@ export default function AdminPanel({
                       </label>
                       <span className="text-[8px] text-slate-400">
                         Format gambar persegi
+                      </span>
+                    </div>
+
+                    {/* Logo Khusus Loading Awal Masuk Aplikasi (Splash / Preloader Screen) */}
+                    <div className="flex flex-col items-center gap-3 bg-emerald-50/70 border-2 border-emerald-400/80 rounded-xl p-4 justify-center text-center relative shadow-xs">
+                      <div className="flex items-center gap-1.5 flex-wrap justify-center">
+                        <span className="text-[10px] font-black text-emerald-900 uppercase tracking-wider">
+                          Logo Loading Awal
+                        </span>
+                        <span className="px-1.5 py-0.5 rounded-full bg-emerald-600 text-white text-[8px] font-extrabold uppercase tracking-wide">
+                          Splash Screen
+                        </span>
+                      </div>
+
+                      <div className="relative w-28 h-28 border border-emerald-200 bg-white rounded-xl shadow-inner flex items-center justify-center overflow-hidden group">
+                        {schoolLoadingLogo ? (
+                          <>
+                            <img
+                              src={schoolLoadingLogo}
+                              alt="Logo loading preview"
+                              className="w-full h-full object-contain p-2"
+                              referrerPolicy="no-referrer"
+                            />
+                            <button
+                              type="button"
+                              onClick={() => {
+                                setSchoolLoadingLogo("");
+                                try {
+                                  localStorage.removeItem("app_custom_loading_logo");
+                                } catch (_) {}
+                              }}
+                              className="absolute inset-0 bg-black/65 opacity-0 group-hover:opacity-100 flex items-center justify-center text-white text-[10px] font-bold transition-all cursor-pointer border-0"
+                            >
+                              Hapus Logo Loading
+                            </button>
+                          </>
+                        ) : (
+                          <div className="flex flex-col items-center gap-1 text-emerald-500 p-2">
+                            <ImageIcon size={28} />
+                            <span className="text-[9px] text-emerald-800 font-semibold">
+                              Default Ikon Sekolah
+                            </span>
+                          </div>
+                        )}
+                      </div>
+
+                      <label className="w-full">
+                        <input
+                          type="file"
+                          accept="image/*"
+                          onChange={handleLoadingLogoUpload}
+                          className="hidden"
+                        />
+                        <div className="flex items-center justify-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 rounded-lg text-[10px] font-bold cursor-pointer shadow-xs transition-colors">
+                          <UploadCloud size={12} />
+                          <span>Unggah Logo Loading</span>
+                        </div>
+                      </label>
+                      <span className="text-[8px] text-emerald-800 font-medium leading-tight">
+                        Muncul saat awal buka aplikasi
                       </span>
                     </div>
 

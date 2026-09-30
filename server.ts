@@ -1624,7 +1624,7 @@ function saveState(skipRemoteSync: boolean = false) {
       databaseBackups
     };
     const tempPath = DATA_FILE + ".tmp";
-    fs.writeFileSync(tempPath, JSON.stringify(data, null, 2), "utf-8");
+    fs.writeFileSync(tempPath, JSON.stringify(data), "utf-8");
     fs.renameSync(tempPath, DATA_FILE);
     // Persist configuration changes directly to MySQL app_configs table using debounced batch
     if (!skipRemoteSync) {
@@ -3149,43 +3149,62 @@ async function startServer() {
 
   // Update School Identity settings
   app.post("/api/admin/set-school-identity", (req, res) => {
-    const { name, subheading, accreditation, address, phone, principal, principalSignature, treasurer, logo, logo2, loadingLogo, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate, favicon, activeAcademicYear } = req.body;
-    
-    if (name !== undefined) schoolIdentity.name = String(name).trim();
-    if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
-    if (accreditation !== undefined) schoolIdentity.accreditation = String(accreditation).trim();
-    if (address !== undefined) schoolIdentity.address = String(address).trim();
-    if (phone !== undefined) schoolIdentity.phone = String(phone).trim();
-    if (principal !== undefined) schoolIdentity.principal = String(principal).trim();
-    if (principalSignature !== undefined) (schoolIdentity as any).principalSignature = String(principalSignature);
-    if (treasurer !== undefined) schoolIdentity.treasurer = String(treasurer).trim();
-    if (logo !== undefined) schoolIdentity.logo = String(logo); // can be empty or base64 data URI
-    if (logo2 !== undefined) (schoolIdentity as any).logo2 = String(logo2); // can be empty or base64 data URI
-    if (loadingLogo !== undefined) (schoolIdentity as any).loadingLogo = String(loadingLogo); // can be empty or base64 data URI
-    if (letterhead !== undefined) schoolIdentity.letterhead = String(letterhead); // can be empty or base64 data URI
-    if (treasurerSignature !== undefined) (schoolIdentity as any).treasurerSignature = String(treasurerSignature);
-    if (schoolStamp !== undefined) (schoolIdentity as any).schoolStamp = String(schoolStamp);
-    if (apkUrl !== undefined) (schoolIdentity as any).apkUrl = String(apkUrl).trim();
-    if (iosUrl !== undefined) (schoolIdentity as any).iosUrl = String(iosUrl).trim();
-    if (treasurerSkUrl !== undefined) (schoolIdentity as any).treasurerSkUrl = String(treasurerSkUrl).trim();
-    if (sarprasSkUrl !== undefined) (schoolIdentity as any).sarprasSkUrl = String(sarprasSkUrl).trim();
-    if (paymentCardTemplate !== undefined) (schoolIdentity as any).paymentCardTemplate = String(paymentCardTemplate); // can be empty or base64 data URI
-    if (favicon !== undefined) (schoolIdentity as any).favicon = String(favicon); // can be empty or base64 data URI
-    if (activeAcademicYear !== undefined) (schoolIdentity as any).activeAcademicYear = String(activeAcademicYear).trim();
+    try {
+      const { name, subheading, accreditation, address, phone, principal, principalSignature, treasurer, logo, logo2, loadingLogo, letterhead, treasurerSignature, schoolStamp, apkUrl, iosUrl, treasurerSkUrl, sarprasSkUrl, paymentCardTemplate, favicon, activeAcademicYear } = req.body;
+      
+      if (name !== undefined) schoolIdentity.name = String(name).trim();
+      if (subheading !== undefined) schoolIdentity.subheading = String(subheading).trim();
+      if (accreditation !== undefined) schoolIdentity.accreditation = String(accreditation).trim();
+      if (address !== undefined) schoolIdentity.address = String(address).trim();
+      if (phone !== undefined) schoolIdentity.phone = String(phone).trim();
+      if (principal !== undefined) schoolIdentity.principal = String(principal).trim();
+      if (principalSignature !== undefined) (schoolIdentity as any).principalSignature = String(principalSignature);
+      if (treasurer !== undefined) schoolIdentity.treasurer = String(treasurer).trim();
+      if (logo !== undefined) schoolIdentity.logo = String(logo); // can be empty or base64 data URI
+      if (logo2 !== undefined) (schoolIdentity as any).logo2 = String(logo2); // can be empty or base64 data URI
+      if (loadingLogo !== undefined) (schoolIdentity as any).loadingLogo = String(loadingLogo); // can be empty or base64 data URI
+      if (letterhead !== undefined) schoolIdentity.letterhead = String(letterhead); // can be empty or base64 data URI
+      if (treasurerSignature !== undefined) (schoolIdentity as any).treasurerSignature = String(treasurerSignature);
+      if (schoolStamp !== undefined) (schoolIdentity as any).schoolStamp = String(schoolStamp);
+      if (apkUrl !== undefined) (schoolIdentity as any).apkUrl = String(apkUrl).trim();
+      if (iosUrl !== undefined) (schoolIdentity as any).iosUrl = String(iosUrl).trim();
+      if (treasurerSkUrl !== undefined) (schoolIdentity as any).treasurerSkUrl = String(treasurerSkUrl).trim();
+      if (sarprasSkUrl !== undefined) (schoolIdentity as any).sarprasSkUrl = String(sarprasSkUrl).trim();
+      if (paymentCardTemplate !== undefined) (schoolIdentity as any).paymentCardTemplate = String(paymentCardTemplate); // can be empty or base64 data URI
+      if (favicon !== undefined) (schoolIdentity as any).favicon = String(favicon); // can be empty or base64 data URI
+      if (activeAcademicYear !== undefined) (schoolIdentity as any).activeAcademicYear = String(activeAcademicYear).trim();
 
-    // Broadcast SSE notification
-    const notification: RealtimeNotification = {
-      id: `notif-school-identity-${Date.now()}`,
-      title: "Identitas Sekolah Diperbarui",
-      message: `Identitas resmi sekolah ${schoolIdentity.name} berhasil diperbarui oleh Administrator.`,
-      type: "info",
-      createdAt: new Date().toISOString()
-    };
-    broadcastNotification(notification);
+      // Broadcast SSE notification
+      const notification: RealtimeNotification = {
+        id: `notif-school-identity-${Date.now()}`,
+        title: "Identitas Sekolah Diperbarui",
+        message: `Identitas resmi sekolah ${schoolIdentity.name} berhasil diperbarui oleh Administrator.`,
+        type: "info",
+        createdAt: new Date().toISOString()
+      };
+      broadcastNotification(notification);
 
-    saveState();
+      saveState();
 
-    res.json({ success: true, schoolIdentity });
+      return res.json({ success: true, schoolIdentity });
+    } catch (err: any) {
+      console.error("[set-school-identity error]:", err);
+      return res.status(500).json({ success: false, message: err?.message || "Gagal memperbarui identitas sekolah" });
+    }
+  });
+
+  // Dedicated lightweight endpoint to update specifically the PWA loading logo
+  app.post("/api/admin/set-loading-logo", (req, res) => {
+    try {
+      const { loadingLogo } = req.body;
+      (schoolIdentity as any).loadingLogo = loadingLogo ? String(loadingLogo) : "";
+      
+      saveState();
+      return res.json({ success: true, schoolIdentity, loadingLogo: (schoolIdentity as any).loadingLogo });
+    } catch (err: any) {
+      console.error("[set-loading-logo error]:", err);
+      return res.status(500).json({ success: false, message: err?.message || "Gagal memperbarui logo loading" });
+    }
   });
 
   // Get WhatsApp Config Settings

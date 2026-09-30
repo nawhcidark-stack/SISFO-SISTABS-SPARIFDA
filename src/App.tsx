@@ -1673,10 +1673,13 @@ export default function App() {
           }
           return true;
         }
+      } else {
+        const errorText = await res.text().catch(() => '');
+        console.error('Server error update school identity:', res.status, errorText);
       }
       return false;
     } catch (err) {
-      console.error(err);
+      console.error('Network error update school identity:', err);
       return false;
     }
   };

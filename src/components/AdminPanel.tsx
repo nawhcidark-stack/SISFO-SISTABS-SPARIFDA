@@ -29,6 +29,7 @@ import { MidtransBulkReportModal } from "./MidtransBulkReportModal";
 import { SingleMidtransReconcileModal } from "./SingleMidtransReconcileModal";
 import MidtransPayModal from "./MidtransPayModal";
 import { notifyFinancialUpdateLocally } from "../utils/syncEvents";
+import { compressAndResizeImage } from "../utils/imageCompressor";
 import {
   ShieldAlert,
   BookOpen,
@@ -4181,73 +4182,111 @@ export default function AdminPanel({
     }
   };
 
-  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const [isCompressingLoadingLogo, setIsCompressingLoadingLogo] = useState(false);
+  const [isSavingLoadingLogo, setIsSavingLoadingLogo] = useState(false);
+
+  const handleLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
+    try {
+      const compressed = await compressAndResizeImage(file, 512, 512, 0.92);
+      setSchoolLogo(compressed);
+    } catch (err: any) {
       setSchoolIdentityMsg({
         type: "error",
-        text: "Ukuran file logo terlalu besar. Maksimal 2MB.",
+        text: "Gagal memproses gambar logo: " + (err?.message || ""),
       });
-      return;
     }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result;
-      if (typeof result === "string") {
-        setSchoolLogo(result);
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
-  const handleLogo2Upload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLogo2Upload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
+    try {
+      const compressed = await compressAndResizeImage(file, 512, 512, 0.92);
+      setSchoolLogo2(compressed);
+    } catch (err: any) {
       setSchoolIdentityMsg({
         type: "error",
-        text: "Ukuran file logo kedua terlalu besar. Maksimal 2MB.",
+        text: "Gagal memproses gambar logo kedua: " + (err?.message || ""),
       });
-      return;
     }
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result;
-      if (typeof result === "string") {
-        setSchoolLogo2(result);
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
-  const handleLoadingLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleLoadingLogoUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    if (file.size > 2 * 1024 * 1024) {
+    setIsCompressingLoadingLogo(true);
+    setSchoolIdentityMsg(null);
+
+    try {
+      // Auto-compress and scale down to 512x512 while keeping full transparency
+      const compressed = await compressAndResizeImage(file, 512, 512, 0.92);
+      setSchoolLoadingLogo(compressed);
+      try {
+        localStorage.setItem("app_custom_loading_logo", compressed);
+      } catch (_) {}
+      setSchoolIdentityMsg({
+        type: "success",
+        text: "Logo loading berhasil diproses & dioptimasi. Klik 'Simpan Logo Loading Ini' atau 'Simpan Perubahan' di bawah.",
+      });
+    } catch (err: any) {
       setSchoolIdentityMsg({
         type: "error",
-        text: "Ukuran file logo loading terlalu besar. Maksimal 2MB.",
+        text: "Gagal memproses file logo loading: " + (err?.message || ""),
       });
-      return;
+    } finally {
+      setIsCompressingLoadingLogo(false);
     }
+  };
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const result = event.target?.result;
-      if (typeof result === "string") {
-        setSchoolLoadingLogo(result);
-        try {
-          localStorage.setItem("app_custom_loading_logo", result);
-        } catch (_) {}
+  const handleSaveLoadingLogoOnly = async () => {
+    setIsSavingLoadingLogo(true);
+    setSchoolIdentityMsg(null);
+    try {
+      const res = await fetch("/api/admin/set-loading-logo", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ loadingLogo: schoolLoadingLogo })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.success) {
+          if (onUpdateSchoolIdentity) {
+            onUpdateSchoolIdentity({ loadingLogo: schoolLoadingLogo });
+          }
+          if (schoolLoadingLogo) {
+            try { localStorage.setItem("app_custom_loading_logo", schoolLoadingLogo); } catch (_) {}
+          } else {
+            try { localStorage.removeItem("app_custom_loading_logo"); } catch (_) {}
+          }
+          setSchoolIdentityMsg({
+            type: "success",
+            text: "🎉 Logo khusus loading awal (splash screen) berhasil disimpan!",
+          });
+        } else {
+          setSchoolIdentityMsg({
+            type: "error",
+            text: data.message || "Gagal menyimpan logo loading.",
+          });
+        }
+      } else {
+        setSchoolIdentityMsg({
+          type: "error",
+          text: `Gagal menyimpan logo loading (HTTP ${res.status}).`,
+        });
       }
-    };
-    reader.readAsDataURL(file);
+    } catch (err: any) {
+      setSchoolIdentityMsg({
+        type: "error",
+        text: "Kesalahan jaringan saat menyimpan logo loading: " + (err?.message || ""),
+      });
+    } finally {
+      setIsSavingLoadingLogo(false);
+    }
   };
 
   const handleLetterheadUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -9312,14 +9351,28 @@ export default function AdminPanel({
                           accept="image/*"
                           onChange={handleLoadingLogoUpload}
                           className="hidden"
+                          disabled={isCompressingLoadingLogo}
                         />
                         <div className="flex items-center justify-center gap-1 px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 rounded-lg text-[10px] font-bold cursor-pointer shadow-xs transition-colors">
                           <UploadCloud size={12} />
-                          <span>Unggah Logo Loading</span>
+                          <span>{isCompressingLoadingLogo ? "Mengoptimasi..." : "Pilih / Ganti Logo"}</span>
                         </div>
                       </label>
+
+                      {schoolLoadingLogo && (
+                        <button
+                          type="button"
+                          onClick={handleSaveLoadingLogoOnly}
+                          disabled={isSavingLoadingLogo || isCompressingLoadingLogo}
+                          className="w-full flex items-center justify-center gap-1.5 px-3 py-1.5 bg-emerald-800 hover:bg-emerald-900 active:scale-95 text-white rounded-lg text-[10px] font-bold cursor-pointer shadow-xs transition-all"
+                        >
+                          <CheckCircle size={12} />
+                          <span>{isSavingLoadingLogo ? "Menyimpan..." : "Simpan Logo Loading Ini"}</span>
+                        </button>
+                      )}
+
                       <span className="text-[8px] text-emerald-800 font-medium leading-tight">
-                        Muncul saat awal buka aplikasi
+                        Otomatis dioptimasi agar ringan &amp; cepat
                       </span>
                     </div>
 

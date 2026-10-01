@@ -43,7 +43,7 @@ export interface ReconcileResultItem {
   reportStatus: string;
   reportPaymentType: string;
   reportTime: string;
-  reconciliationStatus: 'reconciled' | 'already_paid' | 'not_found' | 'report_pending' | 'report_failed';
+  reconciliationStatus: 'reconciled' | 'already_paid' | 'not_found' | 'report_pending' | 'report_failed' | 'voided_by_admin';
   message: string;
 }
 
@@ -52,6 +52,7 @@ export interface ReconcileSummary {
   reconciledCount: number;
   alreadyPaidCount: number;
   notFoundCount: number;
+  voidedByAdminCount?: number;
   pendingCount: number;
   failedCount: number;
   totalAmountReconciled: number;
@@ -611,6 +612,7 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
       (statusFilter === 'reconciled' && item.reconciliationStatus === 'reconciled') ||
       (statusFilter === 'already_paid' && item.reconciliationStatus === 'already_paid') ||
       (statusFilter === 'not_found' && item.reconciliationStatus === 'not_found') ||
+      (statusFilter === 'voided_by_admin' && item.reconciliationStatus === 'voided_by_admin') ||
       (statusFilter === 'pending_or_failed' && (item.reconciliationStatus === 'report_pending' || item.reconciliationStatus === 'report_failed'));
 
     const query = searchQuery.toLowerCase().trim();
@@ -1025,6 +1027,19 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                   >
                     Belum Terhubung ({summary.notFoundCount})
                   </button>
+                  {Boolean(summary.voidedByAdminCount) && (
+                    <button
+                      type="button"
+                      onClick={() => setStatusFilter('voided_by_admin')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer ${
+                        statusFilter === 'voided_by_admin'
+                          ? 'bg-rose-600 text-white shadow-xs'
+                          : 'bg-rose-50 text-rose-800 border border-rose-200 hover:bg-rose-100'
+                      }`}
+                    >
+                      Dibatalkan Admin ({summary.voidedByAdminCount})
+                    </button>
+                  )}
                 </div>
 
                 <div className="relative w-full sm:w-64">
@@ -1099,6 +1114,12 @@ export const MidtransBulkReportModal: React.FC<MidtransBulkReportModalProps> = (
                               <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-blue-100 text-blue-800 rounded-xl text-[11px] font-black border border-blue-300">
                                 <CheckCircle2 size={13} className="text-blue-600 shrink-0" />
                                 <span>SUDAH LUNAS SEBELUMNYA</span>
+                              </span>
+                            )}
+                            {item.reconciliationStatus === 'voided_by_admin' && (
+                              <span className="inline-flex items-center gap-1 px-2.5 py-1 bg-rose-100 text-rose-800 rounded-xl text-[11px] font-black border border-rose-300">
+                                <AlertCircle size={13} className="text-rose-600 shrink-0" />
+                                <span>DIBATALKAN ADMIN</span>
                               </span>
                             )}
                             {item.reconciliationStatus === 'not_found' && (

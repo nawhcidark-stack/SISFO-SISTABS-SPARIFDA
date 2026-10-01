@@ -9,7 +9,7 @@ import compression from "compression";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
@@ -37,6 +37,7 @@ const miscBills: MiscBill[] = [];
 const treasurerTransactions: TreasurerTransaction[] = [];
 const savingsTransactions: SavingsTransaction[] = [];
 const midtransTransactions: MidtransTransactionRecord[] = [];
+const voidedPayments: VoidedPaymentRecord[] = [];
 const notifications: RealtimeNotification[] = [
   {
     id: "notif-init-1",
@@ -1506,8 +1507,15 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
     const nisStr = String(student.nis || "").trim();
 
     const studentTxs = savingsTransactions.filter(t => 
+      !t.isVoidedByAdmin &&
+      !voidedPayments.some(v => v.billId === t.id) &&
       (t.studentId === student.id || (student.nis && (String(t.studentId).trim() === String(student.nis).trim() || String(t.studentNis).trim() === nisStr))) &&
-      (t.status === "success" || !t.status || (t.status as any) === "completed")
+      (t.status === "success" || (t.status as any) === "completed")
+    );
+
+    const hasVoidedTxs = savingsTransactions.some(t => 
+      (t.isVoidedByAdmin || voidedPayments.some(v => v.billId === t.id)) &&
+      (t.studentId === student.id || (student.nis && (String(t.studentId).trim() === String(student.nis).trim() || String(t.studentNis).trim() === nisStr)))
     );
 
     let netTxAmount = 0;
@@ -1526,9 +1534,9 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
     const authoritativeBaseline = AUTHORITATIVE_SAVINGS_MAP.hasOwnProperty(nisStr) ? (AUTHORITATIVE_SAVINGS_MAP[nisStr] || 0) : 0;
     const existingBalance = Number(student.savingsBalance) || 0;
 
-    // If student has a baseline or existing positive balance exceeding recorded transactions,
+    // If student has a baseline positive balance exceeding recorded transactions and NO voided transactions exist,
     // and no initial balance transaction exists, preserve it by generating an official initial transaction!
-    if (!hasInitialTx && authoritativeBaseline > 0 && authoritativeBaseline > netTxAmount) {
+    if (!hasVoidedTxs && !hasInitialTx && authoritativeBaseline > 0 && authoritativeBaseline > netTxAmount) {
       const initAmount = authoritativeBaseline - netTxAmount;
       const initTx: SavingsTransaction = {
         id: `sav-init-${student.id}`,
@@ -1544,14 +1552,13 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
       savingsTransactions.push(initTx);
       persistEntity("savingsTransactions", initTx).catch(() => {});
       netTxAmount += initAmount;
-    } else if (!hasInitialTx && existingBalance > netTxAmount) {
-      const diff = existingBalance - netTxAmount;
+    } else if (!hasVoidedTxs && !hasInitialTx && studentTxs.length === 0 && existingBalance > 0) {
       const initTx: SavingsTransaction = {
         id: `sav-init-${student.id}`,
         studentId: student.id,
         studentNis: student.nis,
         type: "deposit",
-        amount: diff,
+        amount: existingBalance,
         status: "success",
         createdAt: "2026-07-01T00:00:00.000Z",
         paymentMethod: "Saldo Awal Terverifikasi",
@@ -1559,7 +1566,7 @@ function ensureStudentSavingsBalanceAccurate(studentIdOrNis?: string) {
       };
       savingsTransactions.push(initTx);
       persistEntity("savingsTransactions", initTx).catch(() => {});
-      netTxAmount += diff;
+      netTxAmount = existingBalance;
     }
 
     student.savingsBalance = netTxAmount;
@@ -1927,36 +1934,72 @@ function applyDataFromMysql(pulledData: any) {
       });
     }
 
+    // 0. Update voided payments registry from MySQL
+    if (Array.isArray(pulledData.voidedPayments) && pulledData.voidedPayments.length > 0) {
+      voidedPayments.length = 0;
+      voidedPayments.push(...pulledData.voidedPayments);
+    }
+    const voidedBillIds = new Set(voidedPayments.map(v => v.billId).filter(Boolean));
+    const voidedOrderIds = new Set(voidedPayments.map(v => v.orderId).filter(Boolean));
+
     if (Array.isArray(pulledData.sppBills) && pulledData.sppBills.length > 0) {
-      // Build index of current in-memory SPP bills that have been reconciled / paid
-      const localPaidSppMap = new Map<string, SppBill>();
+      // Build index of local SPP bills to preserve local cancellation state if newer
+      const localBillMap = new Map<string, SppBill>();
       sppBills.forEach(b => {
-        if (b.status === "paid") {
-          localPaidSppMap.set(b.id, b);
-          if (b.studentId && b.month && b.year) {
-            localPaidSppMap.set(`${b.studentId}_${b.month}_${b.year}`, b);
-          }
+        localBillMap.set(b.id, b);
+        if (b.studentId && b.month && b.year) {
+          localBillMap.set(`${b.studentId}_${b.month}_${b.year}`, b);
         }
       });
 
-      const sppBillsToHealInMysql: SppBill[] = [];
+      const sppBillsToFixInMysql: SppBill[] = [];
       const mergedSppBills = pulledData.sppBills.map((pulledBill: SppBill) => {
+        const localBill = localBillMap.get(pulledBill.id) ||
+                          localBillMap.get(`${pulledBill.studentId}_${pulledBill.month}_${pulledBill.year}`);
+
+        const isVoided = Boolean(
+          pulledBill.isVoidedByAdmin ||
+          localBill?.isVoidedByAdmin ||
+          voidedBillIds.has(pulledBill.id) ||
+          (pulledBill.orderId && voidedOrderIds.has(pulledBill.orderId)) ||
+          (localBill?.orderId && voidedOrderIds.has(localBill.orderId))
+        );
+
+        if (isVoided) {
+          // If marked voided by admin, it MUST NEVER be paid!
+          const voidedBill: SppBill = {
+            ...pulledBill,
+            status: "unpaid",
+            paidAt: undefined,
+            paymentMethod: undefined,
+            orderId: undefined,
+            isVoidedByAdmin: true,
+            voidedAt: pulledBill.voidedAt || localBill?.voidedAt || new Date().toISOString(),
+            voidReason: pulledBill.voidReason || localBill?.voidReason || "Dibatalkan / Dikoreksi oleh Admin"
+          };
+          delete (voidedBill as any).transactionId;
+          // If MySQL still thought it was paid, queue for immediate fix in MySQL
+          if (pulledBill.status === "paid") {
+            sppBillsToFixInMysql.push(voidedBill);
+          }
+          return voidedBill;
+        }
+
         if (pulledBill.status === "paid") {
           return pulledBill;
         }
-        // If pulled bill is unpaid, check if local memory already marked it as paid via reconciliation
-        const localPaid = localPaidSppMap.get(pulledBill.id) ||
-                          localPaidSppMap.get(`${pulledBill.studentId}_${pulledBill.month}_${pulledBill.year}`);
-        if (localPaid && localPaid.status === "paid") {
+
+        // If pulled bill is unpaid, check if local memory already marked it as paid via valid reconciliation
+        if (localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) {
           const healedBill: SppBill = {
             ...pulledBill,
             status: "paid",
-            paidAt: localPaid.paidAt || new Date().toISOString(),
-            paymentMethod: localPaid.paymentMethod || "Midtrans (Reconciled)",
-            orderId: localPaid.orderId || pulledBill.orderId,
-            transactionId: localPaid.transactionId || pulledBill.transactionId
+            paidAt: localBill.paidAt || new Date().toISOString(),
+            paymentMethod: localBill.paymentMethod || "Midtrans (Reconciled)",
+            orderId: localBill.orderId || pulledBill.orderId,
+            transactionId: localBill.transactionId || pulledBill.transactionId
           };
-          sppBillsToHealInMysql.push(healedBill);
+          sppBillsToFixInMysql.push(healedBill);
           return healedBill;
         }
         return pulledBill;
@@ -1965,41 +2008,67 @@ function applyDataFromMysql(pulledData: any) {
       sppBills.length = 0;
       sppBills.push(...mergedSppBills);
 
-      if (sppBillsToHealInMysql.length > 0 && typeof persistEntities === "function") {
-        persistEntities("sppBills", sppBillsToHealInMysql).catch(err => {
-          console.error("[applyDataFromMysql] Gagal menyelaraskan tagihan SPP lunas ke MySQL:", err);
+      if (sppBillsToFixInMysql.length > 0 && typeof persistEntities === "function") {
+        persistEntities("sppBills", sppBillsToFixInMysql).catch(err => {
+          console.error("[applyDataFromMysql] Gagal menyinkronkan status tagihan SPP ke MySQL:", err);
         });
       }
     }
 
     if (Array.isArray(pulledData.miscBills) && pulledData.miscBills.length > 0) {
-      const localPaidMiscMap = new Map<string, MiscBill>();
+      const localMiscMap = new Map<string, MiscBill>();
       miscBills.forEach(m => {
-        if (m.status === "paid") {
-          localPaidMiscMap.set(m.id, m);
-          if (m.studentId && m.title) {
-            localPaidMiscMap.set(`${m.studentId}_${m.title}`, m);
-          }
+        localMiscMap.set(m.id, m);
+        if (m.studentId && m.title) {
+          localMiscMap.set(`${m.studentId}_${m.title}`, m);
         }
       });
 
-      const miscBillsToHealInMysql: MiscBill[] = [];
+      const miscBillsToFixInMysql: MiscBill[] = [];
       const mergedMiscBills = pulledData.miscBills.map((pulledMisc: MiscBill) => {
+        const localMisc = localMiscMap.get(pulledMisc.id) ||
+                          localMiscMap.get(`${pulledMisc.studentId}_${pulledMisc.title}`);
+
+        const isVoided = Boolean(
+          pulledMisc.isVoidedByAdmin ||
+          localMisc?.isVoidedByAdmin ||
+          voidedBillIds.has(pulledMisc.id) ||
+          (pulledMisc.orderId && voidedOrderIds.has(pulledMisc.orderId)) ||
+          (localMisc?.orderId && voidedOrderIds.has(localMisc.orderId))
+        );
+
+        if (isVoided) {
+          const voidedMisc: MiscBill = {
+            ...pulledMisc,
+            status: "unpaid",
+            paidAt: undefined,
+            paymentMethod: undefined,
+            orderId: undefined,
+            isVoidedByAdmin: true,
+            voidedAt: pulledMisc.voidedAt || localMisc?.voidedAt || new Date().toISOString(),
+            voidReason: pulledMisc.voidReason || localMisc?.voidReason || "Dibatalkan / Dikoreksi oleh Admin"
+          };
+          delete (voidedMisc as any).transactionId;
+          if (pulledMisc.status === "paid") {
+            miscBillsToFixInMysql.push(voidedMisc);
+          }
+          return voidedMisc;
+        }
+
         if (pulledMisc.status === "paid") {
           return pulledMisc;
         }
-        const localPaid = localPaidMiscMap.get(pulledMisc.id) ||
-                          localPaidMiscMap.get(`${pulledMisc.studentId}_${pulledMisc.title}`);
-        if (localPaid && localPaid.status === "paid") {
+
+        if (localMisc && localMisc.status === "paid" && !localMisc.isVoidedByAdmin) {
           const healedMisc: MiscBill = {
             ...pulledMisc,
             status: "paid",
-            paidAt: localPaid.paidAt || new Date().toISOString(),
-            paymentMethod: localPaid.paymentMethod || "Midtrans (Reconciled)",
-            orderId: localPaid.orderId || pulledMisc.orderId,
-            transactionId: localPaid.transactionId || pulledMisc.transactionId
+            paidAt: localMisc.paidAt || new Date().toISOString(),
+            paymentMethod: localMisc.paymentMethod || "Midtrans (Reconciled)",
+            orderId: localMisc.orderId || pulledMisc.orderId,
+            transactionId: localMisc.transactionId || pulledMisc.transactionId
           };
-          miscBillsToHealInMysql.push(healedMisc);
+          miscBillsToFixInMysql.push(healedMisc);
           return healedMisc;
         }
         return pulledMisc;
@@ -2008,18 +2077,56 @@ function applyDataFromMysql(pulledData: any) {
       miscBills.length = 0;
       miscBills.push(...mergedMiscBills);
 
-      if (miscBillsToHealInMysql.length > 0 && typeof persistEntities === "function") {
-        persistEntities("miscBills", miscBillsToHealInMysql).catch(err => {
-          console.error("[applyDataFromMysql] Gagal menyelaraskan tagihan Non-SPP lunas ke MySQL:", err);
+      if (miscBillsToFixInMysql.length > 0 && typeof persistEntities === "function") {
+        persistEntities("miscBills", miscBillsToFixInMysql).catch(err => {
+          console.error("[applyDataFromMysql] Gagal menyinkronkan status tagihan Non-SPP ke MySQL:", err);
         });
       }
     }
 
     if (Array.isArray(pulledData.savingsTransactions) && pulledData.savingsTransactions.length > 0) {
+      const localSavMap = new Map<string, SavingsTransaction>();
+      savingsTransactions.forEach(t => localSavMap.set(t.id, t));
+
+      const savTxsToFixInMysql: SavingsTransaction[] = [];
+      const mergedSavings = pulledData.savingsTransactions.map((pulledTx: SavingsTransaction) => {
+        const localTx = localSavMap.get(pulledTx.id);
+        const isVoided = Boolean(
+          pulledTx.isVoidedByAdmin ||
+          localTx?.isVoidedByAdmin ||
+          voidedBillIds.has(pulledTx.id) ||
+          (pulledTx.orderId && voidedOrderIds.has(pulledTx.orderId)) ||
+          (localTx?.orderId && voidedOrderIds.has(localTx.orderId))
+        );
+
+        if (isVoided) {
+          const voidedTx: SavingsTransaction = {
+            ...pulledTx,
+            status: "failed",
+            isVoidedByAdmin: true,
+            voidedAt: pulledTx.voidedAt || localTx?.voidedAt || new Date().toISOString(),
+            voidReason: pulledTx.voidReason || localTx?.voidReason || "Dibatalkan / Dikoreksi oleh Admin",
+            notes: (pulledTx.notes || "").includes("Dibatalkan") ? pulledTx.notes : `[DIBATALKAN ADMIN] ${pulledTx.notes || ""}`
+          };
+          if (pulledTx.status === "success") {
+            savTxsToFixInMysql.push(voidedTx);
+          }
+          return voidedTx;
+        }
+        return pulledTx;
+      });
+
       const pulledIds = new Set(pulledData.savingsTransactions.map((t: any) => t.id));
       const localOnly = savingsTransactions.filter(t => !pulledIds.has(t.id));
+
       savingsTransactions.length = 0;
-      savingsTransactions.push(...pulledData.savingsTransactions, ...localOnly);
+      savingsTransactions.push(...mergedSavings, ...localOnly);
+
+      if (savTxsToFixInMysql.length > 0 && typeof persistEntities === "function") {
+        persistEntities("savingsTransactions", savTxsToFixInMysql).catch(err => {
+          console.error("[applyDataFromMysql] Gagal menyinkronkan status tabungan batal ke MySQL:", err);
+        });
+      }
     }
 
     if (Array.isArray(pulledData.midtransTransactions) && pulledData.midtransTransactions.length > 0) {
@@ -2709,6 +2816,7 @@ async function startServer() {
       miscBills,
       savingsTransactions,
       midtransTransactions,
+      voidedPayments,
       notifications,
       attendanceLogs,
       homeroomTeachers,
@@ -6374,21 +6482,15 @@ async function startServer() {
     }
   });
 
-  // Bulk reconciliation for pending/unpaid transactions since June 15, 2026
+  // Bulk reconciliation for pending/unpaid transactions (Auto-reconcile deactivated per Admin policy)
   app.post("/api/treasurer/reconcile-all", async (req, res) => {
     try {
-      console.log("Starting bulk reconciliation for pending/unpaid transactions via Master Engine...");
-      const result = await runAutomatedMidtransReconciliation();
-
       res.json({
         success: true,
-        scannedCount: result.scannedCount,
-        reconciledCount: result.reconciledCount,
-        expiredCount: result.expiredCount,
-        details: result.details,
-        message: result.reconciledCount > 0 
-          ? `Berhasil melacak & merekonsiliasi ${result.reconciledCount} transaksi terlewat.` 
-          : "Pindai selesai. Semua transaksi di database sudah sesuai dengan status pembayaran rill di Midtrans."
+        scannedCount: 0,
+        reconciledCount: 0,
+        expiredCount: 0,
+        message: "Rekonsiliasi otomatis dinonaktifkan sesuai instruksi Admin. Seluruh penyelarasan pembayaran dilakukan secara manual melalui modul Verifikasi & Rekonsiliasi Manual."
       });
     } catch (err: any) {
       console.error("Bulk reconciliation error:", err);
@@ -7358,6 +7460,17 @@ async function startServer() {
     delete bill.paidAt;
     delete bill.paymentMethod;
     delete bill.orderId;
+    bill.isVoidedByAdmin = true;
+    bill.voidedAt = new Date().toISOString();
+    bill.voidReason = "Dibatalkan / Dikoreksi oleh Admin";
+
+    if (oldOrderId) {
+      const linkedMt = midtransTransactions.find(m => m.orderId === oldOrderId);
+      if (linkedMt) {
+        linkedMt.transactionStatus = "cancel";
+        (linkedMt as any).isVoidedByAdmin = true;
+      }
+    }
 
     let refundSavTx: SavingsTransaction | null = null;
     // Refund student savings if payment method was Potong Tabungan
@@ -7722,6 +7835,9 @@ async function startServer() {
       for (const bill of targetSppBills) {
         if (bill.status === "paid" || bill.status === "waived") continue;
         bill.status = "paid";
+        delete bill.isVoidedByAdmin;
+        delete bill.voidedAt;
+        delete bill.voidReason;
         bill.paidAt = nowIso;
         bill.paymentMethod = "Manual Teller (Kolektif)";
         bill.orderId = batchOrderId;
@@ -7746,6 +7862,9 @@ async function startServer() {
       for (const bill of targetMiscBills) {
         if (bill.status === "paid") continue;
         bill.status = "paid";
+        delete bill.isVoidedByAdmin;
+        delete bill.voidedAt;
+        delete bill.voidReason;
         bill.paidAt = nowIso;
         bill.paymentMethod = "Manual Teller (Kolektif)";
         bill.orderId = batchOrderId;
@@ -7851,6 +7970,18 @@ async function startServer() {
     bill.paymentMethod = undefined;
     bill.orderId = undefined;
     delete (bill as any).transactionId;
+    bill.isVoidedByAdmin = true;
+    bill.voidedAt = new Date().toISOString();
+    bill.voidReason = "Dibatalkan / Dikoreksi oleh Admin";
+
+    // Mark any linked Midtrans transaction as cancelled so it cannot be auto-reconciled
+    if (prevOrderId) {
+      const linkedMt = midtransTransactions.find(m => m.orderId === prevOrderId);
+      if (linkedMt) {
+        linkedMt.transactionStatus = "cancel";
+        (linkedMt as any).isVoidedByAdmin = true;
+      }
+    }
 
     // Broadcast SSE notification
     const notification: RealtimeNotification = {
@@ -8211,6 +8342,9 @@ async function startServer() {
     // Handle Pending transaction cancellation (e.g. pending online deposit)
     if (transaction.status === "pending") {
       transaction.status = "failed";
+      transaction.isVoidedByAdmin = true;
+      transaction.voidedAt = new Date().toISOString();
+      transaction.voidReason = "Dibatalkan / Dikoreksi oleh Admin";
       transaction.notes = transaction.notes 
         ? `${transaction.notes.replace(/\s*\(Dibatalkan.*?\)/gi, "")} (Dibatalkan Admin)` 
         : "Setoran Tabungan Online (Dibatalkan Admin)";
@@ -8219,6 +8353,7 @@ async function startServer() {
         const mtTx = midtransTransactions.find(m => m.orderId === transaction.orderId);
         if (mtTx && (mtTx.transactionStatus === "pending" || !mtTx.transactionStatus)) {
           mtTx.transactionStatus = "cancel";
+          (mtTx as any).isVoidedByAdmin = true;
           mtTx.description = `${(mtTx.description || "Setoran Tabungan").replace(/\s*\(Dibatalkan.*?\)/gi, "")} (Dibatalkan Admin)`;
         }
       }
@@ -8267,12 +8402,16 @@ async function startServer() {
 
     // Mark transaction as failed/cancelled
     transaction.status = "failed";
+    transaction.isVoidedByAdmin = true;
+    transaction.voidedAt = new Date().toISOString();
+    transaction.voidReason = "Dibatalkan / Dikoreksi oleh Admin";
     transaction.notes = `[DIBATALKAN ADMIN] ${transaction.notes || ""}`;
 
     if (transaction.orderId) {
       const mtTx = midtransTransactions.find(m => m.orderId === transaction.orderId);
       if (mtTx) {
         mtTx.transactionStatus = "cancel";
+        (mtTx as any).isVoidedByAdmin = true;
         mtTx.description = `${(mtTx.description || "Setoran Tabungan").replace(/\s*\(Dibatalkan.*?\)/gi, "")} (Dibatalkan Admin)`;
       }
     }

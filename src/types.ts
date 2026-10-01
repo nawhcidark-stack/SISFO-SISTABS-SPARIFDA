@@ -89,6 +89,9 @@ export interface SppBill {
   transactionId?: string;
   achievementType?: 'akademik' | 'non-akademik' | 'non-prestasi' | 'kebijakan';
   achievementDetail?: string;
+  isVoidedByAdmin?: boolean;
+  voidedAt?: string;
+  voidReason?: string;
 }
 
 export interface SavingsTransaction {
@@ -104,6 +107,9 @@ export interface SavingsTransaction {
   orderId?: string;
   transactionId?: string;
   notes?: string;
+  isVoidedByAdmin?: boolean;
+  voidedAt?: string;
+  voidReason?: string;
 }
 
 export interface MiscBill {
@@ -119,6 +125,22 @@ export interface MiscBill {
   transactionId?: string;
   isMonthly?: boolean;
   month?: string;
+  isVoidedByAdmin?: boolean;
+  voidedAt?: string;
+  voidReason?: string;
+}
+
+export interface VoidedPaymentRecord {
+  id: string;
+  billId?: string;
+  orderId?: string;
+  transactionId?: string;
+  studentId?: string;
+  billType: 'spp' | 'misc' | 'savings' | 'cart';
+  period?: string;
+  amount?: number;
+  voidReason?: string;
+  voidedAt: string;
 }
 
 export interface RealtimeNotification {

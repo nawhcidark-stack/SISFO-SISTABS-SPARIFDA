@@ -8,7 +8,8 @@ import {
   RealtimeNotification, 
   MidtransConfig, 
   MidtransTransactionRecord,
-  SpmbCandidate
+  SpmbCandidate,
+  VoidedPaymentRecord
 } from "../../types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "../../savings_map";
 
@@ -22,6 +23,7 @@ export interface MidtransRouterDeps {
   midtransTransactions: MidtransTransactionRecord[];
   spmbCandidates?: SpmbCandidate[];
   spmbConfig?: any;
+  voidedPayments?: VoidedPaymentRecord[];
   saveState: (skipRemoteSync?: boolean) => void;
   broadcastNotification: (notif: RealtimeNotification) => void;
   sendWhatsappNotification: (to: string, msg: string) => Promise<any>;
@@ -238,11 +240,13 @@ export function findMiscBillMatching(
   // 1. Direct exact match by orderId, id, or transactionId
   if (cleanKey) {
     const directMatch = miscBillsList.find(m =>
-      m.orderId === cleanKey ||
-      m.id === cleanKey ||
-      m.transactionId === cleanKey ||
-      m.id === cleanKey + "-unpaid" ||
-      m.id.replace("-unpaid", "") === cleanKey.replace("-unpaid", "")
+      !m.isVoidedByAdmin && (
+        m.orderId === cleanKey ||
+        m.id === cleanKey ||
+        m.transactionId === cleanKey ||
+        m.id === cleanKey + "-unpaid" ||
+        m.id.replace("-unpaid", "") === cleanKey.replace("-unpaid", "")
+      )
     );
     if (directMatch) return directMatch;
   }
@@ -251,9 +255,11 @@ export function findMiscBillMatching(
   if (cleanKey) {
     const cleanWithoutSuffix = cleanKey.replace(/-\d{4,6}$/, "");
     const suffixMatch = miscBillsList.find(m =>
-      m.id === cleanWithoutSuffix ||
-      m.id === cleanWithoutSuffix + "-unpaid" ||
-      m.orderId === cleanWithoutSuffix
+      !m.isVoidedByAdmin && (
+        m.id === cleanWithoutSuffix ||
+        m.id === cleanWithoutSuffix + "-unpaid" ||
+        m.orderId === cleanWithoutSuffix
+      )
     );
     if (suffixMatch) return suffixMatch;
   }
@@ -262,8 +268,10 @@ export function findMiscBillMatching(
   if (cleanKey) {
     const withoutPrefix = cleanKey.replace(/^MISC-/, "").replace(/^M-/, "").replace(/^MB-/, "");
     const matchShort = miscBillsList.find(m =>
-      m.id.includes(withoutPrefix) ||
-      (m.orderId && m.orderId.includes(withoutPrefix))
+      !m.isVoidedByAdmin && (
+        m.id.includes(withoutPrefix) ||
+        (m.orderId && m.orderId.includes(withoutPrefix))
+      )
     );
     if (matchShort) return matchShort;
   }
@@ -361,11 +369,13 @@ export function findSppBillMatching(
   if (cleanKey) {
     const cleanLower = cleanKey.toLowerCase();
     const directMatch = sppBillsList.find(b => 
-      (b.orderId && b.orderId.toLowerCase() === cleanLower) || 
-      (b.id && b.id.toLowerCase() === cleanLower) || 
-      (b.transactionId && b.transactionId.toLowerCase() === cleanLower) ||
-      (b.id && b.id.toLowerCase() === cleanLower + "-unpaid") ||
-      (b.id && b.id.toLowerCase().replace("-unpaid", "") === cleanLower.replace("-unpaid", ""))
+      !b.isVoidedByAdmin && (
+        (b.orderId && b.orderId.toLowerCase() === cleanLower) || 
+        (b.id && b.id.toLowerCase() === cleanLower) || 
+        (b.transactionId && b.transactionId.toLowerCase() === cleanLower) ||
+        (b.id && b.id.toLowerCase() === cleanLower + "-unpaid") ||
+        (b.id && b.id.toLowerCase().replace("-unpaid", "") === cleanLower.replace("-unpaid", ""))
+      )
     );
     if (directMatch) return directMatch;
   }
@@ -374,9 +384,11 @@ export function findSppBillMatching(
   if (cleanKey) {
     const cleanWithoutSuffix = cleanKey.replace(/-\d{4,6}$/, "").toLowerCase();
     const suffixMatch = sppBillsList.find(b =>
-      (b.id && b.id.toLowerCase() === cleanWithoutSuffix) ||
-      (b.id && b.id.toLowerCase() === cleanWithoutSuffix + "-unpaid") ||
-      (b.orderId && b.orderId.toLowerCase() === cleanWithoutSuffix)
+      !b.isVoidedByAdmin && (
+        (b.id && b.id.toLowerCase() === cleanWithoutSuffix) ||
+        (b.id && b.id.toLowerCase() === cleanWithoutSuffix + "-unpaid") ||
+        (b.orderId && b.orderId.toLowerCase() === cleanWithoutSuffix)
+      )
     );
     if (suffixMatch) return suffixMatch;
   }
@@ -386,9 +398,11 @@ export function findSppBillMatching(
     const decompressed = decompressBillIdForMidtrans(cleanKey);
     if (decompressed && decompressed !== cleanKey) {
       const decompressedMatch = sppBillsList.find(b => 
-        b.id === decompressed || 
-        b.id === decompressed + "-unpaid" || 
-        b.orderId === decompressed
+        !b.isVoidedByAdmin && (
+          b.id === decompressed || 
+          b.id === decompressed + "-unpaid" || 
+          b.orderId === decompressed
+        )
       );
       if (decompressedMatch) return decompressedMatch;
     }
@@ -547,6 +561,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     midtransTransactions,
     spmbCandidates = [],
     spmbConfig,
+    voidedPayments = [],
     saveState,
     broadcastNotification,
     sendWhatsappNotification,
@@ -735,6 +750,53 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     const affectedMiscBills: MiscBill[] = [];
     const affectedSavingsTxs: SavingsTransaction[] = [];
 
+    // Guard: If this orderId or transactionId has already paid bills for this student, DO NOT divert to other bills!
+    const alreadyPaidSppForThisOrder = sppBills.filter(
+      b => (b.studentId === targetStudent.id || (targetStudent.nis && b.studentId === targetStudent.nis) || (targetStudent.nis && b.studentId === `std-${targetStudent.nis}`)) &&
+           b.status === "paid" &&
+           ((orderId && b.orderId === orderId) || (transactionId && b.transactionId === transactionId))
+    );
+    if (alreadyPaidSppForThisOrder.length > 0) {
+      return {
+        reconciled: false,
+        amountReconciled: 0,
+        paidSppCount: 0,
+        paidMiscCount: 0,
+        savingsDeposited: 0,
+        category: alreadyPaidSppForThisOrder.map(b => `SPP ${b.month} ${b.year}`).join(", "),
+        itemsDetail: alreadyPaidSppForThisOrder.map(b => `SPP ${b.month} ${b.year} (Sudah Lunas)`),
+        message: `Tagihan (${alreadyPaidSppForThisOrder.map(b => b.month + ' ' + b.year).join(', ')}) sebelumnya sudah berstatus LUNAS. Pembayaran tidak dialihkan ke bulan berikutnya.`,
+        affectedSppBills: [],
+        affectedMiscBills: [],
+        affectedSavingsTxs: []
+      };
+    }
+
+    // Guard: Check if the order/notes contains a specific month that is ALREADY paid for this student
+    const extractedMonth = extractMonthAndYear(`${orderId} ${options?.notes || ""}`);
+    if (extractedMonth.month) {
+      const targetMonthBill = sppBills.find(
+        b => (b.studentId === targetStudent.id || (targetStudent.nis && b.studentId === targetStudent.nis) || (targetStudent.nis && b.studentId === `std-${targetStudent.nis}`)) &&
+             b.month.toLowerCase() === extractedMonth.month!.toLowerCase() &&
+             (!extractedMonth.year || b.year === extractedMonth.year)
+      );
+      if (targetMonthBill && targetMonthBill.status === "paid") {
+        return {
+          reconciled: false,
+          amountReconciled: 0,
+          paidSppCount: 0,
+          paidMiscCount: 0,
+          savingsDeposited: 0,
+          category: `SPP ${targetMonthBill.month} ${targetMonthBill.year}`,
+          itemsDetail: [`SPP ${targetMonthBill.month} ${targetMonthBill.year} (Sudah Lunas)`],
+          message: `Tagihan SPP ${targetMonthBill.month} ${targetMonthBill.year} sebelumnya sudah berstatus LUNAS. Pembayaran tidak dialihkan ke bulan berikutnya.`,
+          affectedSppBills: [],
+          affectedMiscBills: [],
+          affectedSavingsTxs: []
+        };
+      }
+    }
+
     const isExplicitMisc = options?.preferredCategory === "misc" || 
       orderId.toUpperCase().startsWith("MISC-") || 
       orderId.toUpperCase().startsWith("NONSPP-") || 
@@ -747,7 +809,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     // 1. Non-SPP (Misc) Allocation: Strictly for matching Non-SPP bill(s), no spillover to other bills
     if (isExplicitMisc) {
       const unpaidMisc = miscBills.filter(
-        m => (m.studentId === targetStudent.id || (targetStudent.nis && m.studentId === targetStudent.nis) || (targetStudent.nis && m.studentId === `std-${targetStudent.nis}`)) && (m.status === "unpaid" || m.status === "pending")
+        m => !m.isVoidedByAdmin && !voidedPayments.some(v => v.billId === m.id) && (m.studentId === targetStudent.id || (targetStudent.nis && m.studentId === targetStudent.nis) || (targetStudent.nis && m.studentId === `std-${targetStudent.nis}`)) && (m.status === "unpaid" || m.status === "pending")
       );
       const exactMisc = unpaidMisc.find(m => m.amount === amountVal) || unpaidMisc[0];
       if (exactMisc && remainingAmount >= exactMisc.amount) {
@@ -788,9 +850,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     }
     // 3. SPP Allocation: Strictly for SPP bills matching the amounts (no cross-allocation to Non-SPP)
     else {
-      // 1. Unpaid SPP bills sorted chronologically by academic year
+      // 1. Unpaid SPP bills sorted chronologically by academic year (skipping any voided by admin)
       const unpaidSpp = sppBills
-        .filter(b => (b.studentId === targetStudent.id || (targetStudent.nis && b.studentId === targetStudent.nis) || (targetStudent.nis && b.studentId === `std-${targetStudent.nis}`)) && (b.status === "unpaid" || b.status === "pending"))
+        .filter(b => !b.isVoidedByAdmin && (b.studentId === targetStudent.id || (targetStudent.nis && b.studentId === targetStudent.nis) || (targetStudent.nis && b.studentId === `std-${targetStudent.nis}`)) && (b.status === "unpaid" || b.status === "pending"))
         .sort((a, b) => {
           const yearDiff = (a.year || 2026) - (b.year || 2026);
           if (yearDiff !== 0) return yearDiff;
@@ -799,9 +861,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           return (idxA === -1 ? 99 : idxA) - (idxB === -1 ? 99 : idxB);
         });
 
-      // Check if student has no unpaid SPP but has an exact matching Non-SPP bill
+      // Check if student has no unpaid SPP but has an exact matching Non-SPP bill (skipping any voided by admin)
       const unpaidMisc = miscBills.filter(
-        m => (m.studentId === targetStudent.id || (targetStudent.nis && m.studentId === targetStudent.nis) || (targetStudent.nis && m.studentId === `std-${targetStudent.nis}`)) && (m.status === "unpaid" || m.status === "pending")
+        m => !m.isVoidedByAdmin && (m.studentId === targetStudent.id || (targetStudent.nis && m.studentId === targetStudent.nis) || (targetStudent.nis && m.studentId === `std-${targetStudent.nis}`)) && (m.status === "unpaid" || m.status === "pending")
       );
       const exactMisc = unpaidMisc.find(m => m.amount === amountVal);
 
@@ -903,6 +965,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       const bill = findSppBillMatching(activeOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills }) || 
                    findSppBillMatching(cleanOrderId, sppBills, undefined, { studentsList: students, miscBillsList: miscBills });
       if (bill) {
+        if (bill.isVoidedByAdmin || voidedPayments.some(v => v.billId === bill.id || (bill.orderId && v.orderId === bill.orderId))) {
+          return { status: "settled", actionTaken: false, detailMessage: `Tagihan SPP ${bill.month} ${bill.year} telah dibatalkan / dikoreksi oleh Admin dan tidak boleh diubah otomatis menjadi Lunas.`, midtransStatus: statusData };
+        }
         if (isSettled) {
           if (bill.status !== "paid") {
             bill.status = "paid";
@@ -997,6 +1062,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                    findMiscBillMatching(cleanOrderId, miscBills, undefined, { studentsList: students }) ||
                    miscBills.find(m => m.orderId === activeOrderId || m.orderId === cleanOrderId || m.id === cleanOrderId);
       if (bill) {
+        if (bill.isVoidedByAdmin || voidedPayments.some(v => v.billId === bill.id || (bill.orderId && v.orderId === bill.orderId))) {
+          return { status: "settled", actionTaken: false, detailMessage: `Tagihan Non-SPP "${bill.title}" telah dibatalkan / dikoreksi oleh Admin dan tidak boleh diubah otomatis menjadi Lunas.`, midtransStatus: statusData };
+        }
         if (isSettled) {
           if (bill.status !== "paid") {
             bill.status = "paid";
@@ -1072,6 +1140,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       const activeOrderId = upperTargetOrderId.startsWith("SAV-") ? targetOrderId : cleanOrderId;
       const trans = savingsTransactions.find(t => t.orderId === activeOrderId || t.orderId === cleanOrderId || t.id === cleanOrderId);
       if (trans) {
+        if (trans.isVoidedByAdmin || voidedPayments.some(v => v.billId === trans.id || (trans.orderId && v.orderId === trans.orderId))) {
+          return { status: "settled", actionTaken: false, detailMessage: `Transaksi setoran tabungan ini telah dibatalkan / dikoreksi oleh Admin dan tidak boleh dipulihkan otomatis.`, midtransStatus: statusData };
+        }
         if (isSettled && trans.status !== "success") {
           trans.status = "success";
           actionTaken = true;
@@ -1115,9 +1186,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     // 4. MULTI-BILL CART
     else if (upperTargetOrderId.startsWith("CART-") || upperCleanOrderId.startsWith("CART-") || upperTargetOrderId.startsWith("COLLECTIVE-CART-") || upperCleanOrderId.startsWith("COLLECTIVE-CART-")) {
       const activeOrderId = (upperTargetOrderId.startsWith("CART-") || upperTargetOrderId.startsWith("COLLECTIVE-CART-")) ? targetOrderId : cleanOrderId;
-      const matchedSpp = sppBills.filter(b => b.orderId === activeOrderId || b.orderId === cleanOrderId);
-      const matchedMisc = miscBills.filter(m => m.orderId === activeOrderId || m.orderId === cleanOrderId);
-      const matchedSavings = savingsTransactions.filter(t => t.orderId === activeOrderId || t.orderId === cleanOrderId);
+      const matchedSpp = sppBills.filter(b => !b.isVoidedByAdmin && !voidedPayments.some(v => v.billId === b.id) && (b.orderId === activeOrderId || b.orderId === cleanOrderId));
+      const matchedMisc = miscBills.filter(m => !m.isVoidedByAdmin && !voidedPayments.some(v => v.billId === m.id) && (m.orderId === activeOrderId || m.orderId === cleanOrderId));
+      const matchedSavings = savingsTransactions.filter(t => !t.isVoidedByAdmin && !voidedPayments.some(v => v.billId === t.id) && (t.orderId === activeOrderId || t.orderId === cleanOrderId));
 
       if (matchedSpp.length > 0 || matchedMisc.length > 0 || matchedSavings.length > 0) {
         if (isSettled) {
@@ -1585,39 +1656,11 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   }
 
   async function runAutomatedMidtransReconciliation() {
-    const serverKey = (midtransConfig.serverKey || "").trim();
-    if (!serverKey || midtransConfig.isDisabled) {
-      return { scannedCount: 0, reconciledCount: 0, expiredCount: 0, totalAutoReconciledLifetime: midtransAutoPollerStats.totalAutoReconciledLifetime };
-    }
-
-    const pendingOrders = new Set<string>();
-    sppBills.filter(b => b.status === "pending" && b.orderId).forEach(b => pendingOrders.add(b.orderId!));
-    miscBills.filter(m => m.status === "pending" && m.orderId).forEach(m => pendingOrders.add(m.orderId!));
-    savingsTransactions.filter(t => t.status === "pending" && t.orderId).forEach(t => pendingOrders.add(t.orderId!));
-
-    let reconciled = 0;
-    let expired = 0;
-
-    for (const orderId of pendingOrders) {
-      try {
-        const result = await processMidtransOrderStatus(orderId);
-        if (result.actionTaken) {
-          if (result.status === "settled") reconciled++;
-          if (result.status === "expired") expired++;
-        }
-      } catch (e) {}
-    }
-
-    midtransAutoPollerStats.lastRunTime = new Date().toISOString();
-    midtransAutoPollerStats.scannedCount = pendingOrders.size;
-    midtransAutoPollerStats.reconciledCount = reconciled;
-    midtransAutoPollerStats.expiredCount = expired;
-    midtransAutoPollerStats.totalAutoReconciledLifetime += reconciled;
-
     return {
-      scannedCount: pendingOrders.size,
-      reconciledCount: reconciled,
-      expiredCount: expired,
+      scannedCount: 0,
+      reconciledCount: 0,
+      expiredCount: 0,
+      details: ["Rekonsiliasi otomatis Midtrans dinonaktifkan sesuai kebijakan Admin. Seluruh rekonsiliasi dilakukan secara manual."],
       totalAutoReconciledLifetime: midtransAutoPollerStats.totalAutoReconciledLifetime
     };
   }
@@ -1708,12 +1751,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   // 5. Trigger batch status sync with Midtrans Gateway for pending transactions
   router.post("/admin/midtrans-transactions/sync-all", async (req, res) => {
     try {
-      const result = await runAutomatedMidtransReconciliation();
-      autoSyncHistoricalMidtransTransactions();
       res.json({
         success: true,
-        message: `Penyelarasan selesai. ${result.scannedCount} order pending dipindai, ${result.reconciledCount} order berhasil diselaraskan.`,
-        ...result
+        message: "Rekonsiliasi otomatis Midtrans dinonaktifkan sesuai kebijakan Admin. Seluruh penyelarasan pembayaran dilakukan secara manual melalui modul Rekonsiliasi Manual.",
+        scannedCount: 0,
+        reconciledCount: 0,
+        expiredCount: 0
       });
     } catch (err: any) {
       res.status(500).json({ error: "Gagal menyelaraskan transaksi: " + err.message });
@@ -1742,13 +1785,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   // 8. Force Manual Run of Auto-Poller Engine Endpoint
   router.post("/midtrans-autopoller-run", async (req, res) => {
     try {
-      const result = await runAutomatedMidtransReconciliation();
       res.json({
         success: true,
-        ...result,
-        message: result.reconciledCount > 0 
-          ? `Sistem berhasil memverifikasi & merekonsiliasi ${result.reconciledCount} transaksi Midtrans terlewat!` 
-          : `Pindai selesai. Dipindai ${result.scannedCount} order pending. Semua status di database sudah selaras dengan Midtrans.`
+        scannedCount: 0,
+        reconciledCount: 0,
+        expiredCount: 0,
+        message: "Rekonsiliasi otomatis Midtrans dinonaktifkan. Seluruh rekonsiliasi dilakukan secara manual melalui modul Rekonsiliasi Manual / Pembayaran."
       });
     } catch (e: any) {
       res.status(500).json({ success: false, error: e?.message || String(e) });
@@ -2297,6 +2339,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
       // Mark status as failed / cancelled
       tx.status = "failed";
+      tx.isVoidedByAdmin = true;
+      tx.voidedAt = new Date().toISOString();
+      tx.voidReason = "Dibatalkan oleh Pengguna / Admin";
       tx.notes = tx.notes ? `${tx.notes.replace(/\s*\(Dibatalkan\)/g, '')} (Dibatalkan)` : "Setoran Tabungan Online (Dibatalkan)";
 
       // Also update record in midtransTransactions if tracked
@@ -2305,8 +2350,29 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         const mtTx = midtransTransactions.find(m => m.orderId === activeOrderId);
         if (mtTx && (mtTx.transactionStatus === "pending" || !mtTx.transactionStatus)) {
           mtTx.transactionStatus = "cancel";
+          (mtTx as any).isVoidedByAdmin = true;
           mtTx.description = `${(mtTx.description || 'Setoran Tabungan').replace(/\s*\(Dibatalkan\)/g, '')} (Dibatalkan)`;
         }
+      }
+
+      if (voidedPayments) {
+        const voidRecord: VoidedPaymentRecord = {
+          id: `void-sav-${Date.now()}-${tx.id.slice(-6)}`,
+          billId: tx.id,
+          orderId: activeOrderId || undefined,
+          studentId: tx.studentId,
+          billType: "savings",
+          period: "Setoran Tabungan Online",
+          amount: tx.amount,
+          voidReason: "Dibatalkan oleh Pengguna / Admin",
+          voidedAt: new Date().toISOString()
+        };
+        voidedPayments.unshift(voidRecord);
+        if (persistEntity) persistEntity("voidedPayments", voidRecord).catch(() => {});
+      }
+
+      if (persistEntity) {
+        persistEntity("savingsTransactions", tx).catch(() => {});
       }
 
       saveState();
@@ -2371,15 +2437,29 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   router.post("/midtrans-webhook", async (req, res) => {
     const webhookData = req.body;
     const { order_id, transaction_status, payment_type, gross_amount, transaction_id } = webhookData;
-    console.log("[Midtrans Webhook Callback]:", { order_id, transaction_status, payment_type, gross_amount, transaction_id });
+    console.log("[Midtrans Webhook Callback (Auto-Reconcile Disabled)]:", { order_id, transaction_status, payment_type, gross_amount, transaction_id });
 
     if (!order_id) {
       return res.status(400).json({ status: "error", message: "Order ID missing" });
     }
 
     try {
-      const result = await processMidtransOrderStatus(order_id, webhookData);
-      res.json({ status: "ok", actionTaken: result.actionTaken, detail: result.detailMessage });
+      recordOrUpdateMidtransTransaction({
+        orderId: order_id,
+        transactionId: transaction_id,
+        billType: "other",
+        grossAmount: Number(gross_amount) || 0,
+        transactionStatus: transaction_status,
+        paymentType: `Midtrans (${payment_type || 'Online'})`,
+        settlementTime: webhookData.settlement_time || webhookData.transaction_time || new Date().toISOString(),
+        description: `Callback Midtrans [${order_id}] - Menunggu Rekonsiliasi Manual`
+      });
+
+      res.json({
+        status: "ok",
+        actionTaken: false,
+        message: "Callback Midtrans diterima dan dicatat dalam riwayat transaksi. Rekonsiliasi otomatis dinonaktifkan (seluruh rekonsiliasi dilakukan secara manual oleh Admin/Bendahara)."
+      });
     } catch (e) {
       const err = e as Error;
       console.error("[Midtrans Webhook Error]:", err);
@@ -2916,6 +2996,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       // Handle Case B: Force Reconcile against Local Pending Bill (when Gateway status 404 or dev/offline)
       if (forceReconcileLocal) {
         if (localMatchedSpp && localMatchedSpp.status !== "paid") {
+          if (localMatchedSpp.isVoidedByAdmin || voidedPayments.some(v => v.billId === localMatchedSpp.id)) {
+            return res.status(400).json({
+              success: false,
+              message: `Tagihan SPP ${localMatchedSpp.month} ${localMatchedSpp.year} telah dibatalkan / dikoreksi oleh Admin Sekolah dan tidak dapat diubah kembali menjadi Lunas.`
+            });
+          }
           localMatchedSpp.status = "paid";
           localMatchedSpp.paidAt = new Date().toISOString();
           localMatchedSpp.paymentMethod = "Midtrans (Paksa Rekonsiliasi Internal)";
@@ -2967,6 +3053,12 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         }
 
         if (localMatchedMisc && localMatchedMisc.status !== "paid") {
+          if (localMatchedMisc.isVoidedByAdmin || voidedPayments.some(v => v.billId === localMatchedMisc.id)) {
+            return res.status(400).json({
+              success: false,
+              message: `Tagihan Non-SPP "${localMatchedMisc.title}" telah dibatalkan / dikoreksi oleh Admin Sekolah dan tidak dapat diubah kembali menjadi Lunas.`
+            });
+          }
           localMatchedMisc.status = "paid";
           localMatchedMisc.paidAt = new Date().toISOString();
           localMatchedMisc.paymentMethod = "Midtrans (Paksa Rekonsiliasi Internal)";
@@ -3117,6 +3209,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
       let reconciledCount = 0;
       let alreadyPaidCount = 0;
       let notFoundCount = 0;
+      let voidedByAdminCount = 0;
       let pendingCount = 0;
       let failedCount = 0;
       let totalAmountReconciled = 0;
@@ -3139,7 +3232,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
         reportStatus: string;
         reportPaymentType: string;
         reportTime: string;
-        reconciliationStatus: 'reconciled' | 'already_paid' | 'not_found' | 'report_pending' | 'report_failed';
+        reconciliationStatus: 'reconciled' | 'already_paid' | 'not_found' | 'report_pending' | 'report_failed' | 'voided_by_admin';
         message: string;
       }[] = [];
 
@@ -3424,7 +3517,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             let cartTotalAmt = 0;
 
             matchedSpp.forEach(b => {
-              if (b.status !== "paid") {
+              if (b.status !== "paid" && !b.isVoidedByAdmin && !voidedPayments.some(v => v.billId === b.id)) {
                 b.status = "paid";
                 b.paidAt = resolvedPaidAt;
                 b.paymentMethod = actualPaymentType;
@@ -3435,7 +3528,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             });
 
             matchedMisc.forEach(m => {
-              if (m.status !== "paid") {
+              if (m.status !== "paid" && !m.isVoidedByAdmin && !voidedPayments.some(v => v.billId === m.id)) {
                 m.status = "paid";
                 m.paidAt = resolvedPaidAt;
                 m.paymentMethod = actualPaymentType;
@@ -3446,7 +3539,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             });
 
             matchedSavings.forEach(t => {
-              if (t.status !== "success") {
+              if (t.status !== "success" && !t.isVoidedByAdmin && !voidedPayments.some(v => v.billId === t.id)) {
                 t.status = "success";
                 t.paymentMethod = actualPaymentType;
                 if (cleanTxId) t.transactionId = cleanTxId;
@@ -3635,6 +3728,22 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reconciliationStatus: "already_paid",
                 message: `SUDAH LUNAS: Setoran Tabungan a.n ${student?.name || 'Siswa'} sudah dikonfirmasi LUNAS.`
               });
+            } else if (savingsTx.isVoidedByAdmin || voidedPayments.some(v => v.billId === savingsTx.id)) {
+              voidedByAdminCount++;
+              results.push({
+                orderId: cleanOrderId || cleanTxId,
+                transactionId: cleanTxId,
+                studentName: student?.name || "-",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: "Setoran Tabungan",
+                amount: savingsTx.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime,
+                reconciliationStatus: "voided_by_admin",
+                message: `DIBATALKAN ADMIN: Transaksi setoran tabungan a.n ${student?.name || 'Siswa'} telah dibatalkan / dikoreksi oleh Admin sekolah.`
+              });
             } else {
               savingsTx.status = "success";
               savingsTx.paymentMethod = actualPaymentType;
@@ -3813,6 +3922,22 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reconciliationStatus: "already_paid",
                 message: `SUDAH LUNAS: Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
               });
+            } else if (miscBill.isVoidedByAdmin || voidedPayments.some(v => v.billId === miscBill.id)) {
+              voidedByAdminCount++;
+              results.push({
+                orderId: cleanOrderId || cleanTxId,
+                transactionId: cleanTxId,
+                studentName: student?.name || "-",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: miscBill.title,
+                amount: miscBill.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime,
+                reconciliationStatus: "voided_by_admin",
+                message: `DIBATALKAN ADMIN: Tagihan Non-SPP "${miscBill.title}" a.n ${student?.name || 'Siswa'} telah dibatalkan / dikoreksi oleh Admin sekolah.`
+              });
             } else {
               miscBill.status = "paid";
               miscBill.paidAt = resolvedPaidAt;
@@ -3961,6 +4086,22 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
                 reportTime,
                 reconciliationStatus: "already_paid",
                 message: `SUDAH LUNAS: Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} sebelumnya sudah tercatat LUNAS.`
+              });
+            } else if (sppBill.isVoidedByAdmin || voidedPayments.some(v => v.billId === sppBill.id)) {
+              voidedByAdminCount++;
+              results.push({
+                orderId: cleanOrderId || cleanTxId,
+                transactionId: cleanTxId,
+                studentName: student?.name || "-",
+                studentNis: student?.nis || "-",
+                studentClass: student?.class || "-",
+                category: `SPP ${sppBill.month} ${sppBill.year}`,
+                amount: sppBill.amount,
+                reportStatus: rawStatus,
+                reportPaymentType: actualPaymentType,
+                reportTime,
+                reconciliationStatus: "voided_by_admin",
+                message: `DIBATALKAN ADMIN: Tagihan SPP ${sppBill.month} ${sppBill.year} a.n ${student?.name || 'Siswa'} telah dibatalkan / dikoreksi oleh Admin sekolah.`
               });
             } else {
               sppBill.status = "paid";
@@ -4254,6 +4395,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
           reconciledCount,
           alreadyPaidCount,
           notFoundCount,
+          voidedByAdminCount,
           pendingCount,
           failedCount,
           totalAmountReconciled
@@ -4412,6 +4554,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             bill.paymentMethod = paymentType;
             bill.orderId = cleanOrderId;
             if (cleanTxId) bill.transactionId = cleanTxId;
+            bill.isVoidedByAdmin = false;
+            delete bill.voidedAt;
+            delete bill.voidReason;
 
             recordOrUpdateMidtransTransaction({
               orderId: cleanOrderId,
@@ -4465,6 +4610,9 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             mBill.paymentMethod = paymentType;
             mBill.orderId = cleanOrderId;
             if (cleanTxId) mBill.transactionId = cleanTxId;
+            mBill.isVoidedByAdmin = false;
+            delete mBill.voidedAt;
+            delete mBill.voidReason;
 
             recordOrUpdateMidtransTransaction({
               orderId: cleanOrderId,

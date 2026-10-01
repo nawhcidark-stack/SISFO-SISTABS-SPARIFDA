@@ -428,6 +428,9 @@ CREATE TABLE IF NOT EXISTS \`spp_bills\` (
   \`transaction_id\` VARCHAR(100) DEFAULT NULL,
   \`achievement_type\` VARCHAR(64) DEFAULT NULL,
   \`achievement_detail\` TEXT DEFAULT NULL,
+  \`is_voided_by_admin\` TINYINT(1) DEFAULT 0,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
   \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
   PRIMARY KEY (\`id\`),
   KEY \`idx_student_id\` (\`student_id\`),
@@ -448,6 +451,9 @@ CREATE TABLE IF NOT EXISTS \`misc_bills\` (
   \`transaction_id\` VARCHAR(100) DEFAULT NULL,
   \`is_monthly\` TINYINT(1) DEFAULT 0,
   \`month\` VARCHAR(32) DEFAULT NULL,
+  \`is_voided_by_admin\` TINYINT(1) DEFAULT 0,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_misc_student\` (\`student_id\`),
   KEY \`idx_misc_status\` (\`status\`)
@@ -465,9 +471,29 @@ CREATE TABLE IF NOT EXISTS \`savings_transactions\` (
   \`order_id\` VARCHAR(100) DEFAULT NULL,
   \`transaction_id\` VARCHAR(100) DEFAULT NULL,
   \`notes\` TEXT DEFAULT NULL,
+  \`is_voided_by_admin\` TINYINT(1) DEFAULT 0,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_sav_student\` (\`student_id\`),
   KEY \`idx_sav_type\` (\`type\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`voided_payments\` (
+  \`id\` VARCHAR(100) NOT NULL,
+  \`bill_id\` VARCHAR(100) DEFAULT NULL,
+  \`order_id\` VARCHAR(100) DEFAULT NULL,
+  \`transaction_id\` VARCHAR(100) DEFAULT NULL,
+  \`student_id\` VARCHAR(64) DEFAULT NULL,
+  \`bill_type\` VARCHAR(32) NOT NULL,
+  \`period\` VARCHAR(100) DEFAULT NULL,
+  \`amount\` DECIMAL(15,2) DEFAULT 0.00,
+  \`void_reason\` VARCHAR(255) DEFAULT NULL,
+  \`voided_at\` VARCHAR(64) DEFAULT NULL,
+  \`created_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_bill_id\` (\`bill_id\`),
+  KEY \`idx_order_id\` (\`order_id\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS \`treasurer_transactions\` (
@@ -1051,7 +1077,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (sppBills.length > 0) {
     out += `\n-- Data Tagihan SPP (${sppBills.length} baris)\n`;
     for (const b of sppBills) {
-      out += `INSERT INTO \`spp_bills\` (\`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`) VALUES (${sqlEscape(b.id)}, ${sqlEscape(b.studentId)}, ${sqlEscape(b.month)}, ${sqlEscape(b.year || 2026)}, ${sqlEscape(b.amount || 0)}, ${sqlEscape(b.status || 'unpaid')}, ${sqlEscape(b.paidAt)}, ${sqlEscape(b.paymentMethod)}, ${sqlEscape(b.orderId)}, ${sqlEscape(b.transactionId)}, ${sqlEscape(b.achievementType)}, ${sqlEscape(b.achievementDetail)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=CASE WHEN \`spp_bills\`.\`status\` = 'paid' THEN 'paid' ELSE VALUES(\`status\`) END, \`paid_at\`=CASE WHEN \`spp_bills\`.\`status\` = 'paid' AND \`spp_bills\`.\`paid_at\` IS NOT NULL THEN \`spp_bills\`.\`paid_at\` ELSE VALUES(\`paid_at\`) END, \`payment_method\`=CASE WHEN \`spp_bills\`.\`status\` = 'paid' AND \`spp_bills\`.\`payment_method\` IS NOT NULL THEN \`spp_bills\`.\`payment_method\` ELSE VALUES(\`payment_method\`) END, \`order_id\`=COALESCE(\`spp_bills\`.\`order_id\`, VALUES(\`order_id\`));\n`;
+      out += `INSERT INTO \`spp_bills\` (\`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(b.id)}, ${sqlEscape(b.studentId)}, ${sqlEscape(b.month)}, ${sqlEscape(b.year || 2026)}, ${sqlEscape(b.amount || 0)}, ${sqlEscape(b.status || 'unpaid')}, ${sqlEscape(b.paidAt)}, ${sqlEscape(b.paymentMethod)}, ${sqlEscape(b.orderId)}, ${sqlEscape(b.transactionId)}, ${sqlEscape(b.achievementType)}, ${sqlEscape(b.achievementDetail)}, ${sqlEscape(b.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(b.voidedAt)}, ${sqlEscape(b.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
     }
   }
 
@@ -1061,7 +1087,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (miscBills.length > 0) {
     out += `\n-- Data Tagihan Non-SPP / Lainnya (${miscBills.length} baris)\n`;
     for (const m of miscBills) {
-      out += `INSERT INTO \`misc_bills\` (\`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`) VALUES (${sqlEscape(m.id)}, ${sqlEscape(m.studentId)}, ${sqlEscape(m.title)}, ${sqlEscape(m.amount || 0)}, ${sqlEscape(m.status || 'unpaid')}, ${sqlEscape(m.createdAt)}, ${sqlEscape(m.paidAt)}, ${sqlEscape(m.paymentMethod)}, ${sqlEscape(m.orderId)}, ${sqlEscape(m.transactionId)}, ${sqlEscape(m.isMonthly ? 1 : 0)}, ${sqlEscape(m.month)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=CASE WHEN \`misc_bills\`.\`status\` = 'paid' THEN 'paid' ELSE VALUES(\`status\`) END, \`paid_at\`=CASE WHEN \`misc_bills\`.\`status\` = 'paid' AND \`misc_bills\`.\`paid_at\` IS NOT NULL THEN \`misc_bills\`.\`paid_at\` ELSE VALUES(\`paid_at\`) END, \`payment_method\`=CASE WHEN \`misc_bills\`.\`status\` = 'paid' AND \`misc_bills\`.\`payment_method\` IS NOT NULL THEN \`misc_bills\`.\`payment_method\` ELSE VALUES(\`payment_method\`) END;\n`;
+      out += `INSERT INTO \`misc_bills\` (\`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(m.id)}, ${sqlEscape(m.studentId)}, ${sqlEscape(m.title)}, ${sqlEscape(m.amount || 0)}, ${sqlEscape(m.status || 'unpaid')}, ${sqlEscape(m.createdAt)}, ${sqlEscape(m.paidAt)}, ${sqlEscape(m.paymentMethod)}, ${sqlEscape(m.orderId)}, ${sqlEscape(m.transactionId)}, ${sqlEscape(m.isMonthly ? 1 : 0)}, ${sqlEscape(m.month)}, ${sqlEscape(m.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(m.voidedAt)}, ${sqlEscape(m.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
     }
   }
 
@@ -1071,7 +1097,16 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (savings.length > 0) {
     out += `\n-- Data Transaksi Tabungan Siswa (${savings.length} baris)\n`;
     for (const s of savings) {
-      out += `INSERT INTO \`savings_transactions\` (\`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`) VALUES (${sqlEscape(s.id)}, ${sqlEscape(s.studentId)}, ${sqlEscape(s.studentNis)}, ${sqlEscape(s.type)}, ${sqlEscape(s.amount || 0)}, ${sqlEscape(s.status || 'success')}, ${sqlEscape(s.createdAt)}, ${sqlEscape(s.paymentMethod)}, ${sqlEscape(s.orderId)}, ${sqlEscape(s.transactionId)}, ${sqlEscape(s.notes)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`);\n`;
+      out += `INSERT INTO \`savings_transactions\` (\`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`, \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`) VALUES (${sqlEscape(s.id)}, ${sqlEscape(s.studentId)}, ${sqlEscape(s.studentNis)}, ${sqlEscape(s.type)}, ${sqlEscape(s.amount || 0)}, ${sqlEscape(s.status || 'success')}, ${sqlEscape(s.createdAt)}, ${sqlEscape(s.paymentMethod)}, ${sqlEscape(s.orderId)}, ${sqlEscape(s.transactionId)}, ${sqlEscape(s.notes)}, ${sqlEscape(s.isVoidedByAdmin ? 1 : 0)}, ${sqlEscape(s.voidedAt)}, ${sqlEscape(s.voidReason)}) ON DUPLICATE KEY UPDATE \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`notes\`=VALUES(\`notes\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`);\n`;
+    }
+  }
+
+  // 4B. Voided Payments Registry
+  const voidedPayments = snapshot.voidedPayments || [];
+  if (voidedPayments.length > 0) {
+    out += `\n-- Data Riwayat Pembatalan Pembayaran Admin (${voidedPayments.length} baris)\n`;
+    for (const v of voidedPayments) {
+      out += `INSERT INTO \`voided_payments\` (\`id\`, \`bill_id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`bill_type\`, \`period\`, \`amount\`, \`void_reason\`, \`voided_at\`) VALUES (${sqlEscape(v.id)}, ${sqlEscape(v.billId)}, ${sqlEscape(v.orderId)}, ${sqlEscape(v.transactionId)}, ${sqlEscape(v.studentId)}, ${sqlEscape(v.billType || 'spp')}, ${sqlEscape(v.period)}, ${sqlEscape(v.amount || 0)}, ${sqlEscape(v.voidReason)}, ${sqlEscape(v.voidedAt)}) ON DUPLICATE KEY UPDATE \`bill_id\`=VALUES(\`bill_id\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`), \`void_reason\`=VALUES(\`void_reason\`), \`voided_at\`=VALUES(\`voided_at\`);\n`;
     }
   }
 
@@ -1702,7 +1737,10 @@ export async function pullDataFromMysql(): Promise<{
         orderId: r.order_id || undefined,
         transactionId: r.transaction_id || undefined,
         achievementType: r.achievement_type || undefined,
-        achievementDetail: r.achievement_detail || undefined
+        achievementDetail: r.achievement_detail || undefined,
+        isVoidedByAdmin: Boolean(r.is_voided_by_admin),
+        voidedAt: r.voided_at || undefined,
+        voidReason: r.void_reason || undefined
       }));
       counts.sppBills = resultData.sppBills.length;
     }
@@ -1722,7 +1760,10 @@ export async function pullDataFromMysql(): Promise<{
         orderId: r.order_id || undefined,
         transactionId: r.transaction_id || undefined,
         isMonthly: Boolean(r.is_monthly),
-        month: r.month || undefined
+        month: r.month || undefined,
+        isVoidedByAdmin: Boolean(r.is_voided_by_admin),
+        voidedAt: r.voided_at || undefined,
+        voidReason: r.void_reason || undefined
       }));
       counts.miscBills = resultData.miscBills.length;
     }
@@ -1741,9 +1782,29 @@ export async function pullDataFromMysql(): Promise<{
         paymentMethod: r.payment_method || undefined,
         orderId: r.order_id || undefined,
         transactionId: r.transaction_id || undefined,
-        notes: r.notes || undefined
+        notes: r.notes || undefined,
+        isVoidedByAdmin: Boolean(r.is_voided_by_admin),
+        voidedAt: r.voided_at || undefined,
+        voidReason: r.void_reason || undefined
       }));
       counts.savingsTransactions = resultData.savingsTransactions.length;
+    }
+
+    // 4B. Voided Payments Registry
+    if (hasTable('voided_payments')) {
+      const [rows]: any = await connection.query('SELECT * FROM `voided_payments`');
+      resultData.voidedPayments = rows.map((r: any) => ({
+        id: r.id,
+        billId: r.bill_id || undefined,
+        orderId: r.order_id || undefined,
+        transactionId: r.transaction_id || undefined,
+        studentId: r.student_id || undefined,
+        billType: r.bill_type || 'spp',
+        period: r.period || undefined,
+        amount: Number(r.amount) || 0,
+        voidReason: r.void_reason || undefined,
+        voidedAt: r.voided_at || new Date().toISOString()
+      }));
     }
 
     // 5. Treasurer Transactions (Buku Kas Umum)
@@ -2366,6 +2427,27 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
     } catch (colCheckErr: any) {
       console.warn('[MySQL Column Check Warning]:', colCheckErr.message || colCheckErr);
     }
+
+    // Auto-migration: Ensure is_voided_by_admin, voided_at, void_reason exist on spp_bills, misc_bills, savings_transactions
+    const tablesToCheck = ['spp_bills', 'misc_bills', 'savings_transactions'];
+    for (const tName of tablesToCheck) {
+      try {
+        const [tCols]: any = await connection.query(`SHOW COLUMNS FROM \`${tName}\``);
+        const tColNames = new Set((tCols || []).map((c: any) => c.Field));
+        if (!tColNames.has('is_voided_by_admin')) {
+          await connection.query(`ALTER TABLE \`${tName}\` ADD COLUMN \`is_voided_by_admin\` TINYINT(1) DEFAULT 0`);
+        }
+        if (!tColNames.has('voided_at')) {
+          await connection.query(`ALTER TABLE \`${tName}\` ADD COLUMN \`voided_at\` VARCHAR(64) DEFAULT NULL`);
+        }
+        if (!tColNames.has('void_reason')) {
+          await connection.query(`ALTER TABLE \`${tName}\` ADD COLUMN \`void_reason\` VARCHAR(255) DEFAULT NULL`);
+        }
+      } catch (e: any) {
+        console.warn(`[MySQL Column Check Warning on ${tName}]:`, e.message || e);
+      }
+    }
+
     return {
       success: true,
       message: 'Semua struktur tabel MySQL berhasil diverifikasi dan diinisialisasi.'
@@ -2472,17 +2554,20 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const bTransactionId = b.transactionId || (b as any).transaction_id || null;
       const bAchType = b.achievementType || (b as any).achievement_type || null;
       const bAchDetail = b.achievementDetail || (b as any).achievement_detail || null;
+      const bIsVoided = b.isVoidedByAdmin ? 1 : 0;
+      const bVoidedAt = b.voidedAt || null;
+      const bVoidReason = b.voidReason || null;
 
       // Try updating existing row matching ID or student_id + month + year
       const [updateResult]: any = await connection.query(`
         UPDATE \`spp_bills\`
-        SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?
+        SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
         WHERE \`id\`=? OR (
           (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
           AND LOWER(\`month\`)=LOWER(?) AND \`year\`=?
         )
       `, [
-        bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail,
+        bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason,
         b.id, bStudentId, bStudentId, bStudentId, bMonth, bYear
       ]);
 
@@ -2490,16 +2575,17 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         await connection.query(`
           INSERT INTO \`spp_bills\` (
             \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
-            \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
             \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
-            \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
+            \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`),
+            \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
         `, [
           b.id, bStudentId, bMonth, bYear, bAmount, bStatus,
           bPaidAt, bPaymentMethod, bOrderId, bTransactionId,
-          bAchType, bAchDetail
+          bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason
         ]);
       }
       return { success: true, message: `Data tagihan SPP "${b.month} ${b.year}" langsung tersimpan ke MySQL.` };
@@ -2519,16 +2605,19 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const mTransactionId = m.transactionId || (m as any).transaction_id || null;
       const mIsMonthly = m.isMonthly || (m as any).is_monthly ? 1 : 0;
       const mMonth = m.month || null;
+      const mIsVoided = m.isVoidedByAdmin ? 1 : 0;
+      const mVoidedAt = m.voidedAt || null;
+      const mVoidReason = m.voidReason || null;
 
       const [updateResult]: any = await connection.query(`
         UPDATE \`misc_bills\`
-        SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?
+        SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
         WHERE \`id\`=? OR (
           (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
           AND LOWER(\`title\`)=LOWER(?)
         )
       `, [
-        mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth,
+        mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth, mIsVoided, mVoidedAt, mVoidReason,
         m.id, mStudentId, mStudentId, mStudentId, mTitle
       ]);
 
@@ -2536,16 +2625,19 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         await connection.query(`
           INSERT INTO \`misc_bills\` (
             \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
-            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`,
+            \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
           ON DUPLICATE KEY UPDATE
             \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
             \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
-            \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
+            \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`),
+            \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
         `, [
           m.id, mStudentId, mTitle, mAmount, mStatus,
           mCreatedAt, mPaidAt, mPaymentMethod,
-          mOrderId, mTransactionId, mIsMonthly, mMonth
+          mOrderId, mTransactionId, mIsMonthly, mMonth,
+          mIsVoided, mVoidedAt, mVoidReason
         ]);
       }
       return { success: true, message: `Data tagihan non-SPP "${m.title}" langsung tersimpan ke MySQL.` };
@@ -2554,20 +2646,44 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     // 4. Savings Transactions
     else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
       const s = data;
+      const sIsVoided = s.isVoidedByAdmin ? 1 : 0;
+      const sVoidedAt = s.voidedAt || null;
+      const sVoidReason = s.voidReason || null;
+
       await connection.query(`
         INSERT INTO \`savings_transactions\` (
           \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
-          \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
-          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
+          \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+          \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
       `, [
         s.id, s.studentId, s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
         s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
-        s.orderId || null, s.transactionId || null, s.notes || null
+        s.orderId || null, s.transactionId || null, s.notes || null,
+        sIsVoided, sVoidedAt, sVoidReason
       ]);
       return { success: true, message: `Transaksi tabungan Rp ${Number(s.amount).toLocaleString('id-ID')} langsung tersimpan ke MySQL.` };
+    }
+
+    // 4B. Voided Payments Registry
+    else if (typeKey === 'voided_payment' || typeKey === 'voided_payments' || typeKey === 'voidedpayment' || typeKey === 'voidedpayments') {
+      const v = data;
+      await connection.query(`
+        INSERT INTO \`voided_payments\` (
+          \`id\`, \`bill_id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`bill_type\`, \`period\`, \`amount\`, \`void_reason\`, \`voided_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`bill_id\`=VALUES(\`bill_id\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+          \`student_id\`=VALUES(\`student_id\`), \`bill_type\`=VALUES(\`bill_type\`), \`period\`=VALUES(\`period\`),
+          \`amount\`=VALUES(\`amount\`), \`void_reason\`=VALUES(\`void_reason\`), \`voided_at\`=VALUES(\`voided_at\`)
+      `, [
+        v.id, v.billId || null, v.orderId || null, v.transactionId || null, v.studentId || null,
+        v.billType || 'spp', v.period || null, Number(v.amount) || 0, v.voidReason || null, v.voidedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Data pembatalan pembayaran ${v.id} langsung tersimpan ke MySQL.` };
     }
 
     // 5. Treasurer Transactions (Kas Umum)
@@ -3207,16 +3323,19 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
           const bTransactionId = b.transactionId || (b as any).transaction_id || null;
           const bAchType = b.achievementType || (b as any).achievement_type || null;
           const bAchDetail = b.achievementDetail || (b as any).achievement_detail || null;
+          const bIsVoided = b.isVoidedByAdmin ? 1 : 0;
+          const bVoidedAt = b.voidedAt || null;
+          const bVoidReason = b.voidReason || null;
 
           const [updateResult]: any = await connection.query(`
             UPDATE \`spp_bills\`
-            SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?
+            SET \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`achievement_type\`=?, \`achievement_detail\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
             WHERE \`id\`=? OR (
               (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
               AND LOWER(\`month\`)=LOWER(?) AND \`year\`=?
             )
           `, [
-            bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail,
+            bAmount, bStatus, bPaidAt, bPaymentMethod, bOrderId, bTransactionId, bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason,
             b.id, bStudentId, bStudentId, bStudentId, bMonth, bYear
           ]);
 
@@ -3224,16 +3343,17 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
             await connection.query(`
               INSERT INTO \`spp_bills\` (
                 \`id\`, \`student_id\`, \`month\`, \`year\`, \`amount\`, \`status\`, \`paid_at\`, \`payment_method\`,
-                \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                \`order_id\`, \`transaction_id\`, \`achievement_type\`, \`achievement_detail\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON DUPLICATE KEY UPDATE
                 \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`), \`paid_at\`=VALUES(\`paid_at\`),
                 \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
-                \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`)
+                \`achievement_type\`=VALUES(\`achievement_type\`), \`achievement_detail\`=VALUES(\`achievement_detail\`),
+                \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
             `, [
               b.id, bStudentId, bMonth, bYear, bAmount, bStatus,
               bPaidAt, bPaymentMethod, bOrderId, bTransactionId,
-              bAchType, bAchDetail
+              bAchType, bAchDetail, bIsVoided, bVoidedAt, bVoidReason
             ]);
           }
           savedCount++;
@@ -3254,16 +3374,19 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
           const mTransactionId = m.transactionId || (m as any).transaction_id || null;
           const mIsMonthly = m.isMonthly || (m as any).is_monthly ? 1 : 0;
           const mMonth = m.month || null;
+          const mIsVoided = m.isVoidedByAdmin ? 1 : 0;
+          const mVoidedAt = m.voidedAt || null;
+          const mVoidReason = m.voidReason || null;
 
           const [updateResult]: any = await connection.query(`
             UPDATE \`misc_bills\`
-            SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?
+            SET \`title\`=?, \`amount\`=?, \`status\`=?, \`paid_at\`=?, \`payment_method\`=?, \`order_id\`=?, \`transaction_id\`=?, \`is_monthly\`=?, \`month\`=?, \`is_voided_by_admin\`=?, \`voided_at\`=?, \`void_reason\`=?
             WHERE \`id\`=? OR (
               (\`student_id\`=? OR \`student_id\`=(SELECT \`id\` FROM \`students\` WHERE \`nis\`=? LIMIT 1) OR \`student_id\`=CONCAT('std-', ?))
               AND LOWER(\`title\`)=LOWER(?)
             )
           `, [
-            mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth,
+            mTitle, mAmount, mStatus, mPaidAt, mPaymentMethod, mOrderId, mTransactionId, mIsMonthly, mMonth, mIsVoided, mVoidedAt, mVoidReason,
             m.id, mStudentId, mStudentId, mStudentId, mTitle
           ]);
 
@@ -3271,16 +3394,19 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
             await connection.query(`
               INSERT INTO \`misc_bills\` (
                 \`id\`, \`student_id\`, \`title\`, \`amount\`, \`status\`, \`created_at\`, \`paid_at\`,
-                \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`
-              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                \`payment_method\`, \`order_id\`, \`transaction_id\`, \`is_monthly\`, \`month\`,
+                \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+              ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
               ON DUPLICATE KEY UPDATE
                 \`title\`=VALUES(\`title\`), \`amount\`=VALUES(\`amount\`), \`status\`=VALUES(\`status\`),
                 \`paid_at\`=VALUES(\`paid_at\`), \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`),
-                \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`)
+                \`transaction_id\`=VALUES(\`transaction_id\`), \`is_monthly\`=VALUES(\`is_monthly\`), \`month\`=VALUES(\`month\`),
+                \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
             `, [
               m.id, mStudentId, mTitle, mAmount, mStatus,
               mCreatedAt, mPaidAt, mPaymentMethod,
-              mOrderId, mTransactionId, mIsMonthly, mMonth
+              mOrderId, mTransactionId, mIsMonthly, mMonth,
+              mIsVoided, mVoidedAt, mVoidReason
             ]);
           }
           savedCount++;
@@ -3290,22 +3416,47 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
       } else if (typeKey === 'savings' || typeKey === 'savings_transaction' || typeKey === 'savingstransactions') {
         const s = item;
         try {
+          const sIsVoided = s.isVoidedByAdmin ? 1 : 0;
+          const sVoidedAt = s.voidedAt || null;
+          const sVoidReason = s.voidReason || null;
+
           await connection.query(`
             INSERT INTO \`savings_transactions\` (
               \`id\`, \`student_id\`, \`student_nis\`, \`type\`, \`amount\`, \`status\`, \`created_at\`,
-              \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              \`payment_method\`, \`order_id\`, \`transaction_id\`, \`notes\`, \`is_voided_by_admin\`, \`voided_at\`, \`void_reason\`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON DUPLICATE KEY UPDATE
               \`status\`=VALUES(\`status\`), \`amount\`=VALUES(\`amount\`), \`notes\`=VALUES(\`notes\`),
-              \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`)
+              \`payment_method\`=VALUES(\`payment_method\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+              \`is_voided_by_admin\`=VALUES(\`is_voided_by_admin\`), \`voided_at\`=VALUES(\`voided_at\`), \`void_reason\`=VALUES(\`void_reason\`)
           `, [
             s.id, s.studentId || (s as any).student_id || '', s.studentNis || null, s.type || 'deposit', Number(s.amount) || 0,
             s.status || 'success', s.createdAt || new Date().toISOString(), s.paymentMethod || null,
-            s.orderId || null, s.transactionId || null, s.notes || null
+            s.orderId || null, s.transactionId || null, s.notes || null,
+            sIsVoided, sVoidedAt, sVoidReason
           ]);
           savedCount++;
         } catch (itemErr: any) {
           console.error(`[MySQL Batch Savings Error] ${s?.id}:`, itemErr?.message || itemErr);
+        }
+      } else if (typeKey === 'voided_payment' || typeKey === 'voided_payments' || typeKey === 'voidedpayment' || typeKey === 'voidedpayments') {
+        const v = item;
+        try {
+          await connection.query(`
+            INSERT INTO \`voided_payments\` (
+              \`id\`, \`bill_id\`, \`order_id\`, \`transaction_id\`, \`student_id\`, \`bill_type\`, \`period\`, \`amount\`, \`void_reason\`, \`voided_at\`
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ON DUPLICATE KEY UPDATE
+              \`bill_id\`=VALUES(\`bill_id\`), \`order_id\`=VALUES(\`order_id\`), \`transaction_id\`=VALUES(\`transaction_id\`),
+              \`student_id\`=VALUES(\`student_id\`), \`bill_type\`=VALUES(\`bill_type\`), \`period\`=VALUES(\`period\`),
+              \`amount\`=VALUES(\`amount\`), \`void_reason\`=VALUES(\`void_reason\`), \`voided_at\`=VALUES(\`voided_at\`)
+          `, [
+            v.id, v.billId || null, v.orderId || null, v.transactionId || null, v.studentId || null,
+            v.billType || 'spp', v.period || null, Number(v.amount) || 0, v.voidReason || null, v.voidedAt || new Date().toISOString()
+          ]);
+          savedCount++;
+        } catch (itemErr: any) {
+          console.error(`[MySQL Batch Voided Error] ${v?.id}:`, itemErr?.message || itemErr);
         }
       } else if (typeKey === 'transaction' || typeKey === 'treasurer_transaction' || typeKey === 'treasurertransactions') {
         const t = item;

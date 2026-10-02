@@ -1957,16 +1957,31 @@ function applyDataFromMysql(pulledData: any) {
         const localBill = localBillMap.get(pulledBill.id) ||
                           localBillMap.get(`${pulledBill.studentId}_${pulledBill.month}_${pulledBill.year}`);
 
+        // If local memory already marked it as paid via valid reconciliation, preserve paid state!
+        if (localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) {
+          const healedBill: SppBill = {
+            ...pulledBill,
+            status: "paid",
+            paidAt: localBill.paidAt || new Date().toISOString(),
+            paymentMethod: localBill.paymentMethod || "Midtrans (Reconciled)",
+            orderId: localBill.orderId || pulledBill.orderId,
+            transactionId: localBill.transactionId || pulledBill.transactionId,
+            isVoidedByAdmin: false
+          };
+          delete (healedBill as any).voidedAt;
+          delete (healedBill as any).voidReason;
+          sppBillsToFixInMysql.push(healedBill);
+          return healedBill;
+        }
+
         const isVoided = Boolean(
           pulledBill.isVoidedByAdmin ||
           localBill?.isVoidedByAdmin ||
-          voidedBillIds.has(pulledBill.id) ||
           (pulledBill.orderId && voidedOrderIds.has(pulledBill.orderId)) ||
           (localBill?.orderId && voidedOrderIds.has(localBill.orderId))
         );
 
         if (isVoided) {
-          // If marked voided by admin, it MUST NEVER be paid!
           const voidedBill: SppBill = {
             ...pulledBill,
             status: "unpaid",
@@ -1978,7 +1993,6 @@ function applyDataFromMysql(pulledData: any) {
             voidReason: pulledBill.voidReason || localBill?.voidReason || "Dibatalkan / Dikoreksi oleh Admin"
           };
           delete (voidedBill as any).transactionId;
-          // If MySQL still thought it was paid, queue for immediate fix in MySQL
           if (pulledBill.status === "paid") {
             sppBillsToFixInMysql.push(voidedBill);
           }
@@ -1987,20 +2001,6 @@ function applyDataFromMysql(pulledData: any) {
 
         if (pulledBill.status === "paid") {
           return pulledBill;
-        }
-
-        // If pulled bill is unpaid, check if local memory already marked it as paid via valid reconciliation
-        if (localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) {
-          const healedBill: SppBill = {
-            ...pulledBill,
-            status: "paid",
-            paidAt: localBill.paidAt || new Date().toISOString(),
-            paymentMethod: localBill.paymentMethod || "Midtrans (Reconciled)",
-            orderId: localBill.orderId || pulledBill.orderId,
-            transactionId: localBill.transactionId || pulledBill.transactionId
-          };
-          sppBillsToFixInMysql.push(healedBill);
-          return healedBill;
         }
         return pulledBill;
       });
@@ -7460,11 +7460,25 @@ async function startServer() {
     delete bill.paidAt;
     delete bill.paymentMethod;
     delete bill.orderId;
-    bill.isVoidedByAdmin = true;
-    bill.voidedAt = new Date().toISOString();
-    bill.voidReason = "Dibatalkan / Dikoreksi oleh Admin";
+    delete (bill as any).transactionId;
+    delete bill.isVoidedByAdmin;
+    delete bill.voidedAt;
+    delete bill.voidReason;
 
     if (oldOrderId) {
+      if (!voidedPayments.some(v => v.billId === bill.id && v.orderId === oldOrderId)) {
+        voidedPayments.push({
+          id: `void-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          billId: bill.id,
+          orderId: oldOrderId,
+          studentId: bill.studentId,
+          billType: "misc",
+          period: bill.title,
+          amount: bill.amount,
+          voidReason: "Dibatalkan / Dikoreksi oleh Admin",
+          voidedAt: new Date().toISOString()
+        });
+      }
       const linkedMt = midtransTransactions.find(m => m.orderId === oldOrderId);
       if (linkedMt) {
         linkedMt.transactionStatus = "cancel";
@@ -7970,12 +7984,25 @@ async function startServer() {
     bill.paymentMethod = undefined;
     bill.orderId = undefined;
     delete (bill as any).transactionId;
-    bill.isVoidedByAdmin = true;
-    bill.voidedAt = new Date().toISOString();
-    bill.voidReason = "Dibatalkan / Dikoreksi oleh Admin";
+    delete bill.isVoidedByAdmin;
+    delete bill.voidedAt;
+    delete bill.voidReason;
 
     // Mark any linked Midtrans transaction as cancelled so it cannot be auto-reconciled
     if (prevOrderId) {
+      if (!voidedPayments.some(v => v.billId === bill.id && v.orderId === prevOrderId)) {
+        voidedPayments.push({
+          id: `void-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+          billId: bill.id,
+          orderId: prevOrderId,
+          studentId: bill.studentId,
+          billType: "spp",
+          period: `${bill.month} ${bill.year}`,
+          amount: bill.amount,
+          voidReason: "Dibatalkan / Dikoreksi oleh Admin",
+          voidedAt: new Date().toISOString()
+        });
+      }
       const linkedMt = midtransTransactions.find(m => m.orderId === prevOrderId);
       if (linkedMt) {
         linkedMt.transactionStatus = "cancel";

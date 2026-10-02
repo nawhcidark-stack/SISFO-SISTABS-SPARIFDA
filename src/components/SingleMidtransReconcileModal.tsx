@@ -715,7 +715,16 @@ export const SingleMidtransReconcileModal: React.FC<SingleMidtransReconcileModal
                   {/* Manual Pairing Button */}
                   <button
                     type="button"
-                    onClick={() => setIsManualPairingOpen(!isManualPairingOpen)}
+                    onClick={() => {
+                      if (!isManualPairingOpen && !selectedStudent && checkResult?.matchedStudent) {
+                        setSelectedStudent({
+                          ...checkResult.matchedStudent,
+                          unpaidSppBills: checkResult.unpaidBills?.spp || [],
+                          unpaidMiscBills: checkResult.unpaidBills?.misc || []
+                        });
+                      }
+                      setIsManualPairingOpen(!isManualPairingOpen);
+                    }}
                     className="flex-1 sm:flex-initial px-3.5 py-2 bg-white hover:bg-slate-50 text-slate-700 border border-slate-300 font-bold rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all cursor-pointer"
                   >
                     <Link2 className="w-3.5 h-3.5 text-indigo-600" />

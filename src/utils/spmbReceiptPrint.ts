@@ -46,7 +46,12 @@ export function calculateReRegDetails(
     : [];
   const rawUniformTotal = uniformItems.reduce((sum, item) => sum + item.price, 0);
 
-  const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || 
+  const isLpMaarif = candidate.schoolOriginType === 'maarif_jogosari' || 
+    candidate.schoolOriginType === 'lp_maarif' ||
+    (candidate.schoolOrigin && (candidate.schoolOrigin.toUpperCase().includes('MAARIF') || candidate.schoolOrigin.toUpperCase().includes("MA'ARIF"))) ||
+    (candidate.schoolOriginType && (candidate.schoolOriginType.toUpperCase().includes('MAARIF') || candidate.schoolOriginType.toUpperCase().includes("MA'ARIF")));
+
+  const isJogosari = candidate.schoolOriginType === 'maarif_jogosari' || 
     (candidate.schoolOrigin && candidate.schoolOrigin.toUpperCase().includes('MAARIF JOGOSARI')) ||
     (candidate.schoolOriginType && candidate.schoolOriginType.toUpperCase().includes('MAARIF JOGOSARI'));
 
@@ -57,9 +62,9 @@ export function calculateReRegDetails(
     : (session?.discountAmount ? Math.round((session.discountAmount / (buildingFee || 1)) * 100) : 0);
   const buildingWaveDiscount = Math.round(buildingFee * (discountPercent / 100));
 
-  // Diskon Uang Gedung SD Maarif
+  // Diskon Uang Gedung SD Maarif Jogosari
   let maarifBuildingDiscount = 0;
-  if (isMaarif) {
+  if (isJogosari) {
     if (config?.maarifBuildingDiscountType === 'percent') {
       maarifBuildingDiscount = Math.round(buildingFee * ((config.maarifBuildingDiscount || 0) / 100));
     } else {
@@ -70,18 +75,30 @@ export function calculateReRegDetails(
   const totalBuildingDiscount = Math.min(buildingFee, buildingWaveDiscount + maarifBuildingDiscount);
   const netBuildingFee = Math.max(0, buildingFee - totalBuildingDiscount);
 
-  // Diskon Seragam SD Maarif
+  // Diskon Seragam SD Maarif Jogosari
   let maarifUniformDiscount = 0;
-  if (isMaarif) {
+  if (isJogosari) {
     if (config?.maarifUniformDiscountType === 'percent') {
       maarifUniformDiscount = Math.round(rawUniformTotal * ((config.maarifUniformDiscount || 0) / 100));
     } else {
       maarifUniformDiscount = config?.maarifUniformDiscount || 0;
     }
   }
-  const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount);
 
-  const grandTotal = netBuildingFee + julySppFee + baseFee + netUniformTotal;
+  // Bonus 1 Set Seragam Olahraga khusus Sesi Inden bagi SD/MI dari LP. Maarif
+  let sportsUniformBonus = 0;
+  if (candidate.sessionId === 'inden' && isLpMaarif) {
+    const sportsItem = uniformItems.find(u => u.id === 'u-1' || u.name.toLowerCase().includes('olahraga'));
+    sportsUniformBonus = sportsItem ? sportsItem.price : 125000;
+  }
+
+  const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount - sportsUniformBonus);
+
+  // Check Sibling KK Match: Bebas SPP bulan pertama (Juli) pada Sesi Inden
+  const isSiblingFreeSpp = Boolean(candidate.sessionId === 'inden' && (candidate.freeFirstMonthSpp || candidate.isSiblingKkMatch));
+  const effectiveJulySppFee = isSiblingFreeSpp ? 0 : julySppFee;
+
+  const grandTotal = netBuildingFee + effectiveJulySppFee + baseFee + netUniformTotal;
 
   return {
     buildingFee,
@@ -91,13 +108,18 @@ export function calculateReRegDetails(
     totalBuildingDiscount,
     netBuildingFee,
     julySppFee,
+    effectiveJulySppFee,
+    isSiblingFreeSpp,
     baseFee,
     uniformItems,
     rawUniformTotal,
     maarifUniformDiscount,
+    sportsUniformBonus,
+    hasSportsUniformBonus: sportsUniformBonus > 0,
     netUniformTotal,
     grandTotal,
-    isMaarif,
+    isMaarif: isLpMaarif,
+    isJogosari,
     sessionName: session?.name || candidate.sessionId || 'Reguler'
   };
 }
@@ -419,20 +441,26 @@ export async function generateReRegReceiptHtml(
                 </tr>
                 <tr>
                   <td style="text-align: center;">2</td>
-                  <td><strong>SPP Bulan Pertama (Juli ${academicYear.split('/')[0]})</strong></td>
+                  <td>
+                    <strong>SPP Bulan Pertama (Juli ${academicYear.split('/')[0]})</strong>
+                    ${details.isSiblingFreeSpp ? `<br><small class="sub-text" style="color: #047857; font-weight: bold;">• 🎉 GRATIS: Promo Sesi Inden Saudara Kandung / No. KK Sama</small>` : ''}
+                  </td>
                   <td style="text-align: right;">Rp ${details.julySppFee.toLocaleString('id-ID')}</td>
-                  <td style="text-align: right; color: #64748b;">Rp 0</td>
-                  <td style="text-align: right; font-weight: bold;">Rp ${details.julySppFee.toLocaleString('id-ID')}</td>
+                  <td style="text-align: right; color: ${details.isSiblingFreeSpp ? '#047857' : '#64748b'}; font-weight: ${details.isSiblingFreeSpp ? 'bold' : 'normal'};">
+                    ${details.isSiblingFreeSpp ? `- Rp ${details.julySppFee.toLocaleString('id-ID')}` : 'Rp 0'}
+                  </td>
+                  <td style="text-align: right; font-weight: bold;">Rp ${details.effectiveJulySppFee.toLocaleString('id-ID')}</td>
                 </tr>
                 <tr>
                   <td style="text-align: center;">3</td>
                   <td>
                     <strong>Paket Seragam & Atribut Lengkap (${genderLabel} - Ukuran ${uniformSize})</strong>
                     <br><small class="sub-text">${details.uniformItems.map(u => u.name).join(', ')}</small>
-                    ${details.maarifUniformDiscount > 0 ? `<br><small class="sub-text" style="color: #047857;">• Diskon Seragam SD Maarif Jogosari</small>` : ''}
+                    ${details.maarifUniformDiscount > 0 ? `<br><small class="sub-text" style="color: #047857;">• Diskon Seragam SD Maarif Jogosari (- Rp ${details.maarifUniformDiscount.toLocaleString('id-ID')})</small>` : ''}
+                    ${details.sportsUniformBonus > 0 ? `<br><small class="sub-text" style="color: #047857; font-weight: bold;">• 🎁 BONUS SESI INDEN: 1 Set Seragam Olahraga Gratis (Khusus SD/MI LP. Ma'arif - Senilai Rp ${details.sportsUniformBonus.toLocaleString('id-ID')})</small>` : ''}
                   </td>
                   <td style="text-align: right;">Rp ${details.rawUniformTotal.toLocaleString('id-ID')}</td>
-                  <td style="text-align: right; color: #047857;">- Rp ${details.maarifUniformDiscount.toLocaleString('id-ID')}</td>
+                  <td style="text-align: right; color: #047857;">${(details.maarifUniformDiscount + details.sportsUniformBonus) > 0 ? `- Rp ${(details.maarifUniformDiscount + details.sportsUniformBonus).toLocaleString('id-ID')}` : 'Rp 0'}</td>
                   <td style="text-align: right; font-weight: bold;">Rp ${details.netUniformTotal.toLocaleString('id-ID')}</td>
                 </tr>
                 <tr class="total-row">

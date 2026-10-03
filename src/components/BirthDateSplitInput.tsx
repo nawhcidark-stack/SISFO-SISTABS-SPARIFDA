@@ -188,12 +188,15 @@ export default function BirthDateSplitInput({
             </label>
             <input
               id={`${idPrefix}-year`}
-              type="number"
-              min={minYear}
-              max={maxYear}
-              placeholder="Contoh: 1989"
+              type="text"
+              inputMode="numeric"
+              maxLength={4}
+              placeholder="Contoh: 2014"
               value={year}
-              onChange={(e) => handlePartChange('year', e.target.value)}
+              onChange={(e) => {
+                const cleanYear = e.target.value.replace(/\D/g, '').slice(0, 4);
+                handlePartChange('year', cleanYear);
+              }}
               className={`w-full px-2.5 py-2 border rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 ${inputBaseClasses}`}
             />
           </div>

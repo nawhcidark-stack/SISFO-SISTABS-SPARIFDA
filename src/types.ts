@@ -645,6 +645,7 @@ export interface SpmbSession {
   description: string;
   discountPercent?: number; // Diskon Uang Gedung dalam persen (%) misal: 50% untuk Inden, 25% Gelombang 1
   discountAmount?: number; // Nilai potongan rupiah (opsional / fallback)
+  sportsUniformBonusForMaarif?: boolean; // Bonus 1 Set Seragam Olahraga khusus bagi pendaftar dari SD/MI LP. Maarif
 }
 
 export interface SpmbUniformItem {
@@ -669,12 +670,14 @@ export interface SpmbConfig {
   bankAccountInfo?: string;
   instructions?: string;
 
-  // Pengaturan Khusus SD MAARIF JOGOSARI
+  // Pengaturan Khusus SD MAARIF JOGOSARI & LP. MAARIF
   maarifSchoolName?: string; // Default: "SD MAARIF JOGOSARI"
   maarifBuildingDiscountType?: 'percent' | 'amount'; // 'percent' atau 'amount' (nominal rupiah)
   maarifBuildingDiscount?: number; // Nilai diskon Uang Gedung khusus SD Maarif (misal: Rp 250.000 atau 20%)
   maarifUniformDiscountType?: 'percent' | 'amount'; // 'percent' atau 'amount' (nominal rupiah)
   maarifUniformDiscount?: number; // Nilai diskon Perlengkapan / Seragam khusus SD Maarif (misal: Rp 100.000 atau 15%)
+  maarifIndenSportsUniformBonus?: boolean; // Default true: Bonus 1 set seragam olahraga khusus pendaftar Sesi Inden dari SD/MI LP. Maarif
+  indenSiblingFreeFirstMonthSpp?: boolean; // Default true: Gratis SPP bulan pertama (Juli) di Sesi Inden jika No KK sama dengan murid aktif kelas 7/8/9 atau sesama calon murid baru
 
   // Pengaturan Pendaftaran Kolektif Langsung di Sekolah
   collectiveRegistrationEnabled?: boolean; // Aktifkan jalur pendaftaran kolektif / langsung di sekolah
@@ -694,7 +697,7 @@ export interface SpmbCandidate {
   birthPlace: string;
   birthDate: string; // YYYY-MM-DD
   phone: string; // WhatsApp
-  schoolOriginType?: 'maarif_jogosari' | 'other'; // 'maarif_jogosari' | 'other'
+  schoolOriginType?: 'maarif_jogosari' | 'lp_maarif' | 'other'; // 'maarif_jogosari' | 'lp_maarif' | 'other'
   schoolOrigin: string; // "SD MAARIF JOGOSARI" atau nama manual
   registrationType?: 'online_individual' | 'school_collective'; // Jalur pendaftaran mandiri vs kolektif di sekolah
   sessionId: string; // 'inden' | 'gelombang-1' | 'gelombang-2'
@@ -736,6 +739,9 @@ export interface SpmbCandidate {
   formCompletedAt?: string;
   nickname?: string;
   kkNumber?: string;
+  isSiblingKkMatch?: boolean;
+  matchedSiblingDetail?: string;
+  freeFirstMonthSpp?: boolean;
   birthCertNumber?: string;
   studentPhone?: string;
   religion?: string;

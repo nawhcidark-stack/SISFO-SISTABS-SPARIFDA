@@ -79,6 +79,13 @@ export const getNormalizedEduValue = (val?: string) => {
   return match || val;
 };
 
+export function isSchoolLpMaarif(schoolOriginType?: string, schoolOrigin?: string): boolean {
+  if (!schoolOriginType && !schoolOrigin) return false;
+  if (schoolOriginType === 'maarif_jogosari' || schoolOriginType === 'lp_maarif') return true;
+  const s = `${schoolOriginType || ''} ${schoolOrigin || ''}`.toUpperCase();
+  return s.includes('MAARIF') || s.includes("MA'ARIF");
+}
+
 interface SpmbLandingPageProps {
   schoolIdentity?: SchoolIdentity;
   onBackToPortal?: () => void;
@@ -103,7 +110,12 @@ export default function SpmbLandingPage({
   const [config, setConfig] = useState<SpmbConfig | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState<boolean>(true);
   const [selectedGenderPreview, setSelectedGenderPreview] = useState<'male' | 'female'>('female');
-  const [selectedSchoolPreview, setSelectedSchoolPreview] = useState<'maarif_jogosari' | 'other'>('maarif_jogosari');
+  const [selectedSchoolPreview, setSelectedSchoolPreview] = useState<'maarif_jogosari' | 'lp_maarif' | 'other'>('maarif_jogosari');
+  const [previewSiblingFreeSpp, setPreviewSiblingFreeSpp] = useState<boolean>(false);
+
+  // Sibling KK Match State
+  const [siblingMatchResult, setSiblingMatchResult] = useState<{ isMatch: boolean; matchedDetail?: string; message?: string } | null>(null);
+  const [isCheckingKk, setIsCheckingKk] = useState<boolean>(false);
 
   // SPMB Official Receipt Modal (Token & Daftar Ulang)
   const [isReceiptModalOpen, setIsReceiptModalOpen] = useState<boolean>(false);
@@ -125,7 +137,7 @@ export default function SpmbLandingPage({
     birthPlace: 'Pasuruan',
     birthDate: '2014-05-12',
     phone: '',
-    schoolOriginType: 'maarif_jogosari' as 'maarif_jogosari' | 'other',
+    schoolOriginType: 'maarif_jogosari' as 'maarif_jogosari' | 'lp_maarif' | 'other',
     manualSchoolName: '',
     schoolOrigin: 'SD MAARIF JOGOSARI',
     sessionId: 'inden'
@@ -477,6 +489,14 @@ export default function SpmbLandingPage({
           width: 140,
           color: { dark: '#0f172a', light: '#ffffff' }
         }).then(url => setQrCodeDataUrl(url)).catch(() => {});
+
+        // Cek apakah calon murid sudah terverifikasi punya saudara kandung / No KK sama
+        const candKk = candidate.kkNumber || candidate.fullFormData?.kkNumber;
+        if (candKk) {
+          checkKkMatchRealtime(candKk, candidate);
+        } else {
+          setSiblingMatchResult(null);
+        }
       } else {
         const err = await res.json();
         setPortalError(err.error || 'Calon siswa belum menyelesaikan pembayaran token atau data tidak ditemukan. Data pendaftaran tidak tersimpan, silakan input formulir pendaftaran ulang.');
@@ -490,6 +510,48 @@ export default function SpmbLandingPage({
     }
   };
 
+  // Real-time Check No KK Match with active students (7/8/9) or new candidates
+  const checkKkMatchRealtime = async (kkVal: string, candidateToUse?: SpmbCandidate | null) => {
+    const cand = candidateToUse !== undefined ? candidateToUse : activeCandidate;
+    const cleanKk = String(kkVal || '').replace(/\D/g, '');
+    if (cleanKk.length < 10) {
+      setSiblingMatchResult(null);
+      return;
+    }
+    setIsCheckingKk(true);
+    try {
+      const res = await fetch('/api/spmb/check-kk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          kkNumber: cleanKk,
+          candidateId: cand?.id,
+          nisn: cand?.nisn
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.isMatch) {
+          setSiblingMatchResult(data);
+          if (cand) {
+            setActiveCandidate(prev => prev ? ({
+              ...prev,
+              isSiblingKkMatch: true,
+              matchedSiblingDetail: data.matchedDetail,
+              freeFirstMonthSpp: cand.sessionId === 'inden' ? true : prev.freeFirstMonthSpp
+            }) : null);
+          }
+        } else {
+          setSiblingMatchResult({ isMatch: false });
+        }
+      }
+    } catch (e) {
+      console.error('Error checking KK match:', e);
+    } finally {
+      setIsCheckingKk(false);
+    }
+  };
+
   // Calculate Equipment and Uniform Fee based on Gender & Session & School Origin
   const getUniformItemsForGender = (gender: 'male' | 'female') => {
     if (!config || !config.uniformItems) return [];
@@ -499,20 +561,28 @@ export default function SpmbLandingPage({
   const calculateTotalReRegFee = (
     gender: 'L' | 'P' | 'male' | 'female',
     sessionId: string,
-    schoolOriginType: 'maarif_jogosari' | 'other' | string = 'maarif_jogosari',
-    customSchoolName: string = ''
+    schoolOriginType: 'maarif_jogosari' | 'lp_maarif' | 'other' | string = 'other',
+    customSchoolName: string = '',
+    isFreeFirstMonthSppOverride?: boolean
   ) => {
     if (!config) return 0;
     const g = (gender === 'L' || gender === 'male') ? 'male' : 'female';
     const items = getUniformItemsForGender(g);
     const rawUniformTotal = items.reduce((sum, item) => sum + item.price, 0);
-    const buildingFee = config.buildingFee || 1500000;
+    const buildingFee = config.buildingFee || 2000000;
     const julySppFee = config.julySppFee || 200000;
     const baseFee = config.reRegistrationBaseFee || 0;
     
     const isMaarif = schoolOriginType === 'maarif_jogosari' || 
       customSchoolName.toUpperCase().includes('MAARIF JOGOSARI') ||
       schoolOriginType.toUpperCase().includes('MAARIF JOGOSARI');
+
+    const isLpMaarif = isMaarif ||
+      schoolOriginType === 'lp_maarif' ||
+      customSchoolName.toUpperCase().includes('MAARIF') ||
+      customSchoolName.toUpperCase().includes("MA'ARIF") ||
+      schoolOriginType.toUpperCase().includes('MAARIF') ||
+      schoolOriginType.toUpperCase().includes("MA'ARIF");
 
     // Check session wave discount (percentage for Building Fee)
     const session = config.sessions.find(s => s.id === sessionId);
@@ -543,20 +613,36 @@ export default function SpmbLandingPage({
         maarifUniformDiscount = config.maarifUniformDiscount || 0;
       }
     }
-    const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount);
 
-    return netBuildingFee + julySppFee + baseFee + netUniformTotal;
+    // Bonus 1 Set Seragam Olahraga khusus Sesi Inden bagi SD/MI dari LP. Maarif
+    let sportsUniformBonus = 0;
+    const allowBonus = session?.sportsUniformBonusForMaarif ?? config.maarifIndenSportsUniformBonus ?? true;
+    if (sessionId === 'inden' && isLpMaarif && allowBonus) {
+      const sportsItem = items.find(u => u.id === 'u-1' || u.name.toLowerCase().includes('olahraga'));
+      sportsUniformBonus = sportsItem ? sportsItem.price : 125000;
+    }
+
+    const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount - sportsUniformBonus);
+
+    // Sibling KK Match: Gratis SPP bulan pertama (Juli) pada Sesi Inden
+    const hasSiblingFreeSpp = isFreeFirstMonthSppOverride !== undefined 
+      ? isFreeFirstMonthSppOverride 
+      : Boolean(sessionId === 'inden' && (activeCandidate?.freeFirstMonthSpp || activeCandidate?.isSiblingKkMatch));
+    const effectiveJulySppFee = hasSiblingFreeSpp ? 0 : julySppFee;
+
+    return netBuildingFee + effectiveJulySppFee + baseFee + netUniformTotal;
   };
 
   const getSessionFeeDetails = (
     sessionId: string,
     gender: 'male' | 'female',
-    schoolOriginType: 'maarif_jogosari' | 'other' | string = 'maarif_jogosari',
-    customSchoolName: string = ''
+    schoolOriginType: 'maarif_jogosari' | 'lp_maarif' | 'other' | string = 'other',
+    customSchoolName: string = '',
+    isFreeFirstMonthSppOverride?: boolean
   ) => {
     const items = getUniformItemsForGender(gender);
     const rawUniformTotal = items.reduce((sum, item) => sum + item.price, 0);
-    const buildingFee = config?.buildingFee || 1500000;
+    const buildingFee = config?.buildingFee || 2000000;
     const julySppFee = config?.julySppFee || 200000;
     const baseFee = config?.reRegistrationBaseFee || 0;
     const session = config?.sessions.find(s => s.id === sessionId);
@@ -564,6 +650,13 @@ export default function SpmbLandingPage({
     const isMaarif = schoolOriginType === 'maarif_jogosari' || 
       customSchoolName.toUpperCase().includes('MAARIF JOGOSARI') ||
       schoolOriginType.toUpperCase().includes('MAARIF JOGOSARI');
+
+    const isLpMaarif = isMaarif ||
+      schoolOriginType === 'lp_maarif' ||
+      customSchoolName.toUpperCase().includes('MAARIF') ||
+      customSchoolName.toUpperCase().includes("MA'ARIF") ||
+      schoolOriginType.toUpperCase().includes('MAARIF') ||
+      schoolOriginType.toUpperCase().includes("MA'ARIF");
 
     const discountPercent = typeof session?.discountPercent === 'number'
       ? session.discountPercent
@@ -590,8 +683,24 @@ export default function SpmbLandingPage({
         maarifUniformDiscount = config?.maarifUniformDiscount || 0;
       }
     }
-    const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount);
-    const total = netBuildingFee + julySppFee + baseFee + netUniformTotal;
+
+    // Bonus 1 Set Seragam Olahraga khusus Sesi Inden bagi SD/MI dari LP. Maarif
+    let sportsUniformBonus = 0;
+    const allowBonus = session?.sportsUniformBonusForMaarif ?? config?.maarifIndenSportsUniformBonus ?? true;
+    if (sessionId === 'inden' && isLpMaarif && allowBonus) {
+      const sportsItem = items.find(u => u.id === 'u-1' || u.name.toLowerCase().includes('olahraga'));
+      sportsUniformBonus = sportsItem ? sportsItem.price : 125000;
+    }
+
+    const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount - sportsUniformBonus);
+
+    // Sibling KK Match: Gratis SPP bulan pertama (Juli) pada Sesi Inden
+    const hasSiblingFreeSpp = isFreeFirstMonthSppOverride !== undefined 
+      ? isFreeFirstMonthSppOverride 
+      : Boolean(sessionId === 'inden' && (activeCandidate?.freeFirstMonthSpp || activeCandidate?.isSiblingKkMatch));
+    const effectiveJulySppFee = hasSiblingFreeSpp ? 0 : julySppFee;
+
+    const total = netBuildingFee + effectiveJulySppFee + baseFee + netUniformTotal;
 
     return {
       buildingFee,
@@ -602,14 +711,20 @@ export default function SpmbLandingPage({
       totalBuildingDiscount,
       netBuildingFee,
       julySppFee,
+      effectiveJulySppFee,
+      hasSiblingFreeSpp,
+      isSiblingFreeSpp: hasSiblingFreeSpp,
       baseFee,
       rawUniformTotal,
       maarifUniformDiscount,
       uniformDiscount: maarifUniformDiscount,
+      sportsUniformBonus,
+      hasSportsUniformBonus: sportsUniformBonus > 0,
       netUniformTotal,
       total,
       session,
-      isMaarif
+      isMaarif,
+      isLpMaarif
     };
   };
 
@@ -1002,7 +1117,14 @@ export default function SpmbLandingPage({
     setIsProcessingReRegPay(true);
 
     try {
-      const totalFee = calculateTotalReRegFee(activeCandidate.gender, activeCandidate.sessionId);
+      const isFreeFirstMonth = Boolean(activeCandidate.sessionId === 'inden' && (activeCandidate.freeFirstMonthSpp || activeCandidate.isSiblingKkMatch));
+      const totalFee = calculateTotalReRegFee(
+        activeCandidate.gender,
+        activeCandidate.sessionId,
+        activeCandidate.schoolOriginType,
+        activeCandidate.schoolOrigin,
+        isFreeFirstMonth
+      );
       const res = await fetch('/api/spmb/pay-reregistration-snap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1023,7 +1145,7 @@ export default function SpmbLandingPage({
       const token = snapData.token || snapData.snapToken;
       setSnapToken(token);
       setSnapOrderId(snapData.orderId);
-      setSnapAmount(snapData.amount || totalFee);
+      setSnapAmount(snapData.totalAmount || snapData.amount || totalFee);
       setSnapRedirectUrl(snapData.redirectUrl || null);
       setSnapTitle(`Daftar Ulang & Seragam SPMB 2027/2028 - ${activeCandidate.fullName}`);
       setSnapPayType('rereg');
@@ -1249,12 +1371,58 @@ export default function SpmbLandingPage({
                             </div>
                           )}
 
-                          <div className="pt-1.5 border-t border-slate-200 text-[11px] flex justify-between text-slate-600">
-                            <span>Estimasi Total:</span>
-                            <span className="font-bold text-slate-900">
-                              Rp {feeMale.total.toLocaleString('id-ID')} (L) / Rp {feeFemale.total.toLocaleString('id-ID')} (P)
-                            </span>
-                          </div>
+                          {/* Bonus 1 Set Seragam Olahraga untuk Sesi Inden bagi SD/MI LP. Maarif */}
+                          {(session.id === 'inden' || session.sportsUniformBonusForMaarif) && (
+                            <div className="p-2.5 rounded-xl bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-300 text-amber-950 font-bold space-y-0.5 shadow-2xs">
+                              <div className="flex items-center gap-1.5 text-xs text-amber-900 font-black">
+                                <span className="text-base leading-none">🎁</span>
+                                <span>BONUS: 1 Set Seragam Olahraga Gratis</span>
+                              </div>
+                              <p className="text-[10px] text-amber-800 m-0 pl-5 font-semibold leading-tight">
+                                Khusus pendaftar SD/MI dari LP. Ma'arif (Bebas biaya 1 setel seragam olahraga)
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Promo Bebas SPP Bulan Pertama di Sesi Inden jika No KK Sama */}
+                          {session.id === 'inden' && (
+                            <div className="p-2.5 rounded-xl bg-gradient-to-r from-teal-50 to-cyan-50 border border-teal-300 text-teal-950 font-bold space-y-0.5 shadow-2xs">
+                              <div className="flex items-center gap-1.5 text-xs text-teal-900 font-black">
+                                <span className="text-base leading-none">🎉</span>
+                                <span>GRATIS SPP Bulan Pertama (Juli)</span>
+                              </div>
+                              <p className="text-[10px] text-teal-800 m-0 pl-5 font-semibold leading-tight">
+                                Jika No. KK sama dengan sesama murid baru atau murid aktif kelas 7/8/9
+                              </p>
+                            </div>
+                          )}
+
+                          {session.id === 'inden' ? (
+                            <div className="pt-2 border-t border-slate-200 text-[11px] space-y-1 text-slate-600">
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold text-slate-700">SD Maarif Jogosari:</span>
+                                <span className="font-bold text-emerald-700">Rp 200.000 <span className="text-[10px] text-slate-500 font-normal">(Hanya SPP)</span></span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold text-slate-700">SD/MI LP. Ma'arif:</span>
+                                <span className="font-bold text-amber-700">Rp 435.000 (L) / Rp 525.000 (P)</span>
+                              </div>
+                              <div className="flex justify-between items-center">
+                                <span className="font-semibold text-slate-700">SD Lainnya (Umum):</span>
+                                <span className="font-bold text-slate-900">Rp {feeMale.total.toLocaleString('id-ID')} (L) / Rp {feeFemale.total.toLocaleString('id-ID')} (P)</span>
+                              </div>
+                              <p className="text-[10px] text-teal-700 font-bold m-0 pt-0.5">
+                                *Gratis SPP bulan pertama jika No. KK sama dengan siswa aktif/calon murid baru
+                              </p>
+                            </div>
+                          ) : (
+                            <div className="pt-1.5 border-t border-slate-200 text-[11px] flex justify-between text-slate-600">
+                              <span>Estimasi Total:</span>
+                              <span className="font-bold text-slate-900">
+                                Rp {feeMale.total.toLocaleString('id-ID')} (L) / Rp {feeFemale.total.toLocaleString('id-ID')} (P)
+                              </span>
+                            </div>
+                          )}
                         </div>
 
                         <p className="text-xs text-slate-600 leading-relaxed min-h-[36px]">
@@ -1292,18 +1460,18 @@ export default function SpmbLandingPage({
                     <span>Struktur & Rincian Biaya Daftar Ulang</span>
                   </h3>
                   <p className="text-xs text-slate-500 mt-1">
-                    Simulasikan rincian biaya pendaftaran sesuai jenis kelamin dan asal sekolah (SD Maarif vs SD Lainnya).
+                    Simulasikan rincian biaya pendaftaran sesuai jenis kelamin dan asal sekolah (SD Maarif Jogosari, SD/MI LP. Ma'arif, atau SD Lainnya).
                   </p>
                 </div>
 
-                {/* Filter Controls: Gender & School Origin */}
+                {/* Filter Controls: Gender, School Origin, & Sibling KK Match */}
                 <div className="flex flex-wrap items-center gap-3">
                   {/* Asal SD Switch */}
                   <div className="flex items-center p-1 bg-slate-100 rounded-2xl border border-slate-200">
                     <button
                       type="button"
                       onClick={() => setSelectedSchoolPreview('maarif_jogosari')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                         selectedSchoolPreview === 'maarif_jogosari'
                           ? 'bg-emerald-600 text-white shadow-xs'
                           : 'text-slate-600 hover:text-slate-900'
@@ -1314,8 +1482,19 @@ export default function SpmbLandingPage({
                     </button>
                     <button
                       type="button"
+                      onClick={() => setSelectedSchoolPreview('lp_maarif')}
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        selectedSchoolPreview === 'lp_maarif'
+                          ? 'bg-amber-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900'
+                      }`}
+                    >
+                      <span>🎁 SD/MI LP. Ma'arif</span>
+                    </button>
+                    <button
+                      type="button"
                       onClick={() => setSelectedSchoolPreview('other')}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
                         selectedSchoolPreview === 'other'
                           ? 'bg-white text-slate-900 shadow-xs border border-slate-200'
                           : 'text-slate-600 hover:text-slate-900'
@@ -1350,6 +1529,24 @@ export default function SpmbLandingPage({
                       <span>Putri</span>
                     </button>
                   </div>
+
+                  {/* Sibling KK Gratis SPP Juli Toggle */}
+                  <label className={`flex items-center gap-2 px-3 py-1.5 rounded-2xl border cursor-pointer text-xs font-bold transition-all select-none ${
+                    previewSiblingFreeSpp 
+                      ? 'bg-teal-50 border-teal-300 text-teal-900 ring-2 ring-teal-400/30' 
+                      : 'bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100'
+                  }`}>
+                    <input
+                      type="checkbox"
+                      checked={previewSiblingFreeSpp}
+                      onChange={(e) => setPreviewSiblingFreeSpp(e.target.checked)}
+                      className="rounded border-teal-400 text-teal-600 focus:ring-teal-500 w-3.5 h-3.5"
+                    />
+                    <span className="flex items-center gap-1">
+                      <span>🎉 Simulasi No KK Sama</span>
+                      <span className="text-[10px] bg-teal-100 text-teal-800 px-1.5 py-0.5 rounded font-black">Gratis SPP Juli</span>
+                    </span>
+                  </label>
                 </div>
               </div>
 
@@ -1359,14 +1556,63 @@ export default function SpmbLandingPage({
                   <Sparkles size={18} className="text-emerald-700 shrink-0 mt-0.5" />
                   <div>
                     <strong className="text-emerald-900 font-bold block text-sm">
-                      🌟 Diskon Spesial Alumni SD MAARIF JOGOSARI Aktif!
+                      🌟 Ketentuan Khusus SD MAARIF JOGOSARI Aktif!
                     </strong>
                     <div className="mt-1 space-y-0.5 text-slate-700">
                       <p className="m-0">
-                        • <strong>Diskon Uang Gedung Tambahan:</strong> Potongan {config?.maarifBuildingDiscountType === 'percent' ? `${config.maarifBuildingDiscount || 0}%` : `Rp ${(config?.maarifBuildingDiscount || 250000).toLocaleString('id-ID')}`}.
+                        • <strong>Potongan Uang Gedung 100%:</strong> Bebas biaya Uang Gedung (Infaq) senilai Rp {(config?.buildingFee || 2000000).toLocaleString('id-ID')} (Net: Rp 0).
                       </p>
                       <p className="m-0">
-                        • <strong>Diskon Seragam/Perlengkapan:</strong> Potongan {config?.maarifUniformDiscountType === 'percent' ? `${config.maarifUniformDiscount || 0}%` : `Rp ${(config?.maarifUniformDiscount || 100000).toLocaleString('id-ID')}`}.
+                        • <strong>Diskon Seragam Lengkap 100%:</strong> Bebas biaya seluruh paket seragam & atribut sekolah (Net: Rp 0).
+                      </p>
+                      <p className="m-0 text-emerald-800 font-bold">
+                        • <strong>Daftar Ulang Hanya SPP Juli:</strong> Hanya membayar SPP Bulan Juli 2027 sebesar Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')} (atau <strong>Rp 0 GRATIS</strong> jika memiliki No. KK sama dengan siswa aktif/murid baru).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notice for SD/MI LP Maarif Lainnya */}
+              {selectedSchoolPreview === 'lp_maarif' && (
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-300 text-xs text-amber-950 flex items-start gap-3 shadow-2xs">
+                  <span className="text-xl shrink-0 mt-0.5">🎁</span>
+                  <div>
+                    <strong className="text-amber-900 font-bold block text-sm">
+                      Bonus Sesi Inden Khusus SD/MI dari LP. Ma'arif Aktif!
+                    </strong>
+                    <div className="mt-1 space-y-0.5 text-amber-950">
+                      <p className="m-0 font-bold text-emerald-800">
+                        • <strong>🎁 BONUS 1 Set Seragam Olahraga Gratis:</strong> Bebas biaya 1 setel seragam olahraga senilai Rp {(config?.uniformItems?.find(u => u.id === 'u-1')?.price || 125000).toLocaleString('id-ID')} (Potongan 100%).
+                      </p>
+                      <p className="m-0 text-slate-700">
+                        • <strong>Potongan Uang Gedung 100%:</strong> Menikmati potongan Uang Gedung 100% di Jalur Inden (hemat Rp {(config?.buildingFee || 2000000).toLocaleString('id-ID')}).
+                      </p>
+                      <p className="m-0 text-teal-800 font-semibold">
+                        • <strong>🎉 Gratis SPP Bulan Pertama:</strong> Jika memiliki No. KK sama dengan sesama murid baru atau murid aktif kelas 7/8/9, SPP Juli senilai Rp 200.000 menjadi GRATIS (Rp 0).
+                      </p>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Notice for SD Lainnya */}
+              {selectedSchoolPreview === 'other' && (
+                <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 text-xs text-slate-800 flex items-start gap-3">
+                  <Building2 size={18} className="text-slate-600 shrink-0 mt-0.5" />
+                  <div>
+                    <strong className="text-slate-900 font-bold block text-sm">
+                      Ketentuan Pendaftar dari SD Lainnya (Umum / Non-Ma'arif)
+                    </strong>
+                    <div className="mt-1 space-y-0.5 text-slate-600">
+                      <p className="m-0">
+                        • <strong>Potongan Uang Gedung 100% di Sesi Inden:</strong> Bebas biaya Uang Gedung senilai Rp {(config?.buildingFee || 2000000).toLocaleString('id-ID')} (Net: Rp 0).
+                      </p>
+                      <p className="m-0">
+                        • <strong>Paket Seragam & Atribut:</strong> Membayar paket seragam lengkap sesuai jenis kelamin ({selectedGenderPreview === 'male' ? 'Putra: Rp 360.000' : 'Putri: Rp 450.000'}).
+                      </p>
+                      <p className="m-0 text-teal-800 font-semibold">
+                        • <strong>🎉 Gratis SPP Bulan Pertama:</strong> Jika No. KK sama dengan murid aktif kelas 7/8/9 atau sesama calon murid baru, SPP Juli (Rp 200.000) menjadi GRATIS (Rp 0).
                       </p>
                     </div>
                   </div>
@@ -1381,10 +1627,10 @@ export default function SpmbLandingPage({
                     <span className="text-xs font-bold uppercase tracking-wider">1. Uang Gedung (Infaq)</span>
                   </div>
                   <p className="text-base font-black text-slate-900 m-0">
-                    Rp {(config?.buildingFee || 1500000).toLocaleString('id-ID')}
+                    Rp {(config?.buildingFee || 2000000).toLocaleString('id-ID')}
                   </p>
-                  <p className="text-[11px] text-emerald-700 font-medium m-0">
-                    Dapat diskon gelombang s.d. 50% di Sesi Inden {selectedSchoolPreview === 'maarif_jogosari' ? '+ Diskon SD Maarif' : ''}
+                  <p className="text-[11px] text-emerald-700 font-bold m-0">
+                    Potongan 100% di Sesi Inden (Net: Rp 0)
                   </p>
                 </div>
 
@@ -1394,10 +1640,14 @@ export default function SpmbLandingPage({
                     <span className="text-xs font-bold uppercase tracking-wider">2. SPP Juli 2027</span>
                   </div>
                   <p className="text-base font-black text-slate-900 m-0">
-                    Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')}
+                    {previewSiblingFreeSpp ? (
+                      <span className="text-emerald-700">GRATIS (Rp 0)</span>
+                    ) : (
+                      `Rp ${(config?.julySppFee || 200000).toLocaleString('id-ID')}`
+                    )}
                   </p>
                   <p className="text-[11px] text-slate-500 m-0">
-                    SPP bulan pertama tahun ajaran baru 2027/2028
+                    {previewSiblingFreeSpp ? '🎉 Bebas SPP (No. KK Sama)' : 'SPP bulan pertama tahun ajaran baru'}
                   </p>
                 </div>
 
@@ -1407,10 +1657,23 @@ export default function SpmbLandingPage({
                     <span className="text-xs font-bold uppercase tracking-wider">3. Seragam & Atribut</span>
                   </div>
                   <p className="text-base font-black text-slate-900 m-0">
-                    Rp {getUniformItemsForGender(selectedGenderPreview).reduce((sum, item) => sum + item.price, 0).toLocaleString('id-ID')}
+                    {selectedSchoolPreview === 'maarif_jogosari' ? (
+                      <span className="text-emerald-700">GRATIS (Diskon 100%)</span>
+                    ) : selectedSchoolPreview === 'lp_maarif' ? (
+                      <span>
+                        Rp {(getUniformItemsForGender(selectedGenderPreview).reduce((sum, item) => sum + item.price, 0) - (config?.uniformItems?.find(u => u.id === 'u-1')?.price || 125000)).toLocaleString('id-ID')}
+                        <span className="text-[10px] text-emerald-700 font-normal ml-1">(Net)</span>
+                      </span>
+                    ) : (
+                      `Rp ${getUniformItemsForGender(selectedGenderPreview).reduce((sum, item) => sum + item.price, 0).toLocaleString('id-ID')}`
+                    )}
                   </p>
                   <p className="text-[11px] text-slate-500 m-0">
-                    Paket lengkap ({selectedGenderPreview === 'male' ? 'Putra' : 'Putri'}) {selectedSchoolPreview === 'maarif_jogosari' ? '(Dapat Diskon Khusus SD Maarif)' : ''}
+                    {selectedSchoolPreview === 'maarif_jogosari' 
+                      ? 'Bebas biaya seragam (Diskon SD Maarif Jogosari)' 
+                      : selectedSchoolPreview === 'lp_maarif' 
+                      ? '🎁 Bonus 1 Set Seragam Olahraga Gratis (Rp 125.000)' 
+                      : `Paket Lengkap (${selectedGenderPreview === 'male' ? 'Putra' : 'Putri'})`}
                   </p>
                 </div>
               </div>
@@ -1421,27 +1684,59 @@ export default function SpmbLandingPage({
                   Rincian Item Seragam & Perlengkapan ({selectedGenderPreview === 'male' ? 'Putra' : 'Putri'}):
                 </h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  {getUniformItemsForGender(selectedGenderPreview).map((item, idx) => (
-                    <div
-                      key={item.id}
-                      className="p-3.5 rounded-2xl bg-white border border-slate-200 flex items-center justify-between gap-3 shadow-2xs"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-800 flex items-center justify-center font-bold text-xs">
-                          {idx + 1}
+                  {getUniformItemsForGender(selectedGenderPreview).map((item, idx) => {
+                    const isSportsItem = item.id === 'u-1' || item.name.toLowerCase().includes('olahraga');
+                    const isFreeBonus = isSportsItem && (selectedSchoolPreview === 'maarif_jogosari' || selectedSchoolPreview === 'lp_maarif');
+                    const isJogosariFreeAll = selectedSchoolPreview === 'maarif_jogosari';
+                    return (
+                      <div
+                        key={item.id}
+                        className={`p-3.5 rounded-2xl border flex items-center justify-between gap-3 shadow-2xs transition-all ${
+                          isJogosariFreeAll || isFreeBonus 
+                            ? 'bg-amber-50/70 border-amber-300 ring-1 ring-amber-400/30' 
+                            : 'bg-white border-slate-200'
+                        }`}
+                      >
+                        <div className="flex items-center gap-3">
+                          <div className={`w-7 h-7 rounded-xl flex items-center justify-center font-bold text-xs ${
+                            isJogosariFreeAll || isFreeBonus ? 'bg-amber-500 text-white' : 'bg-emerald-100 text-emerald-800'
+                          }`}>
+                            {isJogosariFreeAll || isFreeBonus ? '🎁' : idx + 1}
+                          </div>
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <p className="text-xs font-bold text-slate-900 m-0">{item.name}</p>
+                              {isJogosariFreeAll ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white uppercase tracking-wider">
+                                  Diskon SD Maarif
+                                </span>
+                              ) : isFreeBonus ? (
+                                <span className="px-1.5 py-0.5 rounded text-[9px] font-black bg-emerald-600 text-white uppercase tracking-wider">
+                                  Bonus Inden
+                                </span>
+                              ) : null}
+                            </div>
+                            <p className="text-[10px] text-slate-500 m-0">
+                              {item.gender === 'both' ? 'Wajib Semua Siswa' : `Khusus ${item.gender === 'female' ? 'Putri' : 'Putra'}`}
+                              {isFreeBonus && ' • Khusus SD/MI LP. Ma\'arif'}
+                            </p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-xs font-bold text-slate-900 m-0">{item.name}</p>
-                          <p className="text-[10px] text-slate-500 m-0">
-                            {item.gender === 'both' ? 'Wajib Semua Siswa' : `Khusus ${item.gender === 'female' ? 'Putri' : 'Putra'}`}
-                          </p>
+                        <div className="text-right">
+                          {isJogosariFreeAll || isFreeBonus ? (
+                            <div>
+                              <span className="text-xs font-black text-emerald-700 block">GRATIS</span>
+                              <span className="text-[10px] text-slate-400 line-through">Rp {item.price.toLocaleString('id-ID')}</span>
+                            </div>
+                          ) : (
+                            <span className="text-xs font-black text-emerald-700">
+                              Rp {item.price.toLocaleString('id-ID')}
+                            </span>
+                          )}
                         </div>
                       </div>
-                      <span className="text-xs font-black text-emerald-700">
-                        Rp {item.price.toLocaleString('id-ID')}
-                      </span>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </div>
 
@@ -1449,12 +1744,17 @@ export default function SpmbLandingPage({
               <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-50 via-teal-50 to-emerald-50 border border-emerald-200 flex flex-col sm:flex-row items-center justify-between gap-4">
                 <div className="space-y-1 text-center sm:text-left">
                   <p className="text-xs text-slate-600 m-0">
-                    Estimasi Total Biaya Sesi Inden ({selectedGenderPreview === 'male' ? 'Putra' : 'Putri'} - {selectedSchoolPreview === 'maarif_jogosari' ? 'SD Maarif Jogosari' : 'SD Lainnya'}):
+                    Estimasi Total Biaya Sesi Inden ({selectedGenderPreview === 'male' ? 'Putra' : 'Putri'} - {selectedSchoolPreview === 'maarif_jogosari' ? 'SD Maarif Jogosari' : selectedSchoolPreview === 'lp_maarif' ? 'SD/MI LP. Ma\'arif' : 'SD Lainnya'}):
                   </p>
                   <p className="text-2xl font-black text-slate-900 tracking-tight m-0">
-                    Rp {calculateTotalReRegFee(selectedGenderPreview, 'inden', selectedSchoolPreview).toLocaleString('id-ID')}
+                    Rp {calculateTotalReRegFee(selectedGenderPreview, 'inden', selectedSchoolPreview, '', previewSiblingFreeSpp).toLocaleString('id-ID')}
                     <span className="text-xs font-semibold text-emerald-700 ml-2">
-                      {selectedSchoolPreview === 'maarif_jogosari' ? '(Diskon Gelombang + Diskon SD Maarif)' : '(Diskon Gelombang Uang Gedung 50%)'}
+                      {selectedSchoolPreview === 'maarif_jogosari' 
+                        ? '(Potongan Uang Gedung 100% + Diskon Seragam SD Maarif)' 
+                        : selectedSchoolPreview === 'lp_maarif'
+                        ? '(Potongan Uang Gedung 100% + 🎁 Bonus 1 Set Seragam Olahraga Gratis)'
+                        : '(Potongan Uang Gedung 100% Sesi Inden)'}
+                      {previewSiblingFreeSpp ? ' + 🎉 Bebas SPP Juli (No KK Sama)' : ''}
                     </span>
                   </p>
                 </div>
@@ -1640,12 +1940,12 @@ export default function SpmbLandingPage({
                 })()}
               </div>
 
-              {/* 2. Asal Sekolah (SD MAARIF JOGOSARI vs SD Lainnya) */}
+              {/* 2. Asal Sekolah (SD MAARIF JOGOSARI vs SD/MI LP. MA'ARIF vs SD Lainnya) */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-slate-700">
                   2. Asal Sekolah (SD / MI) <span className="text-rose-500">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                   {/* SD Maarif Jogosari */}
                   <button
                     type="button"
@@ -1669,9 +1969,45 @@ export default function SpmbLandingPage({
                         <CheckCircle2 size={14} className="text-emerald-600" />
                       )}
                     </div>
-                    <span className="inline-block mt-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                      ✨ Diskon Khusus Gedung & Seragam
-                    </span>
+                    <div className="mt-1 space-y-0.5">
+                      <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
+                        ✨ Diskon Gedung & Seragam
+                      </span>
+                      {regForm.sessionId === 'inden' && (
+                        <span className="inline-block ml-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300">
+                          🎁 Bonus Seragam
+                        </span>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* SD / MI LP. Maarif Lainnya */}
+                  <button
+                    type="button"
+                    onClick={() => setRegForm(prev => ({
+                      ...prev,
+                      schoolOriginType: 'lp_maarif',
+                      schoolOrigin: prev.manualSchoolName || ''
+                    }))}
+                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
+                      regForm.schoolOriginType === 'lp_maarif'
+                        ? 'bg-amber-50 border-2 border-amber-500 shadow-xs ring-2 ring-amber-500/20'
+                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+                        <span>🎁 2. SD/MI LP. MA'ARIF</span>
+                      </span>
+                      {regForm.schoolOriginType === 'lp_maarif' && (
+                        <CheckCircle2 size={14} className="text-amber-600" />
+                      )}
+                    </div>
+                    <div className="mt-1">
+                      <span className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
+                        🎁 Bonus 1 Set Seragam Olahraga (Inden)
+                      </span>
+                    </div>
                   </button>
 
                   {/* SD Lainnya */}
@@ -1689,7 +2025,7 @@ export default function SpmbLandingPage({
                     }`}
                   >
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-900">2. SD Lainnya (Isi Manual)</span>
+                      <span className="text-xs font-black text-slate-900">3. SD Lainnya (Umum)</span>
                       {regForm.schoolOriginType === 'other' && (
                         <CheckCircle2 size={14} className="text-indigo-600" />
                       )}
@@ -1698,8 +2034,8 @@ export default function SpmbLandingPage({
                   </button>
                 </div>
 
-                {/* Input Manual jika memilih SD Lainnya */}
-                {regForm.schoolOriginType === 'other' && (
+                {/* Input Manual jika memilih SD/MI LP Maarif Lainnya atau SD Lainnya */}
+                {(regForm.schoolOriginType === 'other' || regForm.schoolOriginType === 'lp_maarif') && (
                   <div className="pt-2 animate-in fade-in">
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       Nama Lengkap SD / MI Asal <span className="text-rose-500">*</span>
@@ -1707,7 +2043,7 @@ export default function SpmbLandingPage({
                     <input
                       type="text"
                       required
-                      placeholder="Contoh: SDN Pandaan 1 / MI Maarif Pandaan"
+                      placeholder={regForm.schoolOriginType === 'lp_maarif' ? "Contoh: MI Maarif Pandaan / SD Maarif Sukorejo" : "Contoh: SDN Pandaan 1 / SD Kristen"}
                       value={regForm.manualSchoolName}
                       onChange={(e) => setRegForm({
                         ...regForm,
@@ -1718,6 +2054,27 @@ export default function SpmbLandingPage({
                     />
                   </div>
                 )}
+
+                {/* Alert jika berhak mendapatkan bonus seragam olahraga sesi inden */}
+                {(() => {
+                  const isLp = isSchoolLpMaarif(regForm.schoolOriginType, regForm.schoolOrigin || regForm.manualSchoolName);
+                  if (regForm.sessionId === 'inden' && isLp) {
+                    return (
+                      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-300 text-amber-950 flex items-start gap-3 shadow-2xs animate-in fade-in mt-2">
+                        <span className="text-xl shrink-0 mt-0.5">🎁</span>
+                        <div>
+                          <p className="text-xs font-black text-amber-900 m-0">
+                            Klaim Bonus Sesi Inden Terdeteksi! (1 Set Seragam Olahraga Gratis)
+                          </p>
+                          <p className="text-[11px] text-amber-800 m-0 mt-0.5 leading-relaxed">
+                            Selamat! Calon murid asal SD/MI dari LP. Ma'arif di Sesi Inden otomatis mendapatkan <strong>1 Set Seragam Olahraga Lengkap secara GRATIS (Senilai Rp 175.000)</strong> saat menyelesaikan daftar ulang seragam sekolah.
+                          </p>
+                        </div>
+                      </div>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
 
               {/* Nama Lengkap */}
@@ -1738,35 +2095,20 @@ export default function SpmbLandingPage({
                 />
               </div>
 
-              {/* NISN & NIK */}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    NISN Calon Murid (10 Digit) <span className="text-rose-500">*</span>
-                  </label>
-                  <input
-                    type="text"
-                    required
-                    placeholder="Contoh: 0123456789"
-                    value={regForm.nisn}
-                    onChange={(e) => setRegForm({ ...regForm, nisn: e.target.value.replace(/\D/g, '') })}
-                    className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                  <p className="text-[10px] text-slate-500 mt-1">NISN akan digunakan sebagai nomor ID login portal status.</p>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
-                    NIK Calon Murid (16 Digit)
-                  </label>
-                  <input
-                    type="text"
-                    placeholder="Sesuai Kartu Keluarga (KK)"
-                    value={regForm.nik}
-                    onChange={(e) => setRegForm({ ...regForm, nik: e.target.value.replace(/\D/g, '') })}
-                    className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
-                  />
-                </div>
+              {/* NISN */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  NISN Calon Murid (10 Digit) <span className="text-rose-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  required
+                  placeholder="Contoh: 0123456789"
+                  value={regForm.nisn}
+                  onChange={(e) => setRegForm({ ...regForm, nisn: e.target.value.replace(/\D/g, '') })}
+                  className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
+                />
+                <p className="text-[10px] text-slate-500 mt-1">NISN akan digunakan sebagai nomor ID login portal status dan pencarian data calon murid.</p>
               </div>
 
               {/* Jenis Kelamin & WhatsApp */}
@@ -1816,7 +2158,7 @@ export default function SpmbLandingPage({
                 </div>
               </div>
 
-              {/* Tempat & Tanggal Lahir (Kolom Tersendiri |tgl| |bln| |Tahun| + Otomatis Gabung) */}
+              {/* Tempat & Tanggal Lahir (Kolom Tersendiri |tgl| |bln| |Tahun| + Fleksibel Manual) */}
               <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
                 <BirthDateSplitInput
                   idPrefix="reg-student"
@@ -1830,11 +2172,9 @@ export default function SpmbLandingPage({
                   required
                   showPlaceInput
                   theme="light"
-                  minYear={2000}
-                  maxYear={new Date().getFullYear()}
                   placeholderPlace="Contoh: Pasuruan"
                   properCasePlace={true}
-                  helperText="Pilih tanggal, bulan, dan masukkan 4 digit tahun (contoh: | 18 | | 05 | | 1989 |)"
+                  helperText="Pilih tanggal, bulan, dan ketik 4 digit tahun lahir secara manual/bebas tanpa pembatasan (contoh: 2014)"
                 />
               </div>
 
@@ -2350,15 +2690,49 @@ export default function SpmbLandingPage({
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">No. Kartu Keluarga (KK)</label>
-                          <input
-                            type="text"
-                            value={fullForm.kkNumber || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, kkNumber: e.target.value.replace(/\D/g, '') })}
-                            placeholder="16 Digit No KK"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                          />
+                        <div className="sm:col-span-2">
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
+                            No. Kartu Keluarga (KK)
+                            <span className="ml-1 text-[10px] font-normal text-emerald-700">
+                              (Promo Inden: Bebas SPP Bulan Pertama jika No. KK sama dengan saudara kandung siswa aktif/murid baru)
+                            </span>
+                          </label>
+                          <div className="relative">
+                            <input
+                              type="text"
+                              value={fullForm.kkNumber || ''}
+                              onChange={(e) => {
+                                const cleanVal = e.target.value.replace(/\D/g, '');
+                                setFullForm({ ...fullForm, kkNumber: cleanVal });
+                                if (cleanVal.length >= 10) {
+                                  checkKkMatchRealtime(cleanVal);
+                                } else {
+                                  setSiblingMatchResult(null);
+                                }
+                              }}
+                              placeholder="16 Digit No KK Sesuai Kartu Keluarga Resmi"
+                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
+                            />
+                            {isCheckingKk && (
+                              <span className="absolute right-3 top-2.5 text-[10px] text-slate-400 font-semibold flex items-center gap-1">
+                                <RefreshCw size={10} className="animate-spin text-emerald-600" />
+                                Cek KK...
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Notifikasi Hasil Pengecekan No KK Sibling */}
+                          {siblingMatchResult?.isMatch && (
+                            <div className="mt-2 p-2.5 rounded-xl bg-teal-50 border border-teal-300 text-teal-950 text-xs font-bold flex items-start gap-2 shadow-2xs">
+                              <span className="text-base leading-none">🎉</span>
+                              <div>
+                                <span className="font-extrabold text-teal-900 block text-xs">SELAMAT! PROMO SESI INDEN AKTIF: GRATIS SPP BULAN PERTAMA</span>
+                                <span className="text-[11px] text-teal-800 font-normal">
+                                  {siblingMatchResult.message}
+                                </span>
+                              </div>
+                            </div>
+                          )}
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">No. Akta Kelahiran</label>
@@ -3176,7 +3550,7 @@ export default function SpmbLandingPage({
                     <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                       <div>
                         <h4 className="text-base font-black text-slate-900">Pembayaran Daftar Ulang & Seragam Sekolah</h4>
-                        <p className="text-xs text-slate-500">Pilih ukuran seragam dan selesaikan pelunasan via Midtrans Snap.</p>
+                        <p className="text-xs text-slate-500">Selesaikan pelunasan biaya daftar ulang & seragam sekolah via Midtrans Snap atau teller sekolah.</p>
                       </div>
                       {activeCandidate.reRegistrationStatus === 'paid' ? (
                         <span className="px-3.5 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 font-bold text-xs">
@@ -3187,30 +3561,6 @@ export default function SpmbLandingPage({
                           Belum Lunas
                         </span>
                       )}
-                    </div>
-
-                    {/* Ukuran Seragam Selector */}
-                    <div className="space-y-3">
-                      <label className="block text-xs font-bold text-slate-700">
-                        Pilih Ukuran Seragam Calon Siswa ({activeCandidate.gender === 'L' ? 'Putra' : 'Putri'}):
-                      </label>
-                      <div className="grid grid-cols-3 sm:grid-cols-6 gap-2">
-                        {['S', 'M', 'L', 'XL', 'XXL', 'Jumbo'].map((size) => (
-                          <button
-                            key={size}
-                            type="button"
-                            disabled={activeCandidate.reRegistrationStatus === 'paid'}
-                            onClick={() => setSelectedUniformSize(size)}
-                            className={`py-2.5 rounded-xl border text-xs font-black transition-all ${
-                              selectedUniformSize === size
-                                ? 'bg-emerald-600 text-white border-emerald-600 shadow-sm'
-                                : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                            }`}
-                          >
-                            Ukuran {size}
-                          </button>
-                        ))}
-                      </div>
                     </div>
 
                     {/* Rincian Item Tagihan Daftar Ulang */}
@@ -3257,14 +3607,42 @@ export default function SpmbLandingPage({
                           );
                         })()}
 
-                        {/* 2. SPP Juli 2027 */}
-                        <div className="p-3.5 flex justify-between items-center bg-slate-50/70">
-                          <div>
-                            <span className="font-bold text-slate-900 block">SPP Bulan Juli 2027</span>
-                            <span className="text-[11px] text-slate-500">SPP bulan pertama tahun ajaran baru</span>
-                          </div>
-                          <span className="font-bold text-slate-900">Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')}</span>
-                        </div>
+                        {/* 2. SPP Bulan Juli 2027 */}
+                        {(() => {
+                          const isFreeSpp = Boolean(
+                            activeCandidate.sessionId === 'inden' && 
+                            (activeCandidate.freeFirstMonthSpp || activeCandidate.isSiblingKkMatch)
+                          );
+                          return (
+                            <div className={`p-3.5 flex justify-between items-center transition-all ${isFreeSpp ? 'bg-teal-50/90 border-t border-b border-teal-200 text-teal-950' : 'bg-slate-50/70'}`}>
+                              <div>
+                                <span className="font-bold text-slate-900 block flex items-center gap-1.5">
+                                  <span>SPP Bulan Juli 2027</span>
+                                  {isFreeSpp && (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] bg-teal-200 text-teal-900 font-extrabold uppercase shadow-2xs">
+                                      🎉 GRATIS (No. KK Sama)
+                                    </span>
+                                  )}
+                                </span>
+                                <span className="text-[11px] text-slate-500">
+                                  {isFreeSpp 
+                                    ? `Bebas biaya SPP bulan pertama berkat promo Sesi Inden (Terdeteksi No. KK sama dengan: ${activeCandidate.matchedSiblingDetail || 'Siswa/Murid Baru'})` 
+                                    : 'SPP bulan pertama tahun ajaran baru'}
+                                </span>
+                              </div>
+                              <div className="text-right">
+                                {isFreeSpp ? (
+                                  <div>
+                                    <span className="font-black text-teal-800 text-sm block">GRATIS (Rp 0)</span>
+                                    <span className="text-[10px] text-slate-400 line-through">Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')}</span>
+                                  </div>
+                                ) : (
+                                  <span className="font-bold text-slate-900">Rp {(config?.julySppFee || 200000).toLocaleString('id-ID')}</span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })()}
 
                         {/* 3. Seragam Items Header */}
                         <div className="p-3 bg-slate-100 font-bold text-slate-700 text-[11px] uppercase tracking-wider flex justify-between items-center">
@@ -3284,7 +3662,7 @@ export default function SpmbLandingPage({
                           </div>
                         ))}
 
-                        {/* Maarif Uniform Discount if applied */}
+                        {/* Maarif Uniform Discount & Inden Sports Uniform Bonus if applied */}
                         {(() => {
                           const details = getSessionFeeDetails(
                             activeCandidate.sessionId,
@@ -3292,18 +3670,31 @@ export default function SpmbLandingPage({
                             activeCandidate.schoolOriginType,
                             activeCandidate.schoolOrigin
                           );
-                          if (details.maarifUniformDiscount > 0) {
-                            return (
-                              <div className="p-3.5 flex justify-between items-center text-emerald-800 font-bold bg-emerald-100/60 border-t border-slate-200">
-                                <div className="flex items-center gap-1.5">
-                                  <Sparkles size={14} className="text-emerald-700 shrink-0" />
-                                  <span>Diskon Khusus Seragam / Perlengkapan (SD Maarif Jogosari)</span>
+                          return (
+                            <>
+                              {details.maarifUniformDiscount > 0 && (
+                                <div className="p-3.5 flex justify-between items-center text-emerald-800 font-bold bg-emerald-100/60 border-t border-slate-200">
+                                  <div className="flex items-center gap-1.5">
+                                    <Sparkles size={14} className="text-emerald-700 shrink-0" />
+                                    <span>Diskon Khusus Seragam / Perlengkapan (SD Maarif Jogosari)</span>
+                                  </div>
+                                  <span>- Rp {details.maarifUniformDiscount.toLocaleString('id-ID')}</span>
                                 </div>
-                                <span>- Rp {details.maarifUniformDiscount.toLocaleString('id-ID')}</span>
-                              </div>
-                            );
-                          }
-                          return null;
+                              )}
+                              {details.sportsUniformBonus > 0 && (
+                                <div className="p-3.5 flex justify-between items-center text-amber-950 font-bold bg-gradient-to-r from-amber-50 to-emerald-50 border-t border-amber-200">
+                                  <div className="flex items-center gap-1.5">
+                                    <span className="text-base leading-none">🎁</span>
+                                    <div>
+                                      <span className="font-black text-amber-900 block text-xs">Bonus 1 Set Seragam Olahraga Gratis</span>
+                                      <span className="text-[10px] text-amber-800 font-medium">Khusus Sesi Inden bagi SD/MI dari LP. Ma'arif</span>
+                                    </div>
+                                  </div>
+                                  <span className="text-emerald-700 font-black text-xs">- Rp {details.sportsUniformBonus.toLocaleString('id-ID')} (GRATIS)</span>
+                                </div>
+                              )}
+                            </>
+                          );
                         })()}
 
                         {/* Final Total */}
@@ -3313,6 +3704,8 @@ export default function SpmbLandingPage({
                             <span className="text-[11px] text-slate-600 font-normal">
                               Uang Gedung Net + SPP Juli 2027 + Seragam Net
                               {activeCandidate.schoolOriginType === 'maarif_jogosari' && ' (Termasuk Diskon SD Maarif)'}
+                              {activeCandidate.sessionId === 'inden' && isSchoolLpMaarif(activeCandidate.schoolOriginType, activeCandidate.schoolOrigin) && ' + 🎁 Bonus Seragam Olahraga'}
+                              {activeCandidate.sessionId === 'inden' && (activeCandidate.freeFirstMonthSpp || activeCandidate.isSiblingKkMatch) && ' + 🎉 Bebas SPP Juli (No KK Sama)'}
                             </span>
                           </div>
                           <span className="text-emerald-700 text-lg font-black">
@@ -3545,10 +3938,12 @@ export default function SpmbLandingPage({
                             <span className="font-semibold text-slate-500">Sesi Gelombang</span>
                             <span className="col-span-2 font-bold text-emerald-800 uppercase">: {activeCandidate.sessionId}</span>
                           </div>
-                          <div className="grid grid-cols-3 py-1 border-b border-slate-200">
-                            <span className="font-semibold text-slate-500">Ukuran Seragam</span>
-                            <span className="col-span-2 font-bold text-slate-900">: Ukuran {selectedUniformSize}</span>
-                          </div>
+                          {activeCandidate.selectedUniformSize && (
+                            <div className="grid grid-cols-3 py-1 border-b border-slate-200">
+                              <span className="font-semibold text-slate-500">Ukuran Seragam</span>
+                              <span className="col-span-2 font-bold text-slate-900">: Ukuran {activeCandidate.selectedUniformSize}</span>
+                            </div>
+                          )}
                           <div className="grid grid-cols-3 py-1">
                             <span className="font-semibold text-slate-500">Status Pembayaran</span>
                             <span className="col-span-2 font-bold text-emerald-700">

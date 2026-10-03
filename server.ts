@@ -466,9 +466,10 @@ const defaultSpmbConfig: SpmbConfig = {
       endDate: "2026-12-31",
       isActive: true,
       quota: 64,
-      description: "Pendaftaran dini dengan prioritas ukuran seragam & diskon khusus Uang Gedung 50%.",
+      description: "Pendaftaran dini dengan prioritas ukuran seragam, diskon Uang Gedung 50%, serta BONUS 1 Set Seragam Olahraga Gratis khusus bagi SD/MI dari LP. Ma'arif.",
       discountPercent: 50,
-      discountAmount: 750000
+      discountAmount: 750000,
+      sportsUniformBonusForMaarif: true
     },
     {
       id: "gelombang-1",
@@ -511,6 +512,7 @@ const defaultSpmbConfig: SpmbConfig = {
   maarifBuildingDiscount: 250000, // Diskon Uang Gedung Khusus SD Maarif Jogosari
   maarifUniformDiscountType: "amount",
   maarifUniformDiscount: 100000, // Diskon Perlengkapan Khusus SD Maarif Jogosari
+  maarifIndenSportsUniformBonus: true, // Bonus 1 Set Seragam Olahraga khusus Sesi Inden bagi SD/MI LP. Maarif
   // Pendaftaran Kolektif Langsung di Sekolah
   collectiveRegistrationEnabled: true,
   collectiveTokenFree: true, // Gratis Biaya Token Formulir (Rp 0)

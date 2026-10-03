@@ -147,7 +147,7 @@ export function generateKnowledgeBaseReply(
 
     return {
       matchedCategory: "sessions",
-      reply: `Penerimaan Peserta Didik Baru (SPMB) 2027/2028 di **${schoolName}** terbagi dalam 3 jalur pendaftaran:\n\n${sessionDetails}\n\n💡 **Saran Terbaik:** Daftarkan putra/putri Anda melalui **Jalur Inden** untuk mengamankan kuota kelas dan menikmati diskon uang gedung 50% serta prioritas pemesanan ukuran seragam!`
+      reply: `Penerimaan Peserta Didik Baru (SPMB) 2027/2028 di **${schoolName}** terbagi dalam 3 jalur pendaftaran:\n\n${sessionDetails}\n\n💡 **Keuntungan Spesial Jalur Inden:**\n- Diskon Uang Gedung 50% (Hemat Rp 750.000)\n- 🎁 **BONUS 1 Set Seragam Olahraga Gratis** khusus pendaftar asal SD/MI dari LP. Ma'arif (Senilai Rp 175.000)!\n- Prioritas pemilihan ukuran seragam dan kuota rombel kelas 7.`
     };
   }
 
@@ -155,7 +155,7 @@ export function generateKnowledgeBaseReply(
   if (/(biaya|bayar|tarif|uang gedung|infaq|spp|harga|ongkos|murah|diskon|potongan)/i.test(query)) {
     return {
       matchedCategory: "fees",
-      reply: `Berikut adalah transparansi rincian biaya pendaftaran SPMB 2027/2028 di **${schoolName}**:\n\n1. **Token Registrasi Awal:** **Rp ${tokenFee}**\n   *(Dibayar sekali di awal secara online via Midtrans untuk aktivasi berkas pendaftaran)*.\n\n2. **Infaq Uang Gedung:** Standar **Rp ${buildingFee}**\n   - Jalur Inden: **Diskon 50%** (Cukup bayar Rp 750.000)\n   - Gelombang 1: **Diskon 25%** (Cukup bayar Rp 1.125.000)\n   - Gelombang 2: Rp 1.500.000 (Normal)\n\n3. **SPP Bulan Juli 2027:** **Rp ${julySpp}** *(Bulan pertama tahun ajaran baru)*.\n\n4. **Paket Seragam & Atribut Lengkap:**\n   - Putra: **Rp 490.000** (Olahraga, Batik NU, Atribut, Hasduk, Topi, Kaos Kaki, Sabuk NU)\n   - Putri: **Rp 555.000** (Sama dengan putra + Jilbab Sekolah NU)\n\n🌟 **Diskon Spesial SD Maarif Jogosari:** Tambahan potongan Uang Gedung Rp 250.000 dan Seragam Rp 100.000!`
+      reply: `Berikut adalah transparansi rincian biaya pendaftaran SPMB 2027/2028 di **${schoolName}**:\n\n1. **Token Registrasi Awal:** **Rp ${tokenFee}**\n   *(Dibayar sekali di awal secara online via Midtrans untuk aktivasi berkas pendaftaran)*.\n\n2. **Infaq Uang Gedung:** Standar **Rp ${buildingFee}**\n   - Jalur Inden: **Diskon 50%** (Cukup bayar Rp 750.000)\n   - Gelombang 1: **Diskon 25%** (Cukup bayar Rp 1.125.000)\n   - Gelombang 2: Rp 1.500.000 (Normal)\n\n3. **SPP Bulan Juli 2027:** **Rp ${julySpp}** *(Bulan pertama tahun ajaran baru)*.\n\n4. **Paket Seragam & Atribut Lengkap:**\n   - Putra: **Rp 490.000** (Olahraga, Batik NU, Atribut, Hasduk, Topi, Kaos Kaki, Sabuk NU)\n   - Putri: **Rp 555.000** (Sama dengan putra + Jilbab Sekolah NU)\n\n🎁 **Bonus & Diskon Khusus LP. Ma'arif:**\n- **Sesi Inden:** BONUS 1 Set Seragam Olahraga Gratis (potongan 100% / Rp 175.000) khusus bagi calon murid dari SD/MI lingkungan LP. Ma'arif!\n- **SD Maarif Jogosari:** Tambahan potongan Uang Gedung Rp 250.000 dan potongan Seragam Rp 100.000!`
     };
   }
 

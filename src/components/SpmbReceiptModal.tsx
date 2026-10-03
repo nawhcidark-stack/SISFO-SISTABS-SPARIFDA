@@ -369,10 +369,17 @@ export default function SpmbReceiptModal({
                       <tr>
                         <td className="p-1.5">
                           <strong>Paket Seragam & Atribut ({genderLabel} - {uniformSize})</strong>
-                          {reregDetails.maarifUniformDiscount > 0 && <span className="block text-emerald-700">• Diskon Seragam SD Maarif</span>}
+                          {reregDetails.maarifUniformDiscount > 0 && <span className="block text-emerald-700">• Diskon Seragam SD Maarif (- Rp {reregDetails.maarifUniformDiscount.toLocaleString('id-ID')})</span>}
+                          {reregDetails.sportsUniformBonus > 0 && (
+                            <span className="block text-emerald-700 font-bold">• 🎁 Bonus 1 Set Seragam Olahraga Gratis (Sesi Inden LP. Ma'arif - Senilai Rp {reregDetails.sportsUniformBonus.toLocaleString('id-ID')})</span>
+                          )}
                         </td>
                         <td className="p-1.5 text-right">Rp {reregDetails.rawUniformTotal.toLocaleString('id-ID')}</td>
-                        <td className="p-1.5 text-right text-emerald-700">- Rp {reregDetails.maarifUniformDiscount.toLocaleString('id-ID')}</td>
+                        <td className="p-1.5 text-right text-emerald-700">
+                          {(reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus) > 0
+                            ? `- Rp ${(reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus).toLocaleString('id-ID')}`
+                            : 'Rp 0'}
+                        </td>
                         <td className="p-1.5 text-right font-bold">Rp {reregDetails.netUniformTotal.toLocaleString('id-ID')}</td>
                       </tr>
                       <tr className="bg-slate-50 font-bold border-t border-slate-200">

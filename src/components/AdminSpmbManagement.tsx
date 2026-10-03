@@ -1546,6 +1546,40 @@ export default function AdminSpmbManagement({
                     </div>
                   </div>
 
+                  {/* Bonus Seragam Olahraga untuk LP Maarif */}
+                  <div className={`p-3 rounded-xl border flex items-center justify-between transition-all ${
+                    (session.sportsUniformBonusForMaarif ?? (session.id === 'inden'))
+                      ? 'bg-amber-950/40 border-amber-500/50'
+                      : 'bg-slate-900 border-slate-800'
+                  }`}>
+                    <div className="space-y-0.5 pr-2">
+                      <label className="text-xs font-bold text-white flex items-center gap-1.5 cursor-pointer" htmlFor={`bonus-maarif-${session.id}`}>
+                        <span>🎁 Bonus 1 Set Seragam Olahraga</span>
+                        {session.id === 'inden' && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] bg-amber-500/20 text-amber-300 font-extrabold uppercase border border-amber-500/30">
+                            Khusus Inden
+                          </span>
+                        )}
+                      </label>
+                      <p className="text-[10px] text-slate-400 m-0">
+                        Gratis 1 set seragam olahraga (senilai Rp 175.000) bagi pendaftar dari SD/MI LP. Ma'arif.
+                      </p>
+                    </div>
+                    <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                      <input
+                        id={`bonus-maarif-${session.id}`}
+                        type="checkbox"
+                        checked={session.sportsUniformBonusForMaarif ?? (session.id === 'inden')}
+                        onChange={(e) => {
+                          const updated = config.sessions.map(s => s.id === session.id ? { ...s, sportsUniformBonusForMaarif: e.target.checked } : s);
+                          setConfig({ ...config, sessions: updated });
+                        }}
+                        className="sr-only peer"
+                      />
+                      <div className="w-9 h-5 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                    </label>
+                  </div>
+
                   <div>
                     <label className="block text-[11px] font-bold text-slate-400 mb-1">Keterangan / Deskripsi Sesi</label>
                     <textarea
@@ -1810,6 +1844,29 @@ export default function AdminSpmbManagement({
                           : `Potongan tetap Rp ${(config.maarifUniformDiscount || 0).toLocaleString('id-ID')}`}
                       </p>
                     </div>
+
+                    {/* Bonus Seragam Olahraga Khusus Sesi Inden bagi SD/MI LP Maarif */}
+                    <div className="p-3 bg-slate-800/80 rounded-xl border border-slate-700/80 space-y-2 md:col-span-2">
+                      <div className="flex items-center justify-between">
+                        <div className="space-y-0.5 pr-2">
+                          <label className="block text-[11px] font-black text-amber-400 uppercase tracking-wider flex items-center gap-1.5 cursor-pointer">
+                            <span>🎁 Bonus 1 Set Seragam Olahraga (Sesi Inden Khusus SD/MI LP. Ma'arif)</span>
+                          </label>
+                          <p className="text-[10px] text-slate-300 m-0">
+                            Pendaftar Sesi Inden dari SD/MI lingkungan LP. Ma'arif (termasuk SD Maarif Jogosari) mendapatkan gratis 1 setel seragam olahraga senilai Rp 175.000.
+                          </p>
+                        </div>
+                        <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                          <input
+                            type="checkbox"
+                            checked={config.maarifIndenSportsUniformBonus ?? true}
+                            onChange={(e) => setConfig({ ...config, maarifIndenSportsUniformBonus: e.target.checked })}
+                            className="sr-only peer"
+                          />
+                          <div className="w-9 h-5 bg-slate-700 peer-focus:outline-hidden rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-amber-500"></div>
+                        </label>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1903,6 +1960,17 @@ export default function AdminSpmbManagement({
                               <span>Total Putri:</span>
                               <span>Rp {totalFemale.toLocaleString('id-ID')}</span>
                             </div>
+
+                            {(sess.sportsUniformBonusForMaarif ?? (sess.id === 'inden')) && (
+                              <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/30 text-[10px] text-amber-300 font-semibold space-y-0.5">
+                                <div className="flex items-center gap-1 font-bold text-amber-200">
+                                  <span>🎁 Bonus SD/MI LP. Ma'arif:</span>
+                                </div>
+                                <p className="m-0 text-slate-300">
+                                  Gratis 1 Set Seragam Olahraga (potongan Rp 175.000 saat daftar ulang).
+                                </p>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

@@ -14,6 +14,57 @@ function toProperCase(val?: string | null): string {
     .replace(/(?:^|[\s\-\/\.])([a-z\u00C0-\u017F])/g, (m) => m.toUpperCase());
 }
 
+export function isSchoolLpMaarif(schoolOriginType?: string, schoolOrigin?: string): boolean {
+  if (!schoolOriginType && !schoolOrigin) return false;
+  if (schoolOriginType === 'maarif_jogosari' || schoolOriginType === 'lp_maarif') return true;
+  const s = `${schoolOriginType || ''} ${schoolOrigin || ''}`.toUpperCase();
+  return s.includes('MAARIF') || s.includes("MA'ARIF");
+}
+
+export function checkSiblingKkMatch(
+  kkNumber: string | undefined | null,
+  candidateId?: string,
+  candidateNisn?: string,
+  spmbCandidates: SpmbCandidate[] = [],
+  students: Student[] = []
+): { isMatch: boolean; matchedName?: string; matchedType?: 'student' | 'candidate'; matchedDetail?: string } {
+  if (!kkNumber) return { isMatch: false };
+  const clean = String(kkNumber).replace(/\D/g, '');
+  if (clean.length < 10) return { isMatch: false };
+
+  // 1. Check with active enrolled students (kelas 7, 8, 9)
+  const matchedStudent = students.find(s => {
+    if (s.status !== 'Aktif') return false;
+    const sKk = String(s.kkNumber || (s as any).kk_number || '').replace(/\D/g, '');
+    return sKk && sKk === clean;
+  });
+  if (matchedStudent) {
+    return {
+      isMatch: true,
+      matchedName: matchedStudent.name,
+      matchedType: 'student',
+      matchedDetail: `${matchedStudent.name} (Siswa Aktif Kelas ${matchedStudent.class})`
+    };
+  }
+
+  // 2. Check with other new candidate applicants
+  const matchedCandidate = spmbCandidates.find(c => {
+    if (c.id === candidateId || (candidateNisn && c.nisn === candidateNisn)) return false;
+    const cKk = String(c.kkNumber || c.fullFormData?.kkNumber || '').replace(/\D/g, '');
+    return cKk && cKk === clean;
+  });
+  if (matchedCandidate) {
+    return {
+      isMatch: true,
+      matchedName: matchedCandidate.fullName,
+      matchedType: 'candidate',
+      matchedDetail: `${matchedCandidate.fullName} (Sesama Calon Murid Baru - NISN: ${matchedCandidate.nisn})`
+    };
+  }
+
+  return { isMatch: false };
+}
+
 export interface SpmbRouterDeps {
   spmbConfig: SpmbConfig;
   spmbCandidates: SpmbCandidate[];
@@ -67,6 +118,23 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     } catch (err: any) {
       console.error("Error updating SPMB config:", err);
       res.status(500).json({ error: "Gagal memperbarui konfigurasi SPMB: " + err.message });
+    }
+  });
+
+  // 2A. Check Sibling KK Match (Gratis SPP Bulan Pertama di Sesi Inden)
+  router.post("/check-kk", (req, res) => {
+    try {
+      const { kkNumber, candidateId, nisn } = req.body || {};
+      const result = checkSiblingKkMatch(kkNumber, candidateId, nisn, spmbCandidates, students);
+      res.json({
+        ...result,
+        freeFirstMonthSpp: result.isMatch,
+        message: result.isMatch 
+          ? `Terdeteksi No. KK sama dengan: ${result.matchedDetail}. Berhak GRATIS SPP Bulan Pertama (Juli 2027) pada Sesi Inden!`
+          : "Nomor KK valid dan belum terdaftar pada siswa aktif atau murid baru lainnya."
+      });
+    } catch (err: any) {
+      res.status(500).json({ isMatch: false, error: err.message });
     }
   });
 
@@ -230,7 +298,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         ? (spmbConfig.maarifSchoolName || 'SD MAARIF JOGOSARI') 
         : (schoolOrigin || originSchool || 'SD Lainnya');
 
-      const isMaarif = schoolOriginType === 'maarif_jogosari' || 
+      const isLpMaarif = isSchoolLpMaarif(schoolOriginType, effectiveSchoolOrigin);
+      const isJogosari = schoolOriginType === 'maarif_jogosari' || 
         effectiveSchoolOrigin.toUpperCase().includes('MAARIF JOGOSARI') ||
         (originSchool || '').toUpperCase().includes('MAARIF JOGOSARI');
 
@@ -252,7 +321,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       // SD Maarif discounts
       let maarifBuildingDiscount = 0;
-      if (isMaarif) {
+      if (isJogosari) {
         if (spmbConfig.maarifBuildingDiscountType === 'percent') {
           maarifBuildingDiscount = Math.round(buildingFee * ((spmbConfig.maarifBuildingDiscount || 0) / 100));
         } else {
@@ -261,7 +330,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       let maarifUniformDiscount = 0;
-      if (isMaarif) {
+      if (isJogosari) {
         if (spmbConfig.maarifUniformDiscountType === 'percent') {
           maarifUniformDiscount = Math.round(uniformTotal * ((spmbConfig.maarifUniformDiscount || 0) / 100));
         } else {
@@ -269,9 +338,17 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         }
       }
 
+      // Bonus 1 Set Seragam Olahraga khusus Sesi Inden bagi SD/MI dari LP. Maarif
+      let sportsUniformBonus = 0;
+      const allowBonus = selectedSession?.sportsUniformBonusForMaarif ?? spmbConfig.maarifIndenSportsUniformBonus ?? true;
+      if (selectedSession?.id === 'inden' && isLpMaarif && allowBonus) {
+        const sportsItem = eligibleUniforms.find(u => u.id === 'u-1' || u.name.toLowerCase().includes('olahraga'));
+        sportsUniformBonus = sportsItem ? sportsItem.price : 125000;
+      }
+
       const totalBuildingDiscount = Math.min(buildingFee, buildingWaveDiscount + maarifBuildingDiscount);
       const netBuildingFee = Math.max(0, buildingFee - totalBuildingDiscount);
-      const netUniformTotal = Math.max(0, uniformTotal - maarifUniformDiscount);
+      const netUniformTotal = Math.max(0, uniformTotal - maarifUniformDiscount - sportsUniformBonus);
       const reRegistrationTotal = netBuildingFee + julySppFee + baseAdmFee + netUniformTotal;
 
       let candidate: SpmbCandidate;
@@ -285,7 +362,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         existingCandidate.parentName = parentName || existingCandidate.parentName;
         existingCandidate.originSchool = effectiveSchoolOrigin;
         existingCandidate.schoolOrigin = effectiveSchoolOrigin;
-        existingCandidate.schoolOriginType = schoolOriginType || (isMaarif ? 'maarif_jogosari' : 'other');
+        existingCandidate.schoolOriginType = schoolOriginType || (isJogosari ? 'maarif_jogosari' : 'other');
         existingCandidate.registrationType = registrationType || existingCandidate.registrationType || 'online_individual';
         existingCandidate.email = email || existingCandidate.email;
         existingCandidate.tokenFee = tokenFee;
@@ -310,7 +387,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           birthDate: req.body.birthDate || "",
           phone: cleanPhone,
           schoolOrigin: effectiveSchoolOrigin,
-          schoolOriginType: schoolOriginType || (isMaarif ? 'maarif_jogosari' : 'other'),
+          schoolOriginType: schoolOriginType || (isJogosari ? 'maarif_jogosari' : 'other'),
           registrationType: registrationType || 'online_individual',
           sessionId: selectedSession?.id || "gelombang-1",
           sessionName: selectedSession?.name || "Gelombang 1",
@@ -627,6 +704,17 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (uniformSizes) {
         candidate.uniformSizes = { ...(candidate.uniformSizes || {}), ...uniformSizes };
       }
+
+      // Periksa kecocokan No KK dengan siswa aktif (kelas 7/8/9) atau sesama calon murid baru
+      const targetKk = candidate.kkNumber || candidate.fullFormData?.kkNumber;
+      let siblingCheckResult = checkSiblingKkMatch(targetKk, candidate.id, candidate.nisn, spmbCandidates, students);
+      if (siblingCheckResult.isMatch) {
+        candidate.isSiblingKkMatch = true;
+        candidate.matchedSiblingDetail = siblingCheckResult.matchedDetail;
+        if (candidate.sessionId === 'inden') {
+          candidate.freeFirstMonthSpp = true;
+        }
+      }
       
       // Status pendaftaran: form_submitted (data lengkap terisi & tersimpan permanen di MySQL)
       candidate.status = (candidate.status === "registered" || !candidate.status) ? "form_submitted" : candidate.status;
@@ -665,6 +753,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         success: true,
         message: "Data formulir buku induk calon murid berhasil disimpan permanen ke sistem & MySQL.",
         candidate,
+        siblingCheck: siblingCheckResult,
         mysqlSaved
       });
     } catch (err: any) {
@@ -702,7 +791,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         return res.status(400).json({ error: "Tahap 3 belum selesai: Unggah seluruh berkas persyaratan terlebih dahulu sebelum melakukan daftar ulang." });
       }
 
-      const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || 
+      const isLpMaarif = isSchoolLpMaarif(candidate.schoolOriginType, candidate.schoolOrigin || candidate.originSchool);
+      const isJogosari = candidate.schoolOriginType === 'maarif_jogosari' || 
         (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF JOGOSARI') ||
         (candidate.originSchool || '').toUpperCase().includes('MAARIF JOGOSARI');
 
@@ -717,7 +807,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       // SD Maarif discounts
       let maarifBuildingDiscount = 0;
-      if (isMaarif) {
+      if (isJogosari) {
         if (spmbConfig.maarifBuildingDiscountType === 'percent') {
           maarifBuildingDiscount = Math.round(buildingFee * ((spmbConfig.maarifBuildingDiscount || 0) / 100));
         } else {
@@ -737,26 +827,79 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       const rawUniformTotal = eligibleUniforms.reduce((sum, item) => sum + item.price, 0);
 
       let maarifUniformDiscount = 0;
-      if (isMaarif) {
+      if (isJogosari) {
         if (spmbConfig.maarifUniformDiscountType === 'percent') {
           maarifUniformDiscount = Math.round(rawUniformTotal * ((spmbConfig.maarifUniformDiscount || 0) / 100));
         } else {
           maarifUniformDiscount = spmbConfig.maarifUniformDiscount || 0;
         }
       }
-      const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount);
 
-      const defaultTotal = netBuildingFee + julySppFee + baseAdmFee + netUniformTotal;
-      const totalAmount = customAmount ? Number(customAmount) : defaultTotal;
+      // Bonus 1 Set Seragam Olahraga khusus Sesi Inden bagi SD/MI dari LP. Maarif
+      let sportsUniformBonus = 0;
+      const allowBonus = selectedSession?.sportsUniformBonusForMaarif ?? spmbConfig.maarifIndenSportsUniformBonus ?? true;
+      if (selectedSession.id === 'inden' && isLpMaarif && allowBonus) {
+        const sportsItem = eligibleUniforms.find(u => u.id === 'u-1' || u.name.toLowerCase().includes('olahraga'));
+        sportsUniformBonus = sportsItem ? sportsItem.price : 125000;
+      }
+
+      const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount - sportsUniformBonus);
+
+      // Check Sibling KK Match (Gratis SPP bulan pertama di Sesi Inden jika No KK sama dengan murid aktif kelas 7/8/9 atau sesama murid baru)
+      const candKk = candidate.kkNumber || candidate.fullFormData?.kkNumber || req.body.kkNumber;
+      const siblingCheck = checkSiblingKkMatch(candKk, candidate.id, candidate.nisn, spmbCandidates, students);
+      const isSiblingFreeSpp = selectedSession.id === 'inden' && (siblingCheck.isMatch || candidate.freeFirstMonthSpp || candidate.isSiblingKkMatch);
+      const effectiveJulySppFee = isSiblingFreeSpp ? 0 : julySppFee;
+
+      if (siblingCheck.isMatch) {
+        candidate.isSiblingKkMatch = true;
+        candidate.matchedSiblingDetail = siblingCheck.matchedDetail;
+        if (selectedSession.id === 'inden') {
+          candidate.freeFirstMonthSpp = true;
+        }
+      }
+
+      const defaultTotal = netBuildingFee + effectiveJulySppFee + baseAdmFee + netUniformTotal;
+      const totalAmount = (customAmount !== undefined && customAmount !== null && Number(customAmount) >= 0)
+        ? Math.round(Number(customAmount))
+        : Math.round(defaultTotal);
+
+      const finalGrossAmount = Math.round(totalAmount);
 
       const orderId = `SPMB-REREG-${candidate.nisn}-${Date.now()}`;
       candidate.reRegistrationOrderId = orderId;
-      candidate.reRegistrationFee = totalAmount;
-      candidate.reRegistrationAmount = totalAmount;
+      candidate.reRegistrationFee = finalGrossAmount;
+      candidate.reRegistrationAmount = finalGrossAmount;
       candidate.uniformCost = netUniformTotal;
       if (selectedUniforms) candidate.selectedUniforms = selectedUniforms;
       if (uniformSizes) candidate.uniformSizes = uniformSizes;
       candidate.updatedAt = new Date().toISOString();
+
+      // Jika total tagihan Rp 0 (misal gratis seluruhnya), langsung tandai LUNAS tanpa memanggil Snap Midtrans
+      if (finalGrossAmount <= 0) {
+        candidate.reRegistrationPaid = true;
+        candidate.reRegistrationStatus = "paid";
+        candidate.reRegistrationPaidAt = new Date().toISOString();
+        candidate.reRegistrationPaymentMethod = "Gratis / Beasiswa (Diskon 100%)";
+        candidate.reRegistrationFee = 0;
+        candidate.reRegistrationAmount = 0;
+        saveState();
+
+        broadcastNotification({
+          id: `notif-${Date.now()}`,
+          title: "Daftar Ulang Lunas (Gratis)",
+          message: `Calon murid ${candidate.fullName} telah melunasi Daftar Ulang & Seragam (Diskon 100% / Gratis).`,
+          createdAt: new Date().toISOString(),
+          type: "success"
+        });
+
+        return res.json({
+          success: true,
+          isFree: true,
+          message: "Pembayaran Daftar Ulang & Perlengkapan Seragam BERHASIL (Gratis / Diskon 100%).",
+          candidate
+        });
+      }
 
       saveState();
 
@@ -773,60 +916,87 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         const authString = Buffer.from(midtransConfig.serverKey.trim() + ":").toString("base64");
         const baseUrl = midtransConfig.isProduction ? "https://app.midtrans.com/snap/v1/transactions" : "https://app.sandbox.midtrans.com/snap/v1/transactions";
 
+        // Susun item_details secara NET dan bulat agar jumlahnya 100% SAMA PERSIS dengan finalGrossAmount
+        const itemDetails: Array<{ id: string; price: number; quantity: number; name: string }> = [];
+
+        if (netBuildingFee > 0) {
+          itemDetails.push({
+            id: "BUILDING-NET",
+            price: Math.round(netBuildingFee),
+            quantity: 1,
+            name: `Uang Gedung Net (${selectedSession?.name || "Inden"})`.slice(0, 50)
+          });
+        }
+
+        if (effectiveJulySppFee > 0) {
+          itemDetails.push({
+            id: "SPP-JULY",
+            price: Math.round(effectiveJulySppFee),
+            quantity: 1,
+            name: "SPP Bulan Juli 2027"
+          });
+        }
+
+        if (baseAdmFee > 0) {
+          itemDetails.push({
+            id: "REREG-BASE",
+            price: Math.round(baseAdmFee),
+            quantity: 1,
+            name: "Biaya Administrasi & Daftar Ulang".slice(0, 50)
+          });
+        }
+
+        if (netUniformTotal > 0) {
+          if (maarifUniformDiscount === 0 && sportsUniformBonus === 0) {
+            eligibleUniforms.forEach(u => {
+              if (u.price > 0) {
+                itemDetails.push({
+                  id: String(u.id).slice(0, 45),
+                  price: Math.round(u.price),
+                  quantity: 1,
+                  name: u.name.slice(0, 50)
+                });
+              }
+            });
+          } else {
+            itemDetails.push({
+              id: "UNIFORM-NET",
+              price: Math.round(netUniformTotal),
+              quantity: 1,
+              name: `Paket Seragam & Atribut Net (${candidate.gender === 'L' ? 'Putra' : 'Putri'})`.slice(0, 50)
+            });
+          }
+        }
+
+        // Filter proteksi mutlak: Midtrans melarang price <= 0 atau quantity <= 0
+        const validItems = itemDetails.filter(item => item.price > 0 && item.quantity > 0);
+        const currentSum = validItems.reduce((sum, item) => sum + (item.price * item.quantity), 0);
+
+        let finalItemDetails = validItems;
+        if (currentSum !== finalGrossAmount || finalItemDetails.length === 0) {
+          const safeStudentName = (candidate.fullName || candidate.nisn || "Siswa")
+            .replace(/[^a-zA-Z0-9\s]/g, "")
+            .trim()
+            .slice(0, 25);
+          finalItemDetails = [{
+            id: "TOTAL-REREG",
+            price: finalGrossAmount,
+            quantity: 1,
+            name: `Daftar Ulang - ${safeStudentName}`.slice(0, 50)
+          }];
+        }
+
         const midtransPayload = {
           transaction_details: {
             order_id: orderId,
-            gross_amount: totalAmount
+            gross_amount: finalGrossAmount
           },
           customer_details: {
             first_name: candidate.fullName,
             email: candidate.email || `spmb.${candidate.nisn}@smpmaarifnu.sch.id`,
             phone: candidate.parentPhone || candidate.phone
           },
-          item_details: [
-            {
-              id: "BUILDING-FEE",
-              price: buildingFee,
-              quantity: 1,
-              name: "Uang Gedung / Infaq Pembangunan"
-            },
-            ...(buildingWaveDiscount > 0 ? [{
-              id: "DISC-BUILDING-WAVE",
-              price: -buildingWaveDiscount,
-              quantity: 1,
-              name: `Diskon Uang Gedung (${discountPercent}% - ${selectedSession?.name || "Sesi"})`
-            }] : []),
-            ...(maarifBuildingDiscount > 0 ? [{
-              id: "DISC-BUILDING-MAARIF",
-              price: -maarifBuildingDiscount,
-              quantity: 1,
-              name: "Diskon Gedung Khusus SD Maarif Jogosari"
-            }] : []),
-            {
-              id: "SPP-JULY",
-              price: julySppFee,
-              quantity: 1,
-              name: "SPP Bulan Juli 2027"
-            },
-            ...(baseAdmFee > 0 ? [{
-              id: "REREG-BASE",
-              price: baseAdmFee,
-              quantity: 1,
-              name: "Biaya Administrasi"
-            }] : []),
-            ...eligibleUniforms.map(u => ({
-              id: u.id,
-              price: u.price,
-              quantity: 1,
-              name: u.name.slice(0, 50)
-            })),
-            ...(maarifUniformDiscount > 0 ? [{
-              id: "DISC-UNIFORM-MAARIF",
-              price: -maarifUniformDiscount,
-              quantity: 1,
-              name: "Diskon Seragam Khusus SD Maarif Jogosari"
-            }] : [])
-          ]
+          item_details: finalItemDetails
         };
 
         const snapResponse = await fetch(baseUrl, {

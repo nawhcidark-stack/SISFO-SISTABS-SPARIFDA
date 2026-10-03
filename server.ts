@@ -1959,6 +1959,32 @@ function applyDataFromMysql(pulledData: any) {
         const localBill = localBillMap.get(pulledBill.id) ||
                           localBillMap.get(`${pulledBill.studentId}_${pulledBill.month}_${pulledBill.year}`);
 
+        // 1. If bill in MySQL or local memory is WAIVED (Bebas Kebijakan / Prestasi), preserve WAIVED state completely
+        if (pulledBill.status === "waived" || (localBill && localBill.status === "waived")) {
+          const effectiveWaived = (localBill && localBill.status === "waived") ? localBill : pulledBill;
+          const waivedBill: SppBill = {
+            ...pulledBill,
+            ...effectiveWaived,
+            status: "waived",
+            paidAt: effectiveWaived.paidAt || pulledBill.paidAt || new Date().toISOString(),
+            paymentMethod: effectiveWaived.paymentMethod || pulledBill.paymentMethod || "Bebas SPP (Kebijakan Yayasan)",
+            orderId: effectiveWaived.orderId || pulledBill.orderId || `ORD-WAIVED-KEBIJAKAN-${pulledBill.id}`,
+            isVoidedByAdmin: false,
+            voidedAt: undefined,
+            voidReason: undefined
+          };
+          if ((effectiveWaived as any).achievementType) {
+            (waivedBill as any).achievementType = (effectiveWaived as any).achievementType;
+          }
+          if ((effectiveWaived as any).achievementDetail) {
+            (waivedBill as any).achievementDetail = (effectiveWaived as any).achievementDetail;
+          }
+          if (pulledBill.status !== "waived") {
+            sppBillsToFixInMysql.push(waivedBill);
+          }
+          return waivedBill;
+        }
+
         const isVoided = Boolean(
           pulledBill.isVoidedByAdmin ||
           localBill?.isVoidedByAdmin ||
@@ -8075,8 +8101,8 @@ async function startServer() {
     res.json({ success: true, bill });
   });
 
-  // Admin Bulk Waive/Free SPP due to Achievement (Academic / Non-Academic)
-  app.post("/api/admin/waive-spp-bulk", (req, res) => {
+  // Admin Bulk Waive/Free SPP due to Achievement (Academic / Non-Academic) or Non-Prestasi / Kebijakan
+  app.post("/api/admin/waive-spp-bulk", async (req, res) => {
     const { studentId, billIds, achievementType, achievementDetail } = req.body;
     if (!studentId || !Array.isArray(billIds) || billIds.length === 0) {
       return res.status(400).json({ error: "Siswa dan daftar tagihan wajib dipilih." });
@@ -8087,9 +8113,11 @@ async function startServer() {
     }
 
     const waivedBills: SppBill[] = [];
-    billIds.forEach(billId => {
+    const removedVoidRecordIds: string[] = [];
+
+    for (const billId of billIds) {
       const bill = sppBills.find(b => b.id === billId && b.studentId === studentId);
-      if (bill && bill.status === "unpaid") {
+      if (bill && (bill.status === "unpaid" || bill.status === "pending")) {
         bill.status = "waived";
         bill.paidAt = new Date().toISOString();
         let methodStr = `Bebas SPP Prestasi (${achievementType === 'akademik' ? 'Akademik' : 'Non-Akademik'})`;
@@ -8105,12 +8133,38 @@ async function startServer() {
         bill.orderId = `ORD-WAIVED-${codeTag}-${Date.now()}-${billId.slice(-4)}`;
         (bill as any).achievementType = achievementType;
         (bill as any).achievementDetail = achievementDetail || "";
+        bill.isVoidedByAdmin = false;
+        bill.voidedAt = undefined;
+        bill.voidReason = undefined;
+
+        // Clean up any void records referencing this bill so background sync doesn't reset it to unpaid
+        for (let i = voidedPayments.length - 1; i >= 0; i--) {
+          if (voidedPayments[i].billId === bill.id) {
+            removedVoidRecordIds.push(voidedPayments[i].id);
+            voidedPayments.splice(i, 1);
+          }
+        }
+
         waivedBills.push(bill);
       }
-    });
+    }
 
     if (waivedBills.length === 0) {
       return res.status(400).json({ error: "Tidak ada tagihan belum lunas yang terpilih atau dapat dibebaskan." });
+    }
+
+    // Persist directly to MySQL and clear void records
+    try {
+      if (typeof directSaveEntitiesBatchToMysql === "function") {
+        await directSaveEntitiesBatchToMysql("sppBills", waivedBills);
+      }
+      for (const vId of removedVoidRecordIds) {
+        if (typeof directDeleteEntityFromMysql === "function") {
+          await directDeleteEntityFromMysql("voidedPayments", vId);
+        }
+      }
+    } catch (e) {
+      console.warn("Error saving waived bills directly to MySQL:", e);
     }
 
     // Broadcast SSE notification

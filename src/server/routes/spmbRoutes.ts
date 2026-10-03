@@ -2,7 +2,6 @@ import { Router } from "express";
 import multer from "multer";
 import { SpmbCandidate, SpmbConfig, Student, RealtimeNotification, MidtransConfig } from "../../types";
 import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, ensureAllMysqlTablesExist } from "../mysqlService";
-import { askSpmbAiAssistant, SpmbAiChatMessage } from "../spmbAiAssistant";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -174,51 +173,6 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     } catch (err: any) {
       res.status(500).json({ isMatch: false, error: err.message });
     }
-  });
-
-  // 2B. AI Assistant Endpoint for SPMB & School Q&A
-  router.post("/ai-assistant", async (req, res) => {
-    try {
-      const { message, history } = req.body;
-      if (!message || typeof message !== "string" || !message.trim()) {
-        return res.status(400).json({ error: "Pesan pertanyaan tidak boleh kosong." });
-      }
-
-      const cleanHistory: SpmbAiChatMessage[] = Array.isArray(history)
-        ? history.filter((h: any) => h && (h.role === "user" || h.role === "model") && typeof h.text === "string")
-        : [];
-
-      const result = await askSpmbAiAssistant(message.trim(), cleanHistory, {
-        spmbConfig,
-        schoolIdentity
-      });
-
-      res.json({
-        success: true,
-        reply: result.reply,
-        source: result.source,
-        category: result.category
-      });
-    } catch (err: any) {
-      console.error("Error in /api/spmb/ai-assistant:", err);
-      res.status(500).json({ error: "Gagal memproses pertanyaan asisten AI: " + err.message });
-    }
-  });
-
-  // 2C. AI Assistant Suggestions
-  router.get("/ai-assistant/suggestions", (req, res) => {
-    res.json({
-      suggestions: [
-        { id: "s1", label: "Apa saja jalur pendaftarannya?", category: "sessions" },
-        { id: "s2", label: "Berapa rincian biaya masuk & seragam?", category: "fees" },
-        { id: "s3", label: "Apa keuntungan alumni SD Maarif Jogosari?", category: "jogosari" },
-        { id: "s4", label: "Bagaimana alur pendaftaran 5 langkah?", category: "flow" },
-        { id: "s5", label: "Apa saja syarat & berkas yang diunggah?", category: "requirements" },
-        { id: "s6", label: "Apa saja program unggulan & ekstrakurikuler?", category: "profile" },
-        { id: "s7", label: "Bagaimana cara bayar via Midtrans online?", category: "payment" },
-        { id: "s8", label: "Bagaimana cara mengecek status pendaftaran?", category: "status" }
-      ]
-    });
   });
 
   // Helper: Bersihkan draft calon murid yang batas waktu tokennya telah expired di Midtrans

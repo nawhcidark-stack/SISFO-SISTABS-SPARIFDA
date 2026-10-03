@@ -52,14 +52,12 @@ import {
   Unlock,
   UserPlus,
   UserCheck,
-  Bot,
   MessageSquare,
   MessageCircle,
   Copy,
   Trash2
 } from 'lucide-react';
 import QRCode from 'qrcode';
-import { SpmbAiAssistantModal } from './SpmbAiAssistantModal';
 
 // Opsi Pendidikan Terakhir untuk Formulir Data Lengkap SPMB
 export const SPMB_EDUCATION_OPTIONS = [
@@ -202,8 +200,18 @@ export default function SpmbLandingPage({
   // QR Code data URL for registration proof card
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
 
-  // AI Assistant Modal State
-  const [isAiAssistantOpen, setIsAiAssistantOpen] = useState<boolean>(false);
+  // Helper: Dapatkan Tautan Chat Langsung ke WhatsApp Narahubung Panitia SPMB
+  const getWhatsAppLink = (customText?: string) => {
+    const rawPhone = config?.contactPhone || currentSchoolIdentity?.phone || (currentSchoolIdentity as any)?.whatsapp || '081234567890';
+    let clean = rawPhone.replace(/\D/g, '');
+    if (clean.startsWith('0')) {
+      clean = '62' + clean.slice(1);
+    } else if (!clean.startsWith('62')) {
+      clean = '62' + clean;
+    }
+    const defaultMsg = customText || `Assalamu'alaikum Wr. Wb. Panitia SPMB ${currentSchoolIdentity?.name || 'SMP Maarif NU Pandaan'}, saya ingin berkonsultasi seputar pendaftaran murid baru tahun ajaran ${config?.academicYear || '2027/2028'}.`;
+    return `https://wa.me/${clean}?text=${encodeURIComponent(defaultMsg)}`;
+  };
 
   // Helper: Format Alamat Gabung Otomatis dari Dusun, RT, RW, Desa, Kecamatan
   const formatCombinedAddress = (dusun?: string, rt?: string, rw?: string, village?: string, district?: string) => {
@@ -1414,14 +1422,15 @@ export default function SpmbLandingPage({
                     <Search size={15} />
                     <span>Sudah Daftar? Cek Status</span>
                   </button>
-                  <button
-                    type="button"
-                    onClick={() => setIsAiAssistantOpen(true)}
-                    className="px-5 py-3 bg-gradient-to-r from-emerald-700 to-teal-800 hover:from-emerald-800 hover:to-teal-900 text-white font-bold text-sm rounded-2xl shadow-md flex items-center gap-2 transition-all cursor-pointer"
+                  <a
+                    href={getWhatsAppLink()}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-5 py-3 bg-gradient-to-r from-emerald-600 via-emerald-700 to-teal-800 hover:from-emerald-700 hover:to-teal-900 text-white font-bold text-sm rounded-2xl shadow-md flex items-center gap-2 transition-all cursor-pointer"
                   >
-                    <Sparkles size={16} className="text-amber-300 animate-pulse" />
-                    <span>Tanya Asisten AI SPMB</span>
-                  </button>
+                    <MessageCircle size={16} className="text-emerald-200 animate-pulse" />
+                    <span>WhatsApp Narahubung SPMB</span>
+                  </a>
                 </div>
               </div>
 
@@ -1956,43 +1965,79 @@ export default function SpmbLandingPage({
               </div>
             </div>
 
-            {/* AI Assistant Callout Banner in Tab 1 */}
+            {/* Informasi Penting Batas Waktu & Bantuan Petugas Kantor SPMB */}
+            <div className="p-5 sm:p-6 rounded-3xl bg-amber-50/90 border-2 border-amber-300/90 text-slate-800 shadow-sm flex flex-col sm:flex-row items-start gap-4">
+              <div className="w-11 h-11 rounded-2xl bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center shrink-0">
+                <AlertTriangle size={22} className="text-amber-700" />
+              </div>
+              <div className="space-y-2 flex-1 text-xs">
+                <h4 className="text-sm font-black text-amber-950 m-0">Informasi Penting Batas Waktu Pembayaran & Pengisian Formulir</h4>
+                <p className="text-slate-700 leading-relaxed m-0">
+                  Setelah mengisi formulir pendaftaran awal, harap segera selesaikan pembayaran token. <strong>Jika tidak langsung dibayarkan sesuai jangka waktu yang ditentukan maka data akan dihapus dan Calon Murid wajib mengisi ulang formulir.</strong>
+                </p>
+                <div className="pt-2 flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-t border-amber-200/80 mt-1">
+                  <p className="text-emerald-900 font-bold m-0 flex items-center gap-1.5 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-600 shrink-0"></span>
+                    <span>Jika Kesulitan silahkan datang langsung ke <strong>Kantor SPMB SMP Maarif NU Pandaan</strong> untuk dibantu Petugas.</span>
+                  </p>
+                  <a
+                    href={getWhatsAppLink('Assalamu\'alaikum Panitia SPMB SMP Maarif NU Pandaan, saya ingin bertanya dan meminta bantuan proses pendaftaran calon murid baru.')}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl shadow-sm flex items-center gap-1.5 self-start sm:self-auto shrink-0 transition-all cursor-pointer"
+                  >
+                    <MessageCircle size={14} />
+                    <span>Bantuan Petugas SPMB</span>
+                  </a>
+                </div>
+              </div>
+            </div>
+
+            {/* WhatsApp Narahubung SPMB Callout Banner in Tab 1 */}
             <div className="rounded-3xl bg-gradient-to-r from-emerald-900 via-teal-900 to-slate-900 text-white p-6 sm:p-8 shadow-xl border border-emerald-500/30 flex flex-col md:flex-row items-center justify-between gap-6">
               <div className="space-y-2 max-w-xl text-center md:text-left">
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-500/20 border border-emerald-400/40 text-emerald-300 text-xs font-bold">
-                  <Sparkles size={13} className="text-amber-300" />
-                  <span>Asisten AI SPMB Siaga 24 Jam</span>
+                  <MessageCircle size={13} className="text-emerald-300" />
+                  <span>Narahubung & Layanan Informasi Resmi SPMB</span>
                 </div>
                 <h3 className="text-xl sm:text-2xl font-black m-0 tracking-tight">
                   Punya Pertanyaan Seputar Pendaftaran & Sekolah?
                 </h3>
                 <p className="text-xs sm:text-sm text-emerald-100/80 m-0 leading-relaxed">
-                  Konsultasikan info jadwal, rincian seragam, diskon alumni SD Ma'arif Jogosari, atau kendala pendaftaran secara otomatis dan instan dengan Asisten AI kami.
+                  Konsultasikan info jadwal gelombang, rincian biaya seragam, diskon pendaftar SD Ma'arif Jogosari, atau kendala pendaftaran langsung bersama Panitia SPMB via WhatsApp.
                 </p>
                 
                 <div className="pt-2 flex flex-wrap items-center gap-2 justify-center md:justify-start">
-                  {["Rincian Biaya", "Diskon Inden 50%", "Alumni SD Maarif", "Cara Bayar Online"].map((topic, tIdx) => (
-                    <button
+                  {[
+                    { label: "Tanya Biaya Masuk", text: "Halo Panitia SPMB, saya ingin menanyakan rincian biaya masuk dan daftar ulang seragam." },
+                    { label: "Diskon Inden 50%", text: "Halo Panitia SPMB, saya ingin menanyakan syarat dan ketentuan diskon Sesi Inden 50%." },
+                    { label: "Alumni SD Maarif", text: "Halo Panitia SPMB, saya ingin menanyakan diskon khusus alumni SD Maarif Jogosari / LP Maarif." },
+                    { label: "Bantuan Bayar Online", text: "Halo Panitia SPMB, saya membutuhkan panduan cara pembayaran token pendaftaran via Midtrans online." }
+                  ].map((topic, tIdx) => (
+                    <a
                       key={tIdx}
-                      type="button"
-                      onClick={() => setIsAiAssistantOpen(true)}
-                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-emerald-200 hover:text-white text-[11px] font-medium transition-colors cursor-pointer border border-white/10"
+                      href={getWhatsAppLink(topic.text)}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="px-2.5 py-1 rounded-lg bg-white/10 hover:bg-white/20 text-emerald-200 hover:text-white text-[11px] font-medium transition-colors cursor-pointer border border-white/10 flex items-center gap-1"
                     >
-                      {topic}
-                    </button>
+                      <MessageCircle size={11} />
+                      <span>{topic.label}</span>
+                    </a>
                   ))}
                 </div>
               </div>
 
               <div className="shrink-0">
-                <button
-                  type="button"
-                  onClick={() => setIsAiAssistantOpen(true)}
-                  className="px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs sm:text-sm rounded-2xl shadow-lg transition-all transform hover:-translate-y-0.5 cursor-pointer flex items-center gap-2.5"
+                <a
+                  href={getWhatsAppLink()}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="px-6 py-3.5 bg-gradient-to-r from-emerald-500 to-teal-500 hover:from-emerald-400 hover:to-teal-400 text-slate-950 font-black text-xs sm:text-sm rounded-2xl shadow-lg transition-all transform hover:-translate-y-0.5 cursor-pointer flex items-center gap-2.5 text-center"
                 >
-                  <Bot size={18} />
-                  <span>Tanya Asisten AI Sekarang</span>
-                </button>
+                  <MessageCircle size={18} className="text-slate-950" />
+                  <span>Chat WhatsApp Panitia Sekarang</span>
+                </a>
               </div>
             </div>
           </div>
@@ -2371,23 +2416,50 @@ export default function SpmbLandingPage({
                 }
 
                 return (
-                  <button
-                    type="submit"
-                    disabled={isProcessingTokenPay}
-                    className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-sm rounded-2xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
-                  >
-                    {isProcessingTokenPay ? (
-                      <>
-                        <RefreshCw size={16} className="animate-spin" />
-                        <span>Memproses pendaftaran calon murid...</span>
-                      </>
-                    ) : (
-                      <>
-                        <CreditCard size={16} />
-                        <span>Bayar Token Rp {(config?.registrationTokenFee || 50000).toLocaleString('id-ID')} via Midtrans</span>
-                      </>
-                    )}
-                  </button>
+                  <div className="space-y-3">
+                    {/* Peringatan Batas Waktu Pembayaran & Bantuan Petugas */}
+                    <div className="p-4 bg-amber-50 border-2 border-amber-300 rounded-2xl text-xs space-y-2 text-slate-800 shadow-2xs">
+                      <div className="flex items-center gap-2 text-amber-950 font-black text-xs">
+                        <AlertTriangle size={16} className="text-amber-600 shrink-0" />
+                        <span>Perhatian Penting Batas Waktu Pembayaran:</span>
+                      </div>
+                      <p className="text-[11px] text-slate-700 leading-relaxed m-0">
+                        Harap segera selesaikan pembayaran token pendaftaran via Midtrans online setelah formulir dikirim. <strong>Jika tidak langsung dibayarkan sesuai jangka waktu yang ditentukan maka data akan dihapus dan Calon Murid wajib mengisi ulang formulir.</strong>
+                      </p>
+                      <div className="p-2.5 bg-white/90 border border-amber-200 rounded-xl flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                        <p className="text-[11px] text-emerald-900 font-bold m-0">
+                          🏢 <strong>Jika Kesulitan</strong> silahkan datang langsung ke <strong>Kantor SPMB SMP Maarif NU Pandaan</strong> untuk dibantu Petugas.
+                        </p>
+                        <a
+                          href={getWhatsAppLink('Assalamu\'alaikum Panitia SPMB SMP Maarif NU Pandaan, saya butuh panduan pengisian formulir pendaftaran awal.')}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-[11px] font-extrabold text-emerald-700 hover:text-emerald-800 flex items-center gap-1 shrink-0"
+                        >
+                          <MessageCircle size={13} />
+                          <span>Hubungi WA Panitia</span>
+                        </a>
+                      </div>
+                    </div>
+
+                    <button
+                      type="submit"
+                      disabled={isProcessingTokenPay}
+                      className="w-full py-3.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-black text-sm rounded-2xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 transition-all cursor-pointer"
+                    >
+                      {isProcessingTokenPay ? (
+                        <>
+                          <RefreshCw size={16} className="animate-spin" />
+                          <span>Memproses pendaftaran calon murid...</span>
+                        </>
+                      ) : (
+                        <>
+                          <CreditCard size={16} />
+                          <span>Bayar Token Rp {(config?.registrationTokenFee || 50000).toLocaleString('id-ID')} via Midtrans</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
                 );
               })()}
 
@@ -2452,13 +2524,13 @@ export default function SpmbLandingPage({
                       </p>
                     </div>
                   </div>
-                  <div className="p-3 bg-white/90 border border-rose-200 rounded-xl text-slate-700 space-y-1 text-[11px]">
-                    <p className="font-bold text-rose-800 m-0">Ketentuan Sistem Midtrans:</p>
-                    <p className="m-0">
-                      Karena pembayaran token tidak diselesaikan sebelum batas waktu berakhir di Midtrans, seluruh data pendaftaran awal telah dihapus otomatis dari sistem.
+                  <div className="p-3 bg-white/90 border border-rose-200 rounded-xl text-slate-700 space-y-1.5 text-[11px]">
+                    <p className="font-bold text-rose-800 m-0">Ketentuan Sistem Pendaftaran:</p>
+                    <p className="m-0 leading-relaxed">
+                      Karena pembayaran tidak diselesaikan sebelum batas waktu berakhir di Midtrans, seluruh data pendaftaran awal telah dihapus otomatis oleh sistem. <strong>Jika tidak langsung dibayarkan sesuai jangka waktu yang ditentukan maka data akan dihapus dan Calon Murid wajib mengisi ulang formulir.</strong>
                     </p>
-                    <p className="font-bold text-emerald-800 m-0 pt-1">
-                      👉 <strong>Arahan:</strong> Silakan lakukan pengisian ulang formulir pendaftaran data awal calon murid baru.
+                    <p className="font-bold text-emerald-900 m-0 pt-1">
+                      🏢 <strong>Jika Kesulitan</strong> silahkan datang langsung ke <strong>Kantor SPMB SMP Maarif NU Pandaan</strong> untuk dibantu Petugas.
                     </p>
                   </div>
                   <div className="flex justify-end pt-1">
@@ -2807,15 +2879,29 @@ export default function SpmbLandingPage({
                           </div>
 
                           {/* Warning Message per User Request */}
-                          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-[11px] text-rose-900 space-y-1">
-                            <p className="font-extrabold flex items-center gap-1.5 text-rose-950 m-0">
-                              <AlertTriangle size={14} className="text-rose-600 shrink-0" />
-                              <span>Ketentuan Penting Batas Waktu Midtrans:</span>
+                          <div className="p-3.5 bg-rose-50 border-2 border-rose-200 rounded-xl text-[11px] text-rose-900 space-y-2">
+                            <p className="font-extrabold flex items-center gap-1.5 text-rose-950 m-0 text-xs">
+                              <AlertTriangle size={15} className="text-rose-600 shrink-0" />
+                              <span>Ketentuan Penting Batas Waktu Pembayaran:</span>
                             </p>
                             <p className="m-0 leading-relaxed text-slate-700">
-                              Harap segera selesaikan pembayaran formulir token pendaftaran sebelum batas waktu berakhir.
-                              <strong> Jika transaksi di Midtrans telah kedaluwarsa (expired)</strong>, maka seluruh data pendaftaran awal calon murid baru akan <strong>dihapus otomatis oleh sistem</strong>, dan calon siswa harus mengisi ulang formulir pendaftaran data awal.
+                              Harap segera selesaikan pembayaran token pendaftaran sebelum batas waktu berakhir.
+                              <strong> Jika tidak langsung dibayarkan sesuai jangka waktu yang ditentukan maka data akan dihapus dan Calon Murid wajib mengisi ulang formulir.</strong>
                             </p>
+                            <div className="p-2.5 bg-white border border-rose-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                              <span className="font-bold text-emerald-900">
+                                🏢 Jika Kesulitan silahkan datang langsung ke <strong>Kantor SPMB SMP Maarif NU Pandaan</strong> untuk dibantu Petugas.
+                              </span>
+                              <a
+                                href={getWhatsAppLink('Assalamu\'alaikum Panitia SPMB, saya mengalami kendala pembayaran token pendaftaran di portal.')}
+                                target="_blank"
+                                rel="noopener noreferrer"
+                                className="text-emerald-700 hover:text-emerald-800 font-black flex items-center gap-1 shrink-0"
+                              >
+                                <MessageCircle size={13} />
+                                <span>WA Petugas</span>
+                              </a>
+                            </div>
                           </div>
                         </div>
 
@@ -4432,40 +4518,29 @@ export default function SpmbLandingPage({
         defaultType={receiptModalType}
       />
 
-      {/* Floating AI Assistant Trigger Button */}
+      {/* Floating WhatsApp Narahubung SPMB Button */}
       <div className="fixed bottom-6 right-6 z-40 flex flex-col items-end gap-2">
-        <button
-          type="button"
-          onClick={() => setIsAiAssistantOpen(true)}
+        <a
+          href={getWhatsAppLink()}
+          target="_blank"
+          rel="noopener noreferrer"
           className="group relative flex items-center gap-2.5 px-4 py-3 bg-gradient-to-r from-emerald-600 via-teal-600 to-emerald-700 hover:from-emerald-700 hover:to-teal-800 text-white font-bold text-xs sm:text-sm rounded-2xl shadow-xl hover:shadow-2xl border border-emerald-400/40 transition-all transform hover:-translate-y-1 active:scale-95 cursor-pointer"
-          aria-label="Tanya Asisten AI SPMB"
+          aria-label="Hubungi WhatsApp Narahubung SPMB"
         >
           <span className="absolute -top-1 -right-1 flex h-3.5 w-3.5">
-            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-amber-400 opacity-75" />
-            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-amber-500 border-2 border-white" />
+            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75" />
+            <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-emerald-500 border-2 border-white" />
           </span>
           <div className="w-8 h-8 rounded-xl bg-white/20 flex items-center justify-center text-white shrink-0">
-            <Bot size={18} />
+            <MessageCircle size={18} />
           </div>
           <div className="text-left hidden sm:block">
-            <p className="text-[10px] text-emerald-100 uppercase tracking-wider font-semibold m-0 leading-none">Tanya Pintar</p>
-            <p className="text-xs font-black m-0 leading-tight">Asisten AI SPMB</p>
+            <p className="text-[10px] text-emerald-100 uppercase tracking-wider font-semibold m-0 leading-none">Narahubung Panitia</p>
+            <p className="text-xs font-black m-0 leading-tight">Chat WhatsApp SPMB</p>
           </div>
-          <span className="sm:hidden text-xs font-bold">Tanya AI</span>
-        </button>
+          <span className="sm:hidden text-xs font-bold">WA SPMB</span>
+        </a>
       </div>
-
-      {/* SPMB AI Assistant Modal */}
-      <SpmbAiAssistantModal
-        isOpen={isAiAssistantOpen}
-        onClose={() => setIsAiAssistantOpen(false)}
-        config={config}
-        schoolIdentity={currentSchoolIdentity}
-        onNavigateTab={(tab) => {
-          setActiveTab(tab);
-          setIsAiAssistantOpen(false);
-        }}
-      />
     </div>
   );
 }

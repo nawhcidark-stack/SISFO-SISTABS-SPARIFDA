@@ -480,6 +480,33 @@ export default function AdminSpmbManagement({
     }
   };
 
+  // Cek status Midtrans untuk calon murid tertentu (terutama jika statusnya pending)
+  const handleCheckCandidateMidtrans = async (candidate: SpmbCandidate) => {
+    try {
+      const res = await fetch(`/api/spmb/candidate/${encodeURIComponent(candidate.nisn)}?_t=${Date.now()}`);
+      if (res.ok) {
+        const updated: SpmbCandidate = await res.json();
+        setCandidates(prev => prev.map(c => c.id === updated.id ? updated : c));
+        alert(
+          `Status Pembayaran Midtrans Calon Murid:\n` +
+          `• Nama: ${updated.fullName}\n` +
+          `• Status Token: ${updated.tokenPaymentStatus ? updated.tokenPaymentStatus.toUpperCase() : 'BELUM BAYAR'}${updated.tokenPaid ? ' (LUNAS)' : ' (PENDING/BELUM LUNAS)'}\n` +
+          `• Batas Waktu: ${updated.tokenExpiryTime || '24 Jam'}\n` +
+          `• No. Order: ${updated.tokenPaymentOrderId || updated.tokenOrderId || '-'}`
+        );
+      } else if (res.status === 410) {
+        // Expired and automatically cleaned up
+        setCandidates(prev => prev.filter(c => c.id !== candidate.id));
+        alert(`Batas waktu pembayaran token calon murid ${candidate.fullName} telah KEDALUWARSA (EXPIRED) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem.`);
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Gagal mengecek status ke Midtrans.');
+      }
+    } catch (e: any) {
+      alert('Koneksi Midtrans gagal: ' + e.message);
+    }
+  };
+
   // Filtered Candidates List
   const filteredCandidates = candidates.filter(c => {
     const matchesSearch = 
@@ -488,7 +515,16 @@ export default function AdminSpmbManagement({
       (c.schoolOrigin && c.schoolOrigin.toLowerCase().includes(searchQuery.toLowerCase()));
 
     const matchesSession = filterSession === 'all' || c.sessionId === filterSession;
-    const matchesStatus = filterStatus === 'all' || c.status === filterStatus;
+    let matchesStatus = true;
+    if (filterStatus === 'all') {
+      matchesStatus = true;
+    } else if (filterStatus === 'token_pending') {
+      matchesStatus = c.tokenPaymentStatus === 'pending' || (!c.tokenPaid && c.tokenPaymentStatus !== 'paid');
+    } else if (filterStatus === 'registered' || filterStatus === 'token_paid') {
+      matchesStatus = Boolean(c.tokenPaid || c.tokenPaymentStatus === 'paid');
+    } else {
+      matchesStatus = c.status === filterStatus;
+    }
     const matchesGender = filterGender === 'all' || c.gender === filterGender;
 
     const isMaarif = c.schoolOriginType === 'maarif_jogosari' || (c.schoolOrigin || '').toLowerCase().includes('maarif');
@@ -915,6 +951,7 @@ export default function AdminSpmbManagement({
                 <option value="re_registered">Daftar Ulang Lunas</option>
                 <option value="form_submitted">Formulir Lengkap</option>
                 <option value="registered">Token Lunas</option>
+                <option value="token_pending">Token Pending (Midtrans)</option>
                 <option value="rejected">Ditolak</option>
               </select>
             </div>
@@ -1035,7 +1072,8 @@ export default function AdminSpmbManagement({
                   ) : (
                     filteredCandidates.map((candidate) => {
                       const isCollective = candidate.registrationType === 'school_collective';
-                      const isTokenPaid = candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid;
+                      const isTokenPending = candidate.tokenPaymentStatus === 'pending';
+                      const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
                       const isRefunded = candidate.collectiveRefundStatus === 'refunded';
                       const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF');
 
@@ -1153,6 +1191,27 @@ export default function AdminSpmbManagement({
                                       <span>Cetak Kuitansi</span>
                                     </button>
                                   </>
+                                ) : isTokenPending ? (
+                                  <div className="space-y-1">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">
+                                      <Clock size={10} className="text-amber-600" />
+                                      <span>Pending Midtrans</span>
+                                    </span>
+                                    {candidate.tokenExpiryTime && (
+                                      <p className="text-[9px] text-slate-500 m-0">
+                                        Batas: {candidate.tokenExpiryTime.replace(' ', ' ').slice(0, 16)}
+                                      </p>
+                                    )}
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCheckCandidateMidtrans(candidate)}
+                                      className="text-[10px] text-indigo-700 hover:text-indigo-900 underline font-bold flex items-center gap-1 cursor-pointer"
+                                      title="Cek status terkini ke Midtrans"
+                                    >
+                                      <RefreshCw size={10} />
+                                      <span>Cek Midtrans</span>
+                                    </button>
+                                  </div>
                                 ) : (
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
                                     Belum Bayar Token

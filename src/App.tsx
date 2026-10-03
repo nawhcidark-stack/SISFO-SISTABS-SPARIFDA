@@ -343,6 +343,17 @@ export default function App() {
       const newUrl = window.location.origin + (isRedirectPath ? '/pembayaran-sukses' : window.location.pathname);
       window.history.replaceState({}, document.title, newUrl);
 
+      // Khusus transaksi SPMB (Token & Daftar Ulang): arahkan langsung ke portal SPMB untuk verifikasi status riil
+      if (orderId.startsWith('SPMB-TOKEN-') || orderId.startsWith('SPMB-REREG-') || orderId.startsWith('SPMB-')) {
+        const tokens = orderId.split('-');
+        const candidateNisn = tokens.length >= 3 ? tokens[2] : '';
+        if (candidateNisn) {
+          localStorage.setItem('spmb_last_nisn', candidateNisn);
+        }
+        setIsSpmbOpen(true);
+        return;
+      }
+
       setIsLoading(true);
       fetch('/api/simulate-payment-success', {
         method: 'POST',

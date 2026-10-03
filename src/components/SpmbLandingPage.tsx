@@ -54,7 +54,9 @@ import {
   UserCheck,
   Bot,
   MessageSquare,
-  MessageCircle
+  MessageCircle,
+  Copy,
+  Trash2
 } from 'lucide-react';
 import QRCode from 'qrcode';
 import { SpmbAiAssistantModal } from './SpmbAiAssistantModal';
@@ -151,6 +153,15 @@ export default function SpmbLandingPage({
   const [isSearchingCandidate, setIsSearchingCandidate] = useState<boolean>(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [portalTab, setPortalTab] = useState<'status' | 'form' | 'docs' | 'rereg' | 'card'>('status');
+  const [expiredNotice, setExpiredNotice] = useState<{ message: string; nisn?: string } | null>(null);
+  const [copiedVa, setCopiedVa] = useState<boolean>(false);
+  const [tokenTimeRemaining, setTokenTimeRemaining] = useState<{
+    hours: number;
+    minutes: number;
+    seconds: number;
+    isExpired: boolean;
+    formattedString: string;
+  } | null>(null);
 
   // Full Data Lengkap Siswa Form State
   const [fullForm, setFullForm] = useState<Partial<SpmbCandidate>>({});
@@ -407,7 +418,12 @@ export default function SpmbLandingPage({
           },
           onPending: (result: any) => {
             console.log('Midtrans Snap payment pending:', result);
+            setIsPayModalOpen(false);
             setSnapError('Pembayaran dalam status pending. Silakan selesaikan pembayaran sesuai panduan Midtrans.');
+            const targetNisn = regForm.nisn || activeCandidate?.nisn;
+            if (targetNisn) {
+              handleCheckStatus(targetNisn);
+            }
           },
           onError: (result: any) => {
             console.error('Midtrans Snap payment error:', result);
@@ -418,7 +434,10 @@ export default function SpmbLandingPage({
           },
           onClose: () => {
             console.log('Midtrans Snap closed by user');
-            // Do NOT mark as paid when closed
+            const targetNisn = regForm.nisn || activeCandidate?.nisn;
+            if (targetNisn) {
+              handleCheckStatus(targetNisn);
+            }
           }
         });
       } catch (err: any) {
@@ -439,6 +458,7 @@ export default function SpmbLandingPage({
     }
 
     setPortalError(null);
+    setExpiredNotice(null);
     setIsSearchingCandidate(true);
 
     try {
@@ -498,8 +518,18 @@ export default function SpmbLandingPage({
           setSiblingMatchResult(null);
         }
       } else {
-        const err = await res.json();
-        setPortalError(err.error || 'Calon siswa belum menyelesaikan pembayaran token atau data tidak ditemukan. Data pendaftaran tidak tersimpan, silakan input formulir pendaftaran ulang.');
+        const err = await res.json().catch(() => ({}));
+        if (res.status === 410 || err.isExpired || err.expired || err.code === 'TOKEN_EXPIRED') {
+          setExpiredNotice({
+            message: err.error || err.message || 'Batas waktu pembayaran token pendaftaran di Midtrans telah kedaluwarsa (expired). Data pendaftaran awal telah dihapus otomatis dari sistem.',
+            nisn
+          });
+          setActiveCandidate(null);
+          setPortalError(null);
+          setActiveTab('portal');
+          return;
+        }
+        setPortalError(err.error || 'Calon siswa belum menyelesaikan pembayaran token atau data tidak ditemukan. Silakan input formulir pendaftaran awal.');
         setActiveCandidate(null);
       }
     } catch (e) {
@@ -509,6 +539,103 @@ export default function SpmbLandingPage({
       setIsSearchingCandidate(false);
     }
   };
+
+  // Re-generate or restart Snap Token for a pending candidate
+  const handleRestartSnapForCandidate = async (candidate: SpmbCandidate) => {
+    try {
+      setIsProcessingTokenPay(true);
+      const res = await fetch('/api/spmb/register-token-snap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: candidate.nisn,
+          fullName: candidate.fullName,
+          phone: candidate.phone || candidate.parentPhone,
+          gender: candidate.gender,
+          sessionId: candidate.sessionId,
+          schoolOriginType: candidate.schoolOriginType,
+          schoolOrigin: candidate.schoolOrigin
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        const token = data.snapToken || data.token;
+        setSnapToken(token);
+        setSnapOrderId(data.orderId);
+        setSnapAmount(data.tokenFee || 50000);
+        setSnapRedirectUrl(data.redirectUrl || null);
+        setSnapTitle(`Token Pendaftaran SPMB - ${candidate.fullName}`);
+        setSnapPayType('token');
+        setIsPayModalOpen(true);
+        setTimeout(() => {
+          triggerSnapPayment(token, data.orderId, 'token');
+        }, 300);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Gagal membuat sesi pembayaran Midtrans.');
+      }
+    } catch (e: any) {
+      alert('Koneksi Midtrans gagal: ' + e.message);
+    } finally {
+      setIsProcessingTokenPay(false);
+    }
+  };
+
+  // Live countdown timer for pending Midtrans token payment
+  useEffect(() => {
+    if (!activeCandidate || activeCandidate.tokenPaid || activeCandidate.tokenPaymentStatus !== 'pending' || !activeCandidate.tokenExpiryTime) {
+      setTokenTimeRemaining(null);
+      return;
+    }
+
+    const calculateRemaining = () => {
+      try {
+        const expiryMs = new Date(activeCandidate.tokenExpiryTime!.replace(' ', 'T')).getTime();
+        const diff = expiryMs - Date.now();
+
+        if (diff <= 0) {
+          setTokenTimeRemaining({
+            hours: 0,
+            minutes: 0,
+            seconds: 0,
+            isExpired: true,
+            formattedString: 'Batas Waktu Telah Habis (Expired)'
+          });
+          // Check live status to trigger cleanup
+          handleCheckStatus(activeCandidate.nisn);
+        } else {
+          const totalSecs = Math.floor(diff / 1000);
+          const hours = Math.floor(totalSecs / 3600);
+          const minutes = Math.floor((totalSecs % 3600) / 60);
+          const seconds = totalSecs % 60;
+
+          setTokenTimeRemaining({
+            hours,
+            minutes,
+            seconds,
+            isExpired: false,
+            formattedString: `${hours} Jam ${minutes} Menit ${seconds} Detik`
+          });
+        }
+      } catch (e) {
+        setTokenTimeRemaining(null);
+      }
+    };
+
+    calculateRemaining();
+    const timerInterval = setInterval(calculateRemaining, 1000);
+    return () => clearInterval(timerInterval);
+  }, [activeCandidate?.tokenExpiryTime, activeCandidate?.tokenPaymentStatus, activeCandidate?.tokenPaid, activeCandidate?.nisn]);
+
+  // Check saved NISN on mount (e.g. redirect back from Midtrans)
+  useEffect(() => {
+    const savedNisn = localStorage.getItem('spmb_last_nisn');
+    if (savedNisn) {
+      localStorage.removeItem('spmb_last_nisn');
+      setSearchNisn(savedNisn);
+      handleCheckStatus(savedNisn);
+    }
+  }, []);
 
   // Real-time Check No KK Match with active students (7/8/9) or new candidates
   const checkKkMatchRealtime = async (kkVal: string, candidateToUse?: SpmbCandidate | null) => {
@@ -2312,7 +2439,57 @@ export default function SpmbLandingPage({
                 </button>
               </div>
 
-              {portalError && (
+              {expiredNotice && (
+                <div className="p-5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs space-y-3 shadow-sm animate-in fade-in">
+                  <div className="flex items-start gap-3">
+                    <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                      <AlertTriangle size={22} />
+                    </div>
+                    <div className="space-y-1">
+                      <p className="font-black text-rose-900 text-sm m-0">Batas Waktu Pembayaran Telah Kedaluwarsa (Expired)</p>
+                      <p className="m-0 text-slate-700 leading-relaxed">
+                        {expiredNotice.message}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="p-3 bg-white/90 border border-rose-200 rounded-xl text-slate-700 space-y-1 text-[11px]">
+                    <p className="font-bold text-rose-800 m-0">Ketentuan Sistem Midtrans:</p>
+                    <p className="m-0">
+                      Karena pembayaran token tidak diselesaikan sebelum batas waktu berakhir di Midtrans, seluruh data pendaftaran awal telah dihapus otomatis dari sistem.
+                    </p>
+                    <p className="font-bold text-emerald-800 m-0 pt-1">
+                      👉 <strong>Arahan:</strong> Silakan lakukan pengisian ulang formulir pendaftaran data awal calon murid baru.
+                    </p>
+                  </div>
+                  <div className="flex justify-end pt-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExpiredNotice(null);
+                        setPortalError(null);
+                        setSearchNisn('');
+                        setRegForm({
+                          nisn: expiredNotice.nisn || '',
+                          fullName: '',
+                          gender: 'L',
+                          parentPhone: '',
+                          phone: '',
+                          schoolOriginType: 'maarif_jogosari',
+                          manualSchoolName: '',
+                          sessionId: config?.sessions?.find(s => s.isActive)?.id || 'gelombang-1'
+                        });
+                        setActiveTab('register');
+                      }}
+                      className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white font-black text-xs rounded-xl shadow-sm flex items-center gap-2 cursor-pointer transition-all"
+                    >
+                      <FileText size={15} />
+                      <span>Isi Ulang Formulir Data Awal Sekarang</span>
+                    </button>
+                  </div>
+                </div>
+              )}
+
+              {portalError && !expiredNotice && (
                 <div className="p-4 rounded-2xl bg-rose-50 border border-rose-200 text-rose-900 text-xs space-y-2.5">
                   <div className="flex items-start gap-2.5">
                     <AlertCircle size={18} className="text-rose-600 shrink-0 mt-0.5" />
@@ -2362,7 +2539,7 @@ export default function SpmbLandingPage({
                   id: 'status' as const,
                   num: 1,
                   label: '1. Status Token',
-                  desc: 'Rp 50.000',
+                  desc: isStep1Done ? 'LUNAS (Rp 50rb)' : 'PENDING (Rp 50rb)',
                   icon: CreditCard,
                   done: isStep1Done,
                   unlocked: isStep1Unlocked,
@@ -2436,6 +2613,11 @@ export default function SpmbLandingPage({
                       <span className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-md shadow-emerald-600/20 flex items-center gap-1.5">
                         <CheckCircle2 size={16} />
                         <span>DITERIMA / LOLOS SELEKSI</span>
+                      </span>
+                    ) : !isStep1Done ? (
+                      <span className="px-3.5 py-1.5 rounded-xl bg-amber-50 text-amber-900 border border-amber-300 font-extrabold text-xs flex items-center gap-1.5 animate-pulse shadow-xs">
+                        <Clock size={14} className="text-amber-600" />
+                        <span>Status: Menunggu Pembayaran Token (Pending)</span>
                       </span>
                     ) : (
                       <span className="px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-800 border border-indigo-200 font-bold text-xs">
@@ -2566,32 +2748,181 @@ export default function SpmbLandingPage({
                         </div>
                       </div>
                     ) : (
-                      <div className="p-4 rounded-2xl bg-amber-50 border border-amber-200 text-xs text-amber-900 space-y-3">
-                        <p className="m-0">
-                          Token pendaftaran awal (Rp 50.000) belum lunas. Silakan selesaikan pembayaran token terlebih dahulu untuk membuka akses Tahap 2: Pengisian Data Lengkap Siswa.
-                        </p>
-                        <button
-                          type="button"
-                          onClick={() => {
-                            if (activeCandidate) {
-                              setRegForm(prev => ({
-                                ...prev,
-                                fullName: activeCandidate.fullName || '',
-                                nisn: activeCandidate.nisn || '',
-                                phone: activeCandidate.phone || '',
-                                gender: activeCandidate.gender || 'L',
-                                schoolOriginType: activeCandidate.schoolOriginType || 'maarif_jogosari',
-                                manualSchoolName: activeCandidate.schoolOrigin || '',
-                                sessionId: activeCandidate.sessionId || prev.sessionId
-                              }));
-                            }
-                            setActiveTab('register');
-                          }}
-                          className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black rounded-xl text-xs flex items-center gap-2 cursor-pointer shadow-sm"
-                        >
-                          <CreditCard size={14} />
-                          <span>Menuju Halaman Pendaftaran & Bayar Token (Rp 50.000)</span>
-                        </button>
+                      <div className="p-5 rounded-3xl bg-amber-50/90 border-2 border-amber-300 text-xs space-y-4 shadow-sm animate-in fade-in">
+                        {/* Status Header */}
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-amber-200">
+                          <div className="flex items-center gap-2.5">
+                            <div className="w-10 h-10 rounded-2xl bg-amber-100 text-amber-800 border border-amber-300 flex items-center justify-center shrink-0">
+                              <Clock size={20} className="animate-spin text-amber-700" style={{ animationDuration: '6s' }} />
+                            </div>
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-950 border border-amber-300 flex items-center gap-1.5 animate-pulse">
+                                  <span className="w-2 h-2 rounded-full bg-amber-600"></span>
+                                  STATUS FORMULIR AWAL: PENDING
+                                </span>
+                              </div>
+                              <p className="text-xs font-bold text-amber-900 mt-1 m-0">
+                                Menunggu Penyelesaian Pembayaran Token Pendaftaran Midtrans
+                              </p>
+                            </div>
+                          </div>
+
+                          <div className="text-left sm:text-right bg-white/80 sm:bg-transparent p-2.5 sm:p-0 rounded-xl border sm:border-0 border-amber-200">
+                            <span className="text-[11px] text-slate-500 block">Total Tagihan Token:</span>
+                            <span className="text-base font-black text-slate-900">Rp {(activeCandidate.tokenAmount || 50000).toLocaleString('id-ID')}</span>
+                          </div>
+                        </div>
+
+                        {/* Midtrans Expiry & Jeda Waktu Countdown Box */}
+                        <div className="p-4 bg-white/90 border border-amber-300/80 rounded-2xl space-y-2.5">
+                          <div className="flex items-start justify-between gap-3 flex-wrap">
+                            <div className="space-y-0.5">
+                              <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">Jeda Waktu / Batas Akhir Pembayaran:</span>
+                              <p className="text-xs font-extrabold text-slate-900 m-0">
+                                {activeCandidate.tokenExpiryTime
+                                  ? `${activeCandidate.tokenExpiryTime.replace(' ', ' • Jam ')} WIB`
+                                  : '24 Jam sejak pendaftaran awal dimulai'}
+                              </p>
+                            </div>
+
+                            {/* Live Countdown Timer */}
+                            {tokenTimeRemaining && (
+                              <div className={`px-3 py-1.5 rounded-xl border flex items-center gap-2 ${
+                                tokenTimeRemaining.isExpired
+                                  ? 'bg-rose-100 text-rose-800 border-rose-300 font-black'
+                                  : 'bg-amber-100/80 text-amber-900 border-amber-300 font-mono font-bold'
+                              }`}>
+                                <Clock size={14} className={tokenTimeRemaining.isExpired ? 'text-rose-600' : 'text-amber-700 animate-pulse'} />
+                                <span>
+                                  {tokenTimeRemaining.isExpired
+                                    ? 'WAKTU HABIS (EXPIRED)'
+                                    : `Sisa Waktu: ${tokenTimeRemaining.formattedString}`}
+                                </span>
+                              </div>
+                            )}
+                          </div>
+
+                          {/* Warning Message per User Request */}
+                          <div className="p-3 bg-rose-50 border border-rose-200 rounded-xl text-[11px] text-rose-900 space-y-1">
+                            <p className="font-extrabold flex items-center gap-1.5 text-rose-950 m-0">
+                              <AlertTriangle size={14} className="text-rose-600 shrink-0" />
+                              <span>Ketentuan Penting Batas Waktu Midtrans:</span>
+                            </p>
+                            <p className="m-0 leading-relaxed text-slate-700">
+                              Harap segera selesaikan pembayaran formulir token pendaftaran sebelum batas waktu berakhir.
+                              <strong> Jika transaksi di Midtrans telah kedaluwarsa (expired)</strong>, maka seluruh data pendaftaran awal calon murid baru akan <strong>dihapus otomatis oleh sistem</strong>, dan calon siswa harus mengisi ulang formulir pendaftaran data awal.
+                            </p>
+                          </div>
+                        </div>
+
+                        {/* Midtrans Virtual Account & Payment Info if Available */}
+                        {activeCandidate.tokenVaNumbers && activeCandidate.tokenVaNumbers.length > 0 && (
+                          <div className="p-4 bg-indigo-50/80 border border-indigo-200 rounded-2xl space-y-2.5">
+                            <div className="flex items-center justify-between">
+                              <span className="text-xs font-black text-indigo-950 uppercase tracking-wider flex items-center gap-1.5">
+                                <CreditCard size={14} className="text-indigo-600" />
+                                <span>Nomor Virtual Account (VA) Midtrans</span>
+                              </span>
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-indigo-100 text-indigo-800 border border-indigo-300">
+                                {activeCandidate.tokenVaNumbers[0]?.bank?.toUpperCase() || 'VA'}
+                              </span>
+                            </div>
+
+                            <div className="p-3 bg-white border border-indigo-200 rounded-xl flex items-center justify-between gap-3">
+                              <div>
+                                <span className="text-[10px] text-slate-500 block uppercase font-bold">Bank {activeCandidate.tokenVaNumbers[0]?.bank?.toUpperCase()}:</span>
+                                <span className="font-mono text-base font-black text-slate-900 tracking-wider">
+                                  {activeCandidate.tokenVaNumbers[0]?.va_number}
+                                </span>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  if (activeCandidate.tokenVaNumbers?.[0]?.va_number) {
+                                    navigator.clipboard.writeText(activeCandidate.tokenVaNumbers[0].va_number);
+                                    setCopiedVa(true);
+                                    setTimeout(() => setCopiedVa(false), 2000);
+                                  }
+                                }}
+                                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-xs rounded-lg shadow-xs flex items-center gap-1.5 transition-all cursor-pointer"
+                              >
+                                {copiedVa ? <Check size={13} /> : <Copy size={13} />}
+                                <span>{copiedVa ? 'Tersalin!' : 'Salin No. VA'}</span>
+                              </button>
+                            </div>
+                            <p className="text-[11px] text-indigo-900 m-0 leading-relaxed">
+                              Transfer tepat <strong>Rp {(activeCandidate.tokenAmount || 50000).toLocaleString('id-ID')}</strong> melalui ATM, Mobile Banking, atau Internet Banking menggunakan nomor Virtual Account di atas.
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Action Buttons: Lanjutkan Pembayaran, Cek Status, Batalkan Draft */}
+                        <div className="pt-2 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5">
+                          <div className="flex flex-wrap items-center gap-2">
+                            {/* Tombol Lanjutkan Pembayaran (Midtrans Snap) */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeCandidate) {
+                                  if (activeCandidate.tokenSnapToken) {
+                                    setSnapToken(activeCandidate.tokenSnapToken);
+                                    setSnapOrderId(activeCandidate.tokenPaymentOrderId || null);
+                                    setSnapAmount(activeCandidate.tokenAmount || 50000);
+                                    setSnapRedirectUrl(activeCandidate.tokenRedirectUrl || null);
+                                    setSnapTitle(`Token Pendaftaran SPMB - ${activeCandidate.fullName}`);
+                                    setSnapPayType('token');
+                                    setIsPayModalOpen(true);
+                                    setTimeout(() => {
+                                      triggerSnapPayment(activeCandidate.tokenSnapToken, activeCandidate.tokenPaymentOrderId, 'token');
+                                    }, 200);
+                                  } else {
+                                    handleRestartSnapForCandidate(activeCandidate);
+                                  }
+                                }
+                              }}
+                              disabled={isProcessingTokenPay}
+                              className="flex-1 sm:flex-none px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-xs rounded-xl shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                            >
+                              <CreditCard size={15} />
+                              <span>{isProcessingTokenPay ? 'Menghubungkan Midtrans...' : 'Lanjutkan Pembayaran (Midtrans)'}</span>
+                            </button>
+
+                            {/* Tombol Cek Status Pembayaran Realtime */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeCandidate?.nisn) {
+                                  handleCheckStatus(activeCandidate.nisn);
+                                }
+                              }}
+                              disabled={isSearchingCandidate}
+                              className="px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-extrabold text-xs rounded-xl border border-slate-300 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                              title="Sinkronkan status transaksi terkini dari Midtrans"
+                            >
+                              <RefreshCw size={14} className={isSearchingCandidate ? 'animate-spin text-emerald-600' : ''} />
+                              <span>{isSearchingCandidate ? 'Mengecek...' : 'Cek Status Midtrans'}</span>
+                            </button>
+                          </div>
+
+                          {/* Tombol Batalkan / Hapus Draft Formulir Awal */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const confirmCancel = window.confirm(
+                                `Batalkan pendaftaran awal calon murid ${activeCandidate.fullName}?\n\nPerhatian: Seluruh data formulir awal yang belum lunas ini akan dihapus dari sistem dan Anda dapat melakukan pengisian formulir data awal kembali kapan saja.`
+                              );
+                              if (confirmCancel) {
+                                handleCancelTokenPayment(activeCandidate.tokenPaymentOrderId || undefined);
+                              }
+                            }}
+                            className="px-3.5 py-2 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-900 border border-rose-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer transition-all"
+                            title="Batalkan pendaftaran dan hapus formulir awal ini"
+                          >
+                            <Trash2 size={13} className="text-rose-600" />
+                            <span>Batalkan & Hapus Draft</span>
+                          </button>
+                        </div>
                       </div>
                     )}
 

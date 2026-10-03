@@ -49,16 +49,22 @@ export default function BirthDateSplitInput({
   const [localMonth, setLocalMonth] = useState(initial.month);
   const [localYear, setLocalYear] = useState(initial.year);
 
-  // Keep a ref of the last value emitted to parent so typing year doesn't get wiped by external sync
+  // Keep a ref of the last value emitted to parent so internal typing never triggers external reset
+  const isInternalChangeRef = React.useRef(false);
   const lastEmittedRef = React.useRef(birthDate);
 
-  // Sync from props only when parent updates externally
+  // Sync from props only when parent updates externally (e.g. form load or full reset)
   React.useEffect(() => {
+    if (isInternalChangeRef.current) {
+      isInternalChangeRef.current = false;
+      return;
+    }
+
     if (birthDate && birthDate !== lastEmittedRef.current) {
       const parsed = parseDateParts(birthDate);
-      if (parsed.day) setLocalDay(parsed.day);
-      if (parsed.month) setLocalMonth(parsed.month);
-      if (parsed.year) setLocalYear(parsed.year);
+      setLocalDay(parsed.day || '');
+      setLocalMonth(parsed.month || '');
+      setLocalYear(parsed.year || '');
       lastEmittedRef.current = birthDate;
     } else if (!birthDate && lastEmittedRef.current) {
       setLocalDay('');
@@ -79,17 +85,19 @@ export default function BirthDateSplitInput({
     if (part === 'year') setLocalYear(val);
 
     const cleanY = (nextYear || '').trim();
-    const cleanM = (nextMonth || '').trim().padStart(2, '0');
-    const cleanD = (nextDay || '').trim().padStart(2, '0');
+    const cleanM = (nextMonth || '').trim();
+    const cleanD = (nextDay || '').trim();
 
     let emitted = '';
-    if (cleanY && cleanM && cleanD) {
-      emitted = `${cleanY}-${cleanM}-${cleanD}`;
+    if (cleanY.length === 4 && cleanM && cleanD) {
+      emitted = `${cleanY}-${cleanM.padStart(2, '0')}-${cleanD.padStart(2, '0')}`;
     } else if (cleanY || cleanM || cleanD) {
-      emitted = `${cleanY || '2014'}-${cleanM || '01'}-${cleanD || '01'}`;
+      // Partial date while user is typing
+      emitted = `${cleanY}-${cleanM ? cleanM.padStart(2, '0') : ''}-${cleanD ? cleanD.padStart(2, '0') : ''}`;
     }
 
     lastEmittedRef.current = emitted;
+    isInternalChangeRef.current = true;
     onBirthDateChange(emitted);
   };
 
@@ -104,17 +112,17 @@ export default function BirthDateSplitInput({
 
   // Compute combined preview
   const combinedText = useMemo(() => {
-    const fullDate = (localYear && localMonth && localDay) 
+    const fullDate = (localYear && localYear.length === 4 && localMonth && localDay) 
       ? `${localYear}-${localMonth.padStart(2, '0')}-${localDay.padStart(2, '0')}`
-      : birthDate;
-    return formatCombinedPlaceAndDate(birthPlace, fullDate);
+      : (birthDate && birthDate.length === 10 ? birthDate : '');
+    return fullDate ? formatCombinedPlaceAndDate(birthPlace, fullDate) : (birthPlace ? `${birthPlace}, -` : '-');
   }, [birthPlace, localYear, localMonth, localDay, birthDate]);
 
   const dateFormattedOnly = useMemo(() => {
-    const fullDate = (localYear && localMonth && localDay)
+    const fullDate = (localYear && localYear.length === 4 && localMonth && localDay)
       ? `${localYear}-${localMonth.padStart(2, '0')}-${localDay.padStart(2, '0')}`
-      : birthDate;
-    return formatIndonesianDate(fullDate);
+      : (birthDate && birthDate.length === 10 ? birthDate : '');
+    return fullDate ? formatIndonesianDate(fullDate) : '-';
   }, [localYear, localMonth, localDay, birthDate]);
 
   const inputBaseClasses = isDark

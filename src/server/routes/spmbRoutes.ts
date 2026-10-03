@@ -95,6 +95,44 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     recordOrUpdateMidtransTransaction
   } = deps;
 
+  // Real Midtrans Status Checker for SPMB Orders
+  async function checkMidtransOrderStatus(orderId: string): Promise<any> {
+    const serverKey = (midtransConfig.serverKey || process.env.MIDTRANS_SERVER_KEY || "").trim();
+    if (!serverKey || !orderId) return null;
+    const cleanId = String(orderId).trim().replace(/^#+/, "").replace(/^["']|["']$/g, "").trim();
+    if (!cleanId) return null;
+    const authHeader = Buffer.from(`${serverKey}:`).toString("base64");
+    
+    const primaryUrl = midtransConfig.isProduction
+      ? `https://api.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`
+      : `https://api.sandbox.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`;
+    const fallbackUrl = midtransConfig.isProduction
+      ? `https://api.sandbox.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`
+      : `https://api.midtrans.com/v2/${encodeURIComponent(cleanId)}/status`;
+
+    try {
+      let res = await fetch(primaryUrl, {
+        method: "GET",
+        headers: { "Authorization": `Basic ${authHeader}`, "Accept": "application/json" }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status_code && data.status_code !== "404") return data;
+      }
+      res = await fetch(fallbackUrl, {
+        method: "GET",
+        headers: { "Authorization": `Basic ${authHeader}`, "Accept": "application/json" }
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.status_code && data.status_code !== "404") return data;
+      }
+    } catch (e) {
+      console.warn("[Midtrans Status Check Error in SPMB]:", e);
+    }
+    return null;
+  }
+
   // ==========================================
   // SPMB (PENERIMAAN MURID BARU) API ENDPOINTS
   // ==========================================
@@ -183,19 +221,49 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     });
   });
 
+  // Helper: Bersihkan draft calon murid yang batas waktu tokennya telah expired di Midtrans
+  function cleanupExpiredSpmbTokenCandidates() {
+    const now = Date.now();
+    for (let i = spmbCandidates.length - 1; i >= 0; i--) {
+      const c = spmbCandidates[i];
+      if (!c.tokenPaid && c.tokenPaymentStatus === 'pending') {
+        let isExpired = false;
+        if (c.tokenExpiryTime) {
+          const expMs = new Date(c.tokenExpiryTime.replace(" ", "T")).getTime();
+          if (!isNaN(expMs) && expMs <= now) {
+            isExpired = true;
+          }
+        } else if (c.createdAt) {
+          const createdMs = new Date(c.createdAt).getTime();
+          if (!isNaN(createdMs) && (now - createdMs) > 24 * 60 * 60 * 1000) {
+            isExpired = true;
+          }
+        }
+        if (isExpired) {
+          const candId = c.id;
+          spmbCandidates.splice(i, 1);
+          saveState();
+          directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
+        }
+      }
+    }
+  }
+
   // 3. Get All Candidates (Admin)
   router.get("/candidates", (req, res) => {
     // Jalankan pemeriksaan otomatisasi pengalihan sesi bagi calon yang melewati batas akhir
     checkAndAutoTransferExpiredCandidates();
-    // Only return registered candidates who have completed or waived token payment
-    const validCandidates = spmbCandidates.filter(c => c.tokenPaid || c.tokenPaymentStatus === 'paid' || c.tokenPaymentStatus === 'waived');
-    res.json(validCandidates);
+    // Bersihkan draft token yang sudah expired
+    cleanupExpiredSpmbTokenCandidates();
+    // Kembalikan seluruh data calon murid (Lunas maupun Pending) agar Admin dapat memonitor status
+    res.json(spmbCandidates);
   });
 
-  // 4. Check Candidate Status by NISN (Automatically delete/deny if token is unpaid)
+  // 4. Check Candidate Status by NISN (Live Check ke Midtrans Gateway)
   router.get("/candidate/:nisn", async (req, res) => {
-    // Jalankan pemeriksaan otomatisasi pengalihan sesi
+    // Jalankan pemeriksaan otomatisasi pengalihan sesi dan pembersihan expired
     checkAndAutoTransferExpiredCandidates();
+    cleanupExpiredSpmbTokenCandidates();
 
     const rawNisn = (req.params.nisn || "").trim();
     if (!rawNisn) {
@@ -221,11 +289,114 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
 
     const candidate = spmbCandidates[candidateIdx];
-    // Jika belum membayar token, otomatis data tidak tersimpan / dihapus dari sistem
-    if (!candidate.tokenPaid && candidate.tokenPaymentStatus !== 'paid' && candidate.tokenPaymentStatus !== 'waived') {
-      spmbCandidates.splice(candidateIdx, 1);
-      saveState();
-      return res.status(404).json({ error: `Calon murid belum menyelesaikan pembayaran token. Data pendaftaran tidak tersimpan, silakan input formulir pendaftaran ulang.` });
+    const activeOrderId = candidate.tokenPaymentOrderId || candidate.tokenOrderId;
+
+    // Selalu verifikasi status terkini ke Midtrans jika belum lunas daftar ulang (untuk memastikan kebenaran status Token)
+    if (activeOrderId && !candidate.reRegistrationPaid) {
+      const mtStatus = await checkMidtransOrderStatus(activeOrderId);
+      if (mtStatus) {
+        const ts = String(mtStatus.transaction_status || "").toLowerCase();
+        const isSettled = ts === "settlement" || ts === "capture";
+        const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
+        const isPending = ts === "pending";
+
+        if (isSettled) {
+          candidate.tokenPaid = true;
+          candidate.tokenPaymentStatus = "paid";
+          candidate.tokenPaidAt = mtStatus.settlement_time || mtStatus.transaction_time || new Date().toISOString();
+          candidate.tokenPaymentMethod = `Midtrans (${mtStatus.payment_type || 'Online'})`;
+          candidate.updatedAt = new Date().toISOString();
+          saveState();
+          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+          return res.json(candidate);
+        } else if (isExpired) {
+          // Sesuai permintaan: jika di midtrans expired, maka data Awal murid baru dihapus, ada arahan isi ulang formulir data awal
+          const candId = candidate.id;
+          const candName = candidate.fullName;
+          spmbCandidates.splice(candidateIdx, 1);
+          saveState();
+          directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
+          return res.status(410).json({
+            error: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+            message: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+            expired: true,
+            isExpired: true,
+            code: "TOKEN_EXPIRED",
+            canReRegister: true
+          });
+        } else if (isPending) {
+          // Masih status pending di Midtrans: data formulir awal diberi tanda status pending sesuai jeda waktu dari Midtrans
+          const expiryTimeStr = mtStatus.expiry_time;
+          let isTimeOver = false;
+          if (expiryTimeStr) {
+            const expMs = new Date(expiryTimeStr.replace(" ", "T")).getTime();
+            if (!isNaN(expMs) && expMs <= Date.now()) {
+              isTimeOver = true;
+            }
+          }
+
+          if (isTimeOver) {
+            // Batas waktu kadaluarsa telah lewat
+            const candId = candidate.id;
+            const candName = candidate.fullName;
+            spmbCandidates.splice(candidateIdx, 1);
+            saveState();
+            directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
+            return res.status(410).json({
+              error: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+              message: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+              expired: true,
+              isExpired: true,
+              code: "TOKEN_EXPIRED",
+              canReRegister: true
+            });
+          }
+
+          candidate.tokenPaid = false;
+          candidate.tokenPaymentStatus = "pending";
+          if (mtStatus.expiry_time) candidate.tokenExpiryTime = mtStatus.expiry_time;
+          if (mtStatus.va_numbers) candidate.tokenVaNumbers = mtStatus.va_numbers;
+          if (mtStatus.payment_type) candidate.tokenPaymentType = mtStatus.payment_type;
+          candidate.tokenPaymentMethod = `Midtrans (${mtStatus.payment_type || 'Online'})`;
+          candidate.updatedAt = new Date().toISOString();
+          saveState();
+          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+          return res.json(candidate);
+        }
+      }
+    }
+
+    // Jika calon berstatus pending dan batas waktu pembayaran telah lewat
+    if (!candidate.tokenPaid && candidate.tokenPaymentStatus === 'pending') {
+      const expiryTimeStr = candidate.tokenExpiryTime;
+      const createdAtMs = new Date(candidate.createdAt || 0).getTime();
+      const ageHours = (Date.now() - createdAtMs) / (1000 * 60 * 60);
+
+      let isExpiredByTime = false;
+      if (expiryTimeStr) {
+        const expMs = new Date(expiryTimeStr.replace(" ", "T")).getTime();
+        if (!isNaN(expMs) && expMs <= Date.now()) {
+          isExpiredByTime = true;
+        }
+      } else if (ageHours > 24) {
+        isExpiredByTime = true;
+      }
+
+      if (isExpiredByTime) {
+        const candId = candidate.id;
+        const candName = candidate.fullName;
+        spmbCandidates.splice(candidateIdx, 1);
+        saveState();
+        directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
+        return res.status(410).json({
+          error: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+          message: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+          expired: true,
+          isExpired: true,
+          code: "TOKEN_EXPIRED",
+          canReRegister: true
+        });
+      }
     }
 
     res.json(candidate);
@@ -369,6 +540,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         existingCandidate.tokenAmount = tokenFee;
         existingCandidate.tokenOrderId = orderId;
         existingCandidate.tokenPaymentOrderId = orderId;
+        existingCandidate.tokenPaid = false;
+        existingCandidate.tokenPaymentStatus = "pending";
         existingCandidate.uniformCost = netUniformTotal;
         existingCandidate.reRegistrationFee = reRegistrationTotal;
         existingCandidate.reRegistrationAmount = reRegistrationTotal;
@@ -399,7 +572,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           tokenFee,
           tokenAmount: tokenFee,
           tokenPaid: false,
-          tokenPaymentStatus: "unpaid",
+          tokenPaymentStatus: "pending",
           tokenOrderId: orderId,
           tokenPaymentOrderId: orderId,
           reRegistrationFee: reRegistrationTotal,
@@ -480,6 +653,18 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           snapToken = snapJson.token || "";
           redirectUrl = snapJson.redirect_url || "";
           candidate.tokenSnapToken = snapToken;
+          candidate.tokenRedirectUrl = redirectUrl;
+          if (!candidate.tokenExpiryTime) {
+            const expD = new Date(Date.now() + 24 * 60 * 60 * 1000);
+            const y = expD.getFullYear();
+            const mo = String(expD.getMonth() + 1).padStart(2, '0');
+            const da = String(expD.getDate()).padStart(2, '0');
+            const ho = String(expD.getHours()).padStart(2, '0');
+            const mi = String(expD.getMinutes()).padStart(2, '0');
+            const se = String(expD.getSeconds()).padStart(2, '0');
+            candidate.tokenExpiryTime = `${y}-${mo}-${da} ${ho}:${mi}:${se}`;
+          }
+          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
           recordOrUpdateMidtransTransaction({
             orderId,
             studentName: candidate.fullName,
@@ -538,7 +723,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
   });
 
-  // 6. Verify or Simulate Token Payment Success
+  // 6. Verify Token Payment Status against Midtrans Gateway
   router.post("/verify-token-payment", async (req, res) => {
     try {
       const { orderId, nisn, paymentMethod } = req.body;
@@ -546,54 +731,127 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         return res.status(400).json({ error: "Order ID atau NISN wajib disertakan." });
       }
 
-      const candidate = spmbCandidates.find(c => 
+      const candidateIdx = spmbCandidates.findIndex(c => 
         (orderId && (c.tokenOrderId === orderId || c.tokenPaymentOrderId === orderId)) ||
         (nisn && (c.nisn || "").trim() === (nisn || "").trim())
       );
 
-      if (!candidate) {
+      if (candidateIdx === -1) {
         return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
       }
 
-      candidate.tokenPaid = true;
-      candidate.tokenPaymentStatus = "paid";
-      candidate.tokenPaidAt = new Date().toISOString();
-      candidate.tokenPaymentMethod = paymentMethod || "Midtrans Snap Online";
-      candidate.status = "registered";
-      candidate.updatedAt = new Date().toISOString();
+      const candidate = spmbCandidates[candidateIdx];
+      const targetOrderId = orderId || candidate.tokenPaymentOrderId || candidate.tokenOrderId;
 
-      saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Token Paid Warning]:", err?.message || err));
-
-      // Broadcast notification
-      const notification: RealtimeNotification = {
-        id: `notif-spmb-token-${Date.now()}`,
-        studentId: candidate.nisn,
-        title: "Pendaftaran Murid Baru (SPMB)",
-        message: `Calon murid baru ${candidate.fullName} (NISN: ${candidate.nisn}) berhasil membayar token pendaftaran Rp ${(candidate.tokenFee || candidate.tokenAmount || 50000).toLocaleString("id-ID")}.`,
-        type: "payment",
-        createdAt: new Date().toISOString()
-      };
-      broadcastNotification(notification);
-
-      // Send WhatsApp receipt if configured
-      if (whatsappConfig.enabled && (candidate.parentPhone || candidate.phone)) {
-        const targetPhone = candidate.parentPhone || candidate.phone;
-        const waMsg = `Yth. Calon Wali Murid dari *${candidate.fullName}* (NISN: ${candidate.nisn}).\n\n` +
-          `📢 *BUKTI PEMBAYARAN TOKEN PENDAFTARAN SPMB ${spmbConfig.academicYear}*\n` +
-          `Pembayaran formulir/token pendaftaran sebesar *Rp ${(candidate.tokenFee || candidate.tokenAmount || 50000).toLocaleString("id-ID")}* telah BERHASIL diverifikasi.\n\n` +
-          `• No. Pendaftaran: *${candidate.registrationNumber || candidate.registrationNo || candidate.nisn}*\n` +
-          `• Sesi: *${candidate.sessionName || "SPMB"}*\n` +
-          `• Status: *TERDAFTAR (Silakan Lanjut Isi Buku Induk)*\n\n` +
-          `Silakan buka portal SPMB untuk melanjutkan pengisian data lengkap buku induk dan pembayaran daftar ulang seragam.\n\n` +
-          `-- PANITIA SPMB SMP MAARIF NU PANDAAN --`;
-        sendWhatsappNotification(targetPhone, waMsg).catch(e => console.error("Error sending SPMB token WA:", e));
+      if (!targetOrderId) {
+        return res.status(400).json({ error: "Order ID transaksi tidak ditemukan." });
       }
 
-      res.json({
-        success: true,
-        message: "Pembayaran token pendaftaran berhasil dikonfirmasi.",
-        candidate
+      // Selalu cek status resmi ke payment gateway Midtrans
+      const mtStatus = await checkMidtransOrderStatus(targetOrderId);
+      if (mtStatus) {
+        const ts = String(mtStatus.transaction_status || "").toLowerCase();
+        const isSettled = ts === "settlement" || ts === "capture";
+        const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
+        const isPending = ts === "pending";
+
+        if (isSettled) {
+          candidate.tokenPaid = true;
+          candidate.tokenPaymentStatus = "paid";
+          candidate.tokenPaidAt = mtStatus.settlement_time || mtStatus.transaction_time || new Date().toISOString();
+          candidate.tokenPaymentMethod = paymentMethod || `Midtrans (${mtStatus.payment_type || 'Online'})`;
+          candidate.status = "registered";
+          candidate.updatedAt = new Date().toISOString();
+
+          saveState();
+          directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Token Paid Warning]:", err?.message || err));
+
+          recordOrUpdateMidtransTransaction({
+            orderId: targetOrderId,
+            transactionId: mtStatus.transaction_id,
+            billType: "spmb_token",
+            grossAmount: Number(mtStatus.gross_amount) || candidate.tokenFee || 50000,
+            studentName: candidate.fullName,
+            studentNis: candidate.nisn,
+            description: `Pembayaran Token SPMB - ${candidate.fullName}`,
+            transactionStatus: "settlement",
+            paymentType: candidate.tokenPaymentMethod,
+            settlementTime: candidate.tokenPaidAt
+          });
+
+          // Broadcast notification
+          const notification: RealtimeNotification = {
+            id: `notif-spmb-token-${Date.now()}`,
+            studentId: candidate.nisn,
+            title: "Pendaftaran Murid Baru (SPMB)",
+            message: `Calon murid baru ${candidate.fullName} (NISN: ${candidate.nisn}) berhasil membayar token pendaftaran Rp ${(candidate.tokenFee || candidate.tokenAmount || 50000).toLocaleString("id-ID")}.`,
+            type: "payment",
+            createdAt: new Date().toISOString()
+          };
+          broadcastNotification(notification);
+
+          // Send WhatsApp receipt if configured
+          if (whatsappConfig.enabled && (candidate.parentPhone || candidate.phone)) {
+            const targetPhone = candidate.parentPhone || candidate.phone;
+            const waMsg = `Yth. Calon Wali Murid dari *${candidate.fullName}* (NISN: ${candidate.nisn}).\n\n` +
+              `📢 *BUKTI PEMBAYARAN TOKEN PENDAFTARAN SPMB ${spmbConfig.academicYear}*\n` +
+              `Pembayaran formulir/token pendaftaran sebesar *Rp ${(candidate.tokenFee || candidate.tokenAmount || 50000).toLocaleString("id-ID")}* telah BERHASIL diverifikasi LUNAS.\n\n` +
+              `• No. Pendaftaran: *${candidate.registrationNumber || candidate.registrationNo || candidate.nisn}*\n` +
+              `• Sesi: *${candidate.sessionName || "SPMB"}*\n` +
+              `• Status: *TERDAFTAR (Silakan Lanjut Isi Buku Induk)*\n\n` +
+              `Silakan buka portal SPMB untuk melanjutkan pengisian data lengkap buku induk dan pembayaran daftar ulang seragam.\n\n` +
+              `-- PANITIA SPMB SMP MAARIF NU PANDAAN --`;
+            sendWhatsappNotification(targetPhone, waMsg).catch(e => console.error("Error sending SPMB token WA:", e));
+          }
+
+          return res.json({
+            success: true,
+            status: "paid",
+            message: "Pembayaran token pendaftaran berhasil dikonfirmasi LUNAS.",
+            candidate
+          });
+        } else if (isExpired) {
+          // Sesuai permintaan: jika di midtrans expired, data Awal murid baru dihapus, ada arahan isi ulang formulir data awal
+          const candId = candidate.id;
+          const candName = candidate.fullName;
+          spmbCandidates.splice(candidateIdx, 1);
+          saveState();
+          directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
+
+          return res.status(410).json({
+            success: false,
+            status: "expired",
+            isExpired: true,
+            expired: true,
+            error: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+            message: `Batas waktu pembayaran token pendaftaran (${candName}) telah kedaluwarsa (expired) di Midtrans. Data pendaftaran awal telah dihapus otomatis dari sistem. Silakan lakukan pengisian ulang formulir data awal.`,
+            code: "TOKEN_EXPIRED",
+            canReRegister: true
+          });
+        } else if (isPending) {
+          candidate.tokenPaid = false;
+          candidate.tokenPaymentStatus = "pending";
+          if (mtStatus.expiry_time) candidate.tokenExpiryTime = mtStatus.expiry_time;
+          if (mtStatus.va_numbers) candidate.tokenVaNumbers = mtStatus.va_numbers;
+          if (mtStatus.payment_type) candidate.tokenPaymentType = mtStatus.payment_type;
+          candidate.tokenPaymentMethod = `Midtrans (${mtStatus.payment_type || 'Online'})`;
+          candidate.updatedAt = new Date().toISOString();
+          saveState();
+          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+
+          return res.json({
+            success: false,
+            status: "pending",
+            isPending: true,
+            message: "Pembayaran token pendaftaran masih dalam status PENDING di Midtrans. Menunggu penyelesaian pembayaran sebelum batas waktu.",
+            candidate
+          });
+        }
+      }
+
+      return res.status(400).json({
+        success: false,
+        error: "Status transaksi belum terkonfirmasi lunas di Gateway Midtrans. Pastikan pembayaran telah berhasil diselesaikan."
       });
     } catch (err: any) {
       console.error("Error in verify-token-payment:", err);

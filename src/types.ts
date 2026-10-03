@@ -719,11 +719,20 @@ export interface SpmbCandidate {
   }>;
 
   // 1. Pembayaran Token Pendaftaran (Rp. 50.000)
-  tokenPaymentStatus: 'unpaid' | 'paid' | 'waived';
+  tokenPaymentStatus: 'unpaid' | 'pending' | 'paid' | 'waived';
   tokenPaymentOrderId?: string;
+  tokenOrderId?: string;
   tokenPaidAt?: string;
   tokenPaymentMethod?: string;
   tokenAmount?: number;
+  tokenExpiryTime?: string;
+  tokenSnapToken?: string;
+  tokenRedirectUrl?: string;
+  tokenVaNumbers?: Array<{ bank?: string; va_number?: string }>;
+  tokenPaymentType?: string;
+  tokenBillKey?: string;
+  tokenBillerCode?: string;
+  tokenQrString?: string;
 
   // 1b. Pengembalian Uang Token Tunai / Cash (Khusus Jalur Kolektif yang membayar via online)
   collectiveRefundStatus?: 'none' | 'pending' | 'refunded';

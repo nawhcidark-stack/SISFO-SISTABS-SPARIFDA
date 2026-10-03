@@ -1540,7 +1540,8 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
       if (candidate) {
         if (isToken) {
-          if (isSettled && candidate.tokenPaymentStatus !== "paid") {
+          if (isSettled) {
+            candidate.tokenPaid = true;
             candidate.tokenPaymentStatus = "paid";
             candidate.tokenPaidAt = resolvedPaidAt;
             candidate.tokenPaymentMethod = actualPaymentType;
@@ -1561,11 +1562,26 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             });
 
             detailMessage = `Token formulir SPMB a.n ${candidate.fullName} (${candidate.registrationNo}) berhasil di-settle LUNAS.`;
-          } else if (isExpired && candidate.tokenPaymentStatus !== "paid") {
-            candidate.tokenPaymentStatus = "unpaid";
-            candidate.tokenPaymentOrderId = undefined;
+          } else if (ts === "pending") {
+            candidate.tokenPaid = false;
+            candidate.tokenPaymentStatus = "pending";
+            if (statusData.expiry_time) candidate.tokenExpiryTime = statusData.expiry_time;
+            if (statusData.va_numbers) candidate.tokenVaNumbers = statusData.va_numbers;
+            if (statusData.payment_type) candidate.tokenPaymentType = statusData.payment_type;
             actionTaken = true;
-            detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} dibatalkan karena expired.`;
+            detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} masih berstatus PENDING di Midtrans (Batas waktu: ${statusData.expiry_time || '24 jam'}).`;
+          } else if (isExpired) {
+            const candIdx = spmbCandidates.findIndex(c => c.id === candidate.id);
+            if (candIdx !== -1) {
+              spmbCandidates.splice(candIdx, 1);
+            }
+            saveState();
+            try {
+              const { directDeleteEntityFromMysql } = require("../mysqlService");
+              directDeleteEntityFromMysql("spmb_candidates", candidate.id).catch(() => {});
+            } catch (_) {}
+            actionTaken = true;
+            detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} telah expired di Midtrans. Data awal calon murid baru telah dihapus dari sistem.`;
           }
         } else if (isRereg) {
           if (isSettled && candidate.reRegistrationStatus !== "paid") {
@@ -2554,15 +2570,21 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
     const realOrderId = midtransStatus?.order_id || cleanOrderId;
     const realTxId = transactionId || midtransStatus?.transaction_id || `sim-${Date.now()}`;
     const actualPaymentType = paymentType || midtransStatus?.payment_type || "Midtrans Snap";
+    // Jika ada status riil dari gateway Midtrans, gunakan status sebenarnya (jangan paksa settlement jika pending/expired)
+    const effectiveStatus = (midtransStatus && midtransStatus.transaction_status)
+      ? String(midtransStatus.transaction_status).toLowerCase()
+      : "settlement";
 
     try {
       const reconResult = await processMidtransOrderStatus(realOrderId, {
         order_id: realOrderId,
-        transaction_status: "settlement",
+        transaction_status: effectiveStatus,
         payment_type: actualPaymentType,
         settlement_time: new Date().toISOString(),
         transaction_id: realTxId,
-        gross_amount: midtransStatus?.gross_amount
+        gross_amount: midtransStatus?.gross_amount,
+        expiry_time: midtransStatus?.expiry_time,
+        va_numbers: midtransStatus?.va_numbers
       });
 
       if (!reconResult.actionTaken) {
@@ -2574,7 +2596,7 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
 
       res.json({
         success: true,
-        message: reconResult.detailMessage || "Pembayaran berhasil diselaraskan dan berstatus LUNAS.",
+        message: reconResult.detailMessage || "Pembayaran berhasil diproses sesuai status Midtrans.",
         reconResult
       });
     } catch (e) {
@@ -2587,28 +2609,80 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
   router.post("/midtrans-webhook", async (req, res) => {
     const webhookData = req.body;
     const { order_id, transaction_status, payment_type, gross_amount, transaction_id } = webhookData;
-    console.log("[Midtrans Webhook Callback (Auto-Reconcile Disabled)]:", { order_id, transaction_status, payment_type, gross_amount, transaction_id });
+    console.log("[Midtrans Webhook Callback]:", { order_id, transaction_status, payment_type, gross_amount, transaction_id });
 
     if (!order_id) {
       return res.status(400).json({ status: "error", message: "Order ID missing" });
     }
 
     try {
+      // 1. Catat di riwayat transaksi Midtrans
       recordOrUpdateMidtransTransaction({
         orderId: order_id,
         transactionId: transaction_id,
-        billType: "other",
+        billType: String(order_id).startsWith("SPMB-") ? "spmb_token" : "other",
         grossAmount: Number(gross_amount) || 0,
         transactionStatus: transaction_status,
         paymentType: `Midtrans (${payment_type || 'Online'})`,
         settlementTime: webhookData.settlement_time || webhookData.transaction_time || new Date().toISOString(),
-        description: `Callback Midtrans [${order_id}] - Menunggu Rekonsiliasi Manual`
+        description: `Callback Midtrans [${order_id}] - Status: ${transaction_status}`
       });
+
+      // 2. Jika transaksi SPMB Token, sinkronkan langsung status calon murid baru
+      let spmbActionTaken = false;
+      if (String(order_id).toUpperCase().startsWith("SPMB-TOKEN-")) {
+        const candIdx = spmbCandidates.findIndex(c => 
+          c.tokenPaymentOrderId === order_id || 
+          c.tokenOrderId === order_id || 
+          String(order_id).includes(c.nisn)
+        );
+        if (candIdx !== -1) {
+          const candidate = spmbCandidates[candIdx];
+          const ts = String(transaction_status || "").toLowerCase();
+          const isSettled = ts === "settlement" || ts === "capture";
+          const isPending = ts === "pending";
+          const isExpired = ts === "expire" || ts === "cancel" || ts === "deny";
+
+          if (isSettled) {
+            candidate.tokenPaid = true;
+            candidate.tokenPaymentStatus = "paid";
+            candidate.tokenPaidAt = webhookData.settlement_time || webhookData.transaction_time || new Date().toISOString();
+            candidate.tokenPaymentMethod = `Midtrans (${payment_type || 'Online'})`;
+            candidate.status = "registered";
+            candidate.updatedAt = new Date().toISOString();
+            saveState();
+            if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
+            spmbActionTaken = true;
+          } else if (isPending) {
+            candidate.tokenPaid = false;
+            candidate.tokenPaymentStatus = "pending";
+            if (webhookData.expiry_time) candidate.tokenExpiryTime = webhookData.expiry_time;
+            if (webhookData.va_numbers) candidate.tokenVaNumbers = webhookData.va_numbers;
+            if (payment_type) candidate.tokenPaymentType = payment_type;
+            candidate.tokenPaymentMethod = `Midtrans (${payment_type || 'Online'})`;
+            candidate.updatedAt = new Date().toISOString();
+            saveState();
+            if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
+            spmbActionTaken = true;
+          } else if (isExpired) {
+            const candId = candidate.id;
+            spmbCandidates.splice(candIdx, 1);
+            saveState();
+            try {
+              const { directDeleteEntityFromMysql } = require("../mysqlService");
+              directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
+            } catch (_) {}
+            spmbActionTaken = true;
+          }
+        }
+      }
 
       res.json({
         status: "ok",
-        actionTaken: false,
-        message: "Callback Midtrans diterima dan dicatat dalam riwayat transaksi. Rekonsiliasi otomatis dinonaktifkan (seluruh rekonsiliasi dilakukan secara manual oleh Admin/Bendahara)."
+        actionTaken: spmbActionTaken,
+        message: spmbActionTaken 
+          ? `Callback Midtrans untuk Token SPMB [${order_id}] berhasil diproses (Status: ${transaction_status}).`
+          : "Callback Midtrans diterima dan dicatat dalam riwayat transaksi. Rekonsiliasi otomatis dinonaktifkan untuk tagihan internal sekolah."
       });
     } catch (e) {
       const err = e as Error;

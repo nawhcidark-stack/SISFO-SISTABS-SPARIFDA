@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react';
+import React, { useMemo, useState } from 'react';
 import { INDONESIAN_MONTHS, parseDateParts, buildIsoDate, formatCombinedPlaceAndDate, formatIndonesianDate, toProperCase } from '../utils/dateUtils';
 import { Calendar, MapPin } from 'lucide-react';
 
@@ -43,29 +43,54 @@ export default function BirthDateSplitInput({
 }: BirthDateSplitInputProps) {
   const isDark = theme === 'dark';
 
-  // Parse day, month, year from current birthDate value
-  const { day, month, year } = useMemo(() => parseDateParts(birthDate), [birthDate]);
+  // Initial parsing from birthDate
+  const initial = useMemo(() => parseDateParts(birthDate), []);
+  const [localDay, setLocalDay] = useState(initial.day);
+  const [localMonth, setLocalMonth] = useState(initial.month);
+  const [localYear, setLocalYear] = useState(initial.year);
+
+  // Keep a ref of the last value emitted to parent so typing year doesn't get wiped by external sync
+  const lastEmittedRef = React.useRef(birthDate);
+
+  // Sync from props only when parent updates externally
+  React.useEffect(() => {
+    if (birthDate && birthDate !== lastEmittedRef.current) {
+      const parsed = parseDateParts(birthDate);
+      if (parsed.day) setLocalDay(parsed.day);
+      if (parsed.month) setLocalMonth(parsed.month);
+      if (parsed.year) setLocalYear(parsed.year);
+      lastEmittedRef.current = birthDate;
+    } else if (!birthDate && lastEmittedRef.current) {
+      setLocalDay('');
+      setLocalMonth('');
+      setLocalYear('');
+      lastEmittedRef.current = '';
+    }
+  }, [birthDate]);
 
   // Handler for each split column
   const handlePartChange = (part: 'day' | 'month' | 'year', val: string) => {
-    let nextDay = part === 'day' ? val : day;
-    let nextMonth = part === 'month' ? val : month;
-    let nextYear = part === 'year' ? val : year;
+    const nextDay = part === 'day' ? val : localDay;
+    const nextMonth = part === 'month' ? val : localMonth;
+    const nextYear = part === 'year' ? val : localYear;
 
-    // Normalize day and month
-    if (nextDay && nextDay.length === 1) nextDay = '0' + nextDay;
-    if (nextMonth && nextMonth.length === 1) nextMonth = '0' + nextMonth;
+    if (part === 'day') setLocalDay(val);
+    if (part === 'month') setLocalMonth(val);
+    if (part === 'year') setLocalYear(val);
 
-    if (nextYear && nextMonth && nextDay) {
-      const iso = buildIsoDate(nextDay, nextMonth, nextYear);
-      onBirthDateChange(iso);
-    } else {
-      // If incomplete, assemble whatever is present or pass standard formatted
-      const y = nextYear || '2000';
-      const m = nextMonth || '01';
-      const d = nextDay || '01';
-      onBirthDateChange(`${y}-${m}-${d}`);
+    const cleanY = (nextYear || '').trim();
+    const cleanM = (nextMonth || '').trim().padStart(2, '0');
+    const cleanD = (nextDay || '').trim().padStart(2, '0');
+
+    let emitted = '';
+    if (cleanY && cleanM && cleanD) {
+      emitted = `${cleanY}-${cleanM}-${cleanD}`;
+    } else if (cleanY || cleanM || cleanD) {
+      emitted = `${cleanY || '2014'}-${cleanM || '01'}-${cleanD || '01'}`;
     }
+
+    lastEmittedRef.current = emitted;
+    onBirthDateChange(emitted);
   };
 
   // Generate list of days 01 - 31
@@ -79,12 +104,18 @@ export default function BirthDateSplitInput({
 
   // Compute combined preview
   const combinedText = useMemo(() => {
-    return formatCombinedPlaceAndDate(birthPlace, birthDate);
-  }, [birthPlace, birthDate]);
+    const fullDate = (localYear && localMonth && localDay) 
+      ? `${localYear}-${localMonth.padStart(2, '0')}-${localDay.padStart(2, '0')}`
+      : birthDate;
+    return formatCombinedPlaceAndDate(birthPlace, fullDate);
+  }, [birthPlace, localYear, localMonth, localDay, birthDate]);
 
   const dateFormattedOnly = useMemo(() => {
-    return formatIndonesianDate(birthDate);
-  }, [birthDate]);
+    const fullDate = (localYear && localMonth && localDay)
+      ? `${localYear}-${localMonth.padStart(2, '0')}-${localDay.padStart(2, '0')}`
+      : birthDate;
+    return formatIndonesianDate(fullDate);
+  }, [localYear, localMonth, localDay, birthDate]);
 
   const inputBaseClasses = isDark
     ? 'bg-slate-900 border-slate-700 text-white placeholder-slate-500 focus:ring-emerald-500 focus:border-emerald-500'
@@ -148,7 +179,7 @@ export default function BirthDateSplitInput({
             </label>
             <select
               id={`${idPrefix}-day`}
-              value={day}
+              value={localDay}
               onChange={(e) => handlePartChange('day', e.target.value)}
               className={`w-full px-2 py-2 border rounded-xl text-xs font-mono font-bold focus:outline-none focus:ring-2 ${inputBaseClasses}`}
             >
@@ -168,7 +199,7 @@ export default function BirthDateSplitInput({
             </label>
             <select
               id={`${idPrefix}-month`}
-              value={month}
+              value={localMonth}
               onChange={(e) => handlePartChange('month', e.target.value)}
               className={`w-full px-2 py-2 border rounded-xl text-xs font-medium focus:outline-none focus:ring-2 ${inputBaseClasses}`}
             >
@@ -192,7 +223,7 @@ export default function BirthDateSplitInput({
               inputMode="numeric"
               maxLength={4}
               placeholder="Contoh: 2014"
-              value={year}
+              value={localYear}
               onChange={(e) => {
                 const cleanYear = e.target.value.replace(/\D/g, '').slice(0, 4);
                 handlePartChange('year', cleanYear);

@@ -1174,14 +1174,20 @@ export default function SpmbLandingPage({
       {/* Top Floating Navbar */}
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-xs">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2.5 sm:gap-3">
             {schoolIdentity?.logo ? (
-              <img src={schoolIdentity.logo} alt="Logo" className="w-10 h-10 object-contain rounded-lg bg-slate-100 p-1 border border-slate-200" />
+              <img src={schoolIdentity.logo} alt="Logo 1" className="w-10 h-10 object-contain rounded-lg bg-slate-100 p-1 border border-slate-200 shrink-0" />
             ) : (
-              <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-sm font-black">
+              <div className="w-10 h-10 rounded-lg bg-emerald-600 flex items-center justify-center text-white shadow-sm font-black shrink-0">
                 <GraduationCap size={22} />
               </div>
             )}
+            <img
+              src={schoolIdentity?.logo2 || "/logo2.png"}
+              alt="Logo Sekolah Inspiratif"
+              className="w-10 h-10 object-contain rounded-lg bg-white p-1 border border-emerald-200 shadow-2xs shrink-0"
+              onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo2.png'; }}
+            />
             <div>
               <div className="flex items-center gap-2">
                 <h1 className="text-sm sm:text-base font-black tracking-tight text-slate-900 m-0">
@@ -1192,7 +1198,7 @@ export default function SpmbLandingPage({
                 </span>
               </div>
               <p className="text-[11px] text-slate-500 m-0 hidden sm:block">
-                {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"} • {schoolIdentity?.accreditation || 'Terakreditasi A'}
+                Sekolah Inspiratif {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"} • {schoolIdentity?.accreditation || 'Terakreditasi A'}
               </p>
             </div>
           </div>
@@ -1253,14 +1259,14 @@ export default function SpmbLandingPage({
         {activeTab === 'info' && (
           <div className="space-y-10">
             {/* Hero Section */}
-            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-50 via-teal-50/60 to-indigo-50/60 border border-emerald-200/80 p-6 sm:p-10 shadow-xs">
-              <div className="relative z-10 max-w-3xl space-y-4">
+            <div className="relative overflow-hidden rounded-3xl bg-gradient-to-r from-emerald-50 via-teal-50/60 to-indigo-50/60 border border-emerald-200/80 p-6 sm:p-10 shadow-xs flex flex-col lg:flex-row lg:items-center justify-between gap-8">
+              <div className="relative z-10 max-w-2xl space-y-4">
                 <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-emerald-100/80 border border-emerald-300 text-emerald-800 text-xs font-bold">
                   <Award size={14} />
                   <span>Penerimaan Peserta Didik Baru TA 2027/2028</span>
                 </div>
                 <h2 className="text-2xl sm:text-4xl font-black text-slate-900 tracking-tight leading-tight">
-                  Wujudkan Masa Depan Gemilang di <span className="text-emerald-700">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
+                  Wujudkan Masa Depan Gemilang di <span className="text-emerald-700">Sekolah Inspiratif {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</span>
                 </h2>
                 <p className="text-slate-700 text-sm sm:text-base leading-relaxed">
                   Sekolah Ramah Anak dengan Kurikulum Merdeka Terintegrasi Pendidikan Karakter Aswaja An-Nahdliyah, Laboratorium Komputer Modern, dan Program Unggulan Tahfidz serta Digital Literacy.
@@ -1289,6 +1295,31 @@ export default function SpmbLandingPage({
                     <Sparkles size={16} className="text-amber-300 animate-pulse" />
                     <span>Tanya Asisten AI SPMB</span>
                   </button>
+                </div>
+              </div>
+
+              {/* Logo Ke-2 / Logo Sekolah Inspiratif Pada Banner header sebelah kanan */}
+              <div className="relative z-10 shrink-0 flex items-center justify-center lg:justify-end">
+                <div className="relative group">
+                  <div className="absolute -inset-3 bg-gradient-to-r from-emerald-400 via-teal-400 to-amber-300 rounded-3xl blur-xl opacity-40 group-hover:opacity-65 transition duration-500" />
+                  <div className="relative w-48 h-48 sm:w-56 sm:h-56 bg-white/95 backdrop-blur-md rounded-3xl p-5 shadow-xl border border-emerald-200/90 flex flex-col items-center justify-center text-center transform transition duration-300 hover:scale-105">
+                    <img
+                      src={schoolIdentity?.logo2 || "/logo2.png"}
+                      alt="Logo Sekolah Inspiratif"
+                      className="max-h-28 sm:max-h-36 max-w-full object-contain drop-shadow-md"
+                      onError={(e) => {
+                        (e.currentTarget as HTMLImageElement).src = '/logo2.png';
+                      }}
+                    />
+                    <div className="mt-2.5">
+                      <span className="block text-xs sm:text-sm font-black text-emerald-800 uppercase tracking-wider">
+                        Sekolah Inspiratif
+                      </span>
+                      <span className="block text-[10px] text-slate-500 font-semibold">
+                        {schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                      </span>
+                    </div>
+                  </div>
                 </div>
               </div>
 
@@ -3858,17 +3889,17 @@ export default function SpmbLandingPage({
                           />
                         </div>
                       ) : (
-                        <div className="flex items-center gap-4 border-b-2 border-slate-900 pb-4">
+                        <div className="flex items-center justify-between gap-4 border-b-2 border-slate-900 pb-4">
                           {currentSchoolIdentity?.logo ? (
-                            <img src={currentSchoolIdentity.logo} alt="Logo" className="w-16 h-16 object-contain" />
+                            <img src={currentSchoolIdentity.logo} alt="Logo" className="w-16 h-16 object-contain shrink-0" />
                           ) : (
-                            <div className="w-16 h-16 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-black text-2xl">
+                            <div className="w-16 h-16 rounded-xl bg-emerald-700 text-white flex items-center justify-center font-black text-2xl shrink-0">
                               NU
                             </div>
                           )}
                           <div className="text-center flex-grow">
                             <h3 className="text-base sm:text-lg font-black tracking-tight uppercase text-slate-900 m-0">
-                              {currentSchoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+                              SEKOLAH INSPIRATIF {currentSchoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
                             </h3>
                             <p className="text-xs font-bold text-emerald-800 m-0 uppercase">
                               PANITIA SISTEM PENERIMAAN MURID BARU (SPMB) T.A. {config?.academicYear || '2027/2028'}
@@ -3877,9 +3908,12 @@ export default function SpmbLandingPage({
                               {currentSchoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} • Telp: {config?.contactPhone || currentSchoolIdentity?.phone || '(0343) 631234'}
                             </p>
                           </div>
-                          {qrCodeDataUrl && (
-                            <img src={qrCodeDataUrl} alt="QR Code" className="w-16 h-16 object-contain hidden sm:block" />
-                          )}
+                          <img
+                            src={currentSchoolIdentity?.logo2 || "/logo2.png"}
+                            alt="Logo Sekolah Inspiratif"
+                            className="w-16 h-16 object-contain shrink-0 hidden sm:block"
+                            onError={(e) => { (e.currentTarget as HTMLImageElement).src = '/logo2.png'; }}
+                          />
                         </div>
                       )}
 

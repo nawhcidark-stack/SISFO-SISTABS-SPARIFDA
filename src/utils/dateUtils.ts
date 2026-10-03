@@ -23,8 +23,8 @@ export function parseDateParts(dateStr?: string): { day: string; month: string; 
   
   const clean = String(dateStr).trim();
   
-  // Format YYYY-MM-DD
-  const isoMatch = clean.match(/^(\d{4})[-/.](\d{1,2})[-/.](\d{1,2})/);
+  // Format YYYY-MM-DD (supports 1 to 4 digits for year while typing)
+  const isoMatch = clean.match(/^(\d{1,4})[-/.](\d{1,2})[-/.](\d{1,2})/);
   if (isoMatch) {
     return {
       year: isoMatch[1],
@@ -34,12 +34,21 @@ export function parseDateParts(dateStr?: string): { day: string; month: string; 
   }
 
   // Format DD-MM-YYYY or DD/MM/YYYY
-  const idMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{4})/);
+  const idMatch = clean.match(/^(\d{1,2})[-/.](\d{1,2})[-/.](\d{1,4})/);
   if (idMatch) {
     return {
       day: idMatch[1].padStart(2, '0'),
       month: idMatch[2].padStart(2, '0'),
       year: idMatch[3],
+    };
+  }
+
+  const parts = clean.split(/[-/.]/);
+  if (parts.length === 3) {
+    return {
+      year: parts[0],
+      month: parts[1].padStart(2, '0'),
+      day: parts[2].padStart(2, '0')
     };
   }
 
@@ -50,11 +59,10 @@ export function parseDateParts(dateStr?: string): { day: string; month: string; 
  * Builds ISO date string YYYY-MM-DD from { day, month, year }
  */
 export function buildIsoDate(day: string, month: string, year: string): string {
-  if (!year || !month || !day) return '';
-  const cleanY = year.trim();
-  const cleanM = month.trim().padStart(2, '0');
-  const cleanD = day.trim().padStart(2, '0');
-  if (cleanY.length !== 4) return '';
+  if (!year && !month && !day) return '';
+  const cleanY = (year || '').trim();
+  const cleanM = (month || '').trim().padStart(2, '0');
+  const cleanD = (day || '').trim().padStart(2, '0');
   return `${cleanY}-${cleanM}-${cleanD}`;
 }
 

@@ -1959,26 +1959,11 @@ function applyDataFromMysql(pulledData: any) {
         const localBill = localBillMap.get(pulledBill.id) ||
                           localBillMap.get(`${pulledBill.studentId}_${pulledBill.month}_${pulledBill.year}`);
 
-        // If local memory already marked it as paid via valid reconciliation, preserve paid state!
-        if (localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) {
-          const healedBill: SppBill = {
-            ...pulledBill,
-            status: "paid",
-            paidAt: localBill.paidAt || new Date().toISOString(),
-            paymentMethod: localBill.paymentMethod || "Midtrans (Reconciled)",
-            orderId: localBill.orderId || pulledBill.orderId,
-            transactionId: localBill.transactionId || pulledBill.transactionId,
-            isVoidedByAdmin: false
-          };
-          delete (healedBill as any).voidedAt;
-          delete (healedBill as any).voidReason;
-          sppBillsToFixInMysql.push(healedBill);
-          return healedBill;
-        }
-
         const isVoided = Boolean(
           pulledBill.isVoidedByAdmin ||
           localBill?.isVoidedByAdmin ||
+          voidedBillIds.has(pulledBill.id) ||
+          (localBill && voidedBillIds.has(localBill.id)) ||
           (pulledBill.orderId && voidedOrderIds.has(pulledBill.orderId)) ||
           (localBill?.orderId && voidedOrderIds.has(localBill.orderId))
         );
@@ -1999,6 +1984,52 @@ function applyDataFromMysql(pulledData: any) {
             sppBillsToFixInMysql.push(voidedBill);
           }
           return voidedBill;
+        }
+
+        // If MySQL pulled status is unpaid, respect unpaid state directly
+        if (pulledBill.status === "unpaid") {
+          return {
+            ...pulledBill,
+            status: "unpaid",
+            paidAt: undefined,
+            paymentMethod: undefined,
+            orderId: undefined,
+            isVoidedByAdmin: false
+          };
+        }
+
+        // If local bill was explicitly set to unpaid by admin cancellation
+        if (localBill && localBill.status === "unpaid") {
+          const unpaidBill: SppBill = {
+            ...pulledBill,
+            status: "unpaid",
+            paidAt: undefined,
+            paymentMethod: undefined,
+            orderId: undefined,
+            isVoidedByAdmin: false
+          };
+          delete (unpaidBill as any).transactionId;
+          if (pulledBill.status === "paid") {
+            sppBillsToFixInMysql.push(unpaidBill);
+          }
+          return unpaidBill;
+        }
+
+        // If local memory marked it as paid via valid reconciliation, preserve paid state
+        if (localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) {
+          const healedBill: SppBill = {
+            ...pulledBill,
+            status: "paid",
+            paidAt: localBill.paidAt || new Date().toISOString(),
+            paymentMethod: localBill.paymentMethod || "Midtrans (Reconciled)",
+            orderId: localBill.orderId || pulledBill.orderId,
+            transactionId: localBill.transactionId || pulledBill.transactionId,
+            isVoidedByAdmin: false
+          };
+          delete (healedBill as any).voidedAt;
+          delete (healedBill as any).voidReason;
+          sppBillsToFixInMysql.push(healedBill);
+          return healedBill;
         }
 
         if (pulledBill.status === "paid") {
@@ -7967,7 +7998,7 @@ async function startServer() {
   });
 
   // Admin Cancel/Void SPP (Manual Teller or Midtrans correction)
-  app.post("/api/admin/cancel-spp-manual", (req, res) => {
+  app.post("/api/admin/cancel-spp-manual", async (req, res) => {
     const { billId } = req.body;
     const bill = sppBills.find(b => b.id === billId);
     if (!bill) {
@@ -7986,25 +8017,26 @@ async function startServer() {
     bill.paymentMethod = undefined;
     bill.orderId = undefined;
     delete (bill as any).transactionId;
-    delete bill.isVoidedByAdmin;
-    delete bill.voidedAt;
-    delete bill.voidReason;
+    bill.isVoidedByAdmin = true;
+    bill.voidedAt = new Date().toISOString();
+    bill.voidReason = "Dibatalkan / Dikoreksi oleh Admin";
 
-    // Mark any linked Midtrans transaction as cancelled so it cannot be auto-reconciled
+    // Mark voided payment registry so background sync never restores it to paid
+    const voidRecord: VoidedPaymentRecord = {
+      id: `void-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      billId: bill.id,
+      orderId: prevOrderId || `MANUAL-${bill.id}`,
+      studentId: bill.studentId,
+      billType: "spp",
+      period: `${bill.month} ${bill.year}`,
+      amount: bill.amount,
+      voidReason: "Dibatalkan / Dikoreksi oleh Admin",
+      voidedAt: new Date().toISOString()
+    };
+    voidedPayments.push(voidRecord);
+    persistEntity("voidedPayments", voidRecord).catch(err => console.warn("Error persisting voided SPP to MySQL:", err));
+
     if (prevOrderId) {
-      if (!voidedPayments.some(v => v.billId === bill.id && v.orderId === prevOrderId)) {
-        voidedPayments.push({
-          id: `void-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-          billId: bill.id,
-          orderId: prevOrderId,
-          studentId: bill.studentId,
-          billType: "spp",
-          period: `${bill.month} ${bill.year}`,
-          amount: bill.amount,
-          voidReason: "Dibatalkan / Dikoreksi oleh Admin",
-          voidedAt: new Date().toISOString()
-        });
-      }
       const linkedMt = midtransTransactions.find(m => m.orderId === prevOrderId);
       if (linkedMt) {
         linkedMt.transactionStatus = "cancel";
@@ -8035,7 +8067,11 @@ async function startServer() {
     }
 
     saveState();
-    persistEntity("sppBills", bill).catch(err => console.error("Error persisting cancelled sppBill to MySQL:", err));
+    try {
+      await directSaveEntityToMysql("sppBills", bill);
+    } catch (err) {
+      console.error("Error direct saving cancelled sppBill to MySQL:", err);
+    }
     res.json({ success: true, bill });
   });
 

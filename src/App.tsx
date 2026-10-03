@@ -350,7 +350,7 @@ export default function App() {
         if (candidateNisn) {
           localStorage.setItem('spmb_last_nisn', candidateNisn);
         }
-        setIsSpmbOpen(true);
+        setIsSpmbView(true);
         return;
       }
 

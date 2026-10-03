@@ -2471,11 +2471,14 @@ export default function SpmbLandingPage({
                         setRegForm({
                           nisn: expiredNotice.nisn || '',
                           fullName: '',
+                          nik: '',
                           gender: 'L',
-                          parentPhone: '',
+                          birthPlace: 'Pasuruan',
+                          birthDate: '2014-05-12',
                           phone: '',
                           schoolOriginType: 'maarif_jogosari',
                           manualSchoolName: '',
+                          schoolOrigin: 'SD MAARIF JOGOSARI',
                           sessionId: config?.sessions?.find(s => s.isActive)?.id || 'gelombang-1'
                         });
                         setActiveTab('register');

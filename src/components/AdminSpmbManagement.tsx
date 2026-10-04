@@ -330,7 +330,7 @@ export default function AdminSpmbManagement({
         const updated = await res.json();
         setCandidates(prev => prev.map(c => c.id === updated.candidate.id ? updated.candidate : c));
         setSelectedCandidate(updated.candidate);
-        alert(`Status calon siswa berhasil diperbarui menjadi ${status.toUpperCase()}!`);
+        alert(`Status calon murid berhasil diperbarui menjadi ${status.toUpperCase()}!`);
       }
     } catch (e) {
       console.error('Error updating candidate status:', e);
@@ -370,7 +370,7 @@ export default function AdminSpmbManagement({
         loadData();
       } else {
         const err = await res.json();
-        alert(err.error || 'Gagal memigrasikan data calon siswa.');
+        alert(err.error || 'Gagal memigrasikan data calon murid.');
       }
     } catch (e) {
       console.error('Error promoting candidates:', e);
@@ -393,13 +393,13 @@ export default function AdminSpmbManagement({
     }
   };
 
-  // Revert / Batalkan Pengalihan Jalur Calon Siswa (Kembalikan ke Jalur Sebelumnya)
+  // Revert / Batalkan Pengalihan Jalur Calon Murid (Kembalikan ke Jalur Sebelumnya)
   const handleRevertTransfer = async (candidate: SpmbCandidate) => {
     const targetSessionId = candidate.previousSessionId || candidate.originalSessionId;
     const targetSession = config?.sessions.find(s => s.id === targetSessionId);
     const targetName = targetSession?.name || targetSessionId || 'Jalur Sebelumnya';
     
-    if (!confirm(`Batalkan pengalihan jalur untuk calon siswa "${candidate.fullName}" dan kembalikan ke ${targetName}?`)) {
+    if (!confirm(`Batalkan pengalihan jalur untuk calon murid "${candidate.fullName}" dan kembalikan ke ${targetName}?`)) {
       return;
     }
 
@@ -420,7 +420,7 @@ export default function AdminSpmbManagement({
         if (selectedCandidate?.id === candidate.id) {
           setSelectedCandidate(result.candidate);
         }
-        alert(result.message || `Berhasil mengembalikan calon siswa ke ${targetName}!`);
+        alert(result.message || `Berhasil mengembalikan calon murid ke ${targetName}!`);
       } else {
         const err = await res.json();
         alert(err.error || 'Gagal membatalkan pengalihan jalur.');
@@ -807,7 +807,7 @@ export default function AdminSpmbManagement({
                 SPMB {currentAcademicYear}
               </span>
               <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold">
-                {candidates.length} Calon Siswa
+                {candidates.length} Calon Murid
               </span>
               <span className="px-2.5 py-1 rounded-full bg-teal-100 text-teal-900 border border-teal-300 text-xs font-bold">
                 {formCompletedCount} Biodata Lengkap
@@ -822,7 +822,7 @@ export default function AdminSpmbManagement({
               Penerimaan Murid Baru (SPMB) {currentAcademicYear}
             </h2>
             <p className="text-xs text-slate-600 font-medium m-0 max-w-3xl">
-              Panel administrasi penerimaan siswa baru, pemantauan statistik pendaftar, laporan keuangan & arus kas, pengembalian uang token, hingga verifikasi buku induk.
+              Panel administrasi penerimaan murid baru, pemantauan statistik pendaftar, laporan keuangan & arus kas, pengembalian uang token, hingga verifikasi buku induk.
             </p>
           </div>
 
@@ -886,7 +886,7 @@ export default function AdminSpmbManagement({
                 </div>
                 <div className="flex items-baseline gap-1.5 pt-0.5">
                   <span className="text-2xl font-black text-slate-900">{maleCount}</span>
-                  <span className="text-xs font-medium text-slate-500">calon siswa</span>
+                  <span className="text-xs font-medium text-slate-500">calon murid</span>
                 </div>
                 {/* Progress bar */}
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
@@ -928,7 +928,7 @@ export default function AdminSpmbManagement({
             <div className="flex items-center justify-between">
               <div className="flex items-center gap-2 text-slate-900 font-black text-xs uppercase tracking-wider">
                 <GraduationCap size={16} className="text-emerald-700" />
-                <span>Statistik Asal Sekolah Calon Siswa</span>
+                <span>Statistik Asal Sekolah Calon Murid</span>
               </div>
               <span className="text-xs font-bold text-slate-600">{totalRegistered} Total Siswa</span>
             </div>
@@ -947,7 +947,7 @@ export default function AdminSpmbManagement({
                 </div>
                 <div className="flex items-baseline gap-1.5 pt-0.5">
                   <span className="text-2xl font-black text-slate-900">{maarifCount}</span>
-                  <span className="text-xs font-medium text-slate-500">calon siswa</span>
+                  <span className="text-xs font-medium text-slate-500">calon murid</span>
                 </div>
                 {/* Progress bar */}
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
@@ -971,7 +971,7 @@ export default function AdminSpmbManagement({
                 </div>
                 <div className="flex items-baseline gap-1.5 pt-0.5">
                   <span className="text-2xl font-black text-slate-900">{umumCount}</span>
-                  <span className="text-xs font-medium text-slate-500">calon siswa</span>
+                  <span className="text-xs font-medium text-slate-500">calon murid</span>
                 </div>
                 {/* Progress bar */}
                 <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden mt-1.5">
@@ -1017,7 +1017,7 @@ export default function AdminSpmbManagement({
             <span className="text-xl font-black text-teal-700 mt-0.5 block">{reRegPaidCount}</span>
           </div>
 
-          <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 shadow-xs text-center" title="Calon siswa yang dialihkan ke jalur berikutnya karena melewati batas akhir daftar ulang">
+          <div className="p-3 rounded-2xl bg-rose-50 border border-rose-200 shadow-xs text-center" title="Calon murid yang dialihkan ke jalur berikutnya karena melewati batas akhir daftar ulang">
             <span className="text-[11px] font-bold text-rose-900 block">Dialihkan Jalur</span>
             <span className="text-xl font-black text-rose-600 mt-0.5 block">{transferredCount}</span>
           </div>
@@ -1191,7 +1191,7 @@ export default function AdminSpmbManagement({
                 onClick={handleProcessAutoTransfers}
                 disabled={isProcessingAutoTransfer}
                 className="px-3.5 py-2 bg-amber-50 hover:bg-amber-100 text-amber-900 border border-amber-300 font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-xs transition-all cursor-pointer"
-                title="Cek calon siswa yang belum melunasi daftar ulang sampai batas akhir dan alihkan ke gelombang berikutnya"
+                title="Cek calon murid yang belum melunasi daftar ulang sampai batas akhir dan alihkan ke gelombang berikutnya"
               >
                 <ArrowLeftRight size={14} className={isProcessingAutoTransfer ? 'animate-spin' : ''} />
                 <span>{isProcessingAutoTransfer ? 'Memproses...' : 'Proses Pengalihan'}</span>
@@ -1279,7 +1279,7 @@ export default function AdminSpmbManagement({
               <table className="w-full text-left text-xs text-slate-700">
                 <thead className="bg-slate-50 text-slate-700 uppercase text-[10px] font-black tracking-wider border-b border-slate-200">
                   <tr>
-                    <th className="py-3.5 px-4">Calon Siswa</th>
+                    <th className="py-3.5 px-4">Calon Murid</th>
                     <th className="py-3.5 px-4">NISN / Asal Sekolah</th>
                     <th className="py-3.5 px-4">Jalur Pendaftaran</th>
                     <th className="py-3.5 px-4">Token Online & Refund Cash</th>
@@ -1306,7 +1306,7 @@ export default function AdminSpmbManagement({
 
                       return (
                         <tr key={candidate.id} className="hover:bg-slate-50/80 transition-colors">
-                          {/* Nama Calon Siswa */}
+                          {/* Nama Calon Murid */}
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-2.5">
                               <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs ${
@@ -1499,9 +1499,9 @@ export default function AdminSpmbManagement({
                                     <span>Form Lengkap</span>
                                   </span>
                                 ) : (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-50 text-amber-900 border border-amber-300">
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-50 text-amber-900 border border-amber-300">
                                     <Clock size={10} className="text-amber-600" />
-                                    <span>Belum Lengkap</span>
+                                    <span>Form Belum</span>
                                   </span>
                                 )}
                               </div>
@@ -1511,6 +1511,7 @@ export default function AdminSpmbManagement({
                                 const hasAkta = Boolean(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
                                 const hasKtp = Boolean(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
                                 const allDocs = hasFoto && hasKk && hasAkta && hasKtp;
+                                const hasAnyDoc = hasFoto || hasKk || hasAkta || hasKtp;
 
                                 return (
                                   <div className="space-y-1">
@@ -1520,14 +1521,15 @@ export default function AdminSpmbManagement({
                                           <CheckCircle2 size={10} className="text-emerald-700" />
                                           <span>Berkas Lengkap</span>
                                         </span>
-                                      ) : (hasFoto || hasKk || hasAkta || hasKtp || candidate.documentsUploaded) ? (
+                                      ) : hasAnyDoc ? (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
                                           <FileText size={10} className="text-blue-700" />
                                           <span>Berkas Sebagian</span>
                                         </span>
                                       ) : (
-                                        <span className="text-[10px] text-slate-400">
-                                          Berkas Kosong
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-100 text-slate-600 border border-slate-300">
+                                          <Clock size={10} className="text-slate-400" />
+                                          <span>Berkas Belum</span>
                                         </span>
                                       )}
                                     </div>
@@ -1701,7 +1703,7 @@ export default function AdminSpmbManagement({
               <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200 text-center">
                 <span className="text-xs font-bold text-teal-900 block">Daftar Ulang Lunas</span>
                 <span className="text-2xl font-black text-teal-700 mt-1 block">{reRegPaidCount}</span>
-                <span className="text-[10px] text-teal-600 font-medium">Calon Siswa</span>
+                <span className="text-[10px] text-teal-600 font-medium">Calon Murid</span>
               </div>
 
               <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-center">
@@ -1717,7 +1719,7 @@ export default function AdminSpmbManagement({
               </div>
             </div>
 
-            {/* Form Rekonsiliasi Cepat Per Calon Siswa (Berdasarkan NISN / Order ID) */}
+            {/* Form Rekonsiliasi Cepat Per Calon Murid (Berdasarkan NISN / Order ID) */}
             <div className="p-4.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
               <div className="flex items-center gap-2 text-xs font-black text-slate-800 uppercase tracking-wider">
                 <Search size={15} className="text-emerald-700" />
@@ -1813,7 +1815,7 @@ export default function AdminSpmbManagement({
               <table className="w-full text-left text-xs border-collapse">
                 <thead>
                   <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-extrabold text-[11px] uppercase tracking-wider">
-                    <th className="py-3 px-4">Calon Siswa / NISN</th>
+                    <th className="py-3 px-4">Calon Murid / NISN</th>
                     <th className="py-3 px-4">Asal SD & Sesi</th>
                     <th className="py-3 px-4">Token Formulir</th>
                     <th className="py-3 px-4">Daftar Ulang & Seragam</th>
@@ -1827,7 +1829,7 @@ export default function AdminSpmbManagement({
                     const isTokenPaid = cand.tokenPaid || cand.tokenPaymentStatus === 'paid';
                     const isReregPaid = cand.reRegistrationStatus === 'paid';
                     const isFormDone = cand.isFormCompleted;
-                    const hasDocs = cand.documentsUploaded || Boolean(cand.documents?.pasPhoto || cand.documents?.kkPhoto || cand.documents?.aktaPhoto);
+                    const hasDocs = Boolean(cand.documents?.pasPhoto || cand.documents?.kkPhoto || cand.documents?.aktaPhoto || cand.documents?.ktpAyahPhoto || cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.pasPhoto);
 
                     return (
                       <tr key={cand.id} className="hover:bg-slate-50 transition-colors">
@@ -1907,8 +1909,8 @@ export default function AdminSpmbManagement({
                                   <span>Buku Induk Lengkap</span>
                                 </span>
                               ) : (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-300">
-                                  <span>Belum Lengkap</span>
+                                <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold uppercase bg-amber-50 text-amber-900 border border-amber-300">
+                                  <span>Form Belum</span>
                                 </span>
                               )}
                             </div>
@@ -1933,7 +1935,9 @@ export default function AdminSpmbManagement({
                                         <span>Berkas Sebagian</span>
                                       </span>
                                     ) : (
-                                      <span className="text-[10px] text-slate-400">Berkas Kosong</span>
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-extrabold uppercase bg-slate-100 text-slate-600 border border-slate-300">
+                                        <span>Berkas Belum</span>
+                                      </span>
                                     )}
                                     <div className="flex items-center gap-1 text-[8.5px] font-mono text-slate-600">
                                       <span className={docFoto ? 'text-emerald-700 font-bold' : 'text-slate-400'}>📸Foto</span>•
@@ -2034,7 +2038,7 @@ export default function AdminSpmbManagement({
                 </strong>
                 <span className="text-xs text-slate-400">
                   {config.isOpen !== false 
-                    ? 'Formulir pendaftaran online dapat diakses dan menerima pendaftaran calon siswa baru.' 
+                    ? 'Formulir pendaftaran online dapat diakses dan menerima pendaftaran calon murid baru.' 
                     : 'Pendaftaran ditutup total. Pengunjung akan melihat pesan bahwa pendaftaran belum dibuka/aktif.'}
                 </span>
               </div>
@@ -2063,7 +2067,7 @@ export default function AdminSpmbManagement({
                   Pengalihan Jalur Otomatis (Batas Akhir Daftar Ulang): {config.autoTransferExpiredSessions !== false ? '🟢 AKTIF' : '⚪ NONAKTIF'}
                 </strong>
                 <span className="text-xs text-slate-400">
-                  Otomatis memindahkan calon siswa yang belum melunasi daftar ulang hingga tanggal batas akhir (endDate) ke gelombang selanjutnya. Panitia dapat membatalkan dan mengembalikan jalur calon murid kapan saja.
+                  Otomatis memindahkan calon murid yang belum melunasi daftar ulang hingga tanggal batas akhir (endDate) ke gelombang selanjutnya. Panitia dapat membatalkan dan mengembalikan jalur calon murid kapan saja.
                 </span>
               </div>
             </div>
@@ -2327,7 +2331,7 @@ export default function AdminSpmbManagement({
                   />
                 </div>
                 <p className="text-xs text-slate-400">
-                  Tahun ajaran ini otomatis disinkronkan ke seluruh halaman portal SPMB, nomor registrasi calon siswa, kuitansi pendaftaran, hingga kuitansi pengembalian token cash.
+                  Tahun ajaran ini otomatis disinkronkan ke seluruh halaman portal SPMB, nomor registrasi calon murid, kuitansi pendaftaran, hingga kuitansi pengembalian token cash.
                 </p>
               </div>
             </div>
@@ -2380,13 +2384,13 @@ export default function AdminSpmbManagement({
                 </span>
               </div>
 
-              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                 {/* 1. KETUA PANITIA SPMB */}
                 <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 space-y-3 flex flex-col justify-between">
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
                       <span className="text-xs font-black text-emerald-400 uppercase tracking-wide">1. Ketua Panitia SPMB</span>
-                      <span className="text-[10px] text-slate-400 font-mono">Penandatangan Utama</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Penandatangan Token</span>
                     </div>
 
                     <div>
@@ -2418,18 +2422,18 @@ export default function AdminSpmbManagement({
                     {/* Upload TTD Ketua SPMB */}
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
-                        <span>Upload TTD Digital Ketua SPMB</span>
+                        <span>Upload TTD Digital Ketua</span>
                         {config.spmbChairSignatureUrl && (
                           <span className="text-[10px] text-emerald-400 font-bold">✓ TTD Aktif</span>
                         )}
                       </label>
                       
                       {config.spmbChairSignatureUrl ? (
-                        <div className="p-2.5 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
+                        <div className="p-2 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
                           <img 
                             src={config.spmbChairSignatureUrl} 
                             alt="TTD Ketua" 
-                            className="h-10 max-w-[120px] object-contain" 
+                            className="h-9 max-w-[100px] object-contain" 
                           />
                           <button
                             type="button"
@@ -2438,10 +2442,10 @@ export default function AdminSpmbManagement({
                               setConfig(updated);
                               handleSaveConfig(updated);
                             }}
-                            className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold cursor-pointer"
+                            className="p-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold cursor-pointer"
                             title="Hapus TTD"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       ) : null}
@@ -2450,31 +2454,109 @@ export default function AdminSpmbManagement({
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
                         onChange={(e) => handleUploadConfigImage('spmbChairSignatureUrl', e)}
-                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* 2. PANITIA PELAYANAN SEKOLAH / LOKET SPMB */}
+                {/* 2. BENDAHARA PANITIA SPMB */}
                 <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 space-y-3 flex flex-col justify-between">
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-indigo-400 uppercase tracking-wide">2. Panitia Pelayanan SPMB</span>
-                      <span className="text-[10px] text-slate-400 font-mono">Pelayanan di Sekolah</span>
+                      <span className="text-xs font-black text-cyan-400 uppercase tracking-wide">2. Bendahara SPMB</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Daftar Ulang</span>
                     </div>
 
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                        Nama Panitia Pelayanan / Petugas
+                        Nama Lengkap Bendahara SPMB
+                      </label>
+                      <input
+                        type="text"
+                        value={config.spmbTreasurerName || ''}
+                        onChange={(e) => setConfig({ ...config, spmbTreasurerName: e.target.value })}
+                        placeholder="Contoh: Hj. Siti Aisyah, S.E."
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-cyan-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Sebutan Jabatan
+                      </label>
+                      <input
+                        type="text"
+                        value={config.spmbTreasurerTitle || 'Bendahara Panitia SPMB'}
+                        onChange={(e) => setConfig({ ...config, spmbTreasurerTitle: e.target.value })}
+                        placeholder="Bendahara Panitia SPMB"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-cyan-500"
+                      />
+                    </div>
+
+                    {/* Upload TTD Bendahara SPMB */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
+                        <span>Upload TTD Digital Bendahara</span>
+                        {config.spmbTreasurerSignatureUrl && (
+                          <span className="text-[10px] text-cyan-400 font-bold">✓ TTD Aktif</span>
+                        )}
+                      </label>
+                      
+                      {config.spmbTreasurerSignatureUrl ? (
+                        <div className="p-2 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
+                          <img 
+                            src={config.spmbTreasurerSignatureUrl} 
+                            alt="TTD Bendahara" 
+                            className="h-9 max-w-[100px] object-contain" 
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...config, spmbTreasurerSignatureUrl: undefined };
+                              setConfig(updated);
+                              handleSaveConfig(updated);
+                            }}
+                            className="p-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold cursor-pointer"
+                            title="Hapus TTD"
+                          >
+                            <Trash2 size={13} />
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => handleUploadConfigImage('spmbTreasurerSignatureUrl', e)}
+                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. PANITIA PELAYANAN SEKOLAH / LOKET SPMB */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-indigo-400 uppercase tracking-wide">3. Petugas Pelayanan SPMB</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Pelayanan Kantor</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Nama Petugas (Bisa Dikosongi / Titik-Titik)
                       </label>
                       <input
                         type="text"
                         value={config.spmbOfficerName || ''}
                         onChange={(e) => setConfig({ ...config, spmbOfficerName: e.target.value })}
-                        placeholder="Contoh: Panitia Pelayanan SPMB"
-                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-indigo-500"
+                        placeholder="( .................................... )"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-indigo-500 font-mono placeholder:text-slate-500"
                       />
+                      <p className="text-[10px] text-slate-400 mt-1">
+                        * Jika dikosongi, di kuitansi akan otomatis tercetak <em>( .................................... )</em> untuk diparaf petugas loket.
+                      </p>
                     </div>
 
                     <div>
@@ -2483,9 +2565,9 @@ export default function AdminSpmbManagement({
                       </label>
                       <input
                         type="text"
-                        value={config.spmbOfficerTitle || 'Panitia Pelayanan SPMB Sekolah'}
+                        value={config.spmbOfficerTitle || 'Panitia Pelayanan SPMB'}
                         onChange={(e) => setConfig({ ...config, spmbOfficerTitle: e.target.value })}
-                        placeholder="Panitia Pelayanan SPMB Sekolah"
+                        placeholder="Panitia Pelayanan SPMB"
                         className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-indigo-500"
                       />
                     </div>
@@ -2493,18 +2575,18 @@ export default function AdminSpmbManagement({
                     {/* Upload TTD Panitia Pelayanan */}
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
-                        <span>Upload TTD Panitia Pelayanan</span>
+                        <span>Upload TTD Digital Petugas (Opsional)</span>
                         {config.spmbOfficerSignatureUrl && (
                           <span className="text-[10px] text-indigo-400 font-bold">✓ TTD Aktif</span>
                         )}
                       </label>
                       
                       {config.spmbOfficerSignatureUrl ? (
-                        <div className="p-2.5 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
+                        <div className="p-2 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
                           <img 
                             src={config.spmbOfficerSignatureUrl} 
                             alt="TTD Panitia" 
-                            className="h-10 max-w-[120px] object-contain" 
+                            className="h-9 max-w-[100px] object-contain" 
                           />
                           <button
                             type="button"
@@ -2513,10 +2595,10 @@ export default function AdminSpmbManagement({
                               setConfig(updated);
                               handleSaveConfig(updated);
                             }}
-                            className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold cursor-pointer"
+                            className="p-1 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold cursor-pointer"
                             title="Hapus TTD"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       ) : null}
@@ -2525,40 +2607,40 @@ export default function AdminSpmbManagement({
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
                         onChange={(e) => handleUploadConfigImage('spmbOfficerSignatureUrl', e)}
-                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
                       />
                     </div>
                   </div>
                 </div>
 
-                {/* 3. STEMPEL RESMI PANITIA SPMB */}
-                <div className="p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/40 space-y-3 flex flex-col justify-between">
+                {/* 4. STEMPEL RESMI PANITIA SPMB */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-amber-500/40 space-y-3 flex flex-col justify-between">
                   <div className="space-y-2.5">
                     <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-amber-400 uppercase tracking-wide">3. Stempel Resmi SPMB</span>
-                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">Otomatis Disamping Kiri TTD</span>
+                      <span className="text-xs font-black text-amber-400 uppercase tracking-wide">4. Stempel Resmi SPMB</span>
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">Samping Kiri TTD</span>
                     </div>
 
-                    <p className="text-[11px] text-slate-300 leading-relaxed m-0">
-                      Stempel SPMB akan <strong>otomatis disandingkan di sebelah kiri Nama & TTD Ketua/Bendahara Panitia SPMB</strong> pada Kuitansi Pembayaran Token dan Kuitansi Daftar Ulang.
+                    <p className="text-[10px] text-slate-300 leading-relaxed m-0">
+                      Stempel SPMB <strong>otomatis disandingkan di sebelah kiri Nama & TTD Ketua/Bendahara</strong> pada Kuitansi Pembayaran Token dan Daftar Ulang.
                     </p>
 
                     {/* Upload Stempel SPMB */}
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
-                        <span>Upload File Stempel (Disarankan PNG Transparan)</span>
+                        <span>Upload File Stempel (PNG Transparan)</span>
                         {config.spmbStampUrl && (
                           <span className="text-[10px] text-emerald-400 font-bold">✓ Stempel Aktif</span>
                         )}
                       </label>
                       
                       {config.spmbStampUrl ? (
-                        <div className="p-2.5 bg-slate-800/90 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
+                        <div className="p-2 bg-slate-800/90 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
                           <div className="p-1 bg-white rounded-lg">
                             <img 
                               src={config.spmbStampUrl} 
                               alt="Stempel SPMB" 
-                              className="h-10 max-w-[90px] object-contain" 
+                              className="h-9 max-w-[80px] object-contain" 
                             />
                           </div>
                           <button
@@ -2568,10 +2650,10 @@ export default function AdminSpmbManagement({
                               setConfig(updated);
                               handleSaveConfig(updated);
                             }}
-                            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg text-xs font-bold cursor-pointer"
+                            className="p-1 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg text-xs font-bold cursor-pointer"
                             title="Hapus Stempel"
                           >
-                            <Trash2 size={14} />
+                            <Trash2 size={13} />
                           </button>
                         </div>
                       ) : null}
@@ -2580,7 +2662,7 @@ export default function AdminSpmbManagement({
                         type="file"
                         accept="image/png,image/jpeg,image/webp"
                         onChange={(e) => handleUploadConfigImage('spmbStampUrl', e)}
-                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
                       />
                     </div>
                   </div>
@@ -2796,7 +2878,7 @@ export default function AdminSpmbManagement({
             {/* Simulasi Total Biaya Per Gender & Sesi */}
             <div className="pt-2">
               <h4 className="text-xs font-black text-slate-300 uppercase tracking-wider mb-3">
-                Simulasi Rincian Daftar Ulang Siswa Baru ({currentAcademicYear})
+                Simulasi Rincian Daftar Ulang Murid Baru ({currentAcademicYear})
               </h4>
               {(() => {
                 const bFee = config.buildingFee || 1500000;
@@ -3168,7 +3250,7 @@ export default function AdminSpmbManagement({
                   <span className="col-span-2 font-bold text-slate-900">: {receiptCandidate.collectiveRefundRecipient || receiptCandidate.parentName || receiptCandidate.fullName}</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">
-                  <span className="text-slate-600 font-medium">Nama Calon Siswa</span>
+                  <span className="text-slate-600 font-medium">Nama Calon Murid</span>
                   <span className="col-span-2 font-bold text-slate-900">: {receiptCandidate.fullName} (NISN: {receiptCandidate.nisn})</span>
                 </div>
                 <div className="grid grid-cols-3 gap-2">

@@ -1866,6 +1866,16 @@ function loadState() {
       if (Array.isArray(data.spmbCandidates)) {
         spmbCandidates.length = 0;
         spmbCandidates.push(...data.spmbCandidates);
+        spmbCandidates.forEach(cand => {
+          if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
+            cand.isFormCompleted = false;
+            delete (cand as any).formCompletedAt;
+            cand.documentsUploaded = false;
+            delete (cand as any).documentsUploadedAt;
+            cand.documents = {};
+            cand.status = 'registered';
+          }
+        });
       }
       if (data.backupConfig) Object.assign(backupConfig, data.backupConfig);
       if (Array.isArray(data.databaseBackups)) {
@@ -2716,6 +2726,16 @@ async function startServer() {
   // Serve static files from /uploads
   app.use("/uploads", express.static(uploadDir));
 
+  // Support accessing /uploads/berkas_murid/:name directly and serving index.html
+  app.get("/uploads/berkas_murid/:name", (req, res, next) => {
+    const studentFolder = path.join(uploadDir, "berkas_murid", req.params.name);
+    const indexPath = path.join(studentFolder, "index.html");
+    if (fs.existsSync(indexPath)) {
+      return res.sendFile(indexPath);
+    }
+    next();
+  });
+
   // Upload file API for admin user
   app.post("/api/admin/upload-file", upload.single("file"), async (req, res) => {
     if (!req.file) {
@@ -3162,7 +3182,20 @@ async function startServer() {
     if (tSalaries) { teacherSalaries.length = 0; teacherSalaries.push(...tSalaries); }
 
     const spmbArr = getArray(["spmbCandidates"]);
-    if (spmbArr) { spmbCandidates.length = 0; spmbCandidates.push(...spmbArr); }
+    if (spmbArr) {
+      spmbCandidates.length = 0;
+      spmbCandidates.push(...spmbArr);
+      spmbCandidates.forEach(cand => {
+        if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
+          cand.isFormCompleted = false;
+          delete (cand as any).formCompletedAt;
+          cand.documentsUploaded = false;
+          delete (cand as any).documentsUploadedAt;
+          cand.documents = {};
+          cand.status = 'registered';
+        }
+      });
+    }
 
     const midtransArr = getArray([
       "midtransTransactions",

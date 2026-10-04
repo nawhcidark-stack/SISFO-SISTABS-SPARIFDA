@@ -291,7 +291,7 @@ export async function generateTokenReceiptHtml(
         <!-- Receipt Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) -->
         <div class="receipt-footer">
           <div class="signature-column">
-            <p class="sig-title">Orang Tua / Calon Siswa,</p>
+            <p class="sig-title">Orang Tua / Calon Murid,</p>
             <p class="sig-sub">Pembayar</p>
             <div class="sig-space"></div>
             <p class="sig-name">( ${candidate.parentName || candidate.fullName} )</p>
@@ -303,17 +303,17 @@ export async function generateTokenReceiptHtml(
             <div class="sig-space sig-center-box">
               ${config?.spmbOfficerSignatureUrl ? `<img src="${config.spmbOfficerSignatureUrl}" class="sig-img" alt="Ttd Panitia Pelayanan" referrerPolicy="no-referrer" />` : ''}
             </div>
-            <p class="sig-name"><u>( ${config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</u></p>
+            <p class="sig-name">${config?.spmbOfficerName && config.spmbOfficerName.trim() && !config.spmbOfficerName.includes('...') ? `<u>( ${config.spmbOfficerName.trim()} )</u>` : '( .................................... )'}</p>
           </div>
 
           <div class="signature-column">
             <p class="sig-title">Pandaan, ${payDateStr}</p>
-            <p class="sig-sub">${config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+            <p class="sig-sub">${config?.spmbChairTitle || 'Ketua Panitia SPMB'},</p>
             <div class="sig-space sig-with-stamp-flex">
-              ${(config?.spmbStampUrl || schoolIdentity?.stamp) ? `<img src="${config?.spmbStampUrl || schoolIdentity?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
-              ${(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Ketua SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) ? `<img src="${config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Ketua SPMB" referrerPolicy="no-referrer" />` : ''}
             </div>
-            <p class="sig-name"><u>${config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</u></p>
+            <p class="sig-name"><u>${config?.spmbChairName || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</u></p>
           </div>
         </div>
 
@@ -416,7 +416,7 @@ export async function generateReRegReceiptHtml(
               <td class="col-label">Untuk Pembayaran</td>
               <td class="col-colon">:</td>
               <td class="col-value">
-                Pelunasan Biaya Daftar Ulang Siswa Baru, Uang Gedung, SPP Bulan Juli, dan Paket Seragam & Atribut Sekolah (${genderLabel} - Ukuran: <strong>${uniformSize}</strong>) Tahun Ajaran <strong>${academicYear}</strong>
+                Pelunasan Biaya Daftar Ulang Murid Baru, Uang Gedung, SPP Bulan Juli, dan Paket Seragam & Atribut Sekolah (${genderLabel} - Ukuran: <strong>${uniformSize}</strong>) Tahun Ajaran <strong>${academicYear}</strong>
               </td>
             </tr>
             <tr>
@@ -489,10 +489,10 @@ export async function generateReRegReceiptHtml(
           </div>
         </div>
 
-        <!-- Receipt Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) -->
+        <!-- Receipt Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Bendahara/Ketua SPMB dengan Stempel) -->
         <div class="receipt-footer">
           <div class="signature-column">
-            <p class="sig-title">Orang Tua / Wali Siswa,</p>
+            <p class="sig-title">Orang Tua / Wali Murid,</p>
             <p class="sig-sub">Pembayar</p>
             <div class="sig-space"></div>
             <p class="sig-name">( ${candidate.parentName || candidate.fullName} )</p>
@@ -504,17 +504,17 @@ export async function generateReRegReceiptHtml(
             <div class="sig-space sig-center-box">
               ${config?.spmbOfficerSignatureUrl ? `<img src="${config.spmbOfficerSignatureUrl}" class="sig-img" alt="Ttd Panitia Pelayanan" referrerPolicy="no-referrer" />` : ''}
             </div>
-            <p class="sig-name"><u>( ${config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</u></p>
+            <p class="sig-name">${config?.spmbOfficerName && config.spmbOfficerName.trim() && !config.spmbOfficerName.includes('...') ? `<u>( ${config.spmbOfficerName.trim()} )</u>` : '( .................................... )'}</p>
           </div>
 
           <div class="signature-column">
             <p class="sig-title">Pandaan, ${payDateStr}</p>
-            <p class="sig-sub">${config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+            <p class="sig-sub">${config?.spmbTreasurerTitle || config?.spmbChairTitle || 'Bendahara Panitia SPMB'},</p>
             <div class="sig-space sig-with-stamp-flex">
-              ${(config?.spmbStampUrl || schoolIdentity?.stamp) ? `<img src="${config?.spmbStampUrl || schoolIdentity?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
-              ${(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Ketua SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) ? `<img src="${config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Bendahara SPMB" referrerPolicy="no-referrer" />` : ''}
             </div>
-            <p class="sig-name"><u>${config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</u></p>
+            <p class="sig-name"><u>${config?.spmbTreasurerName || config?.spmbChairName || schoolIdentity?.treasurer || 'Bendahara Panitia SPMB'}</u></p>
           </div>
         </div>
 

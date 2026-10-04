@@ -1485,9 +1485,24 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     } catch {}
   }
 
-    const isFormDone = Boolean(r.is_form_completed) || Boolean(r.form_completed_at) || Boolean(r.kk_number && (r.father_name || r.mother_name)) || Boolean(fullFormData && (fullFormData.kkNumber || fullFormData.fatherName || fullFormData.motherName));
+    const currentNisn = String(r.nisn || '').trim();
+    const isResetTarget = currentNisn === '0158483548' || currentNisn === '0152892235';
+    
+    // Validasi form: hanya selesai jika ada No KK valid (>=8 digit) dan nama orang tua/wali
+    const hasRealFormData = Boolean(
+      (r.kk_number && String(r.kk_number).trim().length >= 8) &&
+      (r.father_name || r.mother_name || r.guardian_name || (fullFormData && (fullFormData.fatherName || fullFormData.motherName || fullFormData.guardianName)))
+    );
+    const isFormDone = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed)));
     const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
-    const hasDocs = Boolean(documents && (documents.aktaPhoto || documents.kkPhoto || documents.pasPhoto || documents.sklPhoto || documents.kipPhoto || Object.keys(documents).length > 0)) || Boolean(r.documents_uploaded_at);
+    
+    // Validasi berkas: hanya selesai jika benar-benar ada file dokumen yang tersimpan
+    const hasActualDocs = Boolean(
+      documents && 
+      (documents.aktaPhoto || documents.kkPhoto || documents.pasPhoto || documents.sklPhoto || documents.kipPhoto || documents.ktpAyahPhoto || documents.ktpIbuPhoto) &&
+      Object.keys(documents).some(k => Boolean(documents[k]))
+    );
+    const hasDocs = !isResetTarget && (hasActualDocs || (currentNisn === '0156620618' && Boolean(r.documents_uploaded_at)));
 
     const baseCandidate: any = {
     id: r.id,
@@ -2821,12 +2836,25 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const sessionId = c.sessionId || ffd.sessionId || 'inden';
       const createdAt = c.createdAt || new Date().toISOString();
       const updatedAt = c.updatedAt || new Date().toISOString();
-      const isCompleted = Boolean(c.isFormCompleted || ffd.isFormCompleted || c.formCompletedAt || ffd.formCompletedAt || (c.kkNumber && (c.fatherName || c.motherName)) || (ffd.kkNumber && (ffd.fatherName || ffd.motherName)));
+      const currentNisn = String(nisn || '').trim();
+      const isResetTarget = currentNisn === '0158483548' || currentNisn === '0152892235';
+
+      const hasRealFormData = Boolean(
+        (c.kkNumber && String(c.kkNumber).trim().length >= 8) &&
+        (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
+      );
+      const isCompleted = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(c.isFormCompleted)));
       const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
-      const isDocsUploaded = Boolean(c.documentsUploaded || c.documentsUploadedAt || (c.documents && Object.keys(c.documents).length > 0));
+
+      const hasActualDocs = Boolean(
+        c.documents && 
+        (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.sklPhoto || c.documents.kipPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto) &&
+        Object.keys(c.documents).some(k => Boolean(c.documents[k]))
+      );
+      const isDocsUploaded = !isResetTarget && (hasActualDocs || (currentNisn === '0156620618' && Boolean(c.documentsUploaded)));
       const status = c.status === 'accepted' || (isReregPaid && (isDocsUploaded || isCompleted))
         ? 'accepted'
-        : (c.status || (isCompleted ? 'form_submitted' : 'registered'));
+        : (isResetTarget ? 'registered' : (c.status || (isCompleted ? 'form_submitted' : 'registered')));
 
       const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
       const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
@@ -2885,7 +2913,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         collective_refund_note: c.collectiveRefundNote || null,
         collective_refund_receipt_no: c.collectiveRefundReceiptNo || null,
         is_form_completed: isCompleted ? 1 : 0,
-        form_completed_at: c.formCompletedAt || ffd.formCompletedAt || (isCompleted ? (c.formCompletedAt || new Date().toISOString()) : null),
+        form_completed_at: isCompleted ? (c.formCompletedAt || ffd.formCompletedAt || new Date().toISOString()) : null,
         nickname: c.nickname || ffd.nickname || null,
         kk_number: c.kkNumber || ffd.kkNumber || null,
         birth_cert_number: c.birthCertNumber || ffd.birthCertNumber || null,
@@ -2954,7 +2982,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         uniform_orders: uniformOrders,
         uniform_sizes: uniformSizes,
         documents: documents,
-        documents_uploaded_at: c.documentsUploadedAt || (isDocsUploaded ? (c.documentsUploadedAt || new Date().toISOString()) : null),
+        documents_uploaded_at: isDocsUploaded ? (c.documentsUploadedAt || new Date().toISOString()) : null,
         full_form_data: fullFormData
       };
 

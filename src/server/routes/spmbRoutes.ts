@@ -1,9 +1,192 @@
 import { Router } from "express";
 import multer from "multer";
+import fs from "fs";
+import path from "path";
 import { SpmbCandidate, SpmbConfig, Student, RealtimeNotification, MidtransConfig } from "../../types";
 import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, ensureAllMysqlTablesExist } from "../mysqlService";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
+
+/**
+ * Simpan berkas dokumen murid baru ke folder hosting fisik di /uploads/berkas_murid/[Nama_Murid]
+ * dan buat file index.html interaktif untuk pratinjau berkas di browser / buku induk kesiswaan
+ */
+export function saveCandidateDocumentsToDisk(
+  candidate: SpmbCandidate,
+  incomingDocs: Record<string, string>
+): { documents: Record<string, string>; folderUrl: string; folderName: string } {
+  // Tentukan nama folder murid yang bersih berdasarkan nama murid
+  const rawName = candidate.fullName || `Murid_${candidate.nisn || candidate.id}`;
+  const folderName = rawName
+    .trim()
+    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+    .trim()
+    .replace(/\s+/g, "_") || `Murid_${candidate.id}`;
+
+  const baseUploadsDir = path.join(process.cwd(), "uploads", "berkas_murid");
+  if (!fs.existsSync(baseUploadsDir)) {
+    fs.mkdirSync(baseUploadsDir, { recursive: true });
+  }
+
+  // Jika nama murid diubah dan folder lama ada, ganti nama folder otomatis
+  if (candidate.documentsFolderName && candidate.documentsFolderName !== folderName) {
+    const oldDir = path.join(baseUploadsDir, candidate.documentsFolderName);
+    const newDir = path.join(baseUploadsDir, folderName);
+    if (fs.existsSync(oldDir) && !fs.existsSync(newDir)) {
+      try {
+        fs.renameSync(oldDir, newDir);
+      } catch (e) {
+        console.warn("[Document Folder Rename Warning]:", e);
+      }
+    }
+  }
+
+  const targetDir = path.join(baseUploadsDir, folderName);
+  if (!fs.existsSync(targetDir)) {
+    fs.mkdirSync(targetDir, { recursive: true });
+  }
+
+  const resultDocs: Record<string, string> = { ...(candidate.documents || {}) };
+
+  const docLabels: Record<string, string> = {
+    pasPhoto: "Pas Foto Calon Murid (3x4)",
+    kkPhoto: "Kartu Keluarga (KK)",
+    aktaPhoto: "Akte Kelahiran Murid",
+    ktpAyahPhoto: "KTP Ayah / Wali",
+    ktpIbuPhoto: "KTP Ibu Kandung",
+    ktpPhoto: "KTP Orang Tua / Wali",
+    kipPhoto: "Kartu Indonesia Pintar (KIP)",
+    ijazahPhoto: "Ijazah / SKL",
+    skhuPhoto: "SKHUN / Rapor"
+  };
+
+  for (const [key, val] of Object.entries(incomingDocs)) {
+    if (!val || typeof val !== "string") continue;
+    if (val.startsWith("data:")) {
+      const match = val.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+      if (match) {
+        const mime = match[1].toLowerCase();
+        const base64 = match[2];
+        let ext = ".jpg";
+        if (mime.includes("png")) ext = ".png";
+        else if (mime.includes("pdf")) ext = ".pdf";
+        else if (mime.includes("webp")) ext = ".webp";
+        else if (mime.includes("jpeg") || mime.includes("jpg")) ext = ".jpg";
+
+        const fileName = `${key}${ext}`;
+        const filePath = path.join(targetDir, fileName);
+        try {
+          fs.writeFileSync(filePath, Buffer.from(base64, "base64"));
+          resultDocs[key] = `/uploads/berkas_murid/${folderName}/${fileName}`;
+        } catch (writeErr) {
+          console.error(`[Error writing document file ${fileName}]:`, writeErr);
+          resultDocs[key] = val;
+        }
+      } else {
+        resultDocs[key] = val;
+      }
+    } else {
+      resultDocs[key] = val;
+    }
+  }
+
+  // Buat index.html interaktif untuk tampilan browser saat tautan folder dibuka
+  try {
+    const docEntries = Object.entries(resultDocs).filter(([_, url]) => Boolean(url));
+    const docItemsHtml = docEntries.map(([key, url]) => {
+      const label = docLabels[key] || key.replace(/([A-Z])/g, ' $1').toUpperCase();
+      const isPdf = String(url).toLowerCase().endsWith('.pdf');
+      return `
+        <div class="doc-card">
+          <div class="doc-header">
+            <span class="doc-title">${label}</span>
+            <a href="${url}" target="_blank" download class="btn-dl">Unduh Berkas</a>
+          </div>
+          <div class="doc-preview">
+            ${isPdf 
+              ? `<iframe src="${url}" class="doc-iframe"></iframe>`
+              : `<a href="${url}" target="_blank" title="Klik untuk perbesar"><img src="${url}" alt="${label}" class="doc-img" /></a>`
+            }
+          </div>
+          <div class="doc-footer">
+            <a href="${url}" target="_blank" class="btn-view">Buka Gambar Asli ↗</a>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    const indexHtml = `<!DOCTYPE html>
+<html lang="id">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Folder Berkas Murid - ${candidate.fullName}</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; background: #f8fafc; color: #1e293b; margin: 0; padding: 24px; }
+    .container { max-width: 1000px; margin: 0 auto; }
+    .header { background: #0f172a; color: white; padding: 24px; border-radius: 16px; margin-bottom: 24px; display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 16px; box-shadow: 0 10px 15px -3px rgba(0,0,0,0.1); }
+    .header h1 { margin: 0 0 6px 0; font-size: 20px; font-weight: 800; letter-spacing: -0.025em; }
+    .header p { margin: 0; color: #94a3b8; font-size: 13px; }
+    .badge { background: #10b981; color: white; padding: 6px 14px; border-radius: 9999px; font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em; }
+    .info-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; padding: 18px; margin-bottom: 24px; display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 14px; box-shadow: 0 1px 3px rgba(0,0,0,0.05); }
+    .info-item span.label { display: block; font-size: 11px; text-transform: uppercase; font-weight: 700; color: #64748b; margin-bottom: 2px; }
+    .info-item span.val { font-size: 14px; font-weight: 700; color: #0f172a; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 20px; }
+    .doc-card { background: white; border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden; display: flex; flex-direction: column; box-shadow: 0 2px 4px rgba(0,0,0,0.04); }
+    .doc-header { padding: 12px 16px; background: #f1f5f9; border-bottom: 1px solid #e2e8f0; display: flex; justify-content: space-between; align-items: center; }
+    .doc-title { font-size: 12px; font-weight: 700; color: #334155; }
+    .btn-dl { font-size: 11px; font-weight: 600; color: #0284c7; text-decoration: none; }
+    .btn-dl:hover { text-decoration: underline; }
+    .doc-preview { height: 260px; display: flex; align-items: center; justify-content: center; background: #fafafa; padding: 8px; overflow: hidden; }
+    .doc-img { max-height: 100%; max-width: 100%; object-fit: contain; border-radius: 6px; }
+    .doc-iframe { width: 100%; height: 100%; border: none; }
+    .doc-footer { padding: 10px 16px; border-top: 1px solid #e2e8f0; background: white; text-align: center; }
+    .btn-view { font-size: 12px; font-weight: 700; color: #059669; text-decoration: none; display: inline-block; }
+    .btn-view:hover { text-decoration: underline; }
+    .footer-note { margin-top: 32px; text-align: center; font-size: 12px; color: #94a3b8; }
+    @media print {
+      body { background: white; padding: 0; }
+      .header { background: #0f172a !important; color: white !important; -webkit-print-color-adjust: exact; }
+      .btn-dl, .btn-view { display: none; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="header">
+      <div>
+        <h1>📁 FOLDER BERKAS MURID - SMP MA'ARIF NU PANDAAN</h1>
+        <p>Sistem Informasi Akademik & Penerimaan Murid Baru (SPMB)</p>
+      </div>
+      <span class="badge">Berkas Lengkap</span>
+    </div>
+
+    <div class="info-card">
+      <div class="info-item"><span class="label">Nama Lengkap Murid</span><span class="val">${candidate.fullName}</span></div>
+      <div class="info-item"><span class="label">NISN</span><span class="val">${candidate.nisn || '-'}</span></div>
+      <div class="info-item"><span class="label">Asal Sekolah</span><span class="val">${candidate.schoolOrigin || '-'}</span></div>
+      <div class="info-item"><span class="label">Jalur Pendaftaran</span><span class="val">${candidate.sessionId ? candidate.sessionId.toUpperCase() : '-'}</span></div>
+    </div>
+
+    <div class="grid">
+      ${docItemsHtml || '<p style="grid-column: 1/-1; text-align: center; color: #64748b; padding: 30px;">Belum ada berkas yang diunggah.</p>'}
+    </div>
+
+    <div class="footer-note">
+      Dokumen berkas tersimpan aman pada folder hosting resmi SMP Ma'arif NU Pandaan.
+    </div>
+  </div>
+</body>
+</html>`;
+
+    fs.writeFileSync(path.join(targetDir, "index.html"), indexHtml, "utf8");
+  } catch (htmlErr) {
+    console.warn("[Error generating documents index.html]:", htmlErr);
+  }
+
+  const folderUrl = `/uploads/berkas_murid/${folderName}`;
+  return { documents: resultDocs, folderUrl, folderName };
+}
 
 function toProperCase(val?: string | null): string {
   if (!val) return "";
@@ -180,9 +363,30 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     if (!c) return false;
     let changed = false;
     const ffd = (c.fullFormData && typeof c.fullFormData === 'object') ? c.fullFormData : {};
+    const currentNisn = String(c.nisn || "").trim();
+    const isResetTarget = currentNisn === "0158483548" || currentNisn === "0152892235" || c.id === "0158483548" || c.id === "0152892235";
     
+    // Perbaikan Khusus Murid Baru yang belum mengisi data lengkap tapi sempat terbuka (NISN 0158483548 & 0152892235)
+    if (isResetTarget) {
+      if (c.isFormCompleted) {
+        c.isFormCompleted = false;
+        delete c.formCompletedAt;
+        changed = true;
+      }
+      if (c.documentsUploaded) {
+        c.documentsUploaded = false;
+        delete c.documentsUploadedAt;
+        changed = true;
+      }
+      c.documents = {};
+      if (!c.reRegistrationPaid && c.status !== 'registered') {
+        c.status = 'registered';
+        changed = true;
+      }
+    }
+
     // Khusus NISN 0156620618 atau kandidat dengan pembayaran daftar ulang selesai
-    if (String(c.nisn || "").trim() === "0156620618" || c.id === "0156620618") {
+    if (currentNisn === "0156620618" || c.id === "0156620618") {
       if (!c.tokenPaid || c.tokenPaymentStatus !== 'paid') {
         c.tokenPaid = true;
         c.tokenPaymentStatus = 'paid';
@@ -225,19 +429,48 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
 
     // 1. Validasi Kelengkapan Formulir Buku Induk
-    const isFormDone = Boolean(c.isFormCompleted || ffd.isFormCompleted || c.formCompletedAt || ffd.formCompletedAt || (c.kkNumber && (c.fatherName || c.motherName)) || (ffd.kkNumber && (ffd.fatherName || ffd.motherName)) || (c.nik && (c.birthPlace || c.address)));
-    if (isFormDone && !c.isFormCompleted) {
-      c.isFormCompleted = true;
-      if (!c.formCompletedAt) c.formCompletedAt = ffd.formCompletedAt || c.createdAt || new Date().toISOString();
-      changed = true;
+    // Harus benar-benar ada data buku induk (No KK dan Nama Orang Tua / Wali), bukan sekadar data singkat pendaftaran awal!
+    const hasRealFormData = Boolean(
+      (c.kkNumber && String(c.kkNumber).trim().length >= 8) &&
+      (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
+    );
+    
+    if (hasRealFormData && !isResetTarget) {
+      if (!c.isFormCompleted) {
+        c.isFormCompleted = true;
+        if (!c.formCompletedAt) c.formCompletedAt = ffd.formCompletedAt || c.createdAt || new Date().toISOString();
+        changed = true;
+      }
+    } else {
+      // Jika belum mengisi No KK dan data orang tua atau target reset, maka status formulir BELUM lengkap!
+      if ((c.isFormCompleted || isResetTarget) && currentNisn !== "0156620618") {
+        c.isFormCompleted = false;
+        delete c.formCompletedAt;
+        changed = true;
+      }
     }
 
-    // 2. Validasi Kelengkapan Berkas Upload (5 Berkas Wajib: Pas Foto, KK, Akta, KTP Ayah, KTP Ibu)
-    const hasDocs = Boolean(c.documentsUploaded || c.documentsUploadedAt || (c.documents && (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto || c.documents.ktpPhoto || Object.keys(c.documents).length > 0)));
-    if (hasDocs && !c.documentsUploaded) {
-      c.documentsUploaded = true;
-      if (!c.documentsUploadedAt) c.documentsUploadedAt = c.createdAt || new Date().toISOString();
-      changed = true;
+    // 2. Validasi Kelengkapan Berkas Upload
+    // Hanya dianggap terunggah jika benar-benar ada file foto yang tersimpan di c.documents dan bukan target reset!
+    const hasActualDocs = Boolean(
+      !isResetTarget &&
+      c.documents && 
+      (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto) &&
+      Object.keys(c.documents).some(k => Boolean(c.documents[k]))
+    );
+    if (hasActualDocs) {
+      if (!c.documentsUploaded) {
+        c.documentsUploaded = true;
+        if (!c.documentsUploadedAt) c.documentsUploadedAt = new Date().toISOString();
+        changed = true;
+      }
+    } else {
+      // Jika tidak ada foto berkas sama sekali, status berkas BELUM!
+      if ((c.documentsUploaded || isResetTarget) && currentNisn !== "0156620618") {
+        c.documentsUploaded = false;
+        delete c.documentsUploadedAt;
+        changed = true;
+      }
     }
 
     // 3. Validasi Status Pembayaran Daftar Ulang
@@ -252,10 +485,13 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     // 4. Penyelarasan Status Akhir (accepted / form_submitted / registered)
     if (c.isPromotedToStudent) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
-    } else if (isReregPaid && (hasDocs || isFormDone)) {
+    } else if (isReregPaid && (hasActualDocs || hasRealFormData)) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
-    } else if (isFormDone && (c.status === 'registered' || !c.status)) {
+    } else if (hasRealFormData && (c.status === 'registered' || !c.status)) {
       c.status = 'form_submitted';
+      changed = true;
+    } else if (!hasRealFormData && !isReregPaid && c.status !== 'registered' && currentNisn !== "0156620618") {
+      c.status = 'registered';
       changed = true;
     }
 
@@ -1757,8 +1993,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
       }
 
-      // Merge and save documents permanently
-      candidate.documents = { ...(candidate.documents || {}), ...documents };
+      // Merge and save documents permanently to hosting disk folder
+      const { documents: savedDocs, folderUrl, folderName } = saveCandidateDocumentsToDisk(candidate, documents);
+      candidate.documents = savedDocs;
+      candidate.documentsFolder = folderUrl;
+      candidate.documentsFolderName = folderName;
+      if (!candidate.googleDriveLink) {
+        candidate.googleDriveLink = folderUrl;
+      }
       candidate.documentsUploaded = true;
       candidate.documentsUploadedAt = new Date().toISOString();
       
@@ -1786,8 +2028,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       res.json({
         success: true,
-        message: "Berkas pendaftaran calon murid berhasil disimpan permanen!",
-        candidate
+        message: "Berkas pendaftaran calon murid berhasil disimpan permanen pada hosting!",
+        candidate,
+        folderUrl
       });
     } catch (err: any) {
       console.error("Error in upload-documents:", err);
@@ -1819,7 +2062,13 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         return res.status(404).json({ error: "Calon murid tidak ditemukan." });
       }
 
-      candidate.documents = { ...(candidate.documents || {}), ...(documents || {}) };
+      const { documents: savedDocs, folderUrl, folderName } = saveCandidateDocumentsToDisk(candidate, documents || {});
+      candidate.documents = savedDocs;
+      candidate.documentsFolder = folderUrl;
+      candidate.documentsFolderName = folderName;
+      if (!candidate.googleDriveLink) {
+        candidate.googleDriveLink = folderUrl;
+      }
       candidate.documentsUploaded = true;
       candidate.documentsUploadedAt = new Date().toISOString();
       healCandidateData(candidate);
@@ -1830,8 +2079,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       res.json({
         success: true,
-        message: `Berkas dokumen calon murid ${candidate.fullName} berhasil diperbarui oleh Admin.`,
-        candidate
+        message: `Berkas dokumen calon murid ${candidate.fullName} berhasil diperbarui dan disimpan pada hosting.`,
+        candidate,
+        folderUrl
       });
     } catch (err: any) {
       console.error("Error in /admin-update-documents:", err);
@@ -2100,8 +2350,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           guardianAddress: candidate.guardianAddress || "",
           guardianPhone: candidate.guardianPhone || "",
           guardianStatus: candidate.guardianStatus || "",
-          googleDriveLink: candidate.googleDriveLink || ""
+          googleDriveLink: candidate.googleDriveLink || candidate.documentsFolder || (candidate.documentsFolderName ? `/uploads/berkas_murid/${candidate.documentsFolderName}` : ""),
+          documentsFolder: candidate.documentsFolder || (candidate.documentsFolderName ? `/uploads/berkas_murid/${candidate.documentsFolderName}` : ""),
+          documents: { ...(candidate.documents || {}) }
         };
+
+        if (candidate.documents?.pasPhoto && !newStudent.photoUrl) {
+          newStudent.photoUrl = candidate.documents.pasPhoto;
+        }
 
         students.push(newStudent);
         candidate.status = "accepted";

@@ -262,7 +262,7 @@ export default function SpmbReceiptModal({
                 {/* Footer Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) */}
                 <div className="grid grid-cols-3 gap-3 pt-5 border-t border-slate-200 text-center text-[10px]">
                   <div>
-                    <p className="m-0 text-slate-500">Orang Tua / Calon Siswa,</p>
+                    <p className="m-0 text-slate-500">Orang Tua / Calon Murid,</p>
                     <p className="m-0 text-slate-700 font-bold">Pembayar</p>
                     <div className="h-12"></div>
                     <p className="font-bold underline text-slate-800 m-0">( {candidate.parentName || candidate.fullName} )</p>
@@ -276,31 +276,35 @@ export default function SpmbReceiptModal({
                         <img src={config.spmbOfficerSignatureUrl} alt="Ttd Panitia" className="h-11 object-contain z-10" referrerPolicy="no-referrer" />
                       )}
                     </div>
-                    <p className="font-bold underline text-slate-800 m-0">( {config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</p>
+                    <p className="font-bold underline text-slate-800 m-0">
+                      {config?.spmbOfficerName && config.spmbOfficerName.trim() && !config.spmbOfficerName.includes('...')
+                        ? `( ${config.spmbOfficerName.trim()} )`
+                        : '( .................................... )'}
+                    </p>
                   </div>
 
                   <div>
                     <p className="m-0 text-slate-500">Pandaan, {formatIndoDate(candidate.tokenPaidAt)}</p>
-                    <p className="m-0 text-slate-700 font-bold">{config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+                    <p className="m-0 text-slate-700 font-bold">{config?.spmbChairTitle || 'Ketua Panitia SPMB'},</p>
                     <div className="h-12 flex items-center justify-center relative">
-                      {(config?.spmbStampUrl || schoolIdentity?.stamp) && (
+                      {(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) && (
                         <img 
-                          src={config?.spmbStampUrl || schoolIdentity?.stamp} 
+                          src={config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp} 
                           alt="Stempel SPMB" 
                           className="absolute -left-2 top-0 h-12 max-w-[70px] object-contain opacity-85 pointer-events-none z-1" 
                           referrerPolicy="no-referrer" 
                         />
                       )}
-                      {(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) && (
+                      {(config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature) && (
                         <img 
-                          src={config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature} 
+                          src={config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature} 
                           alt="Ttd Ketua SPMB" 
                           className="h-11 object-contain z-10" 
                           referrerPolicy="no-referrer" 
                         />
                       )}
                     </div>
-                    <p className="font-bold underline text-slate-800 m-0">{config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</p>
+                    <p className="font-bold underline text-slate-800 m-0">{config?.spmbChairName || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</p>
                   </div>
                 </div>
 
@@ -423,10 +427,10 @@ export default function SpmbReceiptModal({
                   </table>
                 </div>
 
-                {/* Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) */}
+                {/* Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Bendahara/Ketua SPMB dengan Stempel) */}
                 <div className="grid grid-cols-3 gap-3 pt-4 border-t border-slate-200 text-center text-[10px]">
                   <div>
-                    <p className="m-0 text-slate-500">Orang Tua / Wali Siswa,</p>
+                    <p className="m-0 text-slate-500">Orang Tua / Wali Murid,</p>
                     <p className="m-0 text-slate-700 font-bold">Pembayar</p>
                     <div className="h-12"></div>
                     <p className="font-bold underline text-slate-800 m-0">( {candidate.parentName || candidate.fullName} )</p>
@@ -440,31 +444,35 @@ export default function SpmbReceiptModal({
                         <img src={config.spmbOfficerSignatureUrl} alt="Ttd Panitia" className="h-11 object-contain z-10" referrerPolicy="no-referrer" />
                       )}
                     </div>
-                    <p className="font-bold underline text-slate-800 m-0">( {config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</p>
+                    <p className="font-bold underline text-slate-800 m-0">
+                      {config?.spmbOfficerName && config.spmbOfficerName.trim() && !config.spmbOfficerName.includes('...')
+                        ? `( ${config.spmbOfficerName.trim()} )`
+                        : '( .................................... )'}
+                    </p>
                   </div>
 
                   <div>
                     <p className="m-0 text-slate-500">Pandaan, {formatIndoDate(candidate.reRegistrationPaidAt)}</p>
-                    <p className="m-0 text-slate-700 font-bold">{config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+                    <p className="m-0 text-slate-700 font-bold">{config?.spmbTreasurerTitle || config?.spmbChairTitle || 'Bendahara Panitia SPMB'},</p>
                     <div className="h-12 flex items-center justify-center relative">
-                      {(config?.spmbStampUrl || schoolIdentity?.stamp) && (
+                      {(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) && (
                         <img 
-                          src={config?.spmbStampUrl || schoolIdentity?.stamp} 
+                          src={config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp} 
                           alt="Stempel SPMB" 
                           className="absolute -left-2 top-0 h-12 max-w-[70px] object-contain opacity-85 pointer-events-none z-1" 
                           referrerPolicy="no-referrer" 
                         />
                       )}
-                      {(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) && (
+                      {(config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) && (
                         <img 
-                          src={config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature} 
-                          alt="Ttd Ketua SPMB" 
+                          src={config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature} 
+                          alt="Ttd Bendahara SPMB" 
                           className="h-11 object-contain z-10" 
                           referrerPolicy="no-referrer" 
                         />
                       )}
                     </div>
-                    <p className="font-bold underline text-slate-800 m-0">{config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</p>
+                    <p className="font-bold underline text-slate-800 m-0">{config?.spmbTreasurerName || config?.spmbChairName || schoolIdentity?.treasurer || 'Bendahara Panitia SPMB'}</p>
                   </div>
                 </div>
 

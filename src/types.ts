@@ -29,6 +29,17 @@ export interface Student {
   photoUrl?: string;
   parentName?: string;
   googleDriveLink?: string;
+  documentsFolder?: string;
+  documents?: {
+    aktaPhoto?: string;
+    kkPhoto?: string;
+    ktpPhoto?: string;
+    ktpAyahPhoto?: string;
+    ktpIbuPhoto?: string;
+    pasPhoto?: string;
+    kipPhoto?: string;
+    [key: string]: string | undefined;
+  };
 
   // Data Orang Tua - Ayah
   fatherName?: string;
@@ -826,7 +837,9 @@ export interface SpmbCandidate {
   selectedUniformSize?: string; // e.g. "S", "M", "L", "XL", "XXL", "Jumbo"
   customUniformNote?: string;
 
-  // 4. Berkas Upload (Akte Kelahiran, Kartu Keluarga, KTP Orang Tua, Pas Foto Siswa)
+  // 4. Berkas Upload (Akte Kelahiran, Kartu Keluarga, KTP Orang Tua, Pas Foto Murid)
+  documentsFolder?: string; // URL Folder Hosting (e.g. /uploads/spmb/MUHAMMAD_RIZKY_PRATAMA/)
+  documentsFolderName?: string; // Nama Folder pada Hosting
   documents?: {
     aktaPhoto?: string;
     kkPhoto?: string;

@@ -1003,25 +1003,32 @@ export default function BukuIndukManagement({
                                 <Eye size={13.5} /> <span className="hidden xl:inline">Detail</span>
                               </button>
                               
-                              {student.googleDriveLink ? (
-                                <a
-                                  href={student.googleDriveLink}
-                                  target="_blank"
-                                  rel="noreferrer"
-                                  className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-750 text-white rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-extrabold uppercase shadow-sm tracking-wider hover:scale-[1.02] active:scale-95 shrink-0"
-                                  title="Buka Folder Google Drive Siswa (KK, Akte, dll)"
-                                >
-                                  <ExternalLink size={11} /> BERKAS SISWA
-                                </a>
-                              ) : (
-                                <button
-                                  onClick={() => handleOpenEdit(student)}
-                                  className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-200 rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider"
-                                  title="Belum ada link berkas, klik untuk tambah"
-                                >
-                                  <ExternalLink size={11} className="opacity-40" /> + Berkas
-                                </button>
-                              )}
+                              {(() => {
+                                const cleanFolder = (student.name || '').trim().replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+                                const docLink = student.googleDriveLink || student.documentsFolder || (student.documents && Object.keys(student.documents).length > 0 ? `/uploads/berkas_murid/${cleanFolder}` : '');
+                                if (docLink) {
+                                  return (
+                                    <a
+                                      href={docLink}
+                                      target="_blank"
+                                      rel="noreferrer"
+                                      className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-extrabold uppercase shadow-sm tracking-wider hover:scale-[1.02] active:scale-95 shrink-0"
+                                      title="Buka Folder Berkas Murid (Hosting / Drive - KK, Akte, KTP, dll)"
+                                    >
+                                      <ExternalLink size={11} /> BERKAS MURID
+                                    </a>
+                                  );
+                                }
+                                return (
+                                  <button
+                                    onClick={() => handleOpenEdit(student)}
+                                    className="px-2.5 py-1.5 bg-slate-100 hover:bg-indigo-50 text-slate-400 hover:text-indigo-600 border border-dashed border-slate-200 hover:border-indigo-200 rounded-lg transition inline-flex items-center justify-center gap-1 text-[10px] font-bold uppercase tracking-wider"
+                                    title="Belum ada link berkas, klik untuk tambah"
+                                  >
+                                    <ExternalLink size={11} className="opacity-40" /> + Berkas
+                                  </button>
+                                );
+                              })()}
 
                               <button
                                 onClick={() => handleOpenEdit(student)}
@@ -1727,51 +1734,57 @@ export default function BukuIndukManagement({
                 
                 {activeViewTab === 'siswa' && (
                   <div className="space-y-6">
-                    {/* Google Drive Files Card */}
-                    <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
-                      <div className="flex-1">
-                        <h4 className="text-xs font-black text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
-                          <ExternalLink size={14} className="text-emerald-600" /> FOLDER BERKAS GOOGLE DRIVE
-                        </h4>
-                        <p className="text-[11px] text-slate-500 mt-1">
-                          Folder ini berisi berkas pendukung siswa seperti scan Kartu Keluarga, Akta Kelahiran, Ijazah, dan dokumen penting lainnya.
-                        </p>
-                        {selectedStudent.googleDriveLink && (
-                          <div className="mt-2">
-                            <a
-                              href={selectedStudent.googleDriveLink}
-                              target="_blank"
-                              rel="noreferrer"
-                              className="text-xs text-emerald-700 hover:text-emerald-900 hover:underline font-mono font-bold break-all flex items-center gap-1"
-                            >
-                              <ExternalLink size={11} /> {selectedStudent.googleDriveLink}
-                            </a>
+                    {/* Google Drive / Hosting Files Card */}
+                    {(() => {
+                      const cleanFolder = (selectedStudent.name || '').trim().replace(/[^a-zA-Z0-9_\-\s]/g, '').trim().replace(/\s+/g, '_');
+                      const docLink = selectedStudent.googleDriveLink || selectedStudent.documentsFolder || (selectedStudent.documents && Object.keys(selectedStudent.documents).length > 0 ? `/uploads/berkas_murid/${cleanFolder}` : '');
+                      return (
+                        <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/20 flex flex-col md:flex-row items-start md:items-center justify-between gap-4">
+                          <div className="flex-1">
+                            <h4 className="text-xs font-black text-emerald-800 uppercase tracking-wider flex items-center gap-1.5">
+                              <ExternalLink size={14} className="text-emerald-600" /> FOLDER BERKAS MURID (HOSTING / DRIVE)
+                            </h4>
+                            <p className="text-[11px] text-slate-500 mt-1">
+                              Folder ini berisi berkas pendukung murid baru seperti scan Pas Foto, Kartu Keluarga (KK), Akta Kelahiran, KTP Orang Tua, dan dokumen lainnya yang tersimpan di hosting atau Drive.
+                            </p>
+                            {docLink && (
+                              <div className="mt-2">
+                                <a
+                                  href={docLink}
+                                  target="_blank"
+                                  rel="noreferrer"
+                                  className="text-xs text-emerald-700 hover:text-emerald-900 hover:underline font-mono font-bold break-all flex items-center gap-1"
+                                >
+                                  <ExternalLink size={11} /> {docLink}
+                                </a>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                      <div className="shrink-0 w-full md:w-auto">
-                        {selectedStudent.googleDriveLink ? (
-                          <a
-                            href={selectedStudent.googleDriveLink}
-                            target="_blank"
-                            rel="noreferrer"
-                            className="w-full md:w-auto px-4 py-2.5 bg-emerald-650 hover:bg-emerald-750 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow-md transition flex items-center justify-center gap-2"
-                          >
-                            <ExternalLink size={14} /> Buka Folder Drive
-                          </a>
-                        ) : (
-                          <button
-                            onClick={() => {
-                              setIsViewModalOpen(false);
-                              handleOpenEdit(selectedStudent);
-                            }}
-                            className="w-full md:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
-                          >
-                            <Edit size={13} /> Tambah Link Berkas
-                          </button>
-                        )}
-                      </div>
-                    </div>
+                          <div className="shrink-0 w-full md:w-auto">
+                            {docLink ? (
+                              <a
+                                href={docLink}
+                                target="_blank"
+                                rel="noreferrer"
+                                className="w-full md:w-auto px-4 py-2.5 bg-emerald-650 hover:bg-emerald-750 text-white text-xs font-bold rounded-xl shadow-sm hover:shadow-md transition flex items-center justify-center gap-2"
+                              >
+                                <ExternalLink size={14} /> Buka Folder Berkas
+                              </a>
+                            ) : (
+                              <button
+                                onClick={() => {
+                                  setIsViewModalOpen(false);
+                                  handleOpenEdit(selectedStudent);
+                                }}
+                                className="w-full md:w-auto px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold rounded-xl border border-slate-300 transition flex items-center justify-center gap-1.5 cursor-pointer"
+                              >
+                                <Edit size={13} /> Tambah Link Berkas
+                              </button>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })()}
 
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                       {[

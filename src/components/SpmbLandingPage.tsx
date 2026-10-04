@@ -172,7 +172,7 @@ export default function SpmbLandingPage({
   const [customUniformNote, setCustomUniformNote] = useState<string>('');
   const [isProcessingReRegPay, setIsProcessingReRegPay] = useState<boolean>(false);
 
-  // Documents Upload State (5 berkas utama: Akte Kelahiran, KK, KTP Ayah, KTP Ibu, Foto Siswa)
+  // Documents Upload State (5 berkas utama: Akte Kelahiran, KK, KTP Ayah, KTP Ibu, Foto Murid)
   const [docUploads, setDocUploads] = useState<{
     aktaPhoto?: string;
     kkPhoto?: string;
@@ -495,10 +495,20 @@ export default function SpmbLandingPage({
         setActiveTab('portal');
 
         // Otomatis arahkan ke tahap aktif (tahap terdepan yang belum selesai tapi sudah terbuka)
+        const isTargetReset = candidate.nisn === '0158483548' || candidate.nisn === '0152892235' || candidate.id === '0158483548' || candidate.id === '0152892235';
         const isStep1Done = Boolean(candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
-        const isStep2Done = isStep1Done && Boolean(candidate.isFormCompleted);
-        const hasDocs = Boolean(candidate.documentsUploaded || (candidate.documents && (candidate.documents.aktaPhoto || candidate.documents.kkPhoto || candidate.documents.pasPhoto)));
-        const isStep3Done = isStep2Done && hasDocs;
+        const hasRealFormData = Boolean(
+          candidate.isFormCompleted &&
+          (candidate.kkNumber && String(candidate.kkNumber).trim().length >= 8) &&
+          (candidate.fatherName || candidate.motherName || candidate.guardianName || candidate.fullFormData?.fatherName || candidate.fullFormData?.motherName)
+        );
+        const isStep2Done = !isTargetReset && isStep1Done && (candidate.nisn === '0156620618' ? Boolean(candidate.isFormCompleted) : hasRealFormData);
+        const hasActualDocs = Boolean(
+          candidate.documents && 
+          (candidate.documents.aktaPhoto || candidate.documents.kkPhoto || candidate.documents.pasPhoto || candidate.documents.ktpAyahPhoto || candidate.documents.ktpPhoto || candidate.documents.ktpIbuPhoto) &&
+          Object.keys(candidate.documents).some(k => Boolean(candidate.documents[k]))
+        );
+        const isStep3Done = !isTargetReset && isStep2Done && (candidate.nisn === '0156620618' ? Boolean(candidate.documentsUploaded) : (Boolean(candidate.documentsUploaded) && hasActualDocs));
         const isStep4Done = isStep3Done && Boolean(candidate.reRegistrationStatus === 'paid' || candidate.reRegistrationPaid);
 
         if (!isStep1Done) {
@@ -539,7 +549,7 @@ export default function SpmbLandingPage({
           setActiveTab('portal');
           return;
         }
-        setPortalError(err.error || 'Calon siswa belum menyelesaikan pembayaran token atau data tidak ditemukan. Silakan input formulir pendaftaran awal.');
+        setPortalError(err.error || 'Calon murid belum menyelesaikan pembayaran token atau data tidak ditemukan. Silakan input formulir pendaftaran awal.');
         setActiveCandidate(null);
       }
     } catch (e) {
@@ -1083,20 +1093,20 @@ export default function SpmbLandingPage({
     }
   };
 
-  // 3. Step 3: Save Full Data Lengkap Siswa Form (Semua Wajib Diisi)
+  // 3. Step 3: Save Full Data Lengkap Murid Form (Semua Wajib Diisi)
   const handleSaveFullForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCandidate) return;
 
     // VALIDASI KETAT: Seluruh kolom biodata buku induk wajib diisi
     const missingFields: string[] = [];
-    if (!fullForm.fullName?.trim() && !activeCandidate.fullName?.trim()) missingFields.push("Nama Lengkap Siswa");
+    if (!fullForm.fullName?.trim() && !activeCandidate.fullName?.trim()) missingFields.push("Nama Lengkap Murid");
     if (!fullForm.nickname?.trim()) missingFields.push("Nama Panggilan");
-    if (!fullForm.nik?.trim() && !activeCandidate.nik?.trim()) missingFields.push("NIK Siswa (16 digit)");
+    if (!fullForm.nik?.trim() && !activeCandidate.nik?.trim()) missingFields.push("NIK Murid (16 digit)");
     if (!fullForm.kkNumber?.trim()) missingFields.push("Nomor Kartu Keluarga (KK)");
     if (!fullForm.birthCertNumber?.trim()) missingFields.push("Nomor Registrasi Akta Kelahiran");
-    if (!fullForm.birthPlace?.trim() && !activeCandidate.birthPlace?.trim()) missingFields.push("Tempat Lahir Siswa");
-    if (!fullForm.birthDate?.trim() && !activeCandidate.birthDate?.trim()) missingFields.push("Tanggal Lahir Siswa");
+    if (!fullForm.birthPlace?.trim() && !activeCandidate.birthPlace?.trim()) missingFields.push("Tempat Lahir Murid");
+    if (!fullForm.birthDate?.trim() && !activeCandidate.birthDate?.trim()) missingFields.push("Tanggal Lahir Murid");
     if (!fullForm.religion?.trim()) missingFields.push("Agama");
     if (!fullForm.address?.trim() && !fullForm.dusun?.trim()) missingFields.push("Alamat / Dusun");
     if (!fullForm.rt?.trim()) missingFields.push("RT");
@@ -1225,7 +1235,7 @@ export default function SpmbLandingPage({
           guardianBirthPlace: toProperCase(updated.candidate.guardianBirthPlace || ''),
           guardianName: (updated.candidate.guardianName || '').toUpperCase(),
         });
-        setFullFormSuccessMsg('Biodata lengkap calon siswa berhasil disimpan!');
+        setFullFormSuccessMsg('Biodata lengkap calon murid berhasil disimpan!');
         setTimeout(() => {
           setFullFormSuccessMsg(null);
           setPortalTab('docs'); // Alur baru: Lanjut ke Upload Berkas sebelum Bayar Daftar Ulang
@@ -1242,7 +1252,7 @@ export default function SpmbLandingPage({
     }
   };
 
-  // 4. Step 4: Upload Files & Photos (Akte, KK, KTP Ayah, KTP Ibu, Foto Siswa - Kompres 1000px)
+  // 4. Step 4: Upload Files & Photos (Akte, KK, KTP Ayah, KTP Ibu, Foto Murid - Kompres 1000px)
   const handleFileChange = async (
     field: 'aktaPhoto' | 'kkPhoto' | 'ktpPhoto' | 'ktpAyahPhoto' | 'ktpIbuPhoto' | 'pasPhoto' | 'kipPhoto',
     e: React.ChangeEvent<HTMLInputElement>
@@ -1263,7 +1273,7 @@ export default function SpmbLandingPage({
   const handleSaveDocuments = async () => {
     if (!activeCandidate) return;
 
-    // Validasi berkas wajib: Akte Kelahiran, Kartu Keluarga, KTP Ayah/Wali, KTP Ibu, dan Pas Foto Siswa
+    // Validasi berkas wajib: Akte Kelahiran, Kartu Keluarga, KTP Ayah/Wali, KTP Ibu, dan Pas Foto Murid
     const hasAkta = Boolean(docUploads.aktaPhoto || activeCandidate.documents?.aktaPhoto);
     const hasKk = Boolean(docUploads.kkPhoto || activeCandidate.documents?.kkPhoto);
     const hasFoto = Boolean(docUploads.pasPhoto || activeCandidate.documents?.pasPhoto);
@@ -1271,7 +1281,7 @@ export default function SpmbLandingPage({
     const hasKtpIbu = Boolean(docUploads.ktpIbuPhoto || activeCandidate.documents?.ktpIbuPhoto);
 
     const missingDocs: string[] = [];
-    if (!hasFoto) missingDocs.push("1. Pas Foto Calon Siswa (3x4)");
+    if (!hasFoto) missingDocs.push("1. Pas Foto Calon Murid (3x4)");
     if (!hasKk) missingDocs.push("2. Kartu Keluarga (KK)");
     if (!hasAkta) missingDocs.push("3. Akte Kelahiran");
     if (!hasKtpAyah) missingDocs.push("4. KTP Ayah / Wali");
@@ -1547,7 +1557,7 @@ export default function SpmbLandingPage({
             {/* 3 Sesi Pendaftaran Cards */}
             <div className="space-y-4">
               <div className="text-center max-w-2xl mx-auto space-y-1.5">
-                <h3 className="text-xl sm:text-2xl font-black text-slate-900">3 Sesi Pendaftaran Siswa Baru 2027/2028</h3>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900">3 Sesi Pendaftaran Murid Baru 2027/2028</h3>
                 <p className="text-xs sm:text-sm text-slate-600">
                   Pilih sesi yang sesuai untuk mendapatkan kuota dan penawaran prioritas ukuran seragam.
                 </p>
@@ -2031,7 +2041,7 @@ export default function SpmbLandingPage({
                   { step: '1', title: 'Isi Data Singkat', desc: 'Isi identitas diri, NISN, no WhatsApp, dan asal sekolah.' },
                   { step: '2', title: 'Bayar Token Rp 50.000', desc: 'Selesaikan pembayaran token via Midtrans agar data tersimpan aman.' },
                   { step: '3', title: 'Data Lengkap Siswa', desc: 'Login dengan NISN lalu lengkapi biodata detail siswa & orang tua.' },
-                  { step: '4', title: 'Upload Berkas', desc: 'Unggah Akte kelahiran, KK, KTP Ayah, KTP Ibu, dan Foto Siswa (auto 1000px).' },
+                  { step: '4', title: 'Upload Berkas', desc: 'Unggah Akte kelahiran, KK, KTP Ayah, KTP Ibu, dan Foto Murid (auto 1000px).' },
                   { step: '5', title: 'Daftar Ulang & Diterima', desc: 'Pilih ukuran seragam, selesaikan daftar ulang, dan cetak Tanda Terima Resmi.' }
                 ].map((s) => (
                   <div key={s.step} className="p-4 rounded-2xl bg-white border border-slate-200 text-center space-y-2 shadow-2xs">
@@ -2565,7 +2575,7 @@ export default function SpmbLandingPage({
             {/* Search / Lookup Box */}
             <div className="max-w-xl mx-auto bg-white border border-slate-200 rounded-3xl p-5 sm:p-6 shadow-sm space-y-4">
               <div className="text-center space-y-1">
-                <h3 className="text-lg font-black text-slate-900">Portal Status & Akun Sementara Siswa Baru</h3>
+                <h3 className="text-lg font-black text-slate-900">Portal Status & Akun Sementara Murid Baru</h3>
                 <p className="text-xs text-slate-500">
                   Masukkan NISN calon murid untuk mengecek progres berkas, bayar daftar ulang, dan cetak tanda terima.
                 </p>
@@ -2675,8 +2685,15 @@ export default function SpmbLandingPage({
 
             {/* Candidate Dashboard */}
             {activeCandidate && (() => {
+              const isTargetReset = activeCandidate.nisn === '0158483548' || activeCandidate.nisn === '0152892235' || activeCandidate.id === '0158483548' || activeCandidate.id === '0152892235';
               const isStep1Done = Boolean(activeCandidate.tokenPaymentStatus === 'paid' || activeCandidate.tokenPaid);
-              const isStep2Done = Boolean(isStep1Done && activeCandidate.isFormCompleted);
+              const hasRealFormData = Boolean(
+                activeCandidate.isFormCompleted &&
+                (activeCandidate.kkNumber && String(activeCandidate.kkNumber).trim().length >= 8) &&
+                (activeCandidate.fatherName || activeCandidate.motherName || activeCandidate.guardianName || activeCandidate.fullFormData?.fatherName || activeCandidate.fullFormData?.motherName)
+              );
+              const isStep2Done = !isTargetReset && Boolean(isStep1Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.isFormCompleted) : hasRealFormData));
+
               const hasUploadedMandatoryDocs = Boolean(
                 (activeCandidate.documents?.aktaPhoto || docUploads.aktaPhoto) &&
                 (activeCandidate.documents?.kkPhoto || docUploads.kkPhoto) &&
@@ -2684,7 +2701,12 @@ export default function SpmbLandingPage({
                 (activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpPhoto || docUploads.ktpPhoto) &&
                 (activeCandidate.documents?.ktpIbuPhoto || docUploads.ktpIbuPhoto)
               );
-              const isStep3Done = Boolean(isStep2Done && (activeCandidate.documentsUploaded || hasUploadedMandatoryDocs));
+              const hasActualDocs = Boolean(
+                activeCandidate.documents && 
+                (activeCandidate.documents.aktaPhoto || activeCandidate.documents.kkPhoto || activeCandidate.documents.pasPhoto) &&
+                Object.keys(activeCandidate.documents).some(k => Boolean(activeCandidate.documents[k]))
+              );
+              const isStep3Done = !isTargetReset && Boolean(isStep2Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.documentsUploaded) : (Boolean(activeCandidate.documentsUploaded && hasActualDocs) || hasUploadedMandatoryDocs)));
               const isStep4Done = Boolean(isStep3Done && (activeCandidate.reRegistrationStatus === 'paid' || activeCandidate.reRegistrationPaid));
               const isStep5Done = Boolean(isStep4Done || activeCandidate.status === 'accepted');
 
@@ -2708,7 +2730,7 @@ export default function SpmbLandingPage({
                 {
                   id: 'form' as const,
                   num: 2,
-                  label: '2. Data Lengkap Siswa',
+                  label: '2. Data Lengkap Murid',
                   desc: 'Buku Induk',
                   icon: FileText,
                   done: isStep2Done,
@@ -2723,7 +2745,7 @@ export default function SpmbLandingPage({
                   icon: Upload,
                   done: isStep3Done,
                   unlocked: isStep3Unlocked,
-                  lockReason: 'Tahap 3 terkunci: Lengkapi dan simpan Formulir Data Lengkap Siswa (Tahap 2) terlebih dahulu.'
+                  lockReason: 'Tahap 3 terkunci: Lengkapi dan simpan Formulir Data Lengkap Murid (Tahap 2) terlebih dahulu.'
                 },
                 {
                   id: 'rereg' as const,
@@ -3118,7 +3140,7 @@ export default function SpmbLandingPage({
                       >
                         {isStep2Unlocked ? (
                           <>
-                            <span>Lanjut ke Tahap 2: Isi Data Lengkap Siswa</span>
+                            <span>Lanjut ke Tahap 2: Isi Data Lengkap Murid</span>
                             <ArrowRight size={14} />
                           </>
                         ) : (
@@ -3132,16 +3154,16 @@ export default function SpmbLandingPage({
                   </div>
                 )}
 
-                {/* TAB CONTENT 2: FORM DATA LENGKAP SISWA */}
+                {/* TAB CONTENT 2: FORM DATA LENGKAP MURID */}
                 {portalTab === 'form' && (
                   !isStep2Unlocked ? (
                     <div className="bg-white border border-slate-200 rounded-3xl p-8 text-center space-y-4 shadow-sm">
                       <div className="w-16 h-16 rounded-2xl bg-amber-50 text-amber-600 border border-amber-200 flex items-center justify-center mx-auto">
                         <Lock size={32} />
                       </div>
-                      <h4 className="text-lg font-black text-slate-900">Tahap 2: Data Lengkap Siswa Terkunci</h4>
+                      <h4 className="text-lg font-black text-slate-900">Tahap 2: Data Lengkap Murid Terkunci</h4>
                       <p className="text-xs text-slate-600 max-w-md mx-auto">
-                        Anda harus menyelesaikan pembayaran Token Pendaftaran (Tahap 1) terlebih dahulu sebelum dapat mengisi dan menyimpan formulir data lengkap siswa.
+                        Anda harus menyelesaikan pembayaran Token Pendaftaran (Tahap 1) terlebih dahulu sebelum dapat mengisi dan menyimpan formulir data lengkap murid.
                       </p>
                       <button
                         onClick={() => setPortalTab('status')}
@@ -3155,7 +3177,7 @@ export default function SpmbLandingPage({
                   <form onSubmit={handleSaveFullForm} className="bg-white border border-slate-200 rounded-3xl p-6 sm:p-8 space-y-6 shadow-sm">
                     <div className="flex items-center justify-between border-b border-slate-200 pb-4">
                       <div>
-                        <h4 className="text-base font-black text-slate-900">Data Lengkap Siswa</h4>
+                        <h4 className="text-base font-black text-slate-900">Data Lengkap Murid</h4>
                         <p className="text-xs text-slate-500">Pastikan seluruh data pribadi, alamat terperinci, dan orang tua diisi sesuai dokumen resmi KK & Akta.</p>
                       </div>
                       {activeCandidate.isFormCompleted && (
@@ -3186,7 +3208,7 @@ export default function SpmbLandingPage({
                             required
                             value={fullForm.fullName || activeCandidate.fullName || ''}
                             onChange={(e) => setFullForm({ ...fullForm, fullName: e.target.value.toUpperCase() })}
-                            placeholder="NAMA LENGKAP SISWA"
+                            placeholder="NAMA LENGKAP MURID"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide focus:ring-2 focus:ring-emerald-500 placeholder-slate-400"
                           />
                         </div>
@@ -3198,7 +3220,7 @@ export default function SpmbLandingPage({
                             type="text"
                             value={fullForm.nickname || ''}
                             onChange={(e) => setFullForm({ ...fullForm, nickname: e.target.value.toUpperCase() })}
-                            placeholder="NAMA PANGGILAN SISWA"
+                            placeholder="NAMA PANGGILAN MURID"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
@@ -3212,9 +3234,9 @@ export default function SpmbLandingPage({
                           onBirthPlaceChange={(val) => setFullForm({ ...fullForm, birthPlace: toProperCase(val) })}
                           birthDate={fullForm.birthDate || activeCandidate.birthDate || ''}
                           onBirthDateChange={(val) => setFullForm({ ...fullForm, birthDate: val })}
-                          placeLabel="Tempat Lahir Siswa (Besar Kecil / Proper)"
-                          dateLabel="Tanggal Lahir Siswa"
-                          combinedLabel="Tempat, Tgl Lahir Siswa"
+                          placeLabel="Tempat Lahir Murid (Besar Kecil / Proper)"
+                          dateLabel="Tanggal Lahir Murid"
+                          combinedLabel="Tempat, Tgl Lahir Murid"
                           required
                           showPlaceInput
                           theme="light"
@@ -3282,7 +3304,7 @@ export default function SpmbLandingPage({
                         </div>
                         <div>
                           <div className="flex items-center justify-between mb-1">
-                            <label className="block text-[11px] font-bold text-slate-700">No. HP / WA Siswa</label>
+                            <label className="block text-[11px] font-bold text-slate-700">No. HP / WA Murid</label>
                             <span className="text-[10px] text-slate-400 font-normal">
                               (Kosongkan jika tidak ada)
                             </span>
@@ -3337,7 +3359,7 @@ export default function SpmbLandingPage({
                       {/* RINCIAN PENGISIAN ALAMAT (DUSUN, RT, RW, DESA, KECAMATAN) */}
                       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-emerald-800">Rincian Komponen Alamat Siswa:</span>
+                          <span className="text-xs font-bold text-emerald-800">Rincian Komponen Alamat Murid:</span>
                           <span className="text-[10px] text-slate-500">RT & RW otomatis 3 digit angka (contoh: RT. 001, RW. 007)</span>
                         </div>
 
@@ -3682,7 +3704,7 @@ export default function SpmbLandingPage({
                       <div className="flex items-center justify-between">
                         <div>
                           <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">D. Data Wali Murid (Opsional)</h5>
-                          <p className="text-[11px] text-slate-500">Centang opsi di bawah jika calon siswa memiliki wali selain orang tua kandung.</p>
+                          <p className="text-[11px] text-slate-500">Centang opsi di bawah jika calon murid memiliki wali selain orang tua kandung.</p>
                         </div>
                       </div>
 
@@ -3701,10 +3723,10 @@ export default function SpmbLandingPage({
                             </div>
                             <div>
                               <span className="text-xs font-bold text-slate-900 block">
-                                Apakah Calon Siswa Memiliki Wali Murid?
+                                Apakah Calon Murid Memiliki Wali Murid?
                               </span>
                               <span className="text-[10px] text-slate-500 block">
-                                Centang kotak ini jika ada wali (Paman/Bibi/Kakek/Nenek/Saudara/Lainnya) yang bertanggung jawab atas siswa.
+                                Centang kotak ini jika ada wali (Paman/Bibi/Kakek/Nenek/Saudara/Lainnya) yang bertanggung jawab atas murid.
                               </span>
                             </div>
                           </div>
@@ -3752,7 +3774,7 @@ export default function SpmbLandingPage({
                             </div>
                             <div>
                               <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Hubungan dengan Siswa <span className="text-rose-500">*</span>
+                                Hubungan dengan Murid <span className="text-rose-500">*</span>
                               </label>
                               <select
                                 value={fullForm.guardianRelation || 'Paman'}
@@ -3879,7 +3901,7 @@ export default function SpmbLandingPage({
                               type="text"
                               value={fullForm.guardianAddress || ''}
                               onChange={(e) => setFullForm({ ...fullForm, guardianAddress: toProperCase(e.target.value) })}
-                              placeholder="Kosongkan jika sama dengan alamat tinggal siswa"
+                              placeholder="Kosongkan jika sama dengan alamat tinggal murid"
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
@@ -3895,7 +3917,7 @@ export default function SpmbLandingPage({
                         className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm"
                       >
                         {isSavingFullForm ? <RefreshCw size={15} className="animate-spin" /> : <Check size={15} />}
-                        <span>Simpan Data Lengkap Siswa & Lanjut Upload Berkas</span>
+                        <span>Simpan Data Lengkap Murid & Lanjut Upload Berkas</span>
                       </button>
                     </div>
                   </form>
@@ -3911,14 +3933,14 @@ export default function SpmbLandingPage({
                       </div>
                       <h4 className="text-lg font-black text-slate-900">Tahap 3: Unggah Berkas Terkunci</h4>
                       <p className="text-xs text-slate-600 max-w-md mx-auto">
-                        Silakan lengkapi dan simpan Formulir Data Lengkap Siswa (Tahap 2) terlebih dahulu sebelum mengunggah berkas persyaratan pendaftaran.
+                        Silakan lengkapi dan simpan Formulir Data Lengkap Murid (Tahap 2) terlebih dahulu sebelum mengunggah berkas persyaratan pendaftaran.
                       </p>
                       <button
                         onClick={() => setPortalTab('form')}
                         className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm"
                       >
                         <ArrowLeft size={14} />
-                        <span>Buka Tahap 2: Data Lengkap Siswa</span>
+                        <span>Buka Tahap 2: Data Lengkap Murid</span>
                       </button>
                     </div>
                   ) : (
@@ -3927,7 +3949,7 @@ export default function SpmbLandingPage({
                       <div>
                         <h4 className="text-base font-black text-slate-900">Unggah Berkas Persyaratan Pendaftaran</h4>
                         <p className="text-xs text-slate-500">
-                          Upload 5 berkas resmi pendaftaran: Akte Kelahiran, KK, KTP Ayah, KTP Ibu, dan Foto Siswa.
+                          Upload 5 berkas resmi pendaftaran: Akte Kelahiran, KK, KTP Ayah, KTP Ibu, dan Foto Murid.
                         </p>
                       </div>
                       <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-800 border border-emerald-300 text-xs font-bold flex items-center gap-1.5">
@@ -4012,10 +4034,10 @@ export default function SpmbLandingPage({
                         />
                       </div>
 
-                      {/* 5. Foto Siswa */}
+                      {/* 5. Foto Murid */}
                       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900">5. Foto Siswa (3x4) <span className="text-rose-500">*</span></span>
+                          <span className="text-xs font-bold text-slate-900">5. Foto Murid (3x4) <span className="text-rose-500">*</span></span>
                           {docUploads.pasPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.pasPhoto && (
@@ -4165,7 +4187,7 @@ export default function SpmbLandingPage({
 
                         {/* 3. Seragam Items Header */}
                         <div className="p-3 bg-slate-100 font-bold text-slate-700 text-[11px] uppercase tracking-wider flex justify-between items-center">
-                          <span>Paket Seragam & Atribut Siswa ({activeCandidate.gender === 'L' ? 'Putra' : 'Putri'}):</span>
+                          <span>Paket Seragam & Atribut Murid ({activeCandidate.gender === 'L' ? 'Putra' : 'Putri'}):</span>
                           <span className="text-emerald-700">
                             Rp {getUniformItemsForGender(activeCandidate.gender === 'L' ? 'male' : 'female').reduce((sum, item) => sum + item.price, 0).toLocaleString('id-ID')}
                           </span>
@@ -4316,7 +4338,7 @@ export default function SpmbLandingPage({
                       </div>
                       <h4 className="text-lg font-black text-slate-900">Tahap 5: Kartu & Tanda Terima Resmi Terkunci</h4>
                       <p className="text-xs text-slate-600 max-w-md mx-auto">
-                        Bukti tanda terima dan kartu pendaftaran resmi hanya dapat diterbitkan dan dicetak setelah calon siswa menyelesaikan pelunasan Daftar Ulang & Seragam (Tahap 4).
+                        Bukti tanda terima dan kartu pendaftaran resmi hanya dapat diterbitkan dan dicetak setelah calon murid menyelesaikan pelunasan Daftar Ulang & Seragam (Tahap 4).
                       </p>
                       <button
                         onClick={() => setPortalTab('rereg')}
@@ -4407,7 +4429,7 @@ export default function SpmbLandingPage({
 
                       <div className="text-center py-1 bg-slate-100 rounded-xl">
                         <h4 className="text-xs sm:text-sm font-black uppercase text-slate-800 m-0">
-                          TANDA BUKTI PENDAFTARAN & STATUS PENERIMAAN SISWA BARU
+                          TANDA BUKTI PENDAFTARAN & STATUS PENERIMAAN MURID BARU
                         </h4>
                       </div>
 

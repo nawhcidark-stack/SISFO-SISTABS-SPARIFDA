@@ -667,6 +667,16 @@ export interface SpmbConfig {
   sessions: SpmbSession[];
   uniformItems: SpmbUniformItem[];
   contactPhone: string;
+  spmbChairName?: string; // Nama Ketua Panitia SPMB
+  spmbChairTitle?: string; // Jabatan / Gelar (e.g. "Ketua Panitia SPMB")
+  spmbChairSignatureUrl?: string; // TTD Ketua Panitia SPMB (Base64 / URL)
+  spmbTreasurerName?: string; // Nama Bendahara Panitia SPMB
+  spmbTreasurerTitle?: string; // Jabatan Bendahara SPMB
+  spmbTreasurerSignatureUrl?: string; // TTD Bendahara SPMB
+  spmbOfficerName?: string; // Nama Panitia Pelayanan Sekolah / Kantor SPMB
+  spmbOfficerTitle?: string; // Jabatan Panitia Pelayanan (e.g. "Panitia Pelayanan SPMB Sekolah")
+  spmbOfficerSignatureUrl?: string; // TTD Panitia Pelayanan Sekolah / Kantor SPMB
+  spmbStampUrl?: string; // Stempel Resmi Panitia SPMB (Base64 / URL PNG Transparan)
   bankAccountInfo?: string;
   instructions?: string;
 
@@ -816,15 +826,17 @@ export interface SpmbCandidate {
   selectedUniformSize?: string; // e.g. "S", "M", "L", "XL", "XXL", "Jumbo"
   customUniformNote?: string;
 
-  // 4. Berkas Upload (Akte Kelahiran, Kartu Keluarga, KTP Ayah, KTP Ibu, Foto Siswa)
+  // 4. Berkas Upload (Akte Kelahiran, Kartu Keluarga, KTP Orang Tua, Pas Foto Siswa)
   documents?: {
     aktaPhoto?: string;
     kkPhoto?: string;
+    ktpPhoto?: string;
     ktpAyahPhoto?: string;
     ktpIbuPhoto?: string;
     pasPhoto?: string;
-    sklPhoto?: string;
     kipPhoto?: string;
+    ktp?: string;
+    sklPhoto?: string;
   };
   documentsUploadedAt?: string;
 

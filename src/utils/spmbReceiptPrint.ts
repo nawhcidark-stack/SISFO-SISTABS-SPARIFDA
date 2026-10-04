@@ -288,26 +288,41 @@ export async function generateTokenReceiptHtml(
           </table>
         </div>
 
-        <!-- Receipt Signatures & QR -->
+        <!-- Receipt Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) -->
         <div class="receipt-footer">
           <div class="signature-column">
             <p class="sig-title">Orang Tua / Calon Siswa,</p>
+            <p class="sig-sub">Pembayar</p>
             <div class="sig-space"></div>
             <p class="sig-name">( ${candidate.parentName || candidate.fullName} )</p>
           </div>
 
-          <div class="qr-column">
-            ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="qr-image" alt="QR Validasi" />` : ''}
-            <span class="qr-caption">Scan untuk Verifikasi Keabsahan</span>
+          <div class="signature-column">
+            <p class="sig-title">Panitia Pelayanan SPMB,</p>
+            <p class="sig-sub">${config?.spmbOfficerTitle || 'Pelayanan di Sekolah / Kantor SPMB'}</p>
+            <div class="sig-space sig-center-box">
+              ${config?.spmbOfficerSignatureUrl ? `<img src="${config.spmbOfficerSignatureUrl}" class="sig-img" alt="Ttd Panitia Pelayanan" referrerPolicy="no-referrer" />` : ''}
+            </div>
+            <p class="sig-name"><u>( ${config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</u></p>
           </div>
 
           <div class="signature-column">
             <p class="sig-title">Pandaan, ${payDateStr}</p>
-            <p class="sig-sub">Bendahara Panitia SPMB,</p>
-            <div class="sig-space sig-with-stamp">
-              ${schoolIdentity?.treasurerSignature ? `<img src="${schoolIdentity.treasurerSignature}" class="sig-img" alt="Ttd Bendahara" referrerPolicy="no-referrer" />` : ''}
+            <p class="sig-sub">${config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+            <div class="sig-space sig-with-stamp-flex">
+              ${(config?.spmbStampUrl || schoolIdentity?.stamp) ? `<img src="${config?.spmbStampUrl || schoolIdentity?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Ketua SPMB" referrerPolicy="no-referrer" />` : ''}
             </div>
-            <p class="sig-name"><u>${schoolIdentity?.treasurer || 'Panitia Penerimaan Murid Baru'}</u></p>
+            <p class="sig-name"><u>${config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</u></p>
+          </div>
+        </div>
+
+        <div class="receipt-verify-bar">
+          ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="qr-image-small" alt="QR Validasi" />` : ''}
+          <div class="verify-text">
+            <strong>DOKUMEN RESMI & SAH SISTEM INFORMASI AKADEMIK & SPMB</strong>
+            <span>Nomor Kuitansi: ${receiptNo} • Tanggal Pelunasan: ${payDateStr}</span>
+            <span>Scan QR Code untuk memverifikasi keabsahan pembayaran & dokumen tanda terima resmi.</span>
           </div>
         </div>
 
@@ -474,26 +489,41 @@ export async function generateReRegReceiptHtml(
           </div>
         </div>
 
-        <!-- Receipt Signatures & QR -->
+        <!-- Receipt Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) -->
         <div class="receipt-footer">
           <div class="signature-column">
             <p class="sig-title">Orang Tua / Wali Siswa,</p>
+            <p class="sig-sub">Pembayar</p>
             <div class="sig-space"></div>
             <p class="sig-name">( ${candidate.parentName || candidate.fullName} )</p>
           </div>
 
-          <div class="qr-column">
-            ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="qr-image" alt="QR Validasi" />` : ''}
-            <span class="qr-caption">Scan untuk Verifikasi Keabsahan</span>
+          <div class="signature-column">
+            <p class="sig-title">Panitia Pelayanan SPMB,</p>
+            <p class="sig-sub">${config?.spmbOfficerTitle || 'Pelayanan di Sekolah / Kantor SPMB'}</p>
+            <div class="sig-space sig-center-box">
+              ${config?.spmbOfficerSignatureUrl ? `<img src="${config.spmbOfficerSignatureUrl}" class="sig-img" alt="Ttd Panitia Pelayanan" referrerPolicy="no-referrer" />` : ''}
+            </div>
+            <p class="sig-name"><u>( ${config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</u></p>
           </div>
 
           <div class="signature-column">
             <p class="sig-title">Pandaan, ${payDateStr}</p>
-            <p class="sig-sub">Kepala Sekolah,</p>
-            <div class="sig-space sig-with-stamp">
-              ${schoolIdentity?.principalSignature ? `<img src="${schoolIdentity.principalSignature}" class="sig-img" alt="Ttd Kepala Sekolah" referrerPolicy="no-referrer" />` : ''}
+            <p class="sig-sub">${config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+            <div class="sig-space sig-with-stamp-flex">
+              ${(config?.spmbStampUrl || schoolIdentity?.stamp) ? `<img src="${config?.spmbStampUrl || schoolIdentity?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Ketua SPMB" referrerPolicy="no-referrer" />` : ''}
             </div>
-            <p class="sig-name"><u>${schoolIdentity?.principal || 'Kepala Sekolah'}</u></p>
+            <p class="sig-name"><u>${config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</u></p>
+          </div>
+        </div>
+
+        <div class="receipt-verify-bar">
+          ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="qr-image-small" alt="QR Validasi" />` : ''}
+          <div class="verify-text">
+            <strong>DOKUMEN RESMI & SAH SISTEM INFORMASI AKADEMIK & SPMB</strong>
+            <span>Nomor Kuitansi: ${receiptNo} • Tanggal Pelunasan: ${payDateStr}</span>
+            <span>Scan QR Code untuk memverifikasi keabsahan pembayaran & dokumen tanda terima resmi.</span>
           </div>
         </div>
 
@@ -815,81 +845,105 @@ function getReceiptCss(): string {
       padding: 8px;
     }
 
-    /* FOOTER SIGNATURES & QR */
+    /* FOOTER SIGNATURES & VERIFICATION */
     .receipt-footer {
       display: flex;
       justify-content: space-between;
       align-items: flex-start;
-      margin-top: 18px;
-      padding-top: 10px;
-      border-top: 1px solid #e2e8f0;
+      margin-top: 14px;
+      padding-top: 8px;
+      border-top: 1px solid #cbd5e1;
     }
     .signature-column {
       width: 32%;
       text-align: center;
-      font-size: 11px;
+      font-size: 10.5px;
+      position: relative;
     }
     .sig-title {
       margin: 0;
-      color: #475569;
+      color: #334155;
+      font-size: 10.5px;
     }
     .sig-sub {
-      margin: 2px 0 0 0;
+      margin: 1.5px 0 0 0;
       font-weight: 700;
       color: #0f172a;
+      font-size: 10px;
     }
     .sig-space {
-      height: 55px;
+      height: 52px;
       position: relative;
     }
-    .sig-with-stamp {
+    .sig-center-box {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+    .sig-with-stamp-flex {
+      position: relative;
       display: flex;
       align-items: center;
       justify-content: center;
     }
     .sig-img {
       position: absolute;
-      height: 55px;
+      height: 50px;
+      max-width: 110px;
       object-fit: contain;
       z-index: 2;
     }
-    .stamp-img {
+    .spmb-stamp-img {
       position: absolute;
-      height: 55px;
+      left: 2px;
+      top: -6px;
+      height: 58px;
+      max-width: 80px;
       object-fit: contain;
-      opacity: 0.85;
+      opacity: 0.88;
       z-index: 1;
+      pointer-events: none;
     }
     .sig-name {
       margin: 0;
       font-weight: 800;
       color: #0f172a;
+      font-size: 10.5px;
     }
-    .qr-column {
-      width: 25%;
-      text-align: center;
+    .receipt-verify-bar {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      margin-top: 10px;
+      padding: 5px 8px;
+      background: #f8fafc;
+      border: 1px solid #e2e8f0;
+      border-radius: 6px;
+    }
+    .qr-image-small {
+      width: 40px;
+      height: 40px;
+      object-fit: contain;
+      flex-shrink: 0;
+    }
+    .verify-text {
       display: flex;
       flex-direction: column;
-      align-items: center;
-      justify-content: center;
+      font-size: 8px;
+      color: #475569;
+      line-height: 1.35;
     }
-    .qr-image {
-      width: 75px;
-      height: 75px;
-      object-fit: contain;
-    }
-    .qr-caption {
+    .verify-text strong {
+      color: #0f172a;
       font-size: 8.5px;
-      color: #64748b;
-      margin-top: 2px;
     }
     .receipt-footnote {
-      margin-top: 14px;
-      font-size: 9px;
+      margin-top: 6px;
+      font-size: 8px;
       color: #94a3b8;
       text-align: center;
       border-top: 1px dashed #e2e8f0;
-      padding-top: 6px;
+      padding-top: 4px;
     }
   `;
 }

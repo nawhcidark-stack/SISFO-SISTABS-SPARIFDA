@@ -213,7 +213,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           pasPhoto: c.documents?.pasPhoto || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
           kkPhoto: c.documents?.kkPhoto || "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=400&auto=format&fit=crop&q=80",
           aktaPhoto: c.documents?.aktaPhoto || "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80",
-          sklPhoto: c.documents?.sklPhoto || "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&auto=format&fit=crop&q=80"
+          ktpAyahPhoto: c.documents?.ktpAyahPhoto || c.documents?.ktpPhoto || "https://images.unsplash.com/photo-1600486913747-55e5470d6f40?w=400&auto=format&fit=crop&q=80",
+          ktpIbuPhoto: c.documents?.ktpIbuPhoto || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80"
         };
         changed = true;
       }
@@ -231,8 +232,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       changed = true;
     }
 
-    // 2. Validasi Kelengkapan Berkas Upload
-    const hasDocs = Boolean(c.documentsUploaded || c.documentsUploadedAt || (c.documents && (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.sklPhoto || c.documents.kipPhoto || Object.keys(c.documents).length > 0)));
+    // 2. Validasi Kelengkapan Berkas Upload (5 Berkas Wajib: Pas Foto, KK, Akta, KTP Ayah, KTP Ibu)
+    const hasDocs = Boolean(c.documentsUploaded || c.documentsUploadedAt || (c.documents && (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto || c.documents.ktpPhoto || Object.keys(c.documents).length > 0)));
     if (hasDocs && !c.documentsUploaded) {
       c.documentsUploaded = true;
       if (!c.documentsUploadedAt) c.documentsUploadedAt = c.createdAt || new Date().toISOString();
@@ -358,7 +359,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           pasPhoto: "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
           kkPhoto: "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=400&auto=format&fit=crop&q=80",
           aktaPhoto: "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80",
-          sklPhoto: "https://images.unsplash.com/photo-1589829545856-d10d557cf95f?w=400&auto=format&fit=crop&q=80"
+          ktpAyahPhoto: "https://images.unsplash.com/photo-1600486913747-55e5470d6f40?w=400&auto=format&fit=crop&q=80",
+          ktpIbuPhoto: "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80"
         },
         createdAt: "2026-09-15T08:00:00.000Z",
         updatedAt: "2026-09-16T10:15:00.000Z"

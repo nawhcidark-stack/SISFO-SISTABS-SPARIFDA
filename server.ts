@@ -505,6 +505,8 @@ const defaultSpmbConfig: SpmbConfig = {
     { id: "u-8", name: "Ikat Pinggang / Gesper Logo NU", price: 30000, gender: "both", required: true },
   ],
   contactPhone: "081234567890",
+  spmbChairName: "Drs. H. M. Sholihuddin",
+  spmbChairTitle: "Ketua Panitia SPMB",
   instructions: "Silakan isi data awal calon murid, bayar token pendaftaran Rp 50.000 via Midtrans (atau gratis untuk pendaftaran kolektif), lengkapi formulir buku induk, selesaikan pembayaran daftar ulang seragam, dan upload berkas pendaftaran.",
   // Diskon khusus SD MAARIF JOGOSARI
   maarifSchoolName: "SD MAARIF JOGOSARI",

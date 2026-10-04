@@ -83,14 +83,14 @@ export function formatIndonesianDate(dateStr?: string): string {
 
 /**
  * Formats a string to Proper Case (Besar Kecil / Title Case per word).
- * e.g. "pasuruan" -> "Pasuruan", "PASURUAN" -> "Pasuruan", "kota pasuruan" -> "Kota Pasuruan"
+ * e.g. "pasuruan" -> "Pasuruan", "desa jogosari, pandaan" -> "Desa Jogosari, Pandaan"
  * Preserves trailing spaces during typing.
  */
 export function toProperCase(val?: string | null): string {
   if (!val) return '';
   return String(val)
     .toLowerCase()
-    .replace(/(?:^|[\s\-\/\.])([a-z\u00C0-\u017F])/g, (m) => m.toUpperCase());
+    .replace(/(?:^|[\s\-\/\.,'()#])([a-z\u00C0-\u017F])/g, (m) => m.toUpperCase());
 }
 
 /**

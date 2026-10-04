@@ -682,6 +682,46 @@ export default function AdminSpmbManagement({
     }
   };
 
+  // Upload TTD & Stempel SPMB Image Helper
+  const handleUploadConfigImage = (field: keyof SpmbConfig, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 500;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
+          }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.9);
+          if (config) {
+            const updated = { ...config, [field]: dataUrl };
+            setConfig(updated);
+            handleSaveConfig(updated);
+          }
+        }
+      };
+      img.src = event.target?.result as string;
+    };
+    reader.readAsDataURL(file);
+  };
+
   // Filtered Candidates List
   const filteredCandidates = candidates.filter(c => {
     const matchesSearch = 
@@ -1465,25 +1505,48 @@ export default function AdminSpmbManagement({
                                   </span>
                                 )}
                               </div>
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                {candidate.documentsUploaded || candidate.documentsUploadedAt || Boolean(candidate.documents?.pasPhoto || candidate.documents?.kkPhoto || candidate.documents?.aktaPhoto) ? (
-                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
-                                    <FileText size={10} className="text-blue-700" />
-                                    <span>Berkas Ada</span>
-                                  </span>
-                                ) : (
-                                  <span className="text-[10px] text-slate-400">
-                                    Berkas Kosong
-                                  </span>
-                                )}
-                              </div>
+                              {(() => {
+                                const hasFoto = Boolean(candidate.documents?.pasPhoto || candidate.fullFormData?.documents?.pasPhoto);
+                                const hasKk = Boolean(candidate.documents?.kkPhoto || candidate.fullFormData?.documents?.kkPhoto);
+                                const hasAkta = Boolean(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
+                                const hasKtp = Boolean(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
+                                const allDocs = hasFoto && hasKk && hasAkta && hasKtp;
+
+                                return (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1.5 flex-wrap">
+                                      {allDocs ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                          <CheckCircle2 size={10} className="text-emerald-700" />
+                                          <span>Berkas Lengkap</span>
+                                        </span>
+                                      ) : (hasFoto || hasKk || hasAkta || hasKtp || candidate.documentsUploaded) ? (
+                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                                          <FileText size={10} className="text-blue-700" />
+                                          <span>Berkas Sebagian</span>
+                                        </span>
+                                      ) : (
+                                        <span className="text-[10px] text-slate-400">
+                                          Berkas Kosong
+                                        </span>
+                                      )}
+                                    </div>
+                                    <div className="flex items-center gap-1 text-[9px] font-mono text-slate-600">
+                                      <span className={hasFoto ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Pas Foto">📸Foto</span>•
+                                      <span className={hasKk ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Kartu Keluarga">📜KK</span>•
+                                      <span className={hasAkta ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Akta Kelahiran">📄Akta</span>•
+                                      <span className={hasKtp ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ortu/Wali">🪪KTP</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                               <div>
                                 <button
                                   type="button"
                                   onClick={() => setSelectedCandidate(candidate)}
                                   className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
                                 >
-                                  Lihat Biodata
+                                  Lihat Biodata & Berkas
                                 </button>
                               </div>
                             </div>
@@ -1850,14 +1913,37 @@ export default function AdminSpmbManagement({
                               )}
                             </div>
                             <div>
-                              {hasDocs ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
-                                  <FileText size={10} className="text-emerald-700" />
-                                  <span>Berkas Tersimpan</span>
-                                </span>
-                              ) : (
-                                <span className="text-[10px] text-slate-400">Berkas Kosong</span>
-                              )}
+                              {(() => {
+                                const docFoto = Boolean(cand.documents?.pasPhoto || cand.fullFormData?.documents?.pasPhoto);
+                                const docKk = Boolean(cand.documents?.kkPhoto || cand.fullFormData?.documents?.kkPhoto);
+                                const docAkta = Boolean(cand.documents?.aktaPhoto || cand.fullFormData?.documents?.aktaPhoto);
+                                const docKtp = Boolean(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto || cand.documents?.ktp || cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.ktpAyahPhoto || cand.fullFormData?.documents?.ktpPhoto);
+                                const allDocs = docFoto && docKk && docAkta && docKtp;
+
+                                return (
+                                  <div className="space-y-0.5">
+                                    {allDocs ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
+                                        <CheckCircle2 size={10} className="text-emerald-700" />
+                                        <span>Berkas Lengkap (5/5)</span>
+                                      </span>
+                                    ) : hasDocs ? (
+                                      <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                                        <FileText size={10} className="text-blue-700" />
+                                        <span>Berkas Sebagian</span>
+                                      </span>
+                                    ) : (
+                                      <span className="text-[10px] text-slate-400">Berkas Kosong</span>
+                                    )}
+                                    <div className="flex items-center gap-1 text-[8.5px] font-mono text-slate-600">
+                                      <span className={docFoto ? 'text-emerald-700 font-bold' : 'text-slate-400'}>📸Foto</span>•
+                                      <span className={docKk ? 'text-emerald-700 font-bold' : 'text-slate-400'}>📜KK</span>•
+                                      <span className={docAkta ? 'text-emerald-700 font-bold' : 'text-slate-400'}>📄Akta</span>•
+                                      <span className={docKtp ? 'text-emerald-700 font-bold' : 'text-slate-400'}>🪪KTP</span>
+                                    </div>
+                                  </div>
+                                );
+                              })()}
                             </div>
                           </div>
                         </td>
@@ -2254,7 +2340,7 @@ export default function AdminSpmbManagement({
                   <span>Nomor Kontak WhatsApp / HP Panitia SPMB</span>
                 </div>
                 <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold uppercase border border-emerald-500/30">
-                  Helpdesk & Asisten AI
+                  Helpdesk & Narahubung
                 </span>
               </div>
 
@@ -2277,8 +2363,240 @@ export default function AdminSpmbManagement({
                   </div>
                 </div>
                 <p className="text-xs text-slate-400">
-                  Nomor ini otomatis disinkronkan ke tombol WhatsApp di pop-up Asisten AI SPMB, rujukan konsultasi pendaftaran wali murid, dan helpdesk pendaftaran sekolah.
+                  Nomor ini otomatis disinkronkan ke seluruh tombol WhatsApp, rujukan konsultasi pendaftaran wali murid, dan helpdesk pendaftaran SPMB.
                 </p>
+              </div>
+            </div>
+
+            {/* SETTING TANDA TANGAN & STEMPEL RESMI KUITANSI SPMB */}
+            <div className="p-5 rounded-2xl bg-gradient-to-r from-emerald-950/50 via-slate-900 to-indigo-950/50 border-2 border-emerald-500/50 space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800 pb-3">
+                <div className="flex items-center gap-2 text-emerald-300 font-black text-sm">
+                  <ShieldCheck size={20} className="text-emerald-400" />
+                  <span>Tanda Tangan Panitia Pelayanan, Ketua SPMB & Stempel Resmi Kuitansi</span>
+                </div>
+                <span className="px-2.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-extrabold uppercase border border-emerald-500/30">
+                  Legalitas & Keabsahan Cetak
+                </span>
+              </div>
+
+              <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+                {/* 1. KETUA PANITIA SPMB */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-emerald-400 uppercase tracking-wide">1. Ketua Panitia SPMB</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Penandatangan Utama</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Nama Lengkap & Gelar Ketua SPMB
+                      </label>
+                      <input
+                        type="text"
+                        value={config.spmbChairName || ''}
+                        onChange={(e) => setConfig({ ...config, spmbChairName: e.target.value })}
+                        placeholder="Contoh: Drs. H. M. Sholihuddin"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-emerald-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Sebutan Jabatan
+                      </label>
+                      <input
+                        type="text"
+                        value={config.spmbChairTitle || 'Ketua Panitia SPMB'}
+                        onChange={(e) => setConfig({ ...config, spmbChairTitle: e.target.value })}
+                        placeholder="Ketua Panitia SPMB"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-emerald-500"
+                      />
+                    </div>
+
+                    {/* Upload TTD Ketua SPMB */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
+                        <span>Upload TTD Digital Ketua SPMB</span>
+                        {config.spmbChairSignatureUrl && (
+                          <span className="text-[10px] text-emerald-400 font-bold">✓ TTD Aktif</span>
+                        )}
+                      </label>
+                      
+                      {config.spmbChairSignatureUrl ? (
+                        <div className="p-2.5 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
+                          <img 
+                            src={config.spmbChairSignatureUrl} 
+                            alt="TTD Ketua" 
+                            className="h-10 max-w-[120px] object-contain" 
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...config, spmbChairSignatureUrl: undefined };
+                              setConfig(updated);
+                              handleSaveConfig(updated);
+                            }}
+                            className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold cursor-pointer"
+                            title="Hapus TTD"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => handleUploadConfigImage('spmbChairSignatureUrl', e)}
+                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 2. PANITIA PELAYANAN SEKOLAH / LOKET SPMB */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-slate-700/80 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-indigo-400 uppercase tracking-wide">2. Panitia Pelayanan SPMB</span>
+                      <span className="text-[10px] text-slate-400 font-mono">Pelayanan di Sekolah</span>
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Nama Panitia Pelayanan / Petugas
+                      </label>
+                      <input
+                        type="text"
+                        value={config.spmbOfficerName || ''}
+                        onChange={(e) => setConfig({ ...config, spmbOfficerName: e.target.value })}
+                        placeholder="Contoh: Panitia Pelayanan SPMB"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-indigo-500"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
+                        Sebutan Jabatan Pelayanan
+                      </label>
+                      <input
+                        type="text"
+                        value={config.spmbOfficerTitle || 'Panitia Pelayanan SPMB Sekolah'}
+                        onChange={(e) => setConfig({ ...config, spmbOfficerTitle: e.target.value })}
+                        placeholder="Panitia Pelayanan SPMB Sekolah"
+                        className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-indigo-500"
+                      />
+                    </div>
+
+                    {/* Upload TTD Panitia Pelayanan */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
+                        <span>Upload TTD Panitia Pelayanan</span>
+                        {config.spmbOfficerSignatureUrl && (
+                          <span className="text-[10px] text-indigo-400 font-bold">✓ TTD Aktif</span>
+                        )}
+                      </label>
+                      
+                      {config.spmbOfficerSignatureUrl ? (
+                        <div className="p-2.5 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
+                          <img 
+                            src={config.spmbOfficerSignatureUrl} 
+                            alt="TTD Panitia" 
+                            className="h-10 max-w-[120px] object-contain" 
+                          />
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...config, spmbOfficerSignatureUrl: undefined };
+                              setConfig(updated);
+                              handleSaveConfig(updated);
+                            }}
+                            className="p-1.5 text-rose-600 hover:text-rose-700 hover:bg-rose-50 rounded-lg text-xs font-bold cursor-pointer"
+                            title="Hapus TTD"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => handleUploadConfigImage('spmbOfficerSignatureUrl', e)}
+                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* 3. STEMPEL RESMI PANITIA SPMB */}
+                <div className="p-4 rounded-2xl bg-slate-900/90 border border-emerald-500/40 space-y-3 flex flex-col justify-between">
+                  <div className="space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <span className="text-xs font-black text-amber-400 uppercase tracking-wide">3. Stempel Resmi SPMB</span>
+                      <span className="px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 text-[9px] font-bold">Otomatis Disamping Kiri TTD</span>
+                    </div>
+
+                    <p className="text-[11px] text-slate-300 leading-relaxed m-0">
+                      Stempel SPMB akan <strong>otomatis disandingkan di sebelah kiri Nama & TTD Ketua/Bendahara Panitia SPMB</strong> pada Kuitansi Pembayaran Token dan Kuitansi Daftar Ulang.
+                    </p>
+
+                    {/* Upload Stempel SPMB */}
+                    <div>
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
+                        <span>Upload File Stempel (Disarankan PNG Transparan)</span>
+                        {config.spmbStampUrl && (
+                          <span className="text-[10px] text-emerald-400 font-bold">✓ Stempel Aktif</span>
+                        )}
+                      </label>
+                      
+                      {config.spmbStampUrl ? (
+                        <div className="p-2.5 bg-slate-800/90 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
+                          <div className="p-1 bg-white rounded-lg">
+                            <img 
+                              src={config.spmbStampUrl} 
+                              alt="Stempel SPMB" 
+                              className="h-10 max-w-[90px] object-contain" 
+                            />
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              const updated = { ...config, spmbStampUrl: undefined };
+                              setConfig(updated);
+                              handleSaveConfig(updated);
+                            }}
+                            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-950/40 rounded-lg text-xs font-bold cursor-pointer"
+                            title="Hapus Stempel"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
+                      ) : null}
+
+                      <input
+                        type="file"
+                        accept="image/png,image/jpeg,image/webp"
+                        onChange={(e) => handleUploadConfigImage('spmbStampUrl', e)}
+                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2.5 file:rounded-lg file:border-0 file:text-[11px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end pt-2 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => handleSaveConfig(config)}
+                  disabled={isSavingConfig}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-md"
+                >
+                  {isSavingConfig ? <RefreshCw size={14} className="animate-spin" /> : <Check size={14} />}
+                  <span>Simpan Semua Pengaturan Legalitas & Stempel SPMB</span>
+                </button>
               </div>
             </div>
 
@@ -3131,103 +3449,197 @@ export default function AdminSpmbManagement({
                     <h4 className="font-black text-emerald-400 text-xs uppercase">3. Berkas Dokumen Terunggah</h4>
                     <span className="text-[10px] text-slate-400 font-medium">Unggah atau ganti berkas dokumen</span>
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
-                    {/* Pas Foto */}
-                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
-                      <span className="text-[10px] text-slate-300 block font-bold">Pas Foto (3x4)</span>
-                      {selectedCandidate.documents?.pasPhoto ? (
-                        <a href={selectedCandidate.documents.pasPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
-                          Lihat File ↗
-                        </a>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
-                      )}
-                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
-                        <span>{selectedCandidate.documents?.pasPhoto ? 'Ganti Foto' : 'Unggah Foto'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleAdminUploadDocument(selectedCandidate, 'pasPhoto', f);
-                          }}
-                        />
-                      </label>
-                    </div>
 
-                    {/* KK */}
-                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
-                      <span className="text-[10px] text-slate-300 block font-bold">Kartu Keluarga</span>
-                      {selectedCandidate.documents?.kkPhoto ? (
-                        <a href={selectedCandidate.documents.kkPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
-                          Lihat File ↗
-                        </a>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
-                      )}
-                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
-                        <span>{selectedCandidate.documents?.kkPhoto ? 'Ganti KK' : 'Unggah KK'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleAdminUploadDocument(selectedCandidate, 'kkPhoto', f);
-                          }}
-                        />
-                      </label>
-                    </div>
+                  {(() => {
+                    const docPasFoto = selectedCandidate.documents?.pasPhoto || selectedCandidate.fullFormData?.documents?.pasPhoto;
+                    const docKk = selectedCandidate.documents?.kkPhoto || selectedCandidate.fullFormData?.documents?.kkPhoto;
+                    const docAkta = selectedCandidate.documents?.aktaPhoto || selectedCandidate.fullFormData?.documents?.aktaPhoto;
+                    const docKtpAyah = selectedCandidate.documents?.ktpAyahPhoto || selectedCandidate.documents?.ktpPhoto || selectedCandidate.documents?.ktp || selectedCandidate.fullFormData?.documents?.ktpAyahPhoto || selectedCandidate.fullFormData?.documents?.ktpPhoto || selectedCandidate.fullFormData?.documents?.ktp;
+                    const docKtpIbu = selectedCandidate.documents?.ktpIbuPhoto || selectedCandidate.fullFormData?.documents?.ktpIbuPhoto;
 
-                    {/* Akta */}
-                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
-                      <span className="text-[10px] text-slate-300 block font-bold">Akta Kelahiran</span>
-                      {selectedCandidate.documents?.aktaPhoto ? (
-                        <a href={selectedCandidate.documents.aktaPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
-                          Lihat File ↗
-                        </a>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
-                      )}
-                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
-                        <span>{selectedCandidate.documents?.aktaPhoto ? 'Ganti Akta' : 'Unggah Akta'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleAdminUploadDocument(selectedCandidate, 'aktaPhoto', f);
-                          }}
-                        />
-                      </label>
-                    </div>
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+                        {/* Pas Foto */}
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-2 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] text-slate-300 block font-bold mb-1">1. Pas Foto (3x4)</span>
+                            {docPasFoto ? (
+                              <div className="space-y-1">
+                                <img src={docPasFoto} alt="Pas Foto" className="w-full h-24 object-cover rounded-lg border border-slate-700 mx-auto" />
+                                <a href={docPasFoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                                  Buka Tab Baru ↗
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="w-full h-24 rounded-lg bg-slate-800/80 border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-500">
+                                Belum Ada
+                              </div>
+                            )}
+                          </div>
+                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
+                            <span>{docPasFoto ? 'Ganti Foto' : 'Unggah Foto'}</span>
+                            <input
+                              type="file"
+                              accept="image/*"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleAdminUploadDocument(selectedCandidate, 'pasPhoto', f);
+                              }}
+                            />
+                          </label>
+                        </div>
 
-                    {/* SKL */}
-                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
-                      <span className="text-[10px] text-slate-300 block font-bold">SKL / Ijazah</span>
-                      {selectedCandidate.documents?.sklPhoto ? (
-                        <a href={selectedCandidate.documents.sklPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
-                          Lihat File ↗
-                        </a>
-                      ) : (
-                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
-                      )}
-                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
-                        <span>{selectedCandidate.documents?.sklPhoto ? 'Ganti SKL' : 'Unggah SKL'}</span>
-                        <input
-                          type="file"
-                          accept="image/*"
-                          className="hidden"
-                          onChange={(e) => {
-                            const f = e.target.files?.[0];
-                            if (f) handleAdminUploadDocument(selectedCandidate, 'sklPhoto', f);
-                          }}
-                        />
-                      </label>
-                    </div>
-                  </div>
+                        {/* KK */}
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-2 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] text-slate-300 block font-bold mb-1">2. Kartu Keluarga</span>
+                            {docKk ? (
+                              <div className="space-y-1">
+                                {docKk.startsWith('data:image') || docKk.startsWith('http') ? (
+                                  <img src={docKk} alt="KK" className="w-full h-24 object-cover rounded-lg border border-slate-700 mx-auto" />
+                                ) : (
+                                  <div className="w-full h-24 bg-slate-800 rounded-lg flex items-center justify-center text-[10px] text-emerald-400 font-bold border border-slate-700">
+                                    📄 File PDF / Berkas
+                                  </div>
+                                )}
+                                <a href={docKk} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                                  Buka Tab Baru ↗
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="w-full h-24 rounded-lg bg-slate-800/80 border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-500">
+                                Belum Ada
+                              </div>
+                            )}
+                          </div>
+                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
+                            <span>{docKk ? 'Ganti KK' : 'Unggah KK'}</span>
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleAdminUploadDocument(selectedCandidate, 'kkPhoto', f);
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {/* Akta */}
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-2 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] text-slate-300 block font-bold mb-1">3. Akta Kelahiran</span>
+                            {docAkta ? (
+                              <div className="space-y-1">
+                                {docAkta.startsWith('data:image') || docAkta.startsWith('http') ? (
+                                  <img src={docAkta} alt="Akta" className="w-full h-24 object-cover rounded-lg border border-slate-700 mx-auto" />
+                                ) : (
+                                  <div className="w-full h-24 bg-slate-800 rounded-lg flex items-center justify-center text-[10px] text-emerald-400 font-bold border border-slate-700">
+                                    📄 File PDF / Berkas
+                                  </div>
+                                )}
+                                <a href={docAkta} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                                  Buka Tab Baru ↗
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="w-full h-24 rounded-lg bg-slate-800/80 border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-500">
+                                Belum Ada
+                              </div>
+                            )}
+                          </div>
+                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
+                            <span>{docAkta ? 'Ganti Akta' : 'Unggah Akta'}</span>
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleAdminUploadDocument(selectedCandidate, 'aktaPhoto', f);
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {/* KTP Ayah / Wali */}
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-2 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] text-slate-300 block font-bold mb-1">4. KTP Ayah / Wali</span>
+                            {docKtpAyah ? (
+                              <div className="space-y-1">
+                                {docKtpAyah.startsWith('data:image') || docKtpAyah.startsWith('http') ? (
+                                  <img src={docKtpAyah} alt="KTP Ayah" className="w-full h-24 object-cover rounded-lg border border-slate-700 mx-auto" />
+                                ) : (
+                                  <div className="w-full h-24 bg-slate-800 rounded-lg flex items-center justify-center text-[10px] text-emerald-400 font-bold border border-slate-700">
+                                    📄 File PDF / Berkas
+                                  </div>
+                                )}
+                                <a href={docKtpAyah} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                                  Buka Tab Baru ↗
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="w-full h-24 rounded-lg bg-slate-800/80 border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-500">
+                                Belum Ada
+                              </div>
+                            )}
+                          </div>
+                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
+                            <span>{docKtpAyah ? 'Ganti KTP' : 'Unggah KTP'}</span>
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleAdminUploadDocument(selectedCandidate, 'ktpAyahPhoto', f);
+                              }}
+                            />
+                          </label>
+                        </div>
+
+                        {/* KTP Ibu */}
+                        <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-2 flex flex-col justify-between">
+                          <div>
+                            <span className="text-[10px] text-slate-300 block font-bold mb-1">5. KTP Ibu</span>
+                            {docKtpIbu ? (
+                              <div className="space-y-1">
+                                {docKtpIbu.startsWith('data:image') || docKtpIbu.startsWith('http') ? (
+                                  <img src={docKtpIbu} alt="KTP Ibu" className="w-full h-24 object-cover rounded-lg border border-slate-700 mx-auto" />
+                                ) : (
+                                  <div className="w-full h-24 bg-slate-800 rounded-lg flex items-center justify-center text-[10px] text-emerald-400 font-bold border border-slate-700">
+                                    📄 File PDF / Berkas
+                                  </div>
+                                )}
+                                <a href={docKtpIbu} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                                  Buka Tab Baru ↗
+                                </a>
+                              </div>
+                            ) : (
+                              <div className="w-full h-24 rounded-lg bg-slate-800/80 border border-dashed border-slate-700 flex items-center justify-center text-[10px] text-slate-500">
+                                Belum Ada
+                              </div>
+                            )}
+                          </div>
+                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
+                            <span>{docKtpIbu ? 'Ganti KTP' : 'Unggah KTP'}</span>
+                            <input
+                              type="file"
+                              accept="image/*,.pdf"
+                              className="hidden"
+                              onChange={(e) => {
+                                const f = e.target.files?.[0];
+                                if (f) handleAdminUploadDocument(selectedCandidate, 'ktpIbuPhoto', f);
+                              }}
+                            />
+                          </label>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Quick Payment & Reconciliation Controls */}

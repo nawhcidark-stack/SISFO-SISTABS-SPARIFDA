@@ -176,11 +176,13 @@ export default function SpmbLandingPage({
   const [docUploads, setDocUploads] = useState<{
     aktaPhoto?: string;
     kkPhoto?: string;
+    ktpPhoto?: string;
     ktpAyahPhoto?: string;
     ktpIbuPhoto?: string;
     pasPhoto?: string;
     sklPhoto?: string;
     kipPhoto?: string;
+    ktp?: string;
   }>({});
   const [isUploadingDocs, setIsUploadingDocs] = useState<boolean>(false);
   const [docsSuccessMsg, setDocsSuccessMsg] = useState<string | null>(null);
@@ -1081,10 +1083,74 @@ export default function SpmbLandingPage({
     }
   };
 
-  // 3. Step 3: Save Full Data Lengkap Siswa Form
+  // 3. Step 3: Save Full Data Lengkap Siswa Form (Semua Wajib Diisi)
   const handleSaveFullForm = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!activeCandidate) return;
+
+    // VALIDASI KETAT: Seluruh kolom biodata buku induk wajib diisi
+    const missingFields: string[] = [];
+    if (!fullForm.fullName?.trim() && !activeCandidate.fullName?.trim()) missingFields.push("Nama Lengkap Siswa");
+    if (!fullForm.nickname?.trim()) missingFields.push("Nama Panggilan");
+    if (!fullForm.nik?.trim() && !activeCandidate.nik?.trim()) missingFields.push("NIK Siswa (16 digit)");
+    if (!fullForm.kkNumber?.trim()) missingFields.push("Nomor Kartu Keluarga (KK)");
+    if (!fullForm.birthCertNumber?.trim()) missingFields.push("Nomor Registrasi Akta Kelahiran");
+    if (!fullForm.birthPlace?.trim() && !activeCandidate.birthPlace?.trim()) missingFields.push("Tempat Lahir Siswa");
+    if (!fullForm.birthDate?.trim() && !activeCandidate.birthDate?.trim()) missingFields.push("Tanggal Lahir Siswa");
+    if (!fullForm.religion?.trim()) missingFields.push("Agama");
+    if (!fullForm.address?.trim() && !fullForm.dusun?.trim()) missingFields.push("Alamat / Dusun");
+    if (!fullForm.rt?.trim()) missingFields.push("RT");
+    if (!fullForm.rw?.trim()) missingFields.push("RW");
+    if (!fullForm.village?.trim()) missingFields.push("Desa / Kelurahan");
+    if (!fullForm.district?.trim()) missingFields.push("Kecamatan");
+    if (!fullForm.city?.trim()) missingFields.push("Kabupaten / Kota");
+    if (!fullForm.postalCode?.trim()) missingFields.push("Kode Pos");
+    if (!fullForm.livingWith?.trim()) missingFields.push("Tempat Tinggal / Tinggal Bersama");
+    if (!fullForm.transportation?.trim()) missingFields.push("Moda Transportasi ke Sekolah");
+    if (!fullForm.childOrder && fullForm.childOrder !== 0) missingFields.push("Anak Ke-");
+    if (!fullForm.siblingsCount && fullForm.siblingsCount !== 0) missingFields.push("Jumlah Saudara Kandung");
+    if (!fullForm.height) missingFields.push("Tinggi Badan (cm)");
+    if (!fullForm.weight) missingFields.push("Berat Badan (kg)");
+    if (!fullForm.distanceToSchool?.trim()) missingFields.push("Jarak ke Sekolah");
+    if (!fullForm.travelTime?.trim()) missingFields.push("Waktu Tempuh ke Sekolah");
+
+    // Data Ayah
+    if (!fullForm.fatherName?.trim()) missingFields.push("Nama Lengkap Ayah");
+    if (!fullForm.fatherNik?.trim()) missingFields.push("NIK Ayah Kandung");
+    if (!fullForm.fatherBirthPlace?.trim()) missingFields.push("Tempat Lahir Ayah");
+    if (!fullForm.fatherBirthDate?.trim()) missingFields.push("Tanggal Lahir Ayah");
+    if (!fullForm.fatherEducation?.trim()) missingFields.push("Pendidikan Terakhir Ayah");
+    if (!fullForm.fatherOccupation?.trim()) missingFields.push("Pekerjaan Ayah");
+    if (!fullForm.fatherIncome?.trim()) missingFields.push("Penghasilan Bulanan Ayah");
+    if (!fullForm.fatherPhone?.trim() && !fullForm.phone?.trim() && !activeCandidate.phone?.trim()) missingFields.push("No. WhatsApp / HP Ayah/Ortu");
+
+    // Data Ibu
+    if (!fullForm.motherName?.trim()) missingFields.push("Nama Lengkap Ibu");
+    if (!fullForm.motherNik?.trim()) missingFields.push("NIK Ibu Kandung");
+    if (!fullForm.motherBirthPlace?.trim()) missingFields.push("Tempat Lahir Ibu");
+    if (!fullForm.motherBirthDate?.trim()) missingFields.push("Tanggal Lahir Ibu");
+    if (!fullForm.motherEducation?.trim()) missingFields.push("Pendidikan Terakhir Ibu");
+    if (!fullForm.motherOccupation?.trim()) missingFields.push("Pekerjaan Ibu");
+    if (!fullForm.motherIncome?.trim()) missingFields.push("Penghasilan Bulanan Ibu");
+    if (!fullForm.motherPhone?.trim() && !fullForm.phone?.trim() && !activeCandidate.phone?.trim()) missingFields.push("No. WhatsApp / HP Ibu");
+
+    if (hasGuardian) {
+      if (!fullForm.guardianName?.trim()) missingFields.push("Nama Lengkap Wali");
+      if (!fullForm.guardianNik?.trim()) missingFields.push("NIK Wali");
+      if (!fullForm.guardianOccupation?.trim()) missingFields.push("Pekerjaan Wali");
+      if (!fullForm.guardianPhone?.trim()) missingFields.push("No. HP / WA Wali");
+    }
+
+    if (missingFields.length > 0) {
+      alert(
+        `⚠️ SEMUA BIODATA LENGKAP WAJIB DIISI!\n\n` +
+        `Anda belum mengisi kolom berikut:\n• ` +
+        missingFields.slice(0, 8).join('\n• ') +
+        (missingFields.length > 8 ? `\n...dan ${missingFields.length - 8} kolom wajib lainnya.` : '') +
+        `\n\nSilakan lengkapi seluruh kolom formulir untuk dapat menyimpan dan melanjutkan ke tahap upload berkas.`
+      );
+      return;
+    }
 
     setIsSavingFullForm(true);
     setFullFormSuccessMsg(null);
@@ -1105,9 +1171,17 @@ export default function SpmbLandingPage({
       fatherName: (fullForm.fatherName || '').toUpperCase(),
       motherName: (fullForm.motherName || '').toUpperCase(),
       birthPlace: toProperCase(fullForm.birthPlace || activeCandidate.birthPlace || ''),
+      dusun: toProperCase(fullForm.dusun || ''),
+      village: toProperCase(fullForm.village || ''),
+      district: toProperCase(fullForm.district || ''),
+      city: toProperCase(fullForm.city || 'Pasuruan'),
       fatherBirthPlace: toProperCase(fullForm.fatherBirthPlace || ''),
+      fatherOccupation: toProperCase(fullForm.fatherOccupation || ''),
       motherBirthPlace: toProperCase(fullForm.motherBirthPlace || ''),
+      motherOccupation: toProperCase(fullForm.motherOccupation || ''),
       guardianBirthPlace: toProperCase(fullForm.guardianBirthPlace || ''),
+      guardianOccupation: toProperCase(fullForm.guardianOccupation || ''),
+      guardianAddress: toProperCase(fullForm.guardianAddress || ''),
       guardianName: (fullForm.guardianName || '').toUpperCase(),
       hasGuardian,
       address: combinedAddress || fullForm.address,
@@ -1151,7 +1225,7 @@ export default function SpmbLandingPage({
           guardianBirthPlace: toProperCase(updated.candidate.guardianBirthPlace || ''),
           guardianName: (updated.candidate.guardianName || '').toUpperCase(),
         });
-        setFullFormSuccessMsg('Data lengkap siswa berhasil disimpan!');
+        setFullFormSuccessMsg('Biodata lengkap calon siswa berhasil disimpan!');
         setTimeout(() => {
           setFullFormSuccessMsg(null);
           setPortalTab('docs'); // Alur baru: Lanjut ke Upload Berkas sebelum Bayar Daftar Ulang
@@ -1170,7 +1244,7 @@ export default function SpmbLandingPage({
 
   // 4. Step 4: Upload Files & Photos (Akte, KK, KTP Ayah, KTP Ibu, Foto Siswa - Kompres 1000px)
   const handleFileChange = async (
-    field: 'aktaPhoto' | 'kkPhoto' | 'ktpAyahPhoto' | 'ktpIbuPhoto' | 'pasPhoto' | 'sklPhoto' | 'kipPhoto',
+    field: 'aktaPhoto' | 'kkPhoto' | 'ktpPhoto' | 'ktpAyahPhoto' | 'ktpIbuPhoto' | 'pasPhoto' | 'kipPhoto',
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
@@ -1189,21 +1263,27 @@ export default function SpmbLandingPage({
   const handleSaveDocuments = async () => {
     if (!activeCandidate) return;
 
-    // Validasi berkas wajib: Akte Kelahiran, Kartu Keluarga, dan Pas Foto Siswa
+    // Validasi berkas wajib: Akte Kelahiran, Kartu Keluarga, KTP Ayah/Wali, KTP Ibu, dan Pas Foto Siswa
     const hasAkta = Boolean(docUploads.aktaPhoto || activeCandidate.documents?.aktaPhoto);
     const hasKk = Boolean(docUploads.kkPhoto || activeCandidate.documents?.kkPhoto);
     const hasFoto = Boolean(docUploads.pasPhoto || activeCandidate.documents?.pasPhoto);
+    const hasKtpAyah = Boolean(docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpPhoto || activeCandidate.documents?.ktpPhoto);
+    const hasKtpIbu = Boolean(docUploads.ktpIbuPhoto || activeCandidate.documents?.ktpIbuPhoto);
 
-    if (!hasAkta) {
-      alert('⚠️ Mohon unggah berkas wajib: Akte Kelahiran calon siswa.');
-      return;
-    }
-    if (!hasKk) {
-      alert('⚠️ Mohon unggah berkas wajib: Kartu Keluarga (KK).');
-      return;
-    }
-    if (!hasFoto) {
-      alert('⚠️ Mohon unggah berkas wajib: Pas Foto Calon Siswa (3x4).');
+    const missingDocs: string[] = [];
+    if (!hasFoto) missingDocs.push("1. Pas Foto Calon Siswa (3x4)");
+    if (!hasKk) missingDocs.push("2. Kartu Keluarga (KK)");
+    if (!hasAkta) missingDocs.push("3. Akte Kelahiran");
+    if (!hasKtpAyah) missingDocs.push("4. KTP Ayah / Wali");
+    if (!hasKtpIbu) missingDocs.push("5. KTP Ibu");
+
+    if (missingDocs.length > 0) {
+      alert(
+        `⚠️ SELURUH BERKAS PERSYARATAN WAJIB DIUNGGAH!\n\n` +
+        `Berkas berikut belum diunggah:\n• ` +
+        missingDocs.join('\n• ') +
+        `\n\nMohon lengkapi dan unggah semua berkas yang diwajibkan untuk dapat menyimpan dan melanjutkan pendaftaran.`
+      );
       return;
     }
 
@@ -1223,7 +1303,7 @@ export default function SpmbLandingPage({
       if (res.ok) {
         const updated = await res.json();
         setActiveCandidate(updated.candidate);
-        setDocsSuccessMsg('Berkas pendaftaran berhasil diunggah! Lanjut ke tahap pembayaran daftar ulang.');
+        setDocsSuccessMsg('Seluruh berkas pendaftaran berhasil diunggah! Lanjut ke tahap pembayaran daftar ulang.');
         setTimeout(() => {
           setDocsSuccessMsg(null);
           // Lanjut ke Daftar Ulang jika belum lunas, atau ke Tanda Terima jika sudah lunas
@@ -2241,18 +2321,21 @@ export default function SpmbLandingPage({
                 {(regForm.schoolOriginType === 'other' || regForm.schoolOriginType === 'lp_maarif') && (
                   <div className="pt-2 animate-in fade-in">
                     <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Nama Lengkap SD / MI Asal <span className="text-rose-500">*</span>
+                      Nama Lengkap SD / MI Asal (Otomatis Huruf Proper) <span className="text-rose-500">*</span>
                     </label>
                     <input
                       type="text"
                       required
                       placeholder={regForm.schoolOriginType === 'lp_maarif' ? "Contoh: MI Maarif Pandaan / SD Maarif Sukorejo" : "Contoh: SDN Pandaan 1 / SD Kristen"}
                       value={regForm.manualSchoolName}
-                      onChange={(e) => setRegForm({
-                        ...regForm,
-                        manualSchoolName: e.target.value,
-                        schoolOrigin: e.target.value
-                      })}
+                      onChange={(e) => {
+                        const properVal = toProperCase(e.target.value);
+                        setRegForm({
+                          ...regForm,
+                          manualSchoolName: properVal,
+                          schoolOrigin: properVal
+                        });
+                      }}
                       className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500"
                     />
                   </div>
@@ -2597,7 +2680,9 @@ export default function SpmbLandingPage({
               const hasUploadedMandatoryDocs = Boolean(
                 (activeCandidate.documents?.aktaPhoto || docUploads.aktaPhoto) &&
                 (activeCandidate.documents?.kkPhoto || docUploads.kkPhoto) &&
-                (activeCandidate.documents?.pasPhoto || docUploads.pasPhoto)
+                (activeCandidate.documents?.pasPhoto || docUploads.pasPhoto) &&
+                (activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpPhoto || docUploads.ktpPhoto) &&
+                (activeCandidate.documents?.ktpIbuPhoto || docUploads.ktpIbuPhoto)
               );
               const isStep3Done = Boolean(isStep2Done && (activeCandidate.documentsUploaded || hasUploadedMandatoryDocs));
               const isStep4Done = Boolean(isStep3Done && (activeCandidate.reRegistrationStatus === 'paid' || activeCandidate.reRegistrationPaid));
@@ -3258,11 +3343,11 @@ export default function SpmbLandingPage({
 
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                           <div className="sm:col-span-1">
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Dusun / Jalan / Gang</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Dusun / Jalan / Gang (Otomatis Proper)</label>
                             <input
                               type="text"
                               value={fullForm.dusun || ''}
-                              onChange={(e) => setFullForm({ ...fullForm, dusun: e.target.value })}
+                              onChange={(e) => setFullForm({ ...fullForm, dusun: toProperCase(e.target.value) })}
                               placeholder="Contoh: Jabon"
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
@@ -3293,21 +3378,21 @@ export default function SpmbLandingPage({
 
                         <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Desa / Kelurahan</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Desa / Kelurahan (Otomatis Proper)</label>
                             <input
                               type="text"
                               value={fullForm.village || ''}
-                              onChange={(e) => setFullForm({ ...fullForm, village: e.target.value })}
+                              onChange={(e) => setFullForm({ ...fullForm, village: toProperCase(e.target.value) })}
                               placeholder="Contoh: Jogosari"
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
                           </div>
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Kecamatan</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Kecamatan (Otomatis Proper)</label>
                             <input
                               type="text"
                               value={fullForm.district || ''}
-                              onChange={(e) => setFullForm({ ...fullForm, district: e.target.value })}
+                              onChange={(e) => setFullForm({ ...fullForm, district: toProperCase(e.target.value) })}
                               placeholder="Contoh: Pandaan"
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
@@ -3332,11 +3417,11 @@ export default function SpmbLandingPage({
 
                       <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Kabupaten / Kota</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Kabupaten / Kota (Otomatis Proper)</label>
                           <input
                             type="text"
                             value={fullForm.city || 'Pasuruan'}
-                            onChange={(e) => setFullForm({ ...fullForm, city: e.target.value })}
+                            onChange={(e) => setFullForm({ ...fullForm, city: toProperCase(e.target.value) })}
                             placeholder="Pasuruan"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
@@ -3423,11 +3508,11 @@ export default function SpmbLandingPage({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ayah (Otomatis Proper)</label>
                           <input
                             type="text"
                             value={fullForm.fatherOccupation || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, fatherOccupation: e.target.value })}
+                            onChange={(e) => setFullForm({ ...fullForm, fatherOccupation: toProperCase(e.target.value) })}
                             placeholder="Wiraswasta / Karyawan / PNS"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
@@ -3542,11 +3627,11 @@ export default function SpmbLandingPage({
                           </select>
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Ibu (Otomatis Proper)</label>
                           <input
                             type="text"
                             value={fullForm.motherOccupation || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, motherOccupation: e.target.value })}
+                            onChange={(e) => setFullForm({ ...fullForm, motherOccupation: toProperCase(e.target.value) })}
                             placeholder="Ibu Rumah Tangga / Guru / Karyawan"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
@@ -3739,11 +3824,11 @@ export default function SpmbLandingPage({
                               </select>
                             </div>
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Wali</label>
+                              <label className="block text-[11px] font-bold text-slate-700 mb-1">Pekerjaan Wali (Otomatis Proper)</label>
                               <input
                                 type="text"
                                 value={fullForm.guardianOccupation || ''}
-                                onChange={(e) => setFullForm({ ...fullForm, guardianOccupation: e.target.value })}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianOccupation: toProperCase(e.target.value) })}
                                 placeholder="Wiraswasta / Karyawan / PNS"
                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />
@@ -3789,11 +3874,11 @@ export default function SpmbLandingPage({
                           </div>
 
                           <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Alamat Tinggal Wali</label>
+                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Alamat Tinggal Wali (Otomatis Proper)</label>
                             <input
                               type="text"
                               value={fullForm.guardianAddress || ''}
-                              onChange={(e) => setFullForm({ ...fullForm, guardianAddress: e.target.value })}
+                              onChange={(e) => setFullForm({ ...fullForm, guardianAddress: toProperCase(e.target.value) })}
                               placeholder="Kosongkan jika sama dengan alamat tinggal siswa"
                               className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                             />
@@ -3858,7 +3943,7 @@ export default function SpmbLandingPage({
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 md:grid-cols-2 sm:grid-cols-3 gap-4">
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                       {/* 1. Akte Kelahiran */}
                       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
@@ -3893,10 +3978,10 @@ export default function SpmbLandingPage({
                         />
                       </div>
 
-                      {/* 3. KTP Ayah */}
+                      {/* 3. KTP Ayah / Wali */}
                       <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
                         <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900">3. KTP Ayah <span className="text-rose-500">*</span></span>
+                          <span className="text-xs font-bold text-slate-900">3. KTP Ayah / Wali <span className="text-rose-500">*</span></span>
                           {docUploads.ktpAyahPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
                         </div>
                         {docUploads.ktpAyahPhoto && (
@@ -3940,23 +4025,6 @@ export default function SpmbLandingPage({
                           type="file"
                           accept="image/*"
                           onChange={(e) => handleFileChange('pasPhoto', e)}
-                          className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
-                        />
-                      </div>
-
-                      {/* Opsional: SKL / Ijazah */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-slate-900">6. SKL / Ijazah (Opsional)</span>
-                          {docUploads.sklPhoto && <span className="text-[10px] font-bold text-emerald-600">✓ Terunggah</span>}
-                        </div>
-                        {docUploads.sklPhoto && (
-                          <img src={docUploads.sklPhoto} alt="SKL Preview" className="w-full h-28 object-cover rounded-xl border border-slate-200" />
-                        )}
-                        <input
-                          type="file"
-                          accept="image/*,.pdf"
-                          onChange={(e) => handleFileChange('sklPhoto', e)}
                           className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
                         />
                       </div>
@@ -4416,9 +4484,9 @@ export default function SpmbLandingPage({
                         </div>
                         <div>
                           <p className="m-0 text-slate-600">Pandaan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
-                          <p className="m-0 text-slate-600">Ketua Panitia SPMB {config?.academicYear || '2027/2028'},</p>
+                          <p className="m-0 text-slate-600">{config?.spmbChairTitle || `Ketua Panitia SPMB ${config?.academicYear || '2027/2028'}`},</p>
                           <div className="h-16" />
-                          <p className="font-bold underline text-slate-900 m-0">H. Ahmad Fuad, S.Pd, M.PdI</p>
+                          <p className="font-bold underline text-slate-900 m-0">{config?.spmbChairName || 'Drs. H. M. Sholihuddin'}</p>
                         </div>
                       </div>
                     </div>

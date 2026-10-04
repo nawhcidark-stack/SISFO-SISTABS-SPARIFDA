@@ -259,26 +259,57 @@ export default function SpmbReceiptModal({
                   </tbody>
                 </table>
 
-                {/* Footer Signatures */}
-                <div className="grid grid-cols-3 gap-4 pt-6 border-t border-slate-200 text-center text-[10px]">
+                {/* Footer Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) */}
+                <div className="grid grid-cols-3 gap-3 pt-5 border-t border-slate-200 text-center text-[10px]">
                   <div>
-                    <p className="m-0 text-slate-500">Orang Tua / Wali,</p>
+                    <p className="m-0 text-slate-500">Orang Tua / Calon Siswa,</p>
+                    <p className="m-0 text-slate-700 font-bold">Pembayar</p>
                     <div className="h-12"></div>
                     <p className="font-bold underline text-slate-800 m-0">( {candidate.parentName || candidate.fullName} )</p>
                   </div>
-                  <div className="flex flex-col items-center justify-center">
-                    {qrCodeDataUrl && <img src={qrCodeDataUrl} alt="QR" className="w-14 h-14 object-contain" />}
-                    <span className="text-[8px] text-slate-400 mt-1">Verifikasi Sah</span>
-                  </div>
+
                   <div>
-                    <p className="m-0 text-slate-500">Pandaan, {formatIndoDate(candidate.tokenPaidAt)}</p>
-                    <p className="m-0 text-slate-700 font-bold">Bendahara Panitia SPMB,</p>
+                    <p className="m-0 text-slate-500">Panitia Pelayanan SPMB,</p>
+                    <p className="m-0 text-slate-700 font-bold">{config?.spmbOfficerTitle || 'Pelayanan di Sekolah / Kantor SPMB'}</p>
                     <div className="h-12 flex items-center justify-center relative">
-                      {schoolIdentity?.treasurerSignature && (
-                        <img src={schoolIdentity.treasurerSignature} alt="Ttd" className="h-12 object-contain z-10" referrerPolicy="no-referrer" />
+                      {config?.spmbOfficerSignatureUrl && (
+                        <img src={config.spmbOfficerSignatureUrl} alt="Ttd Panitia" className="h-11 object-contain z-10" referrerPolicy="no-referrer" />
                       )}
                     </div>
-                    <p className="font-bold underline text-slate-800 m-0">{schoolIdentity?.treasurer || 'Panitia SPMB'}</p>
+                    <p className="font-bold underline text-slate-800 m-0">( {config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</p>
+                  </div>
+
+                  <div>
+                    <p className="m-0 text-slate-500">Pandaan, {formatIndoDate(candidate.tokenPaidAt)}</p>
+                    <p className="m-0 text-slate-700 font-bold">{config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+                    <div className="h-12 flex items-center justify-center relative">
+                      {(config?.spmbStampUrl || schoolIdentity?.stamp) && (
+                        <img 
+                          src={config?.spmbStampUrl || schoolIdentity?.stamp} 
+                          alt="Stempel SPMB" 
+                          className="absolute -left-2 top-0 h-12 max-w-[70px] object-contain opacity-85 pointer-events-none z-1" 
+                          referrerPolicy="no-referrer" 
+                        />
+                      )}
+                      {(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) && (
+                        <img 
+                          src={config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature} 
+                          alt="Ttd Ketua SPMB" 
+                          className="h-11 object-contain z-10" 
+                          referrerPolicy="no-referrer" 
+                        />
+                      )}
+                    </div>
+                    <p className="font-bold underline text-slate-800 m-0">{config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</p>
+                  </div>
+                </div>
+
+                {/* Verification Bar with QR Code */}
+                <div className="mt-4 p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3">
+                  {qrCodeDataUrl && <img src={qrCodeDataUrl} alt="QR" className="w-10 h-10 object-contain shrink-0" />}
+                  <div className="text-[9px] text-slate-600 leading-tight">
+                    <span className="font-bold text-slate-900 block">DOKUMEN RESMI SISTEM INFORMASI AKADEMIK & SPMB</span>
+                    <span>No. Kuitansi: {tokenReceiptNo} • Scan QR untuk memverifikasi keabsahan kuitansi online.</span>
                   </div>
                 </div>
               </div>
@@ -392,26 +423,57 @@ export default function SpmbReceiptModal({
                   </table>
                 </div>
 
-                {/* Signatures */}
-                <div className="grid grid-cols-3 gap-4 pt-4 border-t border-slate-200 text-center text-[10px]">
+                {/* Signatures (3 Kolom: Pembayar, Panitia Pelayanan Sekolah, & Ketua/Bendahara SPMB dengan Stempel) */}
+                <div className="grid grid-cols-3 gap-3 pt-4 border-t border-slate-200 text-center text-[10px]">
                   <div>
-                    <p className="m-0 text-slate-500">Orang Tua / Wali,</p>
+                    <p className="m-0 text-slate-500">Orang Tua / Wali Siswa,</p>
+                    <p className="m-0 text-slate-700 font-bold">Pembayar</p>
                     <div className="h-12"></div>
                     <p className="font-bold underline text-slate-800 m-0">( {candidate.parentName || candidate.fullName} )</p>
                   </div>
-                  <div className="flex flex-col items-center justify-center">
-                    {qrCodeDataUrl && <img src={qrCodeDataUrl} alt="QR" className="w-14 h-14 object-contain" />}
-                    <span className="text-[8px] text-slate-400 mt-1">Verifikasi Sah</span>
-                  </div>
+
                   <div>
-                    <p className="m-0 text-slate-500">Pandaan, {formatIndoDate(candidate.reRegistrationPaidAt)}</p>
-                    <p className="m-0 text-slate-700 font-bold">Kepala Sekolah,</p>
+                    <p className="m-0 text-slate-500">Panitia Pelayanan SPMB,</p>
+                    <p className="m-0 text-slate-700 font-bold">{config?.spmbOfficerTitle || 'Pelayanan di Sekolah / Kantor SPMB'}</p>
                     <div className="h-12 flex items-center justify-center relative">
-                      {schoolIdentity?.principalSignature && (
-                        <img src={schoolIdentity.principalSignature} alt="Ttd" className="h-12 object-contain z-10" referrerPolicy="no-referrer" />
+                      {config?.spmbOfficerSignatureUrl && (
+                        <img src={config.spmbOfficerSignatureUrl} alt="Ttd Panitia" className="h-11 object-contain z-10" referrerPolicy="no-referrer" />
                       )}
                     </div>
-                    <p className="font-bold underline text-slate-800 m-0">{schoolIdentity?.principal || 'Kepala Sekolah'}</p>
+                    <p className="font-bold underline text-slate-800 m-0">( {config?.spmbOfficerName || 'Panitia Pelayanan SPMB'} )</p>
+                  </div>
+
+                  <div>
+                    <p className="m-0 text-slate-500">Pandaan, {formatIndoDate(candidate.reRegistrationPaidAt)}</p>
+                    <p className="m-0 text-slate-700 font-bold">{config?.spmbChairTitle || config?.spmbTreasurerTitle || 'Ketua Panitia SPMB'},</p>
+                    <div className="h-12 flex items-center justify-center relative">
+                      {(config?.spmbStampUrl || schoolIdentity?.stamp) && (
+                        <img 
+                          src={config?.spmbStampUrl || schoolIdentity?.stamp} 
+                          alt="Stempel SPMB" 
+                          className="absolute -left-2 top-0 h-12 max-w-[70px] object-contain opacity-85 pointer-events-none z-1" 
+                          referrerPolicy="no-referrer" 
+                        />
+                      )}
+                      {(config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) && (
+                        <img 
+                          src={config?.spmbChairSignatureUrl || config?.spmbTreasurerSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature} 
+                          alt="Ttd Ketua SPMB" 
+                          className="h-11 object-contain z-10" 
+                          referrerPolicy="no-referrer" 
+                        />
+                      )}
+                    </div>
+                    <p className="font-bold underline text-slate-800 m-0">{config?.spmbChairName || config?.spmbTreasurerName || schoolIdentity?.treasurer || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</p>
+                  </div>
+                </div>
+
+                {/* Verification Bar with QR Code */}
+                <div className="mt-4 p-2.5 bg-slate-50 border border-slate-200 rounded-xl flex items-center gap-3">
+                  {qrCodeDataUrl && <img src={qrCodeDataUrl} alt="QR" className="w-10 h-10 object-contain shrink-0" />}
+                  <div className="text-[9px] text-slate-600 leading-tight">
+                    <span className="font-bold text-slate-900 block">DOKUMEN RESMI SISTEM INFORMASI AKADEMIK & SPMB</span>
+                    <span>No. Kuitansi: {reregReceiptNo} • Scan QR untuk memverifikasi keabsahan kuitansi online.</span>
                   </div>
                 </div>
               </div>

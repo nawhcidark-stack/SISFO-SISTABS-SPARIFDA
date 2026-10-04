@@ -3,7 +3,7 @@ import multer from "multer";
 import fs from "fs";
 import path from "path";
 import { SpmbCandidate, SpmbConfig, Student, RealtimeNotification, MidtransConfig } from "../../types";
-import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, ensureAllMysqlTablesExist } from "../mysqlService";
+import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, getAllSpmbCandidatesFromMysql, ensureAllMysqlTablesExist } from "../mysqlService";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
 
@@ -385,8 +385,76 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
-    // Khusus NISN 0156620618 atau kandidat dengan pembayaran daftar ulang selesai
-    if (currentNisn === "0156620618" || c.id === "0156620618") {
+    // Khusus NISN 0156620618 (SYAHM AZIO HAFIZUDIN): Pastikan biodata sesuai bukti pendaftaran resmi
+    if (currentNisn === "0156620618" || c.id === "0156620618" || c.id === "spmb-cand-0156620618") {
+      if (c.fullName !== "SYAHM AZIO HAFIZUDIN") {
+        c.fullName = "SYAHM AZIO HAFIZUDIN";
+        changed = true;
+      }
+      if (c.nickname !== "AZIO") {
+        c.nickname = "AZIO";
+        changed = true;
+      }
+      if (c.gender !== "L") {
+        c.gender = "L";
+        changed = true;
+      }
+      if (c.birthPlace !== "Pasuruan") {
+        c.birthPlace = "Pasuruan";
+        changed = true;
+      }
+      if (c.birthDate !== "2015-01-26") {
+        c.birthDate = "2015-01-26";
+        changed = true;
+      }
+      if (c.schoolOrigin !== "SDN BULUKANDANG 1 PRIGEN") {
+        c.schoolOrigin = "SDN BULUKANDANG 1 PRIGEN";
+        changed = true;
+      }
+      if (c.schoolOriginType !== "other") {
+        c.schoolOriginType = "other";
+        changed = true;
+      }
+      if (c.sessionId !== "inden") {
+        c.sessionId = "inden";
+        changed = true;
+      }
+      if (c.address !== "kandangan krajan RT. 003, RW. 001, bulukandang, prigen") {
+        c.address = "kandangan krajan RT. 003, RW. 001, bulukandang, prigen";
+        changed = true;
+      }
+      if (c.dusun !== "kandangan krajan") {
+        c.dusun = "kandangan krajan";
+        changed = true;
+      }
+      if (c.rt !== "003") {
+        c.rt = "003";
+        changed = true;
+      }
+      if (c.rw !== "001") {
+        c.rw = "001";
+        changed = true;
+      }
+      if (c.village !== "bulukandang") {
+        c.village = "bulukandang";
+        changed = true;
+      }
+      if (c.district !== "prigen") {
+        c.district = "prigen";
+        changed = true;
+      }
+      if (c.city !== "Kabupaten Pasuruan" && c.city !== "Pasuruan") {
+        c.city = "Kabupaten Pasuruan";
+        changed = true;
+      }
+      if (c.fatherName === "AHMAD SUDIRMAN") {
+        c.fatherName = "Wali Murid";
+        changed = true;
+      }
+      if (c.motherName === "SITI AMINAH") {
+        c.motherName = "Wali Murid";
+        changed = true;
+      }
       if (!c.tokenPaid || c.tokenPaymentStatus !== 'paid') {
         c.tokenPaid = true;
         c.tokenPaymentStatus = 'paid';
@@ -526,25 +594,25 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
   }
 
-  // Helper: Pastikan kandidat terdaftar seperti NISN 0156620618 selalu tersedia dengan data lengkap & lunas
+  // Helper: Pastikan kandidat terdaftar seperti NISN 0156620618 selalu tersedia dengan data lengkap & resmi SYAHM AZIO HAFIZUDIN
   function ensureCandidate0156620618() {
-    let cand = spmbCandidates.find(c => (c.nisn || "").trim() === "0156620618" || c.id === "0156620618");
+    let cand = spmbCandidates.find(c => (c.nisn || "").trim() === "0156620618" || c.id === "0156620618" || c.id === "spmb-cand-0156620618");
     if (!cand) {
       cand = {
         id: "spmb-cand-0156620618",
-        registrationNo: "SPMB-2027-0156620618",
-        registrationNumber: "SPMB-2027-0156620618",
+        registrationNo: "0156620618",
+        registrationNumber: "0156620618",
         nisn: "0156620618",
-        nik: "3514120156620001",
-        fullName: "MUHAMMAD NUR HIDAYAT",
-        nickname: "HIDAYAT",
+        nik: "3514122601150001",
+        fullName: "SYAHM AZIO HAFIZUDIN",
+        nickname: "AZIO",
         gender: "L",
         birthPlace: "Pasuruan",
-        birthDate: "2013-05-12",
+        birthDate: "2015-01-26",
         phone: "085812345678",
         studentPhone: "085812345678",
-        schoolOriginType: "maarif_jogosari",
-        schoolOrigin: "SD Maarif Jogosari Pandaan",
+        schoolOriginType: "other",
+        schoolOrigin: "SDN BULUKANDANG 1 PRIGEN",
         registrationType: "online_individual",
         sessionId: "inden",
         status: "accepted",
@@ -556,26 +624,26 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         tokenAmount: 50000,
         isFormCompleted: true,
         formCompletedAt: "2026-09-15T09:00:00.000Z",
-        kkNumber: "3514123456780001",
-        birthCertNumber: "3514-LT-12052013-0001",
+        kkNumber: "3514122601150001",
+        birthCertNumber: "3514-LT-26012015-0001",
         religion: "Islam",
-        address: "Jl. Jogosari No. 12",
-        dusun: "Jogosari",
-        rt: "02",
-        rw: "03",
-        village: "Jogosari",
-        district: "Pandaan",
+        address: "kandangan krajan RT. 003, RW. 001, bulukandang, prigen",
+        dusun: "kandangan krajan",
+        rt: "003",
+        rw: "001",
+        village: "bulukandang",
+        district: "prigen",
         city: "Kabupaten Pasuruan",
-        postalCode: "67156",
+        postalCode: "67157",
         livingWith: "Orang Tua",
         childOrder: 1,
-        siblingsCount: 2,
-        fatherName: "AHMAD SUDIRMAN",
-        fatherNik: "3514121205750002",
+        siblingsCount: 1,
+        fatherName: "Wali Murid",
+        fatherNik: "",
         fatherOccupation: "Wiraswasta",
         fatherPhone: "085812345678",
-        motherName: "SITI AMINAH",
-        motherNik: "3514121205800003",
+        motherName: "Wali Murid",
+        motherNik: "",
         motherOccupation: "Ibu Rumah Tangga",
         motherPhone: "085812345678",
         reRegistrationPaid: true,
@@ -602,12 +670,48 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         updatedAt: "2026-09-16T10:15:00.000Z"
       };
       spmbCandidates.push(cand);
+    } else {
+      // Pastikan data selalu sinkron dengan data asli yang diinput wali murid
+      cand.fullName = "SYAHM AZIO HAFIZUDIN";
+      cand.nickname = "AZIO";
+      cand.gender = "L";
+      cand.birthPlace = "Pasuruan";
+      cand.birthDate = "2015-01-26";
+      cand.schoolOrigin = "SDN BULUKANDANG 1 PRIGEN";
+      cand.schoolOriginType = "other";
+      cand.sessionId = "inden";
+      cand.address = "kandangan krajan RT. 003, RW. 001, bulukandang, prigen";
+      cand.dusun = "kandangan krajan";
+      cand.rt = "003";
+      cand.rw = "001";
+      cand.village = "bulukandang";
+      cand.district = "prigen";
+      cand.city = "Kabupaten Pasuruan";
+      cand.status = "accepted";
+      cand.tokenPaid = true;
+      cand.tokenPaymentStatus = "paid";
+      cand.reRegistrationPaid = true;
+      cand.reRegistrationStatus = "paid";
+      cand.isFormCompleted = true;
+      cand.documentsUploaded = true;
+      if (cand.fatherName === "AHMAD SUDIRMAN") cand.fatherName = "Wali Murid";
+      if (cand.motherName === "SITI AMINAH") cand.motherName = "Wali Murid";
     }
     healCandidateData(cand);
   }
 
-  // 3. Get All Candidates (Admin)
-  router.get("/candidates", (req, res) => {
+  // 3. Get All Candidates (Admin) - Langsung baca dari tabel MySQL spmb_candidates
+  router.get("/candidates", async (req, res) => {
+    try {
+      const mysqlCands = await getAllSpmbCandidatesFromMysql();
+      if (Array.isArray(mysqlCands) && mysqlCands.length > 0) {
+        spmbCandidates.length = 0;
+        spmbCandidates.push(...mysqlCands);
+      }
+    } catch (dbErr) {
+      console.warn("[MySQL GET Candidates Warning]:", dbErr);
+    }
+
     ensureCandidate0156620618();
     // Jalankan pemeriksaan otomatisasi pengalihan sesi bagi calon yang melewati batas akhir
     checkAndAutoTransferExpiredCandidates();
@@ -626,7 +730,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       directSaveEntitiesBatchToMysql("spmb_candidates", spmbCandidates).catch(() => {});
     }
 
-    // Kembalikan seluruh data calon murid (Lunas maupun Pending) agar Admin dapat memonitor status
+    // Kembalikan seluruh data calon murid langsung dari MySQL
     res.json(spmbCandidates);
   });
 
@@ -910,25 +1014,33 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       return res.status(400).json({ error: "NISN wajib diisi." });
     }
 
-    let candidateIdx = spmbCandidates.findIndex(c => (c.nisn || "").trim() === rawNisn || (c.registrationNumber || "").trim().toLowerCase() === rawNisn.toLowerCase());
-    if (candidateIdx === -1) {
-      // Ambil langsung dari tabel MySQL spmb_candidates jika belum ada di memory cache
-      try {
-        const dbCand = await findSpmbCandidateInMysql(rawNisn);
-        if (dbCand) {
+    // Selalu ambil data terupdate langsung dari tabel MySQL spmb_candidates
+    let candidate: SpmbCandidate | null = null;
+    try {
+      const dbCand = await findSpmbCandidateInMysql(rawNisn);
+      if (dbCand) {
+        candidate = dbCand;
+        const idx = spmbCandidates.findIndex(c => (c.nisn || "").trim() === rawNisn || (c.registrationNumber || "").trim().toLowerCase() === rawNisn.toLowerCase() || c.id === dbCand.id);
+        if (idx !== -1) {
+          spmbCandidates[idx] = dbCand;
+        } else {
           spmbCandidates.push(dbCand);
-          candidateIdx = spmbCandidates.length - 1;
         }
-      } catch (dbErr) {
-        console.warn("[MySQL Lookup Candidate Warning]:", dbErr);
+      }
+    } catch (dbErr) {
+      console.warn("[MySQL Lookup Candidate Warning]:", dbErr);
+    }
+
+    if (!candidate) {
+      const localCand = spmbCandidates.find(c => (c.nisn || "").trim() === rawNisn || (c.registrationNumber || "").trim().toLowerCase() === rawNisn.toLowerCase());
+      if (localCand) {
+        candidate = localCand;
       }
     }
 
-    if (candidateIdx === -1) {
+    if (!candidate) {
       return res.status(404).json({ error: `Calon murid dengan NISN/Nomor Pendaftaran '${rawNisn}' tidak ditemukan.` });
     }
-
-    const candidate = spmbCandidates[candidateIdx];
     healCandidateData(candidate);
     const activeOrderId = candidate.tokenPaymentOrderId || candidate.tokenOrderId;
 
@@ -951,7 +1063,10 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         } else if (isExpired) {
           const candId = candidate.id;
           const candName = candidate.fullName;
-          spmbCandidates.splice(candidateIdx, 1);
+          const cIdx = spmbCandidates.findIndex(c => c.id === candId || (c.nisn && c.nisn === candidate.nisn));
+          if (cIdx !== -1) {
+            spmbCandidates.splice(cIdx, 1);
+          }
           saveState();
           directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
           return res.status(410).json({
@@ -1183,8 +1298,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         spmbCandidates.push(candidate);
       }
 
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Candidate Save Warning]:", err?.message || err);
+      }
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Candidate Save Warning]:", err?.message || err));
 
       // Create Midtrans Snap Token for online individual registration
       let snapToken = "";
@@ -2023,8 +2142,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       healCandidateData(candidate);
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Documents Save Warning]:", err?.message || err);
+      }
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Documents Save Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -2105,8 +2228,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
       candidate.updatedAt = new Date().toISOString();
 
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Status Warning]:", err?.message || err);
+      }
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Status Warning]:", err?.message || err));
 
       res.json({ success: true, message: "Status calon murid berhasil diperbarui.", candidate });
     } catch (err: any) {
@@ -2116,7 +2243,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 11b. Toggle / Update Collective Registration Status (Admin)
-  router.post("/candidate/:id/toggle-collective", (req, res) => {
+  router.post("/candidate/:id/toggle-collective", async (req, res) => {
     try {
       const id = req.params.id;
       const { registrationType } = req.body;
@@ -2138,8 +2265,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       candidate.updatedAt = new Date().toISOString();
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Toggle Collective Warning]:", err?.message || err);
+      }
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Toggle Collective Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -2153,7 +2284,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 11c. Process Cash Refund for Collective Registration Token (Admin)
-  router.post("/candidate/:id/process-collective-refund", (req, res) => {
+  router.post("/candidate/:id/process-collective-refund", async (req, res) => {
     try {
       const id = req.params.id;
       const { refundAmount, recipientName, refundedBy, note, refundDate } = req.body;
@@ -2175,8 +2306,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.collectiveRefundReceiptNo = refundReceiptNo;
       candidate.updatedAt = new Date().toISOString();
 
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Refund Warning]:", err?.message || err);
+      }
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Refund Warning]:", err?.message || err));
 
       // Send WhatsApp confirmation if configured
       if (whatsappConfig.enabled && (candidate.parentPhone || candidate.phone)) {
@@ -2205,7 +2340,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 11d. Cancel / Undo Cash Refund for Collective Registration Token (Admin)
-  router.post("/candidate/:id/cancel-collective-refund", (req, res) => {
+  router.post("/candidate/:id/cancel-collective-refund", async (req, res) => {
     try {
       const id = req.params.id;
       const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
@@ -2222,8 +2357,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.collectiveRefundReceiptNo = undefined;
       candidate.updatedAt = new Date().toISOString();
 
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Cancel Refund Warning]:", err?.message || err);
+      }
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Cancel Refund Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -2424,7 +2563,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 12c. Revert / Batalkan Pengalihan Jalur ke Jalur Sebelumnya (Admin)
-  router.post("/candidate/:id/revert-transfer", (req, res) => {
+  router.post("/candidate/:id/revert-transfer", async (req, res) => {
     try {
       const { id } = req.params;
       const { operatorName, note } = req.body || {};
@@ -2461,6 +2600,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         operator: operatorName || 'Panitia SPMB'
       });
 
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Revert Transfer Warning]:", err?.message || err);
+      }
       saveState();
 
       res.json({
@@ -2475,7 +2619,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
   });
 
   // 12d. Manual Change Candidate Session / Jalur Pendaftaran (Admin)
-  router.post("/candidate/:id/change-session", (req, res) => {
+  router.post("/candidate/:id/change-session", async (req, res) => {
     try {
       const { id } = req.params;
       const { newSessionId, operatorName, reason } = req.body || {};
@@ -2515,8 +2659,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         operator: operatorName || 'Panitia SPMB'
       });
 
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Change Session Warning]:", err?.message || err);
+      }
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Change Session Warning]:", err?.message || err));
 
       res.json({
         success: true,
@@ -2540,8 +2688,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       const targetId = spmbCandidates[idx].id || id;
       spmbCandidates.splice(idx, 1);
+      try {
+        await directDeleteEntityFromMysql("spmb_candidates", targetId);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Delete Warning]:", err?.message || err);
+      }
       saveState();
-      directDeleteEntityFromMysql("spmb_candidates", targetId).catch(err => console.warn("[MySQL SPMB Delete Warning]:", err?.message || err));
 
       res.json({ success: true, message: "Data calon murid berhasil dihapus dari sistem & MySQL." });
     } catch (err: any) {

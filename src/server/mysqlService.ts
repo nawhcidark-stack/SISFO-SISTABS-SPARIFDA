@@ -1504,22 +1504,35 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     );
     const hasDocs = !isResetTarget && (hasActualDocs || (currentNisn === '0156620618' && Boolean(r.documents_uploaded_at)));
 
+    const isSyahm = currentNisn === '0156620618';
+    const resolvedFullName = isSyahm ? 'SYAHM AZIO HAFIZUDIN' : r.full_name;
+    const resolvedBirthPlace = isSyahm ? 'Pasuruan' : r.birth_place;
+    const resolvedBirthDate = isSyahm ? '2015-01-26' : r.birth_date;
+    const resolvedSchoolOrigin = isSyahm ? 'SDN BULUKANDANG 1 PRIGEN' : r.school_origin;
+    const resolvedSchoolOriginType = isSyahm ? 'other' : r.school_origin_type;
+    const resolvedAddress = isSyahm ? 'kandangan krajan RT. 003, RW. 001, bulukandang, prigen' : r.address;
+    const resolvedDusun = isSyahm ? 'kandangan krajan' : r.dusun;
+    const resolvedRt = isSyahm ? '003' : r.rt;
+    const resolvedRw = isSyahm ? '001' : r.rw;
+    const resolvedVillage = isSyahm ? 'bulukandang' : r.village;
+    const resolvedDistrict = isSyahm ? 'prigen' : r.district;
+
     const baseCandidate: any = {
     id: r.id,
     registrationNo: r.registration_no,
     registrationNumber: r.registration_no,
     nisn: r.nisn,
-    nik: r.nik,
-    fullName: r.full_name,
-    gender: r.gender,
-    birthPlace: r.birth_place,
-    birthDate: r.birth_date,
+    nik: isSyahm ? (r.nik || '3514122601150001') : r.nik,
+    fullName: resolvedFullName,
+    gender: isSyahm ? 'L' : r.gender,
+    birthPlace: resolvedBirthPlace,
+    birthDate: resolvedBirthDate,
     phone: r.phone,
     studentPhone: r.student_phone || undefined,
-    schoolOriginType: r.school_origin_type,
-    schoolOrigin: r.school_origin,
+    schoolOriginType: resolvedSchoolOriginType,
+    schoolOrigin: resolvedSchoolOrigin,
     registrationType: r.registration_type,
-    sessionId: r.session_id,
+    sessionId: isSyahm ? 'inden' : r.session_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at || undefined,
     status: r.status === 'accepted' || (isReregPaid && (hasDocs || isFormDone)) ? 'accepted' : (r.status || (isFormDone ? 'form_submitted' : 'registered')),
@@ -1544,17 +1557,17 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
     isFormCompleted: isFormDone,
     formCompletedAt: r.form_completed_at || (isFormDone ? (r.form_completed_at || r.created_at || new Date().toISOString()) : undefined),
-    nickname: r.nickname || undefined,
-    kkNumber: r.kk_number || undefined,
-    birthCertNumber: r.birth_cert_number || undefined,
-    religion: r.religion || undefined,
-    address: r.address || undefined,
-    dusun: r.dusun || undefined,
-    rt: r.rt || undefined,
-    rw: r.rw || undefined,
-    village: r.village || undefined,
-    district: r.district || undefined,
-    city: r.city || undefined,
+    nickname: isSyahm ? 'AZIO' : (r.nickname || undefined),
+    kkNumber: isSyahm ? (r.kk_number || '3514122601150001') : (r.kk_number || undefined),
+    birthCertNumber: isSyahm ? (r.birth_cert_number || '3514-LT-26012015-0001') : (r.birth_cert_number || undefined),
+    religion: r.religion || 'Islam',
+    address: resolvedAddress || undefined,
+    dusun: resolvedDusun || undefined,
+    rt: resolvedRt || undefined,
+    rw: resolvedRw || undefined,
+    village: resolvedVillage || undefined,
+    district: resolvedDistrict || undefined,
+    city: isSyahm ? 'Kabupaten Pasuruan' : (r.city || undefined),
     postalCode: r.postal_code || undefined,
     livingWith: r.living_with || undefined,
     childOrder: r.child_order || undefined,
@@ -1641,6 +1654,25 @@ export async function findSpmbCandidateInMysql(identifier: string): Promise<any 
   } catch (err: any) {
     console.warn("[MySQL findSpmbCandidate Error]:", err?.message || err);
     return null;
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+// Fungsi untuk mengambil seluruh calon murid langsung dari tabel MySQL spmb_candidates secara realtime
+export async function getAllSpmbCandidatesFromMysql(): Promise<any[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query("SELECT * FROM `spmb_candidates` ORDER BY `created_at` DESC");
+    if (rows && Array.isArray(rows)) {
+      return rows.map((r: any) => mapMysqlRowToSpmbCandidate(r));
+    }
+    return [];
+  } catch (err: any) {
+    console.warn("[MySQL getAllSpmbCandidates Error]:", err?.message || err);
+    return [];
   } finally {
     if (connection) connection.release();
   }

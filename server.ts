@@ -2300,8 +2300,58 @@ function applyDataFromMysql(pulledData: any) {
     }
 
     if (Array.isArray(pulledData.spmbCandidates) && pulledData.spmbCandidates.length > 0) {
+      const localCandMap = new Map<string, SpmbCandidate>();
+      spmbCandidates.forEach(c => {
+        if (c.id) localCandMap.set(c.id, c);
+        if (c.nisn) localCandMap.set((c.nisn || "").trim(), c);
+        if (c.registrationNumber) localCandMap.set((c.registrationNumber || "").trim().toLowerCase(), c);
+      });
+
+      const mergedCandidates: SpmbCandidate[] = pulledData.spmbCandidates.map((pulledCand: SpmbCandidate) => {
+        const local = localCandMap.get(pulledCand.id) ||
+                      (pulledCand.nisn ? localCandMap.get((pulledCand.nisn || "").trim()) : undefined) ||
+                      (pulledCand.registrationNumber ? localCandMap.get((pulledCand.registrationNumber || "").trim().toLowerCase()) : undefined);
+
+        if (!local) return pulledCand;
+
+        // Preserve documents, payments, and form completeness if local has them
+        const localDocs = (local.documents && typeof local.documents === 'object' && Object.keys(local.documents).length > 0) ? local.documents : undefined;
+        const pulledDocs = (pulledCand.documents && typeof pulledCand.documents === 'object') ? pulledCand.documents : {};
+        const effectiveDocs = localDocs ? { ...pulledDocs, ...localDocs } : pulledDocs;
+        const hasDocs = Boolean(local.documentsUploaded || pulledCand.documentsUploaded || (effectiveDocs && Object.keys(effectiveDocs).length > 0));
+
+        const isFormDone = Boolean(local.isFormCompleted || pulledCand.isFormCompleted || local.formCompletedAt || pulledCand.formCompletedAt || (local.kkNumber && (local.fatherName || local.motherName)));
+        const isReregPaid = Boolean(local.reRegistrationPaid || pulledCand.reRegistrationPaid || local.reRegistrationStatus === 'paid' || pulledCand.reRegistrationStatus === 'paid');
+        const isTokenPaid = Boolean(local.tokenPaid || pulledCand.tokenPaid || local.tokenPaymentStatus === 'paid' || pulledCand.tokenPaymentStatus === 'paid');
+
+        const merged: SpmbCandidate = {
+          ...pulledCand,
+          ...local,
+          documents: effectiveDocs,
+          documentsUploaded: hasDocs,
+          documentsUploadedAt: local.documentsUploadedAt || pulledCand.documentsUploadedAt || (hasDocs ? new Date().toISOString() : undefined),
+          isFormCompleted: isFormDone,
+          formCompletedAt: local.formCompletedAt || pulledCand.formCompletedAt || (isFormDone ? new Date().toISOString() : undefined),
+          tokenPaid: isTokenPaid,
+          tokenPaymentStatus: isTokenPaid ? 'paid' : (local.tokenPaymentStatus || pulledCand.tokenPaymentStatus || 'unpaid'),
+          reRegistrationPaid: isReregPaid,
+          reRegistrationStatus: isReregPaid ? 'paid' : (local.reRegistrationStatus || pulledCand.reRegistrationStatus || 'unpaid'),
+          status: (local.status === 'accepted' || pulledCand.status === 'accepted' || (isReregPaid && (hasDocs || isFormDone))) ? 'accepted' : (local.status || pulledCand.status || 'registered')
+        };
+        return merged;
+      });
+
+      // Keep local candidates that might not yet be in MySQL
+      const pulledCandIds = new Set(pulledData.spmbCandidates.map((c: any) => c.id || (c.nisn || "").trim()));
+      spmbCandidates.forEach(localC => {
+        const idKey = localC.id || (localC.nisn || "").trim();
+        if (!pulledCandIds.has(idKey)) {
+          mergedCandidates.push(localC);
+        }
+      });
+
       spmbCandidates.length = 0;
-      spmbCandidates.push(...pulledData.spmbCandidates);
+      spmbCandidates.push(...mergedCandidates);
     }
 
     // Authoritative savings balance updates

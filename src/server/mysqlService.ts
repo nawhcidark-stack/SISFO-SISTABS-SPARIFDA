@@ -1485,7 +1485,11 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     } catch {}
   }
 
-  const baseCandidate: any = {
+    const isFormDone = Boolean(r.is_form_completed) || Boolean(r.form_completed_at) || Boolean(r.kk_number && (r.father_name || r.mother_name)) || Boolean(fullFormData && (fullFormData.kkNumber || fullFormData.fatherName || fullFormData.motherName));
+    const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
+    const hasDocs = Boolean(documents && (documents.aktaPhoto || documents.kkPhoto || documents.pasPhoto || documents.sklPhoto || documents.kipPhoto || Object.keys(documents).length > 0)) || Boolean(r.documents_uploaded_at);
+
+    const baseCandidate: any = {
     id: r.id,
     registrationNo: r.registration_no,
     registrationNumber: r.registration_no,
@@ -1503,7 +1507,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     sessionId: r.session_id,
     createdAt: r.created_at,
     updatedAt: r.updated_at || undefined,
-    status: r.status || (Boolean(r.is_form_completed) ? 'form_submitted' : 'registered'),
+    status: r.status === 'accepted' || (isReregPaid && (hasDocs || isFormDone)) ? 'accepted' : (r.status || (isFormDone ? 'form_submitted' : 'registered')),
     originalSessionId: r.original_session_id || undefined,
     previousSessionId: r.previous_session_id || undefined,
     isTransferredSession: Boolean(r.is_transferred_session),
@@ -1523,8 +1527,8 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     collectiveRefundRecipient: r.collective_refund_recipient || undefined,
     collectiveRefundNote: r.collective_refund_note || undefined,
     collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
-    isFormCompleted: Boolean(r.is_form_completed),
-    formCompletedAt: r.form_completed_at || undefined,
+    isFormCompleted: isFormDone,
+    formCompletedAt: r.form_completed_at || (isFormDone ? (r.form_completed_at || r.created_at || new Date().toISOString()) : undefined),
     nickname: r.nickname || undefined,
     kkNumber: r.kk_number || undefined,
     birthCertNumber: r.birth_cert_number || undefined,
@@ -1580,11 +1584,11 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     guardianRelationship: r.guardian_relationship || undefined,
     guardianRelation: r.guardian_relationship || undefined,
     guardianIsSameAsFather: Boolean(r.guardian_is_same_as_father),
-    reRegistrationPaid: r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at),
+    reRegistrationPaid: isReregPaid,
     reRegistrationPaidAt: r.re_registration_paid_at || undefined,
-    reRegistrationMethod: r.re_registration_method || undefined,
+    reRegistrationMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
     reRegistrationOrderId: r.re_registration_order_id || undefined,
-    reRegistrationStatus: r.re_registration_status || 'unpaid',
+    reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
     reRegistrationAmount: r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined,
     buildingFeePaid: Number(r.building_fee_paid) || 0,
     julySppPaid: Number(r.july_spp_paid) || 0,
@@ -1595,8 +1599,8 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     uniformOrders,
     uniformSizes,
     documents,
-    documentsUploaded: Boolean(documents || r.documents_uploaded_at),
-    documentsUploadedAt: r.documents_uploaded_at || undefined,
+    documentsUploaded: hasDocs,
+    documentsUploadedAt: r.documents_uploaded_at || (hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined),
     fullFormData,
     ...(fullFormData && typeof fullFormData === 'object' ? fullFormData : {})
   };
@@ -2817,8 +2821,12 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const sessionId = c.sessionId || ffd.sessionId || 'inden';
       const createdAt = c.createdAt || new Date().toISOString();
       const updatedAt = c.updatedAt || new Date().toISOString();
-      const isCompleted = Boolean(c.isFormCompleted || ffd.isFormCompleted);
-      const status = c.status || (isCompleted ? 'form_submitted' : 'registered');
+      const isCompleted = Boolean(c.isFormCompleted || ffd.isFormCompleted || c.formCompletedAt || ffd.formCompletedAt || (c.kkNumber && (c.fatherName || c.motherName)) || (ffd.kkNumber && (ffd.fatherName || ffd.motherName)));
+      const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
+      const isDocsUploaded = Boolean(c.documentsUploaded || c.documentsUploadedAt || (c.documents && Object.keys(c.documents).length > 0));
+      const status = c.status === 'accepted' || (isReregPaid && (isDocsUploaded || isCompleted))
+        ? 'accepted'
+        : (c.status || (isCompleted ? 'form_submitted' : 'registered'));
 
       const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
       const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
@@ -2877,7 +2885,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         collective_refund_note: c.collectiveRefundNote || null,
         collective_refund_receipt_no: c.collectiveRefundReceiptNo || null,
         is_form_completed: isCompleted ? 1 : 0,
-        form_completed_at: c.formCompletedAt || ffd.formCompletedAt || (isCompleted ? new Date().toISOString() : null),
+        form_completed_at: c.formCompletedAt || ffd.formCompletedAt || (isCompleted ? (c.formCompletedAt || new Date().toISOString()) : null),
         nickname: c.nickname || ffd.nickname || null,
         kk_number: c.kkNumber || ffd.kkNumber || null,
         birth_cert_number: c.birthCertNumber || ffd.birthCertNumber || null,
@@ -2932,10 +2940,10 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         guardian_address: c.guardianAddress || ffd.guardianAddress || null,
         guardian_relationship: c.guardianRelationship || c.guardianRelation || ffd.guardianRelationship || ffd.guardianRelation || null,
         guardian_is_same_as_father: (c.guardianIsSameAsFather ?? ffd.guardianIsSameAsFather) ? 1 : 0,
-        re_registration_paid_at: c.reRegistrationPaidAt || null,
-        re_registration_method: c.reRegistrationMethod || null,
+        re_registration_paid_at: c.reRegistrationPaidAt || (isReregPaid ? new Date().toISOString() : null),
+        re_registration_method: c.reRegistrationMethod || (isReregPaid ? 'Midtrans Online' : null),
         re_registration_order_id: c.reRegistrationOrderId || null,
-        re_registration_status: c.reRegistrationStatus || 'unpaid',
+        re_registration_status: isReregPaid ? 'paid' : (c.reRegistrationStatus || 'unpaid'),
         re_registration_amount: c.reRegistrationAmount !== undefined && c.reRegistrationAmount !== null ? Number(c.reRegistrationAmount) : 0,
         building_fee_paid: Number(c.buildingFeePaid) || 0,
         july_spp_paid: Number(c.julySppPaid) || 0,
@@ -2946,7 +2954,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         uniform_orders: uniformOrders,
         uniform_sizes: uniformSizes,
         documents: documents,
-        documents_uploaded_at: c.documentsUploadedAt || null,
+        documents_uploaded_at: c.documentsUploadedAt || (isDocsUploaded ? (c.documentsUploadedAt || new Date().toISOString()) : null),
         full_form_data: fullFormData
       };
 

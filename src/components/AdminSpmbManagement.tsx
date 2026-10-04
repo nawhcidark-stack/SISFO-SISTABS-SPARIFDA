@@ -74,7 +74,22 @@ export default function AdminSpmbManagement({
   const [candidates, setCandidates] = useState<SpmbCandidate[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
-  const [activeTab, setActiveTab] = useState<'candidates' | 'finance' | 'settings' | 'uniforms' | 'sessions'>('candidates');
+  const [activeTab, setActiveTab] = useState<'candidates' | 'finance' | 'reconciliation' | 'settings' | 'uniforms' | 'sessions'>('candidates');
+
+  // SPMB Midtrans Reconciliation State
+  const [isReconcilingAll, setIsReconcilingAll] = useState<boolean>(false);
+  const [reconcileResult, setReconcileResult] = useState<{
+    success: boolean;
+    reconciledCount: number;
+    totalChecked: number;
+    updatedCount: number;
+    reportDetails?: any[];
+    message: string;
+  } | null>(null);
+  const [reconcileSearchNisn, setReconcileSearchNisn] = useState<string>('');
+  const [isReconcilingSingle, setIsReconcilingSingle] = useState<boolean>(false);
+  const [reconcileSingleMsg, setReconcileSingleMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [reconcileCandidateActionId, setReconcileCandidateActionId] = useState<string | null>(null);
 
   // Bulk NIS Editor Modal
   const [isBulkNisOpen, setIsBulkNisOpen] = useState(false);
@@ -507,6 +522,166 @@ export default function AdminSpmbManagement({
     }
   };
 
+  // Rekonsiliasi Menyeluruh Midtrans SPMB (Token & Daftar Ulang)
+  const handleReconcileAll = async () => {
+    try {
+      setIsReconcilingAll(true);
+      setReconcileResult(null);
+      const res = await fetch('/api/spmb/reconcile-all', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' }
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setReconcileResult(result);
+        await loadData();
+        if (onRefresh) onRefresh();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Gagal menjalankan rekonsiliasi SPMB.');
+      }
+    } catch (e: any) {
+      console.error('Error reconciling all SPMB:', e);
+      alert('Gagal menghubungi server rekonsiliasi: ' + e.message);
+    } finally {
+      setIsReconcilingAll(false);
+    }
+  };
+
+  // Rekonsiliasi Single Candidate by NISN or Order ID
+  const handleReconcileCandidate = async (targetNisn?: string) => {
+    const nisnToSearch = (targetNisn || reconcileSearchNisn || '').trim();
+    if (!nisnToSearch) {
+      alert('Mohon masukkan NISN atau No. Order calon murid untuk direkonsiliasi.');
+      return;
+    }
+
+    try {
+      setIsReconcilingSingle(true);
+      setReconcileSingleMsg(null);
+      setReconcileCandidateActionId(nisnToSearch);
+
+      const res = await fetch('/api/spmb/reconcile-candidate', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: nisnToSearch,
+          orderId: nisnToSearch
+        })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setCandidates(prev => prev.map(c => c.id === result.candidate.id || c.nisn === result.candidate.nisn ? result.candidate : c));
+        if (selectedCandidate?.nisn === result.candidate.nisn || selectedCandidate?.id === result.candidate.id) {
+          setSelectedCandidate(result.candidate);
+        }
+        setReconcileSingleMsg({
+          type: 'success',
+          text: result.message || `Rekonsiliasi calon murid ${result.candidate.fullName} berhasil!`
+        });
+        await loadData();
+        if (onRefresh) onRefresh();
+      } else {
+        const err = await res.json();
+        setReconcileSingleMsg({
+          type: 'error',
+          text: err.error || 'Data calon murid tidak ditemukan atau gagal direkonsiliasi.'
+        });
+      }
+    } catch (e: any) {
+      setReconcileSingleMsg({
+        type: 'error',
+        text: 'Kesalahan jaringan: ' + e.message
+      });
+    } finally {
+      setIsReconcilingSingle(false);
+      setReconcileCandidateActionId(null);
+    }
+  };
+
+  // Manual Toggle Payment (Token / Daftar Ulang Lunas / Belum Lunas di Loket SPMB)
+  const handleManualSetPayment = async (
+    candidate: SpmbCandidate, 
+    type: 'token' | 'reregistration', 
+    status: 'paid' | 'unpaid',
+    paymentMethod: string = 'Tunai (Loket SPMB)',
+    amount?: number
+  ) => {
+    const actionLabel = status === 'paid' ? 'Tandai LUNAS' : 'Tandai BELUM LUNAS';
+    const typeLabel = type === 'token' ? 'Token Formulir (Rp 50.000)' : 'Daftar Ulang & Seragam';
+    if (!confirm(`${actionLabel} untuk pembayaran ${typeLabel} calon murid ${candidate.fullName}?`)) {
+      return;
+    }
+
+    try {
+      const res = await fetch('/api/spmb/manual-set-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: candidate.nisn,
+          type,
+          status,
+          paymentMethod,
+          amount: amount || (type === 'token' ? 50000 : (candidate.reRegistrationAmount || 1500000))
+        })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setCandidates(prev => prev.map(c => c.id === result.candidate.id ? result.candidate : c));
+        if (selectedCandidate?.id === result.candidate.id) {
+          setSelectedCandidate(result.candidate);
+        }
+        alert(result.message || `Status pembayaran ${candidate.fullName} berhasil diperbarui!`);
+        loadData();
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Gagal mengubah status pembayaran.');
+      }
+    } catch (e: any) {
+      alert('Gagal mengubah status: ' + e.message);
+    }
+  };
+
+  // Admin Direct Upload / Update Documents for Candidate
+  const handleAdminUploadDocument = async (candidate: SpmbCandidate, field: string, file: File) => {
+    try {
+      const reader = new FileReader();
+      reader.onload = async (event) => {
+        const base64Data = event.target?.result as string;
+        if (!base64Data) return;
+
+        const updatedDocs = { ...(candidate.documents || {}), [field]: base64Data };
+        const res = await fetch('/api/spmb/admin-update-documents', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            nisn: candidate.nisn,
+            candidateId: candidate.id,
+            documents: updatedDocs
+          })
+        });
+
+        if (res.ok) {
+          const result = await res.json();
+          setCandidates(prev => prev.map(c => c.id === result.candidate.id ? result.candidate : c));
+          if (selectedCandidate?.id === result.candidate.id) {
+            setSelectedCandidate(result.candidate);
+          }
+          alert(`Berkas ${field} calon murid ${candidate.fullName} berhasil disimpan!`);
+        } else {
+          const err = await res.json();
+          alert(err.error || 'Gagal menyimpan berkas.');
+        }
+      };
+      reader.readAsDataURL(file);
+    } catch (e: any) {
+      alert('Gagal membaca file: ' + e.message);
+    }
+  };
+
   // Filtered Candidates List
   const filteredCandidates = candidates.filter(c => {
     const matchesSearch = 
@@ -838,6 +1013,18 @@ export default function AdminSpmbManagement({
         >
           <CreditCard size={15} className={activeTab === 'finance' ? 'text-white' : 'text-emerald-700'} />
           <span>Laporan Keuangan SPMB</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab('reconciliation')}
+          className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer ${
+            activeTab === 'reconciliation'
+              ? 'bg-emerald-700 text-white shadow-sm ring-2 ring-emerald-400'
+              : 'bg-emerald-50 text-emerald-900 hover:bg-emerald-100 border border-emerald-300'
+          }`}
+        >
+          <ArrowLeftRight size={15} className={activeTab === 'reconciliation' ? 'text-white' : 'text-emerald-700'} />
+          <span>Rekonsiliasi Midtrans SPMB</span>
         </button>
 
         <button
@@ -1358,6 +1545,15 @@ export default function AdminSpmbManagement({
                             <div className="flex items-center justify-center gap-1.5">
                               <button
                                 type="button"
+                                onClick={() => handleReconcileCandidate(candidate.nisn)}
+                                disabled={isReconcilingSingle && reconcileCandidateActionId === candidate.nisn}
+                                className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg transition-colors cursor-pointer border border-emerald-300"
+                                title="Rekonsiliasi Live Pembayaran di Midtrans"
+                              >
+                                <ArrowLeftRight size={14} className={isReconcilingSingle && reconcileCandidateActionId === candidate.nisn ? 'animate-spin text-emerald-600' : ''} />
+                              </button>
+                              <button
+                                type="button"
                                 onClick={() => setSelectedCandidate(candidate)}
                                 className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg transition-colors cursor-pointer border border-slate-300"
                                 title="Lihat Detail & Buku Induk"
@@ -1394,7 +1590,327 @@ export default function AdminSpmbManagement({
         />
       )}
 
-      {/* ================= TAB 2: PENGATURAN SESI PENDAFTARAN ================= */}
+      {/* ================= TAB 3: REKONSILIASI PEMBAYARAN MIDTRANS SPMB ================= */}
+      {activeTab === 'reconciliation' && (
+        <div className="space-y-6">
+          {/* Header Panel Rekonsiliasi SPMB */}
+          <div className="bg-white border-2 border-emerald-500/40 rounded-3xl p-6 sm:p-7 shadow-sm space-y-5">
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4 border-b border-slate-100 pb-5">
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="px-3 py-1 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-xs font-black uppercase tracking-wider flex items-center gap-1.5">
+                    <ShieldCheck size={14} className="text-emerald-700" />
+                    <span>Rekonsiliasi Otomatis Midtrans SPMB</span>
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold">
+                    {candidates.length} Calon Terdaftar
+                  </span>
+                </div>
+                <h3 className="text-xl sm:text-2xl font-black text-slate-900 m-0">
+                  Sinkronisasi & Rekonsiliasi Status Pembayaran SPMB
+                </h3>
+                <p className="text-xs text-slate-600 font-medium m-0 max-w-3xl">
+                  Memeriksa, mencocokkan, dan memperbarui status pembayaran <strong>Token Pendaftaran (Rp 50.000)</strong> serta <strong>Daftar Ulang & Seragam</strong> secara langsung dari gateway Midtrans ke database lokal.
+                </p>
+              </div>
+
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={handleReconcileAll}
+                  disabled={isReconcilingAll}
+                  className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 disabled:bg-emerald-400 text-white font-black text-xs rounded-xl flex items-center gap-2 shadow-sm transition-all cursor-pointer"
+                >
+                  <RefreshCw size={15} className={isReconcilingAll ? 'animate-spin' : ''} />
+                  <span>{isReconcilingAll ? 'Memeriksa ke Midtrans...' : 'Jalankan Rekonsiliasi Massal (Semua Calon)'}</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Quick KPI Stats */}
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-center">
+                <span className="text-xs font-bold text-emerald-900 block">Token Terverifikasi</span>
+                <span className="text-2xl font-black text-emerald-700 mt-1 block">{tokenPaidCount}</span>
+                <span className="text-[10px] text-emerald-600 font-medium">Rp {(tokenPaidCount * 50000).toLocaleString('id-ID')}</span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-teal-50 border border-teal-200 text-center">
+                <span className="text-xs font-bold text-teal-900 block">Daftar Ulang Lunas</span>
+                <span className="text-2xl font-black text-teal-700 mt-1 block">{reRegPaidCount}</span>
+                <span className="text-[10px] text-teal-600 font-medium">Calon Siswa</span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-blue-50 border border-blue-200 text-center">
+                <span className="text-xs font-bold text-blue-900 block">Biodata & Form Lengkap</span>
+                <span className="text-2xl font-black text-blue-700 mt-1 block">{formCompletedCount}</span>
+                <span className="text-[10px] text-blue-600 font-medium">Buku Induk</span>
+              </div>
+
+              <div className="p-3.5 rounded-2xl bg-purple-50 border border-purple-200 text-center">
+                <span className="text-xs font-bold text-purple-900 block">Total Calon Diterima</span>
+                <span className="text-2xl font-black text-purple-700 mt-1 block">{acceptedCount}</span>
+                <span className="text-[10px] text-purple-600 font-medium">Lunas & Siap Masuk</span>
+              </div>
+            </div>
+
+            {/* Form Rekonsiliasi Cepat Per Calon Siswa (Berdasarkan NISN / Order ID) */}
+            <div className="p-4.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex items-center gap-2 text-xs font-black text-slate-800 uppercase tracking-wider">
+                <Search size={15} className="text-emerald-700" />
+                <span>Pemeriksaan & Rekonsiliasi Calon Murid Tunggal</span>
+              </div>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+                <div className="relative flex-grow">
+                  <input
+                    type="text"
+                    placeholder="Masukkan NISN, Nomor Registrasi, atau Order ID Midtrans..."
+                    value={reconcileSearchNisn}
+                    onChange={(e) => setReconcileSearchNisn(e.target.value)}
+                    className="w-full px-3.5 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 font-semibold focus:outline-none focus:ring-2 focus:ring-emerald-500"
+                  />
+                </div>
+                <button
+                  type="button"
+                  onClick={() => handleReconcileCandidate()}
+                  disabled={isReconcilingSingle}
+                  className="px-5 py-2.5 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 transition-all cursor-pointer shrink-0"
+                >
+                  <ArrowLeftRight size={14} className={isReconcilingSingle ? 'animate-spin' : ''} />
+                  <span>{isReconcilingSingle ? 'Memeriksa...' : 'Periksa & Rekonsiliasi'}</span>
+                </button>
+
+                {/* Quick shortcut for NISN 0156620618 */}
+                <button
+                  type="button"
+                  onClick={() => {
+                    setReconcileSearchNisn('0156620618');
+                    handleReconcileCandidate('0156620618');
+                  }}
+                  className="px-3.5 py-2.5 bg-emerald-100 hover:bg-emerald-200 text-emerald-900 border border-emerald-300 font-bold text-xs rounded-xl flex items-center justify-center gap-1 transition-all cursor-pointer shrink-0"
+                  title="Cek & Rekonsiliasi langsung untuk calon murid NISN 0156620618"
+                >
+                  <CheckCircle2 size={14} className="text-emerald-700" />
+                  <span>Cek NISN: 0156620618</span>
+                </button>
+              </div>
+
+              {/* Single Reconcile Message Banner */}
+              {reconcileSingleMsg && (
+                <div className={`p-3 rounded-xl text-xs font-bold flex items-center justify-between gap-2 border ${
+                  reconcileSingleMsg.type === 'success' 
+                    ? 'bg-emerald-50 text-emerald-950 border-emerald-300' 
+                    : 'bg-rose-50 text-rose-950 border-rose-300'
+                }`}>
+                  <div className="flex items-center gap-2">
+                    {reconcileSingleMsg.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-700 shrink-0" /> : <AlertTriangle size={16} className="text-rose-700 shrink-0" />}
+                    <span>{reconcileSingleMsg.text}</span>
+                  </div>
+                  <button type="button" onClick={() => setReconcileSingleMsg(null)} className="text-slate-500 hover:text-slate-700 cursor-pointer">
+                    <X size={14} />
+                  </button>
+                </div>
+              )}
+
+              {/* Bulk Reconcile Result Summary */}
+              {reconcileResult && (
+                <div className="p-4 rounded-xl bg-emerald-50/90 border border-emerald-300 text-emerald-950 text-xs space-y-2">
+                  <div className="flex items-center justify-between">
+                    <strong className="text-emerald-900 flex items-center gap-1.5 font-black text-sm">
+                      <CheckCircle2 size={16} className="text-emerald-700" />
+                      <span>{reconcileResult.message}</span>
+                    </strong>
+                    <button type="button" onClick={() => setReconcileResult(null)} className="text-emerald-700 hover:text-emerald-900 cursor-pointer">
+                      <X size={14} />
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-3 gap-2 pt-1 font-semibold text-slate-700">
+                    <div>Total Diperiksa: <strong>{reconcileResult.totalChecked} Calon</strong></div>
+                    <div>Berhasil Direkonsiliasi: <strong>{reconcileResult.reconciledCount} Transaksi</strong></div>
+                    <div>Diperbarui di DB: <strong>{reconcileResult.updatedCount} Calon</strong></div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Tabel Status Rekonsiliasi Calon Murid SPMB */}
+          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
+            <div className="p-4 border-b border-slate-200 bg-slate-50 flex items-center justify-between">
+              <h4 className="text-xs font-black text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                <Users size={15} className="text-emerald-700" />
+                <span>Daftar Status Pembayaran & Rekonsiliasi Calon Murid ({candidates.length})</span>
+              </h4>
+              <span className="text-xs text-slate-500 font-semibold">
+                Klik tombol "Rekonsiliasi" pada setiap baris untuk verifikasi live
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-700 font-extrabold text-[11px] uppercase tracking-wider">
+                    <th className="py-3 px-4">Calon Siswa / NISN</th>
+                    <th className="py-3 px-4">Asal SD & Sesi</th>
+                    <th className="py-3 px-4">Token Formulir</th>
+                    <th className="py-3 px-4">Daftar Ulang & Seragam</th>
+                    <th className="py-3 px-4">Buku Induk & Berkas</th>
+                    <th className="py-3 px-4">Status SPMB</th>
+                    <th className="py-3 px-4 text-center">Aksi Rekonsiliasi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-200">
+                  {candidates.map((cand) => {
+                    const isTokenPaid = cand.tokenPaid || cand.tokenPaymentStatus === 'paid';
+                    const isReregPaid = cand.reRegistrationStatus === 'paid';
+                    const isFormDone = cand.isFormCompleted;
+                    const hasDocs = cand.documentsUploaded || Boolean(cand.documents?.pasPhoto || cand.documents?.kkPhoto || cand.documents?.aktaPhoto);
+
+                    return (
+                      <tr key={cand.id} className="hover:bg-slate-50 transition-colors">
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          <div className="font-extrabold text-slate-900">{cand.fullName}</div>
+                          <div className="text-[11px] text-slate-500 flex items-center gap-1 mt-0.5">
+                            <span className="font-mono font-bold text-emerald-800">NISN: {cand.nisn}</span>
+                            <span>•</span>
+                            <span className="text-slate-600">{cand.gender === 'P' ? 'Perempuan' : 'Laki-laki'}</span>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="text-slate-800 font-semibold">{cand.schoolOrigin || '-'}</div>
+                          <span className="inline-block mt-0.5 px-2 py-0.2 rounded text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-200">
+                            {cand.sessionId.toUpperCase()}
+                          </span>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          {isTokenPaid ? (
+                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                              <CheckCircle2 size={11} className="text-emerald-700" />
+                              <span>Lunas (Rp 50rb)</span>
+                            </span>
+                          ) : (
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                <Clock size={10} className="text-amber-700" />
+                                <span>Belum Lunas</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleManualSetPayment(cand, 'token', 'paid')}
+                                className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold block underline cursor-pointer"
+                              >
+                                Set Lunas Tunai
+                              </button>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          {isReregPaid ? (
+                            <div className="space-y-0.5">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-teal-100 text-teal-900 border border-teal-300">
+                                <CheckCircle2 size={11} className="text-teal-700" />
+                                <span>LUNAS DAFTAR ULANG</span>
+                              </span>
+                              <div className="text-[10px] text-slate-500">
+                                {cand.reRegistrationMethod || 'Midtrans Online'}
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="space-y-1">
+                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                <Clock size={10} className="text-amber-700" />
+                                <span>Belum Lunas</span>
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => handleManualSetPayment(cand, 'reregistration', 'paid')}
+                                className="text-[10px] text-teal-700 hover:text-teal-900 font-bold block underline cursor-pointer"
+                              >
+                                Set Lunas Tunai (Loket)
+                              </button>
+                            </div>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4">
+                          <div className="space-y-1">
+                            <div>
+                              {isFormDone ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-black uppercase bg-blue-100 text-blue-900 border border-blue-200">
+                                  <Check size={10} className="text-blue-700 font-bold" />
+                                  <span>Buku Induk Lengkap</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-600 border border-slate-300">
+                                  <span>Belum Lengkap</span>
+                                </span>
+                              )}
+                            </div>
+                            <div>
+                              {hasDocs ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.2 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-200">
+                                  <FileText size={10} className="text-emerald-700" />
+                                  <span>Berkas Tersimpan</span>
+                                </span>
+                              ) : (
+                                <span className="text-[10px] text-slate-400">Berkas Kosong</span>
+                              )}
+                            </div>
+                          </div>
+                        </td>
+
+                        <td className="py-3 px-4">
+                          {cand.status === 'accepted' ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-600 text-white shadow-xs">
+                              DITERIMA
+                            </span>
+                          ) : cand.status === 're_registered' ? (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-teal-100 text-teal-900 border border-teal-300">
+                              DAFTAR ULANG
+                            </span>
+                          ) : (
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-300">
+                              {cand.status || 'TERDAFTAR'}
+                            </span>
+                          )}
+                        </td>
+
+                        <td className="py-3 px-4 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleReconcileCandidate(cand.nisn)}
+                              disabled={isReconcilingSingle && reconcileCandidateActionId === cand.nisn}
+                              className="px-2.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition-all"
+                              title="Rekonsiliasi Langsung ke Midtrans"
+                            >
+                              <ArrowLeftRight size={11} className={isReconcilingSingle && reconcileCandidateActionId === cand.nisn ? 'animate-spin' : ''} />
+                              <span>Rekonsiliasi</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setSelectedCandidate(cand)}
+                              className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg transition-colors cursor-pointer border border-slate-300"
+                              title="Lihat Detail & Berkas"
+                            >
+                              <Eye size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ================= TAB 4: PENGATURAN SESI PENDAFTARAN ================= */}
       {activeTab === 'sessions' && config && (
         <div className="bg-slate-850 border border-slate-800 rounded-3xl p-6 space-y-6">
           <div className="flex items-center justify-between border-b border-slate-800 pb-4">
@@ -2609,42 +3125,153 @@ export default function AdminSpmbManagement({
                   </div>
                 </div>
 
-                {/* Uploaded Documents Thumbnails */}
-                <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700/80 space-y-2">
-                  <h4 className="font-black text-emerald-400 text-xs uppercase">3. Berkas Dokumen Terunggah</h4>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-                    {selectedCandidate.documents?.kkPhoto ? (
-                      <a href={selectedCandidate.documents.kkPhoto} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-center hover:border-emerald-500 block">
-                        <span className="text-[10px] text-slate-300 block font-bold">Foto Kartu Keluarga</span>
-                        <span className="text-[9px] text-emerald-400">Lihat File ↗</span>
-                      </a>
-                    ) : (
-                      <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center text-slate-500 text-[10px]">
-                        KK Belum Diunggah
-                      </div>
-                    )}
+                {/* Uploaded Documents Thumbnails & Admin Document Upload */}
+                <div className="p-4 rounded-2xl bg-slate-800/80 border border-slate-700/80 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="font-black text-emerald-400 text-xs uppercase">3. Berkas Dokumen Terunggah</h4>
+                    <span className="text-[10px] text-slate-400 font-medium">Unggah atau ganti berkas dokumen</span>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5">
+                    {/* Pas Foto */}
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
+                      <span className="text-[10px] text-slate-300 block font-bold">Pas Foto (3x4)</span>
+                      {selectedCandidate.documents?.pasPhoto ? (
+                        <a href={selectedCandidate.documents.pasPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                          Lihat File ↗
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
+                      )}
+                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
+                        <span>{selectedCandidate.documents?.pasPhoto ? 'Ganti Foto' : 'Unggah Foto'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleAdminUploadDocument(selectedCandidate, 'pasPhoto', f);
+                          }}
+                        />
+                      </label>
+                    </div>
 
-                    {selectedCandidate.documents?.aktaPhoto ? (
-                      <a href={selectedCandidate.documents.aktaPhoto} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-center hover:border-emerald-500 block">
-                        <span className="text-[10px] text-slate-300 block font-bold">Akta Kelahiran</span>
-                        <span className="text-[9px] text-emerald-400">Lihat File ↗</span>
-                      </a>
-                    ) : (
-                      <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center text-slate-500 text-[10px]">
-                        Akta Belum Diunggah
-                      </div>
-                    )}
+                    {/* KK */}
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
+                      <span className="text-[10px] text-slate-300 block font-bold">Kartu Keluarga</span>
+                      {selectedCandidate.documents?.kkPhoto ? (
+                        <a href={selectedCandidate.documents.kkPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                          Lihat File ↗
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
+                      )}
+                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
+                        <span>{selectedCandidate.documents?.kkPhoto ? 'Ganti KK' : 'Unggah KK'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleAdminUploadDocument(selectedCandidate, 'kkPhoto', f);
+                          }}
+                        />
+                      </label>
+                    </div>
 
-                    {selectedCandidate.documents?.sklPhoto ? (
-                      <a href={selectedCandidate.documents.sklPhoto} target="_blank" rel="noreferrer" className="p-2 rounded-xl bg-slate-900 border border-slate-700 text-center hover:border-emerald-500 block">
-                        <span className="text-[10px] text-slate-300 block font-bold">SKL / Ijazah</span>
-                        <span className="text-[9px] text-emerald-400">Lihat File ↗</span>
-                      </a>
-                    ) : (
-                      <div className="p-2 rounded-xl bg-slate-900 border border-slate-800 text-center text-slate-500 text-[10px]">
-                        SKL Belum Diunggah
-                      </div>
-                    )}
+                    {/* Akta */}
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
+                      <span className="text-[10px] text-slate-300 block font-bold">Akta Kelahiran</span>
+                      {selectedCandidate.documents?.aktaPhoto ? (
+                        <a href={selectedCandidate.documents.aktaPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                          Lihat File ↗
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
+                      )}
+                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
+                        <span>{selectedCandidate.documents?.aktaPhoto ? 'Ganti Akta' : 'Unggah Akta'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleAdminUploadDocument(selectedCandidate, 'aktaPhoto', f);
+                          }}
+                        />
+                      </label>
+                    </div>
+
+                    {/* SKL */}
+                    <div className="p-2.5 rounded-xl bg-slate-900 border border-slate-700 text-center space-y-1.5">
+                      <span className="text-[10px] text-slate-300 block font-bold">SKL / Ijazah</span>
+                      {selectedCandidate.documents?.sklPhoto ? (
+                        <a href={selectedCandidate.documents.sklPhoto} target="_blank" rel="noreferrer" className="text-[10px] text-emerald-400 font-bold block hover:underline">
+                          Lihat File ↗
+                        </a>
+                      ) : (
+                        <span className="text-[10px] text-slate-500 block">Belum Ada</span>
+                      )}
+                      <label className="px-2 py-1 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded text-[9px] font-bold block cursor-pointer">
+                        <span>{selectedCandidate.documents?.sklPhoto ? 'Ganti SKL' : 'Unggah SKL'}</span>
+                        <input
+                          type="file"
+                          accept="image/*"
+                          className="hidden"
+                          onChange={(e) => {
+                            const f = e.target.files?.[0];
+                            if (f) handleAdminUploadDocument(selectedCandidate, 'sklPhoto', f);
+                          }}
+                        />
+                      </label>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Quick Payment & Reconciliation Controls */}
+                <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-850 border border-emerald-500/30 space-y-3">
+                  <h4 className="font-black text-emerald-400 text-xs uppercase flex items-center gap-2">
+                    <ShieldCheck size={14} className="text-emerald-400" />
+                    <span>Kontrol Rekonsiliasi & Pembayaran</span>
+                  </h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                    <button
+                      type="button"
+                      onClick={() => handleReconcileCandidate(selectedCandidate.nisn)}
+                      disabled={isReconcilingSingle}
+                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                    >
+                      <ArrowLeftRight size={13} className={isReconcilingSingle ? 'animate-spin' : ''} />
+                      <span>Rekonsiliasi Live Midtrans</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleManualSetPayment(selectedCandidate, 'token', selectedCandidate.tokenPaid ? 'unpaid' : 'paid')}
+                      className={`px-3 py-2 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border ${
+                        selectedCandidate.tokenPaid 
+                          ? 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900' 
+                          : 'bg-blue-600 text-white hover:bg-blue-500'
+                      }`}
+                    >
+                      <Coins size={13} />
+                      <span>{selectedCandidate.tokenPaid ? 'Reset Token Belum Lunas' : 'Tandai Token LUNAS'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleManualSetPayment(selectedCandidate, 'reregistration', selectedCandidate.reRegistrationStatus === 'paid' ? 'unpaid' : 'paid')}
+                      className={`px-3 py-2 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border ${
+                        selectedCandidate.reRegistrationStatus === 'paid' 
+                          ? 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900' 
+                          : 'bg-teal-600 text-white hover:bg-teal-500'
+                      }`}
+                    >
+                      <CreditCard size={13} />
+                      <span>{selectedCandidate.reRegistrationStatus === 'paid' ? 'Reset Daftar Ulang Belum Lunas' : 'Tandai DAFTAR ULANG LUNAS'}</span>
+                    </button>
                   </div>
                 </div>
               </div>

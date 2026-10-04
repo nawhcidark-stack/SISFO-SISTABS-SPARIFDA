@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
-import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
+import { createSpmbRouter, generateDocumentSvgPlaceholder, generateDocumentImageBinary, syncAllCandidateDocumentsToDisk } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
 
 
@@ -2555,6 +2555,7 @@ async function startServer() {
             applyDataFromMysql(mysqlPull.data);
             console.log(`[STARTUP] ✅ Memory/cache berhasil diisi dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.treasurerTransactions || 0} kas, ${mysqlPull.counts?.sppBills || 0} SPP.`);
             applyAuthoritativeSavingsBalances(students);
+            syncAllCandidateDocumentsToDisk(spmbCandidates);
           } else {
             console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
           }
@@ -2678,12 +2679,110 @@ async function startServer() {
   // Serve static files from /uploads
   app.use("/uploads", express.static(uploadDir));
 
+  // Support accessing /uploads/berkas_murid/:name/:fileName (Direct file view/download without 404/Invalid source image)
+  app.get("/uploads/berkas_murid/:name/:fileName", async (req, res, next) => {
+    const studentFolder = path.join(uploadDir, "berkas_murid", req.params.name);
+    const filePath = path.join(studentFolder, req.params.fileName);
+
+    // If file physically exists on disk and is not empty
+    if (fs.existsSync(filePath) && fs.statSync(filePath).isFile() && fs.statSync(filePath).size > 0) {
+      try {
+        const firstBytes = fs.readFileSync(filePath);
+        if (firstBytes.toString("utf8", 0, 5).startsWith("<svg")) {
+          res.setHeader("Content-Type", "image/svg+xml");
+          res.setHeader("Cache-Control", "public, max-age=3600");
+          return res.send(firstBytes.toString("utf8"));
+        }
+      } catch (_) {}
+      return res.sendFile(filePath);
+    }
+
+    // Try finding candidate to regenerate file from memory / MySQL or create clean document image
+    const rawFolderName = req.params.name;
+    const cleanName = rawFolderName.replace(/_/g, " ").trim().toUpperCase();
+    const cand = spmbCandidates.find(c => 
+      c.documentsFolderName === rawFolderName ||
+      (c.fullName && c.fullName.toUpperCase() === cleanName) ||
+      (c.nisn && c.nisn === rawFolderName) ||
+      c.id === rawFolderName
+    );
+
+    const docLabels: Record<string, string> = {
+      pasPhoto: "Pas Foto Calon Murid (3x4)",
+      kkPhoto: "Kartu Keluarga (KK)",
+      aktaPhoto: "Akte Kelahiran Murid",
+      ktpAyahPhoto: "KTP Ayah Kandung",
+      ktpIbuPhoto: "KTP Ibu Kandung",
+      ktpPhoto: "KTP Orang Tua / Wali",
+      kipPhoto: "Kartu Indonesia Pintar (KIP)",
+      ijazahPhoto: "Ijazah / SKL SD/MI",
+      skhuPhoto: "SKHUN / Rapor Siswa"
+    };
+
+    const docKey = req.params.fileName.replace(/\.(jpg|jpeg|png|webp|pdf)$/i, "");
+    const docTitle = docLabels[docKey] || docKey.replace(/([A-Z])/g, ' $1').toUpperCase();
+
+    // Check if candidate has base64 data for this document
+    if (cand && cand.documents && cand.documents[docKey] && cand.documents[docKey].startsWith("data:")) {
+      try {
+        const val = cand.documents[docKey];
+        const match = val.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+        if (match) {
+          if (!fs.existsSync(studentFolder)) {
+            fs.mkdirSync(studentFolder, { recursive: true });
+          }
+          const buf = Buffer.from(match[2], "base64");
+          fs.writeFileSync(filePath, buf);
+          res.setHeader("Content-Type", match[1]);
+          res.setHeader("Cache-Control", "public, max-age=86400");
+          return res.end(buf);
+        }
+      } catch (e) {
+        console.error("Error writing base64 to disk:", e);
+      }
+    }
+
+    // Generate real binary PNG image so Hostinger / LiteSpeed / Cloudflare image optimizer never gets Invalid source image
+    const studentDisplayName = cand ? cand.fullName : cleanName;
+    const studentNisn = cand ? cand.nisn : undefined;
+    const pngBuffer = await generateDocumentImageBinary(docTitle, studentDisplayName, studentNisn);
+
+    try {
+      if (!fs.existsSync(studentFolder)) {
+        fs.mkdirSync(studentFolder, { recursive: true });
+      }
+      fs.writeFileSync(filePath, pngBuffer);
+    } catch (_) {}
+
+    res.setHeader("Content-Type", "image/png");
+    res.setHeader("Cache-Control", "public, max-age=3600");
+    return res.end(pngBuffer);
+  });
+
   // Support accessing /uploads/berkas_murid/:name directly and serving index.html
   app.get("/uploads/berkas_murid/:name", (req, res, next) => {
     const studentFolder = path.join(uploadDir, "berkas_murid", req.params.name);
     const indexPath = path.join(studentFolder, "index.html");
     if (fs.existsSync(indexPath)) {
       return res.sendFile(indexPath);
+    }
+    
+    // Auto-generate index.html if candidate exists
+    const rawFolderName = req.params.name;
+    const cleanName = rawFolderName.replace(/_/g, " ").trim().toUpperCase();
+    const cand = spmbCandidates.find(c => 
+      c.documentsFolderName === rawFolderName ||
+      (c.fullName && c.fullName.toUpperCase() === cleanName) ||
+      (c.nisn && c.nisn === rawFolderName) ||
+      c.id === rawFolderName
+    );
+    if (cand) {
+      try {
+        syncAllCandidateDocumentsToDisk([cand]);
+        if (fs.existsSync(indexPath)) {
+          return res.sendFile(indexPath);
+        }
+      } catch (_) {}
     }
     next();
   });

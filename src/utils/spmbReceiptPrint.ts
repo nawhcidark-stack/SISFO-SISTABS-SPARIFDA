@@ -538,6 +538,7 @@ export async function generateReRegReceiptHtml(
 
 /**
  * Cetak HTML dokumen secara aman dan bersih menggunakan hidden iframe (mencegah popup blocker di iframe & preview)
+ * Menunggu semua elemen gambar (Kop, logo, QR code, pas foto) selesai ter-load sebelum membuka dialog print.
  */
 export function printHtmlSafely(html: string) {
   try {
@@ -564,13 +565,12 @@ export function printHtmlSafely(html: string) {
       doc.write(html);
       doc.close();
 
-      setTimeout(() => {
+      const triggerPrint = () => {
         try {
           iframe.contentWindow?.focus();
           iframe.contentWindow?.print();
         } catch (printErr) {
           console.error('[SPMB Print Error]: Gagal memanggil print pada iframe:', printErr);
-          // Fallback ke window.open jika iframe print dilarang oleh sandbox browser
           fallbackWindowOpenPrint(html);
         }
         setTimeout(() => {
@@ -579,8 +579,43 @@ export function printHtmlSafely(html: string) {
               iframe.parentNode.removeChild(iframe);
             }
           } catch (_) {}
-        }, 8000);
-      }, 500);
+        }, 12000);
+      };
+
+      // Tunggu semua gambar (logo, kop, pas foto murid, qrcode) selesai dirender
+      let isPrinted = false;
+      const safeTrigger = () => {
+        if (!isPrinted) {
+          isPrinted = true;
+          triggerPrint();
+        }
+      };
+
+      const imgs = Array.from(doc.images || []);
+      if (imgs.length > 0) {
+        let loadedCount = 0;
+        const total = imgs.length;
+        const checkDone = () => {
+          loadedCount++;
+          if (loadedCount >= total) {
+            setTimeout(safeTrigger, 200);
+          }
+        };
+
+        imgs.forEach((img) => {
+          if (img.complete && img.naturalWidth > 0) {
+            checkDone();
+          } else {
+            img.onload = checkDone;
+            img.onerror = checkDone;
+          }
+        });
+
+        // Fallback batas waktu maksimal 1200ms
+        setTimeout(safeTrigger, 1200);
+      } else {
+        setTimeout(safeTrigger, 300);
+      }
       return;
     }
   } catch (err) {
@@ -604,7 +639,7 @@ function fallbackWindowOpenPrint(html: string) {
   printWindow.focus();
   setTimeout(() => {
     printWindow.print();
-  }, 400);
+  }, 600);
 }
 
 /**
@@ -623,11 +658,26 @@ export async function generateRegistrationProofHtml(
     : formatIndoDate(candidate.birthDate);
   const printDateStr = formatIndoDate(new Date());
 
-  const pasPhotoUrl = candidate.documents?.pasPhoto || 
+  // Ekstraksi komprehensif pas foto calon murid dari berbagai field
+  let rawPasPhoto = 
+    candidate.documents?.pasPhoto || 
+    (candidate.documents as any)?.foto ||
+    (candidate.documents as any)?.photo ||
+    (candidate.documents as any)?.pasFoto ||
+    (candidate.documents as any)?.fotoMurid ||
     (candidate.fullFormData as any)?.pasPhoto || 
+    (candidate.fullFormData as any)?.documents?.pasPhoto ||
     (candidate as any)?.pasPhoto || 
+    (candidate as any)?.foto ||
+    (candidate as any)?.photo ||
     candidate.photoUrl || 
     '';
+
+  // Jika berupa path relatif /uploads/..., ubah jadi absolute origin agar pasti tampil di cetak iframe
+  let pasPhotoUrl = rawPasPhoto;
+  if (pasPhotoUrl && pasPhotoUrl.startsWith('/') && typeof window !== 'undefined' && window.location?.origin) {
+    pasPhotoUrl = `${window.location.origin}${pasPhotoUrl}`;
+  }
 
   const isAccepted = candidate.status === 'accepted' || candidate.reRegistrationStatus === 'paid';
   const statusLabel = isAccepted ? 'DITERIMA RESMI' : 'TERDAFTAR RESMI';
@@ -647,11 +697,14 @@ export async function generateRegistrationProofHtml(
     console.error('QR generation error:', e);
   }
 
+  const baseOrigin = typeof window !== 'undefined' && window.location?.origin ? window.location.origin : '';
+
   return `
     <!DOCTYPE html>
     <html lang="id">
     <head>
       <meta charset="UTF-8" />
+      ${baseOrigin ? `<base href="${baseOrigin}/" />` : ''}
       <title>Tanda Bukti Pendaftaran SPMB - ${candidate.fullName}</title>
       <style>
         ${getReceiptCss()}
@@ -722,7 +775,7 @@ export async function generateRegistrationProofHtml(
             <tr>
               <td style="width: 130px; vertical-align: top; text-align: center; padding-right: 14px;">
                 <div class="card-photo-box">
-                  ${pasPhotoUrl ? `<img src="${pasPhotoUrl}" class="card-photo-img" alt="Pas Foto 3x4" referrerPolicy="no-referrer" />` : '<div class="card-photo-placeholder">Pas Foto 3x4 Calon Murid</div>'}
+                  ${pasPhotoUrl ? `<img src="${pasPhotoUrl}" class="card-photo-img" alt="Pas Foto 3x4" crossOrigin="anonymous" />` : '<div class="card-photo-placeholder">Pas Foto 3x4 Calon Murid</div>'}
                 </div>
                 <div class="status-badge-lg" style="background:${statusBg}; color:${statusColor};">
                   ${statusLabel}

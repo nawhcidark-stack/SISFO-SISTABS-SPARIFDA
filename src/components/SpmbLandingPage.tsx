@@ -261,54 +261,71 @@ export default function SpmbLandingPage({
     return dateString;
   };
 
-  // Helper: Otomatis kompres gambar menjadi maksimal 1000px
+  // Helper: Otomatis kompres gambar menjadi maksimal 1000px secara aman
   const compressImageToMax1000px = (file: File): Promise<string> => {
-    return new Promise((resolve, reject) => {
-      if (!file.type.startsWith('image/')) {
-        const reader = new FileReader();
-        reader.onload = (e) => resolve(e.target?.result as string);
-        reader.onerror = (e) => reject(e);
-        reader.readAsDataURL(file);
-        return;
-      }
+    return new Promise((resolve) => {
+      const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
+      const isImage = file.type.startsWith('image/');
 
       const reader = new FileReader();
+      reader.onerror = () => resolve('');
       reader.onload = (event) => {
-        const img = new Image();
-        img.src = event.target?.result as string;
-        img.onload = () => {
-          const MAX_SIZE = 1000;
-          let width = img.width;
-          let height = img.height;
+        const rawResult = (event.target?.result as string) || '';
+        if (!isImage || isSvg || isPdf || !rawResult) {
+          return resolve(rawResult);
+        }
 
-          if (width > MAX_SIZE || height > MAX_SIZE) {
-            if (width > height) {
-              height = Math.round((height * MAX_SIZE) / width);
-              width = MAX_SIZE;
-            } else {
-              width = Math.round((width * MAX_SIZE) / height);
-              height = MAX_SIZE;
+        try {
+          const img = new Image();
+          img.crossOrigin = 'anonymous';
+          img.onload = () => {
+            try {
+              const MAX_SIZE = 1000;
+              let width = img.naturalWidth || img.width;
+              let height = img.naturalHeight || img.height;
+
+              if (!width || !height || width <= 0 || height <= 0) {
+                return resolve(rawResult);
+              }
+
+              if (width > MAX_SIZE || height > MAX_SIZE) {
+                if (width > height) {
+                  height = Math.round((height * MAX_SIZE) / width);
+                  width = MAX_SIZE;
+                } else {
+                  width = Math.round((width * MAX_SIZE) / height);
+                  height = MAX_SIZE;
+                }
+              }
+
+              const canvas = document.createElement('canvas');
+              canvas.width = Math.max(1, width);
+              canvas.height = Math.max(1, height);
+              const ctx = canvas.getContext('2d');
+              if (!ctx) {
+                return resolve(rawResult);
+              }
+
+              ctx.imageSmoothingEnabled = true;
+              ctx.imageSmoothingQuality = 'high';
+              ctx.clearRect(0, 0, canvas.width, canvas.height);
+              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+              const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.85);
+              resolve(dataUrl || rawResult);
+            } catch (canvasErr) {
+              console.warn('[Canvas Resize Warning]: Fallback to raw image:', canvasErr);
+              resolve(rawResult);
             }
-          }
-
-          const canvas = document.createElement('canvas');
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (!ctx) {
-            resolve(event.target?.result as string);
-            return;
-          }
-
-          ctx.drawImage(img, 0, 0, width, height);
-          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
-          resolve(dataUrl);
-        };
-        img.onerror = () => {
-          resolve(event.target?.result as string);
-        };
+          };
+          img.onerror = () => {
+            resolve(rawResult);
+          };
+          img.src = rawResult;
+        } catch (err) {
+          resolve(rawResult);
+        }
       };
-      reader.onerror = (err) => reject(err);
       reader.readAsDataURL(file);
     });
   };
@@ -4448,13 +4465,33 @@ export default function SpmbLandingPage({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                         {/* Pas Photo & Status */}
                         <div className="text-center space-y-3">
-                          {docUploads.pasPhoto ? (
-                            <img src={docUploads.pasPhoto} alt="Pas Foto" className="w-28 h-36 object-cover rounded-xl border-2 border-slate-800 mx-auto" />
-                          ) : (
-                            <div className="w-28 h-36 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 mx-auto">
-                              Pas Foto 3x4
-                            </div>
-                          )}
+                          {(() => {
+                            const photoSrc = 
+                              docUploads.pasPhoto || 
+                              activeCandidate.documents?.pasPhoto || 
+                              (activeCandidate.documents as any)?.foto || 
+                              (activeCandidate.documents as any)?.photo || 
+                              (activeCandidate.documents as any)?.pasFoto || 
+                              (activeCandidate.documents as any)?.fotoMurid || 
+                              (activeCandidate.fullFormData as any)?.pasPhoto || 
+                              (activeCandidate.fullFormData as any)?.documents?.pasPhoto || 
+                              (activeCandidate as any)?.pasPhoto || 
+                              (activeCandidate as any)?.foto || 
+                              activeCandidate.photoUrl || 
+                              '';
+                            return photoSrc ? (
+                              <img 
+                                src={photoSrc} 
+                                alt="Pas Foto" 
+                                className="w-28 h-36 object-cover rounded-xl border-2 border-slate-800 mx-auto" 
+                                crossOrigin="anonymous"
+                              />
+                            ) : (
+                              <div className="w-28 h-36 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 mx-auto">
+                                Pas Foto 3x4
+                              </div>
+                            );
+                          })()}
                           <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-300">
                             <span className="text-[10px] font-bold text-emerald-800 block">STATUS KELULUSAN:</span>
                             <span className="text-xs font-black text-emerald-700 uppercase">

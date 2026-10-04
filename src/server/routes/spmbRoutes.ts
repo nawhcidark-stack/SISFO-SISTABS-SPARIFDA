@@ -125,6 +125,7 @@ export function saveCandidateDocumentsToDisk(
   }
 
   const resultDocs: Record<string, string> = { ...(candidate.documents || {}) };
+  const rawDocs: Record<string, string> = { ...(candidate.documentsRaw || candidate.documentsBase64 || candidate.fullFormData?.documentsRaw || {}) };
 
   const docLabels: Record<string, string> = {
     pasPhoto: "Pas Foto Calon Murid (3x4)",
@@ -138,18 +139,20 @@ export function saveCandidateDocumentsToDisk(
     skhuPhoto: "SKHUN / Rapor"
   };
 
-  const allKeys = new Set([...Object.keys(resultDocs), ...Object.keys(incomingDocs)]);
+  const allKeys = new Set([...Object.keys(resultDocs), ...Object.keys(incomingDocs), ...Object.keys(rawDocs)]);
   // Khusus kandidat resmi seperti 0156620618 yang sudah verifikasi dokumen lengkap
   if (candidate.documentsUploaded || candidate.nisn === "0156620618") {
     ['pasPhoto', 'kkPhoto', 'aktaPhoto', 'ktpAyahPhoto', 'ktpIbuPhoto'].forEach(k => allKeys.add(k));
   }
 
   for (const key of allKeys) {
-    const val = incomingDocs[key] || resultDocs[key];
+    const val = incomingDocs[key] || rawDocs[key] || resultDocs[key];
     const fileName = `${key}.jpg`;
     const filePath = path.join(targetDir, fileName);
 
+    // Jika berupa base64 data URI, simpan permanen ke rawDocs dan tulis file fisik asli
     if (val && typeof val === "string" && val.startsWith("data:")) {
+      rawDocs[key] = val;
       const match = val.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
       if (match) {
         const mime = match[1].toLowerCase();
@@ -173,7 +176,29 @@ export function saveCandidateDocumentsToDisk(
       }
     }
 
-    // Jika file fisik belum ada di disk, buat file SVG/JPG dokumen resmi yang valid
+    // Jika file fisik belum ada di disk namun ada backup base64 di database/memory, pulihkan file aslinya!
+    const fallbackBase64 = rawDocs[key] || candidate.fullFormData?.documents?.[key] || candidate.fullFormData?.documentsRaw?.[key];
+    if (!fs.existsSync(filePath) && fallbackBase64 && typeof fallbackBase64 === "string" && fallbackBase64.startsWith("data:")) {
+      const match = fallbackBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+      if (match) {
+        const mime = match[1].toLowerCase();
+        let ext = ".jpg";
+        if (mime.includes("png")) ext = ".png";
+        else if (mime.includes("pdf")) ext = ".pdf";
+        else if (mime.includes("webp")) ext = ".webp";
+        const dynName = `${key}${ext}`;
+        const dynPath = path.join(targetDir, dynName);
+        try {
+          fs.writeFileSync(dynPath, Buffer.from(match[2], "base64"));
+          resultDocs[key] = `/uploads/berkas_murid/${folderName}/${dynName}`;
+          continue;
+        } catch (err) {
+          console.warn(`[Error restoring document from base64 ${dynName}]:`, err);
+        }
+      }
+    }
+
+    // Jika file fisik belum ada di disk dan memang belum pernah diupload, buat file placeholder awal
     if (!fs.existsSync(filePath)) {
       try {
         const label = docLabels[key] || key.replace(/([A-Z])/g, ' $1').toUpperCase();
@@ -184,6 +209,13 @@ export function saveCandidateDocumentsToDisk(
       }
     }
     resultDocs[key] = `/uploads/berkas_murid/${folderName}/${fileName}`;
+  }
+
+  // Simpan rawDocs ke objek kandidat agar tetap tersimpan ke MySQL dan JSON store
+  candidate.documentsRaw = rawDocs;
+  candidate.documentsBase64 = rawDocs;
+  if (candidate.fullFormData) {
+    candidate.fullFormData.documentsRaw = rawDocs;
   }
 
   // Buat index.html interaktif untuk tampilan browser saat tautan folder dibuka
@@ -1830,6 +1862,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.fullFormData = { ...(candidate.fullFormData || {}), ...incomingData };
       if (uniformSizes) {
         candidate.uniformSizes = { ...(candidate.uniformSizes || {}), ...uniformSizes };
+      }
+      if (incomingData.documents && typeof incomingData.documents === 'object') {
+        const { documents: savedDocs, folderUrl, folderName } = saveCandidateDocumentsToDisk(candidate, incomingData.documents);
+        candidate.documents = savedDocs;
+        candidate.documentsFolder = folderUrl;
+        candidate.documentsFolderName = folderName;
       }
 
       // Periksa kecocokan No KK dengan siswa aktif (kelas 7/8/9) atau sesama calon murid baru

@@ -2722,11 +2722,17 @@ async function startServer() {
     const docKey = req.params.fileName.replace(/\.(jpg|jpeg|png|webp|pdf)$/i, "");
     const docTitle = docLabels[docKey] || docKey.replace(/([A-Z])/g, ' $1').toUpperCase();
 
-    // Check if candidate has base64 data for this document
-    if (cand && cand.documents && cand.documents[docKey] && cand.documents[docKey].startsWith("data:")) {
+    // Check if candidate has base64 data for this document from any source
+    const rawVal = cand?.documentsBase64?.[docKey] || 
+      cand?.documentsRaw?.[docKey] || 
+      cand?.documents?.[docKey] || 
+      cand?.fullFormData?.documents?.[docKey] || 
+      cand?.fullFormData?.documentsRaw?.[docKey] || 
+      cand?.fullFormData?.documentsBase64?.[docKey];
+
+    if (rawVal && typeof rawVal === "string" && rawVal.startsWith("data:")) {
       try {
-        const val = cand.documents[docKey];
-        const match = val.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+        const match = rawVal.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
         if (match) {
           if (!fs.existsSync(studentFolder)) {
             fs.mkdirSync(studentFolder, { recursive: true });

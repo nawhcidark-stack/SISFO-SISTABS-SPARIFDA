@@ -10,7 +10,7 @@ import {
 import SpmbReceiptModal from './SpmbReceiptModal';
 import BirthDateSplitInput from './BirthDateSplitInput';
 import PWAInstallButton from './PWAInstallButton';
-import { printSpmbReceiptDirect } from '../utils/spmbReceiptPrint';
+import { printSpmbReceiptDirect, printRegistrationProofDirect } from '../utils/spmbReceiptPrint';
 import { formatCombinedPlaceAndDate, formatIndonesianDate, toProperCase } from '../utils/dateUtils';
 import { 
   GraduationCap, 
@@ -1390,8 +1390,18 @@ export default function SpmbLandingPage({
   };
 
   // Print Registration Proof Card
-  const handlePrintCard = () => {
-    window.print();
+  const [isPrintingProof, setIsPrintingProof] = useState(false);
+  const handlePrintCard = async () => {
+    if (!activeCandidate) return;
+    try {
+      setIsPrintingProof(true);
+      await printRegistrationProofDirect(activeCandidate, config, currentSchoolIdentity);
+    } catch (err) {
+      console.error('Error in printRegistrationProofDirect:', err);
+      window.print();
+    } finally {
+      setTimeout(() => setIsPrintingProof(false), 1200);
+    }
   };
 
   return (
@@ -4380,15 +4390,16 @@ export default function SpmbLandingPage({
 
                       <button
                         onClick={handlePrintCard}
-                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm cursor-pointer"
+                        disabled={isPrintingProof}
+                        className="px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl flex items-center gap-2 shadow-sm cursor-pointer disabled:opacity-60 transition-all"
                       >
-                        <Printer size={15} />
-                        <span>Cetak Bukti Pendaftaran (PDF / Print)</span>
+                        <Printer size={15} className={isPrintingProof ? "animate-spin" : ""} />
+                        <span>{isPrintingProof ? "Menyiapkan Bukti Cetak..." : "Cetak Bukti Pendaftaran (PDF / Print)"}</span>
                       </button>
                     </div>
 
                     {/* Official Card for Print & Screen */}
-                    <div className="bg-white text-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-2xl space-y-6 print:shadow-none print:border-none print:p-0">
+                    <div id="print-spmb-card" className="printable-spmb-card bg-white text-slate-900 rounded-3xl p-6 sm:p-10 border border-slate-200 shadow-2xl space-y-6 print:shadow-none print:border-none print:p-0">
                       {/* Card Header with Letterhead (Admin Main Settings Letterhead KOP) */}
                       {currentSchoolIdentity?.letterhead ? (
                         <div className="border-b-2 border-slate-900 pb-3 mb-2">

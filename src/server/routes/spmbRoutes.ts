@@ -1471,7 +1471,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           candidate.updatedAt = new Date().toISOString();
 
           saveState();
-          directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Token Paid Warning]:", err?.message || err));
+          try {
+            await directSaveEntityToMysql("spmb_candidates", candidate);
+          } catch (err: any) {
+            console.warn("[MySQL SPMB Token Paid Warning]:", err?.message || err);
+          }
 
           recordOrUpdateMidtransTransaction({
             orderId: targetOrderId,
@@ -2051,7 +2055,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.updatedAt = new Date().toISOString();
 
       saveState();
-      directSaveEntityToMysql("spmb_candidates", candidate).catch(err => console.warn("[MySQL SPMB Rereg Paid Warning]:", err?.message || err));
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL SPMB Rereg Paid Warning]:", err?.message || err);
+      }
 
       // Broadcast notification
       const notification: RealtimeNotification = {

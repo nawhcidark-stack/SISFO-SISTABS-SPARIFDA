@@ -537,7 +537,348 @@ export async function generateReRegReceiptHtml(
 }
 
 /**
- * Buka popup window dan langsung cetak kuitansi
+ * Cetak HTML dokumen secara aman dan bersih menggunakan hidden iframe (mencegah popup blocker di iframe & preview)
+ */
+export function printHtmlSafely(html: string) {
+  try {
+    const iframeId = 'spmb-print-iframe-' + Date.now();
+    let iframe = document.getElementById(iframeId) as HTMLIFrameElement;
+    if (!iframe) {
+      iframe = document.createElement('iframe');
+      iframe.id = iframeId;
+      iframe.style.position = 'fixed';
+      iframe.style.right = '0';
+      iframe.style.bottom = '0';
+      iframe.style.width = '0';
+      iframe.style.height = '0';
+      iframe.style.border = '0';
+      iframe.style.opacity = '0';
+      iframe.style.pointerEvents = 'none';
+      iframe.style.zIndex = '-9999';
+      document.body.appendChild(iframe);
+    }
+
+    const doc = iframe.contentWindow?.document;
+    if (doc) {
+      doc.open();
+      doc.write(html);
+      doc.close();
+
+      setTimeout(() => {
+        try {
+          iframe.contentWindow?.focus();
+          iframe.contentWindow?.print();
+        } catch (printErr) {
+          console.error('[SPMB Print Error]: Gagal memanggil print pada iframe:', printErr);
+          // Fallback ke window.open jika iframe print dilarang oleh sandbox browser
+          fallbackWindowOpenPrint(html);
+        }
+        setTimeout(() => {
+          try {
+            if (iframe && iframe.parentNode) {
+              iframe.parentNode.removeChild(iframe);
+            }
+          } catch (_) {}
+        }, 8000);
+      }, 500);
+      return;
+    }
+  } catch (err) {
+    console.warn('[SPMB Print Warning]: Gagal menggunakan iframe printer, membuka jendela baru:', err);
+  }
+
+  fallbackWindowOpenPrint(html);
+}
+
+function fallbackWindowOpenPrint(html: string) {
+  const printWindow = window.open('', '_blank', 'width=900,height=800,menubar=no,toolbar=no,location=no,status=no');
+  if (!printWindow) {
+    alert('Jendela cetak tidak dapat dibuka otomatis. Pastikan perizinan popup browser diaktifkan.');
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(html);
+  printWindow.document.close();
+
+  printWindow.focus();
+  setTimeout(() => {
+    printWindow.print();
+  }, 400);
+}
+
+/**
+ * Generate HTML Tanda Bukti Pendaftaran & Status Penerimaan Calon Murid Baru (A4 Resmi)
+ */
+export async function generateRegistrationProofHtml(
+  candidate: SpmbCandidate,
+  config: SpmbConfig | null,
+  schoolIdentity?: SchoolIdentity
+): Promise<string> {
+  const academicYear = config?.academicYear || '2027/2028';
+  const regNo = candidate.registrationNo || candidate.registrationNumber || candidate.nisn;
+  const genderLabel = candidate.gender === 'L' ? 'Laki-laki (Putra)' : 'Perempuan (Putri)';
+  const birthStr = candidate.birthPlace
+    ? `${candidate.birthPlace}, ${formatIndoDate(candidate.birthDate)}`
+    : formatIndoDate(candidate.birthDate);
+  const printDateStr = formatIndoDate(new Date());
+
+  const pasPhotoUrl = candidate.documents?.pasPhoto || 
+    (candidate.fullFormData as any)?.pasPhoto || 
+    (candidate as any)?.pasPhoto || 
+    candidate.photoUrl || 
+    '';
+
+  const isAccepted = candidate.status === 'accepted' || candidate.reRegistrationStatus === 'paid';
+  const statusLabel = isAccepted ? 'DITERIMA RESMI' : 'TERDAFTAR RESMI';
+  const statusColor = isAccepted ? '#15803d' : '#0369a1';
+  const statusBg = isAccepted ? '#dcfce7' : '#e0f2fe';
+
+  const session = config?.sessions?.find(s => s.id === candidate.sessionId);
+  const sessionName = session?.name || (candidate.sessionId === 'inden' ? 'Jalur Inden' : candidate.sessionId === 'gelombang-1' ? 'Gelombang 1' : candidate.sessionId === 'gelombang-2' ? 'Gelombang 2' : candidate.sessionId || 'Reguler');
+
+  let qrCodeDataUrl = '';
+  try {
+    qrCodeDataUrl = await QRCode.toDataURL(
+      `VALID-SPMB-REGISTRATION-${regNo}-${candidate.fullName}-${candidate.status || 'registered'}`,
+      { width: 130, margin: 1 }
+    );
+  } catch (e) {
+    console.error('QR generation error:', e);
+  }
+
+  return `
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Tanda Bukti Pendaftaran SPMB - ${candidate.fullName}</title>
+      <style>
+        ${getReceiptCss()}
+        .card-photo-box {
+          width: 110px;
+          height: 140px;
+          border: 1.5px solid #0f172a;
+          border-radius: 6px;
+          overflow: hidden;
+          background: #f8fafc;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          margin: 0 auto;
+        }
+        .card-photo-img {
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          display: block;
+        }
+        .card-photo-placeholder {
+          font-size: 10px;
+          color: #64748b;
+          text-align: center;
+          font-weight: 600;
+          padding: 8px;
+        }
+        .status-badge-lg {
+          display: inline-block;
+          margin-top: 6px;
+          padding: 4px 10px;
+          border-radius: 6px;
+          font-size: 11px;
+          font-weight: 900;
+          text-transform: uppercase;
+          letter-spacing: 0.5px;
+          border: 1px solid currentColor;
+        }
+        .notes-list {
+          margin: 6px 0 0 0;
+          padding-left: 18px;
+          font-size: 9.5px;
+          color: #475569;
+          line-height: 1.5;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="receipt-container">
+        <!-- KOP Resmi -->
+        ${renderKopHeaderHtml(schoolIdentity, academicYear)}
+
+        <!-- Judul Dokumen Resmi -->
+        <div class="receipt-title-box">
+          <h1 class="receipt-main-title">TANDA BUKTI PENDAFTARAN & STATUS PENERIMAAN MURID BARU</h1>
+          <div class="receipt-ref-badge">
+            <span>NO. REGISTRASI / NISN: <strong>${regNo}</strong></span>
+            <span class="status-pill status-paid" style="background:${statusBg}; color:${statusColor}; border-color:${statusColor};">
+              ${statusLabel}
+            </span>
+          </div>
+        </div>
+
+        <!-- Biodata Calon Murid -->
+        <div class="receipt-body">
+          <table style="width: 100%; border-collapse: collapse; margin-bottom: 8px;">
+            <tr>
+              <td style="width: 130px; vertical-align: top; text-align: center; padding-right: 14px;">
+                <div class="card-photo-box">
+                  ${pasPhotoUrl ? `<img src="${pasPhotoUrl}" class="card-photo-img" alt="Pas Foto 3x4" referrerPolicy="no-referrer" />` : '<div class="card-photo-placeholder">Pas Foto 3x4 Calon Murid</div>'}
+                </div>
+                <div class="status-badge-lg" style="background:${statusBg}; color:${statusColor};">
+                  ${statusLabel}
+                </div>
+              </td>
+              <td style="vertical-align: top;">
+                <table class="receipt-table" style="margin-bottom: 0;">
+                  <tr>
+                    <td class="col-label" style="width: 150px;">Nomor Registrasi / NISN</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value"><strong class="mono-text" style="font-size: 12px; color: #047857;">${candidate.nisn || '-'}</strong></td>
+                  </tr>
+                  <tr>
+                    <td class="col-label">Nama Lengkap Murid</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value"><strong>${candidate.fullName}</strong> ${candidate.nickname ? `<span class="sub-text">(${candidate.nickname})</span>` : ''}</td>
+                  </tr>
+                  <tr>
+                    <td class="col-label">Jenis Kelamin</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value">${genderLabel}</td>
+                  </tr>
+                  <tr>
+                    <td class="col-label">Tempat, Tanggal Lahir</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value">${birthStr}</td>
+                  </tr>
+                  ${candidate.nik ? `
+                  <tr>
+                    <td class="col-label">NIK Murid</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value mono-text">${candidate.nik}</td>
+                  </tr>` : ''}
+                  ${candidate.kkNumber ? `
+                  <tr>
+                    <td class="col-label">No. Kartu Keluarga (KK)</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value mono-text">${candidate.kkNumber}</td>
+                  </tr>` : ''}
+                  <tr>
+                    <td class="col-label">Alamat Lengkap</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value">${candidate.address || '-'}</td>
+                  </tr>
+                  <tr>
+                    <td class="col-label">Asal Sekolah (SD/MI)</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value"><strong>${candidate.schoolOrigin || '-'}</strong> ${candidate.schoolOriginType === 'maarif_jogosari' ? '<span class="badge-tag">Khusus Maarif Jogosari</span>' : ''}</td>
+                  </tr>
+                  <tr>
+                    <td class="col-label">Jalur / Sesi SPMB</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value">
+                      <strong>${sessionName}</strong>
+                      <span class="badge-tag">${candidate.registrationType === 'school_collective' ? 'Kolektif Sekolah' : 'Online Mandiri'}</span>
+                    </td>
+                  </tr>
+                  <tr>
+                    <td class="col-label">Orang Tua / Wali</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value">${candidate.parentName || candidate.fatherName || candidate.motherName || candidate.guardianName || '-'} • Telp/WA: ${candidate.phone || candidate.studentPhone || '-'}</td>
+                  </tr>
+                  ${candidate.selectedUniformSize ? `
+                  <tr>
+                    <td class="col-label">Ukuran Seragam</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value font-bold">Ukuran ${candidate.selectedUniformSize}</td>
+                  </tr>` : ''}
+                  <tr>
+                    <td class="col-label">Status Administrasi</td>
+                    <td class="col-colon">:</td>
+                    <td class="col-value">
+                      <span style="color: #15803d; font-weight: bold;">• Token Formulir: LUNAS</span>
+                      <span style="margin-left: 10px; color: ${candidate.reRegistrationStatus === 'paid' ? '#15803d' : '#b45309'}; font-weight: bold;">
+                        • Daftar Ulang: ${candidate.reRegistrationStatus === 'paid' ? 'LUNAS / SELESAI' : 'BELUM LUNAS'}
+                      </span>
+                    </td>
+                  </tr>
+                </table>
+              </td>
+            </tr>
+          </table>
+        </div>
+
+        <!-- Ketentuan & Catatan Penting -->
+        <div style="background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; padding: 8px 12px; margin-bottom: 12px;">
+          <strong style="font-size: 10px; color: #1e293b; text-transform: uppercase;">Petunjuk & Catatan Penting Bagi Calon Murid:</strong>
+          <ol class="notes-list">
+            <li>Simpan lembar Tanda Bukti Pendaftaran resmi ini dengan baik sebagai identitas sah penerimaan murid baru di <strong>${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</strong>.</li>
+            <li>Bagi calon murid yang belum melunasi Daftar Ulang, dimohon menyelesaikan pembayaran melalui portal SPMB online atau langsung di loket pelayanan panitia sebelum batas akhir sesi.</li>
+            <li>Pengambilan paket seragam sekolah dan atribut resmi dapat dilakukan di Koperasi Sekolah dengan menunjukkan lembar bukti ini atau kuitansi pelunasan.</li>
+          </ol>
+        </div>
+
+        <!-- Kolom Tanda Tangan Resmi (3 Kolom) -->
+        <div class="receipt-footer">
+          <div class="signature-column">
+            <p class="sig-title">Orang Tua / Wali Murid,</p>
+            <p class="sig-sub">Pendaftar</p>
+            <div class="sig-space"></div>
+            <p class="sig-name">( ${candidate.parentName || candidate.fatherName || candidate.motherName || candidate.fullName} )</p>
+          </div>
+
+          <div class="signature-column">
+            <p class="sig-title">Panitia Pelayanan SPMB,</p>
+            <p class="sig-sub">${config?.spmbOfficerTitle || 'Pelayanan di Sekolah / Kantor SPMB'}</p>
+            <div class="sig-space sig-center-box">
+              ${config?.spmbOfficerSignatureUrl ? `<img src="${config.spmbOfficerSignatureUrl}" class="sig-img" alt="Ttd Panitia" referrerPolicy="no-referrer" />` : ''}
+            </div>
+            <p class="sig-name">${config?.spmbOfficerName && config.spmbOfficerName.trim() && !config.spmbOfficerName.includes('...') ? `<u>( ${config.spmbOfficerName.trim()} )</u>` : '( .................................... )'}</p>
+          </div>
+
+          <div class="signature-column">
+            <p class="sig-title">Pandaan, ${printDateStr}</p>
+            <p class="sig-sub">${config?.spmbChairTitle || 'Ketua Panitia SPMB'},</p>
+            <div class="sig-space sig-with-stamp-flex">
+              ${(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) ? `<img src="${config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Ketua SPMB" referrerPolicy="no-referrer" />` : ''}
+            </div>
+            <p class="sig-name"><u>${config?.spmbChairName || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</u></p>
+          </div>
+        </div>
+
+        <!-- Bar Validasi QR & Keabsahan Dokumen -->
+        <div class="receipt-verify-bar">
+          ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="qr-image-small" alt="QR Validasi" />` : ''}
+          <div class="verify-text">
+            <strong>DOKUMEN RESMI SISTEM PENERIMAAN MURID BARU (SPMB) ONLINE</strong>
+            <span>Nomor Registrasi: ${regNo} • Dicetak Pada: ${printDateStr}</span>
+            <span>Scan QR Code ini untuk memverifikasi keaslian dan status penerimaan murid baru di database sekolah.</span>
+          </div>
+        </div>
+
+        <div class="receipt-footnote">
+          <p><em>* Dokumen ini diterbitkan secara sah melalui Sistem Informasi Akademik & SPMB ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.</em></p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Cetak langsung tanda bukti pendaftaran resmi calon murid baru
+ */
+export async function printRegistrationProofDirect(
+  candidate: SpmbCandidate,
+  config: SpmbConfig | null,
+  schoolIdentity?: SchoolIdentity
+) {
+  const html = await generateRegistrationProofHtml(candidate, config, schoolIdentity);
+  printHtmlSafely(html);
+}
+
+/**
+ * Buka window cetak / iframe dan langsung cetak kuitansi token / daftar ulang
  */
 export async function printSpmbReceiptDirect(
   type: 'token' | 'rereg',
@@ -553,20 +894,7 @@ export async function printSpmbReceiptDirect(
     html = await generateReRegReceiptHtml(candidate, config, schoolIdentity, uniformSize);
   }
 
-  const printWindow = window.open('', '_blank', 'width=900,height=800,menubar=no,toolbar=no,location=no,status=no');
-  if (!printWindow) {
-    alert('Gagal membuka jendela cetak. Pastikan izin popup browser diaktifkan.');
-    return;
-  }
-
-  printWindow.document.open();
-  printWindow.document.write(html);
-  printWindow.document.close();
-
-  printWindow.focus();
-  setTimeout(() => {
-    printWindow.print();
-  }, 400);
+  printHtmlSafely(html);
 }
 
 /**

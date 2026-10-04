@@ -953,7 +953,7 @@ export async function printSpmbReceiptDirect(
 /**
  * CSS Styling untuk Kuitansi Cetak
  */
-function getReceiptCss(): string {
+export function getReceiptCss(): string {
   return `
     @page {
       size: A4 portrait;

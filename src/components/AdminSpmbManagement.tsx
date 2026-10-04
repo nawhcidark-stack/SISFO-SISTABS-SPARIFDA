@@ -1638,7 +1638,7 @@ export default function AdminSpmbManagement({
                               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-purple-100 text-purple-900 border border-purple-300">
                                 Siswa Aktif ({candidate.assignedClass || '7-A'})
                               </span>
-                            ) : candidate.status === 'accepted' ? (
+                            ) : candidate.status === 'accepted' && isTokenPaid ? (
                               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-600 text-white shadow-xs">
                                 DITERIMA
                               </span>

@@ -512,8 +512,9 @@ export default function SpmbLandingPage({
         setActiveTab('portal');
 
         // Otomatis arahkan ke tahap aktif (tahap terdepan yang belum selesai tapi sudah terbuka)
-        const isTargetReset = candidate.nisn === '0158483548' || candidate.nisn === '0152892235' || candidate.id === '0158483548' || candidate.id === '0152892235';
-        const isStep1Done = Boolean(candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
+        const isTargetReset = candidate.nisn === '0158483548' || candidate.nisn === '0152892235' || candidate.nisn === '3142814544' || candidate.id === '0158483548' || candidate.id === '0152892235' || candidate.id === 'spmb-1791084056015-307';
+        const isTokenPending = candidate.tokenPaymentStatus === 'pending';
+        const isStep1Done = Boolean(!isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid || candidate.tokenPaymentStatus === 'waived'));
         const hasRealFormData = Boolean(
           candidate.isFormCompleted &&
           (candidate.kkNumber && String(candidate.kkNumber).trim().length >= 8) &&
@@ -2712,8 +2713,9 @@ export default function SpmbLandingPage({
 
             {/* Candidate Dashboard */}
             {activeCandidate && (() => {
-              const isTargetReset = activeCandidate.nisn === '0158483548' || activeCandidate.nisn === '0152892235' || activeCandidate.id === '0158483548' || activeCandidate.id === '0152892235';
-              const isStep1Done = Boolean(activeCandidate.tokenPaymentStatus === 'paid' || activeCandidate.tokenPaid);
+              const isTargetReset = activeCandidate.nisn === '0158483548' || activeCandidate.nisn === '0152892235' || activeCandidate.nisn === '3142814544' || activeCandidate.id === '0158483548' || activeCandidate.id === '0152892235' || activeCandidate.id === 'spmb-1791084056015-307';
+              const isTokenPending = activeCandidate.tokenPaymentStatus === 'pending';
+              const isStep1Done = Boolean(!isTokenPending && (activeCandidate.tokenPaymentStatus === 'paid' || activeCandidate.tokenPaid || activeCandidate.tokenPaymentStatus === 'waived'));
               const hasRealFormData = Boolean(
                 activeCandidate.isFormCompleted &&
                 (activeCandidate.kkNumber && String(activeCandidate.kkNumber).trim().length >= 8) &&
@@ -2735,13 +2737,13 @@ export default function SpmbLandingPage({
               );
               const isStep3Done = !isTargetReset && Boolean(isStep2Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.documentsUploaded) : (Boolean(activeCandidate.documentsUploaded && hasActualDocs) || hasUploadedMandatoryDocs)));
               const isStep4Done = Boolean(isStep3Done && (activeCandidate.reRegistrationStatus === 'paid' || activeCandidate.reRegistrationPaid));
-              const isStep5Done = Boolean(isStep4Done || activeCandidate.status === 'accepted');
+              const isStep5Done = Boolean(isStep4Done && (activeCandidate.status === 'accepted' || activeCandidate.reRegistrationStatus === 'paid'));
 
               const isStep1Unlocked = true;
               const isStep2Unlocked = isStep1Done;
               const isStep3Unlocked = isStep2Done;
               const isStep4Unlocked = isStep3Done;
-              const isStep5Unlocked = isStep4Done || activeCandidate.status === 'accepted';
+              const isStep5Unlocked = Boolean(isStep4Done && (activeCandidate.status === 'accepted' || activeCandidate.reRegistrationStatus === 'paid'));
 
               const steps = [
                 {
@@ -2818,7 +2820,7 @@ export default function SpmbLandingPage({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    {activeCandidate.status === 'accepted' ? (
+                    {activeCandidate.status === 'accepted' && isStep1Done ? (
                       <span className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-md shadow-emerald-600/20 flex items-center gap-1.5">
                         <CheckCircle2 size={16} />
                         <span>DITERIMA / LOLOS SELEKSI</span>

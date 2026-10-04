@@ -476,10 +476,30 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     let changed = false;
     const ffd = (c.fullFormData && typeof c.fullFormData === 'object') ? c.fullFormData : {};
     const currentNisn = String(c.nisn || "").trim();
-    const isResetTarget = currentNisn === "0158483548" || currentNisn === "0152892235" || c.id === "0158483548" || c.id === "0152892235";
+    const isResetTarget = currentNisn === "0158483548" || currentNisn === "0152892235" || currentNisn === "3142814544" || c.id === "0158483548" || c.id === "0152892235" || c.id === "spmb-1791084056015-307";
     
-    // Perbaikan Khusus Murid Baru yang belum mengisi data lengkap tapi sempat terbuka (NISN 0158483548 & 0152892235)
+    // Perbaikan Khusus Murid Baru yang belum menyelesaikan pembayaran token Midtrans atau belum mengisi data lengkap (NISN 3142814544, 0158483548 & 0152892235)
     if (isResetTarget) {
+      if (currentNisn === "3142814544" || c.id === "spmb-1791084056015-307") {
+        if (c.tokenPaid || c.tokenPaymentStatus !== 'pending' || c.tokenPaidAt || c.tokenPaymentMethod) {
+          c.tokenPaid = false;
+          c.tokenPaymentStatus = 'pending';
+          delete c.tokenPaidAt;
+          delete c.tokenPaymentMethod;
+          changed = true;
+        }
+        if (c.reRegistrationPaid || c.reRegistrationStatus !== 'unpaid' || c.totalReRegistrationPaid > 0) {
+          c.reRegistrationPaid = false;
+          c.reRegistrationStatus = 'unpaid';
+          c.totalReRegistrationPaid = 0;
+          c.buildingFeePaid = 0;
+          c.julySppPaid = 0;
+          c.uniformFeePaid = 0;
+          delete c.reRegistrationPaidAt;
+          delete c.reRegistrationMethod;
+          changed = true;
+        }
+      }
       if (c.isFormCompleted) {
         c.isFormCompleted = false;
         delete c.formCompletedAt;
@@ -653,8 +673,34 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
-    // 3. Validasi Status Pembayaran Daftar Ulang
-    const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
+    // 3. Validasi Status Pembayaran Token & Daftar Ulang
+    const isTokenDone = Boolean((c.tokenPaid || c.tokenPaymentStatus === 'paid' || c.tokenPaymentStatus === 'waived') && c.tokenPaymentStatus !== 'pending');
+
+    // Jika token masih pending / belum lunas, pastikan tidak tercatat lunas daftar ulang atau diterima
+    if (!isTokenDone && currentNisn !== "0156620618") {
+      if (c.tokenPaid) {
+        c.tokenPaid = false;
+        changed = true;
+      }
+      if (c.tokenPaymentStatus !== 'pending' && c.tokenPaymentStatus !== 'waived') {
+        c.tokenPaymentStatus = 'pending';
+        changed = true;
+      }
+      if (c.reRegistrationPaid || c.reRegistrationStatus === 'paid') {
+        c.reRegistrationPaid = false;
+        c.reRegistrationStatus = 'unpaid';
+        c.totalReRegistrationPaid = 0;
+        delete c.reRegistrationPaidAt;
+        delete c.reRegistrationMethod;
+        changed = true;
+      }
+      if (c.status === 'accepted') {
+        c.status = 'registered';
+        changed = true;
+      }
+    }
+
+    const isReregPaid = isTokenDone && Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
     if (isReregPaid) {
       if (!c.reRegistrationPaid) { c.reRegistrationPaid = true; changed = true; }
       if (c.reRegistrationStatus !== 'paid') { c.reRegistrationStatus = 'paid'; changed = true; }
@@ -665,9 +711,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     // 4. Penyelarasan Status Akhir (accepted / form_submitted / registered)
     if (c.isPromotedToStudent) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
-    } else if (isReregPaid && (hasActualDocs || hasRealFormData)) {
+    } else if (isTokenDone && isReregPaid && (hasActualDocs || hasRealFormData)) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
-    } else if (hasRealFormData && (c.status === 'registered' || !c.status)) {
+    } else if (isTokenDone && hasRealFormData && (c.status === 'registered' || !c.status)) {
       c.status = 'form_submitted';
       changed = true;
     } else if (!hasRealFormData && !isReregPaid && c.status !== 'registered' && currentNisn !== "0156620618") {

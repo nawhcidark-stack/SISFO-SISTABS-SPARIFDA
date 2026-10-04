@@ -1494,7 +1494,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       (r.father_name || r.mother_name || r.guardian_name || (fullFormData && (fullFormData.fatherName || fullFormData.motherName || fullFormData.guardianName)))
     );
     const isFormDone = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed)));
-    const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
+    const isReregPaid = r.re_registration_status === 'paid' && (Number(r.re_registration_amount) > 0 || Number(r.total_re_registration_paid) > 0);
     
     // Validasi berkas: hanya selesai jika benar-benar ada file dokumen yang tersimpan
     const hasActualDocs = Boolean(
@@ -1617,7 +1617,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     reRegistrationMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
     reRegistrationOrderId: r.re_registration_order_id || undefined,
     reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
-    reRegistrationAmount: r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined,
+    reRegistrationAmount: (Number(r.re_registration_amount) > 0 ? Number(r.re_registration_amount) : (Number(r.total_re_registration_paid) > 0 ? Number(r.total_re_registration_paid) : undefined)),
     buildingFeePaid: Number(r.building_fee_paid) || 0,
     julySppPaid: Number(r.july_spp_paid) || 0,
     uniformFeePaid: Number(r.uniform_fee_paid) || 0,
@@ -2876,7 +2876,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
       );
       const isCompleted = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(c.isFormCompleted)));
-      const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
+      const isReregPaid = Boolean((c.reRegistrationStatus === 'paid' || c.reRegistrationPaid) && (Number(c.reRegistrationAmount) || 0) > 0);
 
       const hasActualDocs = Boolean(
         c.documents && 

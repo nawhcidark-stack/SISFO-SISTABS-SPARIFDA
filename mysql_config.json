@@ -11,8 +11,11 @@
   "connectionLimit": 10,
   "connectTimeout": 10000,
   "autoSyncEnabled": true,
-  "autoSyncIntervalHours": 1,
   "autoSyncDirection": "push",
   "status": "connected",
-  "lastConnectedAt": "2026-10-04T12:15:27.974Z"
+  "lastConnectedAt": "2026-10-05T07:58:42.154Z",
+  "lastSyncAt": "2026-10-05T07:59:08.849Z",
+  "lastAutoSyncAt": "2026-10-05T07:59:08.849Z",
+  "lastAutoSyncStatus": "success",
+  "lastAutoSyncMessage": "Berhasil menyinkronkan 13841 baris data & konfigurasi lengkap"
 }

@@ -18,6 +18,7 @@ import {
   Globe,
   Info,
   Shield,
+  ShieldCheck,
   Layers,
   FileCode2,
   HelpCircle,
@@ -29,7 +30,6 @@ import {
   Timer,
   Zap,
   Sliders,
-  CalendarClock,
   Sparkles
 } from 'lucide-react';
 import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult, SchoolIdentity } from '../types';
@@ -52,8 +52,7 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
     charset: 'utf8mb4',
     connectionLimit: 10,
     connectTimeout: 10000,
-    autoSyncEnabled: false,
-    autoSyncIntervalHours: 1,
+    autoSyncEnabled: true,
     status: 'disconnected'
   });
 
@@ -63,7 +62,6 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
   const [isSaving, setIsSaving] = useState(false);
   const [isTesting, setIsTesting] = useState(false);
   const [isSyncing, setIsSyncing] = useState(false);
-  const [autoSyncHours, setAutoSyncHours] = useState<number>(1);
   const [isSavingAutoSync, setIsSavingAutoSync] = useState(false);
 
   const [testResult, setTestResult] = useState<MysqlTestResult | null>(null);
@@ -89,9 +87,6 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
       if (res.ok) {
         const data = await res.json();
         setConfig(data);
-        if (data.autoSyncIntervalHours) {
-          setAutoSyncHours(data.autoSyncIntervalHours);
-        }
       }
     } catch (err) {
       console.error('Gagal memuat konfigurasi MySQL:', err);
@@ -99,12 +94,6 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
       setIsLoadingConfig(false);
     }
   };
-
-  useEffect(() => {
-    if (config.autoSyncIntervalHours) {
-      setAutoSyncHours(config.autoSyncIntervalHours);
-    }
-  }, [config.autoSyncIntervalHours]);
 
   // Fetch stats of all collections
   const fetchCounts = async () => {
@@ -316,32 +305,27 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
     }
   };
 
-  const handleUpdateAutoSyncConfig = async (enabled: boolean, intervalHours?: number) => {
+  const handleUpdateAutoSyncConfig = async (enabled: boolean) => {
     setIsSavingAutoSync(true);
     setNotification(null);
-    const targetHours = intervalHours !== undefined 
-      ? Math.min(24, Math.max(1, Math.round(intervalHours)))
-      : Math.min(24, Math.max(1, Math.round(autoSyncHours || 1)));
 
     try {
       const res = await fetch('/api/treasurer/mysql-config', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          autoSyncEnabled: enabled,
-          autoSyncIntervalHours: targetHours
+          autoSyncEnabled: enabled
         })
       });
 
       const data = await res.json();
       if (res.ok && data.config) {
         setConfig(data.config);
-        setAutoSyncHours(data.config.autoSyncIntervalHours || targetHours);
         setNotification({
           type: 'success',
           message: enabled
-            ? `Sinkronisasi otomatis berhasil diaktifkan setiap ${targetHours} Jam ke MySQL / phpMyAdmin.`
-            : 'Sinkronisasi otomatis periodik ke MySQL telah dinonaktifkan.'
+            ? 'Otomatis sinkron real-time langsung ke MySQL berhasil diaktifkan. Setiap transaksi SPP atau perubahan data akan langsung tersimpan secara instan.'
+            : 'Otomatis sinkron ke MySQL telah dinonaktifkan.'
         });
       } else {
         setNotification({
@@ -356,37 +340,6 @@ export default function TreasurerMysqlSettings({ schoolIdentity }: TreasurerMysq
       });
     } finally {
       setIsSavingAutoSync(false);
-    }
-  };
-
-  const formatNextSchedule = (isoString?: string) => {
-    if (!isoString) return null;
-    try {
-      const targetDate = new Date(isoString);
-      const now = new Date();
-      const diffMs = targetDate.getTime() - now.getTime();
-      
-      const timeStr = targetDate.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' });
-      const dateStr = targetDate.toLocaleDateString('id-ID', { day: 'numeric', month: 'short', year: 'numeric' });
-      
-      if (diffMs <= 0) {
-        return `${dateStr} pukul ${timeStr} WIB (Sedang berlangsung / Segera)`;
-      }
-      
-      const diffMins = Math.round(diffMs / (60 * 1000));
-      const diffHours = Math.floor(diffMins / 60);
-      const remainingMins = diffMins % 60;
-      
-      let relative = '';
-      if (diffHours > 0) {
-        relative = `sekitar ${diffHours} jam ${remainingMins > 0 ? remainingMins + ' menit' : ''} lagi`;
-      } else {
-        relative = `sekitar ${Math.max(1, diffMins)} menit lagi`;
-      }
-      
-      return `${dateStr} pukul ${timeStr} WIB (${relative})`;
-    } catch {
-      return isoString;
     }
   };
 
@@ -599,7 +552,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
           <span>Sinkronisasi Langsung ke MySQL</span>
           {config.autoSyncEnabled ? (
             <span className="ml-1 px-2 py-0.5 text-[10px] font-extrabold rounded-full bg-emerald-500 text-white shadow-xs">
-              Auto: {config.autoSyncIntervalHours || 1} Jam
+              Auto: Real-Time
             </span>
           ) : null}
         </button>
@@ -1015,24 +968,24 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
       {/* TAB 3: SINKRONISASI DATA */}
       {activeSubTab === 'sync' && (
         <div className="bg-white p-6 rounded-3xl border border-slate-200 shadow-xs flex flex-col gap-6">
-          {/* Card: Pengaturan Sinkronisasi Otomatis Berkala (1 - 24 Jam) */}
+          {/* Card: Pengaturan Otomatis Sinkron Real-Time (Live Auto-Sync) */}
           <div className="p-6 bg-gradient-to-br from-slate-900 via-slate-800 to-indigo-950 text-white rounded-3xl border border-slate-700/80 shadow-lg relative overflow-hidden flex flex-col gap-5">
-            <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-indigo-500/15 rounded-full blur-3xl pointer-events-none" />
+            <div className="absolute right-0 top-0 translate-x-12 -translate-y-12 w-64 h-64 bg-emerald-500/10 rounded-full blur-3xl pointer-events-none" />
             
             <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
               <div className="flex items-start gap-3.5">
-                <div className="p-2.5 bg-indigo-500/20 text-indigo-300 border border-indigo-500/30 rounded-2xl shrink-0">
-                  <Timer size={24} className="stroke-[2.5]" />
+                <div className="p-2.5 bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 rounded-2xl shrink-0">
+                  <Zap size={24} className="stroke-[2.5]" />
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-md bg-indigo-900/80 text-indigo-300 border border-indigo-700/60">
-                      Otomatisasi Background Server
+                    <span className="text-[10px] uppercase font-black tracking-wider px-2 py-0.5 rounded-md bg-emerald-950/80 text-emerald-300 border border-emerald-700/60">
+                      Otomatisasi Real-Time Server
                     </span>
                     {config.autoSyncEnabled ? (
                       <span className="inline-flex items-center gap-1 text-[10px] font-extrabold text-emerald-300 bg-emerald-950/80 px-2.5 py-0.5 rounded-full border border-emerald-700/70 shadow-xs">
                         <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-                        Aktif ({config.autoSyncIntervalHours || 1} Jam Sekali)
+                        Aktif (Real-Time Live)
                       </span>
                     ) : (
                       <span className="text-[10px] font-bold text-slate-400 bg-slate-800 px-2 py-0.5 rounded-full border border-slate-700">
@@ -1041,17 +994,17 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
                     )}
                   </div>
                   <h3 className="text-base font-black text-white mt-1">
-                    Sinkronisasi Otomatis ke MySQL (1 Jam s/d 24 Jam)
+                    Otomatis Sinkron Langsung ke MySQL (Real-Time)
                   </h3>
                   <p className="text-xs text-slate-300 mt-1 max-w-2xl leading-relaxed">
-                    Server akan secara otomatis menyinkronkan seluruh database (Siswa, Kas BKU, SPP, Gaji, Tabungan) ke database MySQL <strong>{config.database}</strong> di Hostinger sesuai interval waktu yang Anda tentukan.
+                    Sistem otomatis menyinkronkan data secara langsung dan aman setiap kali terjadi transaksi pembayaran SPP, kas bendahara, tabungan, atau perubahan data siswa ke database MySQL <strong>{config.database}</strong> di Hostinger. Sinkronisasi berkala (interval timer) telah dihapus sehingga status lunas SPP tidak akan tertimpa atau kembali ke belum bayar.
                   </p>
                 </div>
               </div>
 
               {/* Master Toggle */}
               <div className="flex items-center gap-3 shrink-0 self-start sm:self-center bg-slate-800/90 p-2.5 rounded-2xl border border-slate-700">
-                <span className="text-xs font-bold text-slate-200">Auto-Sync</span>
+                <span className="text-xs font-bold text-slate-200">Otomatis Sinkron</span>
                 <button
                   type="button"
                   onClick={() => handleUpdateAutoSyncConfig(!config.autoSyncEnabled)}
@@ -1059,7 +1012,7 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
                   className={`w-14 h-8 flex items-center rounded-full p-1 cursor-pointer transition-colors duration-300 ease-in-out ${
                     config.autoSyncEnabled ? 'bg-emerald-500 justify-end' : 'bg-slate-600 justify-start'
                   } ${isSavingAutoSync ? 'opacity-50 cursor-not-allowed' : ''}`}
-                  title={config.autoSyncEnabled ? 'Klik untuk menonaktifkan Auto-Sync' : 'Klik untuk mengaktifkan Auto-Sync'}
+                  title={config.autoSyncEnabled ? 'Klik untuk menonaktifkan Otomatis Sinkron' : 'Klik untuk mengaktifkan Otomatis Sinkron'}
                 >
                   <motion.div
                     layout
@@ -1070,124 +1023,81 @@ CREATE TABLE IF NOT EXISTS \`teacher_salaries\` (
               </div>
             </div>
 
-            {/* Interval Configuration Section */}
-            <div className="relative z-10 p-4 bg-black/30 rounded-2xl border border-white/10 flex flex-col gap-4">
-              <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-                <div>
-                  <label className="text-xs font-black text-slate-200 block">
-                    Pilih Frekuensi / Interval Waktu Sinkronisasi Otomatis:
-                  </label>
-                  <span className="text-[11px] text-slate-400">
-                    Tentukan per berapa jam sekali sinkronisasi otomatis dijalankan (minimal 1 Jam, maksimal 24 Jam).
-                  </span>
+            {/* Feature Highlights Grid */}
+            <div className="relative z-10 grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="p-3.5 bg-black/30 rounded-2xl border border-white/10 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-emerald-400 font-extrabold text-xs">
+                  <CheckCircle2 size={16} />
+                  <span>Status Lunas Permanen</span>
                 </div>
-
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-slate-400 font-bold">Setiap:</span>
-                  <div className="flex items-center bg-slate-900 border border-slate-700 rounded-xl px-3 py-1.5 focus-within:border-indigo-500">
-                    <input
-                      type="number"
-                      min={1}
-                      max={24}
-                      value={autoSyncHours}
-                      onChange={(e) => {
-                        const val = parseInt(e.target.value, 10);
-                        if (!isNaN(val)) {
-                          setAutoSyncHours(Math.min(24, Math.max(1, val)));
-                        } else {
-                          setAutoSyncHours(1);
-                        }
-                      }}
-                      className="w-12 bg-transparent text-white font-mono font-black text-center focus:outline-none text-sm"
-                    />
-                    <span className="text-xs font-black text-indigo-400 ml-1">Jam</span>
-                  </div>
-
-                  <button
-                    type="button"
-                    onClick={() => handleUpdateAutoSyncConfig(true, autoSyncHours)}
-                    disabled={isSavingAutoSync}
-                    className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold rounded-xl transition-all shadow-md shadow-indigo-600/30 flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
-                  >
-                    <Save size={13} />
-                    <span>{isSavingAutoSync ? 'Menyimpan...' : 'Terapkan'}</span>
-                  </button>
-                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Tagihan SPP yang telah lunas disimpan secara permanen ke MySQL dan tidak akan ter-reset atau kembali ke status belum bayar.
+                </p>
               </div>
 
-              {/* Preset Interval Buttons */}
-              <div className="flex flex-wrap gap-2 pt-1 border-t border-white/5">
-                {[1, 2, 3, 4, 6, 8, 12, 24].map((hours) => {
-                  const isSelected = autoSyncHours === hours;
-                  return (
-                    <button
-                      key={hours}
-                      type="button"
-                      onClick={() => {
-                        setAutoSyncHours(hours);
-                        handleUpdateAutoSyncConfig(true, hours);
-                      }}
-                      disabled={isSavingAutoSync}
-                      className={`px-3.5 py-1.5 rounded-xl text-xs font-extrabold transition-all cursor-pointer flex items-center gap-1.5 ${
-                        isSelected
-                          ? 'bg-gradient-to-r from-emerald-500 to-teal-500 text-white shadow-md shadow-emerald-500/20 scale-105 border border-emerald-400/40'
-                          : 'bg-slate-800/90 text-slate-300 hover:bg-slate-700 hover:text-white border border-slate-700/80'
-                      }`}
-                    >
-                      <Clock size={12} className={isSelected ? 'text-white' : 'text-slate-400'} />
-                      <span>{hours} Jam {hours === 1 ? '(Default)' : hours === 24 ? '(1 Hari / Maksimal)' : ''}</span>
-                    </button>
-                  );
-                })}
+              <div className="p-3.5 bg-black/30 rounded-2xl border border-white/10 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-indigo-300 font-extrabold text-xs">
+                  <ShieldCheck size={16} />
+                  <span>Tanpa Timer Berkala</span>
+                </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Sinkronisasi interval berkala yang rawan menimpa data telah dinonaktifkan sepenuhnya. Server hanya melakukan push saat ada perubahan nyata.
+                </p>
               </div>
 
-              {/* Status and Next Execution Information Bar */}
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 pt-2 text-xs">
-                <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                    <CalendarClock size={12} className="text-indigo-400" /> Jadwal Auto-Sync Berikutnya
-                  </span>
-                  <span className="font-mono text-emerald-300 font-bold text-[11px]">
-                    {config.autoSyncEnabled && config.nextAutoSyncAt
-                      ? formatNextSchedule(config.nextAutoSyncAt)
-                      : config.autoSyncEnabled
-                      ? 'Segera diproses dalam waktu dekat'
-                      : 'Nonaktif'}
-                  </span>
+              <div className="p-3.5 bg-black/30 rounded-2xl border border-white/10 flex flex-col gap-1.5">
+                <div className="flex items-center gap-2 text-amber-300 font-extrabold text-xs">
+                  <Zap size={16} />
+                  <span>Event-Driven Debounce</span>
                 </div>
+                <p className="text-[11px] text-slate-300 leading-relaxed">
+                  Perubahan data disimpan ke MySQL secara efisien dengan buffer aman untuk menghindari beban koneksi database hosting berlebih.
+                </p>
+              </div>
+            </div>
 
-                <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                    <CheckCircle2 size={12} className="text-emerald-400" /> Sinkronisasi Terakhir
-                  </span>
-                  <span className="font-mono text-slate-200 font-semibold text-[11px]">
-                    {config.lastSyncAt
-                      ? new Date(config.lastSyncAt).toLocaleString('id-ID', {
-                          day: 'numeric',
-                          month: 'short',
-                          year: 'numeric',
-                          hour: '2-digit',
-                          minute: '2-digit',
-                          second: '2-digit'
-                        }) + ' WIB'
-                      : 'Belum pernah'}
-                  </span>
-                </div>
+            {/* Status Information Bar */}
+            <div className="relative z-10 grid grid-cols-1 sm:grid-cols-3 gap-3 pt-1 text-xs border-t border-white/10">
+              <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                  <Zap size={12} className="text-emerald-400" /> Mode Sinkronisasi
+                </span>
+                <span className="font-mono text-emerald-300 font-bold text-[11px]">
+                  {config.autoSyncEnabled ? 'Otomatis Real-Time (Aktif)' : 'Manual Saja (Nonaktif)'}
+                </span>
+              </div>
 
-                <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-1">
-                  <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
-                    <Sparkles size={12} className="text-amber-400" /> Background Worker Server
-                  </span>
-                  <span className="text-[11px] font-semibold">
-                    {config.autoSyncEnabled ? (
-                      <span className="text-emerald-400 font-bold flex items-center gap-1.5">
-                        <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> Aktif di Node.js Server
-                      </span>
-                    ) : (
-                      <span className="text-slate-400">Menunggu diaktifkan</span>
-                    )}
-                  </span>
-                </div>
+              <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                  <CheckCircle2 size={12} className="text-emerald-400" /> Sinkronisasi Terakhir
+                </span>
+                <span className="font-mono text-slate-200 font-semibold text-[11px]">
+                  {config.lastSyncAt
+                    ? new Date(config.lastSyncAt).toLocaleString('id-ID', {
+                        day: 'numeric',
+                        month: 'short',
+                        year: 'numeric',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit'
+                      }) + ' WIB'
+                    : 'Belum pernah'}
+                </span>
+              </div>
+
+              <div className="p-3 bg-white/5 rounded-xl border border-white/10 flex flex-col gap-1">
+                <span className="text-[10px] uppercase font-bold text-slate-400 flex items-center gap-1">
+                  <Sparkles size={12} className="text-amber-400" /> Worker Engine
+                </span>
+                <span className="text-[11px] font-semibold">
+                  {config.autoSyncEnabled ? (
+                    <span className="text-emerald-400 font-bold flex items-center gap-1.5">
+                      <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping" /> Real-time Node.js Worker Aktif
+                    </span>
+                  ) : (
+                    <span className="text-slate-400">Menunggu diaktifkan</span>
+                  )}
+                </span>
               </div>
             </div>
           </div>

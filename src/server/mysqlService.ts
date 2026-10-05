@@ -18,8 +18,7 @@ let currentConfig: MysqlDatabaseConfig = {
   charset: 'utf8mb4',
   connectionLimit: 10,
   connectTimeout: 10000,
-  autoSyncEnabled: false,
-  autoSyncIntervalHours: 1, // Default: 1 Jam (bisa 1 s/d 24 Jam)
+  autoSyncEnabled: true,
   autoSyncDirection: 'push',
   status: 'disconnected'
 };
@@ -30,11 +29,12 @@ export function loadMysqlConfig(): MysqlDatabaseConfig {
     if (fs.existsSync(CONFIG_FILE)) {
       const data = fs.readFileSync(CONFIG_FILE, 'utf-8');
       const parsed = JSON.parse(data);
-      const interval = Math.min(24, Math.max(1, Number(parsed.autoSyncIntervalHours) || 1));
       currentConfig = {
         ...currentConfig,
         ...parsed,
-        autoSyncIntervalHours: interval,
+        autoSyncEnabled: parsed.autoSyncEnabled !== undefined ? Boolean(parsed.autoSyncEnabled) : true,
+        autoSyncIntervalHours: undefined,
+        nextAutoSyncAt: undefined,
         hasPassword: Boolean(parsed.password && parsed.password.length > 0)
       };
     }
@@ -63,26 +63,9 @@ export function saveMysqlConfig(newConfig: Partial<MysqlDatabaseConfig>): MysqlD
     ? newConfig.password 
     : currentConfig.password;
 
-  const intervalHours = newConfig.autoSyncIntervalHours !== undefined
-    ? Math.min(24, Math.max(1, Math.round(Number(newConfig.autoSyncIntervalHours) || 1)))
-    : (currentConfig.autoSyncIntervalHours || 1);
-
   const isEnabled = newConfig.autoSyncEnabled !== undefined 
     ? Boolean(newConfig.autoSyncEnabled) 
-    : (currentConfig.autoSyncEnabled || false);
-
-  let nextSyncAt = newConfig.nextAutoSyncAt !== undefined 
-    ? newConfig.nextAutoSyncAt 
-    : currentConfig.nextAutoSyncAt;
-
-  if (isEnabled) {
-    // If enabling or interval changed or nextAutoSyncAt was empty/past, calculate next schedule
-    if (!nextSyncAt || (currentConfig.autoSyncIntervalHours !== intervalHours) || (!currentConfig.autoSyncEnabled && isEnabled)) {
-      nextSyncAt = new Date(Date.now() + intervalHours * 60 * 60 * 1000).toISOString();
-    }
-  } else {
-    nextSyncAt = undefined;
-  }
+    : (currentConfig.autoSyncEnabled ?? true);
 
   currentConfig = {
     ...currentConfig,
@@ -91,8 +74,8 @@ export function saveMysqlConfig(newConfig: Partial<MysqlDatabaseConfig>): MysqlD
     password,
     hasPassword: Boolean(password && password.length > 0),
     autoSyncEnabled: isEnabled,
-    autoSyncIntervalHours: intervalHours,
-    nextAutoSyncAt: nextSyncAt
+    autoSyncIntervalHours: undefined,
+    nextAutoSyncAt: undefined
   };
 
   try {
@@ -119,10 +102,8 @@ export function getSanitizedConfig(): MysqlDatabaseConfig {
     charset: currentConfig.charset || 'utf8mb4',
     connectionLimit: currentConfig.connectionLimit || 4,
     connectTimeout: currentConfig.connectTimeout || 8000,
-    autoSyncEnabled: currentConfig.autoSyncEnabled || false,
-    autoSyncIntervalHours: currentConfig.autoSyncIntervalHours || 1,
+    autoSyncEnabled: currentConfig.autoSyncEnabled ?? true,
     autoSyncDirection: currentConfig.autoSyncDirection || 'push',
-    nextAutoSyncAt: currentConfig.nextAutoSyncAt,
     lastAutoSyncAt: currentConfig.lastAutoSyncAt,
     lastAutoSyncStatus: currentConfig.lastAutoSyncStatus,
     lastAutoSyncMessage: currentConfig.lastAutoSyncMessage,
@@ -1398,10 +1379,8 @@ export async function syncDataToMysql(appState: any): Promise<MysqlSyncResult> {
     currentConfig.lastAutoSyncStatus = 'success';
     currentConfig.lastAutoSyncMessage = `Berhasil menyinkronkan ${totalRows} baris data & konfigurasi lengkap`;
     currentConfig.status = 'connected';
-    if (currentConfig.autoSyncEnabled) {
-      const interval = currentConfig.autoSyncIntervalHours || 1;
-      currentConfig.nextAutoSyncAt = new Date(Date.now() + interval * 60 * 60 * 1000).toISOString();
-    }
+    currentConfig.nextAutoSyncAt = undefined;
+    currentConfig.autoSyncIntervalHours = undefined;
     try {
       fs.writeFileSync(CONFIG_FILE, JSON.stringify(currentConfig, null, 2), 'utf-8');
     } catch {}

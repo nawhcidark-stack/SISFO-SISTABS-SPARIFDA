@@ -1590,6 +1590,50 @@ async function syncWithFirestore(forcePush: boolean = false, forceDisconnect: bo
   return { success: true, message: "Sistem beroperasi murni dengan MySQL sebagai Primary Authoritative Database." };
 }
 
+function getFullSnapshotForMysql() {
+  return {
+    students,
+    sppBills,
+    miscBills,
+    savingsTransactions,
+    midtransTransactions,
+    voidedPayments,
+    notifications,
+    attendanceLogs,
+    homeroomTeachers,
+    subjectTeachers,
+    teachingJournals,
+    treasurerTransactions,
+    studentDevelopmentLogs,
+    studentInfractionLogs,
+    studentCounselingLogs,
+    classAnnouncements,
+    classMeetingLogs,
+    merdekaAssessments,
+    classSchedules,
+    principalWorkPrograms,
+    teacherEvaluations,
+    infractionRules,
+    sarprasItems,
+    sarprasProposals,
+    sarprasLoans,
+    teacherSalaries,
+    spmbCandidates,
+    sppRates,
+    salaryConfig,
+    schoolIdentity,
+    midtransConfig,
+    whatsappConfig,
+    treasurerConfig,
+    principalConfig,
+    sarprasConfig,
+    bkConfig,
+    curriculumConfig,
+    adminConfig,
+    spmbConfig
+  };
+}
+
 function saveState(skipRemoteSync: boolean = false) {
   try {
     const data = {
@@ -1637,9 +1681,13 @@ function saveState(skipRemoteSync: boolean = false) {
     const tempPath = DATA_FILE + ".tmp";
     fs.writeFileSync(tempPath, JSON.stringify(data), "utf-8");
     fs.renameSync(tempPath, DATA_FILE);
-    // Persist configuration changes directly to MySQL app_configs table using debounced batch
+    // Realtime automatic push to MySQL whenever state changes (no periodic timer)
     if (!skipRemoteSync) {
       debouncedSyncConfigsToMysql();
+      const cfg = getSanitizedConfig();
+      if (cfg.autoSyncEnabled !== false) {
+        triggerDebouncedMysqlSync(() => getFullSnapshotForMysql(), 1500);
+      }
     }
   } catch (error) {
     console.error("Failed to save state:", error);
@@ -2024,56 +2072,35 @@ function applyDataFromMysql(pulledData: any) {
           return voidedBill;
         }
 
-        // If MySQL pulled status is unpaid, respect unpaid state directly
-        if (pulledBill.status === "unpaid") {
-          return {
-            ...pulledBill,
-            status: "unpaid",
-            paidAt: undefined,
-            paymentMethod: undefined,
-            orderId: undefined,
-            isVoidedByAdmin: false
-          };
-        }
-
-        // If local bill was explicitly set to unpaid by admin cancellation
-        if (localBill && localBill.status === "unpaid") {
-          const unpaidBill: SppBill = {
-            ...pulledBill,
-            status: "unpaid",
-            paidAt: undefined,
-            paymentMethod: undefined,
-            orderId: undefined,
-            isVoidedByAdmin: false
-          };
-          delete (unpaidBill as any).transactionId;
-          if (pulledBill.status === "paid") {
-            sppBillsToFixInMysql.push(unpaidBill);
-          }
-          return unpaidBill;
-        }
-
-        // If local memory marked it as paid via valid reconciliation, preserve paid state
-        if (localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) {
+        // 2. CRITICAL PRESERVATION: If local memory marked it as paid, OR if pulled data is paid (and not voided),
+        // it is LUNAS and MUST NEVER revert to unpaid!
+        if ((localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) || (pulledBill.status === "paid")) {
           const healedBill: SppBill = {
             ...pulledBill,
             status: "paid",
-            paidAt: localBill.paidAt || new Date().toISOString(),
-            paymentMethod: localBill.paymentMethod || "Midtrans (Reconciled)",
-            orderId: localBill.orderId || pulledBill.orderId,
-            transactionId: localBill.transactionId || pulledBill.transactionId,
+            paidAt: pulledBill.status === "paid" ? (pulledBill.paidAt || localBill?.paidAt || new Date().toISOString()) : (localBill?.paidAt || new Date().toISOString()),
+            paymentMethod: pulledBill.status === "paid" ? (pulledBill.paymentMethod || localBill?.paymentMethod || "Manual Teller / Online") : (localBill?.paymentMethod || "Manual Teller / Online"),
+            orderId: pulledBill.orderId || localBill?.orderId,
+            transactionId: pulledBill.transactionId || localBill?.transactionId,
             isVoidedByAdmin: false
           };
           delete (healedBill as any).voidedAt;
           delete (healedBill as any).voidReason;
-          sppBillsToFixInMysql.push(healedBill);
+          if (pulledBill.status !== "paid") {
+            sppBillsToFixInMysql.push(healedBill);
+          }
           return healedBill;
         }
 
-        if (pulledBill.status === "paid") {
-          return pulledBill;
-        }
-        return pulledBill;
+        // 3. Default to unpaid
+        return {
+          ...pulledBill,
+          status: "unpaid",
+          paidAt: undefined,
+          paymentMethod: undefined,
+          orderId: undefined,
+          isVoidedByAdmin: false
+        };
       });
 
       sppBills.length = 0;
@@ -2126,23 +2153,34 @@ function applyDataFromMysql(pulledData: any) {
           return voidedMisc;
         }
 
-        if (pulledMisc.status === "paid") {
-          return pulledMisc;
-        }
-
-        if (localMisc && localMisc.status === "paid" && !localMisc.isVoidedByAdmin) {
+        // CRITICAL PRESERVATION: If local memory marked it as paid, OR if pulled data is paid (and not voided),
+        // preserve PAID status and heal MySQL if needed
+        if ((localMisc && localMisc.status === "paid" && !localMisc.isVoidedByAdmin) || (pulledMisc.status === "paid")) {
           const healedMisc: MiscBill = {
             ...pulledMisc,
             status: "paid",
-            paidAt: localMisc.paidAt || new Date().toISOString(),
-            paymentMethod: localMisc.paymentMethod || "Midtrans (Reconciled)",
-            orderId: localMisc.orderId || pulledMisc.orderId,
-            transactionId: localMisc.transactionId || pulledMisc.transactionId
+            paidAt: pulledMisc.status === "paid" ? (pulledMisc.paidAt || localMisc?.paidAt || new Date().toISOString()) : (localMisc?.paidAt || new Date().toISOString()),
+            paymentMethod: pulledMisc.status === "paid" ? (pulledMisc.paymentMethod || localMisc?.paymentMethod || "Manual Teller / Online") : (localMisc?.paymentMethod || "Manual Teller / Online"),
+            orderId: pulledMisc.orderId || localMisc?.orderId,
+            transactionId: pulledMisc.transactionId || localMisc?.transactionId,
+            isVoidedByAdmin: false
           };
-          miscBillsToFixInMysql.push(healedMisc);
+          delete (healedMisc as any).voidedAt;
+          delete (healedMisc as any).voidReason;
+          if (pulledMisc.status !== "paid") {
+            miscBillsToFixInMysql.push(healedMisc);
+          }
           return healedMisc;
         }
-        return pulledMisc;
+
+        return {
+          ...pulledMisc,
+          status: "unpaid",
+          paidAt: undefined,
+          paymentMethod: undefined,
+          orderId: undefined,
+          isVoidedByAdmin: false
+        };
       });
 
       miscBills.length = 0;
@@ -2587,25 +2625,12 @@ async function startServer() {
     }
   };
 
-  // Connect and pull data from authoritative MySQL before accepting requests
+  // Connect and pull data from authoritative MySQL once on server startup
   await syncMysqlBackground();
 
-  // Periodic Auto-Sync from MySQL (every 2 minutes):
-  // Keeps DEV and PUBLIC in sync automatically whenever payments or changes occur on either side
-  setInterval(async () => {
-    try {
-      if (mysqlDatabaseStatus === "ONLINE") {
-        const pullRes = await pullDataFromMysql();
-        if (pullRes.success && pullRes.data) {
-          applyDataFromMysql(pullRes.data);
-          applyAuthoritativeSavingsBalances(students);
-          lastMysqlSyncTime = new Date().toISOString();
-        }
-      }
-    } catch (e) {
-      // background silent catch
-    }
-  }, 120000);
+  // Sinkronisasi berkala (interval timer) telah dihapus sesuai arahan.
+  // Sistem sekarang murni menggunakan Otomatis Sinkron Real-Time (event-driven debounced push & direct write)
+  // saat terjadi pembayaran SPP, transaksi kas, pergerakan tabungan, atau perubahan data lainnya.
 
   console.log(" [STARTUP] ✅ Server web siap dengan data MySQL mutakhir.");
   console.log("=================================================");
@@ -2675,18 +2700,73 @@ async function startServer() {
   });
   const upload = multer({ storage });
 
-  // Serve static files from /uploads
-  app.use("/uploads", express.static(uploadDir));
-
   // Support accessing /uploads/berkas_murid/:name directly and serving index.html
-  app.get("/uploads/berkas_murid/:name", (req, res, next) => {
+  app.get(["/uploads/berkas_murid/:name", "/uploads/berkas_murid/:name/"], (req, res, next) => {
     const studentFolder = path.join(uploadDir, "berkas_murid", req.params.name);
     const indexPath = path.join(studentFolder, "index.html");
     if (fs.existsSync(indexPath)) {
-      return res.sendFile(indexPath);
+      res.setHeader("Content-Type", "text/html; charset=UTF-8");
+      return fs.createReadStream(indexPath).pipe(res);
     }
     next();
   });
+
+  // Smart Content-Type sniffer for /uploads to prevent "Invalid source image" errors
+  // Automatically detects PNG, JPEG, SVG, WebP, and PDF magic bytes regardless of file extension
+  app.use("/uploads", (req, res, next) => {
+    try {
+      const decodedPath = decodeURIComponent(req.path);
+      const filePath = path.join(uploadDir, decodedPath);
+      if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
+        const fd = fs.openSync(filePath, "r");
+        const buffer = Buffer.alloc(512);
+        const bytesRead = fs.readSync(fd, buffer, 0, 512, 0);
+        fs.closeSync(fd);
+
+        let detectedMime = "";
+        if (bytesRead >= 4) {
+          // PNG magic: 89 50 4E 47
+          if (buffer[0] === 0x89 && buffer[1] === 0x50 && buffer[2] === 0x4e && buffer[3] === 0x47) {
+            detectedMime = "image/png";
+          }
+          // JPEG magic: FF D8 FF
+          else if (buffer[0] === 0xff && buffer[1] === 0xd8 && buffer[2] === 0xff) {
+            detectedMime = "image/jpeg";
+          }
+          // WebP: RIFF ... WEBP
+          else if (buffer.toString("ascii", 0, 4) === "RIFF" && buffer.toString("ascii", 8, 12) === "WEBP") {
+            detectedMime = "image/webp";
+          }
+          // PDF: %PDF
+          else if (buffer.toString("ascii", 0, 4) === "%PDF") {
+            detectedMime = "application/pdf";
+          } else {
+            // Textual formats: SVG / HTML
+            const textHead = buffer.toString("utf8", 0, bytesRead).trim();
+            if (textHead.toLowerCase().includes("<svg")) {
+              detectedMime = "image/svg+xml";
+            } else if (textHead.toLowerCase().startsWith("<!doctype") || textHead.toLowerCase().startsWith("<html")) {
+              detectedMime = "text/html; charset=UTF-8";
+            }
+          }
+        }
+
+        if (detectedMime) {
+          res.setHeader("Content-Type", detectedMime);
+          res.setHeader("Content-Length", fs.statSync(filePath).size);
+          res.setHeader("Cache-Control", "public, max-age=3600");
+          const stream = fs.createReadStream(filePath);
+          return stream.pipe(res);
+        }
+      }
+    } catch (e) {
+      // ignore, fall through to express.static
+    }
+    next();
+  });
+
+  // Serve static files from /uploads
+  app.use("/uploads", express.static(uploadDir));
 
   // Upload file API for admin user
   app.post("/api/admin/upload-file", upload.single("file"), async (req, res) => {

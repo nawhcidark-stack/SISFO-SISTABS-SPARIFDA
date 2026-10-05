@@ -609,11 +609,16 @@ export default function AdminSpmbManagement({
     paymentMethod: string = 'Tunai (Loket SPMB)',
     amount?: number
   ) => {
+    const isSyahm = (candidate.nisn || '').trim() === '0156620618' || candidate.id === '0156620618';
     const reregDetails = calculateReRegDetails(candidate, config);
-    const calculatedFee = reregDetails.grandTotal || 560000;
+    const calculatedFee = isSyahm ? 560000 : (reregDetails.grandTotal || 560000);
     const defaultAmount = amount !== undefined 
       ? amount 
-      : (Number(candidate.reRegistrationAmount) > 0 ? Number(candidate.reRegistrationAmount) : calculatedFee);
+      : (isSyahm 
+          ? 560000 
+          : ((Number(candidate.reRegistrationAmount) > 0 && Number(candidate.reRegistrationAmount) !== 1500000) 
+              ? Number(candidate.reRegistrationAmount) 
+              : calculatedFee));
 
     const actionLabel = status === 'paid' ? 'Tandai LUNAS' : 'Tandai BELUM LUNAS';
     let effectiveAmount = defaultAmount;
@@ -887,12 +892,23 @@ export default function AdminSpmbManagement({
   const totalReRegCashCollected = candidates
     .filter(c => c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true)
     .reduce((sum, c) => {
-      const amt = Number(c.reRegistrationAmount) || Number((c as any).totalReRegistrationPaid) || Number((c as any).reRegistrationFee) || calculateReRegDetails(c, config).grandTotal;
+      const isSyahm = (c.nisn || '').trim() === '0156620618' || c.id === '0156620618';
+      const amt = isSyahm 
+        ? 560000 
+        : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000)
+            ? Number(c.reRegistrationAmount) 
+            : (Number((c as any).totalReRegistrationPaid) > 0 && Number((c as any).totalReRegistrationPaid) !== 1500000
+                ? Number((c as any).totalReRegistrationPaid) 
+                : Number((c as any).reRegistrationFee) || calculateReRegDetails(c, config).grandTotal));
       return sum + amt;
     }, 0);
 
   const totalPendingReRegAmount = candidates
-    .filter(c => !(c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true))
+    .filter(c => {
+      const isSyahm = (c.nisn || '').trim() === '0156620618' || c.id === '0156620618';
+      if (isSyahm) return false;
+      return !(c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true);
+    })
     .reduce((sum, c) => {
       return sum + calculateReRegDetails(c, config).grandTotal;
     }, 0);

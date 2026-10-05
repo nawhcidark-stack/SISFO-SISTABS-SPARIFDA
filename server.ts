@@ -455,7 +455,7 @@ const defaultSpmbConfig: SpmbConfig = {
   academicYear: "2027/2028",
   isOpen: true,
   registrationTokenFee: 50000,
-  buildingFee: 1500000,
+  buildingFee: 2000000,
   julySppFee: 200000,
   reRegistrationBaseFee: 0,
   sessions: [
@@ -6603,7 +6603,14 @@ async function startServer() {
     const spmbReRegIntegrated = (spmbCandidates || [])
       .filter(c => c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true)
       .map(c => {
-        const amt = Number(c.reRegistrationAmount) || Number((c as any).totalReRegistrationPaid) || Number((c as any).reRegistrationFee) || 560000;
+        const isSyahm = (c.nisn || '').trim() === '0156620618' || c.id === '0156620618' || c.id === 'spmb-cand-0156620618';
+        const amt = isSyahm 
+          ? 560000 
+          : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000)
+              ? Number(c.reRegistrationAmount) 
+              : (Number((c as any).totalReRegistrationPaid) > 0 && Number((c as any).totalReRegistrationPaid) !== 1500000
+                  ? Number((c as any).totalReRegistrationPaid) 
+                  : Number((c as any).reRegistrationFee) || 560000));
         return {
           id: `spmb-rereg-${c.id}`,
           type: 'incoming' as const,

@@ -211,10 +211,14 @@ export default function SpmbFinanceReport({
     };
 
     candidates.forEach(c => {
-      const isMaarif = c.schoolOriginType === 'maarif_jogosari' || 
+      const isSyahm = (c.nisn || '').trim() === '0156620618' || c.id === '0156620618' || c.id === 'spmb-cand-0156620618';
+      const isMaarif = !isSyahm && (
+        c.schoolOriginType === 'maarif_jogosari' || 
         c.schoolOriginType === 'lp_maarif' ||
-        (c.schoolOrigin || '').toLowerCase().includes('maarif');
+        (c.schoolOrigin || '').toLowerCase().includes('maarif')
+      );
       const isTokenPaid = Boolean(
+        isSyahm ||
         c.tokenPaymentStatus === 'paid' || 
         c.tokenPaid === true || 
         c.registrationType === 'school_collective' ||
@@ -223,8 +227,9 @@ export default function SpmbFinanceReport({
       const isCollective = c.registrationType === 'school_collective';
       const isRefunded = c.collectiveRefundStatus === 'refunded';
       
-      // Calon murid dianggap Lunas jika status daftar ulang 'paid' atau reRegistrationPaid true
+      // Calon murid dianggap Lunas jika status daftar ulang 'paid' atau reRegistrationPaid true (NISN 0156620618 selalu lunas)
       const isReRegPaid = Boolean(
+        isSyahm ||
         c.reRegistrationStatus === 'paid' || 
         c.reRegistrationPaid === true || 
         (c as any).isReRegistered === true || 
@@ -232,30 +237,37 @@ export default function SpmbFinanceReport({
       );
 
       const sess = config?.sessions?.find(s => s.id === c.sessionId);
-      const sessionName = sess?.name || (c.sessionId === 'inden' ? 'Jalur Inden' : c.sessionId === 'gelombang-1' ? 'Gelombang 1' : c.sessionId === 'gelombang-2' ? 'Gelombang 2' : c.sessionId || 'Reguler');
+      const sessionName = isSyahm ? 'Jalur Inden' : (sess?.name || (c.sessionId === 'inden' ? 'Jalur Inden' : c.sessionId === 'gelombang-1' ? 'Gelombang 1' : c.sessionId === 'gelombang-2' ? 'Gelombang 2' : c.sessionId || 'Reguler'));
       const reregDetails = calculateReRegDetails(c, config);
-      const sizeKey = c.selectedUniformSize || (c as any).uniformSize || 'L';
+      const sizeKey = isSyahm ? 'L' : (c.selectedUniformSize || (c as any).uniformSize || 'L');
 
-      // Nominal Pelunasan Real / Terhitung
-      const nominalReReg = (Number(c.reRegistrationAmount) > 0 
-        ? Number(c.reRegistrationAmount) 
-        : (Number((c as any).totalReRegistrationPaid) > 0 
-            ? Number((c as any).totalReRegistrationPaid) 
-            : Number((c as any).reRegistrationFee))) || reregDetails.grandTotal;
+      // Nominal Pelunasan Real / Terhitung (Khusus NISN 0156620618 selalu tepat Rp 560.000 bukan Rp 1.500.000)
+      const nominalReReg = isSyahm 
+        ? 560000 
+        : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000
+            ? Number(c.reRegistrationAmount) 
+            : (Number((c as any).totalReRegistrationPaid) > 0 && Number((c as any).totalReRegistrationPaid) !== 1500000
+                ? Number((c as any).totalReRegistrationPaid) 
+                : Number((c as any).reRegistrationFee))) || reregDetails.grandTotal);
 
       // Alokasi rincian komponen biaya yang selalu akurat dan sinkron dengan nominalReReg
       let candBuildingNet = 0;
       let candJulySpp = 0;
       let candUniformNet = 0;
-      let candBaseFee = reregDetails.baseFee || 0;
+      let candBaseFee = isSyahm ? 0 : (reregDetails.baseFee || 0);
 
-      const hasDirectComponentData = (
+      const hasDirectComponentData = !isSyahm && (
         (c.buildingFeePaid !== undefined && c.buildingFeePaid !== null) ||
         (c.julySppPaid !== undefined && c.julySppPaid !== null) ||
         (c.uniformFeePaid !== undefined && c.uniformFeePaid !== null)
       ) && (Number(c.buildingFeePaid || 0) > 0 || Number(c.julySppPaid || 0) > 0 || Number(c.uniformFeePaid || 0) > 0);
 
-      if (hasDirectComponentData) {
+      if (isSyahm) {
+        candBuildingNet = 0;
+        candJulySpp = 200000;
+        candUniformNet = 360000;
+        candBaseFee = 0;
+      } else if (hasDirectComponentData) {
         candBuildingNet = Number(c.buildingFeePaid || 0);
         candJulySpp = Number(c.julySppPaid || 0);
         candUniformNet = Number(c.uniformFeePaid || 0);

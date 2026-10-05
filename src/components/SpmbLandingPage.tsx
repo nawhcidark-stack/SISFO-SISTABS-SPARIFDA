@@ -162,34 +162,6 @@ export default function SpmbLandingPage({
   } | null>(null);
 
   // Full Data Lengkap Siswa Form State
-  const initializeFullFormData = (candidate: Partial<SpmbCandidate> | null | undefined): Partial<SpmbCandidate> => {
-    if (!candidate) return {};
-    return {
-      ...candidate,
-      nik: candidate.nik || '',
-      studentPhone: candidate.studentPhone || '',
-      nickname: (candidate.nickname || '').toUpperCase(),
-      fatherName: (candidate.fatherName || '').toUpperCase(),
-      motherName: (candidate.motherName || '').toUpperCase(),
-      birthPlace: toProperCase(candidate.birthPlace || ''),
-      fatherBirthPlace: toProperCase(candidate.fatherBirthPlace || ''),
-      motherBirthPlace: toProperCase(candidate.motherBirthPlace || ''),
-      guardianBirthPlace: toProperCase(candidate.guardianBirthPlace || ''),
-      guardianName: (candidate.guardianName || '').toUpperCase(),
-      religion: candidate.religion || 'Islam',
-      livingWith: candidate.livingWith || 'Bersama Orang Tua',
-      transportation: candidate.transportation || 'Sepeda Motor',
-      city: toProperCase(candidate.city || 'Pasuruan'),
-      postalCode: candidate.postalCode || '67156',
-      distanceToSchool: candidate.distanceToSchool || 'Kurang dari 1 km',
-      travelTime: candidate.travelTime || 'Kurang dari 15 menit',
-      childOrder: candidate.childOrder ?? 1,
-      siblingsCount: candidate.siblingsCount ?? 0,
-      height: candidate.height || undefined,
-      weight: candidate.weight || undefined,
-    };
-  };
-
   const [fullForm, setFullForm] = useState<Partial<SpmbCandidate>>({});
   const [hasGuardian, setHasGuardian] = useState<boolean>(false);
   const [isSavingFullForm, setIsSavingFullForm] = useState<boolean>(false);
@@ -289,71 +261,54 @@ export default function SpmbLandingPage({
     return dateString;
   };
 
-  // Helper: Otomatis kompres gambar menjadi maksimal 1000px secara aman
+  // Helper: Otomatis kompres gambar menjadi maksimal 1000px
   const compressImageToMax1000px = (file: File): Promise<string> => {
-    return new Promise((resolve) => {
-      const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
-      const isImage = file.type.startsWith('image/');
+    return new Promise((resolve, reject) => {
+      if (!file.type.startsWith('image/')) {
+        const reader = new FileReader();
+        reader.onload = (e) => resolve(e.target?.result as string);
+        reader.onerror = (e) => reject(e);
+        reader.readAsDataURL(file);
+        return;
+      }
 
       const reader = new FileReader();
-      reader.onerror = () => resolve('');
       reader.onload = (event) => {
-        const rawResult = (event.target?.result as string) || '';
-        if (!isImage || isSvg || isPdf || !rawResult) {
-          return resolve(rawResult);
-        }
+        const img = new Image();
+        img.src = event.target?.result as string;
+        img.onload = () => {
+          const MAX_SIZE = 1000;
+          let width = img.width;
+          let height = img.height;
 
-        try {
-          const img = new Image();
-          img.crossOrigin = 'anonymous';
-          img.onload = () => {
-            try {
-              const MAX_SIZE = 1000;
-              let width = img.naturalWidth || img.width;
-              let height = img.naturalHeight || img.height;
-
-              if (!width || !height || width <= 0 || height <= 0) {
-                return resolve(rawResult);
-              }
-
-              if (width > MAX_SIZE || height > MAX_SIZE) {
-                if (width > height) {
-                  height = Math.round((height * MAX_SIZE) / width);
-                  width = MAX_SIZE;
-                } else {
-                  width = Math.round((width * MAX_SIZE) / height);
-                  height = MAX_SIZE;
-                }
-              }
-
-              const canvas = document.createElement('canvas');
-              canvas.width = Math.max(1, width);
-              canvas.height = Math.max(1, height);
-              const ctx = canvas.getContext('2d');
-              if (!ctx) {
-                return resolve(rawResult);
-              }
-
-              ctx.imageSmoothingEnabled = true;
-              ctx.imageSmoothingQuality = 'high';
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.85);
-              resolve(dataUrl || rawResult);
-            } catch (canvasErr) {
-              console.warn('[Canvas Resize Warning]: Fallback to raw image:', canvasErr);
-              resolve(rawResult);
+          if (width > MAX_SIZE || height > MAX_SIZE) {
+            if (width > height) {
+              height = Math.round((height * MAX_SIZE) / width);
+              width = MAX_SIZE;
+            } else {
+              width = Math.round((width * MAX_SIZE) / height);
+              height = MAX_SIZE;
             }
-          };
-          img.onerror = () => {
-            resolve(rawResult);
-          };
-          img.src = rawResult;
-        } catch (err) {
-          resolve(rawResult);
-        }
+          }
+
+          const canvas = document.createElement('canvas');
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (!ctx) {
+            resolve(event.target?.result as string);
+            return;
+          }
+
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+          resolve(dataUrl);
+        };
+        img.onerror = () => {
+          resolve(event.target?.result as string);
+        };
       };
+      reader.onerror = (err) => reject(err);
       reader.readAsDataURL(file);
     });
   };
@@ -521,7 +476,18 @@ export default function SpmbLandingPage({
       if (res.ok) {
         const candidate: SpmbCandidate = await res.json();
         setActiveCandidate(candidate);
-        setFullForm(initializeFullFormData(candidate));
+        setFullForm({
+          ...candidate,
+          studentPhone: candidate.studentPhone || '',
+          nickname: (candidate.nickname || '').toUpperCase(),
+          fatherName: (candidate.fatherName || '').toUpperCase(),
+          motherName: (candidate.motherName || '').toUpperCase(),
+          birthPlace: toProperCase(candidate.birthPlace || ''),
+          fatherBirthPlace: toProperCase(candidate.fatherBirthPlace || ''),
+          motherBirthPlace: toProperCase(candidate.motherBirthPlace || ''),
+          guardianBirthPlace: toProperCase(candidate.guardianBirthPlace || ''),
+          guardianName: (candidate.guardianName || '').toUpperCase(),
+        });
         setHasGuardian(Boolean(candidate.hasGuardian || (candidate.guardianName && candidate.guardianName.trim() !== '')));
         setDocUploads(candidate.documents || {});
         setSelectedUniformSize(candidate.selectedUniformSize || 'L');
@@ -529,20 +495,20 @@ export default function SpmbLandingPage({
         setActiveTab('portal');
 
         // Otomatis arahkan ke tahap aktif (tahap terdepan yang belum selesai tapi sudah terbuka)
-        const isTokenPending = candidate.tokenPaymentStatus === 'pending';
-        const isStep1Done = Boolean(!isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid || candidate.tokenPaymentStatus === 'waived'));
+        const isTargetReset = candidate.nisn === '0158483548' || candidate.nisn === '0152892235' || candidate.id === '0158483548' || candidate.id === '0152892235';
+        const isStep1Done = Boolean(candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
         const hasRealFormData = Boolean(
           candidate.isFormCompleted &&
           (candidate.kkNumber && String(candidate.kkNumber).trim().length >= 8) &&
           (candidate.fatherName || candidate.motherName || candidate.guardianName || candidate.fullFormData?.fatherName || candidate.fullFormData?.motherName)
         );
-        const isStep2Done = isStep1Done && (candidate.nisn === '0156620618' ? Boolean(candidate.isFormCompleted) : hasRealFormData);
+        const isStep2Done = !isTargetReset && isStep1Done && (candidate.nisn === '0156620618' ? Boolean(candidate.isFormCompleted) : hasRealFormData);
         const hasActualDocs = Boolean(
           candidate.documents && 
           (candidate.documents.aktaPhoto || candidate.documents.kkPhoto || candidate.documents.pasPhoto || candidate.documents.ktpAyahPhoto || candidate.documents.ktpPhoto || candidate.documents.ktpIbuPhoto) &&
           Object.keys(candidate.documents).some(k => Boolean(candidate.documents[k]))
         );
-        const isStep3Done = isStep2Done && (candidate.nisn === '0156620618' ? Boolean(candidate.documentsUploaded) : (Boolean(candidate.documentsUploaded) && hasActualDocs));
+        const isStep3Done = !isTargetReset && isStep2Done && (candidate.nisn === '0156620618' ? Boolean(candidate.documentsUploaded) : (Boolean(candidate.documentsUploaded) && hasActualDocs));
         const isStep4Done = isStep3Done && Boolean(candidate.reRegistrationStatus === 'paid' || candidate.reRegistrationPaid);
 
         if (!isStep1Done) {
@@ -1001,7 +967,18 @@ export default function SpmbLandingPage({
       // If already paid previously, direct to portal
       if (resData.alreadyPaid) {
         setActiveCandidate(resData.candidate);
-        setFullForm(initializeFullFormData(resData.candidate));
+        setFullForm({
+          ...resData.candidate,
+          studentPhone: resData.candidate.studentPhone || '',
+          nickname: (resData.candidate.nickname || '').toUpperCase(),
+          fatherName: (resData.candidate.fatherName || '').toUpperCase(),
+          motherName: (resData.candidate.motherName || '').toUpperCase(),
+          birthPlace: toProperCase(resData.candidate.birthPlace || ''),
+          fatherBirthPlace: toProperCase(resData.candidate.fatherBirthPlace || ''),
+          motherBirthPlace: toProperCase(resData.candidate.motherBirthPlace || ''),
+          guardianBirthPlace: toProperCase(resData.candidate.guardianBirthPlace || ''),
+          guardianName: (resData.candidate.guardianName || '').toUpperCase(),
+        });
         setSearchNisn(resData.candidate.nisn);
         
         QRCode.toDataURL(`SPMB-${resData.candidate.nisn}-${resData.candidate.fullName}`, {
@@ -1059,7 +1036,18 @@ export default function SpmbLandingPage({
         if (res.ok) {
           const verified = await res.json();
           setActiveCandidate(verified.candidate);
-          setFullForm(initializeFullFormData(verified.candidate));
+          setFullForm({
+            ...verified.candidate,
+            studentPhone: verified.candidate.studentPhone || '',
+            nickname: (verified.candidate.nickname || '').toUpperCase(),
+            fatherName: (verified.candidate.fatherName || '').toUpperCase(),
+            motherName: (verified.candidate.motherName || '').toUpperCase(),
+            birthPlace: toProperCase(verified.candidate.birthPlace || ''),
+            fatherBirthPlace: toProperCase(verified.candidate.fatherBirthPlace || ''),
+            motherBirthPlace: toProperCase(verified.candidate.motherBirthPlace || ''),
+            guardianBirthPlace: toProperCase(verified.candidate.guardianBirthPlace || ''),
+            guardianName: (verified.candidate.guardianName || '').toUpperCase(),
+          });
           setSearchNisn(verified.candidate.nisn);
           setActiveTab('portal');
           setPortalTab('form'); // Direct to fill full Data Lengkap Siswa form
@@ -1110,25 +1098,31 @@ export default function SpmbLandingPage({
     e.preventDefault();
     if (!activeCandidate) return;
 
-    // VALIDASI: Kolom biodata buku induk wajib diisi
+    // VALIDASI KETAT: Seluruh kolom biodata buku induk wajib diisi
     const missingFields: string[] = [];
-    const effectiveFullName = fullForm.fullName?.trim() || activeCandidate.fullName?.trim();
-    if (!effectiveFullName) missingFields.push("Nama Lengkap Murid");
+    if (!fullForm.fullName?.trim() && !activeCandidate.fullName?.trim()) missingFields.push("Nama Lengkap Murid");
     if (!fullForm.nickname?.trim()) missingFields.push("Nama Panggilan");
-    const effectiveNik = fullForm.nik?.trim() || activeCandidate.nik?.trim();
-    if (!effectiveNik) missingFields.push("NIK Murid (16 digit)");
+    if (!fullForm.nik?.trim() && !activeCandidate.nik?.trim()) missingFields.push("NIK Murid (16 digit)");
     if (!fullForm.kkNumber?.trim()) missingFields.push("Nomor Kartu Keluarga (KK)");
     if (!fullForm.birthCertNumber?.trim()) missingFields.push("Nomor Registrasi Akta Kelahiran");
-    const effectiveBirthPlace = fullForm.birthPlace?.trim() || activeCandidate.birthPlace?.trim();
-    if (!effectiveBirthPlace) missingFields.push("Tempat Lahir Murid");
-    const effectiveBirthDate = fullForm.birthDate?.trim() || activeCandidate.birthDate?.trim();
-    if (!effectiveBirthDate) missingFields.push("Tanggal Lahir Murid");
+    if (!fullForm.birthPlace?.trim() && !activeCandidate.birthPlace?.trim()) missingFields.push("Tempat Lahir Murid");
+    if (!fullForm.birthDate?.trim() && !activeCandidate.birthDate?.trim()) missingFields.push("Tanggal Lahir Murid");
     if (!fullForm.religion?.trim()) missingFields.push("Agama");
     if (!fullForm.address?.trim() && !fullForm.dusun?.trim()) missingFields.push("Alamat / Dusun");
     if (!fullForm.rt?.trim()) missingFields.push("RT");
     if (!fullForm.rw?.trim()) missingFields.push("RW");
     if (!fullForm.village?.trim()) missingFields.push("Desa / Kelurahan");
     if (!fullForm.district?.trim()) missingFields.push("Kecamatan");
+    if (!fullForm.city?.trim()) missingFields.push("Kabupaten / Kota");
+    if (!fullForm.postalCode?.trim()) missingFields.push("Kode Pos");
+    if (!fullForm.livingWith?.trim()) missingFields.push("Tempat Tinggal / Tinggal Bersama");
+    if (!fullForm.transportation?.trim()) missingFields.push("Moda Transportasi ke Sekolah");
+    if (!fullForm.childOrder && fullForm.childOrder !== 0) missingFields.push("Anak Ke-");
+    if (!fullForm.siblingsCount && fullForm.siblingsCount !== 0) missingFields.push("Jumlah Saudara Kandung");
+    if (!fullForm.height) missingFields.push("Tinggi Badan (cm)");
+    if (!fullForm.weight) missingFields.push("Berat Badan (kg)");
+    if (!fullForm.distanceToSchool?.trim()) missingFields.push("Jarak ke Sekolah");
+    if (!fullForm.travelTime?.trim()) missingFields.push("Waktu Tempuh ke Sekolah");
 
     // Data Ayah
     if (!fullForm.fatherName?.trim()) missingFields.push("Nama Lengkap Ayah");
@@ -1159,11 +1153,11 @@ export default function SpmbLandingPage({
 
     if (missingFields.length > 0) {
       alert(
-        `⚠️ MOHON LENGKAPI KOLOM BERIKUT:\n\n` +
-        `Anda belum mengisi kolom:\n• ` +
+        `⚠️ SEMUA BIODATA LENGKAP WAJIB DIISI!\n\n` +
+        `Anda belum mengisi kolom berikut:\n• ` +
         missingFields.slice(0, 8).join('\n• ') +
         (missingFields.length > 8 ? `\n...dan ${missingFields.length - 8} kolom wajib lainnya.` : '') +
-        `\n\nSilakan lengkapi kolom formulir di atas untuk dapat menyimpan dan melanjutkan ke tahap upload berkas.`
+        `\n\nSilakan lengkapi seluruh kolom formulir untuk dapat menyimpan dan melanjutkan ke tahap upload berkas.`
       );
       return;
     }
@@ -1181,15 +1175,6 @@ export default function SpmbLandingPage({
     );
     const dataToSave = {
       ...fullForm,
-      nik: effectiveNik || fullForm.nik || '',
-      livingWith: fullForm.livingWith || 'Bersama Orang Tua',
-      transportation: fullForm.transportation || 'Sepeda Motor',
-      distanceToSchool: fullForm.distanceToSchool || 'Kurang dari 1 km',
-      travelTime: fullForm.travelTime || 'Kurang dari 15 menit',
-      childOrder: fullForm.childOrder !== undefined && fullForm.childOrder !== '' ? Number(fullForm.childOrder) : (activeCandidate.childOrder || 1),
-      siblingsCount: fullForm.siblingsCount !== undefined && fullForm.siblingsCount !== '' ? Number(fullForm.siblingsCount) : (activeCandidate.siblingsCount || 0),
-      height: fullForm.height ? Number(fullForm.height) : (activeCandidate.height || undefined),
-      weight: fullForm.weight ? Number(fullForm.weight) : (activeCandidate.weight || undefined),
       studentPhone: (fullForm.studentPhone || '').trim(),
       phone: activeCandidate.phone || (fullForm as any).phone || '',
       nickname: (fullForm.nickname || '').toUpperCase(),
@@ -1200,7 +1185,6 @@ export default function SpmbLandingPage({
       village: toProperCase(fullForm.village || ''),
       district: toProperCase(fullForm.district || ''),
       city: toProperCase(fullForm.city || 'Pasuruan'),
-      postalCode: fullForm.postalCode || '67156',
       fatherBirthPlace: toProperCase(fullForm.fatherBirthPlace || ''),
       fatherOccupation: toProperCase(fullForm.fatherOccupation || ''),
       motherBirthPlace: toProperCase(fullForm.motherBirthPlace || ''),
@@ -1239,7 +1223,18 @@ export default function SpmbLandingPage({
       if (res.ok) {
         const updated = await res.json();
         setActiveCandidate(updated.candidate);
-        setFullForm(initializeFullFormData(updated.candidate));
+        setFullForm({
+          ...updated.candidate,
+          studentPhone: updated.candidate.studentPhone || '',
+          nickname: (updated.candidate.nickname || '').toUpperCase(),
+          fatherName: (updated.candidate.fatherName || '').toUpperCase(),
+          motherName: (updated.candidate.motherName || '').toUpperCase(),
+          birthPlace: toProperCase(updated.candidate.birthPlace || ''),
+          fatherBirthPlace: toProperCase(updated.candidate.fatherBirthPlace || ''),
+          motherBirthPlace: toProperCase(updated.candidate.motherBirthPlace || ''),
+          guardianBirthPlace: toProperCase(updated.candidate.guardianBirthPlace || ''),
+          guardianName: (updated.candidate.guardianName || '').toUpperCase(),
+        });
         setFullFormSuccessMsg('Biodata lengkap calon murid berhasil disimpan!');
         setTimeout(() => {
           setFullFormSuccessMsg(null);
@@ -2700,14 +2695,14 @@ export default function SpmbLandingPage({
 
             {/* Candidate Dashboard */}
             {activeCandidate && (() => {
-              const isTokenPending = activeCandidate.tokenPaymentStatus === 'pending';
-              const isStep1Done = Boolean(!isTokenPending && (activeCandidate.tokenPaymentStatus === 'paid' || activeCandidate.tokenPaid || activeCandidate.tokenPaymentStatus === 'waived'));
+              const isTargetReset = activeCandidate.nisn === '0158483548' || activeCandidate.nisn === '0152892235' || activeCandidate.id === '0158483548' || activeCandidate.id === '0152892235';
+              const isStep1Done = Boolean(activeCandidate.tokenPaymentStatus === 'paid' || activeCandidate.tokenPaid);
               const hasRealFormData = Boolean(
                 activeCandidate.isFormCompleted &&
                 (activeCandidate.kkNumber && String(activeCandidate.kkNumber).trim().length >= 8) &&
                 (activeCandidate.fatherName || activeCandidate.motherName || activeCandidate.guardianName || activeCandidate.fullFormData?.fatherName || activeCandidate.fullFormData?.motherName)
               );
-              const isStep2Done = Boolean(isStep1Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.isFormCompleted) : hasRealFormData));
+              const isStep2Done = !isTargetReset && Boolean(isStep1Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.isFormCompleted) : hasRealFormData));
 
               const hasUploadedMandatoryDocs = Boolean(
                 (activeCandidate.documents?.aktaPhoto || docUploads.aktaPhoto) &&
@@ -2721,15 +2716,15 @@ export default function SpmbLandingPage({
                 (activeCandidate.documents.aktaPhoto || activeCandidate.documents.kkPhoto || activeCandidate.documents.pasPhoto) &&
                 Object.keys(activeCandidate.documents).some(k => Boolean(activeCandidate.documents[k]))
               );
-              const isStep3Done = Boolean(isStep2Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.documentsUploaded) : (Boolean(activeCandidate.documentsUploaded && hasActualDocs) || hasUploadedMandatoryDocs)));
+              const isStep3Done = !isTargetReset && Boolean(isStep2Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.documentsUploaded) : (Boolean(activeCandidate.documentsUploaded && hasActualDocs) || hasUploadedMandatoryDocs)));
               const isStep4Done = Boolean(isStep3Done && (activeCandidate.reRegistrationStatus === 'paid' || activeCandidate.reRegistrationPaid));
-              const isStep5Done = Boolean(isStep4Done && (activeCandidate.status === 'accepted' || activeCandidate.reRegistrationStatus === 'paid'));
+              const isStep5Done = Boolean(isStep4Done || activeCandidate.status === 'accepted');
 
               const isStep1Unlocked = true;
               const isStep2Unlocked = isStep1Done;
               const isStep3Unlocked = isStep2Done;
               const isStep4Unlocked = isStep3Done;
-              const isStep5Unlocked = Boolean(isStep4Done && (activeCandidate.status === 'accepted' || activeCandidate.reRegistrationStatus === 'paid'));
+              const isStep5Unlocked = isStep4Done || activeCandidate.status === 'accepted';
 
               const steps = [
                 {
@@ -2806,7 +2801,7 @@ export default function SpmbLandingPage({
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2">
-                    {activeCandidate.status === 'accepted' && isStep1Done ? (
+                    {activeCandidate.status === 'accepted' ? (
                       <span className="px-4 py-2 rounded-xl bg-emerald-600 text-white font-black text-xs shadow-md shadow-emerald-600/20 flex items-center gap-1.5">
                         <CheckCircle2 size={16} />
                         <span>DITERIMA / LOLOS SELEKSI</span>
@@ -3210,7 +3205,7 @@ export default function SpmbLandingPage({
                       </div>
                     )}
 
-                      {/* Section 1: Data Pribadi */}
+                    {/* Section 1: Data Pribadi */}
                     <div className="space-y-4">
                       <h5 className="text-xs font-black text-emerald-700 uppercase tracking-wider">A. Data Pribadi Murid</h5>
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -3229,7 +3224,7 @@ export default function SpmbLandingPage({
                         </div>
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            Nama Panggilan (Otomatis Huruf Kapital) <span className="text-rose-500">*</span>
+                            Nama Panggilan (Otomatis Huruf Kapital)
                           </label>
                           <input
                             type="text"
@@ -3237,37 +3232,6 @@ export default function SpmbLandingPage({
                             onChange={(e) => setFullForm({ ...fullForm, nickname: e.target.value.toUpperCase() })}
                             placeholder="NAMA PANGGILAN MURID"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold tracking-wide placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            NIK Murid (16 Digit Sesuai KK / Akta) <span className="text-rose-500">*</span>
-                          </label>
-                          <input
-                            type="text"
-                            maxLength={16}
-                            value={fullForm.nik || activeCandidate.nik || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, nik: e.target.value.replace(/\D/g, '') })}
-                            placeholder="16 Digit NIK Murid"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                          />
-                        </div>
-                        <div>
-                          <div className="flex items-center justify-between mb-1">
-                            <label className="block text-[11px] font-bold text-slate-700">No. HP / WA Murid</label>
-                            <span className="text-[10px] text-slate-400 font-normal">
-                              (Kosongkan jika belum punya HP)
-                            </span>
-                          </div>
-                          <input
-                            type="text"
-                            value={fullForm.studentPhone || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, studentPhone: e.target.value })}
-                            placeholder="08xxxxxxxxxx (Kosongkan jika belum punya HP)"
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
                       </div>
@@ -3293,10 +3257,10 @@ export default function SpmbLandingPage({
                         />
                       </div>
 
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                        <div>
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                        <div className="sm:col-span-2">
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            No. Kartu Keluarga (KK) <span className="text-rose-500">*</span>
+                            No. Kartu Keluarga (KK)
                             <span className="ml-1 text-[10px] font-normal text-emerald-700">
                               (Promo Inden: Bebas SPP Bulan Pertama jika No. KK sama dengan saudara kandung siswa aktif/murid baru)
                             </span>
@@ -3339,7 +3303,7 @@ export default function SpmbLandingPage({
                           )}
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">No. Registrasi Akta Kelahiran <span className="text-rose-500">*</span></label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">No. Akta Kelahiran</label>
                           <input
                             type="text"
                             value={fullForm.birthCertNumber || ''}
@@ -3348,11 +3312,26 @@ export default function SpmbLandingPage({
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
+                        <div>
+                          <div className="flex items-center justify-between mb-1">
+                            <label className="block text-[11px] font-bold text-slate-700">No. HP / WA Murid</label>
+                            <span className="text-[10px] text-slate-400 font-normal">
+                              (Kosongkan jika tidak ada)
+                            </span>
+                          </div>
+                          <input
+                            type="text"
+                            value={fullForm.studentPhone || ''}
+                            onChange={(e) => setFullForm({ ...fullForm, studentPhone: e.target.value })}
+                            placeholder="08xxxxxxxxxx (Kosongkan jika belum punya HP)"
+                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
+                          />
+                        </div>
                       </div>
 
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Agama <span className="text-rose-500">*</span></label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Agama</label>
                           <select
                             value={fullForm.religion || 'Islam'}
                             onChange={(e) => setFullForm({ ...fullForm, religion: e.target.value })}
@@ -3365,41 +3344,6 @@ export default function SpmbLandingPage({
                             <option value="Buddha">Buddha</option>
                           </select>
                         </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Tempat Tinggal / Tinggal Bersama</label>
-                          <select
-                            value={fullForm.livingWith || 'Bersama Orang Tua'}
-                            onChange={(e) => setFullForm({ ...fullForm, livingWith: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
-                          >
-                            <option value="Bersama Orang Tua">Bersama Orang Tua</option>
-                            <option value="Wali">Wali</option>
-                            <option value="Kos">Kos</option>
-                            <option value="Asrama / Pondok">Asrama / Pondok</option>
-                            <option value="Panti Asuhan">Panti Asuhan</option>
-                            <option value="Lainnya">Lainnya</option>
-                          </select>
-                        </div>
-                        <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">Moda Transportasi ke Sekolah</label>
-                          <select
-                            value={fullForm.transportation || 'Sepeda Motor'}
-                            onChange={(e) => setFullForm({ ...fullForm, transportation: e.target.value })}
-                            className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
-                          >
-                            <option value="Sepeda Motor">Sepeda Motor</option>
-                            <option value="Jalan Kaki">Jalan Kaki</option>
-                            <option value="Sepeda">Sepeda</option>
-                            <option value="Antar Jemput Sekolah">Antar Jemput Sekolah</option>
-                            <option value="Mobil Pribadi">Mobil Pribadi</option>
-                            <option value="Angkutan Umum">Angkutan Umum</option>
-                            <option value="Ojek Online">Ojek Online</option>
-                            <option value="Lainnya">Lainnya</option>
-                          </select>
-                        </div>
-                      </div>
-
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">Anak Ke-</label>
                           <input
@@ -3419,69 +3363,6 @@ export default function SpmbLandingPage({
                             placeholder="2"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
-                        </div>
-                      </div>
-
-                      {/* DATA FISIK & JARAK TEMPUH PERIODIK */}
-                      <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-                        <div className="flex items-center justify-between">
-                          <span className="text-xs font-bold text-emerald-800">Data Fisik & Jarak Tempuh ke Sekolah (Opsional/Buku Induk):</span>
-                          <span className="text-[10px] text-slate-500">Format standar Dapodik</span>
-                        </div>
-
-                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Tinggi Badan (cm)</label>
-                            <input
-                              type="number"
-                              min={50}
-                              max={250}
-                              value={fullForm.height || ''}
-                              onChange={(e) => setFullForm({ ...fullForm, height: e.target.value ? Number(e.target.value) : undefined })}
-                              placeholder="150"
-                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Berat Badan (kg)</label>
-                            <input
-                              type="number"
-                              min={15}
-                              max={200}
-                              value={fullForm.weight || ''}
-                              onChange={(e) => setFullForm({ ...fullForm, weight: e.target.value ? Number(e.target.value) : undefined })}
-                              placeholder="45"
-                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Jarak ke Sekolah</label>
-                            <select
-                              value={fullForm.distanceToSchool || 'Kurang dari 1 km'}
-                              onChange={(e) => setFullForm({ ...fullForm, distanceToSchool: e.target.value })}
-                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
-                            >
-                              <option value="Kurang dari 1 km">Kurang dari 1 km</option>
-                              <option value="1 - 3 km">1 - 3 km</option>
-                              <option value="3 - 5 km">3 - 5 km</option>
-                              <option value="5 - 10 km">5 - 10 km</option>
-                              <option value="Lebih dari 10 km">Lebih dari 10 km</option>
-                            </select>
-                          </div>
-                          <div>
-                            <label className="block text-[11px] font-bold text-slate-700 mb-1">Waktu Tempuh</label>
-                            <select
-                              value={fullForm.travelTime || 'Kurang dari 15 menit'}
-                              onChange={(e) => setFullForm({ ...fullForm, travelTime: e.target.value })}
-                              className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 focus:ring-2 focus:ring-emerald-500"
-                            >
-                              <option value="Kurang dari 15 menit">Kurang dari 15 menit</option>
-                              <option value="15 - 30 menit">15 - 30 menit</option>
-                              <option value="30 - 45 menit">30 - 45 menit</option>
-                              <option value="45 - 60 menit">45 - 60 menit</option>
-                              <option value="Lebih dari 60 menit">Lebih dari 60 menit</option>
-                            </select>
-                          </div>
                         </div>
                       </div>
 
@@ -4567,33 +4448,13 @@ export default function SpmbLandingPage({
                       <div className="grid grid-cols-1 sm:grid-cols-3 gap-6">
                         {/* Pas Photo & Status */}
                         <div className="text-center space-y-3">
-                          {(() => {
-                            const photoSrc = 
-                              docUploads.pasPhoto || 
-                              activeCandidate.documents?.pasPhoto || 
-                              (activeCandidate.documents as any)?.foto || 
-                              (activeCandidate.documents as any)?.photo || 
-                              (activeCandidate.documents as any)?.pasFoto || 
-                              (activeCandidate.documents as any)?.fotoMurid || 
-                              (activeCandidate.fullFormData as any)?.pasPhoto || 
-                              (activeCandidate.fullFormData as any)?.documents?.pasPhoto || 
-                              (activeCandidate as any)?.pasPhoto || 
-                              (activeCandidate as any)?.foto || 
-                              activeCandidate.photoUrl || 
-                              '';
-                            return photoSrc ? (
-                              <img 
-                                src={photoSrc} 
-                                alt="Pas Foto" 
-                                className="w-28 h-36 object-cover rounded-xl border-2 border-slate-800 mx-auto" 
-                                crossOrigin="anonymous"
-                              />
-                            ) : (
-                              <div className="w-28 h-36 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 mx-auto">
-                                Pas Foto 3x4
-                              </div>
-                            );
-                          })()}
+                          {docUploads.pasPhoto ? (
+                            <img src={docUploads.pasPhoto} alt="Pas Foto" className="w-28 h-36 object-cover rounded-xl border-2 border-slate-800 mx-auto" />
+                          ) : (
+                            <div className="w-28 h-36 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 mx-auto">
+                              Pas Foto 3x4
+                            </div>
+                          )}
                           <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-300">
                             <span className="text-[10px] font-bold text-emerald-800 block">STATUS KELULUSAN:</span>
                             <span className="text-xs font-black text-emerald-700 uppercase">

@@ -58,28 +58,6 @@ node server.js
 
 ---
 
-## 📁 Pengaturan Folder Uploads & Hak Akses di Hosting (Agar Berkas Tidak Hilang)
-
-Agar berkas dokumen pendaftaran murid baru (Pas Foto, KK, Akta, KTP, dll.) tersimpan aman di hosting dan **tidak hilang saat push/update dari dev**:
-
-1. **Hak Akses Folder (File Permissions / CHMOD)**:
-   Pastikan folder `uploads/` dan `uploads/berkas_murid/` memiliki izin tulis oleh web server:
-   ```bash
-   chmod -R 755 uploads
-   ```
-   *(Atau `chmod -R 775 uploads` / `777` jika menggunakan shared hosting cPanel tertentu dengan user terpisah).*
-
-2. **Perlindungan Berkas Saat Git Pull / Update**:
-   - Folder `uploads/*` sudah diabaikan di `.gitignore`. Saat Anda melakukan `git pull` atau deploy kode baru dari repository, berkas yang diunggah oleh pendaftar tidak akan terhapus atau tertimpa.
-   - Jangan menjalankan perintah `rm -rf uploads` pada pipeline build hosting Anda.
-
-3. **Sistem Pemulihan Otomatis Berkas (Database-Persistent Base64)**:
-   - Sistem kini telah dilengkapi dengan **Auto-Recovery dari MySQL**.
-   - Setiap berkas yang diunggah disimpan ganda: sebagai file fisik di `/uploads/berkas_murid/` dan sebagai data Base64 di database MySQL (`spmb_candidates.documents` / `full_form_data`).
-   - Jika hosting di-restart, container diganti, atau file fisik di server hilang, backend secara otomatis merekonstruksi kembali file gambar fisik asli dari database MySQL saat diakses.
-
----
-
 ## ⚙️ Panduan Khusus Pengaturan Server & cPanel Hosting
 
 Bila Anda menggunakan panel hosting seperti **cPanel Node.js Selector**:

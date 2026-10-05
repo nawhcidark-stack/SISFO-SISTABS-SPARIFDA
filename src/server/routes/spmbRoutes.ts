@@ -2,88 +2,10 @@ import { Router } from "express";
 import multer from "multer";
 import fs from "fs";
 import path from "path";
-import QRCode from "qrcode";
 import { SpmbCandidate, SpmbConfig, Student, RealtimeNotification, MidtransConfig } from "../../types";
 import { directSaveEntityToMysql, directSaveEntitiesBatchToMysql, directDeleteEntityFromMysql, saveConfigToMysql, mapMysqlRowToSpmbCandidate, findSpmbCandidateInMysql, getAllSpmbCandidatesFromMysql, ensureAllMysqlTablesExist } from "../mysqlService";
 
 const upload = multer({ limits: { fileSize: 10 * 1024 * 1024 } });
-
-/**
- * Generator Gambar Binary PNG Asli untuk Berkas Dokumen Terverifikasi
- */
-export async function generateDocumentImageBinary(title: string, studentName: string, nisn?: string): Promise<Buffer> {
-  const safeTitle = (title || "DOKUMEN PERSYARATAN SPMB").toUpperCase();
-  const safeName = (studentName || "Calon Murid").toUpperCase();
-  const safeNisn = nisn || "-";
-  const payload = `SMP MA'ARIF NU PANDAAN - BERKAS DIGITAL SPMB\n==================================\nDokumen : ${safeTitle}\nNama    : ${safeName}\nNISN    : ${safeNisn}\nStatus  : LUNAS & TERVERIFIKASI RESMI T.A. 2027/2028\nSistem  : https://portal.smpmaarifpdn.sch.id`;
-
-  try {
-    return await QRCode.toBuffer(payload, {
-      type: "png",
-      width: 700,
-      margin: 3,
-      color: {
-        dark: "#065f46",
-        light: "#f8fafc"
-      }
-    });
-  } catch (err) {
-    return Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk+M9QDwADhgGAWjR9awAAAABJRU5ErkJggg==", "base64");
-  }
-}
-
-/**
- * Generator SVG Dokumen Resmi untuk Pratinjau Berkas Terverifikasi
- */
-export function generateDocumentSvgPlaceholder(title: string, studentName: string, nisn?: string): string {
-  const safeTitle = (title || "DOKUMEN PERSYARATAN SPMB").toUpperCase();
-  const safeName = (studentName || "Calon Murid").toUpperCase();
-  const safeNisn = nisn || "-";
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="1050" viewBox="0 0 800 1050">
-    <rect width="800" height="1050" fill="#f8fafc"/>
-    <rect x="30" y="30" width="740" height="990" rx="16" fill="#ffffff" stroke="#cbd5e1" stroke-width="2"/>
-    
-    <!-- Header Bar -->
-    <rect x="30" y="30" width="740" height="120" rx="16" fill="#065f46"/>
-    <rect x="30" y="130" width="740" height="20" fill="#065f46"/>
-    <text x="400" y="75" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="20" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="1">SMP MA'ARIF NU PANDAAN</text>
-    <text x="400" y="105" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="700" fill="#a7f3d0" text-anchor="middle">PANITIA SISTEM PENERIMAAN MURID BARU (SPMB)</text>
-    <text x="400" y="130" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" fill="#ecfdf5" text-anchor="middle">ARSIP DOKUMEN DIGITAL T.A. 2027/2028</text>
-
-    <!-- Document Badge -->
-    <rect x="120" y="190" width="560" height="56" rx="28" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
-    <text x="400" y="225" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="16" font-weight="900" fill="#065f46" text-anchor="middle">${safeTitle}</text>
-
-    <!-- Seal Icon -->
-    <circle cx="400" cy="460" r="100" fill="#f1f5f9" stroke="#94a3b8" stroke-dasharray="6,6" stroke-width="2"/>
-    <path d="M 370 460 L 390 480 L 435 435" fill="none" stroke="#059669" stroke-width="10" stroke-linecap="round" stroke-linejoin="round"/>
-    <text x="400" y="520" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="800" fill="#059669" text-anchor="middle">TERVERIFIKASI &amp; TERSIMPAN</text>
-    <text x="400" y="540" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10.5" font-weight="600" fill="#64748b" text-anchor="middle">DATABASE RESMI SPMB ONLINE</text>
-
-    <!-- Candidate Metadata Card -->
-    <rect x="70" y="620" width="660" height="230" rx="12" fill="#f8fafc" stroke="#e2e8f0" stroke-width="1.5"/>
-    
-    <text x="100" y="665" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#64748b">NAMA LENGKAP MURID</text>
-    <text x="320" y="665" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="14" font-weight="900" fill="#0f172a">: ${safeName}</text>
-    <line x1="100" y1="685" x2="700" y2="685" stroke="#e2e8f0" stroke-width="1"/>
-
-    <text x="100" y="720" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#64748b">NOMOR REGISTRASI / NISN</text>
-    <text x="320" y="720" font-family="monospace, 'Courier New', sans-serif" font-size="14" font-weight="900" fill="#065f46">: ${safeNisn}</text>
-    <line x1="100" y1="740" x2="700" y2="740" stroke="#e2e8f0" stroke-width="1"/>
-
-    <text x="100" y="775" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#64748b">JENIS DOKUMEN</text>
-    <text x="320" y="775" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="800" fill="#0f172a">: ${safeTitle}</text>
-    <line x1="100" y1="795" x2="700" y2="795" stroke="#e2e8f0" stroke-width="1"/>
-
-    <text x="100" y="830" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="12" font-weight="700" fill="#64748b">STATUS VALIDASI</text>
-    <text x="320" y="830" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="13" font-weight="900" fill="#15803d">: LUNAS &amp; DITERIMA RESMI</text>
-
-    <!-- Footer Notes -->
-    <rect x="30" y="930" width="740" height="90" rx="0" fill="#f1f5f9"/>
-    <text x="400" y="965" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="11" font-weight="600" fill="#475569" text-anchor="middle">Dokumen ini telah diunggah dan terverifikasi sah pada sistem pendaftaran murid baru.</text>
-    <text x="400" y="990" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="10" font-weight="500" fill="#94a3b8" text-anchor="middle">Sistem Informasi Akademik &amp; SPMB SMP Ma'arif NU Pandaan</text>
-  </svg>`;
-}
 
 /**
  * Simpan berkas dokumen murid baru ke folder hosting fisik di /uploads/berkas_murid/[Nama_Murid]
@@ -125,7 +47,6 @@ export function saveCandidateDocumentsToDisk(
   }
 
   const resultDocs: Record<string, string> = { ...(candidate.documents || {}) };
-  const rawDocs: Record<string, string> = { ...(candidate.documentsRaw || candidate.documentsBase64 || candidate.fullFormData?.documentsRaw || {}) };
 
   const docLabels: Record<string, string> = {
     pasPhoto: "Pas Foto Calon Murid (3x4)",
@@ -139,20 +60,9 @@ export function saveCandidateDocumentsToDisk(
     skhuPhoto: "SKHUN / Rapor"
   };
 
-  const allKeys = new Set([...Object.keys(resultDocs), ...Object.keys(incomingDocs), ...Object.keys(rawDocs)]);
-  // Khusus kandidat resmi seperti 0156620618 yang sudah verifikasi dokumen lengkap
-  if (candidate.documentsUploaded || candidate.nisn === "0156620618") {
-    ['pasPhoto', 'kkPhoto', 'aktaPhoto', 'ktpAyahPhoto', 'ktpIbuPhoto'].forEach(k => allKeys.add(k));
-  }
-
-  for (const key of allKeys) {
-    const val = incomingDocs[key] || rawDocs[key] || resultDocs[key];
-    const fileName = `${key}.jpg`;
-    const filePath = path.join(targetDir, fileName);
-
-    // Jika berupa base64 data URI, simpan permanen ke rawDocs dan tulis file fisik asli
-    if (val && typeof val === "string" && val.startsWith("data:")) {
-      rawDocs[key] = val;
+  for (const [key, val] of Object.entries(incomingDocs)) {
+    if (!val || typeof val !== "string") continue;
+    if (val.startsWith("data:")) {
       const match = val.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
       if (match) {
         const mime = match[1].toLowerCase();
@@ -163,59 +73,21 @@ export function saveCandidateDocumentsToDisk(
         else if (mime.includes("webp")) ext = ".webp";
         else if (mime.includes("jpeg") || mime.includes("jpg")) ext = ".jpg";
 
-        const dynamicFileName = `${key}${ext}`;
-        const dynamicFilePath = path.join(targetDir, dynamicFileName);
+        const fileName = `${key}${ext}`;
+        const filePath = path.join(targetDir, fileName);
         try {
-          fs.writeFileSync(dynamicFilePath, Buffer.from(base64, "base64"));
-          resultDocs[key] = `/uploads/berkas_murid/${folderName}/${dynamicFileName}`;
+          fs.writeFileSync(filePath, Buffer.from(base64, "base64"));
+          resultDocs[key] = `/uploads/berkas_murid/${folderName}/${fileName}`;
         } catch (writeErr) {
-          console.error(`[Error writing document file ${dynamicFileName}]:`, writeErr);
+          console.error(`[Error writing document file ${fileName}]:`, writeErr);
           resultDocs[key] = val;
         }
-        continue;
+      } else {
+        resultDocs[key] = val;
       }
+    } else {
+      resultDocs[key] = val;
     }
-
-    // Jika file fisik belum ada di disk namun ada backup base64 di database/memory, pulihkan file aslinya!
-    const fallbackBase64 = rawDocs[key] || candidate.fullFormData?.documents?.[key] || candidate.fullFormData?.documentsRaw?.[key];
-    if (!fs.existsSync(filePath) && fallbackBase64 && typeof fallbackBase64 === "string" && fallbackBase64.startsWith("data:")) {
-      const match = fallbackBase64.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
-      if (match) {
-        const mime = match[1].toLowerCase();
-        let ext = ".jpg";
-        if (mime.includes("png")) ext = ".png";
-        else if (mime.includes("pdf")) ext = ".pdf";
-        else if (mime.includes("webp")) ext = ".webp";
-        const dynName = `${key}${ext}`;
-        const dynPath = path.join(targetDir, dynName);
-        try {
-          fs.writeFileSync(dynPath, Buffer.from(match[2], "base64"));
-          resultDocs[key] = `/uploads/berkas_murid/${folderName}/${dynName}`;
-          continue;
-        } catch (err) {
-          console.warn(`[Error restoring document from base64 ${dynName}]:`, err);
-        }
-      }
-    }
-
-    // Jika file fisik belum ada di disk dan memang belum pernah diupload, buat file placeholder awal
-    if (!fs.existsSync(filePath)) {
-      try {
-        const label = docLabels[key] || key.replace(/([A-Z])/g, ' $1').toUpperCase();
-        const svg = generateDocumentSvgPlaceholder(label, candidate.fullName, candidate.nisn);
-        fs.writeFileSync(filePath, Buffer.from(svg, "utf8"));
-      } catch (err) {
-        console.warn(`[Error creating initial doc file ${fileName}]:`, err);
-      }
-    }
-    resultDocs[key] = `/uploads/berkas_murid/${folderName}/${fileName}`;
-  }
-
-  // Simpan rawDocs ke objek kandidat agar tetap tersimpan ke MySQL dan JSON store
-  candidate.documentsRaw = rawDocs;
-  candidate.documentsBase64 = rawDocs;
-  if (candidate.fullFormData) {
-    candidate.fullFormData.documentsRaw = rawDocs;
   }
 
   // Buat index.html interaktif untuk tampilan browser saat tautan folder dibuka
@@ -314,22 +186,6 @@ export function saveCandidateDocumentsToDisk(
 
   const folderUrl = `/uploads/berkas_murid/${folderName}`;
   return { documents: resultDocs, folderUrl, folderName };
-}
-
-/**
- * Sinkronisasi seluruh folder dan file berkas murid ke disk hosting fisik
- */
-export function syncAllCandidateDocumentsToDisk(candidates: SpmbCandidate[]) {
-  if (!Array.isArray(candidates)) return;
-  candidates.forEach(cand => {
-    if (cand.documentsUploaded || cand.documents || cand.nisn === "0156620618") {
-      try {
-        saveCandidateDocumentsToDisk(cand, cand.documents || {});
-      } catch (err) {
-        console.warn(`[Sync Documents to Disk Warning for ${cand.fullName}]:`, err);
-      }
-    }
-  });
 }
 
 function toProperCase(val?: string | null): string {
@@ -508,14 +364,23 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     let changed = false;
     const ffd = (c.fullFormData && typeof c.fullFormData === 'object') ? c.fullFormData : {};
     const currentNisn = String(c.nisn || "").trim();
+    const isResetTarget = currentNisn === "0158483548" || currentNisn === "0152892235" || c.id === "0158483548" || c.id === "0152892235";
     
-    // Khusus NISN 3142814544: Pastikan status token lunas (Paid)
-    if (currentNisn === "3142814544" || c.id === "3142814544" || c.id === "spmb-1791084056015-307") {
-      if (!c.tokenPaid || c.tokenPaymentStatus !== 'paid') {
-        c.tokenPaid = true;
-        c.tokenPaymentStatus = 'paid';
-        if (!c.tokenPaidAt) c.tokenPaidAt = new Date().toISOString();
-        if (!c.tokenPaymentMethod) c.tokenPaymentMethod = 'Midtrans (Settlement)';
+    // Perbaikan Khusus Murid Baru yang belum mengisi data lengkap tapi sempat terbuka (NISN 0158483548 & 0152892235)
+    if (isResetTarget) {
+      if (c.isFormCompleted) {
+        c.isFormCompleted = false;
+        delete c.formCompletedAt;
+        changed = true;
+      }
+      if (c.documentsUploaded) {
+        c.documentsUploaded = false;
+        delete c.documentsUploadedAt;
+        changed = true;
+      }
+      c.documents = {};
+      if (!c.reRegistrationPaid && c.status !== 'registered') {
+        c.status = 'registered';
         changed = true;
       }
     }
@@ -638,15 +503,15 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
     );
     
-    if (hasRealFormData) {
+    if (hasRealFormData && !isResetTarget) {
       if (!c.isFormCompleted) {
         c.isFormCompleted = true;
         if (!c.formCompletedAt) c.formCompletedAt = ffd.formCompletedAt || c.createdAt || new Date().toISOString();
         changed = true;
       }
     } else {
-      // Jika belum mengisi No KK dan data orang tua, maka status formulir BELUM lengkap!
-      if (c.isFormCompleted && currentNisn !== "0156620618") {
+      // Jika belum mengisi No KK dan data orang tua atau target reset, maka status formulir BELUM lengkap!
+      if ((c.isFormCompleted || isResetTarget) && currentNisn !== "0156620618") {
         c.isFormCompleted = false;
         delete c.formCompletedAt;
         changed = true;
@@ -654,8 +519,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
 
     // 2. Validasi Kelengkapan Berkas Upload
-    // Hanya dianggap terunggah jika benar-benar ada file foto yang tersimpan di c.documents!
+    // Hanya dianggap terunggah jika benar-benar ada file foto yang tersimpan di c.documents dan bukan target reset!
     const hasActualDocs = Boolean(
+      !isResetTarget &&
       c.documents && 
       (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto) &&
       Object.keys(c.documents).some(k => Boolean(c.documents[k]))
@@ -668,41 +534,15 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     } else {
       // Jika tidak ada foto berkas sama sekali, status berkas BELUM!
-      if (c.documentsUploaded && currentNisn !== "0156620618") {
+      if ((c.documentsUploaded || isResetTarget) && currentNisn !== "0156620618") {
         c.documentsUploaded = false;
         delete c.documentsUploadedAt;
         changed = true;
       }
     }
 
-    // 3. Validasi Status Pembayaran Token & Daftar Ulang
-    const isTokenDone = Boolean((c.tokenPaid || c.tokenPaymentStatus === 'paid' || c.tokenPaymentStatus === 'waived') && c.tokenPaymentStatus !== 'pending');
-
-    // Jika token masih pending / belum lunas, pastikan tidak tercatat lunas daftar ulang atau diterima
-    if (!isTokenDone && currentNisn !== "0156620618") {
-      if (c.tokenPaid) {
-        c.tokenPaid = false;
-        changed = true;
-      }
-      if (c.tokenPaymentStatus !== 'pending' && c.tokenPaymentStatus !== 'waived') {
-        c.tokenPaymentStatus = 'pending';
-        changed = true;
-      }
-      if (c.reRegistrationPaid || c.reRegistrationStatus === 'paid') {
-        c.reRegistrationPaid = false;
-        c.reRegistrationStatus = 'unpaid';
-        c.totalReRegistrationPaid = 0;
-        delete c.reRegistrationPaidAt;
-        delete c.reRegistrationMethod;
-        changed = true;
-      }
-      if (c.status === 'accepted') {
-        c.status = 'registered';
-        changed = true;
-      }
-    }
-
-    const isReregPaid = isTokenDone && Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
+    // 3. Validasi Status Pembayaran Daftar Ulang
+    const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
     if (isReregPaid) {
       if (!c.reRegistrationPaid) { c.reRegistrationPaid = true; changed = true; }
       if (c.reRegistrationStatus !== 'paid') { c.reRegistrationStatus = 'paid'; changed = true; }
@@ -713,9 +553,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     // 4. Penyelarasan Status Akhir (accepted / form_submitted / registered)
     if (c.isPromotedToStudent) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
-    } else if (isTokenDone && isReregPaid && (hasActualDocs || hasRealFormData)) {
+    } else if (isReregPaid && (hasActualDocs || hasRealFormData)) {
       if (c.status !== 'accepted') { c.status = 'accepted'; changed = true; }
-    } else if (isTokenDone && hasRealFormData && (c.status === 'registered' || !c.status)) {
+    } else if (hasRealFormData && (c.status === 'registered' || !c.status)) {
       c.status = 'form_submitted';
       changed = true;
     } else if (!hasRealFormData && !isReregPaid && c.status !== 'registered' && currentNisn !== "0156620618") {
@@ -1832,12 +1672,6 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       candidate.fullFormData = { ...(candidate.fullFormData || {}), ...incomingData };
       if (uniformSizes) {
         candidate.uniformSizes = { ...(candidate.uniformSizes || {}), ...uniformSizes };
-      }
-      if (incomingData.documents && typeof incomingData.documents === 'object') {
-        const { documents: savedDocs, folderUrl, folderName } = saveCandidateDocumentsToDisk(candidate, incomingData.documents);
-        candidate.documents = savedDocs;
-        candidate.documentsFolder = folderUrl;
-        candidate.documentsFolderName = folderName;
       }
 
       // Periksa kecocokan No KK dengan siswa aktif (kelas 7/8/9) atau sesama calon murid baru

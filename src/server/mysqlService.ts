@@ -1486,14 +1486,15 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
   }
 
     const currentNisn = String(r.nisn || '').trim();
+    const isResetTarget = currentNisn === '0158483548' || currentNisn === '0152892235';
     
     // Validasi form: hanya selesai jika ada No KK valid (>=8 digit) dan nama orang tua/wali
     const hasRealFormData = Boolean(
       (r.kk_number && String(r.kk_number).trim().length >= 8) &&
       (r.father_name || r.mother_name || r.guardian_name || (fullFormData && (fullFormData.fatherName || fullFormData.motherName || fullFormData.guardianName)))
     );
-    const isFormDone = hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed));
-    const isReregPaid = r.re_registration_status === 'paid' && (Number(r.re_registration_amount) > 0 || Number(r.total_re_registration_paid) > 0);
+    const isFormDone = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed)));
+    const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
     
     // Validasi berkas: hanya selesai jika benar-benar ada file dokumen yang tersimpan
     const hasActualDocs = Boolean(
@@ -1501,7 +1502,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       (documents.aktaPhoto || documents.kkPhoto || documents.pasPhoto || documents.sklPhoto || documents.kipPhoto || documents.ktpAyahPhoto || documents.ktpIbuPhoto) &&
       Object.keys(documents).some(k => Boolean(documents[k]))
     );
-    const hasDocs = hasActualDocs || (currentNisn === '0156620618' && Boolean(r.documents_uploaded_at));
+    const hasDocs = !isResetTarget && (hasActualDocs || (currentNisn === '0156620618' && Boolean(r.documents_uploaded_at)));
 
     const isSyahm = currentNisn === '0156620618';
     const resolvedFullName = isSyahm ? 'SYAHM AZIO HAFIZUDIN' : r.full_name;
@@ -1616,7 +1617,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     reRegistrationMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
     reRegistrationOrderId: r.re_registration_order_id || undefined,
     reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
-    reRegistrationAmount: (Number(r.re_registration_amount) > 0 ? Number(r.re_registration_amount) : (Number(r.total_re_registration_paid) > 0 ? Number(r.total_re_registration_paid) : undefined)),
+    reRegistrationAmount: r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined,
     buildingFeePaid: Number(r.building_fee_paid) || 0,
     julySppPaid: Number(r.july_spp_paid) || 0,
     uniformFeePaid: Number(r.uniform_fee_paid) || 0,
@@ -2868,23 +2869,24 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const createdAt = c.createdAt || new Date().toISOString();
       const updatedAt = c.updatedAt || new Date().toISOString();
       const currentNisn = String(nisn || '').trim();
+      const isResetTarget = currentNisn === '0158483548' || currentNisn === '0152892235';
 
       const hasRealFormData = Boolean(
         (c.kkNumber && String(c.kkNumber).trim().length >= 8) &&
         (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
       );
-      const isCompleted = hasRealFormData || (currentNisn === '0156620618' && Boolean(c.isFormCompleted));
-      const isReregPaid = Boolean((c.reRegistrationStatus === 'paid' || c.reRegistrationPaid) && (Number(c.reRegistrationAmount) || 0) > 0);
+      const isCompleted = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(c.isFormCompleted)));
+      const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
 
       const hasActualDocs = Boolean(
         c.documents && 
         (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.sklPhoto || c.documents.kipPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto) &&
         Object.keys(c.documents).some(k => Boolean(c.documents[k]))
       );
-      const isDocsUploaded = hasActualDocs || (currentNisn === '0156620618' && Boolean(c.documentsUploaded));
+      const isDocsUploaded = !isResetTarget && (hasActualDocs || (currentNisn === '0156620618' && Boolean(c.documentsUploaded)));
       const status = c.status === 'accepted' || (isReregPaid && (isDocsUploaded || isCompleted))
         ? 'accepted'
-        : (c.status || (isCompleted ? 'form_submitted' : 'registered'));
+        : (isResetTarget ? 'registered' : (c.status || (isCompleted ? 'form_submitted' : 'registered')));
 
       const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
       const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;

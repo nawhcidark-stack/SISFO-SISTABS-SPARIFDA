@@ -9,81 +9,62 @@ export async function compressAndResizeImage(
   maxHeight: number = 512,
   quality: number = 0.92
 ): Promise<string> {
-  return new Promise((resolve) => {
-    // If not standard image or if SVG/PDF, return raw DataURL directly
-    const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
-    const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-    const isImage = file.type.startsWith("image/");
+  return new Promise((resolve, reject) => {
+    // If SVG, no canvas resize needed, return raw text or data URL
+    if (file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg")) {
+      const reader = new FileReader();
+      reader.onload = (e) => resolve(e.target?.result as string);
+      reader.onerror = () => reject(new Error("Gagal membaca file SVG"));
+      reader.readAsDataURL(file);
+      return;
+    }
 
     const reader = new FileReader();
-    reader.onerror = () => resolve("");
+    reader.onerror = () => reject(new Error("Gagal membaca file gambar"));
     reader.onload = (e) => {
-      const rawResult = (e.target?.result as string) || "";
-      if (!isImage || isSvg || isPdf || !rawResult) {
-        return resolve(rawResult);
-      }
+      const img = new Image();
+      img.onerror = () => reject(new Error("Gagal memproses gambar"));
+      img.onload = () => {
+        let width = img.width;
+        let height = img.height;
 
-      try {
-        const img = new Image();
-        img.crossOrigin = "anonymous";
-        img.onload = () => {
-          try {
-            let width = img.naturalWidth || img.width;
-            let height = img.naturalHeight || img.height;
-
-            if (!width || !height || width <= 0 || height <= 0) {
-              return resolve(rawResult);
-            }
-
-            // Maintain aspect ratio while bounding within maxWidth x maxHeight
-            if (width > height) {
-              if (width > maxWidth) {
-                height = Math.round((height * maxWidth) / width);
-                width = maxWidth;
-              }
-            } else {
-              if (height > maxHeight) {
-                width = Math.round((width * maxHeight) / height);
-                height = maxHeight;
-              }
-            }
-
-            const canvas = document.createElement("canvas");
-            canvas.width = Math.max(1, Math.min(width, maxWidth));
-            canvas.height = Math.max(1, Math.min(height, maxHeight));
-            const ctx = canvas.getContext("2d");
-
-            if (!ctx) {
-              return resolve(rawResult);
-            }
-
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = "high";
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-
-            // Keep PNG format for transparency if source is PNG, otherwise JPEG
-            const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
-            const outputMime = isPng ? "image/png" : "image/jpeg";
-            const resultDataUrl = canvas.toDataURL(outputMime, quality);
-
-            resolve(resultDataUrl || rawResult);
-          } catch (canvasErr) {
-            console.warn("[Canvas Resize Warning]: Fallback to raw image data:", canvasErr);
-            resolve(rawResult);
+        // Maintain aspect ratio while bounding within maxWidth x maxHeight
+        if (width > height) {
+          if (width > maxWidth) {
+            height = Math.round((height * maxWidth) / width);
+            width = maxWidth;
           }
-        };
+        } else {
+          if (height > maxHeight) {
+            width = Math.round((width * maxHeight) / height);
+            height = maxHeight;
+          }
+        }
 
-        img.onerror = () => {
-          resolve(rawResult);
-        };
+        const canvas = document.createElement("canvas");
+        canvas.width = Math.max(1, width);
+        canvas.height = Math.max(1, height);
+        const ctx = canvas.getContext("2d");
 
-        img.src = rawResult;
-      } catch (err) {
-        resolve(rawResult);
-      }
+        if (!ctx) {
+          return resolve(e.target?.result as string);
+        }
+
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = "high";
+        ctx.clearRect(0, 0, width, height);
+        ctx.drawImage(img, 0, 0, width, height);
+
+        // Keep PNG format for transparency if source is PNG, otherwise WEBP or JPEG
+        const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
+        const outputMime = isPng ? "image/png" : "image/jpeg";
+        const resultDataUrl = canvas.toDataURL(outputMime, quality);
+
+        resolve(resultDataUrl);
+      };
+
+      img.src = e.target?.result as string;
     };
-
     reader.readAsDataURL(file);
   });
 }

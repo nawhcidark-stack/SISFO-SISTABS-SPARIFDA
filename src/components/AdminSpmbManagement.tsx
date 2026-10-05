@@ -8,7 +8,7 @@ import {
 } from '../types';
 import SpmbReceiptModal from './SpmbReceiptModal';
 import SpmbFinanceReport from './SpmbFinanceReport';
-import { printSpmbReceiptDirect, printRegistrationProofDirect } from '../utils/spmbReceiptPrint';
+import { printSpmbReceiptDirect } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -687,85 +687,37 @@ export default function AdminSpmbManagement({
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-    const isImage = file.type.startsWith('image/');
-
     const reader = new FileReader();
     reader.onload = (event) => {
-      const rawResult = (event.target?.result as string) || '';
-      if (!isImage || isSvg || !rawResult) {
-        if (config && rawResult) {
-          const updated = { ...config, [field]: rawResult };
-          setConfig(updated);
-          handleSaveConfig(updated);
-        }
-        return;
-      }
-
-      try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            let width = img.naturalWidth || img.width;
-            let height = img.naturalHeight || img.height;
-            if (!width || !height || width <= 0 || height <= 0) {
-              if (config) {
-                const updated = { ...config, [field]: rawResult };
-                setConfig(updated);
-                handleSaveConfig(updated);
-              }
-              return;
-            }
-
-            const maxDim = 500;
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
-              } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
-              }
-            }
-            canvas.width = Math.max(1, width);
-            canvas.height = Math.max(1, height);
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.imageSmoothingEnabled = true;
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0, width, height);
-              const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.9);
-              if (config) {
-                const updated = { ...config, [field]: dataUrl || rawResult };
-                setConfig(updated);
-                handleSaveConfig(updated);
-              }
-            }
-          } catch (canvasErr) {
-            if (config) {
-              const updated = { ...config, [field]: rawResult };
-              setConfig(updated);
-              handleSaveConfig(updated);
-            }
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let width = img.width;
+        let height = img.height;
+        const maxDim = 500;
+        if (width > maxDim || height > maxDim) {
+          if (width > height) {
+            height = Math.round((height * maxDim) / width);
+            width = maxDim;
+          } else {
+            width = Math.round((width * maxDim) / height);
+            height = maxDim;
           }
-        };
-        img.onerror = () => {
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.9);
           if (config) {
-            const updated = { ...config, [field]: rawResult };
+            const updated = { ...config, [field]: dataUrl };
             setConfig(updated);
             handleSaveConfig(updated);
           }
-        };
-        img.src = rawResult;
-      } catch (err) {
-        if (config) {
-          const updated = { ...config, [field]: rawResult };
-          setConfig(updated);
-          handleSaveConfig(updated);
         }
-      }
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
   };
@@ -1638,7 +1590,7 @@ export default function AdminSpmbManagement({
                               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-purple-100 text-purple-900 border border-purple-300">
                                 Siswa Aktif ({candidate.assignedClass || '7-A'})
                               </span>
-                            ) : candidate.status === 'accepted' && isTokenPaid ? (
+                            ) : candidate.status === 'accepted' ? (
                               <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-600 text-white shadow-xs">
                                 DITERIMA
                               </span>
@@ -3492,23 +3444,12 @@ export default function AdminSpmbManagement({
                     <div className="grid grid-cols-1 gap-1.5">
                       <button
                         type="button"
-                        onClick={async () => {
-                          await printRegistrationProofDirect(selectedCandidate, config, schoolIdentity);
-                        }}
-                        className="w-full py-2 bg-emerald-700 hover:bg-emerald-600 border border-emerald-400/40 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
-                      >
-                        <Printer size={13} />
-                        <span>Cetak Bukti Pendaftaran & Status Kelulusan (A4)</span>
-                      </button>
-
-                      <button
-                        type="button"
                         onClick={() => {
                           setReceiptModalCandidate(selectedCandidate);
                           setReceiptModalType('token');
                           setIsReceiptModalOpen(true);
                         }}
-                        className="w-full py-2 bg-emerald-900/60 hover:bg-emerald-800 border border-emerald-500/40 text-emerald-200 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
+                        className="w-full py-2 bg-emerald-800/60 hover:bg-emerald-700 border border-emerald-500/40 text-emerald-100 font-bold text-xs rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-xs transition-all"
                       >
                         <Printer size={13} />
                         <span>Kuitansi Token Lunas (KOP Resmi)</span>

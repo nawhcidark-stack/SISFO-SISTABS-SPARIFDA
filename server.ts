@@ -6601,21 +6601,25 @@ async function startServer() {
 
     // 2f. Get all paid SPMB Re-registration (Daftar Ulang) payments
     const spmbReRegIntegrated = (spmbCandidates || [])
-      .filter(c => c.reRegistrationStatus === 'paid' && (Number(c.reRegistrationAmount) || 0) > 0)
-      .map(c => ({
-        id: `spmb-rereg-${c.id}`,
-        type: 'incoming' as const,
-        category: 'SPMB Daftar Ulang',
-        amount: Number(c.reRegistrationAmount) || 0,
-        description: `Pembayaran Daftar Ulang SPMB (${c.sessionId ? c.sessionId.toUpperCase() : 'SPMB'}) - ${c.fullName} (NISN: ${c.nisn || '-'})`,
-        date: getWIBDateString(c.reRegistrationPaidAt || new Date()),
-        source: 'custom' as const,
-        studentName: c.fullName,
-        nis: c.nisn || '',
-        orderId: c.reRegistrationOrderId,
-        noBukti: c.reRegistrationOrderId || undefined,
-        createdBy: c.reRegistrationPaymentMethod || 'Midtrans (Online)'
-      }));
+      .filter(c => c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true)
+      .map(c => {
+        const amt = Number(c.reRegistrationAmount) || Number((c as any).totalReRegistrationPaid) || Number((c as any).reRegistrationFee) || 560000;
+        return {
+          id: `spmb-rereg-${c.id}`,
+          type: 'incoming' as const,
+          category: 'SPMB Daftar Ulang',
+          amount: amt,
+          description: `Pembayaran Daftar Ulang SPMB (${c.sessionId ? c.sessionId.toUpperCase() : 'SPMB'}) - ${c.fullName} (NISN: ${c.nisn || '-'})`,
+          date: getWIBDateString(c.reRegistrationPaidAt || new Date()),
+          source: 'custom' as const,
+          studentName: c.fullName,
+          nis: c.nisn || '',
+          orderId: c.reRegistrationOrderId,
+          noBukti: c.reRegistrationOrderId || undefined,
+          createdBy: c.reRegistrationPaymentMethod || 'Midtrans (Online)'
+        };
+      })
+      .filter(item => item.amount > 0);
 
     // 3. Merged transactions - Filter out any manually logged misc/auto payments to avoid double counting
     const filteredTreasurerTransactions = treasurerTransactions.filter(t => {

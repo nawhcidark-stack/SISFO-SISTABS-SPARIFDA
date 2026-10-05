@@ -223,15 +223,55 @@ export default function SpmbFinanceReport({
       const isCollective = c.registrationType === 'school_collective';
       const isRefunded = c.collectiveRefundStatus === 'refunded';
       
+      // Calon murid dianggap Lunas jika status daftar ulang 'paid' atau reRegistrationPaid true
       const isReRegPaid = Boolean(
-        (c.reRegistrationStatus === 'paid' || (c as any).reRegistrationPaid === true || (c as any).isReRegistered === true || (c as any).reRegistrationPaymentStatus === 'paid') &&
-        (Number(c.reRegistrationAmount) > 0 || Number((c as any).totalReRegistrationPaid) > 0)
+        c.reRegistrationStatus === 'paid' || 
+        c.reRegistrationPaid === true || 
+        (c as any).isReRegistered === true || 
+        (c as any).reRegistrationPaymentStatus === 'paid'
       );
 
       const sess = config?.sessions?.find(s => s.id === c.sessionId);
       const sessionName = sess?.name || (c.sessionId === 'inden' ? 'Jalur Inden' : c.sessionId === 'gelombang-1' ? 'Gelombang 1' : c.sessionId === 'gelombang-2' ? 'Gelombang 2' : c.sessionId || 'Reguler');
       const reregDetails = calculateReRegDetails(c, config);
       const sizeKey = c.selectedUniformSize || (c as any).uniformSize || 'L';
+
+      // Nominal Pelunasan Real / Terhitung
+      const nominalReReg = (Number(c.reRegistrationAmount) > 0 
+        ? Number(c.reRegistrationAmount) 
+        : (Number((c as any).totalReRegistrationPaid) > 0 
+            ? Number((c as any).totalReRegistrationPaid) 
+            : Number((c as any).reRegistrationFee))) || reregDetails.grandTotal;
+
+      // Alokasi rincian komponen biaya yang selalu akurat dan sinkron dengan nominalReReg
+      let candBuildingNet = 0;
+      let candJulySpp = 0;
+      let candUniformNet = 0;
+      let candBaseFee = reregDetails.baseFee || 0;
+
+      const hasDirectComponentData = (
+        (c.buildingFeePaid !== undefined && c.buildingFeePaid !== null) ||
+        (c.julySppPaid !== undefined && c.julySppPaid !== null) ||
+        (c.uniformFeePaid !== undefined && c.uniformFeePaid !== null)
+      ) && (Number(c.buildingFeePaid || 0) > 0 || Number(c.julySppPaid || 0) > 0 || Number(c.uniformFeePaid || 0) > 0);
+
+      if (hasDirectComponentData) {
+        candBuildingNet = Number(c.buildingFeePaid || 0);
+        candJulySpp = Number(c.julySppPaid || 0);
+        candUniformNet = Number(c.uniformFeePaid || 0);
+        candBaseFee = Number(c.baseFeePaid || 0);
+      } else if (nominalReReg === reregDetails.grandTotal) {
+        candBuildingNet = reregDetails.netBuildingFee;
+        candJulySpp = reregDetails.effectiveJulySppFee;
+        candUniformNet = reregDetails.netUniformTotal;
+        candBaseFee = reregDetails.baseFee;
+      } else {
+        // Alokasi proporsional/bertingkat agar jumlah komponen 100% sama dengan nominalReReg
+        candJulySpp = reregDetails.isSiblingFreeSpp ? 0 : Math.min(nominalReReg, reregDetails.effectiveJulySppFee);
+        candBaseFee = Math.min(Math.max(0, nominalReReg - candJulySpp), reregDetails.baseFee);
+        candUniformNet = Math.min(Math.max(0, nominalReReg - candJulySpp - candBaseFee), reregDetails.netUniformTotal);
+        candBuildingNet = Math.max(0, nominalReReg - candJulySpp - candBaseFee - candUniformNet);
+      }
 
       // 1a. Token Fee Transaction
       if (isTokenPaid) {
@@ -289,16 +329,15 @@ export default function SpmbFinanceReport({
         });
       }
 
-      // 1c. Re-Registration (Daftar Ulang) Handling
+      // 1c. Re-Registration (Daftar Ulang / Pelunasan Murid Baru) Handling
       if (isReRegPaid) {
         const totalDiscount = reregDetails.totalBuildingDiscount + reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus + (reregDetails.isSiblingFreeSpp ? reregDetails.julySppFee : 0);
-        const nominalReReg = (Number(c.reRegistrationAmount) > 0 ? Number(c.reRegistrationAmount) : Number((c as any).totalReRegistrationPaid)) || reregDetails.grandTotal;
         const dateStr = normalizeDateStr(c.reRegistrationPaidAt || (c as any).reRegistrationDate || c.updatedAt || c.createdAt);
 
-        sumBuildingNet += reregDetails.netBuildingFee;
-        sumJulySpp += reregDetails.effectiveJulySppFee;
-        sumUniformNet += reregDetails.netUniformTotal;
-        sumBaseFee += reregDetails.baseFee;
+        sumBuildingNet += candBuildingNet;
+        sumJulySpp += candJulySpp;
+        sumUniformNet += candUniformNet;
+        sumBaseFee += candBaseFee;
         sumTotalDiscounts += totalDiscount;
         sumGrandTotalReReg += nominalReReg;
 
@@ -326,11 +365,11 @@ export default function SpmbFinanceReport({
           statusLabel: 'Lunas DU',
           candidate: c,
           reregBreakdown: {
-            buildingFee: reregDetails.buildingFee,
-            netBuildingFee: reregDetails.netBuildingFee,
-            julySppFee: reregDetails.effectiveJulySppFee,
-            netUniformTotal: reregDetails.netUniformTotal,
-            baseFee: reregDetails.baseFee,
+            buildingFee: candBuildingNet,
+            netBuildingFee: candBuildingNet,
+            julySppFee: candJulySpp,
+            netUniformTotal: candUniformNet,
+            baseFee: candBaseFee,
             totalDiscount,
             uniformSize: sizeKey
           }
@@ -342,36 +381,34 @@ export default function SpmbFinanceReport({
           orderId: c.reRegistrationOrderId || `ORD-REREG-${c.nisn}`,
           paymentMethod: c.reRegistrationPaymentMethod || 'Midtrans Snap Online',
           sessionName,
-          buildingFee: reregDetails.buildingFee,
+          buildingFee: candBuildingNet,
           buildingDiscount: reregDetails.totalBuildingDiscount,
-          netBuildingFee: reregDetails.netBuildingFee,
-          julySppFee: reregDetails.effectiveJulySppFee,
+          netBuildingFee: candBuildingNet,
+          julySppFee: candJulySpp,
           isSiblingFreeSpp: reregDetails.isSiblingFreeSpp,
           rawUniformTotal: reregDetails.rawUniformTotal,
           uniformDiscount: reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus,
-          netUniformTotal: reregDetails.netUniformTotal,
-          baseFee: reregDetails.baseFee,
+          netUniformTotal: candUniformNet,
+          baseFee: candBaseFee,
           totalDiscount,
           grandTotal: nominalReReg,
           uniformSize: sizeKey
         });
       } else {
-        // Pending Daftar Ulang (Piutang)
-        if (isTokenPaid || c.status === 'accepted') {
-          const totalDiscount = reregDetails.totalBuildingDiscount + reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus + (reregDetails.isSiblingFreeSpp ? reregDetails.julySppFee : 0);
-          unpaidDU.push({
-            candidate: c,
-            registeredDate: normalizeDateStr(c.tokenPaidAt || c.createdAt),
-            tokenOrderId: c.tokenPaymentOrderId || `ORD-TOKEN-${c.nisn}`,
-            sessionName,
-            estimatedBuildingFee: reregDetails.netBuildingFee,
-            estimatedJulySpp: reregDetails.effectiveJulySppFee,
-            estimatedUniform: reregDetails.netUniformTotal,
-            estimatedDiscount: totalDiscount,
-            estimatedGrandTotal: reregDetails.grandTotal,
-            uniformSize: sizeKey
-          });
-        }
+        // Pending Daftar Ulang (Piutang) - Seluruh pendaftar yang belum lunas
+        const totalDiscount = reregDetails.totalBuildingDiscount + reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus + (reregDetails.isSiblingFreeSpp ? reregDetails.julySppFee : 0);
+        unpaidDU.push({
+          candidate: c,
+          registeredDate: normalizeDateStr(c.tokenPaidAt || c.createdAt),
+          tokenOrderId: c.tokenPaymentOrderId || `ORD-TOKEN-${c.nisn}`,
+          sessionName,
+          estimatedBuildingFee: reregDetails.netBuildingFee,
+          estimatedJulySpp: reregDetails.effectiveJulySppFee,
+          estimatedUniform: reregDetails.netUniformTotal,
+          estimatedDiscount: totalDiscount,
+          estimatedGrandTotal: reregDetails.grandTotal,
+          uniformSize: sizeKey
+        });
       }
     });
 
@@ -1331,18 +1368,115 @@ export default function SpmbFinanceReport({
 
       {/* 4. TAB CONTENT 1: OVERVIEW & RIWAYAT TRANSAKSI */}
       {activeTab === 'overview' && (
-        <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
-          <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
-            <div className="flex items-center gap-2">
-              <CreditCard size={18} className="text-emerald-600" />
-              <h3 className="text-base font-black text-slate-900 m-0">
-                Riwayat Transaksi Keuangan SPMB ({filteredTransactions.length} Transaksi)
-              </h3>
+        <div className="space-y-4">
+          {/* Card Statistik Jumlah Keseluruhan Murid Baru SPMB & Realisasi Pelunasan */}
+          <div className="p-5 rounded-3xl bg-slate-900 text-white border border-emerald-500/30 shadow-md space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-3">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Users size={17} />
+                </span>
+                <div>
+                  <h4 className="text-sm sm:text-base font-black text-white m-0 uppercase tracking-wide">
+                    Statistik Jumlah Keseluruhan Murid Baru SPMB &amp; Status Pelunasan
+                  </h4>
+                  <p className="text-[11px] text-slate-300 m-0">
+                    Perbandingan jumlah total murid baru, realisasi uang pelunasan yang telah masuk kas, dan sisa piutang.
+                  </p>
+                </div>
+              </div>
+              <span className="px-3 py-1 rounded-xl bg-white/15 text-white font-extrabold text-xs self-start sm:self-auto">
+                {candidates.length} Total Murid Baru
+              </span>
             </div>
-            <span className="text-xs text-slate-500 font-medium">
-              Periode: <strong className="text-slate-800">{activeDateRangeLabel}</strong>
-            </span>
+
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+              {/* Total Calon Murid */}
+              <div className="p-3 rounded-2xl bg-white/5 border border-white/10">
+                <span className="text-[11px] text-slate-400 font-bold block">Total Murid Baru</span>
+                <span className="text-2xl font-black text-white block mt-0.5">{candidates.length}</span>
+                <span className="text-[10px] text-slate-400 block mt-0.5">100% Calon Terdaftar</span>
+              </div>
+
+              {/* Murid Lunas Pelunasan */}
+              <div className="p-3 rounded-2xl bg-emerald-500/15 border border-emerald-500/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-emerald-200 font-bold block">Lunas Pelunasan</span>
+                  <span className="text-[10px] font-black text-emerald-950 bg-emerald-300 px-1.5 py-0.2 rounded-full">
+                    {candidates.length > 0 ? Math.round((filteredMetrics.reregPaidCount / candidates.length) * 100) : 0}%
+                  </span>
+                </div>
+                <span className="text-2xl font-black text-emerald-300 block mt-0.5">{filteredMetrics.reregPaidCount}</span>
+                <span className="text-[10px] text-emerald-200 font-bold block mt-0.5 truncate" title={`Rp ${filteredMetrics.reregRevenue.toLocaleString('id-ID')}`}>
+                  Rp {filteredMetrics.reregRevenue.toLocaleString('id-ID')}
+                </span>
+              </div>
+
+              {/* Murid Belum Pelunasan */}
+              <div className="p-3 rounded-2xl bg-amber-500/15 border border-amber-500/30">
+                <div className="flex items-center justify-between">
+                  <span className="text-[11px] text-amber-200 font-bold block">Belum Pelunasan</span>
+                  <span className="text-[10px] font-black text-amber-950 bg-amber-300 px-1.5 py-0.2 rounded-full">
+                    {candidates.length > 0 ? Math.round((filteredMetrics.pendingReRegCount / candidates.length) * 100) : 0}%
+                  </span>
+                </div>
+                <span className="text-2xl font-black text-amber-300 block mt-0.5">{filteredMetrics.pendingReRegCount}</span>
+                <span className="text-[10px] text-amber-200 font-bold block mt-0.5 truncate" title={`Rp ${filteredMetrics.totalPendingReReg.toLocaleString('id-ID')}`}>
+                  Rp {filteredMetrics.totalPendingReReg.toLocaleString('id-ID')}
+                </span>
+              </div>
+
+              {/* Total Kas Realisasi SPMB */}
+              <div className="p-3 rounded-2xl bg-teal-500/20 border border-teal-400/40">
+                <span className="text-[11px] text-teal-200 font-bold block">Total Kas Bersih</span>
+                <span className="text-xl sm:text-2xl font-black text-teal-300 block mt-0.5 truncate">
+                  Rp {filteredMetrics.totalNetKas.toLocaleString('id-ID')}
+                </span>
+                <span className="text-[10px] text-teal-200 font-semibold block mt-0.5">
+                  Token Bersih + Pelunasan
+                </span>
+              </div>
+            </div>
+
+            {/* Progress Bar Status Pelunasan */}
+            <div className="space-y-1.5 pt-1">
+              <div className="flex items-center justify-between text-[11px] font-bold">
+                <span className="text-slate-300">Rasio Pelunasan Murid Baru:</span>
+                <div className="flex items-center gap-3">
+                  <span className="text-emerald-400">
+                    Lunas: {filteredMetrics.reregPaidCount} murid ({candidates.length > 0 ? Math.round((filteredMetrics.reregPaidCount / candidates.length) * 100) : 0}%)
+                  </span>
+                  <span className="text-amber-400">
+                    Menunggu: {filteredMetrics.pendingReRegCount} murid ({candidates.length > 0 ? Math.round((filteredMetrics.pendingReRegCount / candidates.length) * 100) : 0}%)
+                  </span>
+                </div>
+              </div>
+
+              <div className="w-full bg-slate-800 h-2.5 rounded-full overflow-hidden flex p-0.5 border border-white/10">
+                <div 
+                  className="bg-emerald-400 h-full rounded-l-full transition-all duration-500"
+                  style={{ width: `${candidates.length > 0 ? (filteredMetrics.reregPaidCount / candidates.length) * 100 : 0}%` }}
+                />
+                <div 
+                  className="bg-amber-400 h-full rounded-r-full transition-all duration-500"
+                  style={{ width: `${candidates.length > 0 ? (filteredMetrics.pendingReRegCount / candidates.length) * 100 : 0}%` }}
+                />
+              </div>
+            </div>
           </div>
+
+          <div className="bg-white border border-slate-200/90 rounded-3xl p-5 sm:p-6 shadow-xs space-y-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <CreditCard size={18} className="text-emerald-600" />
+                <h3 className="text-base font-black text-slate-900 m-0">
+                  Riwayat Transaksi Keuangan SPMB ({filteredTransactions.length} Transaksi)
+                </h3>
+              </div>
+              <span className="text-xs text-slate-500 font-medium">
+                Periode: <strong className="text-slate-800">{activeDateRangeLabel}</strong>
+              </span>
+            </div>
 
           <div className="overflow-x-auto border border-slate-200 rounded-2xl">
             <table className="w-full text-left text-xs text-slate-700">
@@ -1447,6 +1581,7 @@ export default function SpmbFinanceReport({
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       )}
 

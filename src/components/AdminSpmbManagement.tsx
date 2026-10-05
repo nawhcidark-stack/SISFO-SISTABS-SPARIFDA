@@ -8,7 +8,7 @@ import {
 } from '../types';
 import SpmbReceiptModal from './SpmbReceiptModal';
 import SpmbFinanceReport from './SpmbFinanceReport';
-import { printSpmbReceiptDirect, printRegistrationProofDirect, generateAuthenticPasPhotoSvgDataUrl } from '../utils/spmbReceiptPrint';
+import { printSpmbReceiptDirect, printRegistrationProofDirect, generateAuthenticPasPhotoSvgDataUrl, calculateReRegDetails } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -609,10 +609,39 @@ export default function AdminSpmbManagement({
     paymentMethod: string = 'Tunai (Loket SPMB)',
     amount?: number
   ) => {
+    const reregDetails = calculateReRegDetails(candidate, config);
+    const calculatedFee = reregDetails.grandTotal || 560000;
+    const defaultAmount = amount !== undefined 
+      ? amount 
+      : (Number(candidate.reRegistrationAmount) > 0 ? Number(candidate.reRegistrationAmount) : calculatedFee);
+
     const actionLabel = status === 'paid' ? 'Tandai LUNAS' : 'Tandai BELUM LUNAS';
-    const typeLabel = type === 'token' ? 'Token Formulir (Rp 50.000)' : 'Daftar Ulang & Seragam';
-    if (!confirm(`${actionLabel} untuk pembayaran ${typeLabel} calon murid ${candidate.fullName}?`)) {
-      return;
+    let effectiveAmount = defaultAmount;
+
+    if (status === 'paid' && type === 'reregistration') {
+      const inputAmountStr = prompt(
+        `Pelunasan Biaya Daftar Ulang & Seragam Murid Baru:\n` +
+        `Nama Siswa: ${candidate.fullName} (NISN: ${candidate.nisn})\n` +
+        `Gelombang: ${reregDetails.sessionName}\n\n` +
+        `Biaya Terhitung Sistem: Rp ${calculatedFee.toLocaleString('id-ID')}\n` +
+        `• Uang Gedung Net: Rp ${reregDetails.netBuildingFee.toLocaleString('id-ID')}\n` +
+        `• Paket Seragam Net: Rp ${reregDetails.netUniformTotal.toLocaleString('id-ID')}\n` +
+        `• SPP Juli: Rp ${reregDetails.effectiveJulySppFee.toLocaleString('id-ID')}\n\n` +
+        `Masukkan jumlah uang pelunasan yang disetorkan (Rupiah):`,
+        String(defaultAmount)
+      );
+      if (inputAmountStr === null) return; // user cancelled
+      const parsed = parseInt(inputAmountStr.replace(/[^0-9]/g, ''), 10);
+      if (isNaN(parsed) || parsed < 0) {
+        alert('Nominal pelunasan tidak valid.');
+        return;
+      }
+      effectiveAmount = parsed;
+    } else {
+      const typeLabel = type === 'token' ? 'Token Formulir (Rp 50.000)' : `Daftar Ulang & Seragam (Rp ${defaultAmount.toLocaleString('id-ID')})`;
+      if (!confirm(`${actionLabel} untuk pembayaran ${typeLabel} calon murid ${candidate.fullName}?`)) {
+        return;
+      }
     }
 
     try {
@@ -624,7 +653,7 @@ export default function AdminSpmbManagement({
           type,
           status,
           paymentMethod,
-          amount: amount || (type === 'token' ? 50000 : (candidate.reRegistrationAmount || 1500000))
+          amount: type === 'token' ? 50000 : effectiveAmount
         })
       });
 
@@ -832,15 +861,46 @@ export default function AdminSpmbManagement({
   const maarifPercent = totalRegistered > 0 ? Math.round((maarifCount / totalRegistered) * 100) : 0;
   const umumPercent = totalRegistered > 0 ? Math.round((umumCount / totalRegistered) * 100) : 0;
 
-  const tokenPaidCount = candidates.filter(c => c.tokenPaymentStatus === 'paid' || c.tokenPaid).length;
+  // 3. Pelunasan & Administrasi Murid Baru SPMB
+  const tokenPaidCount = candidates.filter(c => c.tokenPaymentStatus === 'paid' || c.tokenPaid || c.registrationType === 'school_collective').length;
+  const tokenPaidPercent = totalRegistered > 0 ? Math.round((tokenPaidCount / totalRegistered) * 100) : 0;
   const collectiveCount = candidates.filter(c => c.registrationType === 'school_collective').length;
+  const onlineIndividualCount = totalRegistered - collectiveCount;
   const needRefundCount = candidates.filter(c => c.registrationType === 'school_collective' && (c.tokenPaymentStatus === 'paid' || c.tokenPaid) && c.collectiveRefundStatus !== 'refunded').length;
   const refundedCashCount = candidates.filter(c => c.collectiveRefundStatus === 'refunded').length;
   const transferredCount = candidates.filter(c => c.isTransferredSession).length;
   const formCompletedCount = candidates.filter(c => c.isFormCompleted).length;
-  const reRegPaidCount = candidates.filter(c => c.reRegistrationStatus === 'paid').length;
+  const formCompletedPercent = totalRegistered > 0 ? Math.round((formCompletedCount / totalRegistered) * 100) : 0;
+  const docsUploadedCount = candidates.filter(c => c.documentsUploaded || Boolean(c.documents?.pasPhoto || c.documents?.kkPhoto || c.documents?.aktaPhoto)).length;
+  const docsUploadedPercent = totalRegistered > 0 ? Math.round((docsUploadedCount / totalRegistered) * 100) : 0;
+
+  // Status Pelunasan Murid Baru
+  const reRegPaidCount = candidates.filter(c => c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true).length;
+  const unpaidReRegCount = totalRegistered - reRegPaidCount;
+  const reRegPaidPercent = totalRegistered > 0 ? Math.round((reRegPaidCount / totalRegistered) * 100) : 0;
+  const unpaidReRegPercent = totalRegistered > 0 ? (100 - reRegPaidPercent) : 0;
+
   const acceptedCount = candidates.filter(c => c.status === 'accepted').length;
   const promotedCount = candidates.filter(c => c.isPromotedToStudent).length;
+
+  // Total Realisasi Kas Pelunasan Masuk & Potensi Piutang
+  const totalReRegCashCollected = candidates
+    .filter(c => c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true)
+    .reduce((sum, c) => {
+      const amt = Number(c.reRegistrationAmount) || Number((c as any).totalReRegistrationPaid) || Number((c as any).reRegistrationFee) || calculateReRegDetails(c, config).grandTotal;
+      return sum + amt;
+    }, 0);
+
+  const totalPendingReRegAmount = candidates
+    .filter(c => !(c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true))
+    .reduce((sum, c) => {
+      return sum + calculateReRegDetails(c, config).grandTotal;
+    }, 0);
+
+  // Sesi / Gelombang breakdown
+  const indenCount = candidates.filter(c => c.sessionId === 'inden').length;
+  const gel1Count = candidates.filter(c => c.sessionId === 'gelombang-1').length;
+  const gel2Count = candidates.filter(c => c.sessionId === 'gelombang-2').length;
 
   const currentAcademicYear = config?.academicYear || '2027/2028';
 
@@ -908,7 +968,166 @@ export default function AdminSpmbManagement({
           </div>
         </div>
 
-        {/* 1. STATISTIK UTAMA: GENDER & ASAL SEKOLAH (SD MA'ARIF vs SD UMUM) */}
+        {/* 1. STATISTIK UTAMA: JUMLAH KESELURUHAN MURID BARU SPMB & REALISASI PELUNASAN */}
+        <div className="p-5 sm:p-6 rounded-3xl bg-gradient-to-br from-slate-900 via-slate-850 to-emerald-950 text-white shadow-lg border border-emerald-500/30 space-y-5">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-white/10 pb-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-2 rounded-xl bg-emerald-500/20 text-emerald-400 border border-emerald-500/30">
+                  <Users size={18} />
+                </span>
+                <div>
+                  <h3 className="text-base sm:text-lg font-black text-white m-0 tracking-wide uppercase">
+                    Statistik Jumlah Keseluruhan Murid Baru SPMB {currentAcademicYear}
+                  </h3>
+                  <p className="text-xs text-slate-300 m-0">
+                    Rekapitulasi total seluruh calon siswa pendaftar, progres pelunasan daftar ulang &amp; seragam, token formulir, dan verifikasi buku induk.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2 self-start sm:self-auto">
+              <span className="px-3.5 py-1.5 rounded-2xl bg-emerald-400 text-slate-950 font-black text-xs shadow-sm flex items-center gap-1.5">
+                <Sparkles size={14} />
+                <span>{totalRegistered} Total Murid Baru Terdaftar</span>
+              </span>
+            </div>
+          </div>
+
+          {/* 5-Card High Contrast KPI Grid */}
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* 1. Total Pendaftar */}
+            <div className="p-3.5 rounded-2xl bg-white/10 backdrop-blur-xs border border-white/15">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-slate-300">Total Murid Baru</span>
+                <span className="text-[10px] font-extrabold text-white bg-white/20 px-2 py-0.5 rounded-full">100%</span>
+              </div>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl sm:text-3xl font-black text-white">{totalRegistered}</span>
+                <span className="text-xs font-semibold text-slate-300">siswa</span>
+              </div>
+              <span className="text-[10px] text-slate-400 mt-1 block">Basis data pendaftaran</span>
+            </div>
+
+            {/* 2. Lunas Pelunasan */}
+            <div className="p-3.5 rounded-2xl bg-emerald-500/20 backdrop-blur-xs border border-emerald-400/40">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-emerald-200">Lunas Pelunasan (DU)</span>
+                <span className="text-[10px] font-extrabold text-emerald-950 bg-emerald-300 px-2 py-0.5 rounded-full">
+                  {reRegPaidPercent}%
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl sm:text-3xl font-black text-emerald-300">{reRegPaidCount}</span>
+                <span className="text-xs font-semibold text-emerald-200">siswa</span>
+              </div>
+              <span className="text-[10px] text-emerald-200 font-bold mt-1 block truncate" title={`Rp ${totalReRegCashCollected.toLocaleString('id-ID')}`}>
+                Kas: Rp {totalReRegCashCollected.toLocaleString('id-ID')}
+              </span>
+            </div>
+
+            {/* 3. Belum Pelunasan */}
+            <div className="p-3.5 rounded-2xl bg-amber-500/20 backdrop-blur-xs border border-amber-400/40">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-amber-200">Belum Pelunasan</span>
+                <span className="text-[10px] font-extrabold text-amber-950 bg-amber-300 px-2 py-0.5 rounded-full">
+                  {unpaidReRegPercent}%
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl sm:text-3xl font-black text-amber-300">{unpaidReRegCount}</span>
+                <span className="text-xs font-semibold text-amber-200">siswa</span>
+              </div>
+              <span className="text-[10px] text-amber-200 font-bold mt-1 block truncate" title={`Piutang: Rp ${totalPendingReRegAmount.toLocaleString('id-ID')}`}>
+                Piutang: Rp {totalPendingReRegAmount.toLocaleString('id-ID')}
+              </span>
+            </div>
+
+            {/* 4. Token Lunas */}
+            <div className="p-3.5 rounded-2xl bg-blue-500/20 backdrop-blur-xs border border-blue-400/40">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-blue-200">Token Lunas</span>
+                <span className="text-[10px] font-extrabold text-blue-950 bg-blue-300 px-2 py-0.5 rounded-full">
+                  {tokenPaidPercent}%
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl sm:text-3xl font-black text-blue-200">{tokenPaidCount}</span>
+                <span className="text-xs font-semibold text-blue-200">siswa</span>
+              </div>
+              <span className="text-[10px] text-blue-300 mt-1 block">
+                {collectiveCount} Kolektif • {onlineIndividualCount} Mandiri
+              </span>
+            </div>
+
+            {/* 5. Buku Induk Lengkap */}
+            <div className="p-3.5 rounded-2xl bg-teal-500/20 backdrop-blur-xs border border-teal-400/40">
+              <div className="flex items-center justify-between">
+                <span className="text-[11px] font-bold text-teal-200">Buku Induk Lengkap</span>
+                <span className="text-[10px] font-extrabold text-teal-950 bg-teal-300 px-2 py-0.5 rounded-full">
+                  {formCompletedPercent}%
+                </span>
+              </div>
+              <div className="flex items-baseline gap-1 mt-1">
+                <span className="text-2xl sm:text-3xl font-black text-teal-200">{formCompletedCount}</span>
+                <span className="text-xs font-semibold text-teal-200">siswa</span>
+              </div>
+              <span className="text-[10px] text-teal-300 mt-1 block">
+                {docsUploadedCount} Berkas Terunggah ({docsUploadedPercent}%)
+              </span>
+            </div>
+          </div>
+
+          {/* Visual Progress Bar Pelunasan Murid Baru */}
+          <div className="p-3.5 rounded-2xl bg-black/30 border border-white/10 space-y-2">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1 text-xs font-bold">
+              <span className="text-slate-300 flex items-center gap-1.5">
+                <CreditCard size={14} className="text-emerald-400" />
+                <span>Progres Pelunasan Daftar Ulang &amp; Seragam Murid Baru:</span>
+              </span>
+              <div className="flex items-center gap-3 text-xs">
+                <span className="text-emerald-400 flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 inline-block" />
+                  <span>Lunas: <strong>{reRegPaidCount} siswa ({reRegPaidPercent}%)</strong></span>
+                </span>
+                <span className="text-amber-400 flex items-center gap-1">
+                  <span className="w-2.5 h-2.5 rounded-full bg-amber-400 inline-block" />
+                  <span>Belum Lunas: <strong>{unpaidReRegCount} siswa ({unpaidReRegPercent}%)</strong></span>
+                </span>
+              </div>
+            </div>
+
+            <div className="w-full bg-slate-800 h-3 rounded-full overflow-hidden flex p-0.5 gap-0.5 border border-white/10">
+              <div 
+                className="bg-emerald-400 h-full rounded-l-full transition-all duration-500"
+                style={{ width: `${reRegPaidPercent}%` }}
+                title={`Lunas Pelunasan: ${reRegPaidCount} murid (${reRegPaidPercent}%)`}
+              />
+              <div 
+                className="bg-amber-400 h-full rounded-r-full transition-all duration-500"
+                style={{ width: `${unpaidReRegPercent}%` }}
+                title={`Belum Lunas: ${unpaidReRegCount} murid (${unpaidReRegPercent}%)`}
+              />
+            </div>
+
+            <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px] text-slate-300">
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-400">Distribusi Gelombang:</span>
+                <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-medium">Inden: <strong>{indenCount}</strong></span>
+                <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-medium">Gel 1: <strong>{gel1Count}</strong></span>
+                <span className="px-2 py-0.5 rounded-md bg-white/10 text-white font-medium">Gel 2: <strong>{gel2Count}</strong></span>
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <span className="text-slate-400">Asal SD:</span>
+                <span className="px-2 py-0.5 rounded-md bg-emerald-900/40 text-emerald-200 border border-emerald-500/30">SD Ma'arif: <strong>{maarifCount}</strong> ({maarifPercent}%)</span>
+                <span className="px-2 py-0.5 rounded-md bg-indigo-900/40 text-indigo-200 border border-indigo-500/30">SD Umum: <strong>{umumCount}</strong> ({umumPercent}%)</span>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* 2. STATISTIK RINCIAN: GENDER & ASAL SEKOLAH (SD MA'ARIF vs SD UMUM) */}
         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           {/* Card Statistik Gender: Laki-laki & Perempuan */}
           <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">

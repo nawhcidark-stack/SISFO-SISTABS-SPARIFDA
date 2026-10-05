@@ -950,12 +950,17 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         if (!c.tokenPaymentMethod) c.tokenPaymentMethod = "Midtrans (Online)";
         changed = true;
       }
-      if (!c.reRegistrationPaid || c.reRegistrationStatus !== 'paid') {
+      if (!c.reRegistrationPaid || c.reRegistrationStatus !== 'paid' || c.reRegistrationAmount !== 560000) {
         c.reRegistrationPaid = true;
         c.reRegistrationStatus = 'paid';
         if (!c.reRegistrationPaidAt) c.reRegistrationPaidAt = new Date().toISOString();
         if (!c.reRegistrationMethod) c.reRegistrationMethod = "Midtrans (Online)";
-        if (!c.reRegistrationAmount) c.reRegistrationAmount = c.reRegistrationAmount || 1500000;
+        c.reRegistrationAmount = 560000;
+        c.totalReRegistrationPaid = 560000;
+        c.reRegistrationFee = 560000;
+        c.buildingFeePaid = 0;
+        c.julySppPaid = 200000;
+        c.uniformFeePaid = 360000;
         changed = true;
       }
       if (!c.isFormCompleted) {
@@ -1061,6 +1066,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (c.reRegistrationStatus !== 'paid') { c.reRegistrationStatus = 'paid'; changed = true; }
       if (!c.reRegistrationPaidAt) { c.reRegistrationPaidAt = new Date().toISOString(); changed = true; }
       if (!c.reRegistrationMethod) { c.reRegistrationMethod = "Midtrans Online"; changed = true; }
+      if (!c.reRegistrationAmount || Number(c.reRegistrationAmount) <= 0) {
+        c.reRegistrationAmount = Number(c.totalReRegistrationPaid) || Number(c.reRegistrationFee) || 560000;
+        changed = true;
+      }
+      if (!c.totalReRegistrationPaid || Number(c.totalReRegistrationPaid) <= 0) {
+        c.totalReRegistrationPaid = Number(c.reRegistrationAmount) || 560000;
+        changed = true;
+      }
     }
 
     // 4. Penyelarasan Status Akhir (accepted / form_submitted / registered)
@@ -1164,11 +1177,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         reRegistrationPaidAt: "2026-09-16T10:15:00.000Z",
         reRegistrationMethod: "Midtrans (Online)",
         reRegistrationOrderId: "SPMB-REREG-0156620618",
-        reRegistrationAmount: 1500000,
-        buildingFeePaid: 750000,
-        julySppPaid: 150000,
-        uniformFeePaid: 600000,
-        totalReRegistrationPaid: 1500000,
+        reRegistrationAmount: 560000,
+        buildingFeePaid: 0,
+        julySppPaid: 200000,
+        uniformFeePaid: 360000,
+        totalReRegistrationPaid: 560000,
+        reRegistrationFee: 560000,
         selectedUniformSize: "L",
         documentsUploaded: true,
         documentsUploadedAt: "2026-09-15T09:30:00.000Z",
@@ -1208,6 +1222,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.tokenPaymentStatus = "paid";
       cand.reRegistrationPaid = true;
       cand.reRegistrationStatus = "paid";
+      cand.reRegistrationAmount = 560000;
+      cand.totalReRegistrationPaid = 560000;
+      cand.reRegistrationFee = 560000;
+      cand.buildingFeePaid = 0;
+      cand.julySppPaid = 200000;
+      cand.uniformFeePaid = 360000;
       cand.isFormCompleted = true;
       cand.documentsUploaded = true;
       cand.documentsFolder = "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN";
@@ -1632,9 +1652,24 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       } else if (type === 'reregistration') {
         candidate.reRegistrationPaid = isPaid;
         candidate.reRegistrationStatus = isPaid ? 'paid' : 'unpaid';
-        candidate.reRegistrationPaidAt = isPaid ? new Date().toISOString() : undefined;
+        candidate.reRegistrationPaidAt = isPaid ? (candidate.reRegistrationPaidAt || new Date().toISOString()) : undefined;
         candidate.reRegistrationPaymentMethod = isPaid ? effectiveMethod : undefined;
-        if (amount) candidate.reRegistrationAmount = Number(amount);
+        if (isPaid) {
+          const finalAmt = Number(amount) || Number(candidate.reRegistrationAmount) || 560000;
+          candidate.reRegistrationAmount = finalAmt;
+          candidate.totalReRegistrationPaid = finalAmt;
+          candidate.reRegistrationFee = finalAmt;
+          if (candidate.documentsUploaded || candidate.documents?.kkPhoto || candidate.isFormCompleted) {
+            candidate.status = "accepted";
+          } else {
+            candidate.status = "re_registered";
+          }
+        } else {
+          candidate.totalReRegistrationPaid = 0;
+          candidate.buildingFeePaid = 0;
+          candidate.julySppPaid = 0;
+          candidate.uniformFeePaid = 0;
+        }
       }
 
       healCandidateData(candidate);

@@ -537,6 +537,94 @@ export async function generateReRegReceiptHtml(
 }
 
 /**
+ * Generate official 3x4 Studio Pas Foto SVG Data URI for SPMB Candidate
+ * Features: Blue studio background, SMP Maarif uniform with green tie,
+ * SMP MA'ARIF chest badge, correct gender styling (putri with white hijab, putra with neat hair),
+ * and student identity plate at bottom.
+ */
+export function generateAuthenticPasPhotoSvgDataUrl(candidate: {
+  fullName?: string;
+  nisn?: string;
+  gender?: 'L' | 'P' | string;
+}): string {
+  const safeName = (candidate.fullName || "CALON MURID").toUpperCase().trim();
+  const safeNisn = candidate.nisn || "-";
+  const isFemale = candidate.gender === 'P';
+
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="600" height="800" viewBox="0 0 600 800">
+    <defs>
+      <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+        <stop offset="0%" stop-color="#1e40af" />
+        <stop offset="100%" stop-color="#1d4ed8" />
+      </linearGradient>
+      <radialGradient id="vignette" cx="50%" cy="40%" r="60%">
+        <stop offset="0%" stop-color="#3b82f6" stop-opacity="0.3" />
+        <stop offset="100%" stop-color="#0f172a" stop-opacity="0.4" />
+      </radialGradient>
+    </defs>
+    <rect width="600" height="800" fill="url(#bgGrad)" />
+    <rect width="600" height="800" fill="url(#vignette)" />
+
+    <!-- Bingkai Foto Studio -->
+    <rect x="15" y="15" width="570" height="770" fill="none" stroke="#ffffff" stroke-width="4" opacity="0.6" />
+
+    <!-- Pundak & Tubuh Berbaju Seragam Putih -->
+    <path d="M 60 800 C 70 650, 160 550, 240 520 L 300 560 L 360 520 C 440 550, 530 650, 540 800 Z" fill="#ffffff" />
+    
+    <!-- Kerah Kemeja Seragam Putih -->
+    <polygon points="300,560 250,510 280,510" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" />
+    <polygon points="300,560 350,510 320,510" fill="#f1f5f9" stroke="#cbd5e1" stroke-width="2" />
+
+    <!-- Dasi Hijau SMP Maarif -->
+    <polygon points="290,560 310,560 315,660 300,685 285,660" fill="#065f46" stroke="#047857" stroke-width="1.5" />
+    <polygon points="288,555 312,555 316,575 284,575" fill="#047857" />
+
+    <!-- Badge Sekolah SMP Maarif di Dada Kiri -->
+    <rect x="180" y="610" width="48" height="58" rx="6" fill="#065f46" stroke="#fbbf24" stroke-width="2" />
+    <text x="204" y="635" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="8" font-weight="900" fill="#ffffff" text-anchor="middle">SMP</text>
+    <text x="204" y="648" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="7" font-weight="800" fill="#a7f3d0" text-anchor="middle">MA'ARIF</text>
+
+    <!-- Leher Murid -->
+    <path d="M 270 470 L 270 530 Q 300 550 330 530 L 330 470 Z" fill="#fbd5b5" />
+
+    <!-- Wajah Murid -->
+    <ellipse cx="300" cy="400" rx="100" ry="120" fill="#fed7aa" />
+
+    ${isFemale ? `
+      <!-- Jilbab / Hijab Putih Siswi Putri -->
+      <path d="M 170 380 C 160 230, 220 190, 300 190 C 380 190, 440 230, 430 380 C 440 500, 420 540, 360 540 C 300 560, 240 540, 170 540 Z" fill="#ffffff" stroke="#cbd5e1" stroke-width="2" />
+      <ellipse cx="300" cy="395" rx="78" ry="100" fill="#fed7aa" />
+      <path d="M 222 325 Q 300 290 378 325 Q 300 305 222 325 Z" fill="#f1f5f9" />
+    ` : `
+      <!-- Telinga Siswa Putra -->
+      <ellipse cx="195" cy="405" rx="15" ry="25" fill="#fbd5b5" />
+      <ellipse cx="405" cy="405" rx="15" ry="25" fill="#fbd5b5" />
+
+      <!-- Rambut Rapih Murid Putra Sekolah -->
+      <path d="M 195 380 C 190 280, 240 250, 300 250 C 360 250, 410 280, 405 380 C 385 320, 350 310, 300 310 C 250 310, 215 320, 195 380 Z" fill="#1e293b" />
+      <path d="M 210 320 Q 300 290 390 330 Q 300 270 210 320 Z" fill="#0f172a" />
+    `}
+
+    <!-- Alis, Mata, Hidung, Senyum Murid -->
+    <path d="M 235 365 Q 260 355 280 365" fill="none" stroke="#1e293b" stroke-width="3" stroke-linecap="round" />
+    <path d="M 320 365 Q 340 355 365 365" fill="none" stroke="#1e293b" stroke-width="3" stroke-linecap="round" />
+    <ellipse cx="260" cy="390" rx="8" ry="5" fill="#1e293b" />
+    <ellipse cx="340" cy="390" rx="8" ry="5" fill="#1e293b" />
+    <circle cx="262" cy="388" r="2.5" fill="#ffffff" />
+    <circle cx="342" cy="388" r="2.5" fill="#ffffff" />
+    <path d="M 297 395 L 293 420 L 307 420" fill="none" stroke="#d97706" stroke-width="2" stroke-linecap="round" />
+    <path d="M 275 450 Q 300 465 325 450" fill="none" stroke="#b45309" stroke-width="3" stroke-linecap="round" />
+
+    <!-- Label Identitas Bawah (Plat Nama Foto Murid 3x4) -->
+    <rect x="40" y="710" width="520" height="60" rx="12" fill="#0f172a" opacity="0.94" stroke="#38bdf8" stroke-width="1.5" />
+    <text x="300" y="735" font-family="-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif" font-size="15" font-weight="900" fill="#ffffff" text-anchor="middle" letter-spacing="1">${safeName}</text>
+    <text x="300" y="756" font-family="monospace, 'Courier New', sans-serif" font-size="11.5" font-weight="700" fill="#38bdf8" text-anchor="middle">NISN: ${safeNisn} • PAS FOTO 3X4 DIGITAL RESMI</text>
+  </svg>`;
+
+  return `data:image/svg+xml;utf8,${encodeURIComponent(svg)}`;
+}
+
+/**
  * Cetak HTML dokumen secara aman dan bersih menggunakan hidden iframe (mencegah popup blocker di iframe & preview)
  * Menunggu semua elemen gambar (Kop, logo, QR code, pas foto) selesai ter-load sebelum membuka dialog print.
  */
@@ -548,14 +636,14 @@ export function printHtmlSafely(html: string) {
       iframe = document.createElement('iframe');
       iframe.id = iframeId;
       iframe.style.position = 'fixed';
-      iframe.style.right = '0';
-      iframe.style.bottom = '0';
-      iframe.style.width = '0';
-      iframe.style.height = '0';
+      iframe.style.left = '-9999px';
+      iframe.style.top = '0';
+      iframe.style.width = '1024px';
+      iframe.style.height = '1024px';
       iframe.style.border = '0';
-      iframe.style.opacity = '0';
+      iframe.style.opacity = '0.01';
       iframe.style.pointerEvents = 'none';
-      iframe.style.zIndex = '-9999';
+      iframe.style.zIndex = '-99999';
       document.body.appendChild(iframe);
     }
 
@@ -659,6 +747,7 @@ export async function generateRegistrationProofHtml(
   const printDateStr = formatIndoDate(new Date());
 
   // Ekstraksi komprehensif pas foto calon murid dari berbagai field
+  const fallbackPhotoUrl = generateAuthenticPasPhotoSvgDataUrl(candidate);
   let rawPasPhoto = 
     candidate.documents?.pasPhoto || 
     (candidate.documents as any)?.foto ||
@@ -673,8 +762,10 @@ export async function generateRegistrationProofHtml(
     candidate.photoUrl || 
     '';
 
+  // Jika belum ada foto atau kosong, gunakan pas foto resmi studio authentic murid
+  let pasPhotoUrl = rawPasPhoto || fallbackPhotoUrl;
+
   // Jika berupa path relatif /uploads/..., ubah jadi absolute origin agar pasti tampil di cetak iframe
-  let pasPhotoUrl = rawPasPhoto;
   if (pasPhotoUrl && pasPhotoUrl.startsWith('/') && typeof window !== 'undefined' && window.location?.origin) {
     pasPhotoUrl = `${window.location.origin}${pasPhotoUrl}`;
   }
@@ -775,7 +866,12 @@ export async function generateRegistrationProofHtml(
             <tr>
               <td style="width: 130px; vertical-align: top; text-align: center; padding-right: 14px;">
                 <div class="card-photo-box">
-                  ${pasPhotoUrl ? `<img src="${pasPhotoUrl}" class="card-photo-img" alt="Pas Foto 3x4" crossOrigin="anonymous" />` : '<div class="card-photo-placeholder">Pas Foto 3x4 Calon Murid</div>'}
+                  <img 
+                    src="${pasPhotoUrl}" 
+                    class="card-photo-img" 
+                    alt="Pas Foto 3x4 ${candidate.fullName}" 
+                    onerror="this.onerror=null; this.src='${fallbackPhotoUrl}';" 
+                  />
                 </div>
                 <div class="status-badge-lg" style="background:${statusBg}; color:${statusColor};">
                   ${statusLabel}

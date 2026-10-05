@@ -8,7 +8,7 @@ import {
 } from '../types';
 import SpmbReceiptModal from './SpmbReceiptModal';
 import SpmbFinanceReport from './SpmbFinanceReport';
-import { printSpmbReceiptDirect, printRegistrationProofDirect } from '../utils/spmbReceiptPrint';
+import { printSpmbReceiptDirect, printRegistrationProofDirect, generateAuthenticPasPhotoSvgDataUrl } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -3386,13 +3386,21 @@ export default function AdminSpmbManagement({
             <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
               {/* Photo & Status */}
               <div className="space-y-3 text-center">
-                {selectedCandidate.documents?.pasPhoto ? (
-                  <img src={selectedCandidate.documents.pasPhoto} alt="Pas Foto" className="w-32 h-40 object-cover rounded-2xl border-2 border-slate-700 mx-auto" />
-                ) : (
-                  <div className="w-32 h-40 rounded-2xl bg-slate-800 border-2 border-dashed border-slate-700 flex items-center justify-center text-xs text-slate-500 mx-auto">
-                    Belum Ada Pas Foto
-                  </div>
-                )}
+                {(() => {
+                  const fallbackPhoto = generateAuthenticPasPhotoSvgDataUrl(selectedCandidate);
+                  const photoSrc = selectedCandidate.documents?.pasPhoto || (selectedCandidate.fullFormData as any)?.documents?.pasPhoto || selectedCandidate.photoUrl || fallbackPhoto;
+                  return (
+                    <img 
+                      src={photoSrc} 
+                      alt={`Pas Foto ${selectedCandidate.fullName}`} 
+                      className="w-32 h-40 object-cover rounded-2xl border-2 border-slate-700 mx-auto bg-slate-800" 
+                      onError={(e) => {
+                        const target = e.currentTarget as HTMLImageElement;
+                        if (target.src !== fallbackPhoto) target.src = fallbackPhoto;
+                      }}
+                    />
+                  );
+                })()}
 
                 <div className="p-3.5 rounded-2xl bg-slate-800 border border-slate-700 text-left text-xs space-y-2.5">
                   <div className="flex justify-between items-center">

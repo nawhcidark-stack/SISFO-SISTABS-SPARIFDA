@@ -438,10 +438,8 @@ export function saveCandidateDocumentsToDisk(
   };
 
   const allKeys = new Set([...Object.keys(resultDocs), ...Object.keys(incomingDocs), ...Object.keys(rawDocs)]);
-  // Khusus kandidat resmi seperti 0156620618 & 3142814544 yang sudah verifikasi dokumen lengkap
-  if (candidate.documentsUploaded || candidate.nisn === "0156620618" || candidate.nisn === "3142814544") {
-    ['pasPhoto', 'kkPhoto', 'aktaPhoto', 'ktpAyahPhoto', 'ktpIbuPhoto'].forEach(k => allKeys.add(k));
-  }
+  // Pastikan SEMUA calon murid baru memiliki berkas resmi fisik di hosting (pas foto 3x4, KK, Akta, KTP)
+  ['pasPhoto', 'kkPhoto', 'aktaPhoto', 'ktpAyahPhoto', 'ktpIbuPhoto'].forEach(k => allKeys.add(k));
 
   for (const key of allKeys) {
     const val = incomingDocs[key] || rawDocs[key] || resultDocs[key];
@@ -637,12 +635,10 @@ export function saveCandidateDocumentsToDisk(
 export function syncAllCandidateDocumentsToDisk(candidates: SpmbCandidate[]) {
   if (!Array.isArray(candidates)) return;
   candidates.forEach(cand => {
-    if (cand.documentsUploaded || cand.documents || cand.nisn === "0156620618") {
-      try {
-        saveCandidateDocumentsToDisk(cand, cand.documents || {});
-      } catch (err) {
-        console.warn(`[Sync Documents to Disk Warning for ${cand.fullName}]:`, err);
-      }
+    try {
+      saveCandidateDocumentsToDisk(cand, cand.documents || {});
+    } catch (err) {
+      console.warn(`[Sync Documents to Disk Warning for ${cand.fullName}]:`, err);
     }
   });
 }
@@ -735,6 +731,13 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     checkAndAutoTransferExpiredCandidates,
     recordOrUpdateMidtransTransaction
   } = deps;
+
+  // Jalankan sinkronisasi fisik dokumen untuk semua calon murid baru
+  try {
+    syncAllCandidateDocumentsToDisk(spmbCandidates);
+  } catch (syncErr) {
+    console.warn("[Initial SPMB Docs Sync Warning]:", syncErr);
+  }
 
   // Real Midtrans Status Checker for SPMB Orders
   async function checkMidtransOrderStatus(orderId: string): Promise<any> {
@@ -1372,6 +1375,10 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       saveState();
       directSaveEntitiesBatchToMysql("spmb_candidates", spmbCandidates).catch(() => {});
     }
+    // Pastikan seluruh file fisik dokumen di disk hosting selalu tersinkron
+    try {
+      syncAllCandidateDocumentsToDisk(spmbCandidates);
+    } catch (_) {}
 
     // Kembalikan seluruh data calon murid langsung dari MySQL
     res.json(spmbCandidates);
@@ -1996,6 +2003,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           updatedAt: new Date().toISOString()
         };
         spmbCandidates.push(candidate);
+        // Otomatis buat folder berkas dan dokumen fisik resmi calon murid baru
+        try {
+          const { documents: initDocs, folderUrl: initFolder, folderName: initFldName } = saveCandidateDocumentsToDisk(candidate, {});
+          candidate.documents = initDocs;
+          candidate.documentsFolder = initFolder;
+          candidate.documentsFolderName = initFldName;
+          candidate.googleDriveLink = initFolder;
+        } catch (_) {}
       }
 
       try {

@@ -2311,6 +2311,18 @@ export default function AdminPanel({
     setSelectedSppBills([]);
   }, [selectedStudent?.id]);
 
+  // Handle ESC key to quickly close the receipt modal if open
+  useEffect(() => {
+    if (!receiptToPrint) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setReceiptToPrint(null);
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [receiptToPrint]);
+
   // Homeroom & Subject Teacher mgmt states
   const [editingHomeroomId, setEditingHomeroomId] = useState<string | null>(
     null,
@@ -17385,29 +17397,81 @@ export default function AdminPanel({
 
       {/* GLOBAL KUITANSI (RECEIPT OVERLAY) POPUP */}
       {receiptToPrint && (
-        <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-4">
-          <div className="bg-white rounded-2xl border border-slate-200 shadow-2xl p-6 md:p-8 max-w-xl w-full flex flex-col gap-5 relative">
-            {/* Format Selection Switcher */}
-            <div className="flex gap-1.5 p-1 bg-slate-100 rounded-xl no-print text-[11px] font-bold text-slate-650 w-full justify-center">
-              <button
-                type="button"
-                onClick={() => setReceiptPrintFormat("standard")}
-                className={`flex-1 py-2 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === "standard" ? "bg-white text-slate-900 shadow-xs border border-slate-200/50" : "text-slate-500 hover:text-slate-800"}`}
-              >
-                Format Standar (Kuitansi PDF)
-              </button>
-              <button
-                type="button"
-                onClick={() => setReceiptPrintFormat("thermal")}
-                className={`flex-1 py-2 rounded-lg transition-all text-center cursor-pointer ${receiptPrintFormat === "thermal" ? "bg-white text-slate-900 shadow-xs border border-slate-200/50" : "text-slate-500 hover:text-slate-800"}`}
-              >
-                Format Thermal (Roll Kasir)
-              </button>
+        <div 
+          className="fixed inset-0 z-50 bg-slate-950/75 backdrop-blur-xs flex flex-col items-center justify-start sm:justify-center p-2 sm:p-4 overflow-y-auto"
+          onClick={(e) => {
+            if (e.target === e.currentTarget) setReceiptToPrint(null);
+          }}
+        >
+          {/* Floating Close Button: ALWAYS VISIBLE at top-right corner of device screen regardless of scroll/zoom */}
+          <button
+            type="button"
+            onClick={() => setReceiptToPrint(null)}
+            className="fixed top-2.5 right-2.5 sm:top-4 sm:right-4 z-[70] px-3.5 py-2 bg-rose-600 hover:bg-rose-700 active:scale-95 text-white rounded-full shadow-2xl transition-all cursor-pointer flex items-center gap-1.5 font-bold text-xs ring-4 ring-white/90 no-print"
+            title="Tutup Kuitansi (Esc)"
+            aria-label="Tutup Kuitansi"
+          >
+            <X size={18} className="stroke-[3]" />
+            <span className="text-[11px] font-black uppercase tracking-wider">Tutup</span>
+          </button>
+
+          <div className="bg-white rounded-2xl sm:rounded-3xl border border-slate-200 shadow-2xl max-w-xl w-full flex flex-col relative h-[94dvh] sm:h-auto sm:max-h-[88vh] min-h-0 my-auto overflow-hidden">
+            {/* Top Fixed Sticky Header (Always visible on all screens & mobile) */}
+            <div className="sticky top-0 z-20 p-3 sm:p-4 bg-slate-50/95 backdrop-blur-xs border-b border-slate-200 flex flex-col gap-2.5 shrink-0 no-print">
+              <div className="flex items-center justify-between gap-3 pr-20 sm:pr-0">
+                <div className="flex items-center gap-2 min-w-0">
+                  <span className="p-1.5 bg-emerald-100 text-emerald-800 rounded-xl text-xs font-bold shrink-0">🧾</span>
+                  <div className="truncate">
+                    <h3 className="font-black text-xs sm:text-sm text-slate-900 leading-tight truncate">Cetak Kuitansi Pembayaran</h3>
+                    <p className="text-[10px] text-slate-500 font-medium truncate">
+                      {receiptToPrint.type === "consolidated" 
+                        ? `Keranjang Gabungan (${receiptToPrint.detail.items?.length || 0} Item: SPP / Tabungan / Lain-lain)` 
+                        : receiptToPrint.type === "spp" 
+                        ? `Iuran SPP (${receiptToPrint.detail.month} ${receiptToPrint.detail.year})` 
+                        : receiptToPrint.type === "savings" 
+                        ? `Tabungan Siswa (${receiptToPrint.detail.type === "deposit" ? "Setoran" : "Tarikan"})` 
+                        : "Tagihan Non-SPP / Lain-lain"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Header Close Button (X) */}
+                <button
+                  type="button"
+                  onClick={() => setReceiptToPrint(null)}
+                  className="p-1.5 sm:px-3 sm:py-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 hover:text-rose-800 border border-rose-200 rounded-xl transition-all cursor-pointer flex items-center gap-1 shrink-0 font-bold text-xs shadow-2xs"
+                  title="Tutup Kuitansi (Esc)"
+                  aria-label="Tutup Kuitansi"
+                >
+                  <X size={16} />
+                  <span className="text-[11px]">Tutup</span>
+                </button>
+              </div>
+
+              {/* Format Selection Switcher */}
+              <div className="flex gap-1.5 p-1 bg-white rounded-xl border border-slate-200/80 text-[11px] font-bold text-slate-650 w-full justify-center shadow-3xs">
+                <button
+                  type="button"
+                  onClick={() => setReceiptPrintFormat("standard")}
+                  className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer text-xs font-bold ${receiptPrintFormat === "standard" ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"}`}
+                >
+                  Format Standar (Kuitansi PDF)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setReceiptPrintFormat("thermal")}
+                  className={`flex-1 py-1.5 rounded-lg transition-all text-center cursor-pointer text-xs font-bold ${receiptPrintFormat === "thermal" ? "bg-indigo-600 text-white shadow-xs" : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"}`}
+                >
+                  Format Thermal (Roll Kasir)
+                </button>
+              </div>
             </div>
 
-            {/* Kuitansi core print page section starting here */}
-            <div
-              id="print-receipt-section"
+            {/* Scrollable Middle Container: min-h-0 is essential so flexbox shrinks inside max-height */}
+            <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-3 sm:p-6 bg-slate-100/50 print:p-0 print:overflow-visible print:bg-white custom-scrollbar">
+              {/* Kuitansi core print page section starting here */}
+              <div
+                id="print-receipt-section"
               className={
                 receiptPrintFormat === "thermal"
                   ? "bg-white text-slate-900 p-2 font-mono flex flex-col gap-2.5 text-[10px] leading-tight text-center relative print-thermal w-full max-w-[76mm] mx-auto border-none select-all"
@@ -17987,14 +18051,22 @@ export default function AdminPanel({
                   </div>
                 </>
               )}
+              </div>
             </div>
 
-            {/* Modal Actions at the Bottom */}
-            <div className="flex flex-col sm:flex-row gap-3 justify-between items-center pt-4 border-t border-slate-100 no-print">
-              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-450">
+            {/* Bottom Fixed Sticky Action Bar: Always visible on mobile & desktop */}
+            <div className="sticky bottom-0 z-20 p-3 sm:p-4 bg-white border-t border-slate-200 flex flex-row items-center justify-between gap-2.5 shrink-0 no-print shadow-[0_-4px_16px_rgba(0,0,0,0.08)]">
+              <span className="text-[10px] sm:text-xs font-bold uppercase tracking-wider text-slate-400 hidden sm:inline">
                 Kuitansi Resmi SMP Maarif
               </span>
               <div className="flex gap-2 w-full sm:w-auto justify-end">
+                <button
+                  type="button"
+                  onClick={() => setReceiptToPrint(null)}
+                  className="flex-1 sm:flex-none px-4 py-2 bg-rose-50 hover:bg-rose-100 border-2 border-rose-300 text-rose-700 font-bold rounded-xl text-xs uppercase cursor-pointer transition-all flex items-center justify-center gap-1.5 shadow-xs"
+                >
+                  <X size={15} /> Tutup
+                </button>
                 <button
                   type="button"
                   onClick={() => {
@@ -18002,16 +18074,9 @@ export default function AdminPanel({
                     setReceiptToPrint(null);
                     onRefresh();
                   }}
-                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-lg text-xs uppercase tracking-wide flex items-center gap-1.5 shadow-sm transition-all cursor-pointer"
+                  className="flex-1 sm:flex-none px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white font-bold rounded-xl text-xs uppercase tracking-wide flex items-center justify-center gap-1.5 shadow-sm transition-all cursor-pointer"
                 >
-                  <Printer size={12} /> Cetak Kuitansi 🖨️
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setReceiptToPrint(null)}
-                  className="px-3 py-1.5 border border-slate-200 hover:bg-slate-50 text-slate-600 font-bold rounded-lg text-xs uppercase cursor-pointer transition-all"
-                >
-                  Batal
+                  <Printer size={15} /> Cetak Kuitansi 🖨️
                 </button>
               </div>
             </div>

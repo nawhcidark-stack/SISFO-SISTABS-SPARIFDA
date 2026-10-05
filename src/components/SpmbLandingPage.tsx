@@ -10,7 +10,7 @@ import {
 import SpmbReceiptModal from './SpmbReceiptModal';
 import BirthDateSplitInput from './BirthDateSplitInput';
 import PWAInstallButton from './PWAInstallButton';
-import { printSpmbReceiptDirect, printRegistrationProofDirect } from '../utils/spmbReceiptPrint';
+import { printSpmbReceiptDirect, printRegistrationProofDirect, generateAuthenticPasPhotoSvgDataUrl } from '../utils/spmbReceiptPrint';
 import { formatCombinedPlaceAndDate, formatIndonesianDate, toProperCase } from '../utils/dateUtils';
 import { 
   GraduationCap, 
@@ -1441,7 +1441,14 @@ export default function SpmbLandingPage({
     if (!activeCandidate) return;
     try {
       setIsPrintingProof(true);
-      await printRegistrationProofDirect(activeCandidate, config, currentSchoolIdentity);
+      const candidateWithDocs: SpmbCandidate = {
+        ...activeCandidate,
+        documents: {
+          ...(activeCandidate.documents || {}),
+          ...Object.fromEntries(Object.entries(docUploads).filter(([_, v]) => Boolean(v)))
+        }
+      };
+      await printRegistrationProofDirect(candidateWithDocs, config, currentSchoolIdentity);
     } catch (err) {
       console.error('Error in printRegistrationProofDirect:', err);
       window.print();
@@ -4815,6 +4822,7 @@ export default function SpmbLandingPage({
                         {/* Pas Photo & Status */}
                         <div className="text-center space-y-3">
                           {(() => {
+                            const fallbackPhoto = generateAuthenticPasPhotoSvgDataUrl(activeCandidate);
                             const photoSrc = 
                               docUploads.pasPhoto || 
                               activeCandidate.documents?.pasPhoto || 
@@ -4827,18 +4835,19 @@ export default function SpmbLandingPage({
                               (activeCandidate as any)?.pasPhoto || 
                               (activeCandidate as any)?.foto || 
                               activeCandidate.photoUrl || 
-                              '';
-                            return photoSrc ? (
+                              fallbackPhoto;
+                            return (
                               <img 
                                 src={photoSrc} 
-                                alt="Pas Foto" 
-                                className="w-28 h-36 object-cover rounded-xl border-2 border-slate-800 mx-auto" 
-                                crossOrigin="anonymous"
+                                alt={`Pas Foto ${activeCandidate.fullName}`} 
+                                className="w-28 h-36 object-cover rounded-xl border-2 border-slate-800 mx-auto bg-slate-100 shadow-sm" 
+                                onError={(e) => {
+                                  const target = e.currentTarget as HTMLImageElement;
+                                  if (target.src !== fallbackPhoto) {
+                                    target.src = fallbackPhoto;
+                                  }
+                                }}
                               />
-                            ) : (
-                              <div className="w-28 h-36 rounded-xl border-2 border-dashed border-slate-300 flex items-center justify-center text-xs text-slate-400 mx-auto">
-                                Pas Foto 3x4
-                              </div>
                             );
                           })()}
                           <div className="p-2 rounded-xl bg-emerald-50 border border-emerald-300">

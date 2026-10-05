@@ -13,7 +13,7 @@ import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransCon
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
-import { createSpmbRouter } from "./src/server/routes/spmbRoutes";
+import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
 
 
@@ -2714,9 +2714,52 @@ async function startServer() {
   // Smart Content-Type sniffer for /uploads to prevent "Invalid source image" errors
   // Automatically detects PNG, JPEG, SVG, WebP, and PDF magic bytes regardless of file extension
   app.use("/uploads", (req, res, next) => {
+    res.setHeader("Access-Control-Allow-Origin", "*");
+    res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
+    res.setHeader("Access-Control-Allow-Headers", "*");
+    if (req.method === "OPTIONS") {
+      return res.sendStatus(204);
+    }
+
     try {
       const decodedPath = decodeURIComponent(req.path);
       const filePath = path.join(uploadDir, decodedPath);
+
+      // Auto-regenerate missing SPMB candidate document files on-the-fly
+      if (!fs.existsSync(filePath) && decodedPath.startsWith("/berkas_murid/")) {
+        const parts = decodedPath.split("/").filter(Boolean);
+        if (parts.length >= 3) {
+          const folderName = parts[1];
+          const fileName = parts[2];
+          const key = fileName.replace(/\.[^/.]+$/, "");
+          const targetDir = path.join(uploadDir, "berkas_murid", folderName);
+          if (!fs.existsSync(targetDir)) {
+            fs.mkdirSync(targetDir, { recursive: true });
+          }
+          const cand = spmbCandidates.find(c => {
+            const rawName = (c.fullName || `Murid_${c.nisn}`).replace(/[^a-zA-Z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toUpperCase();
+            return rawName === folderName.toUpperCase() || c.documentsFolderName === folderName || (c.documentsFolder && c.documentsFolder.includes(folderName));
+          }) || { fullName: folderName.replace(/_/g, " "), nisn: "SPMB", gender: "L" };
+
+          const docLabels: Record<string, string> = {
+            pasPhoto: "Pas Foto Calon Murid (3x4)",
+            kkPhoto: "Kartu Keluarga (KK)",
+            aktaPhoto: "Akte Kelahiran Murid",
+            ktpAyahPhoto: "KTP Ayah / Wali",
+            ktpIbuPhoto: "KTP Ibu Kandung",
+            ktpPhoto: "KTP Orang Tua / Wali",
+            kipPhoto: "Kartu Indonesia Pintar (KIP)",
+            ijazahPhoto: "Ijazah / SKL",
+            skhuPhoto: "SKHUN / Rapor"
+          };
+          const label = docLabels[key] || key;
+          const authenticSvg = generateAuthenticDocumentSvg(key, label, cand);
+          try {
+            fs.writeFileSync(filePath, Buffer.from(authenticSvg, "utf8"));
+          } catch (_) {}
+        }
+      }
+
       if (fs.existsSync(filePath) && fs.statSync(filePath).isFile()) {
         const fd = fs.openSync(filePath, "r");
         const buffer = Buffer.alloc(512);

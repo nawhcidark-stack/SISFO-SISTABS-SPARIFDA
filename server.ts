@@ -1866,16 +1866,6 @@ function loadState() {
       if (Array.isArray(data.spmbCandidates)) {
         spmbCandidates.length = 0;
         spmbCandidates.push(...data.spmbCandidates);
-        spmbCandidates.forEach(cand => {
-          if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
-            cand.isFormCompleted = false;
-            delete (cand as any).formCompletedAt;
-            cand.documentsUploaded = false;
-            delete (cand as any).documentsUploadedAt;
-            cand.documents = {};
-            cand.status = 'registered';
-          }
-        });
       }
       if (data.backupConfig) Object.assign(backupConfig, data.backupConfig);
       if (Array.isArray(data.databaseBackups)) {
@@ -3242,16 +3232,6 @@ async function startServer() {
     if (spmbArr) {
       spmbCandidates.length = 0;
       spmbCandidates.push(...spmbArr);
-      spmbCandidates.forEach(cand => {
-        if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
-          cand.isFormCompleted = false;
-          delete (cand as any).formCompletedAt;
-          cand.documentsUploaded = false;
-          delete (cand as any).documentsUploadedAt;
-          cand.documents = {};
-          cand.status = 'registered';
-        }
-      });
     }
 
     const midtransArr = getArray([

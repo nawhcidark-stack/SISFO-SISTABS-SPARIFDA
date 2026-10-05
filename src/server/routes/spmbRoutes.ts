@@ -508,43 +508,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     let changed = false;
     const ffd = (c.fullFormData && typeof c.fullFormData === 'object') ? c.fullFormData : {};
     const currentNisn = String(c.nisn || "").trim();
-    const isResetTarget = currentNisn === "0158483548" || currentNisn === "0152892235" || currentNisn === "3142814544" || c.id === "0158483548" || c.id === "0152892235" || c.id === "spmb-1791084056015-307";
     
-    // Perbaikan Khusus Murid Baru yang belum menyelesaikan pembayaran token Midtrans atau belum mengisi data lengkap (NISN 3142814544, 0158483548 & 0152892235)
-    if (isResetTarget) {
-      if (currentNisn === "3142814544" || c.id === "spmb-1791084056015-307") {
-        if (c.tokenPaid || c.tokenPaymentStatus !== 'pending' || c.tokenPaidAt || c.tokenPaymentMethod) {
-          c.tokenPaid = false;
-          c.tokenPaymentStatus = 'pending';
-          delete c.tokenPaidAt;
-          delete c.tokenPaymentMethod;
-          changed = true;
-        }
-        if (c.reRegistrationPaid || c.reRegistrationStatus !== 'unpaid' || c.totalReRegistrationPaid > 0) {
-          c.reRegistrationPaid = false;
-          c.reRegistrationStatus = 'unpaid';
-          c.totalReRegistrationPaid = 0;
-          c.buildingFeePaid = 0;
-          c.julySppPaid = 0;
-          c.uniformFeePaid = 0;
-          delete c.reRegistrationPaidAt;
-          delete c.reRegistrationMethod;
-          changed = true;
-        }
-      }
-      if (c.isFormCompleted) {
-        c.isFormCompleted = false;
-        delete c.formCompletedAt;
-        changed = true;
-      }
-      if (c.documentsUploaded) {
-        c.documentsUploaded = false;
-        delete c.documentsUploadedAt;
-        changed = true;
-      }
-      c.documents = {};
-      if (!c.reRegistrationPaid && c.status !== 'registered') {
-        c.status = 'registered';
+    // Khusus NISN 3142814544: Pastikan status token lunas (Paid)
+    if (currentNisn === "3142814544" || c.id === "3142814544" || c.id === "spmb-1791084056015-307") {
+      if (!c.tokenPaid || c.tokenPaymentStatus !== 'paid') {
+        c.tokenPaid = true;
+        c.tokenPaymentStatus = 'paid';
+        if (!c.tokenPaidAt) c.tokenPaidAt = new Date().toISOString();
+        if (!c.tokenPaymentMethod) c.tokenPaymentMethod = 'Midtrans (Settlement)';
         changed = true;
       }
     }
@@ -667,15 +638,15 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
     );
     
-    if (hasRealFormData && !isResetTarget) {
+    if (hasRealFormData) {
       if (!c.isFormCompleted) {
         c.isFormCompleted = true;
         if (!c.formCompletedAt) c.formCompletedAt = ffd.formCompletedAt || c.createdAt || new Date().toISOString();
         changed = true;
       }
     } else {
-      // Jika belum mengisi No KK dan data orang tua atau target reset, maka status formulir BELUM lengkap!
-      if ((c.isFormCompleted || isResetTarget) && currentNisn !== "0156620618") {
+      // Jika belum mengisi No KK dan data orang tua, maka status formulir BELUM lengkap!
+      if (c.isFormCompleted && currentNisn !== "0156620618") {
         c.isFormCompleted = false;
         delete c.formCompletedAt;
         changed = true;
@@ -683,9 +654,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
 
     // 2. Validasi Kelengkapan Berkas Upload
-    // Hanya dianggap terunggah jika benar-benar ada file foto yang tersimpan di c.documents dan bukan target reset!
+    // Hanya dianggap terunggah jika benar-benar ada file foto yang tersimpan di c.documents!
     const hasActualDocs = Boolean(
-      !isResetTarget &&
       c.documents && 
       (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto) &&
       Object.keys(c.documents).some(k => Boolean(c.documents[k]))
@@ -698,7 +668,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     } else {
       // Jika tidak ada foto berkas sama sekali, status berkas BELUM!
-      if ((c.documentsUploaded || isResetTarget) && currentNisn !== "0156620618") {
+      if (c.documentsUploaded && currentNisn !== "0156620618") {
         c.documentsUploaded = false;
         delete c.documentsUploadedAt;
         changed = true;

@@ -381,6 +381,22 @@ export async function generateReRegReceiptHtml(
   schoolIdentity?: SchoolIdentity,
   uniformSize = 'M'
 ): Promise<string> {
+  let activeSchoolIdentity = schoolIdentity;
+  if ((!activeSchoolIdentity || !activeSchoolIdentity.treasurerSignature) && typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/school-identity?_t=${Date.now()}`);
+      if (res.ok) {
+        const idData = await res.json();
+        activeSchoolIdentity = { ...(activeSchoolIdentity || {}), ...idData };
+      }
+    } catch (_) {}
+  }
+
+  // Tanda tangan kuitansi bendahara SPMB mengikuti tanda tangan bendahara di pengaturan aplikasi utama
+  const effectiveTreasurerSig = activeSchoolIdentity?.treasurerSignature || config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || activeSchoolIdentity?.principalSignature || '';
+  const effectiveTreasurerName = activeSchoolIdentity?.treasurer || config?.spmbTreasurerName || config?.spmbChairName || 'Bendahara Sekolah';
+  const effectiveStamp = activeSchoolIdentity?.schoolStamp || (activeSchoolIdentity as any)?.stamp || config?.spmbStampUrl || '';
+
   const academicYear = config?.academicYear || '2027/2028';
   const details = calculateReRegDetails(candidate, config);
   const totalAmount = details.grandTotal;
@@ -548,10 +564,10 @@ export async function generateReRegReceiptHtml(
             <p class="sig-title">Pandaan, ${payDateStr}</p>
             <p class="sig-sub">${config?.spmbTreasurerTitle || config?.spmbChairTitle || 'Bendahara Panitia SPMB'},</p>
             <div class="sig-space sig-with-stamp-flex">
-              ${(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) ? `<img src="${config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
-              ${(config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Bendahara SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${effectiveStamp ? `<img src="${effectiveStamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${effectiveTreasurerSig ? `<img src="${effectiveTreasurerSig}" class="sig-img" alt="Ttd Bendahara SPMB" referrerPolicy="no-referrer" />` : ''}
             </div>
-            <p class="sig-name"><u>${config?.spmbTreasurerName || config?.spmbChairName || schoolIdentity?.treasurer || 'Bendahara Panitia SPMB'}</u></p>
+            <p class="sig-name"><u>${effectiveTreasurerName}</u></p>
           </div>
         </div>
 
@@ -1074,11 +1090,22 @@ export async function printSpmbReceiptDirect(
   schoolIdentity?: SchoolIdentity,
   uniformSize = 'M'
 ) {
+  let effectiveSchoolIdentity = schoolIdentity;
+  if ((!effectiveSchoolIdentity || !effectiveSchoolIdentity.treasurerSignature) && typeof window !== 'undefined') {
+    try {
+      const res = await fetch(`/api/school-identity?_t=${Date.now()}`);
+      if (res.ok) {
+        const fetchedId = await res.json();
+        effectiveSchoolIdentity = { ...(effectiveSchoolIdentity || {}), ...fetchedId };
+      }
+    } catch (_) {}
+  }
+
   let html = '';
   if (type === 'token') {
-    html = await generateTokenReceiptHtml(candidate, config, schoolIdentity);
+    html = await generateTokenReceiptHtml(candidate, config, effectiveSchoolIdentity);
   } else {
-    html = await generateReRegReceiptHtml(candidate, config, schoolIdentity, uniformSize);
+    html = await generateReRegReceiptHtml(candidate, config, effectiveSchoolIdentity, uniformSize);
   }
 
   printHtmlSafely(html);

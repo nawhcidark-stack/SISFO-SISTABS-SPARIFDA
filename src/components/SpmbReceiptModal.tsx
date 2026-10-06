@@ -30,6 +30,26 @@ export default function SpmbReceiptModal({
   const [uniformSize, setUniformSize] = useState<string>('M');
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
   const [isPrinting, setIsPrinting] = useState<boolean>(false);
+  const [activeIdentity, setActiveIdentity] = useState<SchoolIdentity | undefined>(schoolIdentity);
+
+  useEffect(() => {
+    if (schoolIdentity) {
+      setActiveIdentity(schoolIdentity);
+    }
+  }, [schoolIdentity]);
+
+  useEffect(() => {
+    if (!activeIdentity?.treasurerSignature) {
+      fetch(`/api/school-identity?_t=${Date.now()}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => {
+          if (data) {
+            setActiveIdentity(prev => ({ ...data, ...(prev || {}) }));
+          }
+        })
+        .catch(() => {});
+    }
+  }, []);
 
   useEffect(() => {
     if (defaultType) {
@@ -91,7 +111,7 @@ export default function SpmbReceiptModal({
   const handleTriggerPrint = async () => {
     try {
       setIsPrinting(true);
-      await printSpmbReceiptDirect(receiptType, candidate, config, schoolIdentity, uniformSize);
+      await printSpmbReceiptDirect(receiptType, candidate, config, activeIdentity, uniformSize);
     } catch (e) {
       console.error('Print error:', e);
     } finally {
@@ -470,24 +490,24 @@ export default function SpmbReceiptModal({
                     <p className="m-0 text-slate-500">Pandaan, {formatIndoDate(candidate.reRegistrationPaidAt)}</p>
                     <p className="m-0 text-slate-700 font-bold">{config?.spmbTreasurerTitle || config?.spmbChairTitle || 'Bendahara Panitia SPMB'},</p>
                     <div className="h-12 flex items-center justify-center relative">
-                      {(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) && (
+                      {(activeIdentity?.schoolStamp || (activeIdentity as any)?.stamp || config?.spmbStampUrl) && (
                         <img 
-                          src={config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp} 
+                          src={activeIdentity?.schoolStamp || (activeIdentity as any)?.stamp || config?.spmbStampUrl} 
                           alt="Stempel SPMB" 
                           className="absolute -left-3 -top-3 h-24 max-w-[140px] object-contain opacity-85 pointer-events-none z-1" 
                           referrerPolicy="no-referrer" 
                         />
                       )}
-                      {(config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature) && (
+                      {(activeIdentity?.treasurerSignature || config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || activeIdentity?.principalSignature) && (
                         <img 
-                          src={config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || schoolIdentity?.treasurerSignature || schoolIdentity?.principalSignature} 
+                          src={activeIdentity?.treasurerSignature || config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || activeIdentity?.principalSignature} 
                           alt="Ttd Bendahara SPMB" 
                           className="h-11 object-contain z-10" 
                           referrerPolicy="no-referrer" 
                         />
                       )}
                     </div>
-                    <p className="font-bold underline text-slate-800 m-0">{config?.spmbTreasurerName || config?.spmbChairName || schoolIdentity?.treasurer || 'Bendahara Panitia SPMB'}</p>
+                    <p className="font-bold underline text-slate-800 m-0">{activeIdentity?.treasurer || config?.spmbTreasurerName || config?.spmbChairName || 'Bendahara Panitia SPMB'}</p>
                   </div>
                 </div>
 

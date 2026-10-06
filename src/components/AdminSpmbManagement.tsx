@@ -72,6 +72,12 @@ export default function AdminSpmbManagement({
 }: AdminSpmbManagementProps) {
   const [currentSchoolIdentity, setCurrentSchoolIdentity] = useState<SchoolIdentity | undefined>(schoolIdentity);
   const [config, setConfig] = useState<SpmbConfig | null>(null);
+
+  useEffect(() => {
+    if (schoolIdentity) {
+      setCurrentSchoolIdentity(schoolIdentity);
+    }
+  }, [schoolIdentity]);
   const [candidates, setCandidates] = useState<SpmbCandidate[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSavingConfig, setIsSavingConfig] = useState<boolean>(false);
@@ -162,16 +168,14 @@ export default function AdminSpmbManagement({
         setCandidates(candidatesData);
       }
 
-      if (!schoolIdentity) {
-        try {
-          const resId = await fetch(`/api/school-identity?_t=${Date.now()}`);
-          if (resId.ok) {
-            const idData = await resId.json();
-            setCurrentSchoolIdentity(idData);
-          }
-        } catch (err) {
-          console.error('Failed to load school identity:', err);
+      try {
+        const resId = await fetch(`/api/school-identity?_t=${Date.now()}`);
+        if (resId.ok) {
+          const idData = await resId.json();
+          setCurrentSchoolIdentity(prev => ({ ...(prev || {}), ...idData }));
         }
+      } catch (err) {
+        console.error('Failed to load school identity:', err);
       }
     } catch (e) {
       console.error('Failed to load SPMB data:', e);
@@ -2741,14 +2745,19 @@ export default function AdminSpmbManagement({
                     </div>
 
                     <div>
-                      <label className="block text-[11px] font-bold text-slate-300 mb-1">
-                        Nama Lengkap Bendahara SPMB
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
+                        <span>Nama Lengkap Bendahara SPMB</span>
+                        {currentSchoolIdentity?.treasurer && (
+                          <span className="text-[9.5px] text-cyan-400 font-normal">
+                            Utama: {currentSchoolIdentity.treasurer}
+                          </span>
+                        )}
                       </label>
                       <input
                         type="text"
                         value={config.spmbTreasurerName || ''}
                         onChange={(e) => setConfig({ ...config, spmbTreasurerName: e.target.value })}
-                        placeholder="Contoh: Hj. Siti Aisyah, S.E."
+                        placeholder={currentSchoolIdentity?.treasurer ? `Mengikuti aplikasi: ${currentSchoolIdentity.treasurer}` : "Contoh: Hj. Siti Aisyah, S.E."}
                         className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-xs text-white font-bold focus:border-cyan-500"
                       />
                     </div>
@@ -2766,16 +2775,35 @@ export default function AdminSpmbManagement({
                       />
                     </div>
 
-                    {/* Upload TTD Bendahara SPMB */}
+                    {/* TTD Bendahara SPMB (Mengikuti Pengaturan Aplikasi Utama) */}
                     <div>
                       <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
-                        <span>Upload TTD Digital Bendahara</span>
-                        {config.spmbTreasurerSignatureUrl && (
-                          <span className="text-[10px] text-cyan-400 font-bold">✓ TTD Aktif</span>
+                        <span>TTD Digital Bendahara Kuitansi</span>
+                        {(currentSchoolIdentity?.treasurerSignature || config.spmbTreasurerSignatureUrl) && (
+                          <span className="text-[10px] text-emerald-400 font-bold flex items-center gap-1">
+                            <CheckCircle2 size={11} className="text-emerald-400" />
+                            {currentSchoolIdentity?.treasurerSignature ? 'Mengikuti Aplikasi Utama' : 'TTD Khusus Aktif'}
+                          </span>
                         )}
                       </label>
                       
-                      {config.spmbTreasurerSignatureUrl ? (
+                      {currentSchoolIdentity?.treasurerSignature ? (
+                        <div className="p-2.5 bg-emerald-950/40 rounded-xl border border-emerald-500/40 flex items-center justify-between gap-3 mb-2">
+                          <div className="flex items-center gap-2.5">
+                            <div className="bg-white p-1 rounded-lg border border-slate-300 shrink-0">
+                              <img 
+                                src={currentSchoolIdentity.treasurerSignature} 
+                                alt="TTD Bendahara Aplikasi Utama" 
+                                className="h-9 max-w-[100px] object-contain" 
+                              />
+                            </div>
+                            <div className="text-[10px] text-emerald-200 leading-tight">
+                              <span className="font-bold block text-emerald-300">✓ TTD Bendahara Aplikasi Utama Aktif</span>
+                              <span className="text-slate-400 text-[9px]">Kuitansi SPMB otomatis menggunakan tanda tangan ini</span>
+                            </div>
+                          </div>
+                        </div>
+                      ) : config.spmbTreasurerSignatureUrl ? (
                         <div className="p-2 bg-white/95 rounded-xl border border-slate-600 flex items-center justify-between gap-2 mb-2">
                           <img 
                             src={config.spmbTreasurerSignatureUrl} 
@@ -2795,14 +2823,23 @@ export default function AdminSpmbManagement({
                             <Trash2 size={13} />
                           </button>
                         </div>
-                      ) : null}
+                      ) : (
+                        <div className="p-2.5 bg-slate-800/80 rounded-xl border border-slate-700 text-[10px] text-slate-400 mb-2 leading-relaxed">
+                          Belum ada TTD Bendahara di Pengaturan Aplikasi Utama (Menu Identitas Sekolah). Silakan unggah di Pengaturan Utama atau melalui input di bawah.
+                        </div>
+                      )}
 
-                      <input
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp"
-                        onChange={(e) => handleUploadConfigImage('spmbTreasurerSignatureUrl', e)}
-                        className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
-                      />
+                      <div className="space-y-1">
+                        <span className="text-[9.5px] text-slate-400 block">
+                          Ganti / Upload TTD Cadangan:
+                        </span>
+                        <input
+                          type="file"
+                          accept="image/png,image/jpeg,image/webp"
+                          onChange={(e) => handleUploadConfigImage('spmbTreasurerSignatureUrl', e)}
+                          className="block w-full text-xs text-slate-400 file:mr-2 file:py-1 file:px-2 file:rounded-lg file:border-0 file:text-[10px] file:font-bold file:bg-slate-700 file:text-slate-200 hover:file:bg-slate-600 cursor-pointer"
+                        />
+                      </div>
                     </div>
                   </div>
                 </div>

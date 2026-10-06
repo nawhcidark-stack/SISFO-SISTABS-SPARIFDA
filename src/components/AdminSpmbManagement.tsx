@@ -695,6 +695,25 @@ export default function AdminSpmbManagement({
         const base64Data = event.target?.result as string;
         if (!base64Data) return;
 
+        // 1. Unggah langsung ke server hosting resmi
+        try {
+          const hFormData = new FormData();
+          hFormData.append('file', file);
+          hFormData.append('nisn', candidate.nisn || candidate.id);
+          hFormData.append('candidateId', candidate.id);
+          hFormData.append('studentName', candidate.fullName);
+          hFormData.append('field', field);
+          hFormData.append('folder', `berkas_murid/${(candidate.fullName || `Murid_${candidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
+          hFormData.append('fileData', base64Data);
+
+          fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
+            method: 'POST',
+            body: hFormData,
+            signal: AbortSignal.timeout(15000)
+          }).catch(() => {});
+        } catch (_) {}
+
+        // 2. Simpan ke backend sistem
         const res = await fetch('/api/spmb/upload-single-document', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },

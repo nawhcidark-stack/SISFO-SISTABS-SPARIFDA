@@ -226,6 +226,7 @@ export default function SpmbLandingPage({
     kipPhoto?: string;
     ktp?: string;
   }>({});
+  const [docUploadsRaw, setDocUploadsRaw] = useState<Record<string, string>>({});
   const [isUploadingDocs, setIsUploadingDocs] = useState<boolean>(false);
   const [docsSuccessMsg, setDocsSuccessMsg] = useState<string | null>(null);
   // Per-field Upload State & Progress (0 - 100%)
@@ -1326,10 +1327,38 @@ export default function SpmbLandingPage({
         setUploadStatus(prev => ({ ...prev, [field]: 'Gambar terkompresi, mengirim ke server...' }));
       }
 
-      setUploadProgress(prev => ({ ...prev, [field]: 75 }));
+      setUploadProgress(prev => ({ ...prev, [field]: 65 }));
       setUploadStatus(prev => ({ ...prev, [field]: 'Menyimpan berkas permanen di server hosting...' }));
 
-      // Langsung upload & simpan ke penyimpanan fisik hosting (/uploads/berkas_murid/...) dan database
+      // 1. Unggah langsung dari browser ke Hosting Resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
+      let hostingRemoteUrl = '';
+      try {
+        const hFormData = new FormData();
+        hFormData.append('file', file);
+        hFormData.append('nisn', activeCandidate.nisn || activeCandidate.id);
+        hFormData.append('candidateId', activeCandidate.id);
+        hFormData.append('studentName', activeCandidate.fullName);
+        hFormData.append('field', field);
+        hFormData.append('folder', `berkas_murid/${(activeCandidate.fullName || `Murid_${activeCandidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
+        hFormData.append('fileData', base64Data);
+
+        const hRes = await fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
+          method: 'POST',
+          body: hFormData,
+          signal: AbortSignal.timeout(15000)
+        });
+        if (hRes.ok) {
+          const hData = await hRes.json();
+          hostingRemoteUrl = hData.url || hData.fileUrl || '';
+          console.log('[Browser Direct Upload to Hosting OK]:', hostingRemoteUrl);
+        }
+      } catch (hErr) {
+        console.warn('[Direct Browser Hosting Upload Note]:', hErr);
+      }
+
+      setUploadProgress(prev => ({ ...prev, [field]: 85 }));
+
+      // 2. Simpan juga ke API aplikasi backend
       const res = await fetch('/api/spmb/upload-single-document', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1352,7 +1381,9 @@ export default function SpmbLandingPage({
       setUploadStatus(prev => ({ ...prev, [field]: '✓ Berhasil tersimpan di server hosting!' }));
 
       // Perbarui docUploads & activeCandidate dengan URL hosting permanen
-      setDocUploads(prev => ({ ...prev, [field]: result.fileUrl || base64Data }));
+      const effectiveFileUrl = hostingRemoteUrl || result.fileUrl || base64Data;
+      setDocUploads(prev => ({ ...prev, [field]: effectiveFileUrl }));
+      setDocUploadsRaw(prev => ({ ...prev, [field]: base64Data }));
       if (result.candidate) {
         setActiveCandidate(result.candidate);
       }
@@ -1396,12 +1427,20 @@ export default function SpmbLandingPage({
     setDocsSuccessMsg(null);
 
     try {
+      // Gabungkan docUploads dan docUploadsRaw agar backend selalu menerima payload base64 jika tersedia
+      const payloadDocs: Record<string, string> = { ...docUploads };
+      for (const [k, v] of Object.entries(docUploadsRaw)) {
+        if (v && v.startsWith('data:')) {
+          payloadDocs[k] = v;
+        }
+      }
+
       const res = await fetch('/api/spmb/upload-documents', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           nisn: activeCandidate.nisn,
-          documents: docUploads
+          documents: payloadDocs
         })
       });
 

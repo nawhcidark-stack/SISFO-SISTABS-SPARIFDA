@@ -616,7 +616,9 @@ export function saveCandidateDocumentsToDisk(
         <h1>📁 FOLDER BERKAS MURID - SMP MA'ARIF NU PANDAAN</h1>
         <p>Sistem Informasi Akademik & Penerimaan Murid Baru (SPMB)</p>
       </div>
-      <span class="badge">Berkas Lengkap</span>
+      <span class="badge" style="${docEntries.length === 5 ? 'background: #10b981;' : docEntries.length > 0 ? 'background: #0284c7;' : 'background: #64748b;'}">
+        ${docEntries.length === 5 ? 'Berkas Lengkap (5/5)' : docEntries.length > 0 ? `Berkas Sebagian (${docEntries.length}/5)` : 'Belum Ada Berkas Diunggah'}
+      </span>
     </div>
 
     <div class="info-card">
@@ -2981,9 +2983,27 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         candidate.googleDriveLink = folderUrl;
       }
 
-      // Sinkronkan berkas base64 langsung ke hosting penyimpanan resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
+      // Sinkronkan berkas ke hosting penyimpanan resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
       for (const [fieldKey, fieldVal] of Object.entries(documents || {})) {
-        if (typeof fieldVal === "string" && fieldVal.startsWith("data:")) {
+        let base64Payload = "";
+        if (typeof fieldVal === "string") {
+          if (fieldVal.startsWith("data:")) {
+            base64Payload = fieldVal;
+          } else if (fieldVal.startsWith("/uploads/")) {
+            // Jika sudah berupa path lokal, baca file fisik lalu kirimkan base64 ke hosting
+            const localFile = path.join(process.cwd(), fieldVal.replace(/^\/+/, ""));
+            if (fs.existsSync(localFile)) {
+              try {
+                const buf = fs.readFileSync(localFile);
+                const ext = path.extname(localFile).toLowerCase();
+                const mime = ext === ".png" ? "image/png" : ext === ".pdf" ? "application/pdf" : "image/jpeg";
+                base64Payload = `data:${mime};base64,${buf.toString("base64")}`;
+              } catch (_) {}
+            }
+          }
+        }
+
+        if (base64Payload) {
           try {
             fetch("https://portal.smpmaarifpdn.sch.id/api/upload", {
               method: "POST",
@@ -2994,9 +3014,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
                 studentName: candidate.fullName,
                 field: fieldKey,
                 folder: `berkas_murid/${folderName}`,
-                fileData: fieldVal
+                fileData: base64Payload
               }),
-              signal: AbortSignal.timeout(8000)
+              signal: AbortSignal.timeout(10000)
             }).then(async r => {
               if (r.ok) console.log(`[Hosting API Bulk Sync OK for ${candidate.fullName} - ${fieldKey}]`);
             }).catch(() => {});
@@ -3124,14 +3144,24 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       // Tulis file fisik asli langsung ke disk
       try {
         fs.writeFileSync(savedFilePath, Buffer.from(base64Content, "base64"));
+        // Simpan juga salinan langsung ke folder uploads utama
+        try {
+          const uploadsRoot = path.join(process.cwd(), "uploads");
+          if (!fs.existsSync(uploadsRoot)) fs.mkdirSync(uploadsRoot, { recursive: true });
+          fs.copyFileSync(savedFilePath, path.join(uploadsRoot, `${folderName}_${savedFileName}`));
+          const directRoot = path.join(uploadsRoot, savedFileName);
+          if (!fs.existsSync(directRoot)) fs.copyFileSync(savedFilePath, directRoot);
+          fs.utimesSync(uploadsRoot, new Date(), new Date());
+        } catch (_) {}
       } catch (writeErr: any) {
         console.error(`[Error writing single document file ${savedFileName}]:`, writeErr);
         return res.status(500).json({ error: "Gagal menulis file ke server hosting: " + writeErr.message });
       }
 
       // Sinkronkan berkas langsung ke hosting penyimpanan resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
+      let hostingRemoteUrl = "";
       try {
-        fetch("https://portal.smpmaarifpdn.sch.id/api/upload", {
+        const syncRes = await fetch("https://portal.smpmaarifpdn.sch.id/api/upload", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
@@ -3143,13 +3173,18 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
             folder: `berkas_murid/${folderName}`,
             fileData: fileData
           }),
-          signal: AbortSignal.timeout(8000)
-        }).then(async r => {
-          if (r.ok) {
-            console.log(`[Hosting API Direct Sync OK for ${candidate.fullName} - ${field}]`);
-          }
-        }).catch(() => {});
-      } catch (_) {}
+          signal: AbortSignal.timeout(12000)
+        });
+        if (syncRes.ok) {
+          const syncJson = await syncRes.json();
+          hostingRemoteUrl = syncJson.url || syncJson.fileUrl || "";
+          console.log(`[Hosting API Direct Sync OK for ${candidate.fullName} - ${field}]:`, hostingRemoteUrl);
+        } else {
+          console.warn(`[Hosting API Direct Sync Status ${syncRes.status}]`);
+        }
+      } catch (syncErr: any) {
+        console.warn(`[Hosting API Direct Sync Warning]:`, syncErr?.message || syncErr);
+      }
 
       const fileUrl = `/uploads/berkas_murid/${folderName}/${savedFileName}`;
 

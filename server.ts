@@ -2920,6 +2920,25 @@ async function startServer() {
           try {
             fs.copyFileSync(file.path, destPath);
             try { fs.unlinkSync(file.path); } catch (_) {}
+
+            // Gandakan juga berkas ke folder uploads utama agar langsung terlihat saat admin membuka uploads di File Manager
+            try {
+              const rootCopyName = `${path.basename(folderSubPath)}_${safeFileName}`;
+              fs.copyFileSync(destPath, path.join(uploadDir, rootCopyName));
+              const directRootPath = path.join(uploadDir, safeFileName);
+              if (!fs.existsSync(directRootPath)) {
+                fs.copyFileSync(destPath, directRootPath);
+              }
+              // Perbarui mtime folder uploads agar tercatat waktu perubahan terkini di File Manager hPanel
+              fs.utimesSync(uploadDir, new Date(), new Date());
+            } catch (_) {}
+
+            // Simpan juga ke folder public_html jika ada
+            try {
+              const publicHtmlUpload = path.join(process.cwd(), "public_html", "uploads", folderSubPath);
+              if (!fs.existsSync(publicHtmlUpload)) fs.mkdirSync(publicHtmlUpload, { recursive: true });
+              fs.copyFileSync(destPath, path.join(publicHtmlUpload, safeFileName));
+            } catch (_) {}
           } catch (copyErr) {
             console.warn("[Upload File Copy Error]:", copyErr);
           }
@@ -2957,6 +2976,25 @@ async function startServer() {
 
         try {
           fs.writeFileSync(destPath, Buffer.from(base64Content, "base64"));
+
+          // Gandakan juga berkas ke folder uploads utama agar langsung terlihat saat admin membuka uploads di File Manager
+          try {
+            const rootCopyName = `${path.basename(folderSubPath)}_${safeFileName}`;
+            fs.copyFileSync(destPath, path.join(uploadDir, rootCopyName));
+            const directRootPath = path.join(uploadDir, safeFileName);
+            if (!fs.existsSync(directRootPath)) {
+              fs.copyFileSync(destPath, directRootPath);
+            }
+            fs.utimesSync(uploadDir, new Date(), new Date());
+          } catch (_) {}
+
+          // Simpan juga ke folder public_html jika ada
+          try {
+            const publicHtmlUpload = path.join(process.cwd(), "public_html", "uploads", folderSubPath);
+            if (!fs.existsSync(publicHtmlUpload)) fs.mkdirSync(publicHtmlUpload, { recursive: true });
+            fs.copyFileSync(destPath, path.join(publicHtmlUpload, safeFileName));
+          } catch (_) {}
+
           const fileUrl = `/uploads/${folderSubPath.replace(/\\/g, "/")}/${safeFileName}`;
           savedFiles.push({
             fieldName: field || path.parse(safeFileName).name,

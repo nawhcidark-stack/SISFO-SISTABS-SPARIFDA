@@ -395,7 +395,8 @@ export async function generateReRegReceiptHtml(
   // Tanda tangan kuitansi bendahara SPMB mengikuti tanda tangan bendahara di pengaturan aplikasi utama
   const effectiveTreasurerSig = activeSchoolIdentity?.treasurerSignature || config?.spmbTreasurerSignatureUrl || config?.spmbChairSignatureUrl || activeSchoolIdentity?.principalSignature || '';
   const effectiveTreasurerName = activeSchoolIdentity?.treasurer || config?.spmbTreasurerName || config?.spmbChairName || 'Bendahara Sekolah';
-  const effectiveStamp = activeSchoolIdentity?.schoolStamp || (activeSchoolIdentity as any)?.stamp || config?.spmbStampUrl || '';
+  // Stempel Bendahara SPMB mengikuti Stempel yang diupload di adminSPMB
+  const effectiveStamp = config?.spmbTreasurerStampUrl || config?.spmbStampUrl || activeSchoolIdentity?.schoolStamp || (activeSchoolIdentity as any)?.stamp || '';
 
   const academicYear = config?.academicYear || '2027/2028';
   const details = calculateReRegDetails(candidate, config);

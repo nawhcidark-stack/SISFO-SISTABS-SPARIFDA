@@ -2841,6 +2841,33 @@ export default function AdminSpmbManagement({
                         />
                       </div>
                     </div>
+
+                    {/* Stempel Bendahara SPMB: Mengikuti Stempel yang diupload di adminSPMB */}
+                    <div className="pt-2 border-t border-slate-800">
+                      <label className="block text-[11px] font-bold text-slate-300 mb-1 flex items-center justify-between">
+                        <span>Stempel Kuitansi Bendahara SPMB</span>
+                        {config.spmbStampUrl && (
+                          <span className="text-[10px] text-amber-400 font-bold flex items-center gap-1">
+                            <CheckCircle2 size={11} className="text-amber-400" /> Mengikuti Stempel Admin SPMB
+                          </span>
+                        )}
+                      </label>
+                      {config.spmbStampUrl ? (
+                        <div className="p-2 bg-slate-800/80 rounded-xl border border-amber-500/30 flex items-center gap-2.5">
+                          <div className="p-1 bg-white rounded-lg shrink-0">
+                            <img src={config.spmbStampUrl} alt="Stempel Admin SPMB" className="h-8 max-w-[80px] object-contain" />
+                          </div>
+                          <div className="text-[9.5px] text-slate-300 leading-tight">
+                            <span className="font-bold text-amber-300 block">✓ Mengikuti Stempel yang diupload di Admin SPMB</span>
+                            <span className="text-slate-400">Otomatis dicetak berdampingan di kiri tanda tangan bendahara.</span>
+                          </div>
+                        </div>
+                      ) : (
+                        <p className="text-[9.5px] text-slate-400 m-0 leading-relaxed">
+                          Stempel Bendahara SPMB otomatis menggunakan berkas yang diunggah pada <strong>4. Stempel Resmi SPMB</strong> di bawah.
+                        </p>
+                      )}
+                    </div>
                   </div>
                 </div>
 

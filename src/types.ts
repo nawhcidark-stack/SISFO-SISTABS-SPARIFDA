@@ -688,6 +688,7 @@ export interface SpmbConfig {
   spmbOfficerTitle?: string; // Jabatan Panitia Pelayanan (e.g. "Panitia Pelayanan SPMB Sekolah")
   spmbOfficerSignatureUrl?: string; // TTD Panitia Pelayanan Sekolah / Kantor SPMB
   spmbStampUrl?: string; // Stempel Resmi Panitia SPMB (Base64 / URL PNG Transparan)
+  spmbTreasurerStampUrl?: string; // Stempel Khusus Bendahara SPMB (Base64 / URL PNG Transparan)
   bankAccountInfo?: string;
   instructions?: string;
 

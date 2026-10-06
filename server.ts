@@ -2692,10 +2692,29 @@ async function startServer() {
   });
 
   // API Routes
-  // Setup directory for uploads
-  const uploadDir = path.join(process.cwd(), "uploads");
+  // Setup directory for uploads (Mendukung variabel environment UPLOAD_DIR untuk hosting cPanel/VPS)
+  const defaultUploadDir = path.join(process.cwd(), "uploads");
+  const configuredUploadEnv = (process.env.UPLOAD_DIR && process.env.UPLOAD_DIR.trim()) || "";
+  let uploadDir = defaultUploadDir;
+
+  if (configuredUploadEnv) {
+    try {
+      const resolvedTarget = path.resolve(configuredUploadEnv);
+      if (!fs.existsSync(resolvedTarget)) {
+        fs.mkdirSync(resolvedTarget, { recursive: true });
+      }
+      uploadDir = resolvedTarget;
+      console.log(`[UPLOAD_DIR]: Aktif menggunakan direktori upload hosting: ${uploadDir}`);
+    } catch (err) {
+      console.warn(`[UPLOAD_DIR]: Gagal menginisialisasi ${configuredUploadEnv}, menggunakan default:`, err);
+      uploadDir = defaultUploadDir;
+    }
+  }
+
   if (!fs.existsSync(uploadDir)) {
-    fs.mkdirSync(uploadDir, { recursive: true });
+    try {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    } catch (_) {}
   }
 
   // Configure multer disk storage
@@ -2712,8 +2731,30 @@ async function startServer() {
   const upload = multer({ storage });
 
   // Support accessing /uploads/berkas_murid/:name directly and serving index.html
-  app.get(["/uploads/berkas_murid/:name", "/uploads/berkas_murid/:name/"], (req, res, next) => {
-    const studentFolder = path.join(uploadDir, "berkas_murid", req.params.name);
+  app.get([
+    "/uploads/berkas_murid/:name",
+    "/uploads/berkas_murid/:name/",
+    "/uploads/berkas_spmb27/berkas_murid/:name",
+    "/uploads/berkas_spmb27/berkas_murid/:name/",
+    "/uploads/berkas_spmb27/:name",
+    "/uploads/berkas_spmb27/:name/",
+    "/berkas_spmb27/berkas_murid/:name",
+    "/berkas_spmb27/berkas_murid/:name/",
+    "/berkas_spmb27/:name",
+    "/berkas_spmb27/:name/",
+    "/uploads/berkas_smp27/berkas_murid/:name",
+    "/uploads/berkas_smp27/berkas_murid/:name/",
+    "/uploads/berkas_smp27/:name",
+    "/uploads/berkas_smp27/:name/",
+    "/berkas_smp27/berkas_murid/:name",
+    "/berkas_smp27/berkas_murid/:name/",
+    "/berkas_smp27/:name",
+    "/berkas_smp27/:name/"
+  ], (req, res, next) => {
+    let studentFolder = path.join(uploadDir, "berkas_murid", req.params.name);
+    if (!fs.existsSync(studentFolder)) {
+      studentFolder = path.join(uploadDir, req.params.name);
+    }
     const indexPath = path.join(studentFolder, "index.html");
     if (fs.existsSync(indexPath)) {
       res.setHeader("Content-Type", "text/html; charset=UTF-8");
@@ -2724,7 +2765,7 @@ async function startServer() {
 
   // Smart Content-Type sniffer for /uploads to prevent "Invalid source image" errors
   // Automatically detects PNG, JPEG, SVG, WebP, and PDF magic bytes regardless of file extension
-  app.use("/uploads", (req, res, next) => {
+  app.use(["/uploads", "/uploads/berkas_spmb27", "/berkas_spmb27", "/uploads/berkas_smp27", "/berkas_smp27"], (req, res, next) => {
     res.setHeader("Access-Control-Allow-Origin", "*");
     res.setHeader("Access-Control-Allow-Methods", "GET, HEAD, OPTIONS");
     res.setHeader("Access-Control-Allow-Headers", "*");
@@ -2736,7 +2777,21 @@ async function startServer() {
       const decodedPath = decodeURIComponent(req.path);
       let filePath = path.join(uploadDir, decodedPath);
 
-      // Jika file fisik tidak langsung ditemukan, cek variasi ekstensi lain (.jpg, .png, .jpeg, .svg, .webp, .pdf)
+      // Jika file fisik tidak langsung ditemukan, cek variasi folder dan ekstensi lain (.jpg, .png, .jpeg, .svg, .webp, .pdf)
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        const altPaths = [
+          path.join(uploadDir, "berkas_murid", decodedPath),
+          path.join(defaultUploadDir, decodedPath),
+          path.join(defaultUploadDir, "berkas_murid", decodedPath)
+        ];
+        for (const alt of altPaths) {
+          if (fs.existsSync(alt) && fs.statSync(alt).isFile()) {
+            filePath = alt;
+            break;
+          }
+        }
+      }
+
       if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
         const parsed = path.parse(filePath);
         const candidateExts = [".jpg", ".png", ".svg", ".webp", ".pdf", ".jpeg"];
@@ -2797,18 +2852,38 @@ async function startServer() {
     next();
   });
 
-  // Serve static files from /uploads
-  app.use("/uploads", express.static(uploadDir));
+  // Serve static files from configured uploadDir
+  app.use(["/uploads", "/uploads/berkas_spmb27", "/berkas_spmb27", "/uploads/berkas_smp27", "/berkas_smp27"], express.static(uploadDir));
+  if (uploadDir !== defaultUploadDir && fs.existsSync(defaultUploadDir)) {
+    app.use("/uploads", express.static(defaultUploadDir));
+  }
 
-  // Dedicated fallback for /uploads to strictly prevent serving SPA index.html
-  app.use("/uploads", async (req, res) => {
+  // Dedicated fallback for /uploads & /uploads/berkas_spmb27 to strictly prevent serving SPA index.html
+  app.use(["/uploads", "/uploads/berkas_spmb27", "/berkas_spmb27", "/uploads/berkas_smp27", "/berkas_smp27"], async (req, res) => {
     try {
       const decodedPath = decodeURIComponent(req.path);
       // Cek apakah request ditujukan ke berkas murid SPMB
       const parts = decodedPath.split("/").filter(Boolean);
-      if (parts.length >= 2 && parts[0] === "berkas_murid") {
-        const studentFolderName = parts[1];
-        const requestedFile = parts[2] || "";
+      let studentFolderName = "";
+      let requestedFile = "";
+
+      if (parts.length >= 2 && (parts[0] === "berkas_murid" || parts[0] === "berkas_spmb27" || parts[0] === "berkas_smp27")) {
+        if ((parts[0] === "berkas_spmb27" || parts[0] === "berkas_smp27") && parts[1] === "berkas_murid" && parts.length >= 3) {
+          studentFolderName = parts[2];
+          requestedFile = parts[3] || "";
+        } else {
+          studentFolderName = parts[1];
+          requestedFile = parts[2] || "";
+        }
+      } else if (parts.length >= 2) {
+        studentFolderName = parts[0];
+        requestedFile = parts[1] || "";
+      } else if (parts.length === 1) {
+        studentFolderName = parts[0];
+        requestedFile = parts[0];
+      }
+
+      if (studentFolderName) {
         const fieldKey = path.parse(requestedFile).name;
 
         // Cari kandidat yang bersangkutan
@@ -2830,6 +2905,10 @@ async function startServer() {
                 const targetDir = path.join(uploadDir, "berkas_murid", studentFolderName);
                 if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
                 fs.writeFileSync(path.join(targetDir, requestedFile), buf);
+
+                const directStudentDir = path.join(uploadDir, studentFolderName);
+                if (!fs.existsSync(directStudentDir)) fs.mkdirSync(directStudentDir, { recursive: true });
+                fs.writeFileSync(path.join(directStudentDir, requestedFile), buf);
               } catch (_) {}
               res.setHeader("Content-Type", mime);
               res.setHeader("Cache-Control", "public, max-age=3600");
@@ -2849,6 +2928,10 @@ async function startServer() {
                 const targetDir = path.join(uploadDir, "berkas_murid", studentFolderName);
                 if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
                 fs.writeFileSync(path.join(targetDir, requestedFile), buffer);
+
+                const directStudentDir = path.join(uploadDir, studentFolderName);
+                if (!fs.existsSync(directStudentDir)) fs.mkdirSync(directStudentDir, { recursive: true });
+                fs.writeFileSync(path.join(directStudentDir, requestedFile), buffer);
               } catch (_) {}
               res.setHeader("Content-Type", contentType);
               res.setHeader("Cache-Control", "public, max-age=3600");

@@ -4202,7 +4202,7 @@ export default function AdminPanel({
     if (!file) return;
 
     try {
-      const compressed = await compressAndResizeImage(file, 512, 512, 0.92);
+      const compressed = await compressAndResizeImage(file, 1000, 1000, 0.92);
       setSchoolLogo(compressed);
     } catch (err: any) {
       setSchoolIdentityMsg({
@@ -4217,7 +4217,7 @@ export default function AdminPanel({
     if (!file) return;
 
     try {
-      const compressed = await compressAndResizeImage(file, 512, 512, 0.92);
+      const compressed = await compressAndResizeImage(file, 1000, 1000, 0.92);
       setSchoolLogo2(compressed);
     } catch (err: any) {
       setSchoolIdentityMsg({
@@ -4235,8 +4235,8 @@ export default function AdminPanel({
     setSchoolIdentityMsg(null);
 
     try {
-      // Auto-compress and scale down to 512x512 while keeping full transparency
-      const compressed = await compressAndResizeImage(file, 512, 512, 0.92);
+      // Auto-compress and scale down to 1000px if above 1000px while keeping full transparency
+      const compressed = await compressAndResizeImage(file, 1000, 1000, 0.92);
       setSchoolLoadingLogo(compressed);
       try {
         localStorage.setItem("app_custom_loading_logo", compressed);

@@ -89,4 +89,5 @@ Bila Anda menggunakan panel hosting seperti **cPanel Node.js Selector**:
 3. **Environment Variables**:
    * `NODE_ENV`: Set ke `production`.
    * `PORT`: Server port akan membaca variabel port lingkungan cPanel Anda secara dinamis. Jika tidak dispesifikasikan, server akan berjalan default di port `3000`.
+   * `UPLOAD_DIR`: Set ke `/home/u604170242/domains/portal.smpmaarifpdn.sch.id/uploads/berkas_spmb27` untuk menyimpan seluruh berkas upload langsung ke direktori hosting khusus tersebut.
 4. **Run JS Command**: Klik tombol **Run build** atau jalankan perintah melalui terminal virtual cPanel.

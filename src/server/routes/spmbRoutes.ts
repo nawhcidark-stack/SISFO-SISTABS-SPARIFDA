@@ -384,6 +384,30 @@ export function generateDocumentSvgPlaceholder(title: string, studentName: strin
 }
 
 /**
+ * Mendapatkan direktori penyimpanan berkas upload di hosting
+ * Membaca variabel environment UPLOAD_DIR (misal: /home/u604170242/domains/portal.smpmaarifpdn.sch.id/uploads/berkas_smp27)
+ */
+export function getHostingUploadDir(): string {
+  const configured = (process.env.UPLOAD_DIR && process.env.UPLOAD_DIR.trim()) || "";
+  if (configured) {
+    try {
+      const resolved = path.resolve(configured);
+      if (!fs.existsSync(resolved)) {
+        fs.mkdirSync(resolved, { recursive: true });
+      }
+      return resolved;
+    } catch (err) {
+      console.warn(`[UPLOAD_DIR]: Gagal mengakses folder ${configured}, menggunakan default 'uploads':`, err);
+    }
+  }
+  const defaultDir = path.join(process.cwd(), "uploads");
+  if (!fs.existsSync(defaultDir)) {
+    try { fs.mkdirSync(defaultDir, { recursive: true }); } catch (_) {}
+  }
+  return defaultDir;
+}
+
+/**
  * Simpan berkas dokumen murid baru ke folder hosting fisik di /uploads/berkas_murid/[Nama_Murid]
  * dan buat file index.html interaktif untuk pratinjau berkas di browser / buku induk kesiswaan
  */
@@ -399,9 +423,10 @@ export function saveCandidateDocumentsToDisk(
     .trim()
     .replace(/\s+/g, "_") || `Murid_${candidate.id}`;
 
-  const baseUploadsDir = path.join(process.cwd(), "uploads", "berkas_murid");
+  const uploadRootDir = getHostingUploadDir();
+  const baseUploadsDir = path.join(uploadRootDir, "berkas_murid");
   if (!fs.existsSync(baseUploadsDir)) {
-    fs.mkdirSync(baseUploadsDir, { recursive: true });
+    try { fs.mkdirSync(baseUploadsDir, { recursive: true }); } catch (_) {}
   }
 
   // Jika nama murid diubah dan folder lama ada, ganti nama folder otomatis
@@ -419,7 +444,7 @@ export function saveCandidateDocumentsToDisk(
 
   const targetDir = path.join(baseUploadsDir, folderName);
   if (!fs.existsSync(targetDir)) {
-    fs.mkdirSync(targetDir, { recursive: true });
+    try { fs.mkdirSync(targetDir, { recursive: true }); } catch (_) {}
   }
 
   const resultDocs: Record<string, string> = { ...(candidate.documents || {}) };
@@ -466,6 +491,14 @@ export function saveCandidateDocumentsToDisk(
         const dynamicFilePath = path.join(targetDir, dynamicFileName);
         try {
           fs.writeFileSync(dynamicFilePath, Buffer.from(base64, "base64"));
+          // Gandakan juga berkas langsung ke uploadRootDir/[folderName] dan uploadRootDir
+          try {
+            const directStudentDir = path.join(uploadRootDir, folderName);
+            if (!fs.existsSync(directStudentDir)) fs.mkdirSync(directStudentDir, { recursive: true });
+            fs.writeFileSync(path.join(directStudentDir, dynamicFileName), Buffer.from(base64, "base64"));
+            fs.writeFileSync(path.join(uploadRootDir, `${folderName}_${dynamicFileName}`), Buffer.from(base64, "base64"));
+            fs.utimesSync(uploadRootDir, new Date(), new Date());
+          } catch (_) {}
           resultDocs[key] = `/uploads/berkas_murid/${folderName}/${dynamicFileName}`;
         } catch (writeErr) {
           console.error(`[Error writing document file ${dynamicFileName}]:`, writeErr);
@@ -3002,7 +3035,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
             base64Payload = fieldVal;
           } else if (fieldVal.startsWith("/uploads/")) {
             // Jika sudah berupa path lokal, baca file fisik lalu kirimkan base64 ke hosting
-            const localFile = path.join(process.cwd(), fieldVal.replace(/^\/+/, ""));
+            const uploadsRoot = getHostingUploadDir();
+            let localFile = path.join(process.cwd(), fieldVal.replace(/^\/+/, ""));
+            if (!fs.existsSync(localFile)) {
+              localFile = path.join(uploadsRoot, fieldVal.replace(/^\/+uploads\/?/, ""));
+            }
             if (fs.existsSync(localFile)) {
               try {
                 const buf = fs.readFileSync(localFile);
@@ -3121,7 +3158,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         .replace(/^_+|_+$/g, "")
         .replace(/\s+/g, "_") || `Murid_${candidate.id}`;
 
-      const baseUploadsDir = path.join(process.cwd(), "uploads", "berkas_murid");
+      const uploadsRoot = getHostingUploadDir();
+      const baseUploadsDir = path.join(uploadsRoot, "berkas_murid");
       const targetDir = path.join(baseUploadsDir, folderName);
       if (!fs.existsSync(targetDir)) {
         fs.mkdirSync(targetDir, { recursive: true });
@@ -3155,10 +3193,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       // Tulis file fisik asli langsung ke disk
       try {
         fs.writeFileSync(savedFilePath, Buffer.from(base64Content, "base64"));
-        // Simpan juga salinan langsung ke folder uploads utama
+        // Simpan juga salinan langsung ke folder uploads root
         try {
-          const uploadsRoot = path.join(process.cwd(), "uploads");
           if (!fs.existsSync(uploadsRoot)) fs.mkdirSync(uploadsRoot, { recursive: true });
+          const directStudentDir = path.join(uploadsRoot, folderName);
+          if (!fs.existsSync(directStudentDir)) fs.mkdirSync(directStudentDir, { recursive: true });
+          fs.writeFileSync(path.join(directStudentDir, savedFileName), Buffer.from(base64Content, "base64"));
           fs.copyFileSync(savedFilePath, path.join(uploadsRoot, `${folderName}_${savedFileName}`));
           const directRoot = path.join(uploadsRoot, savedFileName);
           if (!fs.existsSync(directRoot)) fs.copyFileSync(savedFilePath, directRoot);

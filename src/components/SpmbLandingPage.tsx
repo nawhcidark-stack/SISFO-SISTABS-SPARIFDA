@@ -336,14 +336,18 @@ export default function SpmbLandingPage({
                 return resolve(rawResult);
               }
 
-              if (width > MAX_SIZE || height > MAX_SIZE) {
-                if (width > height) {
-                  height = Math.round((height * MAX_SIZE) / width);
-                  width = MAX_SIZE;
-                } else {
-                  width = Math.round((width * MAX_SIZE) / height);
-                  height = MAX_SIZE;
-                }
+              // TIDAK di-compress jika file di bawah atau sama dengan 1000px (100% resolusi & kualitas asli)
+              if (width <= MAX_SIZE && height <= MAX_SIZE) {
+                return resolve(rawResult);
+              }
+
+              // HANYA di-compress & resize jika dimensi di atas 1000px
+              if (width > height) {
+                height = Math.round((height * MAX_SIZE) / width);
+                width = MAX_SIZE;
+              } else {
+                width = Math.round((width * MAX_SIZE) / height);
+                height = MAX_SIZE;
               }
 
               const canvas = document.createElement('canvas');
@@ -358,7 +362,7 @@ export default function SpmbLandingPage({
               ctx.imageSmoothingQuality = 'high';
               ctx.clearRect(0, 0, canvas.width, canvas.height);
               ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
-              const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.85);
+              const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.90);
               resolve(dataUrl || rawResult);
             } catch (canvasErr) {
               console.warn('[Canvas Resize Warning]: Fallback to raw image:', canvasErr);

@@ -2,15 +2,20 @@
  * Client-side high-quality image compressor and aspect-ratio scaler.
  * Compresses images before base64 conversion to avoid huge network payloads,
  * localStorage quota limits, and 413 Payload Too Large proxy errors.
+ *
+ * Aturan Kompresi:
+ * 1. File PDF TIDAK DI-COMPRESS (100% utuh/asli).
+ * 2. File dengan dimensi di bawah atau sama dengan 1000px TIDAK DI-COMPRESS (100% utuh/asli tanpa canvas re-encoding).
+ * 3. File gambar dengan dimensi di atas 1000px (width > 1000 || height > 1000) DI-COMPRESS & di-resize ke maksimal 1000px.
  */
 export async function compressAndResizeImage(
   file: File,
-  maxWidth: number = 512,
-  maxHeight: number = 512,
+  maxWidth: number = 1000,
+  maxHeight: number = 1000,
   quality: number = 0.92
 ): Promise<string> {
   return new Promise((resolve) => {
-    // If not standard image or if SVG/PDF, return raw DataURL directly
+    // Jika bukan file gambar atau jika SVG / PDF, kembalikan DataURL asli secara langsung (TIDAK DI-COMPRESS)
     const isSvg = file.type === "image/svg+xml" || file.name.toLowerCase().endsWith(".svg");
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     const isImage = file.type.startsWith("image/");
@@ -19,6 +24,7 @@ export async function compressAndResizeImage(
     reader.onerror = () => resolve("");
     reader.onload = (e) => {
       const rawResult = (e.target?.result as string) || "";
+      // File PDF, SVG, atau non-image langsung dikembalikan tanpa kompresi
       if (!isImage || isSvg || isPdf || !rawResult) {
         return resolve(rawResult);
       }
@@ -35,7 +41,13 @@ export async function compressAndResizeImage(
               return resolve(rawResult);
             }
 
-            // Maintain aspect ratio while bounding within maxWidth x maxHeight
+            // TIDAK DI-COMPRESS JIKA FILE DI BAWAH ATAU SAMA DENGAN 1000px
+            if (width <= maxWidth && height <= maxHeight) {
+              return resolve(rawResult);
+            }
+
+            // HANYA FILE DI ATAS 1000px YANG DI-RESIZE & DI-COMPRESS
+            // Pertahankan rasio aspek (aspect ratio) dalam batas maxWidth x maxHeight (1000px)
             if (width > height) {
               if (width > maxWidth) {
                 height = Math.round((height * maxWidth) / width);
@@ -62,7 +74,7 @@ export async function compressAndResizeImage(
             ctx.clearRect(0, 0, canvas.width, canvas.height);
             ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
 
-            // Keep PNG format for transparency if source is PNG, otherwise JPEG
+            // Pertahankan format PNG jika sumber adalah PNG, selain itu JPEG
             const isPng = file.type === "image/png" || file.name.toLowerCase().endsWith(".png");
             const outputMime = isPng ? "image/png" : "image/jpeg";
             const resultDataUrl = canvas.toDataURL(outputMime, quality);

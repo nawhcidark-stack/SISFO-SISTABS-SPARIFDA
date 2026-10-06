@@ -55,6 +55,7 @@ import {
 } from 'lucide-react';
 import BulkNisEditorModal from './BulkNisEditorModal';
 import { Student } from '../types';
+import { compressAndResizeImage } from '../utils/imageCompressor';
 
 interface AdminSpmbManagementProps {
   schoolIdentity?: SchoolIdentity;
@@ -690,146 +691,76 @@ export default function AdminSpmbManagement({
   // Admin Direct Upload / Update Documents for Candidate
   const handleAdminUploadDocument = async (candidate: SpmbCandidate, field: string, file: File) => {
     try {
-      const reader = new FileReader();
-      reader.onload = async (event) => {
-        const base64Data = event.target?.result as string;
-        if (!base64Data) return;
+      // Aturan:
+      // - File berupa PDF tidak di-compress
+      // - File dibawah/sama dengan 1000px tidak di-compress
+      // - File diatas 1000px di-compress ke maksimal 1000px
+      const base64Data = await compressAndResizeImage(file, 1000, 1000, 0.90);
+      if (!base64Data) return;
 
-        // 1. Unggah langsung ke server hosting resmi
-        try {
-          const hFormData = new FormData();
-          hFormData.append('file', file);
-          hFormData.append('nisn', candidate.nisn || candidate.id);
-          hFormData.append('candidateId', candidate.id);
-          hFormData.append('studentName', candidate.fullName);
-          hFormData.append('field', field);
-          hFormData.append('folder', `berkas_murid/${(candidate.fullName || `Murid_${candidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
-          hFormData.append('fileData', base64Data);
+      // 1. Unggah langsung ke server hosting resmi
+      try {
+        const hFormData = new FormData();
+        hFormData.append('file', file);
+        hFormData.append('nisn', candidate.nisn || candidate.id);
+        hFormData.append('candidateId', candidate.id);
+        hFormData.append('studentName', candidate.fullName);
+        hFormData.append('field', field);
+        hFormData.append('folder', `berkas_murid/${(candidate.fullName || `Murid_${candidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
+        hFormData.append('fileData', base64Data);
 
-          fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
-            method: 'POST',
-            body: hFormData,
-            signal: AbortSignal.timeout(15000)
-          }).catch(() => {});
-        } catch (_) {}
-
-        // 2. Simpan ke backend sistem
-        const res = await fetch('/api/spmb/upload-single-document', {
+        fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            nisn: candidate.nisn,
-            candidateId: candidate.id,
-            field,
-            fileData: base64Data,
-            fileName: file.name
-          })
-        });
+          body: hFormData,
+          signal: AbortSignal.timeout(15000)
+        }).catch(() => {});
+      } catch (_) {}
 
-        if (res.ok) {
-          const result = await res.json();
-          setCandidates(prev => prev.map(c => c.id === result.candidate.id ? result.candidate : c));
-          if (selectedCandidate?.id === result.candidate.id) {
-            setSelectedCandidate(result.candidate);
-          }
-          alert(`Berkas ${field} calon murid ${candidate.fullName} berhasil disimpan ke server hosting!`);
-        } else {
-          const err = await res.json();
-          alert(err.error || 'Gagal menyimpan berkas.');
+      // 2. Simpan ke backend sistem
+      const res = await fetch('/api/spmb/upload-single-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: candidate.nisn,
+          candidateId: candidate.id,
+          field,
+          fileData: base64Data,
+          fileName: file.name
+        })
+      });
+
+      if (res.ok) {
+        const result = await res.json();
+        setCandidates(prev => prev.map(c => c.id === result.candidate.id ? result.candidate : c));
+        if (selectedCandidate?.id === result.candidate.id) {
+          setSelectedCandidate(result.candidate);
         }
-      };
-      reader.readAsDataURL(file);
+        alert(`Berkas ${field} calon murid ${candidate.fullName} berhasil disimpan ke server hosting!`);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Gagal menyimpan berkas.');
+      }
     } catch (e: any) {
       alert('Gagal membaca file: ' + e.message);
     }
   };
 
   // Upload TTD & Stempel SPMB Image Helper
-  const handleUploadConfigImage = (field: keyof SpmbConfig, e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleUploadConfigImage = async (field: keyof SpmbConfig, e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
-    const isSvg = file.type === 'image/svg+xml' || file.name.toLowerCase().endsWith('.svg');
-    const isImage = file.type.startsWith('image/');
-
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const rawResult = (event.target?.result as string) || '';
-      if (!isImage || isSvg || !rawResult) {
-        if (config && rawResult) {
-          const updated = { ...config, [field]: rawResult };
-          setConfig(updated);
-          handleSaveConfig(updated);
-        }
-        return;
+    try {
+      // Aturan: PDF / <= 1000px tidak di-compress, > 1000px di-compress ke maks 1000px
+      const base64Data = await compressAndResizeImage(file, 1000, 1000, 0.90);
+      if (config && base64Data) {
+        const updated = { ...config, [field]: base64Data };
+        setConfig(updated);
+        handleSaveConfig(updated);
       }
-
-      try {
-        const img = new Image();
-        img.crossOrigin = 'anonymous';
-        img.onload = () => {
-          try {
-            const canvas = document.createElement('canvas');
-            let width = img.naturalWidth || img.width;
-            let height = img.naturalHeight || img.height;
-            if (!width || !height || width <= 0 || height <= 0) {
-              if (config) {
-                const updated = { ...config, [field]: rawResult };
-                setConfig(updated);
-                handleSaveConfig(updated);
-              }
-              return;
-            }
-
-            const maxDim = 500;
-            if (width > maxDim || height > maxDim) {
-              if (width > height) {
-                height = Math.round((height * maxDim) / width);
-                width = maxDim;
-              } else {
-                width = Math.round((width * maxDim) / height);
-                height = maxDim;
-              }
-            }
-            canvas.width = Math.max(1, width);
-            canvas.height = Math.max(1, height);
-            const ctx = canvas.getContext('2d');
-            if (ctx) {
-              ctx.imageSmoothingEnabled = true;
-              ctx.clearRect(0, 0, canvas.width, canvas.height);
-              ctx.drawImage(img, 0, 0, width, height);
-              const dataUrl = canvas.toDataURL(file.type.includes('png') ? 'image/png' : 'image/jpeg', 0.9);
-              if (config) {
-                const updated = { ...config, [field]: dataUrl || rawResult };
-                setConfig(updated);
-                handleSaveConfig(updated);
-              }
-            }
-          } catch (canvasErr) {
-            if (config) {
-              const updated = { ...config, [field]: rawResult };
-              setConfig(updated);
-              handleSaveConfig(updated);
-            }
-          }
-        };
-        img.onerror = () => {
-          if (config) {
-            const updated = { ...config, [field]: rawResult };
-            setConfig(updated);
-            handleSaveConfig(updated);
-          }
-        };
-        img.src = rawResult;
-      } catch (err) {
-        if (config) {
-          const updated = { ...config, [field]: rawResult };
-          setConfig(updated);
-          handleSaveConfig(updated);
-        }
-      }
-    };
-    reader.readAsDataURL(file);
+    } catch (err) {
+      console.error('Gagal memproses gambar konfigurasi SPMB:', err);
+    }
   };
 
   // Filtered Candidates List

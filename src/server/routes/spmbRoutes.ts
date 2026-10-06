@@ -2981,6 +2981,29 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         candidate.googleDriveLink = folderUrl;
       }
 
+      // Sinkronkan berkas base64 langsung ke hosting penyimpanan resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
+      for (const [fieldKey, fieldVal] of Object.entries(documents || {})) {
+        if (typeof fieldVal === "string" && fieldVal.startsWith("data:")) {
+          try {
+            fetch("https://portal.smpmaarifpdn.sch.id/api/upload", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                nisn: candidate.nisn,
+                candidateId: candidate.id,
+                studentName: candidate.fullName,
+                field: fieldKey,
+                folder: `berkas_murid/${folderName}`,
+                fileData: fieldVal
+              }),
+              signal: AbortSignal.timeout(8000)
+            }).then(async r => {
+              if (r.ok) console.log(`[Hosting API Bulk Sync OK for ${candidate.fullName} - ${fieldKey}]`);
+            }).catch(() => {});
+          } catch (_) {}
+        }
+      }
+
       // Verifikasi apakah SELURUH 5 berkas wajib telah lengkap
       const hasAkta = Boolean(candidate.documents?.aktaPhoto);
       const hasKk = Boolean(candidate.documents?.kkPhoto);
@@ -3105,6 +3128,28 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         console.error(`[Error writing single document file ${savedFileName}]:`, writeErr);
         return res.status(500).json({ error: "Gagal menulis file ke server hosting: " + writeErr.message });
       }
+
+      // Sinkronkan berkas langsung ke hosting penyimpanan resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
+      try {
+        fetch("https://portal.smpmaarifpdn.sch.id/api/upload", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            nisn: candidate.nisn,
+            candidateId: candidate.id,
+            studentName: candidate.fullName,
+            field,
+            fileName: savedFileName,
+            folder: `berkas_murid/${folderName}`,
+            fileData: fileData
+          }),
+          signal: AbortSignal.timeout(8000)
+        }).then(async r => {
+          if (r.ok) {
+            console.log(`[Hosting API Direct Sync OK for ${candidate.fullName} - ${field}]`);
+          }
+        }).catch(() => {});
+      } catch (_) {}
 
       const fileUrl = `/uploads/berkas_murid/${folderName}/${savedFileName}`;
 

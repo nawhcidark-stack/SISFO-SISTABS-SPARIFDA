@@ -2884,15 +2884,16 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const isCompleted = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(c.isFormCompleted)));
       const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
 
+      const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
       const hasActualMandatoryDocs = Boolean(
         c.documents && 
-        c.documents.aktaPhoto && 
-        c.documents.kkPhoto && 
-        c.documents.pasPhoto && 
-        (c.documents.ktpAyahPhoto || c.documents.ktpPhoto) && 
-        c.documents.ktpIbuPhoto
+        isRealDoc(c.documents.aktaPhoto) && 
+        isRealDoc(c.documents.kkPhoto) && 
+        isRealDoc(c.documents.pasPhoto) && 
+        (isRealDoc(c.documents.ktpAyahPhoto) || isRealDoc(c.documents.ktpPhoto)) && 
+        isRealDoc(c.documents.ktpIbuPhoto)
       );
-      const isDocsUploaded = !isResetTarget && (hasActualMandatoryDocs || (currentNisn === '0156620618' && Boolean(c.documentsUploaded)));
+      const isDocsUploaded = !isResetTarget && hasActualMandatoryDocs;
       const status = c.status === 'accepted' || (isReregPaid && (isDocsUploaded || isCompleted))
         ? 'accepted'
         : (isResetTarget ? 'registered' : (c.status || (isCompleted ? 'form_submitted' : 'registered')));

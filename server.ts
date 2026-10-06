@@ -2825,27 +2825,36 @@ async function startServer() {
             if (match) {
               const mime = match[1];
               const buf = Buffer.from(match[2], "base64");
+              // Tulis kembali ke disk fisik agar request selanjutnya langsung dari disk
+              try {
+                const targetDir = path.join(uploadDir, "berkas_murid", studentFolderName);
+                if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+                fs.writeFileSync(path.join(targetDir, requestedFile), buf);
+              } catch (_) {}
               res.setHeader("Content-Type", mime);
               res.setHeader("Cache-Control", "public, max-age=3600");
               return res.send(buf);
             }
           }
 
-          // 2. Jika merupakan berkas resmi SPMB, generate SVG autentik on-the-fly
-          const docLabels: Record<string, string> = {
-            pasPhoto: "Pas Foto Calon Murid (3x4)",
-            kkPhoto: "Kartu Keluarga (KK)",
-            aktaPhoto: "Akte Kelahiran Murid",
-            ktpAyahPhoto: "KTP Ayah / Wali",
-            ktpIbuPhoto: "KTP Ibu Kandung",
-            ktpPhoto: "KTP Orang Tua / Wali"
-          };
-          if (docLabels[fieldKey]) {
-            const svgContent = generateAuthenticDocumentSvg(fieldKey, docLabels[fieldKey], targetCand);
-            res.setHeader("Content-Type", "image/svg+xml");
-            res.setHeader("Cache-Control", "public, max-age=3600");
-            return res.send(svgContent);
-          }
+          // 2. Coba ambil dari hosting resmi jika file ada di server utama
+          try {
+            const remoteUrl = `https://portal.smpmaarifpdn.sch.id/uploads/berkas_murid/${encodeURIComponent(studentFolderName)}/${encodeURIComponent(requestedFile)}`;
+            const remoteRes = await fetch(remoteUrl, { signal: AbortSignal.timeout(5000) });
+            if (remoteRes.ok) {
+              const contentType = remoteRes.headers.get("content-type") || "image/jpeg";
+              const arrayBuf = await remoteRes.arrayBuffer();
+              const buffer = Buffer.from(arrayBuf);
+              try {
+                const targetDir = path.join(uploadDir, "berkas_murid", studentFolderName);
+                if (!fs.existsSync(targetDir)) fs.mkdirSync(targetDir, { recursive: true });
+                fs.writeFileSync(path.join(targetDir, requestedFile), buffer);
+              } catch (_) {}
+              res.setHeader("Content-Type", contentType);
+              res.setHeader("Cache-Control", "public, max-age=3600");
+              return res.send(buffer);
+            }
+          } catch (_) {}
         }
       }
     } catch (_) {}
@@ -2853,6 +2862,186 @@ async function startServer() {
     // Fallback mutlak: Return 404 JSON, JANGAN PERNAH return HTML index.html
     res.setHeader("Content-Type", "application/json");
     res.status(404).json({ error: "File tidak ditemukan di penyimpanan server" });
+  });
+
+  // Universal Hosting Storage & Upload API endpoint
+  // Matches user specification: https://portal.smpmaarifpdn.sch.id/api/upload
+  app.post(["/api/upload", "/upload"], upload.any(), async (req, res) => {
+    try {
+      res.setHeader("Access-Control-Allow-Origin", "*");
+      res.setHeader("Access-Control-Allow-Methods", "POST, OPTIONS");
+      res.setHeader("Access-Control-Allow-Headers", "*");
+
+      const body = req.body || {};
+      const files = (req.files as Express.Multer.File[]) || [];
+      const nisn = String(body.nisn || body.candidateId || req.query.nisn || req.query.candidateId || "").trim();
+      const rawName = String(body.studentName || body.name || req.query.name || "").trim();
+      const field = String(body.field || req.query.field || "").trim();
+      const requestedFolder = String(body.folder || req.query.folder || "").trim();
+
+      // Tentukan subfolder penyimpanan fisik di hosting
+      let folderSubPath = "";
+      if (requestedFolder) {
+        folderSubPath = requestedFolder.replace(/^[/\\]+|[/\\]+$/g, "");
+      } else if (rawName || nisn) {
+        let folderName = (rawName || `Murid_${nisn}`)
+          .toUpperCase()
+          .trim()
+          .replace(/[^A-Z0-9]/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "") || `Murid_${nisn}`;
+        folderSubPath = path.join("berkas_murid", folderName);
+      } else {
+        folderSubPath = "berkas_murid";
+      }
+
+      const targetDir = path.join(uploadDir, folderSubPath);
+      if (!fs.existsSync(targetDir)) {
+        fs.mkdirSync(targetDir, { recursive: true });
+      }
+
+      const savedFiles: Array<{
+        fieldName?: string;
+        fileName: string;
+        filePath: string;
+        url: string;
+        size: number;
+      }> = [];
+
+      // 1. Proses berkas yang diunggah via multipart/form-data
+      if (files && files.length > 0) {
+        for (const file of files) {
+          const originalName = file.originalname || "document.jpg";
+          const ext = path.extname(originalName) || ".jpg";
+          const fileField = file.fieldname || field || path.parse(originalName).name;
+          const safeFileName = `${fileField}${ext}`;
+          const destPath = path.join(targetDir, safeFileName);
+
+          try {
+            fs.copyFileSync(file.path, destPath);
+            try { fs.unlinkSync(file.path); } catch (_) {}
+          } catch (copyErr) {
+            console.warn("[Upload File Copy Error]:", copyErr);
+          }
+
+          const fileUrl = `/uploads/${folderSubPath.replace(/\\/g, "/")}/${safeFileName}`;
+          savedFiles.push({
+            fieldName: fileField,
+            fileName: safeFileName,
+            filePath: fileUrl,
+            url: `https://portal.smpmaarifpdn.sch.id${fileUrl}`,
+            size: fs.existsSync(destPath) ? fs.statSync(destPath).size : file.size
+          });
+        }
+      }
+
+      // 2. Proses berkas yang dikirim via JSON base64 data URI
+      const fileData = body.fileData || body.data || body.fileBase64 || body.base64;
+      if (fileData && typeof fileData === "string") {
+        let ext = ".jpg";
+        let base64Content = fileData;
+        if (fileData.startsWith("data:")) {
+          const match = fileData.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+          if (match) {
+            const mime = match[1].toLowerCase();
+            base64Content = match[2];
+            if (mime.includes("png")) ext = ".png";
+            else if (mime.includes("pdf")) ext = ".pdf";
+            else if (mime.includes("webp")) ext = ".webp";
+            else if (mime.includes("jpeg") || mime.includes("jpg")) ext = ".jpg";
+          }
+        }
+        const fileNameParam = body.fileName || (field ? `${field}${ext}` : `dokumen_${Date.now()}${ext}`);
+        const safeFileName = fileNameParam.replace(/[^a-zA-Z0-9._-]/g, "_");
+        const destPath = path.join(targetDir, safeFileName);
+
+        try {
+          fs.writeFileSync(destPath, Buffer.from(base64Content, "base64"));
+          const fileUrl = `/uploads/${folderSubPath.replace(/\\/g, "/")}/${safeFileName}`;
+          savedFiles.push({
+            fieldName: field || path.parse(safeFileName).name,
+            fileName: safeFileName,
+            filePath: fileUrl,
+            url: `https://portal.smpmaarifpdn.sch.id${fileUrl}`,
+            size: fs.statSync(destPath).size
+          });
+        } catch (writeErr: any) {
+          console.error("[Upload writeFileSync Error]:", writeErr);
+        }
+      }
+
+      // 3. Hubungkan langsung ke data calon murid di MySQL jika NISN disertakan
+      if (nisn && savedFiles.length > 0) {
+        let candidate = spmbCandidates.find(c => (c.nisn || "").trim() === nisn || c.id === nisn);
+        if (!candidate) {
+          try {
+            const dbCand = await findSpmbCandidateInMysql(nisn);
+            if (dbCand) {
+              spmbCandidates.push(dbCand);
+              candidate = dbCand;
+            }
+          } catch (_) {}
+        }
+
+        if (candidate) {
+          if (!candidate.documents || typeof candidate.documents !== 'object') candidate.documents = {};
+          if (!candidate.documentsRaw || typeof candidate.documentsRaw !== 'object') candidate.documentsRaw = {};
+
+          for (const sf of savedFiles) {
+            const k = sf.fieldName || path.parse(sf.fileName).name;
+            candidate.documents[k] = sf.filePath;
+            if (fileData) {
+              candidate.documentsRaw[k] = fileData;
+            }
+          }
+          candidate.documentsFolder = `/uploads/${folderSubPath.replace(/\\/g, "/")}`;
+          candidate.documentsFolderName = path.basename(folderSubPath);
+          candidate.googleDriveLink = `/uploads/${folderSubPath.replace(/\\/g, "/")}`;
+
+          const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
+          const allMandatoryDone = Boolean(
+            isRealDoc(candidate.documents?.aktaPhoto) &&
+            isRealDoc(candidate.documents?.kkPhoto) &&
+            isRealDoc(candidate.documents?.pasPhoto) &&
+            (isRealDoc(candidate.documents?.ktpAyahPhoto) || isRealDoc(candidate.documents?.ktpPhoto)) &&
+            isRealDoc(candidate.documents?.ktpIbuPhoto)
+          );
+          candidate.documentsUploaded = allMandatoryDone;
+          if (allMandatoryDone) {
+            candidate.documentsUploadedAt = candidate.documentsUploadedAt || new Date().toISOString();
+          } else {
+            delete candidate.documentsUploadedAt;
+          }
+          candidate.updatedAt = new Date().toISOString();
+
+          directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+          saveState();
+        }
+      }
+
+      if (savedFiles.length === 0) {
+        return res.status(400).json({
+          error: "Tidak ada file atau data berkas yang diterima untuk disimpan."
+        });
+      }
+
+      const primary = savedFiles[0];
+      return res.json({
+        success: true,
+        message: "Berkas berhasil diunggah dan disimpan permanen di hosting.",
+        url: primary.url,
+        fileUrl: primary.filePath,
+        filePath: primary.filePath,
+        fileName: primary.fileName,
+        files: savedFiles,
+        folder: folderSubPath
+      });
+    } catch (err: any) {
+      console.error("[API Upload Error]:", err);
+      return res.status(500).json({
+        error: "Gagal menyimpan berkas ke hosting: " + (err?.message || err)
+      });
+    }
   });
 
   // Upload file API for admin user

@@ -306,7 +306,7 @@ export default function SpmbReceiptModal({
                         <img 
                           src={config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp} 
                           alt="Stempel SPMB" 
-                          className="absolute -left-2 top-0 h-12 max-w-[70px] object-contain opacity-85 pointer-events-none z-1" 
+                          className="absolute -left-3 -top-3 h-24 max-w-[140px] object-contain opacity-85 pointer-events-none z-1" 
                           referrerPolicy="no-referrer" 
                         />
                       )}
@@ -474,7 +474,7 @@ export default function SpmbReceiptModal({
                         <img 
                           src={config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp} 
                           alt="Stempel SPMB" 
-                          className="absolute -left-2 top-0 h-12 max-w-[70px] object-contain opacity-85 pointer-events-none z-1" 
+                          className="absolute -left-3 -top-3 h-24 max-w-[140px] object-contain opacity-85 pointer-events-none z-1" 
                           referrerPolicy="no-referrer" 
                         />
                       )}

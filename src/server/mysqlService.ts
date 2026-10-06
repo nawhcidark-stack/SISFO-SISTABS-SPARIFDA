@@ -1481,12 +1481,13 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     const isFormDone = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed)));
     const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
     
-    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL
+    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL (abaikan berkas contoh SVG / unsplash)
     if (documents && typeof documents === 'object') {
       const cleanedDocs: Record<string, string> = {};
       for (const [docKey, docVal] of Object.entries(documents)) {
         if (!docVal || typeof docVal !== 'string') continue;
         const trimmed = docVal.trim();
+        if (trimmed.endsWith('.svg') || trimmed.includes('unsplash.com')) continue;
         if (trimmed && (trimmed.startsWith('/uploads/') || trimmed.startsWith('data:') || trimmed.startsWith('http'))) {
           cleanedDocs[docKey] = trimmed;
         }
@@ -1494,16 +1495,17 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       documents = Object.keys(cleanedDocs).length > 0 ? cleanedDocs : undefined;
     }
 
-    // Validasi berkas: hanya selesai jika SELURUH 5 berkas wajib telah benar-benar terunggah dan tersimpan
+    // Validasi berkas: hanya selesai jika SELURUH 5 berkas wajib telah benar-benar terunggah dan tersimpan asli
+    const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
     const hasActualMandatoryDocs = Boolean(
       documents && 
-      documents.aktaPhoto && 
-      documents.kkPhoto && 
-      documents.pasPhoto && 
-      (documents.ktpAyahPhoto || documents.ktpPhoto) && 
-      documents.ktpIbuPhoto
+      isRealDoc(documents.aktaPhoto) && 
+      isRealDoc(documents.kkPhoto) && 
+      isRealDoc(documents.pasPhoto) && 
+      (isRealDoc(documents.ktpAyahPhoto) || isRealDoc(documents.ktpPhoto)) && 
+      isRealDoc(documents.ktpIbuPhoto)
     );
-    const hasDocs = !isResetTarget && (hasActualMandatoryDocs || ((currentNisn === '0156620618' || currentNisn === '0149692295') && Boolean(r.documents_uploaded_at)));
+    const hasDocs = !isResetTarget && hasActualMandatoryDocs;
 
     const isSyahm = currentNisn === '0156620618';
     const resolvedFullName = isSyahm ? 'SYAHM AZIO HAFIZUDIN' : r.full_name;
@@ -1631,7 +1633,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     documentsRaw,
     documentsBase64: documentsRaw,
     documentsUploaded: hasDocs,
-    documentsUploadedAt: r.documents_uploaded_at || (hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined),
+    documentsUploadedAt: hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined,
     fullFormData,
     ...(fullFormData && typeof fullFormData === 'object' ? fullFormData : {})
   };

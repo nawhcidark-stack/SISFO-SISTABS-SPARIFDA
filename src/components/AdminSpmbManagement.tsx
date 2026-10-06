@@ -1814,11 +1814,12 @@ export default function AdminSpmbManagement({
                                 )}
                               </div>
                               {(() => {
-                                const hasFoto = Boolean(candidate.documents?.pasPhoto || candidate.fullFormData?.documents?.pasPhoto);
-                                const hasKk = Boolean(candidate.documents?.kkPhoto || candidate.fullFormData?.documents?.kkPhoto);
-                                const hasAkta = Boolean(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
-                                const hasKtpAyah = Boolean(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto);
-                                const hasKtpIbu = Boolean(candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
+                                const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
+                                const hasFoto = isRealDoc(candidate.documents?.pasPhoto || candidate.fullFormData?.documents?.pasPhoto);
+                                const hasKk = isRealDoc(candidate.documents?.kkPhoto || candidate.fullFormData?.documents?.kkPhoto);
+                                const hasAkta = isRealDoc(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
+                                const hasKtpAyah = isRealDoc(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto);
+                                const hasKtpIbu = isRealDoc(candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
                                 const allDocs = hasFoto && hasKk && hasAkta && hasKtpAyah && hasKtpIbu;
                                 const hasAnyDoc = hasFoto || hasKk || hasAkta || hasKtpAyah || hasKtpIbu;
 
@@ -2234,11 +2235,12 @@ export default function AdminSpmbManagement({
                             </div>
                             <div>
                               {(() => {
-                                const docFoto = Boolean(cand.documents?.pasPhoto || cand.fullFormData?.documents?.pasPhoto);
-                                const docKk = Boolean(cand.documents?.kkPhoto || cand.fullFormData?.documents?.kkPhoto);
-                                const docAkta = Boolean(cand.documents?.aktaPhoto || cand.fullFormData?.documents?.aktaPhoto);
-                                const docKtpAyah = Boolean(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto || cand.documents?.ktp || cand.fullFormData?.documents?.ktpAyahPhoto || cand.fullFormData?.documents?.ktpPhoto);
-                                const docKtpIbu = Boolean(cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.ktpIbuPhoto);
+                                const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
+                                const docFoto = isRealDoc(cand.documents?.pasPhoto || cand.fullFormData?.documents?.pasPhoto);
+                                const docKk = isRealDoc(cand.documents?.kkPhoto || cand.fullFormData?.documents?.kkPhoto);
+                                const docAkta = isRealDoc(cand.documents?.aktaPhoto || cand.fullFormData?.documents?.aktaPhoto);
+                                const docKtpAyah = isRealDoc(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto || cand.documents?.ktp || cand.fullFormData?.documents?.ktpAyahPhoto || cand.fullFormData?.documents?.ktpPhoto);
+                                const docKtpIbu = isRealDoc(cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.ktpIbuPhoto);
                                 const allDocs = docFoto && docKk && docAkta && docKtpAyah && docKtpIbu;
 
                                 return (
@@ -2960,7 +2962,7 @@ export default function AdminSpmbManagement({
                             <img 
                               src={config.spmbStampUrl} 
                               alt="Stempel SPMB" 
-                              className="h-9 max-w-[80px] object-contain" 
+                              className="h-20 max-w-[160px] object-contain" 
                             />
                           </div>
                           <button

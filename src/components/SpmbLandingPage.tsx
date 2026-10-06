@@ -555,15 +555,16 @@ export default function SpmbLandingPage({
           (candidate.fatherName || candidate.motherName || candidate.guardianName || candidate.fullFormData?.fatherName || candidate.fullFormData?.motherName)
         );
         const isStep2Done = isStep1Done && (candidate.nisn === '0156620618' ? Boolean(candidate.isFormCompleted) : hasRealFormData);
+        const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
         const hasAllMandatoryDocs = Boolean(
           candidate.documents && 
-          candidate.documents.aktaPhoto && 
-          candidate.documents.kkPhoto && 
-          candidate.documents.pasPhoto && 
-          (candidate.documents.ktpAyahPhoto || candidate.documents.ktpPhoto) && 
-          candidate.documents.ktpIbuPhoto
+          isRealDoc(candidate.documents.aktaPhoto) && 
+          isRealDoc(candidate.documents.kkPhoto) && 
+          isRealDoc(candidate.documents.pasPhoto) && 
+          (isRealDoc(candidate.documents.ktpAyahPhoto) || isRealDoc(candidate.documents.ktpPhoto)) && 
+          isRealDoc(candidate.documents.ktpIbuPhoto)
         );
-        const isStep3Done = isStep2Done && (candidate.nisn === '0156620618' ? Boolean(candidate.documentsUploaded) : hasAllMandatoryDocs);
+        const isStep3Done = Boolean(isStep2Done && hasAllMandatoryDocs);
         const isStep4Done = isStep3Done && Boolean(candidate.reRegistrationStatus === 'paid' || candidate.reRegistrationPaid);
 
         if (!isStep1Done) {
@@ -2937,14 +2938,15 @@ export default function SpmbLandingPage({
               );
               const isStep2Done = Boolean(isStep1Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.isFormCompleted) : hasRealFormData));
 
+              const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
               const hasUploadedMandatoryDocs = Boolean(
-                (activeCandidate.documents?.aktaPhoto || docUploads.aktaPhoto) &&
-                (activeCandidate.documents?.kkPhoto || docUploads.kkPhoto) &&
-                (activeCandidate.documents?.pasPhoto || docUploads.pasPhoto) &&
-                (activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpPhoto || docUploads.ktpPhoto) &&
-                (activeCandidate.documents?.ktpIbuPhoto || docUploads.ktpIbuPhoto)
+                isRealDoc(activeCandidate.documents?.aktaPhoto || docUploads.aktaPhoto) &&
+                isRealDoc(activeCandidate.documents?.kkPhoto || docUploads.kkPhoto) &&
+                isRealDoc(activeCandidate.documents?.pasPhoto || docUploads.pasPhoto) &&
+                (isRealDoc(activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpAyahPhoto) || isRealDoc(activeCandidate.documents?.ktpPhoto || docUploads.ktpPhoto)) &&
+                isRealDoc(activeCandidate.documents?.ktpIbuPhoto || docUploads.ktpIbuPhoto)
               );
-              const isStep3Done = Boolean(isStep2Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.documentsUploaded) : hasUploadedMandatoryDocs));
+              const isStep3Done = Boolean(isStep2Done && hasUploadedMandatoryDocs);
               const isStep4Done = Boolean(isStep3Done && (activeCandidate.reRegistrationStatus === 'paid' || activeCandidate.reRegistrationPaid));
               const isStep5Done = Boolean(isStep4Done && (activeCandidate.status === 'accepted' || activeCandidate.reRegistrationStatus === 'paid'));
 
@@ -5219,10 +5221,27 @@ export default function SpmbLandingPage({
                           <div className="h-16" />
                           <p className="font-bold underline text-slate-900 m-0">( ........................................ )</p>
                         </div>
-                        <div>
+                        <div className="relative">
                           <p className="m-0 text-slate-600">Pandaan, {new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}</p>
                           <p className="m-0 text-slate-600">{config?.spmbChairTitle || `Ketua Panitia SPMB ${config?.academicYear || '2027/2028'}`},</p>
-                          <div className="h-16" />
+                          <div className="h-16 flex items-center justify-center relative">
+                            {(config?.spmbStampUrl || (currentSchoolIdentity as any)?.schoolStamp || (currentSchoolIdentity as any)?.stamp) && (
+                              <img 
+                                src={config?.spmbStampUrl || (currentSchoolIdentity as any)?.schoolStamp || (currentSchoolIdentity as any)?.stamp} 
+                                alt="Stempel SPMB" 
+                                className="absolute -left-3 -top-3 h-24 max-w-[140px] object-contain opacity-85 pointer-events-none z-1" 
+                                referrerPolicy="no-referrer" 
+                              />
+                            )}
+                            {(config?.spmbChairSignatureUrl || currentSchoolIdentity?.principalSignature) && (
+                              <img 
+                                src={config?.spmbChairSignatureUrl || currentSchoolIdentity?.principalSignature} 
+                                alt="Ttd Ketua SPMB" 
+                                className="h-12 object-contain z-10" 
+                                referrerPolicy="no-referrer" 
+                              />
+                            )}
+                          </div>
                           <p className="font-bold underline text-slate-900 m-0">{config?.spmbChairName || 'Drs. H. M. Sholihuddin'}</p>
                         </div>
                       </div>

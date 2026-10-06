@@ -525,7 +525,6 @@ export function saveCandidateDocumentsToDisk(
             if (mime.includes("png")) ext = ".png";
             else if (mime.includes("pdf")) ext = ".pdf";
             else if (mime.includes("webp")) ext = ".webp";
-            else if (mime.includes("svg")) ext = ".svg";
             const dynName = `${key}${ext}`;
             const dynPath = path.join(targetDir, dynName);
             try {
@@ -535,19 +534,9 @@ export function saveCandidateDocumentsToDisk(
             } catch (_) {}
           }
         }
-        // Jika tidak ada di disk dan tidak ada base64, generate berkas fisik SVG autentik agar selalu tersedia di disk hosting
-        if (docLabels[key]) {
-          const svgContent = generateAuthenticDocumentSvg(key, docLabels[key], candidate);
-          const svgPath = path.join(targetDir, `${key}.svg`);
-          try {
-            fs.writeFileSync(svgPath, svgContent, "utf8");
-            resultDocs[key] = `/uploads/berkas_murid/${folderName}/${key}.svg`;
-          } catch (_) {
-            resultDocs[key] = val;
-          }
-        } else {
-          resultDocs[key] = val;
-        }
+        // Jangan buat file contoh palsu atau SVG sintetis jika murid belum mengunggah berkas
+        delete resultDocs[key];
+        delete rawDocs[key];
       }
     }
   }
@@ -895,10 +884,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         c.isFormCompleted = true;
         changed = true;
       }
-      if (!c.documentsUploaded) {
-        c.documentsUploaded = true;
-        changed = true;
-      }
+      // Zafran baru mengunggah 2 dari 5 berkas wajib (Pas Foto & KK). Belum lengkap 5/5.
     }
 
     // Khusus NISN 0156620618 (SYAHM AZIO HAFIZUDIN): Pastikan biodata sesuai bukti pendaftaran resmi
@@ -996,20 +982,18 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         if (!c.formCompletedAt) c.formCompletedAt = c.createdAt || new Date().toISOString();
         changed = true;
       }
-      if (!c.documentsUploaded) {
-        c.documentsUploaded = true;
-        if (!c.documentsUploadedAt) c.documentsUploadedAt = c.createdAt || new Date().toISOString();
-        changed = true;
-      }
-      if (!c.documents || Object.keys(c.documents).length === 0) {
-        c.documents = {
-          pasPhoto: c.documents?.pasPhoto || "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
-          kkPhoto: c.documents?.kkPhoto || "https://images.unsplash.com/photo-1568602471122-7832951cc4c5?w=400&auto=format&fit=crop&q=80",
-          aktaPhoto: c.documents?.aktaPhoto || "https://images.unsplash.com/photo-1554224155-8d04cb21cd6c?w=400&auto=format&fit=crop&q=80",
-          ktpAyahPhoto: c.documents?.ktpAyahPhoto || c.documents?.ktpPhoto || "https://images.unsplash.com/photo-1600486913747-55e5470d6f40?w=400&auto=format&fit=crop&q=80",
-          ktpIbuPhoto: c.documents?.ktpIbuPhoto || "https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?w=400&auto=format&fit=crop&q=80"
-        };
-        changed = true;
+      // Hapus berkas contoh sintetis/SVG/Unsplash jika ada, kosongkan jika belum diunggah asli oleh murid
+      if (c.documents && typeof c.documents === 'object') {
+        const cleaned: Record<string, string> = {};
+        for (const [k, v] of Object.entries(c.documents)) {
+          if (typeof v === 'string' && v.trim() && !v.endsWith('.svg') && !v.includes('unsplash.com')) {
+            cleaned[k] = v.trim();
+          }
+        }
+        if (Object.keys(cleaned).length !== Object.keys(c.documents).length) {
+          c.documents = cleaned;
+          changed = true;
+        }
       }
       if (c.status !== 'accepted') {
         c.status = 'accepted';
@@ -1040,14 +1024,15 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
 
     // 2. Validasi Kelengkapan Berkas Upload
-    // Hanya dianggap LENGKAP jika SELURUH 5 berkas wajib telah benar-benar terunggah!
+    // Hanya dianggap LENGKAP jika SELURUH 5 berkas wajib telah benar-benar terunggah (bukan SVG sintetis / unsplash contoh)!
+    const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
     const hasAllMandatoryDocs = Boolean(
       c.documents && 
-      c.documents.aktaPhoto && 
-      c.documents.kkPhoto && 
-      c.documents.pasPhoto && 
-      (c.documents.ktpAyahPhoto || c.documents.ktpPhoto) && 
-      c.documents.ktpIbuPhoto
+      isRealDoc(c.documents.aktaPhoto) && 
+      isRealDoc(c.documents.kkPhoto) && 
+      isRealDoc(c.documents.pasPhoto) && 
+      (isRealDoc(c.documents.ktpAyahPhoto) || isRealDoc(c.documents.ktpPhoto)) && 
+      isRealDoc(c.documents.ktpIbuPhoto)
     );
     if (hasAllMandatoryDocs) {
       if (!c.documentsUploaded) {
@@ -1057,7 +1042,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     } else {
       // Jika berkas belum lengkap (kurang salah satu dari 5 berkas wajib), status berkas BELUM LENGKAP!
-      if (c.documentsUploaded && currentNisn !== "0156620618") {
+      if (c.documentsUploaded) {
         c.documentsUploaded = false;
         delete c.documentsUploadedAt;
         changed = true;
@@ -1202,18 +1187,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         totalReRegistrationPaid: 560000,
         reRegistrationFee: 560000,
         selectedUniformSize: "L",
-        documentsUploaded: true,
-        documentsUploadedAt: "2026-09-15T09:30:00.000Z",
+        documentsUploaded: false,
         documentsFolder: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN",
         documentsFolderName: "SYAHM_AZIO_HAFIZUDIN",
         googleDriveLink: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN",
-        documents: {
-          pasPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/pasPhoto.jpg",
-          kkPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/kkPhoto.jpg",
-          aktaPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/aktaPhoto.jpg",
-          ktpAyahPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/ktpAyahPhoto.jpg",
-          ktpIbuPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/ktpIbuPhoto.jpg"
-        },
+        documents: {},
         createdAt: "2026-09-15T08:00:00.000Z",
         updatedAt: "2026-09-16T10:15:00.000Z"
       };
@@ -1247,19 +1225,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.julySppPaid = 200000;
       cand.uniformFeePaid = 360000;
       cand.isFormCompleted = true;
-      cand.documentsUploaded = true;
+      cand.documentsUploaded = false;
       cand.documentsFolder = "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN";
       cand.documentsFolderName = "SYAHM_AZIO_HAFIZUDIN";
       cand.googleDriveLink = "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN";
-      if (!cand.documents || Object.keys(cand.documents).length === 0) {
-        cand.documents = {
-          pasPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/pasPhoto.jpg",
-          kkPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/kkPhoto.jpg",
-          aktaPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/aktaPhoto.jpg",
-          ktpAyahPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/ktpAyahPhoto.jpg",
-          ktpIbuPhoto: "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN/ktpIbuPhoto.jpg"
-        };
-      }
+      cand.documents = {};
+      delete (cand as any).documentsUploadedAt;
       if (cand.fatherName === "AHMAD SUDIRMAN") cand.fatherName = "Wali Murid";
       if (cand.motherName === "SITI AMINAH") cand.motherName = "Wali Murid";
     }
@@ -1323,17 +1294,13 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         motherName: "Wali Murid",
         motherOccupation: "Ibu Rumah Tangga",
         reRegistrationStatus: "unpaid",
-        documentsUploaded: true,
-        documentsUploadedAt: new Date(1791164698665).toISOString(),
+        documentsUploaded: false,
         documentsFolder: folderUrl,
         documentsFolderName: folderName,
         googleDriveLink: folderUrl,
         documents: {
           pasPhoto: `${folderUrl}/pasPhoto.jpg`,
-          kkPhoto: `${folderUrl}/kkPhoto.jpg`,
-          aktaPhoto: `${folderUrl}/aktaPhoto.jpg`,
-          ktpAyahPhoto: `${folderUrl}/ktpAyahPhoto.jpg`,
-          ktpIbuPhoto: `${folderUrl}/ktpIbuPhoto.jpg`
+          kkPhoto: `${folderUrl}/kkPhoto.jpg`
         },
         createdAt: new Date(1791164698665 - 60000).toISOString(),
         updatedAt: new Date().toISOString()
@@ -1354,17 +1321,15 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (!cand.tokenPaymentMethod) cand.tokenPaymentMethod = "Midtrans (Settlement)";
       cand.tokenAmount = cand.tokenAmount || 50000;
       cand.isFormCompleted = true;
-      cand.documentsUploaded = true;
+      cand.documentsUploaded = false;
       cand.documentsFolder = folderUrl;
       cand.documentsFolderName = folderName;
       cand.googleDriveLink = folderUrl;
       cand.documents = {
         pasPhoto: `${folderUrl}/pasPhoto.jpg`,
-        kkPhoto: `${folderUrl}/kkPhoto.jpg`,
-        aktaPhoto: `${folderUrl}/aktaPhoto.jpg`,
-        ktpAyahPhoto: `${folderUrl}/ktpAyahPhoto.jpg`,
-        ktpIbuPhoto: `${folderUrl}/ktpIbuPhoto.jpg`
+        kkPhoto: `${folderUrl}/kkPhoto.jpg`
       };
+      delete (cand as any).documentsUploadedAt;
     }
     healCandidateData(cand);
 
@@ -1445,18 +1410,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         uniformFeePaid: 360000,
         selectedUniformSize: "L",
         status: "accepted",
-        documentsUploaded: true,
-        documentsUploadedAt: "2026-10-06T03:24:32.381Z",
+        documentsUploaded: false,
         documentsFolder: folderUrl,
         documentsFolderName: folderName,
         googleDriveLink: folderUrl,
-        documents: {
-          pasPhoto: `${folderUrl}/pasPhoto.svg`,
-          kkPhoto: `${folderUrl}/kkPhoto.svg`,
-          aktaPhoto: `${folderUrl}/aktaPhoto.svg`,
-          ktpAyahPhoto: `${folderUrl}/ktpAyahPhoto.svg`,
-          ktpIbuPhoto: `${folderUrl}/ktpIbuPhoto.svg`
-        },
+        documents: {},
         createdAt: "2026-10-05T04:09:13.267Z",
         updatedAt: "2026-10-06T03:24:32.381Z"
       };
@@ -1473,18 +1431,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.totalReRegistrationPaid = 560000;
       cand.status = "accepted";
       cand.isFormCompleted = true;
-      cand.documentsUploaded = true;
+      cand.documentsUploaded = false;
       cand.documentsFolder = folderUrl;
       cand.documentsFolderName = folderName;
-      if (!cand.documents) {
-        cand.documents = {
-          pasPhoto: `${folderUrl}/pasPhoto.svg`,
-          kkPhoto: `${folderUrl}/kkPhoto.svg`,
-          aktaPhoto: `${folderUrl}/aktaPhoto.svg`,
-          ktpAyahPhoto: `${folderUrl}/ktpAyahPhoto.svg`,
-          ktpIbuPhoto: `${folderUrl}/ktpIbuPhoto.svg`
-        };
-      }
+      cand.documents = {};
+      delete (cand as any).documentsUploadedAt;
     }
     healCandidateData(cand);
 

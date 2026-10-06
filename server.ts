@@ -1915,13 +1915,24 @@ function loadState() {
         spmbCandidates.length = 0;
         spmbCandidates.push(...data.spmbCandidates);
         spmbCandidates.forEach(cand => {
-          if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
-            cand.isFormCompleted = false;
-            delete (cand as any).formCompletedAt;
+          const zeroDocsNisns = ['0156620618', '0149692295', '0143513820', '3140631960', '0141121650', '3142636294', '0158483548', '0152892235'];
+          if (zeroDocsNisns.includes(cand.nisn) || zeroDocsNisns.includes(cand.id)) {
             cand.documentsUploaded = false;
             delete (cand as any).documentsUploadedAt;
             cand.documents = {};
-            cand.status = 'registered';
+            cand.documentsRaw = {};
+            if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
+              cand.isFormCompleted = false;
+              delete (cand as any).formCompletedAt;
+              cand.status = 'registered';
+            }
+          } else if (cand.nisn === '3142814544' || cand.id === '3142814544') {
+            cand.documents = {
+              pasPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/pasPhoto.jpg",
+              kkPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/kkPhoto.jpg"
+            };
+            cand.documentsUploaded = false;
+            delete (cand as any).documentsUploadedAt;
           }
         });
       }
@@ -3294,13 +3305,24 @@ async function startServer() {
       spmbCandidates.length = 0;
       spmbCandidates.push(...spmbArr);
       spmbCandidates.forEach(cand => {
-        if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
-          cand.isFormCompleted = false;
-          delete (cand as any).formCompletedAt;
+        const zeroDocsNisns = ['0156620618', '0149692295', '0143513820', '3140631960', '0141121650', '3142636294', '0158483548', '0152892235'];
+        if (zeroDocsNisns.includes(cand.nisn) || zeroDocsNisns.includes(cand.id)) {
           cand.documentsUploaded = false;
           delete (cand as any).documentsUploadedAt;
           cand.documents = {};
-          cand.status = 'registered';
+          cand.documentsRaw = {};
+          if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
+            cand.isFormCompleted = false;
+            delete (cand as any).formCompletedAt;
+            cand.status = 'registered';
+          }
+        } else if (cand.nisn === '3142814544' || cand.id === '3142814544') {
+          cand.documents = {
+            pasPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/pasPhoto.jpg",
+            kkPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/kkPhoto.jpg"
+          };
+          cand.documentsUploaded = false;
+          delete (cand as any).documentsUploadedAt;
         }
       });
     }

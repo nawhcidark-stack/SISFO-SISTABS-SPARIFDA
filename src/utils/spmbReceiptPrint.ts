@@ -1410,10 +1410,10 @@ export function getReceiptCss(): string {
     }
     .spmb-stamp-img {
       position: absolute;
-      left: 2px;
-      top: -6px;
-      height: 58px;
-      max-width: 80px;
+      left: -8px;
+      top: -24px;
+      height: 116px;
+      max-width: 160px;
       object-fit: contain;
       opacity: 0.88;
       z-index: 1;
@@ -1606,7 +1606,7 @@ export async function printRefundReceiptDirect(
       <div style="width: 45%;">
         <p style="margin: 0; color: #475569;">Pandaan, ${dateStr}<br />Panitia SPMB,</p>
         <div style="position: relative; height: 50px; display: flex; align-items: center; justify-content: center;">
-          ${stampUrl ? `<img src="${stampUrl}" style="position: absolute; left: 10px; height: 52px; opacity: 0.85; z-index: 1;" alt="Stempel" />` : ''}
+          ${stampUrl ? `<img src="${stampUrl}" style="position: absolute; left: -8px; top: -16px; height: 104px; max-width: 160px; opacity: 0.85; z-index: 1;" alt="Stempel" />` : ''}
           ${chairSigUrl ? `<img src="${chairSigUrl}" style="position: absolute; height: 46px; z-index: 2;" alt="Ttd" />` : ''}
         </div>
         <p style="margin: 0; font-weight: bold; text-decoration: underline; color: #0f172a;">( ${officerName || chairName} )</p>

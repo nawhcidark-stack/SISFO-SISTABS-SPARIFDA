@@ -8,7 +8,7 @@ import {
 } from '../types';
 import SpmbReceiptModal from './SpmbReceiptModal';
 import SpmbFinanceReport from './SpmbFinanceReport';
-import { printSpmbReceiptDirect, printRegistrationProofDirect, generateAuthenticPasPhotoSvgDataUrl, calculateReRegDetails } from '../utils/spmbReceiptPrint';
+import { printSpmbReceiptDirect, printRegistrationProofDirect, printRefundReceiptDirect, generateAuthenticPasPhotoSvgDataUrl, calculateReRegDetails } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -609,7 +609,15 @@ export default function AdminSpmbManagement({
     paymentMethod: string = 'Tunai (Loket SPMB)',
     amount?: number
   ) => {
-    const isSyahm = (candidate.nisn || '').trim() === '0156620618' || candidate.id === '0156620618';
+    const isSyahm = Boolean(
+      (candidate.nisn || '').trim() === '0156620618' || 
+      (candidate.nisn || '').includes('156620618') || 
+      candidate.id === '0156620618' || 
+      candidate.id === 'spmb-cand-0156620618' || 
+      (candidate.registrationNo || '').trim() === '0156620618' || 
+      (candidate.registrationNumber || '').trim() === '0156620618' || 
+      (candidate.fullName || '').toUpperCase().includes('SYAHM AZIO')
+    );
     const reregDetails = calculateReRegDetails(candidate, config);
     const calculatedFee = isSyahm ? 560000 : (reregDetails.grandTotal || 560000);
     const defaultAmount = amount !== undefined 
@@ -687,14 +695,15 @@ export default function AdminSpmbManagement({
         const base64Data = event.target?.result as string;
         if (!base64Data) return;
 
-        const updatedDocs = { ...(candidate.documents || {}), [field]: base64Data };
-        const res = await fetch('/api/spmb/admin-update-documents', {
+        const res = await fetch('/api/spmb/upload-single-document', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             nisn: candidate.nisn,
             candidateId: candidate.id,
-            documents: updatedDocs
+            field,
+            fileData: base64Data,
+            fileName: file.name
           })
         });
 
@@ -704,7 +713,7 @@ export default function AdminSpmbManagement({
           if (selectedCandidate?.id === result.candidate.id) {
             setSelectedCandidate(result.candidate);
           }
-          alert(`Berkas ${field} calon murid ${candidate.fullName} berhasil disimpan!`);
+          alert(`Berkas ${field} calon murid ${candidate.fullName} berhasil disimpan ke server hosting!`);
         } else {
           const err = await res.json();
           alert(err.error || 'Gagal menyimpan berkas.');
@@ -892,7 +901,15 @@ export default function AdminSpmbManagement({
   const totalReRegCashCollected = candidates
     .filter(c => c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true)
     .reduce((sum, c) => {
-      const isSyahm = (c.nisn || '').trim() === '0156620618' || c.id === '0156620618';
+      const isSyahm = Boolean(
+        (c.nisn || '').trim() === '0156620618' || 
+        (c.nisn || '').includes('156620618') || 
+        c.id === '0156620618' || 
+        c.id === 'spmb-cand-0156620618' || 
+        (c.registrationNo || '').trim() === '0156620618' || 
+        (c.registrationNumber || '').trim() === '0156620618' || 
+        (c.fullName || '').toUpperCase().includes('SYAHM AZIO')
+      );
       const amt = isSyahm 
         ? 560000 
         : ((Number(c.reRegistrationAmount) > 0 && Number(c.reRegistrationAmount) !== 1500000)
@@ -905,7 +922,15 @@ export default function AdminSpmbManagement({
 
   const totalPendingReRegAmount = candidates
     .filter(c => {
-      const isSyahm = (c.nisn || '').trim() === '0156620618' || c.id === '0156620618';
+      const isSyahm = Boolean(
+        (c.nisn || '').trim() === '0156620618' || 
+        (c.nisn || '').includes('156620618') || 
+        c.id === '0156620618' || 
+        c.id === 'spmb-cand-0156620618' || 
+        (c.registrationNo || '').trim() === '0156620618' || 
+        (c.registrationNumber || '').trim() === '0156620618' || 
+        (c.fullName || '').toUpperCase().includes('SYAHM AZIO')
+      );
       if (isSyahm) return false;
       return !(c.reRegistrationStatus === 'paid' || c.reRegistrationPaid === true || (c as any).isReRegistered === true);
     })
@@ -1792,9 +1817,10 @@ export default function AdminSpmbManagement({
                                 const hasFoto = Boolean(candidate.documents?.pasPhoto || candidate.fullFormData?.documents?.pasPhoto);
                                 const hasKk = Boolean(candidate.documents?.kkPhoto || candidate.fullFormData?.documents?.kkPhoto);
                                 const hasAkta = Boolean(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
-                                const hasKtp = Boolean(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
-                                const allDocs = hasFoto && hasKk && hasAkta && hasKtp;
-                                const hasAnyDoc = hasFoto || hasKk || hasAkta || hasKtp;
+                                const hasKtpAyah = Boolean(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto);
+                                const hasKtpIbu = Boolean(candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
+                                const allDocs = hasFoto && hasKk && hasAkta && hasKtpAyah && hasKtpIbu;
+                                const hasAnyDoc = hasFoto || hasKk || hasAkta || hasKtpAyah || hasKtpIbu;
 
                                 return (
                                   <div className="space-y-1">
@@ -1802,7 +1828,7 @@ export default function AdminSpmbManagement({
                                       {allDocs ? (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
                                           <CheckCircle2 size={10} className="text-emerald-700" />
-                                          <span>Berkas Lengkap</span>
+                                          <span>Berkas Lengkap (5/5)</span>
                                         </span>
                                       ) : hasAnyDoc ? (
                                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
@@ -1820,7 +1846,8 @@ export default function AdminSpmbManagement({
                                       <span className={hasFoto ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Pas Foto">📸Foto</span>•
                                       <span className={hasKk ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Kartu Keluarga">📜KK</span>•
                                       <span className={hasAkta ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Akta Kelahiran">📄Akta</span>•
-                                      <span className={hasKtp ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ortu/Wali">🪪KTP</span>
+                                      <span className={hasKtpAyah ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ayah/Wali">🪪Ayah</span>•
+                                      <span className={hasKtpIbu ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ibu">🪪Ibu</span>
                                     </div>
                                   </div>
                                 );
@@ -1935,6 +1962,14 @@ export default function AdminSpmbManagement({
           candidates={candidates}
           config={config}
           schoolIdentity={currentSchoolIdentity}
+          onOpenReceiptModal={(candidate, type) => {
+            setReceiptModalCandidate(candidate);
+            setReceiptModalType(type);
+            setIsReceiptModalOpen(true);
+          }}
+          onOpenRefundReceiptModal={(candidate) => {
+            setReceiptCandidate(candidate);
+          }}
         />
       )}
 
@@ -2202,8 +2237,9 @@ export default function AdminSpmbManagement({
                                 const docFoto = Boolean(cand.documents?.pasPhoto || cand.fullFormData?.documents?.pasPhoto);
                                 const docKk = Boolean(cand.documents?.kkPhoto || cand.fullFormData?.documents?.kkPhoto);
                                 const docAkta = Boolean(cand.documents?.aktaPhoto || cand.fullFormData?.documents?.aktaPhoto);
-                                const docKtp = Boolean(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto || cand.documents?.ktp || cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.ktpAyahPhoto || cand.fullFormData?.documents?.ktpPhoto);
-                                const allDocs = docFoto && docKk && docAkta && docKtp;
+                                const docKtpAyah = Boolean(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto || cand.documents?.ktp || cand.fullFormData?.documents?.ktpAyahPhoto || cand.fullFormData?.documents?.ktpPhoto);
+                                const docKtpIbu = Boolean(cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.ktpIbuPhoto);
+                                const allDocs = docFoto && docKk && docAkta && docKtpAyah && docKtpIbu;
 
                                 return (
                                   <div className="space-y-0.5">
@@ -2226,7 +2262,8 @@ export default function AdminSpmbManagement({
                                       <span className={docFoto ? 'text-emerald-700 font-bold' : 'text-slate-400'}>📸Foto</span>•
                                       <span className={docKk ? 'text-emerald-700 font-bold' : 'text-slate-400'}>📜KK</span>•
                                       <span className={docAkta ? 'text-emerald-700 font-bold' : 'text-slate-400'}>📄Akta</span>•
-                                      <span className={docKtp ? 'text-emerald-700 font-bold' : 'text-slate-400'}>🪪KTP</span>
+                                      <span className={docKtpAyah ? 'text-emerald-700 font-bold' : 'text-slate-400'}>🪪Ayah</span>•
+                                      <span className={docKtpIbu ? 'text-emerald-700 font-bold' : 'text-slate-400'}>🪪Ibu</span>
                                     </div>
                                   </div>
                                 );
@@ -3476,7 +3513,11 @@ export default function AdminSpmbManagement({
               <div className="flex items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => window.print()}
+                  onClick={async () => {
+                    if (receiptCandidate) {
+                      await printRefundReceiptDirect(receiptCandidate, currentAcademicYear, schoolIdentity, config);
+                    }
+                  }}
                   className="px-4 py-2 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center gap-1.5 shadow-sm cursor-pointer"
                 >
                   <Printer size={14} />
@@ -3493,7 +3534,7 @@ export default function AdminSpmbManagement({
             </div>
 
             {/* Printable Receipt Layout */}
-            <div className="border-2 border-slate-800 rounded-2xl p-6 space-y-5">
+            <div id="print-refund-section" className="printable-spmb-receipt border-2 border-slate-800 rounded-2xl p-6 space-y-5 bg-white">
               {/* Kop Surat Sekolah */}
               <div className="text-center border-b-2 border-slate-800 pb-3 space-y-0.5">
                 <p className="font-extrabold text-xs uppercase tracking-widest text-slate-600 m-0">

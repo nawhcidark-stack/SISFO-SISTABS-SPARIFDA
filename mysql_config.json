@@ -13,9 +13,5 @@
   "autoSyncEnabled": true,
   "autoSyncDirection": "push",
   "status": "connected",
-  "lastConnectedAt": "2026-10-05T12:51:01.372Z",
-  "lastSyncAt": "2026-10-05T13:14:20.428Z",
-  "lastAutoSyncAt": "2026-10-05T13:14:20.428Z",
-  "lastAutoSyncStatus": "success",
-  "lastAutoSyncMessage": "Berhasil menyinkronkan 13854 baris data & konfigurasi lengkap"
+  "lastConnectedAt": "2026-10-06T07:49:42.802Z"
 }

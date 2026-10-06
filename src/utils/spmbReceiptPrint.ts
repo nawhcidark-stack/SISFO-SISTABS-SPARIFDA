@@ -36,7 +36,15 @@ export function calculateReRegDetails(
   candidate: SpmbCandidate,
   config: SpmbConfig | null
 ) {
-  const isSyahm = (candidate.nisn || '').trim() === '0156620618' || candidate.id === '0156620618' || candidate.id === 'spmb-cand-0156620618';
+  const isSyahm = Boolean(
+    (candidate.nisn || '').trim() === '0156620618' || 
+    (candidate.nisn || '').includes('156620618') || 
+    candidate.id === '0156620618' || 
+    candidate.id === 'spmb-cand-0156620618' || 
+    (candidate.registrationNo || '').trim() === '0156620618' || 
+    (candidate.registrationNumber || '').trim() === '0156620618' || 
+    (candidate.fullName || '').toUpperCase().includes('SYAHM AZIO')
+  );
   if (isSyahm) {
     const rawUniformTotal = 360000;
     const netUniformTotal = 360000;
@@ -665,14 +673,15 @@ export function printHtmlSafely(html: string) {
       iframe = document.createElement('iframe');
       iframe.id = iframeId;
       iframe.style.position = 'fixed';
-      iframe.style.left = '-9999px';
+      iframe.style.left = '0';
       iframe.style.top = '0';
-      iframe.style.width = '1024px';
-      iframe.style.height = '1024px';
+      iframe.style.width = '100vw';
+      iframe.style.height = '100vh';
       iframe.style.border = '0';
-      iframe.style.opacity = '0.01';
-      iframe.style.pointerEvents = 'none';
+      iframe.style.margin = '0';
+      iframe.style.padding = '0';
       iframe.style.zIndex = '-99999';
+      iframe.style.visibility = 'visible';
       document.body.appendChild(iframe);
     }
 
@@ -1452,4 +1461,169 @@ export function getReceiptCss(): string {
       padding-top: 4px;
     }
   `;
+}
+
+/**
+ * Mencetak Kuitansi Pengembalian Tunai (Cash Refund) Jalur Kolektif SPMB
+ * Menggunakan iframe terisolasi agar 100% selalu tercetak dengan jelas tanpa layar kosong
+ */
+export async function printRefundReceiptDirect(
+  candidate: SpmbCandidate,
+  academicYear: string = "2025/2026",
+  schoolIdentity?: SchoolIdentity,
+  config?: SpmbConfig | null
+): Promise<void> {
+  const refundAmount = Number(candidate.collectiveRefundAmount) || 50000;
+  const receiptNo = candidate.collectiveRefundReceiptNo || `KW-REFUND-${candidate.nisn || candidate.id}`;
+  const recipientName = candidate.collectiveRefundRecipient || candidate.parentName || candidate.fullName;
+  const refundDate = candidate.collectiveRefundedAt ? new Date(candidate.collectiveRefundedAt) : new Date();
+  const dateStr = refundDate.toLocaleDateString("id-ID", { day: "numeric", month: "long", year: "numeric" });
+  const officerName = candidate.collectiveRefundedBy || config?.spmbOfficerName || "Panitia SPMB";
+  const chairName = config?.spmbChairName || "H. Imron Hamzah, S.Hi";
+
+  const stampUrl = config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp || "";
+  const chairSigUrl = config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature || "";
+
+  let qrCodeDataUrl = "";
+  try {
+    qrCodeDataUrl = await QRCode.toDataURL(`REFUND-${receiptNo}-${candidate.nisn}-${refundAmount}`, {
+      margin: 1,
+      width: 90
+    });
+  } catch (_) {}
+
+  const html = `<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Kuitansi Pengembalian Tunai - ${candidate.fullName}</title>
+  <style>
+    ${getReceiptCss()}
+    .refund-box {
+      border: 2px solid #0f172a;
+      border-radius: 8px;
+      padding: 16px;
+      margin: 0 auto;
+      max-width: 680px;
+      background: #ffffff;
+    }
+    @media print {
+      body {
+        margin: 0 !important;
+        padding: 5mm !important;
+        background: #ffffff !important;
+        visibility: visible !important;
+      }
+      body * {
+        visibility: visible !important;
+      }
+      .refund-box {
+        border: 2px solid #0f172a !important;
+        max-width: 100% !important;
+        width: 100% !important;
+        box-sizing: border-box !important;
+        margin: 0 !important;
+        padding: 12px !important;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="refund-box" id="print-refund-section">
+    <!-- Kop Surat -->
+    <div style="text-align: center; border-bottom: 2px solid #0f172a; padding-bottom: 8px; margin-bottom: 12px;">
+      <p style="margin: 0; font-size: 10px; font-weight: 800; letter-spacing: 2px; color: #475569; text-transform: uppercase;">
+        LEMBAGA PENDIDIKAN MA'ARIF NU KABUPATEN PASURUAN
+      </p>
+      <h2 style="margin: 2px 0; font-size: 18px; font-weight: 900; color: #065f46; text-transform: uppercase;">
+        ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}
+      </h2>
+      <p style="margin: 0; font-size: 10px; color: #475569;">
+        ${schoolIdentity?.address || "Jl. Jogosari No. 01 Pandaan, Pasuruan - Jawa Timur"} • Telp: ${schoolIdentity?.phone || "(0343) 631234"}
+      </p>
+    </div>
+
+    <!-- Judul & No Kuitansi -->
+    <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 12px; font-size: 11px;">
+      <div>
+        <h3 style="margin: 0; font-size: 13px; font-weight: 900; color: #0f172a; text-transform: uppercase;">
+          KUITANSI PENGEMBALIAN UANG TUNAI (CASH REFUND)
+        </h3>
+        <p style="margin: 2px 0 0 0; font-size: 10px; color: #64748b;">
+          Jalur Kolektif Pendaftaran SPMB Tahun Ajaran ${academicYear}
+        </p>
+      </div>
+      <div style="text-align: right; font-family: monospace; font-size: 11px; font-weight: bold; color: #1e293b;">
+        No: ${receiptNo}
+      </div>
+    </div>
+
+    <!-- Rincian Kuitansi -->
+    <table style="width: 100%; border-collapse: collapse; font-size: 11px; margin-bottom: 14px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px;">
+      <tr>
+        <td style="padding: 6px 10px; width: 140px; color: #64748b; font-weight: 600;">Telah Diterima Dari</td>
+        <td style="padding: 6px 10px; font-weight: bold; color: #0f172a;">: Panitia SPMB ${schoolIdentity?.name || "SMP Ma'arif NU Pandaan"}</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 10px; color: #64748b; font-weight: 600;">Diserahkan Kepada</td>
+        <td style="padding: 6px 10px; font-weight: bold; color: #0f172a;">: ${recipientName}</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 10px; color: #64748b; font-weight: 600;">Nama Calon Murid</td>
+        <td style="padding: 6px 10px; font-weight: bold; color: #0f172a;">: ${candidate.fullName} (NISN: ${candidate.nisn})</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 10px; color: #64748b; font-weight: 600;">Asal Sekolah</td>
+        <td style="padding: 6px 10px; color: #0f172a;">: ${candidate.schoolOrigin || 'SD/MI'} (Jalur Kolektif)</td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 10px; color: #64748b; font-weight: 600;">Uang Sejumlah</td>
+        <td style="padding: 6px 10px; font-weight: 900; font-size: 14px; color: #047857;">
+          : Rp ${refundAmount.toLocaleString('id-ID')}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 10px; color: #64748b; font-weight: 600;">Terbilang</td>
+        <td style="padding: 6px 10px; font-weight: 700; font-style: italic; color: #1e293b;">
+          : ${refundAmount === 50000 ? "Lima Puluh Ribu Rupiah" : "Rupiah"}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding: 6px 10px; color: #64748b; font-weight: 600;">Untuk Pembayaran</td>
+        <td style="padding: 6px 10px; color: #334155;">
+          : Pengembalian tunai (cash) biaya formulir/token pendaftaran online jalur kolektif SPMB ${academicYear}.
+        </td>
+      </tr>
+    </table>
+
+    <!-- Tanda Tangan -->
+    <div style="display: flex; justify-content: space-between; text-align: center; font-size: 11px; margin-top: 10px;">
+      <div style="width: 45%;">
+        <p style="margin: 0; color: #475569;">Yang Menerima,</p>
+        <div style="height: 50px;"></div>
+        <p style="margin: 0; font-weight: bold; text-decoration: underline; color: #0f172a;">( ${recipientName} )</p>
+      </div>
+      <div style="width: 45%;">
+        <p style="margin: 0; color: #475569;">Pandaan, ${dateStr}<br />Panitia SPMB,</p>
+        <div style="position: relative; height: 50px; display: flex; align-items: center; justify-content: center;">
+          ${stampUrl ? `<img src="${stampUrl}" style="position: absolute; left: 10px; height: 52px; opacity: 0.85; z-index: 1;" alt="Stempel" />` : ''}
+          ${chairSigUrl ? `<img src="${chairSigUrl}" style="position: absolute; height: 46px; z-index: 2;" alt="Ttd" />` : ''}
+        </div>
+        <p style="margin: 0; font-weight: bold; text-decoration: underline; color: #0f172a;">( ${officerName || chairName} )</p>
+      </div>
+    </div>
+
+    <!-- Verifikasi QR & Bar -->
+    <div style="display: flex; align-items: center; gap: 8px; margin-top: 12px; padding: 6px 8px; background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 6px; font-size: 8px; color: #64748b;">
+      ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" style="width: 36px; height: 36px;" alt="QR" />` : ''}
+      <div>
+        <strong style="color: #0f172a; font-size: 8.5px; display: block;">BUKTI PENGEMBALIAN RESMI SPMB ONLINE</strong>
+        <span>Nomor: ${receiptNo} • Tanggal: ${dateStr} • Status: REFUNDED (LUNAS TUNAI)</span>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  printHtmlSafely(html);
 }

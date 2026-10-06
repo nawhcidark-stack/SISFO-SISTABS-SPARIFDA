@@ -211,7 +211,15 @@ export default function SpmbFinanceReport({
     };
 
     candidates.forEach(c => {
-      const isSyahm = (c.nisn || '').trim() === '0156620618' || c.id === '0156620618' || c.id === 'spmb-cand-0156620618';
+      const isSyahm = Boolean(
+        (c.nisn || '').trim() === '0156620618' || 
+        (c.nisn || '').includes('156620618') || 
+        c.id === '0156620618' || 
+        c.id === 'spmb-cand-0156620618' || 
+        (c.registrationNo || '').trim() === '0156620618' || 
+        (c.registrationNumber || '').trim() === '0156620618' || 
+        (c.fullName || '').toUpperCase().includes('SYAHM AZIO')
+      );
       const isMaarif = !isSyahm && (
         c.schoolOriginType === 'maarif_jogosari' || 
         c.schoolOriginType === 'lp_maarif' ||
@@ -342,8 +350,10 @@ export default function SpmbFinanceReport({
       }
 
       // 1c. Re-Registration (Daftar Ulang / Pelunasan Murid Baru) Handling
-      if (isReRegPaid) {
-        const totalDiscount = reregDetails.totalBuildingDiscount + reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus + (reregDetails.isSiblingFreeSpp ? reregDetails.julySppFee : 0);
+      if (isReRegPaid || isSyahm) {
+        const totalDiscount = isSyahm 
+          ? 2000000 
+          : (reregDetails.totalBuildingDiscount + reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus + (reregDetails.isSiblingFreeSpp ? reregDetails.julySppFee : 0));
         const dateStr = normalizeDateStr(c.reRegistrationPaidAt || (c as any).reRegistrationDate || c.updatedAt || c.createdAt);
 
         sumBuildingNet += candBuildingNet;
@@ -394,31 +404,33 @@ export default function SpmbFinanceReport({
           paymentMethod: c.reRegistrationPaymentMethod || 'Midtrans Snap Online',
           sessionName,
           buildingFee: candBuildingNet,
-          buildingDiscount: reregDetails.totalBuildingDiscount,
+          buildingDiscount: isSyahm ? 2000000 : reregDetails.totalBuildingDiscount,
           netBuildingFee: candBuildingNet,
           julySppFee: candJulySpp,
-          isSiblingFreeSpp: reregDetails.isSiblingFreeSpp,
-          rawUniformTotal: reregDetails.rawUniformTotal,
-          uniformDiscount: reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus,
+          isSiblingFreeSpp: isSyahm ? false : reregDetails.isSiblingFreeSpp,
+          rawUniformTotal: isSyahm ? 360000 : reregDetails.rawUniformTotal,
+          uniformDiscount: isSyahm ? 0 : (reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus),
           netUniformTotal: candUniformNet,
           baseFee: candBaseFee,
           totalDiscount,
-          grandTotal: nominalReReg,
+          grandTotal: isSyahm ? 560000 : nominalReReg,
           uniformSize: sizeKey
         });
       } else {
         // Pending Daftar Ulang (Piutang) - Seluruh pendaftar yang belum lunas
-        const totalDiscount = reregDetails.totalBuildingDiscount + reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus + (reregDetails.isSiblingFreeSpp ? reregDetails.julySppFee : 0);
+        const totalDiscount = isSyahm 
+          ? 2000000 
+          : (reregDetails.totalBuildingDiscount + reregDetails.maarifUniformDiscount + reregDetails.sportsUniformBonus + (reregDetails.isSiblingFreeSpp ? reregDetails.julySppFee : 0));
         unpaidDU.push({
           candidate: c,
           registeredDate: normalizeDateStr(c.tokenPaidAt || c.createdAt),
           tokenOrderId: c.tokenPaymentOrderId || `ORD-TOKEN-${c.nisn}`,
           sessionName,
-          estimatedBuildingFee: reregDetails.netBuildingFee,
-          estimatedJulySpp: reregDetails.effectiveJulySppFee,
-          estimatedUniform: reregDetails.netUniformTotal,
+          estimatedBuildingFee: isSyahm ? 0 : reregDetails.netBuildingFee,
+          estimatedJulySpp: isSyahm ? 200000 : reregDetails.effectiveJulySppFee,
+          estimatedUniform: isSyahm ? 360000 : reregDetails.netUniformTotal,
           estimatedDiscount: totalDiscount,
-          estimatedGrandTotal: reregDetails.grandTotal,
+          estimatedGrandTotal: isSyahm ? 560000 : reregDetails.grandTotal,
           uniformSize: sizeKey
         });
       }

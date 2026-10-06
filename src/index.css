@@ -114,8 +114,11 @@ h1, h2, h3, h4, h5, h6 {
 
   /* Dismantle white card styling on the inner modal containers */
   .bg-white.rounded-2xl,
+  .bg-white.rounded-3xl,
   div[class*="rounded-2xl"],
+  div[class*="rounded-3xl"],
   div[class*="max-w-xl"],
+  div[class*="max-w-2xl"],
   div[class*="max-w-4xl"] {
     position: static !important;
     display: block !important;
@@ -149,13 +152,19 @@ h1, h2, h3, h4, h5, h6 {
   #print-report-section *,
   #print-spmb-card,
   #print-spmb-card *,
+  #print-refund-section,
+  #print-refund-section *,
+  .printable-spmb-receipt,
+  .printable-spmb-receipt *,
   .printable-spmb-card,
   .printable-spmb-card * {
     visibility: visible !important;
   }
 
-  /* Style the report, receipt, and SPMB proof card to flow cleanly at the very top of the page without any blank page offset */
+  /* Style the report, receipt, refund receipt, and SPMB proof card to flow cleanly at the very top of the page without any blank page offset */
   #print-receipt-section,
+  #print-refund-section,
+  .printable-spmb-receipt,
   #print-spmb-card,
   .printable-spmb-card {
     display: block !important;

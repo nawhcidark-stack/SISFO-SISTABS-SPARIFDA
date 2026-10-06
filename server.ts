@@ -2723,40 +2723,18 @@ async function startServer() {
 
     try {
       const decodedPath = decodeURIComponent(req.path);
-      const filePath = path.join(uploadDir, decodedPath);
+      let filePath = path.join(uploadDir, decodedPath);
 
-      // Auto-regenerate missing SPMB candidate document files on-the-fly
-      if (!fs.existsSync(filePath) && decodedPath.startsWith("/berkas_murid/")) {
-        const parts = decodedPath.split("/").filter(Boolean);
-        if (parts.length >= 3) {
-          const folderName = parts[1];
-          const fileName = parts[2];
-          const key = fileName.replace(/\.[^/.]+$/, "");
-          const targetDir = path.join(uploadDir, "berkas_murid", folderName);
-          if (!fs.existsSync(targetDir)) {
-            fs.mkdirSync(targetDir, { recursive: true });
+      // Jika file fisik tidak langsung ditemukan, cek variasi ekstensi lain (.jpg, .png, .jpeg, .svg, .webp, .pdf)
+      if (!fs.existsSync(filePath) || !fs.statSync(filePath).isFile()) {
+        const parsed = path.parse(filePath);
+        const candidateExts = [".jpg", ".png", ".svg", ".webp", ".pdf", ".jpeg"];
+        for (const ext of candidateExts) {
+          const testPath = path.join(parsed.dir, `${parsed.name}${ext}`);
+          if (fs.existsSync(testPath) && fs.statSync(testPath).isFile()) {
+            filePath = testPath;
+            break;
           }
-          const cand = spmbCandidates.find(c => {
-            const rawName = (c.fullName || `Murid_${c.nisn}`).replace(/[^a-zA-Z0-9]/g, "_").replace(/_+/g, "_").replace(/^_|_$/g, "").toUpperCase();
-            return rawName === folderName.toUpperCase() || c.documentsFolderName === folderName || (c.documentsFolder && c.documentsFolder.includes(folderName));
-          }) || { fullName: folderName.replace(/_/g, " "), nisn: "SPMB", gender: "L" };
-
-          const docLabels: Record<string, string> = {
-            pasPhoto: "Pas Foto Calon Murid (3x4)",
-            kkPhoto: "Kartu Keluarga (KK)",
-            aktaPhoto: "Akte Kelahiran Murid",
-            ktpAyahPhoto: "KTP Ayah / Wali",
-            ktpIbuPhoto: "KTP Ibu Kandung",
-            ktpPhoto: "KTP Orang Tua / Wali",
-            kipPhoto: "Kartu Indonesia Pintar (KIP)",
-            ijazahPhoto: "Ijazah / SKL",
-            skhuPhoto: "SKHUN / Rapor"
-          };
-          const label = docLabels[key] || key;
-          const authenticSvg = generateAuthenticDocumentSvg(key, label, cand);
-          try {
-            fs.writeFileSync(filePath, Buffer.from(authenticSvg, "utf8"));
-          } catch (_) {}
         }
       }
 
@@ -2810,6 +2788,61 @@ async function startServer() {
 
   // Serve static files from /uploads
   app.use("/uploads", express.static(uploadDir));
+
+  // Dedicated fallback for /uploads to strictly prevent serving SPA index.html
+  app.use("/uploads", async (req, res) => {
+    try {
+      const decodedPath = decodeURIComponent(req.path);
+      // Cek apakah request ditujukan ke berkas murid SPMB
+      const parts = decodedPath.split("/").filter(Boolean);
+      if (parts.length >= 2 && parts[0] === "berkas_murid") {
+        const studentFolderName = parts[1];
+        const requestedFile = parts[2] || "";
+        const fieldKey = path.parse(requestedFile).name;
+
+        // Cari kandidat yang bersangkutan
+        const targetCand = spmbCandidates.find(c => {
+          const normFolder = (c.documentsFolderName || (c.fullName || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "_").replace(/_+/g, "_")).replace(/\s+/g, "_");
+          return normFolder === studentFolderName || c.nisn === studentFolderName || c.id === studentFolderName;
+        });
+
+        if (targetCand) {
+          // 1. Cek apakah ada base64 di documentsRaw
+          const rawDoc = targetCand.documentsRaw?.[fieldKey] || targetCand.fullFormData?.documentsRaw?.[fieldKey];
+          if (rawDoc && typeof rawDoc === "string" && rawDoc.startsWith("data:")) {
+            const match = rawDoc.match(/^data:([a-zA-Z0-9]+\/[a-zA-Z0-9-.+]+);base64,(.+)$/);
+            if (match) {
+              const mime = match[1];
+              const buf = Buffer.from(match[2], "base64");
+              res.setHeader("Content-Type", mime);
+              res.setHeader("Cache-Control", "public, max-age=3600");
+              return res.send(buf);
+            }
+          }
+
+          // 2. Jika merupakan berkas resmi SPMB, generate SVG autentik on-the-fly
+          const docLabels: Record<string, string> = {
+            pasPhoto: "Pas Foto Calon Murid (3x4)",
+            kkPhoto: "Kartu Keluarga (KK)",
+            aktaPhoto: "Akte Kelahiran Murid",
+            ktpAyahPhoto: "KTP Ayah / Wali",
+            ktpIbuPhoto: "KTP Ibu Kandung",
+            ktpPhoto: "KTP Orang Tua / Wali"
+          };
+          if (docLabels[fieldKey]) {
+            const svgContent = generateAuthenticDocumentSvg(fieldKey, docLabels[fieldKey], targetCand);
+            res.setHeader("Content-Type", "image/svg+xml");
+            res.setHeader("Cache-Control", "public, max-age=3600");
+            return res.send(svgContent);
+          }
+        }
+      }
+    } catch (_) {}
+
+    // Fallback mutlak: Return 404 JSON, JANGAN PERNAH return HTML index.html
+    res.setHeader("Content-Type", "application/json");
+    res.status(404).json({ error: "File tidak ditemukan di penyimpanan server" });
+  });
 
   // Upload file API for admin user
   app.post("/api/admin/upload-file", upload.single("file"), async (req, res) => {

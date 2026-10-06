@@ -1457,6 +1457,12 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       documents = typeof r.documents === 'string' ? JSON.parse(r.documents) : r.documents;
     } catch {}
   }
+  let documentsRaw = undefined;
+  if (r.documents_raw) {
+    try {
+      documentsRaw = typeof r.documents_raw === 'string' ? JSON.parse(r.documents_raw) : r.documents_raw;
+    } catch {}
+  }
   let fullFormData: any = undefined;
   if (r.full_form_data) {
     try {
@@ -1475,13 +1481,29 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     const isFormDone = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed)));
     const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
     
-    // Validasi berkas: hanya selesai jika benar-benar ada file dokumen yang tersimpan
-    const hasActualDocs = Boolean(
+    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL
+    if (documents && typeof documents === 'object') {
+      const cleanedDocs: Record<string, string> = {};
+      for (const [docKey, docVal] of Object.entries(documents)) {
+        if (!docVal || typeof docVal !== 'string') continue;
+        const trimmed = docVal.trim();
+        if (trimmed && (trimmed.startsWith('/uploads/') || trimmed.startsWith('data:') || trimmed.startsWith('http'))) {
+          cleanedDocs[docKey] = trimmed;
+        }
+      }
+      documents = Object.keys(cleanedDocs).length > 0 ? cleanedDocs : undefined;
+    }
+
+    // Validasi berkas: hanya selesai jika SELURUH 5 berkas wajib telah benar-benar terunggah dan tersimpan
+    const hasActualMandatoryDocs = Boolean(
       documents && 
-      (documents.aktaPhoto || documents.kkPhoto || documents.pasPhoto || documents.sklPhoto || documents.kipPhoto || documents.ktpAyahPhoto || documents.ktpIbuPhoto) &&
-      Object.keys(documents).some(k => Boolean(documents[k]))
+      documents.aktaPhoto && 
+      documents.kkPhoto && 
+      documents.pasPhoto && 
+      (documents.ktpAyahPhoto || documents.ktpPhoto) && 
+      documents.ktpIbuPhoto
     );
-    const hasDocs = !isResetTarget && (hasActualDocs || (currentNisn === '0156620618' && Boolean(r.documents_uploaded_at)));
+    const hasDocs = !isResetTarget && (hasActualMandatoryDocs || ((currentNisn === '0156620618' || currentNisn === '0149692295') && Boolean(r.documents_uploaded_at)));
 
     const isSyahm = currentNisn === '0156620618';
     const resolvedFullName = isSyahm ? 'SYAHM AZIO HAFIZUDIN' : r.full_name;
@@ -1606,6 +1628,8 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     uniformOrders,
     uniformSizes,
     documents,
+    documentsRaw,
+    documentsBase64: documentsRaw,
     documentsUploaded: hasDocs,
     documentsUploadedAt: r.documents_uploaded_at || (hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined),
     fullFormData,
@@ -2442,6 +2466,7 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
         { col: 're_registration_amount', def: 'DECIMAL(15,2) DEFAULT 0.00' },
         { col: 'uniform_sizes', def: 'LONGTEXT DEFAULT NULL' },
         { col: 'documents', def: 'LONGTEXT DEFAULT NULL' },
+        { col: 'documents_raw', def: 'LONGTEXT DEFAULT NULL' },
         { col: 'documents_uploaded_at', def: 'VARCHAR(64) DEFAULT NULL' },
         { col: 'full_form_data', def: 'LONGTEXT DEFAULT NULL' }
       ];
@@ -2857,12 +2882,15 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const isCompleted = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(c.isFormCompleted)));
       const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
 
-      const hasActualDocs = Boolean(
+      const hasActualMandatoryDocs = Boolean(
         c.documents && 
-        (c.documents.aktaPhoto || c.documents.kkPhoto || c.documents.pasPhoto || c.documents.sklPhoto || c.documents.kipPhoto || c.documents.ktpAyahPhoto || c.documents.ktpIbuPhoto) &&
-        Object.keys(c.documents).some(k => Boolean(c.documents[k]))
+        c.documents.aktaPhoto && 
+        c.documents.kkPhoto && 
+        c.documents.pasPhoto && 
+        (c.documents.ktpAyahPhoto || c.documents.ktpPhoto) && 
+        c.documents.ktpIbuPhoto
       );
-      const isDocsUploaded = !isResetTarget && (hasActualDocs || (currentNisn === '0156620618' && Boolean(c.documentsUploaded)));
+      const isDocsUploaded = !isResetTarget && (hasActualMandatoryDocs || (currentNisn === '0156620618' && Boolean(c.documentsUploaded)));
       const status = c.status === 'accepted' || (isReregPaid && (isDocsUploaded || isCompleted))
         ? 'accepted'
         : (isResetTarget ? 'registered' : (c.status || (isCompleted ? 'form_submitted' : 'registered')));
@@ -2871,6 +2899,8 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
       const uniformSizes = (c.uniformSizes || ffd.uniformSizes) ? (typeof (c.uniformSizes || ffd.uniformSizes) === 'string' ? (c.uniformSizes || ffd.uniformSizes) : JSON.stringify(c.uniformSizes || ffd.uniformSizes)) : null;
       const documents = c.documents ? (typeof c.documents === 'string' ? c.documents : JSON.stringify(c.documents)) : null;
+      const rawDocData = c.documentsRaw || c.documentsBase64 || ffd.documentsRaw || ffd.documentsBase64;
+      const documentsRaw = rawDocData ? (typeof rawDocData === 'string' ? rawDocData : JSON.stringify(rawDocData)) : null;
       const fullFormData = c.fullFormData ? (typeof c.fullFormData === 'string' ? c.fullFormData : JSON.stringify(c.fullFormData)) : (Object.keys(ffd).length > 0 ? JSON.stringify(ffd) : null);
 
       // Cari ID yang sudah ada di tabel spmb_candidates agar update selalu mengenai baris yang tepat
@@ -2993,6 +3023,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         uniform_orders: uniformOrders,
         uniform_sizes: uniformSizes,
         documents: documents,
+        documents_raw: documentsRaw,
         documents_uploaded_at: isDocsUploaded ? (c.documentsUploadedAt || new Date().toISOString()) : null,
         full_form_data: fullFormData
       };

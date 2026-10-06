@@ -228,6 +228,10 @@ export default function SpmbLandingPage({
   }>({});
   const [isUploadingDocs, setIsUploadingDocs] = useState<boolean>(false);
   const [docsSuccessMsg, setDocsSuccessMsg] = useState<string | null>(null);
+  // Per-field Upload State & Progress (0 - 100%)
+  const [uploadProgress, setUploadProgress] = useState<Record<string, number>>({});
+  const [uploadingFields, setUploadingFields] = useState<Record<string, boolean>>({});
+  const [uploadStatus, setUploadStatus] = useState<Record<string, string>>({});
 
   // Modal Midtrans Token & Order ID
   const [isPayModalOpen, setIsPayModalOpen] = useState<boolean>(false);
@@ -551,12 +555,15 @@ export default function SpmbLandingPage({
           (candidate.fatherName || candidate.motherName || candidate.guardianName || candidate.fullFormData?.fatherName || candidate.fullFormData?.motherName)
         );
         const isStep2Done = isStep1Done && (candidate.nisn === '0156620618' ? Boolean(candidate.isFormCompleted) : hasRealFormData);
-        const hasActualDocs = Boolean(
+        const hasAllMandatoryDocs = Boolean(
           candidate.documents && 
-          (candidate.documents.aktaPhoto || candidate.documents.kkPhoto || candidate.documents.pasPhoto || candidate.documents.ktpAyahPhoto || candidate.documents.ktpPhoto || candidate.documents.ktpIbuPhoto) &&
-          Object.keys(candidate.documents).some(k => Boolean(candidate.documents[k]))
+          candidate.documents.aktaPhoto && 
+          candidate.documents.kkPhoto && 
+          candidate.documents.pasPhoto && 
+          (candidate.documents.ktpAyahPhoto || candidate.documents.ktpPhoto) && 
+          candidate.documents.ktpIbuPhoto
         );
-        const isStep3Done = isStep2Done && (candidate.nisn === '0156620618' ? Boolean(candidate.documentsUploaded) : (Boolean(candidate.documentsUploaded) && hasActualDocs));
+        const isStep3Done = isStep2Done && (candidate.nisn === '0156620618' ? Boolean(candidate.documentsUploaded) : hasAllMandatoryDocs);
         const isStep4Done = isStep3Done && Boolean(candidate.reRegistrationStatus === 'paid' || candidate.reRegistrationPaid);
 
         if (!isStep1Done) {
@@ -1287,32 +1294,81 @@ export default function SpmbLandingPage({
     }
   };
 
-  // 4. Step 4: Upload Files & Photos (Akte, KK, KTP Ayah, KTP Ibu, Foto Murid - Kompres 1000px)
+  // 4. Step 4: Upload Files & Photos (Akte, KK, KTP Ayah, KTP Ibu, Foto Murid - Langsung Upload ke Hosting Server & MySQL)
   const handleFileChange = async (
     field: 'aktaPhoto' | 'kkPhoto' | 'ktpPhoto' | 'ktpAyahPhoto' | 'ktpIbuPhoto' | 'pasPhoto' | 'kipPhoto',
     e: React.ChangeEvent<HTMLInputElement>
   ) => {
     const file = e.target.files?.[0];
-    if (!file) return;
+    if (!file || !activeCandidate) return;
+
+    setUploadingFields(prev => ({ ...prev, [field]: true }));
+    setUploadProgress(prev => ({ ...prev, [field]: 15 }));
+    setUploadStatus(prev => ({ ...prev, [field]: 'Membaca dan memproses berkas...' }));
 
     try {
+      let base64Data = '';
       if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
-        const reader = new FileReader();
-        reader.onload = (event) => {
-          const base64Data = event.target?.result as string;
-          if (base64Data) {
-            setDocUploads(prev => ({ ...prev, [field]: base64Data }));
-          }
-        };
-        reader.readAsDataURL(file);
+        base64Data = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onload = (event) => resolve(event.target?.result as string);
+          reader.onerror = reject;
+          reader.readAsDataURL(file);
+        });
+        setUploadProgress(prev => ({ ...prev, [field]: 45 }));
+        setUploadStatus(prev => ({ ...prev, [field]: 'Dokumen PDF siap diunggah...' }));
       } else {
-        // Otomatis kompres gambar menjadi maksimal 1000px
-        const compressedDataUrl = await compressImageToMax1000px(file);
-        setDocUploads(prev => ({ ...prev, [field]: compressedDataUrl }));
+        setUploadProgress(prev => ({ ...prev, [field]: 35 }));
+        setUploadStatus(prev => ({ ...prev, [field]: 'Mengompresi gambar (maks 1000px)...' }));
+        base64Data = await compressImageToMax1000px(file);
+        setUploadProgress(prev => ({ ...prev, [field]: 55 }));
+        setUploadStatus(prev => ({ ...prev, [field]: 'Gambar terkompresi, mengirim ke server...' }));
       }
-    } catch (err) {
+
+      setUploadProgress(prev => ({ ...prev, [field]: 75 }));
+      setUploadStatus(prev => ({ ...prev, [field]: 'Menyimpan berkas permanen di server hosting...' }));
+
+      // Langsung upload & simpan ke penyimpanan fisik hosting (/uploads/berkas_murid/...) dan database
+      const res = await fetch('/api/spmb/upload-single-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: activeCandidate.nisn,
+          candidateId: activeCandidate.id,
+          field,
+          fileData: base64Data,
+          fileName: file.name
+        })
+      });
+
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Gagal menyimpan berkas ke hosting.');
+      }
+
+      const result = await res.json();
+      setUploadProgress(prev => ({ ...prev, [field]: 100 }));
+      setUploadStatus(prev => ({ ...prev, [field]: '✓ Berhasil tersimpan di server hosting!' }));
+
+      // Perbarui docUploads & activeCandidate dengan URL hosting permanen
+      setDocUploads(prev => ({ ...prev, [field]: result.fileUrl || base64Data }));
+      if (result.candidate) {
+        setActiveCandidate(result.candidate);
+      }
+
+      if (result.isComplete) {
+        setDocsSuccessMsg('🎉 Seluruh 5 berkas persyaratan wajib telah lengkap dan tersimpan permanen di server hosting! Silakan lanjut ke Tahap 4: Pembayaran Daftar Ulang & Seragam.');
+      }
+
+      setTimeout(() => {
+        setUploadingFields(prev => ({ ...prev, [field]: false }));
+      }, 1500);
+    } catch (err: any) {
       console.error('Error processing document file:', err);
-      alert('Gagal memproses berkas. Silakan coba file gambar/PDF lain.');
+      setUploadProgress(prev => ({ ...prev, [field]: 0 }));
+      setUploadStatus(prev => ({ ...prev, [field]: 'Gagal mengunggah berkas' }));
+      setUploadingFields(prev => ({ ...prev, [field]: false }));
+      alert('Gagal memproses berkas: ' + (err.message || 'Silakan coba lagi.'));
     }
   };
 
@@ -1333,15 +1389,7 @@ export default function SpmbLandingPage({
     if (!hasKtpAyah) missingDocs.push("4. KTP Ayah / Wali");
     if (!hasKtpIbu) missingDocs.push("5. KTP Ibu");
 
-    if (missingDocs.length > 0) {
-      alert(
-        `⚠️ SELURUH BERKAS PERSYARATAN WAJIB DIUNGGAH!\n\n` +
-        `Berkas berikut belum diunggah:\n• ` +
-        missingDocs.join('\n• ') +
-        `\n\nMohon lengkapi dan unggah semua berkas yang diwajibkan untuk dapat menyimpan dan melanjutkan pendaftaran.`
-      );
-      return;
-    }
+    const isAllComplete = missingDocs.length === 0;
 
     setIsUploadingDocs(true);
     setDocsSuccessMsg(null);
@@ -1359,16 +1407,26 @@ export default function SpmbLandingPage({
       if (res.ok) {
         const updated = await res.json();
         setActiveCandidate(updated.candidate);
-        setDocsSuccessMsg('Seluruh berkas pendaftaran berhasil diunggah! Lanjut ke tahap pembayaran daftar ulang.');
-        setTimeout(() => {
-          setDocsSuccessMsg(null);
-          // Lanjut ke Daftar Ulang jika belum lunas, atau ke Tanda Terima jika sudah lunas
-          if (updated.candidate.reRegistrationStatus === 'paid') {
-            setPortalTab('card');
-          } else {
-            setPortalTab('rereg');
-          }
-        }, 1200);
+        if (isAllComplete) {
+          setDocsSuccessMsg('🎉 Seluruh 5 berkas pendaftaran berhasil disimpan permanen! Melanjutkan ke tahap pembayaran daftar ulang...');
+          setTimeout(() => {
+            setDocsSuccessMsg(null);
+            if (updated.candidate.reRegistrationStatus === 'paid') {
+              setPortalTab('card');
+            } else {
+              setPortalTab('rereg');
+            }
+          }, 1200);
+        } else {
+          setDocsSuccessMsg(`✓ Berkas yang diunggah (${5 - missingDocs.length} dari 5 berkas) telah tersimpan aman di server hosting. Lengkapi berkas untuk melanjutkan ke tahap berikutnya.`);
+          alert(
+            `⚠️ LENGKAPI BERKAS UNTUK MELANJUTKAN KE TAHAP BERIKUTNYA!\n\n` +
+            `Berkas yang sudah Anda unggah (${5 - missingDocs.length} dari 5 berkas) tetap tersimpan aman di server hosting dan database.\n\n` +
+            `Namun Tab Daftar Ulang belum dapat dibuka. Mohon lengkapi berkas berikut:\n• ` +
+            missingDocs.join('\n• ') +
+            `\n\nSetelah semua 5 berkas terunggah, Tab Daftar Ulang & Seragam akan terbuka secara otomatis.`
+          );
+        }
       } else {
         const err = await res.json();
         alert(err.error || 'Gagal mengunggah berkas.');
@@ -2886,12 +2944,7 @@ export default function SpmbLandingPage({
                 (activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpPhoto || docUploads.ktpPhoto) &&
                 (activeCandidate.documents?.ktpIbuPhoto || docUploads.ktpIbuPhoto)
               );
-              const hasActualDocs = Boolean(
-                activeCandidate.documents && 
-                (activeCandidate.documents.aktaPhoto || activeCandidate.documents.kkPhoto || activeCandidate.documents.pasPhoto) &&
-                Object.keys(activeCandidate.documents).some(k => Boolean(activeCandidate.documents[k]))
-              );
-              const isStep3Done = Boolean(isStep2Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.documentsUploaded) : (Boolean(activeCandidate.documentsUploaded && hasActualDocs) || hasUploadedMandatoryDocs)));
+              const isStep3Done = Boolean(isStep2Done && (activeCandidate.nisn === '0156620618' ? Boolean(activeCandidate.documentsUploaded) : hasUploadedMandatoryDocs));
               const isStep4Done = Boolean(isStep3Done && (activeCandidate.reRegistrationStatus === 'paid' || activeCandidate.reRegistrationPaid));
               const isStep5Done = Boolean(isStep4Done && (activeCandidate.status === 'accepted' || activeCandidate.reRegistrationStatus === 'paid'));
 
@@ -2940,7 +2993,7 @@ export default function SpmbLandingPage({
                   icon: Shirt,
                   done: isStep4Done,
                   unlocked: isStep4Unlocked,
-                  lockReason: 'Tahap 4 terkunci: Unggah seluruh berkas persyaratan wajib (Tahap 3) terlebih dahulu.'
+                  lockReason: 'Tahap 4 terkunci: Lengkapi berkas untuk melanjutkan ke tahap berikutnya. Unggah seluruh 5 berkas persyaratan wajib (Akte Kelahiran, KK, KTP Ayah, KTP Ibu, dan Pas Foto Murid) terlebih dahulu.'
                 },
                 {
                   id: 'card' as const,
@@ -4258,37 +4311,105 @@ export default function SpmbLandingPage({
                     </div>
 
                     {docsSuccessMsg && (
-                      <div className="p-3 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs flex items-center gap-2">
-                        <CheckCircle2 size={16} className="text-emerald-600 shrink-0" />
-                        <span>{docsSuccessMsg}</span>
+                      <div className="p-3.5 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-900 text-xs flex items-center gap-2.5 shadow-xs">
+                        <CheckCircle2 size={18} className="text-emerald-600 shrink-0" />
+                        <span className="font-semibold">{docsSuccessMsg}</span>
                       </div>
                     )}
 
-                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                      {/* Helper function to check if doc is image */}
-                      {(() => {
-                        const isDocImg = (url?: string) => {
-                          if (!url) return false;
-                          const lower = url.toLowerCase();
-                          if (lower.startsWith('data:image')) return true;
-                          if (lower.endsWith('.pdf') || lower.startsWith('data:application/pdf')) return false;
-                          return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.svg') || lower.startsWith('/uploads') || lower.startsWith('http');
-                        };
+                    {(() => {
+                      const isDocImg = (url?: string) => {
+                        if (!url) return false;
+                        const lower = url.toLowerCase();
+                        if (lower.startsWith('data:image')) return true;
+                        if (lower.endsWith('.pdf') || lower.startsWith('data:application/pdf')) return false;
+                        return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.svg') || lower.startsWith('/uploads') || lower.startsWith('http');
+                      };
 
-                        const currentAkta = docUploads.aktaPhoto || activeCandidate.documents?.aktaPhoto;
-                        const currentKk = docUploads.kkPhoto || activeCandidate.documents?.kkPhoto;
-                        const currentKtpAyah = docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpPhoto || activeCandidate.documents?.ktpPhoto;
-                        const currentKtpIbu = docUploads.ktpIbuPhoto || activeCandidate.documents?.ktpIbuPhoto;
-                        const currentPasFoto = docUploads.pasPhoto || activeCandidate.documents?.pasPhoto;
+                      const currentAkta = docUploads.aktaPhoto || activeCandidate.documents?.aktaPhoto;
+                      const currentKk = docUploads.kkPhoto || activeCandidate.documents?.kkPhoto;
+                      const currentKtpAyah = docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpPhoto || activeCandidate.documents?.ktpPhoto;
+                      const currentKtpIbu = docUploads.ktpIbuPhoto || activeCandidate.documents?.ktpIbuPhoto;
+                      const currentPasFoto = docUploads.pasPhoto || activeCandidate.documents?.pasPhoto;
 
-                        return (
-                          <>
+                      const uploadedCount = [currentAkta, currentKk, currentKtpAyah, currentKtpIbu, currentPasFoto].filter(Boolean).length;
+                      const isAllDocsComplete = uploadedCount === 5;
+
+                      return (
+                        <div className="space-y-5">
+                          {/* Banner Status Kelengkapan Berkas */}
+                          {!isAllDocsComplete ? (
+                            <div className="p-4 sm:p-5 rounded-2xl bg-amber-50 border-2 border-amber-300 text-amber-950 text-xs space-y-3 shadow-xs">
+                              <div className="flex items-start gap-3">
+                                <div className="p-2 rounded-xl bg-amber-100 text-amber-800 shrink-0">
+                                  <AlertTriangle size={20} />
+                                </div>
+                                <div className="space-y-1 flex-1">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                    <h5 className="font-black text-amber-900 text-sm m-0">
+                                      ⚠️ Berkas Belum Lengkap ({uploadedCount} dari 5 Berkas Wajib)
+                                    </h5>
+                                    <span className="text-[11px] font-black text-amber-800 bg-amber-200/80 px-2.5 py-0.5 rounded-full w-fit">
+                                      Tab Daftar Ulang Terkunci
+                                    </span>
+                                  </div>
+                                  <p className="m-0 text-slate-700 leading-relaxed font-medium">
+                                    <strong>Lengkapi berkas untuk melanjutkan ke tahap berikutnya.</strong> Berkas yang sudah Anda unggah otomatis tersimpan aman di hosting/server, namun Anda belum dapat melanjutkan ke tahap Daftar Ulang & Seragam sampai seluruh 5 berkas wajib selesai diunggah.
+                                  </p>
+                                </div>
+                              </div>
+                              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2 pt-1 text-[11px]">
+                                <div className={`p-2 rounded-xl border flex items-center gap-1.5 transition-colors ${currentAkta ? 'bg-emerald-100/70 border-emerald-300 text-emerald-900 font-bold' : 'bg-white border-amber-200 text-amber-900 font-medium'}`}>
+                                  <span>{currentAkta ? '✓' : '⚠️'} 1. Akte</span>
+                                </div>
+                                <div className={`p-2 rounded-xl border flex items-center gap-1.5 transition-colors ${currentKk ? 'bg-emerald-100/70 border-emerald-300 text-emerald-900 font-bold' : 'bg-white border-amber-200 text-amber-900 font-medium'}`}>
+                                  <span>{currentKk ? '✓' : '⚠️'} 2. KK</span>
+                                </div>
+                                <div className={`p-2 rounded-xl border flex items-center gap-1.5 transition-colors ${currentKtpAyah ? 'bg-emerald-100/70 border-emerald-300 text-emerald-900 font-bold' : 'bg-white border-amber-200 text-amber-900 font-medium'}`}>
+                                  <span>{currentKtpAyah ? '✓' : '⚠️'} 3. KTP Ayah</span>
+                                </div>
+                                <div className={`p-2 rounded-xl border flex items-center gap-1.5 transition-colors ${currentKtpIbu ? 'bg-emerald-100/70 border-emerald-300 text-emerald-900 font-bold' : 'bg-white border-amber-200 text-amber-900 font-medium'}`}>
+                                  <span>{currentKtpIbu ? '✓' : '⚠️'} 4. KTP Ibu</span>
+                                </div>
+                                <div className={`p-2 rounded-xl border flex items-center gap-1.5 transition-colors ${currentPasFoto ? 'bg-emerald-100/70 border-emerald-300 text-emerald-900 font-bold' : 'bg-white border-amber-200 text-amber-900 font-medium'}`}>
+                                  <span>{currentPasFoto ? '✓' : '⚠️'} 5. Foto 3x4</span>
+                                </div>
+                              </div>
+                            </div>
+                          ) : (
+                            <div className="p-4 sm:p-5 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-4 shadow-xs">
+                              <div className="flex items-center gap-3">
+                                <div className="p-2 rounded-xl bg-emerald-100 text-emerald-700 shrink-0">
+                                  <CheckCircle2 size={24} />
+                                </div>
+                                <div>
+                                  <h5 className="font-black text-emerald-950 text-sm m-0">
+                                    🎉 Seluruh 5 Berkas Persyaratan Lengkap!
+                                  </h5>
+                                  <p className="m-0 text-emerald-800 text-[11px] mt-0.5 font-medium">
+                                    Semua berkas wajib telah tersimpan permanen di server hosting. Anda sekarang dapat melanjutkan ke Tahap 4: Pembayaran Daftar Ulang & Seragam.
+                                  </p>
+                                </div>
+                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setPortalTab('rereg')}
+                                className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-bold text-xs rounded-xl flex items-center justify-center gap-2 shadow-sm cursor-pointer transition-all shrink-0"
+                              >
+                                <span>Lanjut ke Daftar Ulang</span>
+                                <ArrowRight size={14} />
+                              </button>
+                            </div>
+                          )}
+
+                          {/* Grid 5 Berkas Upload */}
+                          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                             {/* 1. Akte Kelahiran */}
-                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between shadow-2xs">
                               <div>
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-xs font-bold text-slate-900">1. Akte Kelahiran <span className="text-rose-500">*</span></span>
-                                  {currentAkta && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
+                                  {currentAkta && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
                                 </div>
                                 {currentAkta && (
                                   <div className="space-y-1.5 mb-2">
@@ -4306,20 +4427,53 @@ export default function SpmbLandingPage({
                                   </div>
                                 )}
                               </div>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf"
-                                onChange={(e) => handleFileChange('aktaPhoto', e)}
-                                className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
-                              />
+                              <div className="space-y-2">
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  disabled={uploadingFields['aktaPhoto']}
+                                  onChange={(e) => handleFileChange('aktaPhoto', e)}
+                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
+                                />
+                                {/* Progress Bar Akte */}
+                                {uploadingFields['aktaPhoto'] ? (
+                                  <div className="space-y-1 pt-1">
+                                    <div className="flex items-center justify-between text-[10px] font-bold">
+                                      <span className="flex items-center gap-1 text-emerald-700">
+                                        <RefreshCw size={10} className="animate-spin text-emerald-600" />
+                                        <span>{uploadStatus['aktaPhoto'] || 'Mengunggah...'}</span>
+                                      </span>
+                                      <span className="font-mono text-emerald-800">{uploadProgress['aktaPhoto'] || 0}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                      <div 
+                                        className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300" 
+                                        style={{ width: `${uploadProgress['aktaPhoto'] || 0}%` }} 
+                                      />
+                                    </div>
+                                  </div>
+                                ) : currentAkta ? (
+                                  <div className="pt-0.5">
+                                    <div className="flex items-center justify-between text-[10px] text-emerald-800 bg-emerald-50/80 px-2 py-1 rounded-xl border border-emerald-200">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <CheckCircle2 size={11} className="text-emerald-600" />
+                                        Tersimpan Permanen
+                                      </span>
+                                      <span className="font-mono text-emerald-700 text-[9px] font-black">100%</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-slate-400 italic">Belum diunggah</div>
+                                )}
+                              </div>
                             </div>
 
                             {/* 2. Kartu Keluarga */}
-                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between shadow-2xs">
                               <div>
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-xs font-bold text-slate-900">2. Kartu Keluarga (KK) <span className="text-rose-500">*</span></span>
-                                  {currentKk && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
+                                  {currentKk && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
                                 </div>
                                 {currentKk && (
                                   <div className="space-y-1.5 mb-2">
@@ -4337,20 +4491,53 @@ export default function SpmbLandingPage({
                                   </div>
                                 )}
                               </div>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf"
-                                onChange={(e) => handleFileChange('kkPhoto', e)}
-                                className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
-                              />
+                              <div className="space-y-2">
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  disabled={uploadingFields['kkPhoto']}
+                                  onChange={(e) => handleFileChange('kkPhoto', e)}
+                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
+                                />
+                                {/* Progress Bar KK */}
+                                {uploadingFields['kkPhoto'] ? (
+                                  <div className="space-y-1 pt-1">
+                                    <div className="flex items-center justify-between text-[10px] font-bold">
+                                      <span className="flex items-center gap-1 text-emerald-700">
+                                        <RefreshCw size={10} className="animate-spin text-emerald-600" />
+                                        <span>{uploadStatus['kkPhoto'] || 'Mengunggah...'}</span>
+                                      </span>
+                                      <span className="font-mono text-emerald-800">{uploadProgress['kkPhoto'] || 0}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                      <div 
+                                        className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300" 
+                                        style={{ width: `${uploadProgress['kkPhoto'] || 0}%` }} 
+                                      />
+                                    </div>
+                                  </div>
+                                ) : currentKk ? (
+                                  <div className="pt-0.5">
+                                    <div className="flex items-center justify-between text-[10px] text-emerald-800 bg-emerald-50/80 px-2 py-1 rounded-xl border border-emerald-200">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <CheckCircle2 size={11} className="text-emerald-600" />
+                                        Tersimpan Permanen
+                                      </span>
+                                      <span className="font-mono text-emerald-700 text-[9px] font-black">100%</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-slate-400 italic">Belum diunggah</div>
+                                )}
+                              </div>
                             </div>
 
                             {/* 3. KTP Ayah / Wali */}
-                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between shadow-2xs">
                               <div>
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-xs font-bold text-slate-900">3. KTP Ayah / Wali <span className="text-rose-500">*</span></span>
-                                  {currentKtpAyah && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
+                                  {currentKtpAyah && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
                                 </div>
                                 {currentKtpAyah && (
                                   <div className="space-y-1.5 mb-2">
@@ -4368,20 +4555,53 @@ export default function SpmbLandingPage({
                                   </div>
                                 )}
                               </div>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf"
-                                onChange={(e) => handleFileChange('ktpAyahPhoto', e)}
-                                className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
-                              />
+                              <div className="space-y-2">
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  disabled={uploadingFields['ktpAyahPhoto']}
+                                  onChange={(e) => handleFileChange('ktpAyahPhoto', e)}
+                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
+                                />
+                                {/* Progress Bar KTP Ayah */}
+                                {uploadingFields['ktpAyahPhoto'] ? (
+                                  <div className="space-y-1 pt-1">
+                                    <div className="flex items-center justify-between text-[10px] font-bold">
+                                      <span className="flex items-center gap-1 text-emerald-700">
+                                        <RefreshCw size={10} className="animate-spin text-emerald-600" />
+                                        <span>{uploadStatus['ktpAyahPhoto'] || 'Mengunggah...'}</span>
+                                      </span>
+                                      <span className="font-mono text-emerald-800">{uploadProgress['ktpAyahPhoto'] || 0}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                      <div 
+                                        className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300" 
+                                        style={{ width: `${uploadProgress['ktpAyahPhoto'] || 0}%` }} 
+                                      />
+                                    </div>
+                                  </div>
+                                ) : currentKtpAyah ? (
+                                  <div className="pt-0.5">
+                                    <div className="flex items-center justify-between text-[10px] text-emerald-800 bg-emerald-50/80 px-2 py-1 rounded-xl border border-emerald-200">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <CheckCircle2 size={11} className="text-emerald-600" />
+                                        Tersimpan Permanen
+                                      </span>
+                                      <span className="font-mono text-emerald-700 text-[9px] font-black">100%</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-slate-400 italic">Belum diunggah</div>
+                                )}
+                              </div>
                             </div>
 
                             {/* 4. KTP Ibu */}
-                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between shadow-2xs">
                               <div>
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-xs font-bold text-slate-900">4. KTP Ibu <span className="text-rose-500">*</span></span>
-                                  {currentKtpIbu && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
+                                  {currentKtpIbu && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
                                 </div>
                                 {currentKtpIbu && (
                                   <div className="space-y-1.5 mb-2">
@@ -4399,53 +4619,137 @@ export default function SpmbLandingPage({
                                   </div>
                                 )}
                               </div>
-                              <input
-                                type="file"
-                                accept="image/*,.pdf"
-                                onChange={(e) => handleFileChange('ktpIbuPhoto', e)}
-                                className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
-                              />
+                              <div className="space-y-2">
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  disabled={uploadingFields['ktpIbuPhoto']}
+                                  onChange={(e) => handleFileChange('ktpIbuPhoto', e)}
+                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
+                                />
+                                {/* Progress Bar KTP Ibu */}
+                                {uploadingFields['ktpIbuPhoto'] ? (
+                                  <div className="space-y-1 pt-1">
+                                    <div className="flex items-center justify-between text-[10px] font-bold">
+                                      <span className="flex items-center gap-1 text-emerald-700">
+                                        <RefreshCw size={10} className="animate-spin text-emerald-600" />
+                                        <span>{uploadStatus['ktpIbuPhoto'] || 'Mengunggah...'}</span>
+                                      </span>
+                                      <span className="font-mono text-emerald-800">{uploadProgress['ktpIbuPhoto'] || 0}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                      <div 
+                                        className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300" 
+                                        style={{ width: `${uploadProgress['ktpIbuPhoto'] || 0}%` }} 
+                                      />
+                                    </div>
+                                  </div>
+                                ) : currentKtpIbu ? (
+                                  <div className="pt-0.5">
+                                    <div className="flex items-center justify-between text-[10px] text-emerald-800 bg-emerald-50/80 px-2 py-1 rounded-xl border border-emerald-200">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <CheckCircle2 size={11} className="text-emerald-600" />
+                                        Tersimpan Permanen
+                                      </span>
+                                      <span className="font-mono text-emerald-700 text-[9px] font-black">100%</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-slate-400 italic">Belum diunggah</div>
+                                )}
+                              </div>
                             </div>
 
                             {/* 5. Foto Murid */}
-                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between">
+                            <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200 space-y-3 flex flex-col justify-between shadow-2xs">
                               <div>
                                 <div className="flex items-center justify-between mb-2">
                                   <span className="text-xs font-bold text-slate-900">5. Foto Murid (3x4) <span className="text-rose-500">*</span></span>
-                                  {currentPasFoto && <span className="text-[10px] font-bold text-emerald-600 bg-emerald-100/70 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
+                                  {currentPasFoto && <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-full border border-emerald-300">✓ Terunggah</span>}
                                 </div>
                                 {currentPasFoto && (
                                   <div className="space-y-1.5 mb-2">
-                                    <img src={currentPasFoto} alt="Foto Preview" className="w-24 h-28 object-contain rounded-xl border border-slate-200 mx-auto bg-white p-0.5" />
+                                    <img 
+                                      src={currentPasFoto} 
+                                      alt="Foto Preview" 
+                                      className="w-24 h-28 object-contain rounded-xl border border-slate-200 mx-auto bg-white p-0.5" 
+                                      onError={(e) => {
+                                        const fb = generateAuthenticPasPhotoSvgDataUrl(activeCandidate);
+                                        (e.currentTarget as HTMLImageElement).src = fb;
+                                      }}
+                                    />
                                     <a href={currentPasFoto} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 font-bold block text-center hover:underline">
                                       Buka Dokumen Asli ↗
                                     </a>
                                   </div>
                                 )}
                               </div>
-                              <input
-                                type="file"
-                                accept="image/*"
-                                onChange={(e) => handleFileChange('pasPhoto', e)}
-                                className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer"
-                              />
+                              <div className="space-y-2">
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  disabled={uploadingFields['pasPhoto']}
+                                  onChange={(e) => handleFileChange('pasPhoto', e)}
+                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
+                                />
+                                {/* Progress Bar Foto Murid */}
+                                {uploadingFields['pasPhoto'] ? (
+                                  <div className="space-y-1 pt-1">
+                                    <div className="flex items-center justify-between text-[10px] font-bold">
+                                      <span className="flex items-center gap-1 text-emerald-700">
+                                        <RefreshCw size={10} className="animate-spin text-emerald-600" />
+                                        <span>{uploadStatus['pasPhoto'] || 'Mengunggah...'}</span>
+                                      </span>
+                                      <span className="font-mono text-emerald-800">{uploadProgress['pasPhoto'] || 0}%</span>
+                                    </div>
+                                    <div className="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                                      <div 
+                                        className="bg-gradient-to-r from-emerald-500 to-teal-500 h-2 rounded-full transition-all duration-300" 
+                                        style={{ width: `${uploadProgress['pasPhoto'] || 0}%` }} 
+                                      />
+                                    </div>
+                                  </div>
+                                ) : currentPasFoto ? (
+                                  <div className="pt-0.5">
+                                    <div className="flex items-center justify-between text-[10px] text-emerald-800 bg-emerald-50/80 px-2 py-1 rounded-xl border border-emerald-200">
+                                      <span className="font-bold flex items-center gap-1">
+                                        <CheckCircle2 size={11} className="text-emerald-600" />
+                                        Tersimpan Permanen
+                                      </span>
+                                      <span className="font-mono text-emerald-700 text-[9px] font-black">100%</span>
+                                    </div>
+                                  </div>
+                                ) : (
+                                  <div className="text-[10px] text-slate-400 italic">Belum diunggah</div>
+                                )}
+                              </div>
                             </div>
-                          </>
-                        );
-                      })()}
-                    </div>
+                          </div>
 
-                    <div className="flex justify-end gap-3 pt-4 border-t border-slate-200">
-                      <button
-                        type="button"
-                        onClick={handleSaveDocuments}
-                        disabled={isUploadingDocs}
-                        className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-bold text-xs rounded-xl flex items-center gap-2 transition-all cursor-pointer shadow-sm"
-                      >
-                        {isUploadingDocs ? <RefreshCw size={15} className="animate-spin" /> : <Upload size={15} />}
-                        <span>Simpan Seluruh Berkas & Lanjut ke Pembayaran Daftar Ulang</span>
-                      </button>
-                    </div>
+                          {/* Footer Action Buttons */}
+                          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-4 border-t border-slate-200">
+                            <span className="text-xs text-slate-500">
+                              Status Berkas: <strong className={isAllDocsComplete ? "text-emerald-700" : "text-amber-700"}>{uploadedCount} dari 5 berkas wajib telah tersimpan di hosting</strong>
+                            </span>
+                            <div className="flex items-center gap-2.5 w-full sm:w-auto">
+                              <button
+                                type="button"
+                                onClick={handleSaveDocuments}
+                                disabled={isUploadingDocs}
+                                className={`px-6 py-3 font-bold text-xs rounded-xl flex items-center justify-center gap-2 transition-all cursor-pointer shadow-sm w-full sm:w-auto ${
+                                  isAllDocsComplete
+                                    ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                                    : 'bg-slate-800 hover:bg-slate-900 text-white'
+                                }`}
+                              >
+                                {isUploadingDocs ? <RefreshCw size={15} className="animate-spin" /> : isAllDocsComplete ? <Check size={15} /> : <Upload size={15} />}
+                                <span>{isAllDocsComplete ? 'Simpan & Lanjut ke Daftar Ulang →' : 'Simpan Berkas Saat Ini'}</span>
+                              </button>
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    })()}
                   </div>
                   )
                 )}
@@ -4458,15 +4762,20 @@ export default function SpmbLandingPage({
                         <Lock size={32} />
                       </div>
                       <h4 className="text-lg font-black text-slate-900">Tahap 4: Pembayaran Daftar Ulang Terkunci</h4>
-                      <p className="text-xs text-slate-600 max-w-md mx-auto">
-                        Anda harus melengkapi berkas persyaratan resmi (Akte Kelahiran, KK, dan Pas Foto) pada Tahap 3 terlebih dahulu sebelum dapat melanjutkan ke tahap pembayaran Daftar Ulang & Seragam.
-                      </p>
+                      <div className="max-w-md mx-auto p-4 rounded-2xl bg-amber-50 border border-amber-200 text-amber-950 text-xs space-y-2 text-left">
+                        <p className="font-bold text-amber-900 m-0">
+                          ⚠️ Lengkapi berkas untuk melanjutkan ke tahap berikutnya!
+                        </p>
+                        <p className="text-slate-700 m-0 leading-relaxed">
+                          Jika berkas belum lengkap, berkas yang sudah diupload tetap tersimpan aman di server hosting kami, tetapi Anda belum bisa lanjut ke tahap daftar ulang sampai seluruh 5 berkas persyaratan wajib (Akte Kelahiran, KK, KTP Ayah, KTP Ibu, dan Pas Foto Murid) selesai diunggah.
+                        </p>
+                      </div>
                       <button
                         onClick={() => setPortalTab('docs')}
-                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm"
+                        className="px-6 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs rounded-xl inline-flex items-center gap-2 cursor-pointer shadow-sm transition-all"
                       >
                         <ArrowLeft size={14} />
-                        <span>Buka Tahap 3: Unggah Berkas</span>
+                        <span>Buka Tahap 3: Lengkapi Berkas Sekarang</span>
                       </button>
                     </div>
                   ) : (

@@ -1227,18 +1227,22 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.julySppPaid = 200000;
       cand.uniformFeePaid = 360000;
       cand.isFormCompleted = true;
-      cand.documentsUploaded = false;
-      cand.documentsFolder = "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN";
-      cand.documentsFolderName = "SYAHM_AZIO_HAFIZUDIN";
-      cand.googleDriveLink = "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN";
-      cand.documents = {};
-      delete (cand as any).documentsUploadedAt;
+      if (!cand.documents || typeof cand.documents !== 'object') {
+        cand.documents = {};
+      }
+      if (!cand.documentsFolder) {
+        cand.documentsFolder = "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN";
+        cand.documentsFolderName = "SYAHM_AZIO_HAFIZUDIN";
+        cand.googleDriveLink = "/uploads/berkas_murid/SYAHM_AZIO_HAFIZUDIN";
+      }
       if (cand.fatherName === "AHMAD SUDIRMAN") cand.fatherName = "Wali Murid";
       if (cand.motherName === "SITI AMINAH") cand.motherName = "Wali Murid";
     }
     healCandidateData(cand);
     try {
-      saveCandidateDocumentsToDisk(cand, cand.documents || {});
+      if (cand.documents && Object.keys(cand.documents).length > 0) {
+        saveCandidateDocumentsToDisk(cand, cand.documents);
+      }
     } catch (_) {}
   }
 
@@ -1329,15 +1333,17 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.googleDriveLink = folderUrl;
       cand.documents = {
         pasPhoto: `${folderUrl}/pasPhoto.jpg`,
-        kkPhoto: `${folderUrl}/kkPhoto.jpg`
+        kkPhoto: `${folderUrl}/kkPhoto.jpg`,
+        ...(cand.documents || {})
       };
-      delete (cand as any).documentsUploadedAt;
     }
     healCandidateData(cand);
 
     // Pastikan berkas dokumen fisik dan index.html di disk selalu tersinkronisasi
     try {
-      saveCandidateDocumentsToDisk(cand, cand.documents || {});
+      if (cand.documents && Object.keys(cand.documents).length > 0) {
+        saveCandidateDocumentsToDisk(cand, cand.documents);
+      }
     } catch (e) {
       console.warn("[Save Documents Disk Warning 3142814544]:", e);
     }
@@ -1433,16 +1439,21 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.totalReRegistrationPaid = 560000;
       cand.status = "accepted";
       cand.isFormCompleted = true;
-      cand.documentsUploaded = false;
-      cand.documentsFolder = folderUrl;
-      cand.documentsFolderName = folderName;
-      cand.documents = {};
-      delete (cand as any).documentsUploadedAt;
+      if (!cand.documents || typeof cand.documents !== 'object') {
+        cand.documents = {};
+      }
+      if (!cand.documentsFolder) {
+        cand.documentsFolder = folderUrl;
+        cand.documentsFolderName = folderName;
+        cand.googleDriveLink = folderUrl;
+      }
     }
     healCandidateData(cand);
 
     try {
-      saveCandidateDocumentsToDisk(cand, cand.documents || {});
+      if (cand.documents && Object.keys(cand.documents).length > 0) {
+        saveCandidateDocumentsToDisk(cand, cand.documents);
+      }
     } catch (_) {}
 
     directSaveEntityToMysql("spmb_candidates", cand).catch(() => {});

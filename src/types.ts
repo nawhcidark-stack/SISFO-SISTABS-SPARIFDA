@@ -719,7 +719,7 @@ export interface SpmbCandidate {
   birthPlace: string;
   birthDate: string; // YYYY-MM-DD
   phone: string; // WhatsApp
-  schoolOriginType?: 'maarif_jogosari' | 'lp_maarif' | 'other'; // 'maarif_jogosari' | 'lp_maarif' | 'other'
+  schoolOriginType?: 'maarif_jogosari' | 'lp_maarif' | 'maarif' | 'alumni' | 'other' | string; // 'maarif_jogosari' | 'lp_maarif' | 'maarif' | 'other'
   schoolOrigin: string; // "SD MAARIF JOGOSARI" atau nama manual
   registrationType?: 'online_individual' | 'school_collective'; // Jalur pendaftaran mandiri vs kolektif di sekolah
   sessionId: string; // 'inden' | 'gelombang-1' | 'gelombang-2'

@@ -470,7 +470,7 @@ export async function generateReRegReceiptHtml(
               <td class="col-label">Untuk Pembayaran</td>
               <td class="col-colon">:</td>
               <td class="col-value">
-                Pelunasan Biaya Daftar Ulang Murid Baru, Uang Gedung, SPP Bulan Juli, dan Paket Seragam & Atribut Sekolah (${genderLabel} - Ukuran: <strong>${uniformSize}</strong>) Tahun Ajaran <strong>${academicYear}</strong>
+                Pelunasan Biaya Daftar Ulang Murid Baru, Uang Gedung, SPP Bulan Juli, dan Paket Seragam & Atribut Sekolah (${genderLabel}) Tahun Ajaran <strong>${academicYear}</strong>
               </td>
             </tr>
             <tr>
@@ -523,7 +523,7 @@ export async function generateReRegReceiptHtml(
                 <tr>
                   <td style="text-align: center;">3</td>
                   <td>
-                    <strong>Paket Seragam & Atribut Lengkap (${genderLabel} - Ukuran ${uniformSize})</strong>
+                    <strong>Paket Seragam & Atribut Lengkap (${genderLabel})</strong>
                     <br><small class="sub-text">${details.uniformItems.map(u => u.name).join(', ')}</small>
                     ${details.maarifUniformDiscount > 0 ? `<br><small class="sub-text" style="color: #047857;">• Diskon Seragam SD Maarif Jogosari (- Rp ${details.maarifUniformDiscount.toLocaleString('id-ID')})</small>` : ''}
                     ${details.sportsUniformBonus > 0 ? `<br><small class="sub-text" style="color: #047857; font-weight: bold;">• 🎁 BONUS SESI INDEN: 1 Set Seragam Olahraga Gratis (Khusus SD/MI LP. Ma'arif - Senilai Rp ${details.sportsUniformBonus.toLocaleString('id-ID')})</small>` : ''}

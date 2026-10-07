@@ -11,7 +11,7 @@ import compression from "compression";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";

@@ -160,7 +160,6 @@ export default function AdminSpmbManagement({
     schoolOriginType: 'maarif' as 'maarif' | 'other' | 'alumni',
     registrationType: 'school_collective' as 'online_individual' | 'school_collective',
     sessionId: 'inden',
-    selectedUniformSize: 'L',
     address: '',
     fatherName: '',
     motherName: '',
@@ -651,7 +650,6 @@ export default function AdminSpmbManagement({
       schoolOriginType: (candidate.schoolOriginType as any) || 'maarif',
       registrationType: candidate.registrationType || 'school_collective',
       sessionId: candidate.sessionId || 'inden',
-      selectedUniformSize: candidate.selectedUniformSize || 'L',
       address: candidate.address || '',
       fatherName: candidate.fatherName || '',
       motherName: candidate.motherName || '',
@@ -5137,11 +5135,11 @@ export default function AdminSpmbManagement({
                 </div>
               </div>
 
-              {/* Bagian 3: Pendaftaran, Sekolah Asal & Seragam */}
+              {/* Bagian 3: Pendaftaran & Sekolah Asal */}
               <div className="p-5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-4">
                 <h4 className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center gap-2 m-0">
                   <Building2 size={14} />
-                  <span>3. Asal Sekolah, Gelombang & Seragam</span>
+                  <span>3. Asal Sekolah & Gelombang</span>
                 </h4>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
                   <div className="space-y-1">
@@ -5197,29 +5195,6 @@ export default function AdminSpmbManagement({
                         </>
                       )}
                     </select>
-                  </div>
-
-                  <div className="space-y-1 sm:col-span-2">
-                    <label className="text-slate-300 font-bold block flex items-center gap-1.5">
-                      <Shirt size={13} />
-                      <span>Ukuran Seragam</span>
-                    </label>
-                    <div className="grid grid-cols-6 gap-2">
-                      {['S', 'M', 'L', 'XL', 'XXL', 'Custom'].map(size => (
-                        <button
-                          key={size}
-                          type="button"
-                          onClick={() => setEditInitialForm(prev => ({ ...prev, selectedUniformSize: size }))}
-                          className={`py-2 text-center rounded-xl font-bold text-xs cursor-pointer border transition-all ${
-                            editInitialForm.selectedUniformSize === size
-                              ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
-                              : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
-                          }`}
-                        >
-                          {size}
-                        </button>
-                      ))}
-                    </div>
                   </div>
                 </div>
               </div>

@@ -1038,13 +1038,13 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
     // Khusus NISN 3140631960 (DELISHA FARAH AZZALEA): Pastikan biodata, status lunas, dan refund kolektif tetap permanen
     if (currentNisn === "3140631960" || c.id === "3140631960" || c.id === "spmb-cand-3140631960") {
-      if (c.fullName !== "DELISHA FARAH AZZALEA") { c.fullName = "DELISHA FARAH AZZALEA"; changed = true; }
-      if (c.nickname !== "DELISHA") { c.nickname = "DELISHA"; changed = true; }
-      if (c.gender !== "P") { c.gender = "P"; changed = true; }
-      if (c.schoolOrigin !== "SD MAARIF JOGOSARI") { c.schoolOrigin = "SD MAARIF JOGOSARI"; changed = true; }
-      if (c.schoolOriginType !== "maarif") { c.schoolOriginType = "maarif"; changed = true; }
-      if (c.registrationType !== "school_collective") { c.registrationType = "school_collective"; changed = true; }
-      if (c.sessionId !== "inden") { c.sessionId = "inden"; changed = true; }
+      if (!c.fullName) { c.fullName = "DELISHA FARAH AZZALEA"; changed = true; }
+      if (!c.nickname) { c.nickname = "DELISHA"; changed = true; }
+      if (!c.gender) { c.gender = "P"; changed = true; }
+      if (!c.schoolOrigin) { c.schoolOrigin = "SD MAARIF JOGOSARI"; changed = true; }
+      if (!c.schoolOriginType) { c.schoolOriginType = "maarif"; changed = true; }
+      if (!c.registrationType) { c.registrationType = "school_collective"; changed = true; }
+      if (!c.sessionId) { c.sessionId = "inden"; changed = true; }
       if (!c.tokenPaid || c.tokenPaymentStatus !== 'paid') {
         c.tokenPaid = true;
         c.tokenPaymentStatus = 'paid';
@@ -1088,15 +1088,19 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
-    // Khusus NISN 3142636294 (SALWA LAYLA ZAHRA): Pastikan biodata dan status lunas token & daftar ulang tetap permanen
+    // Khusus NISN 3142636294 (SALWA LAYLA ZAHRA): Pastikan biodata dan status lunas token & daftar ulang tetap permanen (Jalur Mandiri Online)
     if (currentNisn === "3142636294" || c.id === "3142636294" || c.id === "spmb-cand-3142636294") {
-      if (c.fullName !== "SALWA LAYLA ZAHRA") { c.fullName = "SALWA LAYLA ZAHRA"; changed = true; }
-      if (c.nickname !== "SALWA") { c.nickname = "SALWA"; changed = true; }
-      if (c.gender !== "P") { c.gender = "P"; changed = true; }
-      if (c.schoolOrigin !== "SD MAARIF JOGOSARI") { c.schoolOrigin = "SD MAARIF JOGOSARI"; changed = true; }
-      if (c.schoolOriginType !== "maarif") { c.schoolOriginType = "maarif"; changed = true; }
-      if (c.registrationType !== "school_collective") { c.registrationType = "school_collective"; changed = true; }
-      if (c.sessionId !== "inden") { c.sessionId = "inden"; changed = true; }
+      if (!c.fullName) { c.fullName = "SALWA LAYLA ZAHRA"; changed = true; }
+      if (!c.nickname) { c.nickname = "SALWA"; changed = true; }
+      if (!c.gender) { c.gender = "P"; changed = true; }
+      if (!c.schoolOrigin) { c.schoolOrigin = "SD MAARIF JOGOSARI"; changed = true; }
+      if (!c.schoolOriginType) { c.schoolOriginType = "maarif"; changed = true; }
+      if (!c.registrationType || c.registrationType === "school_collective") {
+        c.registrationType = "online_individual";
+        c.collectiveRefundStatus = "none";
+        changed = true;
+      }
+      if (!c.sessionId) { c.sessionId = "inden"; changed = true; }
       if (!c.tokenPaid || c.tokenPaymentStatus !== 'paid') {
         c.tokenPaid = true;
         c.tokenPaymentStatus = 'paid';
@@ -1697,10 +1701,10 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.collectiveRefundRecipient = cand.collectiveRefundRecipient || "Orang Tua / Wali Murid";
       cand.collectiveRefundNote = cand.collectiveRefundNote || "Pengembalian tunai (cash) biaya formulir token pendaftaran online jalur kolektif SPMB 2027/2028";
       cand.collectiveRefundReceiptNo = cand.collectiveRefundReceiptNo || "REF-KOL/2026/3140631960";
-      cand.schoolOrigin = cand.schoolOrigin || "SD MAARIF JOGOSARI";
-      cand.schoolOriginType = "maarif";
-      cand.registrationType = "school_collective";
-      cand.sessionId = "inden";
+      if (!cand.schoolOrigin) cand.schoolOrigin = "SD MAARIF JOGOSARI";
+      if (!cand.schoolOriginType) cand.schoolOriginType = "maarif";
+      if (!cand.registrationType) cand.registrationType = "school_collective";
+      if (!cand.sessionId) cand.sessionId = "inden";
       cand.status = "accepted";
       cand.isFormCompleted = true;
       if (!cand.documentsFolder) {
@@ -1746,7 +1750,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         studentPhone: "081234567891",
         schoolOriginType: "maarif",
         schoolOrigin: "SD MAARIF JOGOSARI",
-        registrationType: "school_collective",
+        registrationType: "online_individual",
         sessionId: "inden",
         status: "accepted",
         isTransferredSession: false,
@@ -1801,7 +1805,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       };
       spmbCandidates.push(cand);
     } else {
-      cand.fullName = "SALWA LAYLA ZAHRA";
+      if (!cand.fullName) cand.fullName = "SALWA LAYLA ZAHRA";
       cand.nisn = rawNisn;
       cand.tokenPaid = true;
       cand.tokenPaymentStatus = "paid";
@@ -1818,10 +1822,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.reRegistrationAmount = cand.reRegistrationAmount || 200000;
       cand.totalReRegistrationPaid = cand.totalReRegistrationPaid || 200000;
       cand.julySppPaid = cand.julySppPaid || 200000;
-      cand.schoolOrigin = cand.schoolOrigin || "SD MAARIF JOGOSARI";
-      cand.schoolOriginType = "maarif";
-      cand.registrationType = "school_collective";
-      cand.sessionId = "inden";
+      if (!cand.schoolOrigin) cand.schoolOrigin = "SD MAARIF JOGOSARI";
+      if (!cand.schoolOriginType) cand.schoolOriginType = "maarif";
+      cand.registrationType = "online_individual";
+      cand.collectiveRefundStatus = "none";
+      if (!cand.sessionId) cand.sessionId = "inden";
       cand.status = "accepted";
       cand.isFormCompleted = true;
       if (!cand.documentsFolder) {

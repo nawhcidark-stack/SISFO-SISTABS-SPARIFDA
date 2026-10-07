@@ -51,7 +51,10 @@ import {
   ArrowLeftRight,
   Hash,
   Layers,
-  ShieldCheck
+  ShieldCheck,
+  ArrowUpDown,
+  LayoutGrid,
+  Table
 } from 'lucide-react';
 import BulkNisEditorModal from './BulkNisEditorModal';
 import { Student } from '../types';
@@ -110,6 +113,8 @@ export default function AdminSpmbManagement({
   const [filterSchoolOrigin, setFilterSchoolOrigin] = useState<'all' | 'maarif' | 'other'>('all');
   const [filterCollective, setFilterCollective] = useState<string>('all');
   const [filterTransfer, setFilterTransfer] = useState<'all' | 'transferred' | 'normal'>('all');
+  const [sortBy, setSortBy] = useState<'time_asc' | 'time_desc' | 'name_asc'>('time_asc');
+  const [tableViewMode, setTableViewMode] = useState<'compact' | 'wide' | 'cards'>('compact');
 
   // Auto-Transfer & Revert State
   const [isProcessingAutoTransfer, setIsProcessingAutoTransfer] = useState<boolean>(false);
@@ -905,6 +910,55 @@ export default function AdminSpmbManagement({
     return matchesSearch && matchesSession && matchesStatus && matchesGender && matchesSchoolOrigin && matchesCollective && matchesTransfer;
   });
 
+  // Helper: Dapatkan timestamp waktu pendaftaran calon murid
+  const getCandidateRegTimestamp = (c: SpmbCandidate): number => {
+    if (c.createdAt) {
+      const t = new Date(c.createdAt).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (c.tokenPaidAt) {
+      const t = new Date(c.tokenPaidAt).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    if (c.formCompletedAt) {
+      const t = new Date(c.formCompletedAt).getTime();
+      if (!isNaN(t) && t > 0) return t;
+    }
+    const idMatch = (c.id || '').match(/(\d{13})/);
+    if (idMatch) return Number(idMatch[1]);
+    return 0;
+  };
+
+  const formatRegTime = (c: SpmbCandidate): string => {
+    const ts = getCandidateRegTimestamp(c);
+    if (!ts) return '-';
+    try {
+      const d = new Date(ts);
+      return d.toLocaleDateString('id-ID', {
+        day: 'numeric',
+        month: 'short',
+        hour: '2-digit',
+        minute: '2-digit'
+      });
+    } catch (_) {
+      return '-';
+    }
+  };
+
+  // Sorted Candidates List (Default: Urutan Waktu Pendaftaran Terlama -> Terbaru / Pendaftar No. 1, 2, 3...)
+  const sortedCandidates = [...filteredCandidates].sort((a, b) => {
+    if (sortBy === 'time_desc') {
+      return getCandidateRegTimestamp(b) - getCandidateRegTimestamp(a);
+    }
+    if (sortBy === 'name_asc') {
+      return (a.fullName || '').localeCompare(b.fullName || '');
+    }
+    // Default: 'time_asc' (Urutan waktu pendaftaran kronologis pendaftar ke-1, 2, 3...)
+    const diff = getCandidateRegTimestamp(a) - getCandidateRegTimestamp(b);
+    if (diff !== 0) return diff;
+    return (a.registrationNo || a.nisn || '').localeCompare(b.registrationNo || b.nisn || '');
+  });
+
   // Calculate Statistics
   const totalRegistered = candidates.length;
   
@@ -1534,6 +1588,65 @@ export default function AdminSpmbManagement({
                 <option value="token_pending">Token Pending (Midtrans)</option>
                 <option value="rejected">Ditolak</option>
               </select>
+
+              {/* Urutan Pendaftaran & Waktu */}
+              <div className="flex items-center gap-1.5 bg-slate-50 border border-slate-300 rounded-xl px-2.5 py-1.5 shadow-2xs">
+                <ArrowUpDown size={13} className="text-emerald-700 shrink-0" />
+                <span className="text-[11px] font-bold text-slate-700 shrink-0">Urutan:</span>
+                <select
+                  value={sortBy}
+                  onChange={(e) => setSortBy(e.target.value as any)}
+                  className="bg-transparent text-xs text-slate-900 font-extrabold focus:outline-none cursor-pointer"
+                  title="Urutkan calon murid berdasarkan waktu atau nama"
+                >
+                  <option value="time_asc">⏱️ Waktu Pendaftaran (Terlama / No. Urut 1..)</option>
+                  <option value="time_desc">⏱️ Waktu Pendaftaran (Terbaru)</option>
+                  <option value="name_asc">🔤 Nama Calon Murid (A-Z)</option>
+                </select>
+              </div>
+
+              {/* Toggle Mode Tampilan (Fit Layar vs Tabel Lebar vs Kartu) */}
+              <div className="flex items-center bg-slate-100 p-0.5 rounded-xl border border-slate-300 shadow-2xs">
+                <button
+                  type="button"
+                  onClick={() => setTableViewMode('compact')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-extrabold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    tableViewMode === 'compact'
+                      ? 'bg-emerald-700 text-white shadow-xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                  title="Tampilan Pas di Layar: Semua data terlihat langsung tanpa harus digeser horizontal"
+                >
+                  <LayoutGrid size={13} />
+                  <span>Pas Layar (Tanpa Geser)</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTableViewMode('wide')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    tableViewMode === 'wide'
+                      ? 'bg-emerald-700 text-white shadow-xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                  title="Tampilan Tabel Lebar dengan scroll horizontal"
+                >
+                  <Table size={13} />
+                  <span>Tabel Lebar</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setTableViewMode('cards')}
+                  className={`px-2.5 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                    tableViewMode === 'cards'
+                      ? 'bg-emerald-700 text-white shadow-xs'
+                      : 'text-slate-700 hover:text-slate-900'
+                  }`}
+                  title="Tampilan Kartu Kotak Responsif"
+                >
+                  <CreditCard size={13} />
+                  <span>Kartu</span>
+                </button>
+              </div>
             </div>
 
             {/* Quick Action Buttons */}
@@ -1626,31 +1739,394 @@ export default function AdminSpmbManagement({
             </div>
           )}
 
-          {/* Candidates Table - High Contrast Light Theme */}
-          <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
-            <div className="overflow-x-auto">
-              <table className="w-full text-left text-xs text-slate-700">
-                <thead className="bg-slate-50 text-slate-700 uppercase text-[10px] font-black tracking-wider border-b border-slate-200">
-                  <tr>
-                    <th className="py-3.5 px-4">Calon Murid</th>
-                    <th className="py-3.5 px-4">NISN / Asal Sekolah</th>
-                    <th className="py-3.5 px-4">Jalur Pendaftaran</th>
-                    <th className="py-3.5 px-4">Token Online & Refund Cash</th>
-                    <th className="py-3.5 px-4">Data Formulir & Berkas</th>
-                    <th className="py-3.5 px-4">Daftar Ulang</th>
-                    <th className="py-3.5 px-4">Status Penerimaan</th>
-                    <th className="py-3.5 px-4 text-center">Aksi</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-100 font-medium">
-                  {filteredCandidates.length === 0 ? (
+          {/* Candidates Display - Tampilan Pas Layar (Default), Tabel Lebar, atau Kartu */}
+          {sortedCandidates.length === 0 ? (
+            <div className="bg-white border border-slate-200 rounded-3xl p-12 text-center shadow-xs">
+              <Users size={36} className="mx-auto text-slate-300 mb-3" />
+              <p className="text-slate-700 font-bold text-sm m-0">Belum ada calon murid terdaftar yang cocok dengan filter pencarian.</p>
+              <p className="text-slate-400 text-xs mt-1">Coba ubah kata kunci pencarian atau sesuaikan pilihan filter di atas.</p>
+            </div>
+          ) : tableViewMode === 'compact' ? (
+            /* ================= MODE 1: PAS LAYAR (FIT SCREEN - TANPA GESER HORIZONTAL) ================= */
+            <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
+              <div className="w-full">
+                <table className="w-full text-left text-xs text-slate-800 table-auto border-collapse">
+                  <thead className="bg-slate-50 text-slate-700 uppercase text-[10px] font-black tracking-wider border-b border-slate-200">
                     <tr>
-                      <td colSpan={8} className="py-12 text-center text-slate-500 text-xs">
-                        Belum ada calon murid terdaftar yang cocok dengan filter pencarian.
-                      </td>
+                      <th className="w-12 py-3 px-2 text-center">No</th>
+                      <th className="py-3 px-3">Calon Murid & Asal Sekolah</th>
+                      <th className="py-3 px-2.5">Jalur & Sesi</th>
+                      <th className="py-3 px-3">Biaya & Kuitansi (Token & DU)</th>
+                      <th className="py-3 px-2.5">Formulir & Berkas</th>
+                      <th className="py-3 px-3 text-center">Status & Aksi</th>
                     </tr>
-                  ) : (
-                    filteredCandidates.map((candidate) => {
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {sortedCandidates.map((candidate, index) => {
+                      const isCollective = candidate.registrationType === 'school_collective';
+                      const isTokenPending = candidate.tokenPaymentStatus === 'pending';
+                      const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
+                      const isRefunded = candidate.collectiveRefundStatus === 'refunded';
+                      const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF');
+
+                      const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
+                      const hasFoto = isRealDoc(candidate.documents?.pasPhoto || candidate.fullFormData?.documents?.pasPhoto);
+                      const hasKk = isRealDoc(candidate.documents?.kkPhoto || candidate.fullFormData?.documents?.kkPhoto);
+                      const hasAkta = isRealDoc(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
+                      const hasKtpAyah = isRealDoc(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto);
+                      const hasKtpIbu = isRealDoc(candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
+                      const allDocs = hasFoto && hasKk && hasAkta && hasKtpAyah && hasKtpIbu;
+                      const hasAnyDoc = hasFoto || hasKk || hasAkta || hasKtpAyah || hasKtpIbu;
+
+                      return (
+                        <tr key={candidate.id} className="hover:bg-slate-50/80 transition-colors">
+                          {/* 1. No. Urut & Waktu Pendaftaran */}
+                          <td className="py-3 px-2 text-center align-top">
+                            <span className="inline-flex items-center justify-center w-7 h-7 rounded-xl bg-slate-100 text-slate-800 font-black text-xs border border-slate-200 shadow-2xs">
+                              {index + 1}
+                            </span>
+                            <span className="block text-[10px] text-slate-500 font-medium mt-1 leading-tight">
+                              {formatRegTime(candidate)}
+                            </span>
+                          </td>
+
+                          {/* 2. Calon Murid & Identitas & Asal Sekolah */}
+                          <td className="py-3 px-3 align-top">
+                            <div className="flex items-start gap-2.5">
+                              <div className={`w-8 h-8 rounded-xl flex items-center justify-center font-black text-xs shrink-0 mt-0.5 ${
+                                candidate.gender === 'P' || (candidate.gender as string) === 'female'
+                                  ? 'bg-pink-100 text-pink-700'
+                                  : 'bg-blue-100 text-blue-700'
+                              }`}>
+                                {candidate.fullName.charAt(0)}
+                              </div>
+                              <div className="min-w-0">
+                                <p className="font-extrabold text-slate-900 m-0 leading-snug">{candidate.fullName}</p>
+                                <div className="flex items-center gap-1.5 flex-wrap text-[10px] text-slate-500 mt-0.5">
+                                  <span className="font-mono text-emerald-800 font-bold bg-emerald-50 px-1 rounded border border-emerald-200">{candidate.nisn}</span>
+                                  <span>•</span>
+                                  <span>{candidate.gender === 'P' || (candidate.gender as string) === 'female' ? 'P' : 'L'}</span>
+                                  <span>•</span>
+                                  <span>{candidate.phone || '-'}</span>
+                                </div>
+                                <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                                  {isMaarif ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black">
+                                      <Sparkles size={10} className="text-emerald-700" />
+                                      <span>SD Ma'arif Jogosari</span>
+                                    </span>
+                                  ) : (
+                                    <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
+                                      {candidate.schoolOrigin || 'SD Umum'}
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 3. Jalur & Sesi Gelombang */}
+                          <td className="py-3 px-2.5 align-top">
+                            <div className="space-y-1.5">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-bold uppercase">
+                                  {candidate.sessionId === 'inden' ? 'Inden' : candidate.sessionId === 'gelombang-1' ? 'Gel. 1' : candidate.sessionId === 'gelombang-2' ? 'Gel. 2' : candidate.sessionId}
+                                </span>
+                                {isCollective ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-900 border border-indigo-300 text-[10px] font-black">
+                                    <GraduationCap size={11} className="text-indigo-700" />
+                                    <span>Kolektif</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-300 text-[10px] font-bold">
+                                    <span>Mandiri</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              {candidate.isTransferredSession && (
+                                <div className="p-1.5 rounded-lg bg-rose-50 border border-rose-300 space-y-1">
+                                  <div className="flex items-center gap-1 text-[9px] text-rose-900 font-black">
+                                    <ArrowLeftRight size={10} className="text-rose-600 shrink-0" />
+                                    <span>Dialihkan dari {candidate.previousSessionId === 'inden' ? 'Inden' : candidate.previousSessionId === 'gelombang-1' ? 'Gel. 1' : (candidate.previousSessionId || 'Sesi Lalu')}</span>
+                                  </div>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleRevertTransfer(candidate)}
+                                    disabled={isRevertingTransfer}
+                                    className="w-full px-1.5 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9px] rounded flex items-center justify-center gap-1 cursor-pointer"
+                                  >
+                                    <Undo2 size={9} />
+                                    <span>Kembalikan</span>
+                                  </button>
+                                </div>
+                              )}
+
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => handleToggleCollective(candidate)}
+                                  className="text-[10px] text-indigo-700 hover:text-indigo-900 underline font-bold cursor-pointer"
+                                  title="Ubah jalur pendaftaran (Kolektif / Mandiri)"
+                                >
+                                  {isCollective ? 'Ubah ke Mandiri' : 'Tandai Kolektif'}
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 4. Biaya & Kuitansi (Token & Daftar Ulang) */}
+                          <td className="py-3 px-3 align-top">
+                            <div className="space-y-2">
+                              {/* Token */}
+                              <div className="space-y-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] font-bold text-slate-500">Token:</span>
+                                  {isTokenPaid ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                      Lunas (50rb)
+                                    </span>
+                                  ) : isTokenPending ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                                      Pending
+                                    </span>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                      Belum Bayar
+                                    </span>
+                                  )}
+                                  {isTokenPaid && (
+                                    <button
+                                      type="button"
+                                      onClick={() => {
+                                        setReceiptModalCandidate(candidate);
+                                        setReceiptModalType('token');
+                                        setIsReceiptModalOpen(true);
+                                      }}
+                                      className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-0.5 cursor-pointer"
+                                      title="Cetak Kuitansi Token"
+                                    >
+                                      <Printer size={10} />
+                                      <span>Kuitansi</span>
+                                    </button>
+                                  )}
+                                  {isTokenPending && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCheckCandidateMidtrans(candidate)}
+                                      className="text-[10px] text-indigo-700 underline font-bold flex items-center gap-0.5 cursor-pointer"
+                                    >
+                                      <RefreshCw size={9} />
+                                      <span>Cek</span>
+                                    </button>
+                                  )}
+                                </div>
+
+                                {/* Refund Token khusus Kolektif */}
+                                {isCollective && isTokenPaid && (
+                                  <div className="text-[10px]">
+                                    {isRefunded ? (
+                                      <div className="flex items-center gap-1 text-emerald-800 font-bold">
+                                        <CheckCircle2 size={10} className="text-emerald-600" />
+                                        <span>Cash Rp 50rb Kembali</span>
+                                        <button
+                                          type="button"
+                                          onClick={() => setReceiptCandidate(candidate)}
+                                          className="text-blue-700 underline ml-1 cursor-pointer font-bold"
+                                        >
+                                          Kuitansi
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenRefundModal(candidate)}
+                                        className="px-2 py-0.5 bg-amber-600 hover:bg-amber-700 text-white font-black text-[9px] rounded shadow-xs flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <Banknote size={10} />
+                                        <span>Refund Cash Rp 50rb</span>
+                                      </button>
+                                    )}
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Daftar Ulang */}
+                              <div className="pt-1.5 border-t border-slate-100 space-y-1">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <span className="text-[10px] font-bold text-slate-500">Daftar Ulang:</span>
+                                  {candidate.reRegistrationStatus === 'paid' ? (
+                                    <>
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                        Lunas (Uk. {candidate.selectedUniformSize || 'L'})
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setReceiptModalCandidate(candidate);
+                                          setReceiptModalType('rereg');
+                                          setIsReceiptModalOpen(true);
+                                        }}
+                                        className="text-[10px] text-teal-700 hover:text-teal-900 font-bold flex items-center gap-0.5 cursor-pointer"
+                                        title="Cetak Kuitansi DU"
+                                      >
+                                        <Printer size={10} />
+                                        <span>Kuitansi DU</span>
+                                      </button>
+                                    </>
+                                  ) : (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                      Belum Lunas
+                                    </span>
+                                  )}
+                                </div>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 5. Status Formulir & Berkas */}
+                          <td className="py-3 px-2.5 align-top">
+                            <div className="space-y-1.5">
+                              <div>
+                                {candidate.isFormCompleted ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                    <CheckCircle2 size={10} className="text-emerald-700" />
+                                    <span>Form Lengkap</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-amber-50 text-amber-900 border border-amber-300">
+                                    <Clock size={10} className="text-amber-600" />
+                                    <span>Form Belum</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              <div>
+                                {allDocs ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                    <CheckCircle2 size={10} className="text-emerald-700" />
+                                    <span>Berkas 5/5</span>
+                                  </span>
+                                ) : hasAnyDoc ? (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
+                                    <FileText size={10} className="text-blue-700" />
+                                    <span>Berkas Sebagian</span>
+                                  </span>
+                                ) : (
+                                  <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-100 text-slate-600 border border-slate-300">
+                                    <Clock size={10} className="text-slate-400" />
+                                    <span>Berkas Belum</span>
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-0.5 text-[8.5px] font-mono text-slate-600">
+                                <span className={hasFoto ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Foto">📸Foto</span>•
+                                <span className={hasKk ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KK">📜KK</span>•
+                                <span className={hasAkta ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Akta">📄Akta</span>•
+                                <span className={hasKtpAyah ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ayah">🪪Ayah</span>•
+                                <span className={hasKtpIbu ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ibu">🪪Ibu</span>
+                              </div>
+
+                              <div>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCandidate(candidate)}
+                                  className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
+                                >
+                                  Lihat Berkas
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+
+                          {/* 6. Status Penerimaan & Aksi */}
+                          <td className="py-3 px-3 align-top text-center">
+                            <div className="space-y-2">
+                              <div>
+                                {candidate.isPromotedToStudent ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-purple-100 text-purple-900 border border-purple-300 block w-fit mx-auto">
+                                    Siswa ({candidate.assignedClass || '7-A'})
+                                  </span>
+                                ) : candidate.status === 'accepted' && isTokenPaid ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-600 text-white shadow-xs block w-fit mx-auto">
+                                    DITERIMA
+                                  </span>
+                                ) : candidate.status === 'rejected' ? (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-900 border border-rose-300 block w-fit mx-auto">
+                                    DITOLAK
+                                  </span>
+                                ) : (
+                                  <span className="px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-300 block w-fit mx-auto">
+                                    Menunggu
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center justify-center gap-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handleReconcileCandidate(candidate.nisn)}
+                                  disabled={isReconcilingSingle && reconcileCandidateActionId === candidate.nisn}
+                                  className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-lg transition-colors cursor-pointer border border-emerald-300"
+                                  title="Rekonsiliasi Live Pembayaran Midtrans"
+                                >
+                                  <ArrowLeftRight size={13} className={isReconcilingSingle && reconcileCandidateActionId === candidate.nisn ? 'animate-spin text-emerald-600' : ''} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setSelectedCandidate(candidate)}
+                                  className="p-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 rounded-lg transition-colors cursor-pointer border border-slate-300"
+                                  title="Lihat Detail & Buku Induk"
+                                >
+                                  <Eye size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleOpenEditInitialData(candidate)}
+                                  className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg transition-colors cursor-pointer border border-amber-300"
+                                  title="Edit Data Awal Formulir SPMB"
+                                >
+                                  <Edit3 size={13} />
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeleteCandidate(candidate.id, candidate.fullName)}
+                                  className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg transition-colors cursor-pointer border border-rose-200"
+                                  title="Hapus Data Calon Murid"
+                                >
+                                  <Trash2 size={13} />
+                                </button>
+                              </div>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          ) : tableViewMode === 'wide' ? (
+            /* ================= MODE 2: TABEL LEBAR DENGAN SCROLL HORIZONTAL ================= */
+            <div className="bg-white border border-slate-200 rounded-3xl overflow-hidden shadow-xs">
+              <div className="overflow-x-auto">
+                <table className="w-full text-left text-xs text-slate-700">
+                  <thead className="bg-slate-50 text-slate-700 uppercase text-[10px] font-black tracking-wider border-b border-slate-200">
+                    <tr>
+                      <th className="py-3.5 px-3 text-center w-12">No</th>
+                      <th className="py-3.5 px-4">Calon Murid</th>
+                      <th className="py-3.5 px-4">NISN / Asal Sekolah</th>
+                      <th className="py-3.5 px-4">Jalur Pendaftaran</th>
+                      <th className="py-3.5 px-4">Token Online & Refund Cash</th>
+                      <th className="py-3.5 px-4">Data Formulir & Berkas</th>
+                      <th className="py-3.5 px-4">Daftar Ulang</th>
+                      <th className="py-3.5 px-4">Status Penerimaan</th>
+                      <th className="py-3.5 px-4 text-center">Aksi</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100 font-medium">
+                    {sortedCandidates.map((candidate, index) => {
                       const isCollective = candidate.registrationType === 'school_collective';
                       const isTokenPending = candidate.tokenPaymentStatus === 'pending';
                       const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
@@ -1659,6 +2135,16 @@ export default function AdminSpmbManagement({
 
                       return (
                         <tr key={candidate.id} className="hover:bg-slate-50/80 transition-colors">
+                          {/* No Urut */}
+                          <td className="py-3.5 px-3 text-center font-black text-slate-700 text-xs">
+                            <span className="inline-flex items-center justify-center w-6 h-6 rounded-lg bg-slate-100 text-slate-800 text-xs font-mono">
+                              {index + 1}
+                            </span>
+                            <span className="block text-[9px] text-slate-400 font-sans mt-0.5">
+                              {formatRegTime(candidate)}
+                            </span>
+                          </td>
+
                           {/* Nama Calon Murid */}
                           <td className="py-3.5 px-4">
                             <div className="flex items-center gap-2.5">
@@ -1696,7 +2182,6 @@ export default function AdminSpmbManagement({
                           {/* Jalur Pendaftaran & Sesi Gelombang */}
                           <td className="py-3.5 px-4">
                             <div className="space-y-1.5">
-                              {/* Sesi Gelombang */}
                               <div className="flex items-center gap-1.5 flex-wrap">
                                 <span className="px-2 py-0.5 rounded-full bg-slate-100 text-slate-800 border border-slate-300 text-[10px] font-bold uppercase">
                                   {candidate.sessionId === 'inden' ? 'Jalur Inden' : candidate.sessionId === 'gelombang-1' ? 'Gelombang 1' : candidate.sessionId === 'gelombang-2' ? 'Gelombang 2' : candidate.sessionId}
@@ -1714,7 +2199,6 @@ export default function AdminSpmbManagement({
                                 )}
                               </div>
 
-                              {/* Status Pengalihan Otomatis */}
                               {candidate.isTransferredSession && (
                                 <div className="p-1.5 rounded-lg bg-rose-50 border border-rose-300 space-y-1">
                                   <div className="flex items-center gap-1 text-[10px] text-rose-900 font-black">
@@ -1726,7 +2210,6 @@ export default function AdminSpmbManagement({
                                     onClick={() => handleRevertTransfer(candidate)}
                                     disabled={isRevertingTransfer}
                                     className="w-full px-2 py-0.5 bg-rose-600 hover:bg-rose-700 text-white font-bold text-[9px] rounded flex items-center justify-center gap-1 shadow-xs cursor-pointer transition-all"
-                                    title="Batalkan pengalihan dan kembalikan ke jalur pendaftaran sebelumnya"
                                   >
                                     <Undo2 size={10} />
                                     <span>Kembalikan ke Jalur Sebelumnya</span>
@@ -1739,7 +2222,6 @@ export default function AdminSpmbManagement({
                                   type="button"
                                   onClick={() => handleToggleCollective(candidate)}
                                   className="text-[10px] text-slate-500 hover:text-indigo-700 underline font-medium cursor-pointer"
-                                  title="Klik untuk mengubah jenis jalur"
                                 >
                                   {isCollective ? 'Ubah ke Mandiri' : 'Tandai Kolektif'}
                                 </button>
@@ -1750,7 +2232,6 @@ export default function AdminSpmbManagement({
                           {/* Token Online & Refund Cash */}
                           <td className="py-3.5 px-4">
                             <div className="space-y-1.5">
-                              {/* Status Pembayaran Token Online */}
                               <div className="flex flex-col items-start gap-1">
                                 {isTokenPaid ? (
                                   <>
@@ -1765,7 +2246,6 @@ export default function AdminSpmbManagement({
                                         setIsReceiptModalOpen(true);
                                       }}
                                       className="text-[10px] text-emerald-700 hover:text-emerald-800 font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                      title="Cetak Kuitansi Resmi Token Pendaftaran"
                                     >
                                       <Printer size={11} />
                                       <span>Cetak Kuitansi</span>
@@ -1777,16 +2257,10 @@ export default function AdminSpmbManagement({
                                       <Clock size={10} className="text-amber-600" />
                                       <span>Pending Midtrans</span>
                                     </span>
-                                    {candidate.tokenExpiryTime && (
-                                      <p className="text-[9px] text-slate-500 m-0">
-                                        Batas: {candidate.tokenExpiryTime.replace(' ', ' ').slice(0, 16)}
-                                      </p>
-                                    )}
                                     <button
                                       type="button"
                                       onClick={() => handleCheckCandidateMidtrans(candidate)}
                                       className="text-[10px] text-indigo-700 hover:text-indigo-900 underline font-bold flex items-center gap-1 cursor-pointer"
-                                      title="Cek status terkini ke Midtrans"
                                     >
                                       <RefreshCw size={10} />
                                       <span>Cek Midtrans</span>
@@ -1799,7 +2273,6 @@ export default function AdminSpmbManagement({
                                 )}
                               </div>
 
-                              {/* Status & Aksi Pengembalian Token (Khusus Kolektif) */}
                               {isCollective && isTokenPaid && (
                                 <div className="pt-1 border-t border-slate-200">
                                   {isRefunded ? (
@@ -1808,30 +2281,19 @@ export default function AdminSpmbManagement({
                                         <CheckCircle2 size={12} className="text-emerald-600" />
                                         <span>Cash Rp {(candidate.collectiveRefundAmount || 50000).toLocaleString('id-ID')} Dikembalikan</span>
                                       </div>
-                                      <div className="flex items-center gap-2">
-                                        <button
-                                          type="button"
-                                          onClick={() => setReceiptCandidate(candidate)}
-                                          className="text-[10px] text-blue-700 hover:text-blue-900 underline font-bold cursor-pointer"
-                                        >
-                                          Kuitansi Refund
-                                        </button>
-                                        <span className="text-slate-300">•</span>
-                                        <button
-                                          type="button"
-                                          onClick={() => handleCancelRefund(candidate)}
-                                          className="text-[10px] text-rose-600 hover:text-rose-800 cursor-pointer"
-                                        >
-                                          Batal
-                                        </button>
-                                      </div>
+                                      <button
+                                        type="button"
+                                        onClick={() => setReceiptCandidate(candidate)}
+                                        className="text-[10px] text-blue-700 hover:text-blue-900 underline font-bold cursor-pointer"
+                                      >
+                                        Kuitansi Refund
+                                      </button>
                                     </div>
                                   ) : (
                                     <button
                                       type="button"
                                       onClick={() => handleOpenRefundModal(candidate)}
                                       className="px-2.5 py-1 bg-amber-600 hover:bg-amber-700 text-white font-black text-[10px] rounded-lg shadow-xs flex items-center gap-1 cursor-pointer transition-all"
-                                      title="Kembalikan uang token pendaftaran Rp 50.000 secara tunai"
                                     >
                                       <Banknote size={12} />
                                       <span>Kembalikan Token (Cash)</span>
@@ -1842,7 +2304,7 @@ export default function AdminSpmbManagement({
                             </div>
                           </td>
 
-                          {/* Status Data Lengkap Formulir & Berkas */}
+                          {/* Data Formulir & Berkas */}
                           <td className="py-3.5 px-4">
                             <div className="space-y-1.5">
                               <div>
@@ -1858,59 +2320,17 @@ export default function AdminSpmbManagement({
                                   </span>
                                 )}
                               </div>
-                              {(() => {
-                                const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
-                                const hasFoto = isRealDoc(candidate.documents?.pasPhoto || candidate.fullFormData?.documents?.pasPhoto);
-                                const hasKk = isRealDoc(candidate.documents?.kkPhoto || candidate.fullFormData?.documents?.kkPhoto);
-                                const hasAkta = isRealDoc(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
-                                const hasKtpAyah = isRealDoc(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto);
-                                const hasKtpIbu = isRealDoc(candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
-                                const allDocs = hasFoto && hasKk && hasAkta && hasKtpAyah && hasKtpIbu;
-                                const hasAnyDoc = hasFoto || hasKk || hasAkta || hasKtpAyah || hasKtpIbu;
-
-                                return (
-                                  <div className="space-y-1">
-                                    <div className="flex items-center gap-1.5 flex-wrap">
-                                      {allDocs ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-900 border border-emerald-300">
-                                          <CheckCircle2 size={10} className="text-emerald-700" />
-                                          <span>Berkas Lengkap (5/5)</span>
-                                        </span>
-                                      ) : hasAnyDoc ? (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-blue-100 text-blue-900 border border-blue-200">
-                                          <FileText size={10} className="text-blue-700" />
-                                          <span>Berkas Sebagian</span>
-                                        </span>
-                                      ) : (
-                                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-extrabold uppercase bg-slate-100 text-slate-600 border border-slate-300">
-                                          <Clock size={10} className="text-slate-400" />
-                                          <span>Berkas Belum</span>
-                                        </span>
-                                      )}
-                                    </div>
-                                    <div className="flex items-center gap-1 text-[9px] font-mono text-slate-600">
-                                      <span className={hasFoto ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Pas Foto">📸Foto</span>•
-                                      <span className={hasKk ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Kartu Keluarga">📜KK</span>•
-                                      <span className={hasAkta ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="Akta Kelahiran">📄Akta</span>•
-                                      <span className={hasKtpAyah ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ayah/Wali">🪪Ayah</span>•
-                                      <span className={hasKtpIbu ? 'text-emerald-700 font-bold' : 'text-slate-400'} title="KTP Ibu">🪪Ibu</span>
-                                    </div>
-                                  </div>
-                                );
-                              })()}
-                              <div>
-                                <button
-                                  type="button"
-                                  onClick={() => setSelectedCandidate(candidate)}
-                                  className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
-                                >
-                                  Lihat Biodata & Berkas
-                                </button>
-                              </div>
+                              <button
+                                type="button"
+                                onClick={() => setSelectedCandidate(candidate)}
+                                className="text-[10px] text-indigo-700 hover:text-indigo-900 font-bold underline cursor-pointer"
+                              >
+                                Lihat Biodata & Berkas
+                              </button>
                             </div>
                           </td>
 
-                          {/* Status Daftar Ulang */}
+                          {/* Daftar Ulang */}
                           <td className="py-3.5 px-4">
                             <div className="space-y-1">
                               {candidate.reRegistrationStatus === 'paid' ? (
@@ -1926,7 +2346,6 @@ export default function AdminSpmbManagement({
                                       setIsReceiptModalOpen(true);
                                     }}
                                     className="text-[10px] text-teal-700 hover:text-teal-900 font-bold flex items-center gap-1 cursor-pointer transition-colors"
-                                    title="Cetak Kuitansi Resmi Daftar Ulang & Seragam"
                                   >
                                     <Printer size={11} />
                                     <span>Cetak Kuitansi DU</span>
@@ -2001,12 +2420,219 @@ export default function AdminSpmbManagement({
                           </td>
                         </tr>
                       );
-                    })
-                  )}
-                </tbody>
-              </table>
+                    })}
+                  </tbody>
+                </table>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* ================= MODE 3: KARTU KOTAK RESPONSIF (CARDS VIEW) ================= */
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {sortedCandidates.map((candidate, index) => {
+                const isCollective = candidate.registrationType === 'school_collective';
+                const isTokenPending = candidate.tokenPaymentStatus === 'pending';
+                const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
+                const isRefunded = candidate.collectiveRefundStatus === 'refunded';
+                const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF');
+
+                return (
+                  <div key={candidate.id} className="bg-white border border-slate-200 rounded-3xl p-4 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between gap-3">
+                    {/* Header Kartu */}
+                    <div>
+                      <div className="flex items-center justify-between gap-2 mb-2 pb-2 border-b border-slate-100">
+                        <div className="flex items-center gap-1.5">
+                          <span className="w-7 h-7 rounded-xl bg-emerald-100 text-emerald-900 border border-emerald-300 font-black text-xs flex items-center justify-center">
+                            #{index + 1}
+                          </span>
+                          <span className="text-[11px] font-bold text-slate-500 font-mono">
+                            {formatRegTime(candidate)}
+                          </span>
+                        </div>
+                        <div>
+                          {candidate.isPromotedToStudent ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-purple-100 text-purple-900 border border-purple-300">
+                              Siswa {candidate.assignedClass || '7-A'}
+                            </span>
+                          ) : candidate.status === 'accepted' && isTokenPaid ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-600 text-white shadow-xs">
+                              DITERIMA
+                            </span>
+                          ) : candidate.status === 'rejected' ? (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-rose-100 text-rose-900 border border-rose-300">
+                              DITOLAK
+                            </span>
+                          ) : (
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-slate-100 text-slate-700 border border-slate-300">
+                              Menunggu
+                            </span>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Identitas Calon */}
+                      <div className="flex items-start gap-2.5">
+                        <div className={`w-9 h-9 rounded-xl flex items-center justify-center font-black text-sm shrink-0 ${
+                          candidate.gender === 'P' || (candidate.gender as string) === 'female'
+                            ? 'bg-pink-100 text-pink-700'
+                            : 'bg-blue-100 text-blue-700'
+                        }`}>
+                          {candidate.fullName.charAt(0)}
+                        </div>
+                        <div className="min-w-0 flex-grow">
+                          <h4 className="font-black text-slate-900 text-sm m-0 leading-tight truncate">{candidate.fullName}</h4>
+                          <p className="text-[11px] text-slate-600 m-0 mt-0.5 font-mono">
+                            NISN: <span className="font-bold text-emerald-800">{candidate.nisn}</span> • {candidate.gender === 'P' || (candidate.gender as string) === 'female' ? 'Perempuan' : 'Laki-laki'}
+                          </p>
+                          <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                            {isMaarif ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black">
+                                <Sparkles size={10} className="text-emerald-700" />
+                                <span>SD Ma'arif</span>
+                              </span>
+                            ) : (
+                              <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 truncate max-w-[180px]">
+                                {candidate.schoolOrigin || 'SD Lainnya'}
+                              </span>
+                            )}
+                            <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-300">
+                              {candidate.sessionId === 'inden' ? 'Inden' : candidate.sessionId}
+                            </span>
+                            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${
+                              isCollective ? 'bg-indigo-100 text-indigo-900 border-indigo-300' : 'bg-slate-100 text-slate-700 border-slate-300'
+                            }`}>
+                              {isCollective ? 'Kolektif' : 'Mandiri'}
+                            </span>
+                          </div>
+                        </div>
+                      </div>
+
+                      {/* Status Biaya & Berkas Ringkas */}
+                      <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5 text-xs">
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-500 font-bold">Token Online:</span>
+                          <div className="flex items-center gap-1">
+                            {isTokenPaid ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                Lunas (50rb)
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                Belum Lunas
+                              </span>
+                            )}
+                            {isTokenPaid && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReceiptModalCandidate(candidate);
+                                  setReceiptModalType('token');
+                                  setIsReceiptModalOpen(true);
+                                }}
+                                className="text-emerald-700 hover:text-emerald-900 font-bold ml-1 cursor-pointer"
+                                title="Kuitansi Token"
+                              >
+                                <Printer size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        {isCollective && isTokenPaid && (
+                          <div className="flex items-center justify-between text-[11px]">
+                            <span className="text-slate-500 font-bold">Refund Kolektif:</span>
+                            {isRefunded ? (
+                              <span className="text-emerald-700 font-bold text-[10px]">✅ Cash 50rb Kembali</span>
+                            ) : (
+                              <button
+                                type="button"
+                                onClick={() => handleOpenRefundModal(candidate)}
+                                className="px-2 py-0.5 bg-amber-600 text-white font-bold text-[9px] rounded cursor-pointer"
+                              >
+                                Refund Cash 50rb
+                              </button>
+                            )}
+                          </div>
+                        )}
+
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-500 font-bold">Daftar Ulang:</span>
+                          <div className="flex items-center gap-1">
+                            {candidate.reRegistrationStatus === 'paid' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                LUNAS (Uk. {candidate.selectedUniformSize || 'L'})
+                              </span>
+                            ) : (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                Belum Lunas
+                              </span>
+                            )}
+                            {candidate.reRegistrationStatus === 'paid' && (
+                              <button
+                                type="button"
+                                onClick={() => {
+                                  setReceiptModalCandidate(candidate);
+                                  setReceiptModalType('rereg');
+                                  setIsReceiptModalOpen(true);
+                                }}
+                                className="text-teal-700 hover:text-teal-900 font-bold ml-1 cursor-pointer"
+                                title="Kuitansi DU"
+                              >
+                                <Printer size={11} />
+                              </button>
+                            )}
+                          </div>
+                        </div>
+
+                        <div className="flex items-center justify-between text-[11px]">
+                          <span className="text-slate-500 font-bold">Form & Berkas:</span>
+                          <span className="text-[10px] font-bold text-slate-700">
+                            {candidate.isFormCompleted ? '✅ Form Lengkap' : '⏳ Form Belum'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Footer Tombol Aksi */}
+                    <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-1">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedCandidate(candidate)}
+                        className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs rounded-xl flex items-center gap-1 cursor-pointer transition-all border border-slate-300 flex-grow justify-center"
+                      >
+                        <Eye size={12} />
+                        <span>Detail & Berkas</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenEditInitialData(candidate)}
+                        className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-xl cursor-pointer border border-amber-300"
+                        title="Edit Data Awal"
+                      >
+                        <Edit3 size={13} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleReconcileCandidate(candidate.nisn)}
+                        disabled={isReconcilingSingle && reconcileCandidateActionId === candidate.nisn}
+                        className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 rounded-xl cursor-pointer border border-emerald-300"
+                        title="Cek Midtrans"
+                      >
+                        <ArrowLeftRight size={13} className={isReconcilingSingle && reconcileCandidateActionId === candidate.nisn ? 'animate-spin text-emerald-600' : ''} />
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCandidate(candidate.id, candidate.fullName)}
+                        className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-xl cursor-pointer border border-rose-200"
+                        title="Hapus"
+                      >
+                        <Trash2 size={13} />
+                      </button>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
 

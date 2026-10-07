@@ -11,7 +11,7 @@ import compression from "compression";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -1678,17 +1678,25 @@ function saveState(skipRemoteSync: boolean = false) {
       backupConfig,
       databaseBackups
     };
-    const tempPath = DATA_FILE + ".tmp";
-    fs.writeFileSync(tempPath, JSON.stringify(data), "utf-8");
-    fs.renameSync(tempPath, DATA_FILE);
-    // Realtime automatic push to MySQL whenever state changes (no periodic timer)
+    // 1. PRIMARY PERSISTENCE: Database MySQL Hostinger (authoritative cloud database)
     if (!skipRemoteSync) {
       debouncedSyncConfigsToMysql();
       const cfg = getSanitizedConfig();
       if (cfg.autoSyncEnabled !== false) {
-        triggerDebouncedMysqlSync(() => getFullSnapshotForMysql(), 1500);
+        triggerDebouncedMysqlSync(() => getFullSnapshotForMysql(), 800);
       }
     }
+
+    // 2. SECONDARY NON-BLOCKING LOCAL BACKUP SNAPSHOT:
+    // Salinan cadangan darurat lokal ditulis asinkron tanpa memblokir server
+    try {
+      const tempPath = DATA_FILE + ".tmp";
+      fs.writeFile(tempPath, JSON.stringify(data), "utf-8", (err) => {
+        if (!err) {
+          fs.rename(tempPath, DATA_FILE, () => {});
+        }
+      });
+    } catch (_) {}
   } catch (error) {
     console.error("Failed to save state:", error);
   }
@@ -2396,13 +2404,17 @@ function applyDataFromMysql(pulledData: any) {
   }
 }
 
-const hasMysqlEnv = Boolean(process.env.MYSQL_HOST && process.env.MYSQL_DATABASE);
+loadMysqlConfig();
+const mysqlActiveCfg = getSanitizedConfig();
+const hasMysqlConfigured = Boolean(
+  (process.env.MYSQL_HOST && process.env.MYSQL_DATABASE) ||
+  (mysqlActiveCfg && mysqlActiveCfg.host && mysqlActiveCfg.database)
+);
 const isLoaded = loadState();
 
 if (isLoaded) {
-  // Save state immediately to persist the cleaned deduplicated bills
-  saveState(true);
-} else if (!hasMysqlEnv) {
+  // Baseline cache loaded; Primary hydration occurs directly from MySQL on server startup
+} else if (!hasMysqlConfigured) {
   // Only initialize fallback unpaid bills if MySQL is not configured
   students.forEach((student, sIdx) => {
     months.forEach((month, mIdx) => {
@@ -2566,63 +2578,50 @@ async function sendWhatsappNotification(phoneNumber: string, message: string): P
 async function startServer() {
   console.log("=================================================");
   console.log(" [STARTUP] SMP MA'ARIF NU PANDAAN - START SERVER");
+  console.log(" [PRIMARY ENGINE] Menggunakan MySQL Database Engine");
   console.log("=================================================");
   
-  // 1. Load initial local backup/cache first as safe baseline
-  try {
-    loadState();
-  } catch (e) {
-    console.warn("Local state load warning:", e);
-  }
+  // 1. PRIMARY DATABASE ENGINE: Connect & Hydrate authoritative state directly from MySQL database (Hostinger)
+  loadMysqlConfig();
+  const mysqlCfg = getSanitizedConfig();
+  const hasConfig = !!(mysqlCfg.host && mysqlCfg.database && mysqlCfg.user);
+  let mysqlHydrated = false;
 
-  // 2. Connect MySQL & Synchronize in background so the server and UI start instantly (< 500ms)
-  const syncMysqlBackground = async () => {
+  if (hasConfig) {
     try {
-      loadMysqlConfig();
-      const mysqlCfg = getSanitizedConfig();
-      const hasConfig = !!(mysqlCfg.host && mysqlCfg.database && mysqlCfg.user);
-
-      if (hasConfig) {
-        console.log(`[STARTUP] Menghubungkan ke MySQL database "${mysqlCfg.database}" di ${mysqlCfg.host}:${mysqlCfg.port}...`);
-        const testRes = await testMysqlConnection();
+      console.log(`[STARTUP] Menghubungkan ke MySQL database "${mysqlCfg.database}" di ${mysqlCfg.host}:${mysqlCfg.port}...`);
+      const testRes = await testMysqlConnection();
+      
+      if (testRes.success) {
+        mysqlDatabaseStatus = "ONLINE";
+        mysqlDatabaseError = null;
+        dbSyncStatus = "DATABASE MYSQL ONLINE (PRIMARY ENGINE)";
+        dbSyncError = null;
+        lastMysqlSyncTime = new Date().toISOString();
+        console.log(`[STARTUP] ✅ Test connection BERHASIL. MySQL Server: ${testRes.serverVersion}, Database: ${testRes.databaseName}`);
         
-        if (testRes.success) {
-          mysqlDatabaseStatus = "ONLINE";
-          mysqlDatabaseError = null;
-          dbSyncStatus = "DATABASE MYSQL ONLINE";
-          dbSyncError = null;
-          lastMysqlSyncTime = new Date().toISOString();
-          console.log(`[STARTUP] ✅ Test connection BERHASIL. MySQL Server: ${testRes.serverVersion}, Database: ${testRes.databaseName}`);
-          
-          // Pastikan tabel siap
-          await ensureAllMysqlTablesExist();
+        // Pastikan struktur seluruh tabel MySQL siap
+        await ensureAllMysqlTablesExist();
 
-          // 3. SELECT data dari MySQL -> 4. Isi memory/cache
-          console.log("[STARTUP] Mengambil data langsung dari MySQL (Primary Database)...");
-          const mysqlPull = await pullDataFromMysql();
-          if (mysqlPull.success && mysqlPull.data) {
-            applyDataFromMysql(mysqlPull.data);
-            console.log(`[STARTUP] ✅ Memory/cache berhasil diisi dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.treasurerTransactions || 0} kas, ${mysqlPull.counts?.sppBills || 0} SPP.`);
-            applyAuthoritativeSavingsBalances(students);
-          } else {
-            console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
-          }
+        // Ambil data langsung dari MySQL (Primary Database)
+        console.log("[STARTUP] Mengambil seluruh data resmi langsung dari MySQL (Primary Engine)...");
+        const mysqlPull = await pullDataFromMysql();
+        if (mysqlPull.success && mysqlPull.data) {
+          applyDataFromMysql(mysqlPull.data);
+          mysqlHydrated = true;
+          console.log(`[STARTUP] ✅ Data berhasil dimuat langsung dari MySQL: ${mysqlPull.counts?.students || 0} siswa, ${mysqlPull.counts?.spmbCandidates || 0} calon SPMB, ${mysqlPull.counts?.treasurerTransactions || 0} transaksi kas, ${mysqlPull.counts?.sppBills || 0} tagihan SPP.`);
+          applyAuthoritativeSavingsBalances(students);
         } else {
-          // Perlindungan jika MySQL gagal konek
-          mysqlDatabaseStatus = "OFFLINE";
-          mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
-          dbSyncStatus = "DATABASE MYSQL OFFLINE";
-          dbSyncError = mysqlDatabaseError;
-          console.error("=================================================");
-          console.error(" [PERINGATAN KRUSIAL] DATABASE MYSQL OFFLINE");
-          console.error(" Alasan:", mysqlDatabaseError);
-          console.error(" Server tetap berjalan dalam status OFFLINE untuk mencegah penimpaan data.");
-          console.error("=================================================");
+          console.warn("[STARTUP] ⚠️ Gagal menarik data dari MySQL:", mysqlPull.message);
         }
       } else {
-        console.log("[STARTUP] Konfigurasi MySQL belum diatur di .env / sistem. Menjalankan dalam mode lokal.");
-        mysqlDatabaseStatus = "DISCONNECTED";
-        dbSyncStatus = "MYSQL BELUM DIKONFIGURASI";
+        mysqlDatabaseStatus = "OFFLINE";
+        mysqlDatabaseError = testRes.message + (testRes.hint ? ` (${testRes.hint})` : "");
+        dbSyncStatus = "DATABASE MYSQL OFFLINE";
+        dbSyncError = mysqlDatabaseError;
+        console.error("=================================================");
+        console.error(" [PERINGATAN] DATABASE MYSQL OFFLINE:", mysqlDatabaseError);
+        console.error("=================================================");
       }
     } catch (err: any) {
       console.error("[STARTUP ERROR] Kesalahan inisialisasi MySQL:", err.message || err);
@@ -2630,20 +2629,21 @@ async function startServer() {
       mysqlDatabaseError = err.message || String(err);
       dbSyncStatus = "DATABASE MYSQL OFFLINE";
       dbSyncError = mysqlDatabaseError;
-    } finally {
-      isInitialSyncCompleted = true;
-      console.log(" [STARTUP] ✅ Inisialisasi latar belakang database MySQL selesai.");
     }
-  };
+  }
 
-  // Connect and pull data from authoritative MySQL once on server startup
-  await syncMysqlBackground();
+  // 2. Jika MySQL tidak dapat dihubungi saat booting (misal koneksi jaringan drop), gunakan local fallback cache
+  if (!mysqlHydrated) {
+    console.log("[STARTUP] Menjalankan local emergency fallback cache...");
+    try {
+      loadState();
+    } catch (e) {
+      console.warn("Local state load warning:", e);
+    }
+  }
 
-  // Sinkronisasi berkala (interval timer) telah dihapus sesuai arahan.
-  // Sistem sekarang murni menggunakan Otomatis Sinkron Real-Time (event-driven debounced push & direct write)
-  // saat terjadi pembayaran SPP, transaksi kas, pergerakan tabungan, atau perubahan data lainnya.
-
-  console.log(" [STARTUP] ✅ Server web siap dengan data MySQL mutakhir.");
+  isInitialSyncCompleted = true;
+  console.log(` [STARTUP] ✅ Inisialisasi database selesai. Status MySQL: ${mysqlDatabaseStatus}`);
   console.log("=================================================");
 
   const app = express();

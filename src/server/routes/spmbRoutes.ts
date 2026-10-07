@@ -4225,6 +4225,82 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
   });
 
+  // 14. Admin Update Initial Registration Form Data (Data Awal Formulir SPMB)
+  router.post("/candidate/:id/initial-data", async (req, res) => {
+    try {
+      const id = req.params.id;
+      const candidate = spmbCandidates.find(c => c.id === id || c.nisn === id);
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      const {
+        fullName,
+        nickname,
+        nisn,
+        nik,
+        gender,
+        birthPlace,
+        birthDate,
+        phone,
+        studentPhone,
+        schoolOrigin,
+        schoolOriginType,
+        registrationType,
+        sessionId,
+        selectedUniformSize,
+        address,
+        fatherName,
+        motherName,
+        guardianName
+      } = req.body;
+
+      if (fullName !== undefined && String(fullName).trim()) candidate.fullName = String(fullName).trim();
+      if (nickname !== undefined) candidate.nickname = String(nickname).trim();
+      if (nisn !== undefined && String(nisn).trim()) {
+        candidate.nisn = String(nisn).trim();
+        if (!candidate.registrationNo || candidate.registrationNo.length < 5) {
+          candidate.registrationNo = candidate.nisn;
+          candidate.registrationNumber = candidate.nisn;
+        }
+      }
+      if (nik !== undefined) candidate.nik = String(nik).trim();
+      if (gender !== undefined) candidate.gender = gender === "P" ? "P" : "L";
+      if (birthPlace !== undefined) candidate.birthPlace = String(birthPlace).trim();
+      if (birthDate !== undefined) candidate.birthDate = String(birthDate).trim();
+      if (phone !== undefined) candidate.phone = String(phone).trim();
+      if (studentPhone !== undefined) candidate.studentPhone = String(studentPhone).trim();
+      if (schoolOrigin !== undefined) candidate.schoolOrigin = String(schoolOrigin).trim();
+      if (schoolOriginType !== undefined) candidate.schoolOriginType = schoolOriginType;
+      if (registrationType !== undefined) candidate.registrationType = registrationType;
+      if (sessionId !== undefined) candidate.sessionId = sessionId;
+      if (selectedUniformSize !== undefined) candidate.selectedUniformSize = selectedUniformSize;
+      if (address !== undefined) candidate.address = String(address).trim();
+      if (fatherName !== undefined) candidate.fatherName = String(fatherName).trim();
+      if (motherName !== undefined) candidate.motherName = String(motherName).trim();
+      if (guardianName !== undefined) candidate.guardianName = String(guardianName).trim();
+
+      candidate.updatedAt = new Date().toISOString();
+
+      // Sinkronkan ke database MySQL secara langsung (Primary Engine)
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL Update Initial Form Data Warning]:", err?.message || err);
+      }
+      saveState();
+
+      res.json({
+        success: true,
+        message: `Data awal formulir SPMB untuk ${candidate.fullName} (NISN: ${candidate.nisn}) berhasil diperbarui dan disimpan ke MySQL.`,
+        candidate
+      });
+    } catch (err: any) {
+      console.error("Error in /api/spmb/candidate/:id/initial-data:", err);
+      res.status(500).json({ error: "Gagal memperbarui data awal formulir: " + err.message });
+    }
+  });
+
 
   return router;
 }

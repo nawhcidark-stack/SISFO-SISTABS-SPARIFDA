@@ -138,6 +138,30 @@ export default function AdminSpmbManagement({
   const [receiptModalCandidate, setReceiptModalCandidate] = useState<SpmbCandidate | null>(null);
   const [receiptModalType, setReceiptModalType] = useState<'token' | 'rereg'>('token');
 
+  // Edit Data Awal Formulir SPMB Modal State
+  const [editingInitialCandidate, setEditingInitialCandidate] = useState<SpmbCandidate | null>(null);
+  const [isSavingInitialData, setIsSavingInitialData] = useState<boolean>(false);
+  const [editInitialForm, setEditInitialForm] = useState({
+    fullName: '',
+    nickname: '',
+    nisn: '',
+    nik: '',
+    gender: 'L' as 'L' | 'P',
+    birthPlace: '',
+    birthDate: '',
+    phone: '',
+    studentPhone: '',
+    schoolOrigin: '',
+    schoolOriginType: 'maarif' as 'maarif' | 'other' | 'alumni',
+    registrationType: 'school_collective' as 'online_individual' | 'school_collective',
+    sessionId: 'inden',
+    selectedUniformSize: 'L',
+    address: '',
+    fatherName: '',
+    motherName: '',
+    guardianName: ''
+  });
+
   // Migration / Promotion to Grade 7 State
   const [isMigrating, setIsMigrating] = useState<boolean>(false);
   const [migrationTargetClass, setMigrationTargetClass] = useState<string>('7-A');
@@ -603,6 +627,73 @@ export default function AdminSpmbManagement({
     } finally {
       setIsReconcilingSingle(false);
       setReconcileCandidateActionId(null);
+    }
+  };
+
+  // Open Edit Initial Registration Form Modal
+  const handleOpenEditInitialData = (candidate: SpmbCandidate) => {
+    setEditInitialForm({
+      fullName: candidate.fullName || '',
+      nickname: candidate.nickname || '',
+      nisn: candidate.nisn || '',
+      nik: candidate.nik || '',
+      gender: candidate.gender === 'P' ? 'P' : 'L',
+      birthPlace: candidate.birthPlace || '',
+      birthDate: candidate.birthDate || '',
+      phone: candidate.phone || candidate.fatherPhone || candidate.motherPhone || '',
+      studentPhone: candidate.studentPhone || '',
+      schoolOrigin: candidate.schoolOrigin || '',
+      schoolOriginType: (candidate.schoolOriginType as any) || 'maarif',
+      registrationType: candidate.registrationType || 'school_collective',
+      sessionId: candidate.sessionId || 'inden',
+      selectedUniformSize: candidate.selectedUniformSize || 'L',
+      address: candidate.address || '',
+      fatherName: candidate.fatherName || '',
+      motherName: candidate.motherName || '',
+      guardianName: candidate.guardianName || ''
+    });
+    setEditingInitialCandidate(candidate);
+  };
+
+  // Save Edit Initial Registration Form Data directly to MySQL
+  const handleSaveInitialData = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!editingInitialCandidate) return;
+    if (!editInitialForm.fullName.trim()) {
+      alert('Nama lengkap calon murid wajib diisi.');
+      return;
+    }
+    if (!editInitialForm.nisn.trim()) {
+      alert('NISN calon murid wajib diisi.');
+      return;
+    }
+
+    try {
+      setIsSavingInitialData(true);
+      const res = await fetch(`/api/spmb/candidate/${editingInitialCandidate.id}/initial-data`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editInitialForm)
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.error || 'Gagal menyimpan data awal formulir.');
+      }
+
+      // Update state local
+      const updatedCandidate = data.candidate;
+      setCandidates(prev => prev.map(c => c.id === updatedCandidate.id ? updatedCandidate : c));
+      if (selectedCandidate?.id === updatedCandidate.id) {
+        setSelectedCandidate(updatedCandidate);
+      }
+      setEditingInitialCandidate(null);
+      alert(data.message || 'Data awal formulir SPMB berhasil diperbarui dan disimpan ke MySQL!');
+      if (onRefresh) onRefresh();
+    } catch (err: any) {
+      alert('Terjadi kesalahan: ' + err.message);
+    } finally {
+      setIsSavingInitialData(false);
     }
   };
 
@@ -1889,6 +1980,14 @@ export default function AdminSpmbManagement({
                                 title="Lihat Detail & Buku Induk"
                               >
                                 <Eye size={14} />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenEditInitialData(candidate)}
+                                className="p-1.5 bg-amber-50 hover:bg-amber-100 text-amber-800 rounded-lg transition-colors cursor-pointer border border-amber-300"
+                                title="Edit Data Awal Formulir SPMB"
+                              >
+                                <Edit3 size={14} />
                               </button>
                               <button
                                 type="button"
@@ -3665,13 +3764,24 @@ export default function AdminSpmbManagement({
                   Asal Sekolah: {selectedCandidate.schoolOrigin} • Sesi: {selectedCandidate.sessionId.toUpperCase()} • Jalur: {selectedCandidate.registrationType === 'school_collective' ? 'Kolektif Sekolah' : 'Mandiri Online'}
                 </p>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedCandidate(null)}
-                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
-              >
-                <X size={18} />
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => handleOpenEditInitialData(selectedCandidate)}
+                  className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-slate-950 font-black text-xs flex items-center gap-1.5 cursor-pointer shadow-sm transition-all"
+                  title="Edit Data Awal Formulir Calon Murid Ini"
+                >
+                  <Edit3 size={14} />
+                  <span>Edit Data Awal Formulir</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setSelectedCandidate(null)}
+                  className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+                >
+                  <X size={18} />
+                </button>
+              </div>
             </div>
 
             {/* Candidate Overview Grid */}
@@ -4213,6 +4323,313 @@ export default function AdminSpmbManagement({
         }}
         initialClassFilter={bulkNisFilterClass}
       />
+
+      {/* Modal Edit Data Awal Formulir SPMB */}
+      {editingInitialCandidate && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-xs overflow-y-auto">
+          <div className="w-full max-w-3xl bg-slate-900 border border-slate-700 rounded-3xl p-6 sm:p-8 space-y-6 shadow-2xl max-h-[92vh] overflow-y-auto">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+              <div className="flex items-center gap-3">
+                <div className="p-3 bg-amber-500/20 text-amber-400 rounded-2xl border border-amber-500/30">
+                  <Edit3 size={22} />
+                </div>
+                <div>
+                  <h3 className="text-lg font-black text-white m-0 flex items-center gap-2">
+                    <span>Edit Data Awal Formulir SPMB</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 m-0 mt-0.5">
+                    Ubah biodata awal pendaftaran calon murid • Disimpan permanen ke MySQL
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setEditingInitialCandidate(null)}
+                className="p-2 rounded-xl bg-slate-800 text-slate-400 hover:text-white cursor-pointer"
+              >
+                <X size={18} />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveInitialData} className="space-y-6">
+              {/* Bagian 1: Identitas Calon Siswa */}
+              <div className="p-5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-4">
+                <h4 className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center gap-2 m-0">
+                  <User size={14} />
+                  <span>1. Identitas Calon Siswa</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-slate-300 font-bold block">
+                      Nama Lengkap Siswa <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      value={editInitialForm.fullName}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, fullName: e.target.value.toUpperCase() }))}
+                      placeholder="Contoh: DELISHA FARAH AZZALEA"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Nama Panggilan</label>
+                    <input
+                      type="text"
+                      value={editInitialForm.nickname}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, nickname: e.target.value.toUpperCase() }))}
+                      placeholder="Contoh: DELISHA"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">
+                      NISN (10 Digit) <span className="text-rose-400">*</span>
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      maxLength={12}
+                      value={editInitialForm.nisn}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, nisn: e.target.value.replace(/\D/g, '') }))}
+                      placeholder="Contoh: 3140631960"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono font-bold focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">NIK Siswa (16 Digit)</label>
+                    <input
+                      type="text"
+                      maxLength={18}
+                      value={editInitialForm.nik}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, nik: e.target.value.replace(/\D/g, '') }))}
+                      placeholder="Contoh: 3514120101140001"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Jenis Kelamin</label>
+                    <select
+                      value={editInitialForm.gender}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, gender: e.target.value as 'L' | 'P' }))}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="L">Laki-laki (L)</option>
+                      <option value="P">Perempuan (P)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Tempat Lahir</label>
+                    <input
+                      type="text"
+                      value={editInitialForm.birthPlace}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, birthPlace: e.target.value }))}
+                      placeholder="Contoh: Pasuruan"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Tanggal Lahir</label>
+                    <input
+                      type="date"
+                      value={editInitialForm.birthDate}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, birthDate: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-slate-300 font-bold block">Alamat Tinggal / Domisili</label>
+                    <input
+                      type="text"
+                      value={editInitialForm.address}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, address: e.target.value }))}
+                      placeholder="Contoh: Jl. Kasri No. 12, RT 01 RW 02, Pandaan"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bagian 2: Kontak & Orang Tua */}
+              <div className="p-5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-4">
+                <h4 className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center gap-2 m-0">
+                  <Phone size={14} />
+                  <span>2. Kontak & Orang Tua</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">No. WhatsApp Wali / Orang Tua</label>
+                    <input
+                      type="tel"
+                      value={editInitialForm.phone}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, phone: e.target.value }))}
+                      placeholder="Contoh: 081234567890"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">No. HP / WhatsApp Siswa</label>
+                    <input
+                      type="tel"
+                      value={editInitialForm.studentPhone}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, studentPhone: e.target.value }))}
+                      placeholder="Contoh: 085812345678"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Nama Ayah</label>
+                    <input
+                      type="text"
+                      value={editInitialForm.fatherName}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, fatherName: e.target.value }))}
+                      placeholder="Nama lengkap ayah kandung"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Nama Ibu</label>
+                    <input
+                      type="text"
+                      value={editInitialForm.motherName}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, motherName: e.target.value }))}
+                      placeholder="Nama lengkap ibu kandung"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Bagian 3: Pendaftaran, Sekolah Asal & Seragam */}
+              <div className="p-5 rounded-2xl bg-slate-800/80 border border-slate-700 space-y-4">
+                <h4 className="text-xs font-black uppercase text-amber-400 tracking-wider flex items-center gap-2 m-0">
+                  <Building2 size={14} />
+                  <span>3. Asal Sekolah, Gelombang & Seragam</span>
+                </h4>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Nama Asal Sekolah</label>
+                    <input
+                      type="text"
+                      value={editInitialForm.schoolOrigin}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, schoolOrigin: e.target.value.toUpperCase() }))}
+                      placeholder="Contoh: SD MAARIF JOGOSARI"
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden"
+                    />
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Kategori Sekolah Asal</label>
+                    <select
+                      value={editInitialForm.schoolOriginType}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, schoolOriginType: e.target.value as any }))}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="maarif">LP. Ma'arif NU (Diskon Gedung Rp 0)</option>
+                      <option value="other">Sekolah Lain (SD/MI Negeri/Swasta Luar)</option>
+                      <option value="alumni">Keluarga Alumni Ma'arif</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Jalur Pendaftaran</label>
+                    <select
+                      value={editInitialForm.registrationType}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, registrationType: e.target.value as any }))}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden cursor-pointer"
+                    >
+                      <option value="school_collective">Kolektif Sekolah (Token Refund Rp 50.000)</option>
+                      <option value="online_individual">Mandiri Online (Pendaftaran Perorangan)</option>
+                    </select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <label className="text-slate-300 font-bold block">Gelombang / Sesi Pendaftaran</label>
+                    <select
+                      value={editInitialForm.sessionId}
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, sessionId: e.target.value }))}
+                      className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden cursor-pointer"
+                    >
+                      {config?.sessions?.map(s => (
+                        <option key={s.id} value={s.id}>{s.name}</option>
+                      )) || (
+                        <>
+                          <option value="inden">Jalur Inden</option>
+                          <option value="gelombang-1">Gelombang 1</option>
+                          <option value="gelombang-2">Gelombang 2</option>
+                        </>
+                      )}
+                    </select>
+                  </div>
+
+                  <div className="space-y-1 sm:col-span-2">
+                    <label className="text-slate-300 font-bold block flex items-center gap-1.5">
+                      <Shirt size={13} />
+                      <span>Ukuran Seragam</span>
+                    </label>
+                    <div className="grid grid-cols-6 gap-2">
+                      {['S', 'M', 'L', 'XL', 'XXL', 'Custom'].map(size => (
+                        <button
+                          key={size}
+                          type="button"
+                          onClick={() => setEditInitialForm(prev => ({ ...prev, selectedUniformSize: size }))}
+                          className={`py-2 text-center rounded-xl font-bold text-xs cursor-pointer border transition-all ${
+                            editInitialForm.selectedUniformSize === size
+                              ? 'bg-amber-500 text-slate-950 border-amber-400 shadow-sm'
+                              : 'bg-slate-900 text-slate-400 border-slate-700 hover:text-white hover:bg-slate-800'
+                          }`}
+                        >
+                          {size}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Tombol Aksi */}
+              <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-800">
+                <button
+                  type="button"
+                  onClick={() => setEditingInitialCandidate(null)}
+                  disabled={isSavingInitialData}
+                  className="px-5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-bold cursor-pointer transition-colors"
+                >
+                  Batal
+                </button>
+                <button
+                  type="submit"
+                  disabled={isSavingInitialData}
+                  className="px-6 py-2.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-black rounded-xl text-xs flex items-center gap-2 shadow-lg cursor-pointer transition-all disabled:opacity-50"
+                >
+                  {isSavingInitialData ? (
+                    <>
+                      <RefreshCw size={15} className="animate-spin" />
+                      <span>Menyimpan ke MySQL...</span>
+                    </>
+                  ) : (
+                    <>
+                      <Check size={16} />
+                      <span>Simpan Perubahan ke MySQL</span>
+                    </>
+                  )}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

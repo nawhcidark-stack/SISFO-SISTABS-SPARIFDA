@@ -3000,6 +3000,22 @@ async function startServer() {
           const safeFileName = `${fileField}${ext}`;
           const destPath = path.join(targetDir, safeFileName);
 
+          // Hapus otomatis berkas lama untuk field ini sebelum menulis berkas baru
+          if (fileField && fs.existsSync(targetDir)) {
+            try {
+              const existingFiles = fs.readdirSync(targetDir);
+              for (const ef of existingFiles) {
+                const parsedEf = path.parse(ef);
+                if (parsedEf.name.toLowerCase() === fileField.toLowerCase() && ef !== safeFileName) {
+                  try {
+                    fs.unlinkSync(path.join(targetDir, ef));
+                    console.log(`[/api/upload Auto-Delete Old File]: Hapus ${ef} di ${targetDir}`);
+                  } catch (_) {}
+                }
+              }
+            } catch (_) {}
+          }
+
           try {
             fs.copyFileSync(file.path, destPath);
             try { fs.unlinkSync(file.path); } catch (_) {}
@@ -3056,6 +3072,23 @@ async function startServer() {
         const fileNameParam = body.fileName || (field ? `${field}${ext}` : `dokumen_${Date.now()}${ext}`);
         const safeFileName = fileNameParam.replace(/[^a-zA-Z0-9._-]/g, "_");
         const destPath = path.join(targetDir, safeFileName);
+
+        // Hapus otomatis berkas lama untuk field ini sebelum menulis berkas baru
+        const targetBaseField = field || path.parse(safeFileName).name;
+        if (targetBaseField && fs.existsSync(targetDir)) {
+          try {
+            const existingFiles = fs.readdirSync(targetDir);
+            for (const ef of existingFiles) {
+              const parsedEf = path.parse(ef);
+              if (parsedEf.name.toLowerCase() === targetBaseField.toLowerCase() && ef !== safeFileName) {
+                try {
+                  fs.unlinkSync(path.join(targetDir, ef));
+                  console.log(`[/api/upload Auto-Delete Old File (Base64)]: Hapus ${ef} di ${targetDir}`);
+                } catch (_) {}
+              }
+            }
+          } catch (_) {}
+        }
 
         try {
           fs.writeFileSync(destPath, Buffer.from(base64Content, "base64"));

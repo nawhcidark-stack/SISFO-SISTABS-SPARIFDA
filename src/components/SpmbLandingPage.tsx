@@ -1382,7 +1382,7 @@ export default function SpmbLandingPage({
 
       const result = await res.json();
       setUploadProgress(prev => ({ ...prev, [field]: 100 }));
-      setUploadStatus(prev => ({ ...prev, [field]: '✓ Berhasil tersimpan di server hosting!' }));
+      setUploadStatus(prev => ({ ...prev, [field]: '✓ Berkas baru tersimpan (berkas lama otomatis terhapus)!' }));
 
       // Perbarui docUploads & activeCandidate dengan URL hosting permanen
       const effectiveFileUrl = hostingRemoteUrl || result.fileUrl || base64Data;
@@ -1405,6 +1405,47 @@ export default function SpmbLandingPage({
       setUploadStatus(prev => ({ ...prev, [field]: 'Gagal mengunggah berkas' }));
       setUploadingFields(prev => ({ ...prev, [field]: false }));
       alert('Gagal memproses berkas: ' + (err.message || 'Silakan coba lagi.'));
+    }
+  };
+
+  const handleDeleteDocument = async (field: 'aktaPhoto' | 'kkPhoto' | 'ktpPhoto' | 'ktpAyahPhoto' | 'ktpIbuPhoto' | 'pasPhoto' | 'kipPhoto', label: string) => {
+    if (!activeCandidate) return;
+    if (!confirm(`Hapus berkas ${label}? Berkas fisik lama di server hosting akan otomatis dibersihkan.`)) return;
+    try {
+      setUploadingFields(prev => ({ ...prev, [field]: true }));
+      const res = await fetch('/api/spmb/delete-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: activeCandidate.nisn,
+          candidateId: activeCandidate.id,
+          field
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setDocUploads(prev => {
+          const updated = { ...prev };
+          delete updated[field];
+          return updated;
+        });
+        setDocUploadsRaw(prev => {
+          const updated = { ...prev };
+          delete updated[field];
+          return updated;
+        });
+        if (data.candidate) {
+          setActiveCandidate(data.candidate);
+        }
+        setUploadStatus(prev => ({ ...prev, [field]: 'Berkas lama berhasil dihapus dari server.' }));
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Gagal menghapus berkas.');
+      }
+    } catch (e: any) {
+      alert('Terjadi kesalahan saat menghapus berkas: ' + e.message);
+    } finally {
+      setUploadingFields(prev => ({ ...prev, [field]: false }));
     }
   };
 
@@ -4473,13 +4514,39 @@ export default function SpmbLandingPage({
                                 )}
                               </div>
                               <div className="space-y-2">
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf"
-                                  disabled={uploadingFields['aktaPhoto']}
-                                  onChange={(e) => handleFileChange('aktaPhoto', e)}
-                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
-                                />
+                                {currentAkta ? (
+                                  <div className="flex items-center gap-1.5 pt-1">
+                                    <label className="flex-1 px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center shadow-xs" title="Unggah Akte baru (berkas lama otomatis terhapus)">
+                                      <span>Ganti Akte (Hapus Lama)</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        disabled={uploadingFields['aktaPhoto']}
+                                        onChange={(e) => handleFileChange('aktaPhoto', e)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDocument('aktaPhoto', 'Akte Kelahiran')}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors cursor-pointer shrink-0 border border-rose-200"
+                                      title="Hapus berkas Akte lama ini"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label className="w-full px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center border border-slate-300 shadow-2xs">
+                                    <span>Pilih Berkas Akte</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      disabled={uploadingFields['aktaPhoto']}
+                                      onChange={(e) => handleFileChange('aktaPhoto', e)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                )}
                                 {/* Progress Bar Akte */}
                                 {uploadingFields['aktaPhoto'] ? (
                                   <div className="space-y-1 pt-1">
@@ -4537,13 +4604,39 @@ export default function SpmbLandingPage({
                                 )}
                               </div>
                               <div className="space-y-2">
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf"
-                                  disabled={uploadingFields['kkPhoto']}
-                                  onChange={(e) => handleFileChange('kkPhoto', e)}
-                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
-                                />
+                                {currentKk ? (
+                                  <div className="flex items-center gap-1.5 pt-1">
+                                    <label className="flex-1 px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center shadow-xs" title="Unggah KK baru (berkas lama otomatis terhapus)">
+                                      <span>Ganti KK (Hapus Lama)</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        disabled={uploadingFields['kkPhoto']}
+                                        onChange={(e) => handleFileChange('kkPhoto', e)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDocument('kkPhoto', 'Kartu Keluarga')}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors cursor-pointer shrink-0 border border-rose-200"
+                                      title="Hapus berkas KK lama ini"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label className="w-full px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center border border-slate-300 shadow-2xs">
+                                    <span>Pilih Berkas KK</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      disabled={uploadingFields['kkPhoto']}
+                                      onChange={(e) => handleFileChange('kkPhoto', e)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                )}
                                 {/* Progress Bar KK */}
                                 {uploadingFields['kkPhoto'] ? (
                                   <div className="space-y-1 pt-1">
@@ -4601,13 +4694,39 @@ export default function SpmbLandingPage({
                                 )}
                               </div>
                               <div className="space-y-2">
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf"
-                                  disabled={uploadingFields['ktpAyahPhoto']}
-                                  onChange={(e) => handleFileChange('ktpAyahPhoto', e)}
-                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
-                                />
+                                {currentKtpAyah ? (
+                                  <div className="flex items-center gap-1.5 pt-1">
+                                    <label className="flex-1 px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center shadow-xs" title="Unggah KTP baru (berkas lama otomatis terhapus)">
+                                      <span>Ganti KTP (Hapus Lama)</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        disabled={uploadingFields['ktpAyahPhoto']}
+                                        onChange={(e) => handleFileChange('ktpAyahPhoto', e)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDocument('ktpAyahPhoto', 'KTP Ayah / Wali')}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors cursor-pointer shrink-0 border border-rose-200"
+                                      title="Hapus berkas KTP Ayah lama ini"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label className="w-full px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center border border-slate-300 shadow-2xs">
+                                    <span>Pilih Berkas KTP Ayah</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      disabled={uploadingFields['ktpAyahPhoto']}
+                                      onChange={(e) => handleFileChange('ktpAyahPhoto', e)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                )}
                                 {/* Progress Bar KTP Ayah */}
                                 {uploadingFields['ktpAyahPhoto'] ? (
                                   <div className="space-y-1 pt-1">
@@ -4665,13 +4784,39 @@ export default function SpmbLandingPage({
                                 )}
                               </div>
                               <div className="space-y-2">
-                                <input
-                                  type="file"
-                                  accept="image/*,.pdf"
-                                  disabled={uploadingFields['ktpIbuPhoto']}
-                                  onChange={(e) => handleFileChange('ktpIbuPhoto', e)}
-                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
-                                />
+                                {currentKtpIbu ? (
+                                  <div className="flex items-center gap-1.5 pt-1">
+                                    <label className="flex-1 px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center shadow-xs" title="Unggah KTP Ibu baru (berkas lama otomatis terhapus)">
+                                      <span>Ganti KTP (Hapus Lama)</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*,.pdf"
+                                        disabled={uploadingFields['ktpIbuPhoto']}
+                                        onChange={(e) => handleFileChange('ktpIbuPhoto', e)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDocument('ktpIbuPhoto', 'KTP Ibu')}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors cursor-pointer shrink-0 border border-rose-200"
+                                      title="Hapus berkas KTP Ibu lama ini"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label className="w-full px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center border border-slate-300 shadow-2xs">
+                                    <span>Pilih Berkas KTP Ibu</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*,.pdf"
+                                      disabled={uploadingFields['ktpIbuPhoto']}
+                                      onChange={(e) => handleFileChange('ktpIbuPhoto', e)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                )}
                                 {/* Progress Bar KTP Ibu */}
                                 {uploadingFields['ktpIbuPhoto'] ? (
                                   <div className="space-y-1 pt-1">
@@ -4730,13 +4875,39 @@ export default function SpmbLandingPage({
                                 )}
                               </div>
                               <div className="space-y-2">
-                                <input
-                                  type="file"
-                                  accept="image/*"
-                                  disabled={uploadingFields['pasPhoto']}
-                                  onChange={(e) => handleFileChange('pasPhoto', e)}
-                                  className="block w-full text-xs text-slate-500 file:mr-3 file:py-1.5 file:px-3 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-slate-200 file:text-slate-800 hover:file:bg-slate-300 cursor-pointer disabled:opacity-50"
-                                />
+                                {currentPasFoto ? (
+                                  <div className="flex items-center gap-1.5 pt-1">
+                                    <label className="flex-1 px-2.5 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center shadow-xs" title="Unggah Pas Foto baru (berkas lama otomatis terhapus)">
+                                      <span>Ganti Foto (Hapus Lama)</span>
+                                      <input
+                                        type="file"
+                                        accept="image/*"
+                                        disabled={uploadingFields['pasPhoto']}
+                                        onChange={(e) => handleFileChange('pasPhoto', e)}
+                                        className="hidden"
+                                      />
+                                    </label>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeleteDocument('pasPhoto', 'Pas Foto (3x4)')}
+                                      className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-xl transition-colors cursor-pointer shrink-0 border border-rose-200"
+                                      title="Hapus berkas Foto lama ini"
+                                    >
+                                      <Trash2 size={13} />
+                                    </button>
+                                  </div>
+                                ) : (
+                                  <label className="w-full px-2.5 py-1.5 bg-slate-200 hover:bg-slate-300 text-slate-800 rounded-xl text-[10px] font-bold block cursor-pointer transition-colors text-center border border-slate-300 shadow-2xs">
+                                    <span>Pilih Pas Foto</span>
+                                    <input
+                                      type="file"
+                                      accept="image/*"
+                                      disabled={uploadingFields['pasPhoto']}
+                                      onChange={(e) => handleFileChange('pasPhoto', e)}
+                                      className="hidden"
+                                    />
+                                  </label>
+                                )}
                                 {/* Progress Bar Foto Murid */}
                                 {uploadingFields['pasPhoto'] ? (
                                   <div className="space-y-1 pt-1">

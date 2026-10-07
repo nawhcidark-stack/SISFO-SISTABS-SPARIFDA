@@ -408,6 +408,263 @@ export function getHostingUploadDir(): string {
 }
 
 /**
+ * Hapus berkas lama secara otomatis saat calon murid mengganti atau mengunggah berkas baru.
+ * Menghapus file fisik di folder murid (/uploads/berkas_murid/[Nama_Murid]), folder duplikat, dan folder uploads root.
+ */
+/**
+ * Helper: Ambil semua alias field berkas persyaratan SPMB
+ */
+export function getRelatedDocumentKeys(fieldKey: string): string[] {
+  const fLower = (fieldKey || "").toLowerCase();
+  const keys = new Set<string>();
+  keys.add(fLower);
+
+  if (fLower.includes("ktp") && (fLower.includes("ayah") || fLower === "ktpphoto" || fLower === "ktp")) {
+    keys.add("ktpayahphoto");
+    keys.add("ktpphoto");
+    keys.add("ktp");
+    keys.add("ktpayah");
+  } else if (fLower.includes("ktp") && fLower.includes("ibu")) {
+    keys.add("ktpibuphoto");
+    keys.add("ktpibu");
+  } else if (fLower.includes("pasphoto") || fLower.includes("foto") || fLower.includes("photo")) {
+    keys.add("pasphoto");
+    keys.add("pasfoto");
+    keys.add("foto");
+    keys.add("photo");
+    keys.add("fotomurid");
+  } else if (fLower.includes("akta") || fLower.includes("akte")) {
+    keys.add("aktaphoto");
+    keys.add("akta");
+    keys.add("aktephoto");
+    keys.add("akte");
+    keys.add("aktakelahiran");
+  } else if (fLower.includes("kk")) {
+    keys.add("kkphoto");
+    keys.add("kk");
+    keys.add("kartukeluarga");
+  } else if (fLower.includes("kip")) {
+    keys.add("kipphoto");
+    keys.add("kip");
+  } else if (fLower.includes("ijazah") || fLower.includes("skl")) {
+    keys.add("ijazahphoto");
+    keys.add("ijazah");
+    keys.add("sklphoto");
+    keys.add("skl");
+  } else if (fLower.includes("skhu") || fLower.includes("rapor")) {
+    keys.add("skhuphoto");
+    keys.add("skhu");
+    keys.add("raporphoto");
+    keys.add("rapor");
+  }
+  return Array.from(keys);
+}
+
+/**
+ * Hapus berkas lama secara otomatis saat calon murid mengganti atau mengunggah berkas baru.
+ * Menghapus file fisik di folder murid (/uploads/berkas_murid/[Nama_Murid]), folder duplikat, dan folder uploads root.
+ */
+export function deleteOldCandidateDocumentFiles(
+  candidate: SpmbCandidate,
+  fieldKey: string,
+  exceptFileName?: string
+): void {
+  try {
+    const uploadRootDir = getHostingUploadDir();
+    const defaultUploads = path.join(process.cwd(), "uploads");
+    const publicHtmlUploads = path.join(process.cwd(), "public_html", "uploads");
+
+    const rawName = candidate.fullName || `Murid_${candidate.nisn || candidate.id}`;
+    const folderNameClean = rawName
+      .trim()
+      .replace(/[^a-zA-Z0-9_\-\s]/g, "")
+      .trim()
+      .replace(/\s+/g, "_") || `Murid_${candidate.id}`;
+
+    const folderNameUpper = rawName
+      .toUpperCase()
+      .trim()
+      .replace(/[^A-Z0-9]/g, "_")
+      .replace(/_+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .replace(/\s+/g, "_") || `Murid_${candidate.id}`;
+
+    // Helper: cari semua kemungkinan alias nama field
+    const relatedKeys = new Set<string>(getRelatedDocumentKeys(fieldKey));
+    const fLower = fieldKey.toLowerCase();
+
+    // Kumpulkan seluruh URL berkas lama yang tersimpan di data kandidat
+    const oldSavedUrls: string[] = [];
+    const collectFromObj = (obj?: Record<string, any>) => {
+      if (!obj || typeof obj !== "object") return;
+      for (const [k, v] of Object.entries(obj)) {
+        if (relatedKeys.has(k.toLowerCase()) && typeof v === "string" && !v.startsWith("data:")) {
+          oldSavedUrls.push(v);
+        }
+      }
+    };
+
+    collectFromObj(candidate.documents);
+    collectFromObj(candidate.documentsRaw);
+    collectFromObj(candidate.fullFormData?.documents);
+    collectFromObj(candidate.fullFormData?.documentsRaw);
+
+    const possibleFolderNames = Array.from(new Set([
+      folderNameClean,
+      folderNameUpper,
+      candidate.documentsFolderName || "",
+      candidate.documentsFolder ? path.basename(candidate.documentsFolder) : "",
+      candidate.googleDriveLink && candidate.googleDriveLink.includes("/uploads/berkas_murid/") ? path.basename(candidate.googleDriveLink) : "",
+      candidate.nisn ? `Murid_${candidate.nisn}` : "",
+      candidate.nisn ? String(candidate.nisn) : "",
+      candidate.id ? `Murid_${candidate.id}` : "",
+      candidate.id ? String(candidate.id) : "",
+      ...oldSavedUrls.map(u => {
+        try { return path.basename(path.dirname(u)); } catch (_) { return ""; }
+      })
+    ])).filter(Boolean);
+
+    const rootDirs = Array.from(new Set([uploadRootDir, defaultUploads, publicHtmlUploads])).filter(Boolean);
+
+    // 1. Periksa dan hapus file fisik langsung yang terdaftar di oldSavedUrls
+    for (const url of oldSavedUrls) {
+      const bName = path.basename(url);
+      if (exceptFileName && bName.toLowerCase() === exceptFileName.toLowerCase()) {
+        continue;
+      }
+      const directCandidates = [
+        path.join(process.cwd(), url.replace(/^\/+/, "")),
+        path.join(uploadRootDir, url.replace(/^\/+uploads\/?/, "")),
+        path.join(process.cwd(), "public_html", url.replace(/^\/+/, "")),
+        path.join(uploadRootDir, "berkas_murid", bName),
+        path.join(uploadRootDir, bName)
+      ];
+      for (const fPath of directCandidates) {
+        if (fs.existsSync(fPath)) {
+          try {
+            fs.unlinkSync(fPath);
+            console.log(`[SPMB Auto-Delete Old File by URL]: Berhasil menghapus berkas lama ${fPath}`);
+          } catch (e) {
+            console.warn(`[SPMB Auto-Delete URL Warning]: ${fPath}:`, e);
+          }
+        }
+      }
+    }
+
+    // 2. Periksa semua direktori folder murid
+    for (const rDir of rootDirs) {
+      for (const fName of possibleFolderNames) {
+        const studentDir = path.join(rDir, "berkas_murid", fName);
+        const directStudentDir = path.join(rDir, fName);
+        const dirsToCheck = [studentDir, directStudentDir];
+
+        for (const dir of dirsToCheck) {
+          if (!fs.existsSync(dir)) continue;
+          try {
+            const files = fs.readdirSync(dir);
+            for (const file of files) {
+              const parsed = path.parse(file);
+              const pLower = parsed.name.toLowerCase();
+
+              const isMatchingField = relatedKeys.has(pLower) ||
+                Array.from(relatedKeys).some(rk => pLower.startsWith(`${rk}_`) || pLower.startsWith(`${rk}-`));
+
+              const isMatchingSaved = oldSavedUrls.some(u => path.basename(u).toLowerCase() === file.toLowerCase());
+
+              if (isMatchingField || isMatchingSaved) {
+                if (exceptFileName && file.toLowerCase() === exceptFileName.toLowerCase()) {
+                  // Berkas baru yang sedang disimpan dengan nama sama
+                  continue;
+                }
+                const filePath = path.join(dir, file);
+                try {
+                  if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                    console.log(`[SPMB Auto-Delete Old File]: Berhasil menghapus file lama ${filePath}`);
+                  }
+                } catch (e) {
+                  console.warn(`[SPMB Auto-Delete Warning]: Gagal menghapus file lama ${filePath}:`, e);
+                }
+              }
+            }
+          } catch (_) {}
+        }
+
+        // Hapus juga salinan di rDir yang memiliki prefix [fName]_[fieldKey].*
+        if (fs.existsSync(rDir)) {
+          try {
+            const rootFiles = fs.readdirSync(rDir);
+            for (const rFile of rootFiles) {
+              const rParsed = path.parse(rFile);
+              const rLower = rParsed.name.toLowerCase();
+              for (const rk of relatedKeys) {
+                if (rLower === `${fName.toLowerCase()}_${rk}` || rLower === `${candidate.nisn}_${rk}` || rLower === rk) {
+                  if (exceptFileName && rFile.toLowerCase() === exceptFileName.toLowerCase()) {
+                    continue;
+                  }
+                  const rPath = path.join(rDir, rFile);
+                  try {
+                    if (fs.existsSync(rPath)) {
+                      fs.unlinkSync(rPath);
+                      console.log(`[SPMB Auto-Delete Root Copy]: Berhasil menghapus ${rPath}`);
+                    }
+                  } catch (_) {}
+                }
+              }
+            }
+          } catch (_) {}
+        }
+      }
+    }
+
+    // 3. Bersihkan referensi alias lama dari data kandidat
+    for (const rk of relatedKeys) {
+      if (rk !== fLower) {
+        if (candidate.documents) {
+          for (const k of Object.keys(candidate.documents)) {
+            if (k.toLowerCase() === rk) delete candidate.documents[k];
+          }
+        }
+        if (candidate.documentsRaw) {
+          for (const k of Object.keys(candidate.documentsRaw)) {
+            if (k.toLowerCase() === rk) delete candidate.documentsRaw[k];
+          }
+        }
+        if (candidate.fullFormData?.documents) {
+          for (const k of Object.keys(candidate.fullFormData.documents)) {
+            if (k.toLowerCase() === rk) delete candidate.fullFormData.documents[k];
+          }
+        }
+        if (candidate.fullFormData?.documentsRaw) {
+          for (const k of Object.keys(candidate.fullFormData.documentsRaw)) {
+            if (k.toLowerCase() === rk) delete candidate.fullFormData.documentsRaw[k];
+          }
+        }
+      }
+    }
+
+    // 4. Beri tahu server hosting resmi https://portal.smpmaarifpdn.sch.id jika tersedia
+    try {
+      fetch("https://portal.smpmaarifpdn.sch.id/api/upload", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "delete_old_file",
+          nisn: candidate.nisn,
+          candidateId: candidate.id,
+          field: fieldKey,
+          relatedFields: Array.from(relatedKeys),
+          exceptFileName: exceptFileName || ""
+        }),
+        signal: AbortSignal.timeout(4000)
+      }).catch(() => {});
+    } catch (_) {}
+  } catch (err) {
+    console.warn(`[deleteOldCandidateDocumentFiles Warning for ${fieldKey}]:`, err);
+  }
+}
+
+/**
  * Simpan berkas dokumen murid baru ke folder hosting fisik di /uploads/berkas_murid/[Nama_Murid]
  * dan buat file index.html interaktif untuk pratinjau berkas di browser / buku induk kesiswaan
  */
@@ -468,6 +725,7 @@ export function saveCandidateDocumentsToDisk(
   for (const key of allKeys) {
     const val = incomingDocs[key] || rawDocs[key] || resultDocs[key];
     if (!val || typeof val !== "string") {
+      deleteOldCandidateDocumentFiles(candidate, key);
       delete resultDocs[key];
       delete rawDocs[key];
       continue;
@@ -489,6 +747,10 @@ export function saveCandidateDocumentsToDisk(
 
         const dynamicFileName = `${key}${ext}`;
         const dynamicFilePath = path.join(targetDir, dynamicFileName);
+
+        // Hapus berkas lama secara otomatis sebelum menulis berkas baru
+        deleteOldCandidateDocumentFiles(candidate, key, dynamicFileName);
+
         try {
           fs.writeFileSync(dynamicFilePath, Buffer.from(base64, "base64"));
           // Gandakan juga berkas langsung ke uploadRootDir/[folderName] dan uploadRootDir
@@ -3570,6 +3832,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       const savedFileName = `${field}${ext}`;
       const savedFilePath = path.join(targetDir, savedFileName);
 
+      // Hapus berkas lama secara otomatis sebelum menulis berkas baru
+      deleteOldCandidateDocumentFiles(candidate, field, savedFileName);
+
       // Tulis file fisik asli langsung ke disk
       try {
         fs.writeFileSync(savedFilePath, Buffer.from(base64Content, "base64"));
@@ -3667,6 +3932,10 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
       healCandidateData(candidate);
       try {
+        saveCandidateDocumentsToDisk(candidate, candidate.documents || {});
+      } catch (_) {}
+
+      try {
         await directSaveEntityToMysql("spmb_candidates", candidate);
       } catch (err: any) {
         console.warn("[MySQL Single Document Direct Save Warning]:", err?.message || err);
@@ -3686,6 +3955,98 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     } catch (err: any) {
       console.error("Error in upload-single-document:", err);
       res.status(500).json({ error: "Gagal mengunggah berkas: " + err.message });
+    }
+  });
+
+  // 10B. Hapus Berkas Persyaratan SPMB (Menghapus file fisik di disk & memperbarui data kandidat)
+  router.post("/delete-document", async (req, res) => {
+    try {
+      const { nisn, candidateId, field } = req.body;
+      const targetId = String(nisn || candidateId || "").trim();
+      if (!targetId || !field) {
+        return res.status(400).json({ error: "NISN/ID dan nama berkas (field) wajib disertakan." });
+      }
+
+      let candidate = spmbCandidates.find(
+        c => (c.nisn || "").trim() === targetId ||
+             (c.registrationNumber || "").trim().toLowerCase() === targetId.toLowerCase() ||
+             c.id === targetId
+      );
+      if (!candidate) {
+        try {
+          const dbCand = await findSpmbCandidateInMysql(targetId);
+          if (dbCand) {
+            spmbCandidates.push(dbCand);
+            candidate = dbCand;
+          }
+        } catch (_) {}
+      }
+
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      // 1. Hapus berkas fisik lama di server hosting/disk
+      deleteOldCandidateDocumentFiles(candidate, field);
+
+      // 2. Bersihkan referensi berkas di data kandidat
+      if (candidate.documents) {
+        delete candidate.documents[field];
+      }
+      if (candidate.documentsRaw) {
+        delete candidate.documentsRaw[field];
+      }
+      if (candidate.fullFormData?.documents) {
+        delete candidate.fullFormData.documents[field];
+      }
+      if (candidate.fullFormData?.documentsRaw) {
+        delete candidate.fullFormData.documentsRaw[field];
+      }
+
+      // 3. Verifikasi ulang kelengkapan 5 berkas wajib
+      const hasAkta = Boolean(candidate.documents?.aktaPhoto);
+      const hasKk = Boolean(candidate.documents?.kkPhoto);
+      const hasFoto = Boolean(candidate.documents?.pasPhoto);
+      const hasKtpAyah = Boolean(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto);
+      const hasKtpIbu = Boolean(candidate.documents?.ktpIbuPhoto);
+      const allMandatoryDone = hasAkta && hasKk && hasFoto && hasKtpAyah && hasKtpIbu;
+
+      candidate.documentsUploaded = allMandatoryDone;
+      if (allMandatoryDone) {
+        candidate.documentsUploadedAt = candidate.documentsUploadedAt || new Date().toISOString();
+      } else {
+        delete candidate.documentsUploadedAt;
+        if (candidate.status === "documents_verified") {
+          candidate.status = "registered";
+        }
+      }
+
+      candidate.updatedAt = new Date().toISOString();
+      healCandidateData(candidate);
+
+      try {
+        saveCandidateDocumentsToDisk(candidate, candidate.documents || {});
+      } catch (_) {}
+
+      try {
+        await directSaveEntityToMysql("spmb_candidates", candidate);
+      } catch (err: any) {
+        console.warn("[MySQL Delete Document Warning]:", err?.message || err);
+      }
+      saveState();
+
+      res.json({
+        success: true,
+        message: `Berkas ${field} berhasil dihapus dari sistem dan penyimpanan hosting!`,
+        field,
+        candidate,
+        isComplete: allMandatoryDone,
+        uploadedCount: [hasAkta, hasKk, hasFoto, hasKtpAyah, hasKtpIbu].filter(Boolean).length,
+        totalRequired: 5
+      });
+    } catch (err: any) {
+      console.error("Error in /delete-document:", err);
+      res.status(500).json({ error: "Gagal menghapus berkas: " + err.message });
     }
   });
 

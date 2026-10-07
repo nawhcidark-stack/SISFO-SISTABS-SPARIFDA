@@ -833,13 +833,42 @@ export default function AdminSpmbManagement({
         if (selectedCandidate?.id === result.candidate.id) {
           setSelectedCandidate(result.candidate);
         }
-        alert(`Berkas ${field} calon murid ${candidate.fullName} berhasil disimpan ke server hosting!`);
+        alert(`Berkas ${field} calon murid ${candidate.fullName} berhasil disimpan ke server hosting (berkas lama otomatis terhapus)!`);
       } else {
         const err = await res.json();
         alert(err.error || 'Gagal menyimpan berkas.');
       }
     } catch (e: any) {
       alert('Gagal membaca file: ' + e.message);
+    }
+  };
+
+  // Hapus Berkas Dokumen SPMB oleh Admin (Otomatis hapus file fisik di disk & update status)
+  const handleAdminDeleteDocument = async (candidate: SpmbCandidate, field: string, label: string) => {
+    if (!confirm(`Hapus berkas ${label} a.n. ${candidate.fullName}?\n\nBerkas fisik di hosting/server akan otomatis dibersihkan permanen.`)) return;
+    try {
+      const res = await fetch('/api/spmb/delete-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: candidate.nisn,
+          candidateId: candidate.id,
+          field
+        })
+      });
+      if (res.ok) {
+        const result = await res.json();
+        setCandidates(prev => prev.map(c => c.id === result.candidate.id ? result.candidate : c));
+        if (selectedCandidate?.id === result.candidate.id) {
+          setSelectedCandidate(result.candidate);
+        }
+        alert(`Berkas ${label} berhasil dihapus dari server hosting!`);
+      } else {
+        const err = await res.json();
+        alert(err.error || 'Gagal menghapus berkas.');
+      }
+    } catch (e: any) {
+      alert('Gagal menghapus berkas: ' + e.message);
     }
   };
 
@@ -4665,18 +4694,43 @@ export default function AdminSpmbManagement({
                               </div>
                             )}
                           </div>
-                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
-                            <span>{docPasFoto ? 'Ganti Foto' : 'Unggah Foto'}</span>
-                            <input
-                              type="file"
-                              accept="image/*"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleAdminUploadDocument(selectedCandidate, 'pasPhoto', f);
-                              }}
-                            />
-                          </label>
+                          {docPasFoto ? (
+                            <div className="flex items-center gap-1.5">
+                              <label className="flex-1 px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center" title="Unggah foto baru (foto lama otomatis dihapus)">
+                                <span>Ganti Foto</span>
+                                <input
+                                  type="file"
+                                  accept="image/*"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleAdminUploadDocument(selectedCandidate, 'pasPhoto', f);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminDeleteDocument(selectedCandidate, 'pasPhoto', 'Pas Foto (3x4)')}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                                title="Hapus berkas foto lama ini"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center">
+                              <span>Unggah Foto</span>
+                              <input
+                                type="file"
+                                accept="image/*"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleAdminUploadDocument(selectedCandidate, 'pasPhoto', f);
+                                }}
+                              />
+                            </label>
+                          )}
                         </div>
 
                         {/* KK */}
@@ -4702,18 +4756,43 @@ export default function AdminSpmbManagement({
                               </div>
                             )}
                           </div>
-                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
-                            <span>{docKk ? 'Ganti KK' : 'Unggah KK'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleAdminUploadDocument(selectedCandidate, 'kkPhoto', f);
-                              }}
-                            />
-                          </label>
+                          {docKk ? (
+                            <div className="flex items-center gap-1.5">
+                              <label className="flex-1 px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center" title="Unggah KK baru (berkas lama otomatis terhapus)">
+                                <span>Ganti KK</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleAdminUploadDocument(selectedCandidate, 'kkPhoto', f);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminDeleteDocument(selectedCandidate, 'kkPhoto', 'Kartu Keluarga')}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                                title="Hapus berkas KK lama ini"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center">
+                              <span>Unggah KK</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleAdminUploadDocument(selectedCandidate, 'kkPhoto', f);
+                                }}
+                              />
+                            </label>
+                          )}
                         </div>
 
                         {/* Akta */}
@@ -4739,18 +4818,43 @@ export default function AdminSpmbManagement({
                               </div>
                             )}
                           </div>
-                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
-                            <span>{docAkta ? 'Ganti Akta' : 'Unggah Akta'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleAdminUploadDocument(selectedCandidate, 'aktaPhoto', f);
-                              }}
-                            />
-                          </label>
+                          {docAkta ? (
+                            <div className="flex items-center gap-1.5">
+                              <label className="flex-1 px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center" title="Unggah Akta baru (berkas lama otomatis terhapus)">
+                                <span>Ganti Akta</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleAdminUploadDocument(selectedCandidate, 'aktaPhoto', f);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminDeleteDocument(selectedCandidate, 'aktaPhoto', 'Akta Kelahiran')}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                                title="Hapus berkas Akta lama ini"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center">
+                              <span>Unggah Akta</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleAdminUploadDocument(selectedCandidate, 'aktaPhoto', f);
+                                }}
+                              />
+                            </label>
+                          )}
                         </div>
 
                         {/* KTP Ayah / Wali */}
@@ -4776,18 +4880,43 @@ export default function AdminSpmbManagement({
                               </div>
                             )}
                           </div>
-                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
-                            <span>{docKtpAyah ? 'Ganti KTP' : 'Unggah KTP'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleAdminUploadDocument(selectedCandidate, 'ktpAyahPhoto', f);
-                              }}
-                            />
-                          </label>
+                          {docKtpAyah ? (
+                            <div className="flex items-center gap-1.5">
+                              <label className="flex-1 px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center" title="Unggah KTP baru (berkas lama otomatis terhapus)">
+                                <span>Ganti KTP</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleAdminUploadDocument(selectedCandidate, 'ktpAyahPhoto', f);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminDeleteDocument(selectedCandidate, 'ktpAyahPhoto', 'KTP Ayah / Wali')}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                                title="Hapus berkas KTP Ayah lama ini"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center">
+                              <span>Unggah KTP</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleAdminUploadDocument(selectedCandidate, 'ktpAyahPhoto', f);
+                                }}
+                              />
+                            </label>
+                          )}
                         </div>
 
                         {/* KTP Ibu */}
@@ -4813,18 +4942,43 @@ export default function AdminSpmbManagement({
                               </div>
                             )}
                           </div>
-                          <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors">
-                            <span>{docKtpIbu ? 'Ganti KTP' : 'Unggah KTP'}</span>
-                            <input
-                              type="file"
-                              accept="image/*,.pdf"
-                              className="hidden"
-                              onChange={(e) => {
-                                const f = e.target.files?.[0];
-                                if (f) handleAdminUploadDocument(selectedCandidate, 'ktpIbuPhoto', f);
-                              }}
-                            />
-                          </label>
+                          {docKtpIbu ? (
+                            <div className="flex items-center gap-1.5">
+                              <label className="flex-1 px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center" title="Unggah KTP Ibu baru (berkas lama otomatis terhapus)">
+                                <span>Ganti KTP</span>
+                                <input
+                                  type="file"
+                                  accept="image/*,.pdf"
+                                  className="hidden"
+                                  onChange={(e) => {
+                                    const f = e.target.files?.[0];
+                                    if (f) handleAdminUploadDocument(selectedCandidate, 'ktpIbuPhoto', f);
+                                  }}
+                                />
+                              </label>
+                              <button
+                                type="button"
+                                onClick={() => handleAdminDeleteDocument(selectedCandidate, 'ktpIbuPhoto', 'KTP Ibu')}
+                                className="p-1.5 bg-slate-800 hover:bg-rose-900/60 text-slate-400 hover:text-rose-300 rounded-lg transition-colors cursor-pointer shrink-0"
+                                title="Hapus berkas KTP Ibu lama ini"
+                              >
+                                <Trash2 size={13} />
+                              </button>
+                            </div>
+                          ) : (
+                            <label className="px-2 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-lg text-[9px] font-bold block cursor-pointer transition-colors text-center">
+                              <span>Unggah KTP</span>
+                              <input
+                                type="file"
+                                accept="image/*,.pdf"
+                                className="hidden"
+                                onChange={(e) => {
+                                  const f = e.target.files?.[0];
+                                  if (f) handleAdminUploadDocument(selectedCandidate, 'ktpIbuPhoto', f);
+                                }}
+                              />
+                            </label>
+                          )}
                         </div>
                       </div>
                     );

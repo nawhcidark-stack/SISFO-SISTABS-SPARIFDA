@@ -1481,10 +1481,11 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     const isFormDone = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed)));
     const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
     
-    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL (abaikan berkas contoh SVG / unsplash)
+    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL (abaikan berkas contoh SVG / unsplash / key 'file' usang)
     if (documents && typeof documents === 'object') {
       const cleanedDocs: Record<string, string> = {};
       for (const [docKey, docVal] of Object.entries(documents)) {
+        if (docKey === 'file') continue;
         if (!docVal || typeof docVal !== 'string') continue;
         const trimmed = docVal.trim();
         if (trimmed.endsWith('.svg') || trimmed.includes('unsplash.com')) continue;
@@ -1493,6 +1494,17 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
         }
       }
       documents = Object.keys(cleanedDocs).length > 0 ? cleanedDocs : undefined;
+    }
+    if (documentsRaw && typeof documentsRaw === 'object') {
+      delete (documentsRaw as any).file;
+    }
+    if (fullFormData && typeof fullFormData === 'object') {
+      if (fullFormData.documents && typeof fullFormData.documents === 'object') {
+        delete (fullFormData.documents as any).file;
+      }
+      if (fullFormData.documentsRaw && typeof fullFormData.documentsRaw === 'object') {
+        delete (fullFormData.documentsRaw as any).file;
+      }
     }
 
     // Validasi berkas: hanya selesai jika SELURUH 5 berkas wajib telah benar-benar terunggah dan tersimpan asli

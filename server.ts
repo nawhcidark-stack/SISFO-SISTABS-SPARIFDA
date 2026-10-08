@@ -2841,7 +2841,7 @@ async function startServer() {
         if (detectedMime) {
           res.setHeader("Content-Type", detectedMime);
           res.setHeader("Content-Length", fs.statSync(filePath).size);
-          res.setHeader("Cache-Control", "public, max-age=3600");
+          res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
           const stream = fs.createReadStream(filePath);
           return stream.pipe(res);
         }
@@ -2911,7 +2911,7 @@ async function startServer() {
                 fs.writeFileSync(path.join(directStudentDir, requestedFile), buf);
               } catch (_) {}
               res.setHeader("Content-Type", mime);
-              res.setHeader("Cache-Control", "public, max-age=3600");
+              res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
               return res.send(buf);
             }
           }
@@ -2934,7 +2934,7 @@ async function startServer() {
                 fs.writeFileSync(path.join(directStudentDir, requestedFile), buffer);
               } catch (_) {}
               res.setHeader("Content-Type", contentType);
-              res.setHeader("Cache-Control", "public, max-age=3600");
+              res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
               return res.send(buffer);
             }
           } catch (_) {}
@@ -2996,17 +2996,20 @@ async function startServer() {
         for (const file of files) {
           const originalName = file.originalname || "document.jpg";
           const ext = path.extname(originalName) || ".jpg";
-          const fileField = file.fieldname || field || path.parse(originalName).name;
+          const resolvedName = (body.fileName ? path.parse(String(body.fileName)).name : null) || (body.fieldName && body.fieldName !== 'file' ? String(body.fieldName) : null);
+          const fileField = (field && field !== 'file' ? field : null) || (file.fieldname && file.fieldname !== 'file' ? file.fieldname : null) || (resolvedName && resolvedName !== 'file' ? resolvedName : null) || (field !== 'file' ? field : null) || (path.parse(originalName).name !== 'file' ? path.parse(originalName).name : 'dokumen');
           const safeFileName = `${fileField}${ext}`;
           const destPath = path.join(targetDir, safeFileName);
 
-          // Hapus otomatis berkas lama untuk field ini sebelum menulis berkas baru
+          // Hapus otomatis berkas lama untuk field ini sebelum menulis berkas baru (termasuk file.* usang)
           if (fileField && fs.existsSync(targetDir)) {
             try {
               const existingFiles = fs.readdirSync(targetDir);
               for (const ef of existingFiles) {
                 const parsedEf = path.parse(ef);
-                if (parsedEf.name.toLowerCase() === fileField.toLowerCase() && ef !== safeFileName) {
+                const isTargetField = parsedEf.name.toLowerCase() === fileField.toLowerCase();
+                const isStrayGenericFile = parsedEf.name.toLowerCase() === 'file' && fileField.toLowerCase() !== 'file';
+                if ((isTargetField || isStrayGenericFile) && ef !== safeFileName) {
                   try {
                     fs.unlinkSync(path.join(targetDir, ef));
                     console.log(`[/api/upload Auto-Delete Old File]: Hapus ${ef} di ${targetDir}`);
@@ -3143,11 +3146,15 @@ async function startServer() {
 
           for (const sf of savedFiles) {
             const k = sf.fieldName || path.parse(sf.fileName).name;
-            candidate.documents[k] = sf.filePath;
-            if (fileData) {
-              candidate.documentsRaw[k] = fileData;
+            if (k && k !== 'file') {
+              candidate.documents[k] = sf.filePath;
+              if (fileData) {
+                candidate.documentsRaw[k] = fileData;
+              }
             }
           }
+          delete (candidate.documents as any).file;
+          if (candidate.documentsRaw) delete (candidate.documentsRaw as any).file;
           candidate.documentsFolder = `/uploads/${folderSubPath.replace(/\\/g, "/")}`;
           candidate.documentsFolderName = path.basename(folderSubPath);
           candidate.googleDriveLink = `/uploads/${folderSubPath.replace(/\\/g, "/")}`;
@@ -3661,11 +3668,16 @@ async function startServer() {
           }
         } else if (cand.nisn === '3142814544' || cand.id === '3142814544') {
           cand.documents = {
-            pasPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/pasPhoto.jpg",
-            kkPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/kkPhoto.jpg"
+            pasPhoto: cand.documents?.pasPhoto || "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/pasPhoto.png",
+            kkPhoto: cand.documents?.kkPhoto || "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/kkPhoto.jpg",
+            ...(cand.documents || {})
           };
-          cand.documentsUploaded = false;
-          delete (cand as any).documentsUploadedAt;
+          const hasAkta = Boolean(cand.documents?.aktaPhoto);
+          const hasKk = Boolean(cand.documents?.kkPhoto);
+          const hasFoto = Boolean(cand.documents?.pasPhoto);
+          const hasKtpAyah = Boolean(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto);
+          const hasKtpIbu = Boolean(cand.documents?.ktpIbuPhoto);
+          cand.documentsUploaded = hasAkta && hasKk && hasFoto && hasKtpAyah && hasKtpIbu;
         }
       });
     }

@@ -567,7 +567,8 @@ export function deleteOldCandidateDocumentFiles(
               const pLower = parsed.name.toLowerCase();
 
               const isMatchingField = relatedKeys.has(pLower) ||
-                Array.from(relatedKeys).some(rk => pLower.startsWith(`${rk}_`) || pLower.startsWith(`${rk}-`));
+                Array.from(relatedKeys).some(rk => pLower.startsWith(`${rk}_`) || pLower.startsWith(`${rk}-`)) ||
+                (pLower === 'file' && fLower !== 'file');
 
               const isMatchingSaved = oldSavedUrls.some(u => path.basename(u).toLowerCase() === file.toLowerCase());
 
@@ -642,6 +643,11 @@ export function deleteOldCandidateDocumentFiles(
         }
       }
     }
+
+    if (candidate.documents) delete (candidate.documents as any).file;
+    if (candidate.documentsRaw) delete (candidate.documentsRaw as any).file;
+    if (candidate.fullFormData?.documents) delete (candidate.fullFormData.documents as any).file;
+    if (candidate.fullFormData?.documentsRaw) delete (candidate.fullFormData.documentsRaw as any).file;
 
     // 4. Beri tahu server hosting resmi https://portal.smpmaarifpdn.sch.id jika tersedia
     try {
@@ -723,6 +729,11 @@ export function saveCandidateDocumentsToDisk(
   const allKeys = new Set([...Object.keys(resultDocs), ...Object.keys(incomingDocs), ...Object.keys(rawDocs)]);
 
   for (const key of allKeys) {
+    if (key === 'file') {
+      delete resultDocs.file;
+      delete rawDocs.file;
+      continue;
+    }
     const val = incomingDocs[key] || rawDocs[key] || resultDocs[key];
     if (!val || typeof val !== "string") {
       deleteOldCandidateDocumentFiles(candidate, key);
@@ -1444,6 +1455,24 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
+    // Bersihkan 'file' key jika tersimpan tidak sengaja
+    if (c.documents && (c.documents as any).file) {
+      delete (c.documents as any).file;
+      changed = true;
+    }
+    if (c.fullFormData?.documents && (c.fullFormData.documents as any).file) {
+      delete (c.fullFormData.documents as any).file;
+      changed = true;
+    }
+    if (c.documentsRaw && (c.documentsRaw as any).file) {
+      delete (c.documentsRaw as any).file;
+      changed = true;
+    }
+    if (c.fullFormData?.documentsRaw && (c.fullFormData.documentsRaw as any).file) {
+      delete (c.fullFormData.documentsRaw as any).file;
+      changed = true;
+    }
+
     // 3. Validasi Status Pembayaran Token & Daftar Ulang
     const isTokenDone = Boolean((c.tokenPaid || c.tokenPaymentStatus === 'paid' || c.tokenPaymentStatus === 'waived') && c.tokenPaymentStatus !== 'pending');
 
@@ -1453,13 +1482,13 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         c.tokenPaid = false;
         changed = true;
       }
-      if (c.tokenPaymentStatus !== 'pending' && c.tokenPaymentStatus !== 'waived') {
+      if (c.tokenPaymentStatus !== 'pending' && c.tokenPaymentStatus !== 'waived' && c.tokenPaymentStatus !== 'pending_cash_teller') {
         c.tokenPaymentStatus = 'pending';
         changed = true;
       }
       if (c.reRegistrationPaid || c.reRegistrationStatus === 'paid') {
         c.reRegistrationPaid = false;
-        c.reRegistrationStatus = 'unpaid';
+        c.reRegistrationStatus = c.reRegistrationStatus === 'pending_cash_teller' ? 'pending_cash_teller' : 'unpaid';
         c.totalReRegistrationPaid = 0;
         delete c.reRegistrationPaidAt;
         delete c.reRegistrationMethod;
@@ -1724,11 +1753,28 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       cand.documentsFolder = folderUrl;
       cand.documentsFolderName = folderName;
       cand.googleDriveLink = folderUrl;
+      const diskDir = path.join(getHostingUploadDir(), "berkas_murid", folderName);
+      const effectivePasPhoto = fs.existsSync(path.join(diskDir, "pasPhoto.png"))
+        ? `${folderUrl}/pasPhoto.png`
+        : (cand.documents?.pasPhoto || `${folderUrl}/pasPhoto.jpg`);
+      const effectiveAkta = fs.existsSync(path.join(diskDir, "aktaPhoto.jpg"))
+        ? `${folderUrl}/aktaPhoto.jpg`
+        : cand.documents?.aktaPhoto;
+      const effectiveKtpAyah = fs.existsSync(path.join(diskDir, "ktpAyahPhoto.jpg"))
+        ? `${folderUrl}/ktpAyahPhoto.jpg`
+        : cand.documents?.ktpAyahPhoto;
+      const effectiveKtpIbu = fs.existsSync(path.join(diskDir, "ktpIbuPhoto.jpg"))
+        ? `${folderUrl}/ktpIbuPhoto.jpg`
+        : cand.documents?.ktpIbuPhoto;
       cand.documents = {
-        pasPhoto: `${folderUrl}/pasPhoto.jpg`,
         kkPhoto: `${folderUrl}/kkPhoto.jpg`,
-        ...(cand.documents || {})
+        ...(effectiveAkta ? { aktaPhoto: effectiveAkta } : {}),
+        ...(effectiveKtpAyah ? { ktpAyahPhoto: effectiveKtpAyah } : {}),
+        ...(effectiveKtpIbu ? { ktpIbuPhoto: effectiveKtpIbu } : {}),
+        ...(cand.documents || {}),
+        pasPhoto: effectivePasPhoto
       };
+      delete (cand.documents as any).file;
     }
     healCandidateData(cand);
 
@@ -2410,19 +2456,19 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       const isPaid = status === 'paid';
-      const effectiveMethod = paymentMethod || "Manual Tunai / Loket SPMB";
+      const effectiveMethod = paymentMethod || "Tunai di Teller Sekolah";
 
       if (type === 'token') {
         candidate.tokenPaid = isPaid;
-        candidate.tokenPaymentStatus = isPaid ? 'paid' : 'unpaid';
-        candidate.tokenPaidAt = isPaid ? new Date().toISOString() : undefined;
-        candidate.tokenPaymentMethod = isPaid ? effectiveMethod : undefined;
+        candidate.tokenPaymentStatus = isPaid ? 'paid' : (status === 'pending_cash_teller' ? 'pending_cash_teller' : 'unpaid');
+        candidate.tokenPaidAt = isPaid ? (candidate.tokenPaidAt || new Date().toISOString()) : undefined;
+        candidate.tokenPaymentMethod = isPaid ? effectiveMethod : (status === 'pending_cash_teller' ? 'Tunai di Teller Sekolah' : undefined);
         if (amount) candidate.tokenAmount = Number(amount);
       } else if (type === 'reregistration') {
         candidate.reRegistrationPaid = isPaid;
-        candidate.reRegistrationStatus = isPaid ? 'paid' : 'unpaid';
+        candidate.reRegistrationStatus = isPaid ? 'paid' : (status === 'pending_cash_teller' ? 'pending_cash_teller' : 'unpaid');
         candidate.reRegistrationPaidAt = isPaid ? (candidate.reRegistrationPaidAt || new Date().toISOString()) : undefined;
-        candidate.reRegistrationPaymentMethod = isPaid ? effectiveMethod : undefined;
+        candidate.reRegistrationPaymentMethod = isPaid ? effectiveMethod : (status === 'pending_cash_teller' ? 'Tunai di Teller Sekolah' : undefined);
         if (isPaid) {
           const finalAmt = Number(amount) || Number(candidate.reRegistrationAmount) || 560000;
           candidate.reRegistrationAmount = finalAmt;
@@ -2433,7 +2479,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           } else {
             candidate.status = "re_registered";
           }
-        } else {
+        } else if (status !== 'pending_cash_teller') {
           candidate.totalReRegistrationPaid = 0;
           candidate.buildingFeePaid = 0;
           candidate.julySppPaid = 0;
@@ -2454,6 +2500,54 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     } catch (err: any) {
       console.error("Error in manual-set-payment:", err);
       res.status(500).json({ error: "Gagal memperbarui status pembayaran: " + err.message });
+    }
+  });
+
+  // 3E. Set / Register Cash Payment via School Teller (Pembayaran Tunai di Teller / Loket Kasir Sekolah)
+  router.post("/set-teller-payment", async (req, res) => {
+    try {
+      const { nisn, type = 'reregistration', notes } = req.body;
+      const cleanNisn = String(nisn || "").trim();
+      if (!cleanNisn) {
+        return res.status(400).json({ error: "NISN calon murid wajib diisi." });
+      }
+
+      let candidate = spmbCandidates.find(c => (c.nisn || "").trim() === cleanNisn || (c.registrationNumber || "").trim().toLowerCase() === cleanNisn.toLowerCase() || c.id === cleanNisn);
+      if (!candidate) {
+        const dbCand = await findSpmbCandidateInMysql(cleanNisn);
+        if (dbCand) {
+          spmbCandidates.push(dbCand);
+          candidate = dbCand;
+        }
+      }
+
+      if (!candidate) {
+        return res.status(404).json({ error: "Data calon murid tidak ditemukan." });
+      }
+
+      if (type === 'reregistration') {
+        candidate.reRegistrationPaymentMethod = "Tunai di Teller Sekolah";
+        candidate.reRegistrationStatus = "pending_cash_teller";
+        candidate.verificationNotes = notes || "Menunggu verifikasi pembayaran tunai di loket teller sekolah";
+      } else if (type === 'token') {
+        candidate.tokenPaymentMethod = "Tunai di Teller Sekolah";
+        candidate.tokenPaymentStatus = "pending_cash_teller";
+        candidate.verificationNotes = notes || "Menunggu verifikasi token pendaftaran tunai di loket teller sekolah";
+      }
+
+      healCandidateData(candidate);
+      candidate.updatedAt = new Date().toISOString();
+      saveState();
+      await directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+
+      res.json({
+        success: true,
+        candidate,
+        message: `Metode pembayaran tunai via Teller / Loket Sekolah berhasil dipilih untuk calon murid ${candidate.fullName}.`
+      });
+    } catch (err: any) {
+      console.error("Error in /api/spmb/set-teller-payment:", err);
+      res.status(500).json({ error: "Gagal memilih metode teller: " + err.message });
     }
   });
 

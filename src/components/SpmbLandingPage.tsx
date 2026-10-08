@@ -10,7 +10,7 @@ import {
 import SpmbReceiptModal from './SpmbReceiptModal';
 import BirthDateSplitInput from './BirthDateSplitInput';
 import PWAInstallButton from './PWAInstallButton';
-import { printSpmbReceiptDirect, printRegistrationProofDirect, generateAuthenticPasPhotoSvgDataUrl } from '../utils/spmbReceiptPrint';
+import { printSpmbReceiptDirect, printRegistrationProofDirect, generateAuthenticPasPhotoSvgDataUrl, printTellerSlipDirect } from '../utils/spmbReceiptPrint';
 import { formatCombinedPlaceAndDate, formatIndonesianDate, toProperCase } from '../utils/dateUtils';
 import { 
   GraduationCap, 
@@ -245,6 +245,15 @@ export default function SpmbLandingPage({
   const [snapError, setSnapError] = useState<string | null>(null);
   const [isSnapReady, setIsSnapReady] = useState<boolean>(false);
   const [midtransConfigState, setMidtransConfigState] = useState<{ clientKey: string; isProduction: boolean; isDisabled?: boolean } | null>(null);
+
+  // Payment Method Choices (Midtrans Online vs Tunai di Teller Sekolah)
+  const [tokenPaymentTab, setTokenPaymentTab] = useState<'online' | 'teller'>('online');
+  const [reregPaymentTab, setReregPaymentTab] = useState<'online' | 'teller'>('online');
+  const [registrationPayOption, setRegistrationPayOption] = useState<'online' | 'teller'>('online');
+  const [isSettingTellerPay, setIsSettingTellerPay] = useState<boolean>(false);
+
+  // Document Preview Full Lightbox Modal
+  const [previewDocModal, setPreviewDocModal] = useState<{ isOpen: boolean; title: string; url: string; isPdf?: boolean } | null>(null);
 
   // QR Code data URL for registration proof card
   const [qrCodeDataUrl, setQrCodeDataUrl] = useState<string>('');
@@ -546,7 +555,16 @@ export default function SpmbLandingPage({
         setActiveCandidate(candidate);
         setFullForm(initializeFullFormData(candidate));
         setHasGuardian(Boolean(candidate.hasGuardian || (candidate.guardianName && candidate.guardianName.trim() !== '')));
-        setDocUploads(candidate.documents || {});
+        const cleanDocs = Object.fromEntries(
+          Object.entries({ ...(candidate.documents || {}), ...(candidate.fullFormData?.documents || {}) })
+            .filter(([k, v]) => k !== 'file' && Boolean(v))
+        ) as Record<string, string>;
+        const cleanRaw = Object.fromEntries(
+          Object.entries({ ...(candidate.documentsRaw || {}), ...(candidate.fullFormData?.documentsRaw || {}) })
+            .filter(([k, v]) => k !== 'file' && Boolean(v))
+        ) as Record<string, string>;
+        setDocUploads(cleanDocs);
+        setDocUploadsRaw(cleanRaw);
         setSelectedUniformSize(candidate.selectedUniformSize || 'L');
         setCustomUniformNote(candidate.customUniformNote || '');
         setActiveTab('portal');
@@ -1338,11 +1356,13 @@ export default function SpmbLandingPage({
       let hostingRemoteUrl = '';
       try {
         const hFormData = new FormData();
+        hFormData.append('field', field);
+        hFormData.append(field, file);
         hFormData.append('file', file);
+        hFormData.append('fileName', `${field}.${file.name.split('.').pop() || 'jpg'}`);
         hFormData.append('nisn', activeCandidate.nisn || activeCandidate.id);
         hFormData.append('candidateId', activeCandidate.id);
         hFormData.append('studentName', activeCandidate.fullName);
-        hFormData.append('field', field);
         hFormData.append('folder', `berkas_murid/${(activeCandidate.fullName || `Murid_${activeCandidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
         hFormData.append('fileData', base64Data);
 
@@ -1384,12 +1404,30 @@ export default function SpmbLandingPage({
       setUploadProgress(prev => ({ ...prev, [field]: 100 }));
       setUploadStatus(prev => ({ ...prev, [field]: '✓ Berkas baru tersimpan (berkas lama otomatis terhapus)!' }));
 
-      // Perbarui docUploads & activeCandidate dengan URL hosting permanen
-      const effectiveFileUrl = hostingRemoteUrl || result.fileUrl || base64Data;
-      setDocUploads(prev => ({ ...prev, [field]: effectiveFileUrl }));
-      setDocUploadsRaw(prev => ({ ...prev, [field]: base64Data }));
+      // Perbarui docUploads & activeCandidate dengan URL hosting permanen & base64
+      const timestamp = Date.now();
+      const localFileUrl = result.fileUrl ? `${result.fileUrl}${result.fileUrl.includes('?') ? '&' : '?'}v=${timestamp}` : '';
+      const effectiveFileUrl = localFileUrl || hostingRemoteUrl || base64Data;
+      setDocUploads(prev => {
+        const next = { ...prev, [field]: effectiveFileUrl };
+        delete (next as any).file;
+        return next;
+      });
+      setDocUploadsRaw(prev => {
+        const next = { ...prev, [field]: base64Data };
+        delete (next as any).file;
+        return next;
+      });
       if (result.candidate) {
-        setActiveCandidate(result.candidate);
+        const cleanedDocs = { ...(result.candidate.documents || {}), [field]: effectiveFileUrl };
+        delete (cleanedDocs as any).file;
+        const cleanedRaw = { ...(result.candidate.documentsRaw || {}), [field]: base64Data };
+        delete (cleanedRaw as any).file;
+        setActiveCandidate({
+          ...result.candidate,
+          documents: cleanedDocs,
+          documentsRaw: cleanedRaw
+        });
       }
 
       if (result.isComplete) {
@@ -1597,6 +1635,62 @@ export default function SpmbLandingPage({
       window.print();
     } finally {
       setTimeout(() => setIsPrintingProof(false), 1200);
+    }
+  };
+
+  // Set / Register Cash Payment via School Teller
+  const handleSetTellerPayment = async (type: 'reregistration' | 'token' = 'reregistration') => {
+    if (!activeCandidate) return;
+    setIsSettingTellerPay(true);
+    try {
+      const res = await fetch('/api/spmb/set-teller-payment', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: activeCandidate.nisn,
+          type
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json();
+        throw new Error(err.error || 'Gagal mengatur metode pembayaran teller.');
+      }
+      const data = await res.json();
+      setActiveCandidate(data.candidate);
+      alert(
+        `✓ Metode Pembayaran Tunai di Loket Teller Sekolah Berhasil Dipilih!\n\n` +
+        `Data Anda a.n. ${data.candidate.fullName} telah tercatat di antrean loket kasir/teller sekolah.\n` +
+        `Silakan cetak Slip Pembayaran Teller atau bawa Nomor Registrasi (${data.candidate.nisn}) ke Ruang Tata Usaha / Keuangan Sekolah untuk menyelesaikan pembayaran tunai.`
+      );
+    } catch (err: any) {
+      alert(err.message || 'Terjadi kesalahan sistem saat memilih metode teller.');
+    } finally {
+      setIsSettingTellerPay(false);
+    }
+  };
+
+  // Cetak Slip Pembayaran Tunai ke Teller Sekolah
+  const handlePrintTellerSlip = async (type: 'rereg' | 'token' = 'rereg') => {
+    if (!activeCandidate) return;
+    try {
+      const isFreeFirstMonth = Boolean(activeCandidate.sessionId === 'inden' && (activeCandidate.freeFirstMonthSpp || activeCandidate.isSiblingKkMatch));
+      const reregAmount = calculateTotalReRegFee(
+        activeCandidate.gender,
+        activeCandidate.sessionId,
+        activeCandidate.schoolOriginType,
+        activeCandidate.schoolOrigin,
+        isFreeFirstMonth
+      );
+      await printTellerSlipDirect(
+        activeCandidate,
+        type,
+        config,
+        currentSchoolIdentity,
+        type === 'rereg' ? reregAmount : (activeCandidate.tokenAmount || 50000)
+      );
+    } catch (err: any) {
+      console.error('Error printing teller slip:', err);
+      alert('Gagal mencetak slip teller: ' + err.message);
     }
   };
 
@@ -4412,11 +4506,11 @@ export default function SpmbLandingPage({
                         return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.svg') || lower.startsWith('/uploads') || lower.startsWith('http');
                       };
 
-                      const currentAkta = docUploads.aktaPhoto || activeCandidate.documents?.aktaPhoto;
-                      const currentKk = docUploads.kkPhoto || activeCandidate.documents?.kkPhoto;
-                      const currentKtpAyah = docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpPhoto || activeCandidate.documents?.ktpPhoto;
-                      const currentKtpIbu = docUploads.ktpIbuPhoto || activeCandidate.documents?.ktpIbuPhoto;
-                      const currentPasFoto = docUploads.pasPhoto || activeCandidate.documents?.pasPhoto;
+                      const currentAkta = docUploads.aktaPhoto || docUploadsRaw.aktaPhoto || activeCandidate.documents?.aktaPhoto || (activeCandidate.documents as any)?.akta || activeCandidate.fullFormData?.documents?.aktaPhoto || (activeCandidate.fullFormData?.documents as any)?.akta || activeCandidate.documentsRaw?.aktaPhoto;
+                      const currentKk = docUploads.kkPhoto || docUploadsRaw.kkPhoto || activeCandidate.documents?.kkPhoto || (activeCandidate.documents as any)?.kk || activeCandidate.fullFormData?.documents?.kkPhoto || (activeCandidate.fullFormData?.documents as any)?.kk || activeCandidate.documentsRaw?.kkPhoto;
+                      const currentKtpAyah = docUploads.ktpAyahPhoto || docUploadsRaw.ktpAyahPhoto || activeCandidate.documents?.ktpAyahPhoto || activeCandidate.documents?.ktpPhoto || (activeCandidate.documents as any)?.ktp || activeCandidate.fullFormData?.documents?.ktpAyahPhoto || activeCandidate.fullFormData?.documents?.ktpPhoto || (activeCandidate.fullFormData?.documents as any)?.ktp || docUploads.ktpPhoto || docUploadsRaw.ktpPhoto || activeCandidate.documentsRaw?.ktpAyahPhoto || activeCandidate.documentsRaw?.ktpPhoto;
+                      const currentKtpIbu = docUploads.ktpIbuPhoto || docUploadsRaw.ktpIbuPhoto || activeCandidate.documents?.ktpIbuPhoto || (activeCandidate.documents as any)?.ktpibu || activeCandidate.fullFormData?.documents?.ktpIbuPhoto || (activeCandidate.fullFormData?.documents as any)?.ktpibu || activeCandidate.documentsRaw?.ktpIbuPhoto;
+                      const currentPasFoto = docUploads.pasPhoto || docUploadsRaw.pasPhoto || activeCandidate.documents?.pasPhoto || (activeCandidate.documents as any)?.foto || (activeCandidate.documents as any)?.photo || (activeCandidate.documents as any)?.pasFoto || activeCandidate.fullFormData?.documents?.pasPhoto || activeCandidate.documentsRaw?.pasPhoto;
 
                       const uploadedCount = [currentAkta, currentKk, currentKtpAyah, currentKtpIbu, currentPasFoto].filter(Boolean).length;
                       const isAllDocsComplete = uploadedCount === 5;
@@ -5186,24 +5280,137 @@ export default function SpmbLandingPage({
                           </button>
                         </div>
                       ) : (
-                        <button
-                          type="button"
-                          onClick={handlePayReRegistrationSnap}
-                          disabled={isProcessingReRegPay}
-                          className="w-full sm:w-auto px-8 py-3.5 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-sm rounded-2xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer"
-                        >
-                          {isProcessingReRegPay ? (
-                            <>
-                              <RefreshCw size={16} className="animate-spin" />
-                              <span>Membuka Midtrans Snap...</span>
-                            </>
-                          ) : (
-                            <>
-                              <CreditCard size={16} />
-                              <span>Bayar Daftar Ulang via Midtrans Snap</span>
-                            </>
+                        <div className="w-full space-y-4">
+                          {/* Selector Tab Metode Pembayaran */}
+                          <div className="flex flex-wrap items-center gap-2 p-1 bg-slate-100 rounded-2xl border border-slate-200">
+                            <button
+                              type="button"
+                              onClick={() => setReregPaymentTab('online')}
+                              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                reregPaymentTab === 'online'
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'text-slate-700 hover:text-emerald-700 hover:bg-slate-200/60'
+                              }`}
+                            >
+                              <CreditCard size={15} />
+                              <span>Bayar Online Instan (Midtrans Snap)</span>
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => setReregPaymentTab('teller')}
+                              className={`flex-1 py-2.5 px-4 rounded-xl text-xs font-black flex items-center justify-center gap-2 transition-all cursor-pointer ${
+                                reregPaymentTab === 'teller'
+                                  ? 'bg-emerald-600 text-white shadow-sm'
+                                  : 'text-slate-700 hover:text-emerald-700 hover:bg-slate-200/60'
+                              }`}
+                            >
+                              <Coins size={15} />
+                              <span>Bayar Tunai di Loket / Teller Sekolah</span>
+                            </button>
+                          </div>
+
+                          {/* OPSI 1: MIDTRANS SNAP ONLINE */}
+                          {reregPaymentTab === 'online' && (
+                            <div className="p-5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                                <div>
+                                  <h6 className="text-xs font-black text-slate-900 m-0">Pembayaran Online Otomatis 24 Jam</h6>
+                                  <p className="text-[11px] text-slate-500 m-0 mt-0.5">
+                                    Mendukung QRIS (GoPay, ShopeePay, Dana, BCA Mobile), Transfer VA Bank Mandiri/BCA/BRI/BNI/BSI, dan E-Wallet.
+                                  </p>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={handlePayReRegistrationSnap}
+                                  disabled={isProcessingReRegPay}
+                                  className="px-6 py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md flex items-center justify-center gap-2 transition-all cursor-pointer shrink-0"
+                                >
+                                  {isProcessingReRegPay ? (
+                                    <>
+                                      <RefreshCw size={15} className="animate-spin" />
+                                      <span>Membuka Midtrans...</span>
+                                    </>
+                                  ) : (
+                                    <>
+                                      <CreditCard size={15} />
+                                      <span>Bayar Sekarang via Midtrans</span>
+                                    </>
+                                  )}
+                                </button>
+                              </div>
+                            </div>
                           )}
-                        </button>
+
+                          {/* OPSI 2: BAYAR TUNAI DI TELLER SEKOLAH */}
+                          {reregPaymentTab === 'teller' && (
+                            <div className="p-5 rounded-2xl bg-gradient-to-br from-amber-50 to-emerald-50/50 border-2 border-emerald-300 space-y-4 shadow-2xs animate-in fade-in">
+                              <div className="flex items-start gap-3">
+                                <div className="p-2.5 rounded-xl bg-emerald-100 text-emerald-800 shrink-0">
+                                  <Coins size={22} />
+                                </div>
+                                <div className="space-y-1 flex-1">
+                                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                                    <h6 className="text-sm font-black text-emerald-950 m-0">
+                                      Pembayaran Tunai di Loket / Teller SPMB Sekolah
+                                    </h6>
+                                    {(activeCandidate.reRegistrationStatus === 'pending_cash_teller' || activeCandidate.reRegistrationPaymentMethod === 'Tunai di Teller Sekolah') && (
+                                      <span className="text-[10px] font-black text-amber-900 bg-amber-200 px-2.5 py-0.5 rounded-full border border-amber-300 w-fit">
+                                        ⏳ Menunggu Verifikasi Teller
+                                      </span>
+                                    )}
+                                  </div>
+                                  <p className="text-xs text-slate-700 m-0 leading-relaxed">
+                                    Anda dapat melakukan pelunasan biaya daftar ulang & seragam secara langsung dengan uang tunai (cash) di Kantor Tata Usaha / Keuangan Sekolah.
+                                  </p>
+                                </div>
+                              </div>
+
+                              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 p-3.5 bg-white rounded-xl border border-emerald-200 text-xs">
+                                <div>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Lokasi Loket:</span>
+                                  <span className="font-bold text-slate-800">Ruang Tata Usaha / Keuangan Sekolah</span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Jam Layanan:</span>
+                                  <span className="font-bold text-slate-800">Senin - Sabtu (07.30 - 14.00 WIB)</span>
+                                </div>
+                                <div>
+                                  <span className="text-[10px] text-slate-400 font-bold uppercase block">Kode Pembayaran:</span>
+                                  <span className="font-mono font-black text-emerald-700">TELLER-DU-{activeCandidate.nisn}</span>
+                                </div>
+                              </div>
+
+                              <div className="flex flex-wrap items-center gap-2.5 pt-1">
+                                <button
+                                  type="button"
+                                  onClick={() => handlePrintTellerSlip('rereg')}
+                                  className="px-5 py-2.5 bg-emerald-700 hover:bg-emerald-800 text-white font-black text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
+                                  title="Cetak atau unduh Slip Pembayaran Teller untuk dibawa ke loket sekolah"
+                                >
+                                  <Printer size={14} />
+                                  <span>Cetak / Unduh Slip Pembayaran Teller</span>
+                                </button>
+
+                                {activeCandidate.reRegistrationStatus !== 'pending_cash_teller' && activeCandidate.reRegistrationPaymentMethod !== 'Tunai di Teller Sekolah' ? (
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSetTellerPayment('reregistration')}
+                                    disabled={isSettingTellerPay}
+                                    className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white font-bold text-xs rounded-xl shadow-xs flex items-center gap-2 cursor-pointer transition-all"
+                                  >
+                                    <CheckCircle2 size={14} className="text-emerald-400" />
+                                    <span>{isSettingTellerPay ? 'Menyimpan Pilihan...' : 'Pilih Metode Tunai di Loket'}</span>
+                                  </button>
+                                ) : (
+                                  <div className="p-2 px-3 rounded-xl bg-emerald-100 text-emerald-900 text-[11px] font-bold border border-emerald-300 flex items-center gap-1.5">
+                                    <CheckCircle2 size={13} className="text-emerald-700" />
+                                    <span>Pilihan Tersimpan: Menunggu Penyetoran di Loket Sekolah</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+                          )}
+                        </div>
                       )}
 
                       <button
@@ -5540,6 +5747,64 @@ export default function SpmbLandingPage({
                 className="w-full py-2 text-xs text-slate-500 hover:text-rose-600 transition-colors cursor-pointer"
               >
                 {snapPayType === 'token' ? 'Batalkan Pendaftaran (Hapus Draft)' : 'Tutup Jendela Pembayaran'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal Preview Berkas Dokumen (Lightbox Full High-Resolution) */}
+      {previewDocModal && previewDocModal.isOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-4 backdrop-blur-sm animate-in fade-in duration-200">
+          <div className="w-full max-w-3xl bg-white rounded-3xl overflow-hidden shadow-2xl flex flex-col max-h-[90vh]">
+            <div className="p-4 sm:p-5 bg-slate-900 text-white flex items-center justify-between border-b border-slate-800">
+              <div className="flex items-center gap-2.5">
+                <FileText size={18} className="text-emerald-400" />
+                <h3 className="text-sm sm:text-base font-bold text-white truncate max-w-md">{previewDocModal.title}</h3>
+              </div>
+              <div className="flex items-center gap-2">
+                <a
+                  href={previewDocModal.url}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-emerald-400 text-xs font-bold rounded-xl border border-slate-700 inline-flex items-center gap-1.5 transition-colors"
+                >
+                  <Eye size={13} />
+                  <span>Buka Asli ↗</span>
+                </a>
+                <button
+                  type="button"
+                  onClick={() => setPreviewDocModal(null)}
+                  className="p-1.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer"
+                  title="Tutup Pratinjau"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+            <div className="p-4 sm:p-6 overflow-auto flex-1 flex items-center justify-center bg-slate-950/40">
+              {previewDocModal.isPdf ? (
+                <iframe
+                  src={previewDocModal.url}
+                  title={previewDocModal.title}
+                  className="w-full h-[65vh] rounded-2xl border border-slate-200 bg-white"
+                />
+              ) : (
+                <img
+                  src={previewDocModal.url}
+                  alt={previewDocModal.title}
+                  className="max-h-[70vh] max-w-full object-contain rounded-2xl border border-slate-200 shadow-md bg-white p-2"
+                />
+              )}
+            </div>
+            <div className="p-3 bg-slate-100 border-t border-slate-200 flex items-center justify-between text-xs text-slate-600 px-5">
+              <span>Berkas tersimpan resmi di server hosting sekolah.</span>
+              <button
+                type="button"
+                onClick={() => setPreviewDocModal(null)}
+                className="px-4 py-1.5 bg-slate-800 hover:bg-slate-700 text-white font-bold rounded-xl cursor-pointer"
+              >
+                Tutup
               </button>
             </div>
           </div>

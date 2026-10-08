@@ -799,12 +799,14 @@ export default function AdminSpmbManagement({
       // 1. Unggah langsung ke server hosting resmi
       try {
         const hFormData = new FormData();
-        hFormData.append('file', file);
+        hFormData.append('field', field);
         hFormData.append('nisn', candidate.nisn || candidate.id);
         hFormData.append('candidateId', candidate.id);
         hFormData.append('studentName', candidate.fullName);
-        hFormData.append('field', field);
         hFormData.append('folder', `berkas_murid/${(candidate.fullName || `Murid_${candidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
+        hFormData.append('fileName', `${field}.${file.name.split('.').pop() || 'jpg'}`);
+        hFormData.append(field, file);
+        hFormData.append('file', file);
         hFormData.append('fileData', base64Data);
 
         fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
@@ -903,6 +905,8 @@ export default function AdminSpmbManagement({
       matchesStatus = true;
     } else if (filterStatus === 'token_pending') {
       matchesStatus = c.tokenPaymentStatus === 'pending' || (!c.tokenPaid && c.tokenPaymentStatus !== 'paid');
+    } else if (filterStatus === 'pending_cash_teller') {
+      matchesStatus = c.reRegistrationStatus === 'pending_cash_teller' || c.tokenPaymentStatus === 'pending_cash_teller' || c.reRegistrationPaymentMethod === 'Tunai di Teller Sekolah';
     } else if (filterStatus === 'registered' || filterStatus === 'token_paid') {
       matchesStatus = Boolean(c.tokenPaid || c.tokenPaymentStatus === 'paid');
     } else {
@@ -1610,6 +1614,7 @@ export default function AdminSpmbManagement({
                 <option value="all">Semua Status</option>
                 <option value="accepted">Diterima</option>
                 <option value="re_registered">Daftar Ulang Lunas</option>
+                <option value="pending_cash_teller">⏳ Menunggu Kasir Teller Sekolah</option>
                 <option value="form_submitted">Formulir Lengkap</option>
                 <option value="registered">Token Lunas</option>
                 <option value="token_pending">Token Pending (Midtrans)</option>
@@ -2001,6 +2006,10 @@ export default function AdminSpmbManagement({
                                         <span>Kuitansi DU</span>
                                       </button>
                                     </>
+                                  ) : candidate.reRegistrationStatus === 'pending_cash_teller' ? (
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-950 border border-amber-300">
+                                      ⏳ Kasir Teller
+                                    </span>
                                   ) : (
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
                                       Belum Lunas
@@ -2378,6 +2387,10 @@ export default function AdminSpmbManagement({
                                     <span>Cetak Kuitansi DU</span>
                                   </button>
                                 </>
+                              ) : candidate.reRegistrationStatus === 'pending_cash_teller' ? (
+                                <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-200 text-amber-950 border border-amber-300 block w-fit">
+                                  ⏳ KASIR TELLER
+                                </span>
                               ) : (
                                 <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
                                   Belum Lunas
@@ -2587,6 +2600,10 @@ export default function AdminSpmbManagement({
                             {candidate.reRegistrationStatus === 'paid' ? (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
                                 LUNAS (Uk. {candidate.selectedUniformSize || 'L'})
+                              </span>
+                            ) : candidate.reRegistrationStatus === 'pending_cash_teller' ? (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-950 border border-amber-300">
+                                ⏳ Kasir Teller
                               </span>
                             ) : (
                               <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
@@ -4538,8 +4555,8 @@ export default function AdminSpmbManagement({
                   )}
                   <div className="flex justify-between">
                     <span className="text-slate-400">Daftar Ulang:</span>
-                    <span className={`font-bold ${selectedCandidate.reRegistrationStatus === 'paid' ? 'text-emerald-400' : 'text-amber-400'}`}>
-                      {selectedCandidate.reRegistrationStatus === 'paid' ? 'LUNAS' : 'Belum Lunas'}
+                    <span className={`font-bold ${selectedCandidate.reRegistrationStatus === 'paid' ? 'text-emerald-400' : selectedCandidate.reRegistrationStatus === 'pending_cash_teller' ? 'text-amber-400' : 'text-slate-400'}`}>
+                      {selectedCandidate.reRegistrationStatus === 'paid' ? 'LUNAS' : selectedCandidate.reRegistrationStatus === 'pending_cash_teller' ? '⏳ MENUNGGU KASIR TELLER' : 'Belum Lunas'}
                     </span>
                   </div>
                   <div className="flex justify-between">
@@ -5021,11 +5038,19 @@ export default function AdminSpmbManagement({
                       className={`px-3 py-2 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border ${
                         selectedCandidate.reRegistrationStatus === 'paid' 
                           ? 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900' 
+                          : selectedCandidate.reRegistrationStatus === 'pending_cash_teller'
+                          ? 'bg-emerald-600 text-white hover:bg-emerald-500 ring-2 ring-emerald-400 shadow-sm'
                           : 'bg-teal-600 text-white hover:bg-teal-500'
                       }`}
                     >
                       <CreditCard size={13} />
-                      <span>{selectedCandidate.reRegistrationStatus === 'paid' ? 'Reset Daftar Ulang Belum Lunas' : 'Tandai DAFTAR ULANG LUNAS'}</span>
+                      <span>
+                        {selectedCandidate.reRegistrationStatus === 'paid'
+                          ? 'Reset Daftar Ulang Belum Lunas'
+                          : selectedCandidate.reRegistrationStatus === 'pending_cash_teller'
+                          ? '✓ Terima Pembayaran Kasir Teller (Tandai Lunas)'
+                          : 'Tandai DAFTAR ULANG LUNAS'}
+                      </span>
                     </button>
                   </div>
                 </div>

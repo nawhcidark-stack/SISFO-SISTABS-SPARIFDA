@@ -741,7 +741,7 @@ export interface SpmbCandidate {
   }>;
 
   // 1. Pembayaran Token Pendaftaran (Rp. 50.000)
-  tokenPaymentStatus: 'unpaid' | 'pending' | 'paid' | 'waived' | 'pending_cash_teller';
+  tokenPaymentStatus: 'unpaid' | 'pending' | 'paid' | 'waived';
   tokenPaymentOrderId?: string;
   tokenOrderId?: string;
   tokenPaidAt?: string;
@@ -829,8 +829,8 @@ export interface SpmbCandidate {
   guardianRelation?: string;
   guardianAddress?: string;
 
-  // 3. Pembayaran Daftar Ulang & Perlengkapan (Midtrans / Tunai Teller)
-  reRegistrationStatus: 'unpaid' | 'pending' | 'paid' | 'pending_cash_teller';
+  // 3. Pembayaran Daftar Ulang & Perlengkapan (Midtrans)
+  reRegistrationStatus: 'unpaid' | 'pending' | 'paid';
   reRegistrationAmount?: number;
   reRegistrationOrderId?: string;
   reRegistrationPaidAt?: string;

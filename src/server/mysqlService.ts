@@ -1486,6 +1486,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       const cleanedDocs: Record<string, string> = {};
       for (const [docKey, docVal] of Object.entries(documents)) {
         if (!docVal || typeof docVal !== 'string') continue;
+        if (docKey === 'file') continue;
         const trimmed = docVal.trim();
         if (trimmed.endsWith('.svg') || trimmed.includes('unsplash.com')) continue;
         if (trimmed && (trimmed.startsWith('/uploads/') || trimmed.startsWith('data:') || trimmed.startsWith('http'))) {
@@ -1618,6 +1619,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     reRegistrationPaid: isReregPaid,
     reRegistrationPaidAt: r.re_registration_paid_at || undefined,
     reRegistrationMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
+    reRegistrationPaymentMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
     reRegistrationOrderId: r.re_registration_order_id || undefined,
     reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
     reRegistrationAmount: isSyahm ? 560000 : (r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined),

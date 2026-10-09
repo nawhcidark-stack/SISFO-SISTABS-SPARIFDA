@@ -1313,8 +1313,9 @@ export default function SpmbLandingPage({
     setUploadStatus(prev => ({ ...prev, [field]: 'Membaca dan memproses berkas...' }));
 
     try {
+      const isPdf = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
       let base64Data = '';
-      if (file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf')) {
+      if (isPdf) {
         base64Data = await new Promise<string>((resolve, reject) => {
           const reader = new FileReader();
           reader.onload = (event) => resolve(event.target?.result as string);
@@ -1337,12 +1338,17 @@ export default function SpmbLandingPage({
       // 1. Unggah langsung dari browser ke Hosting Resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
       let hostingRemoteUrl = '';
       try {
+        const ext = file.name.substring(file.name.lastIndexOf('.')) || (isPdf ? '.pdf' : '.jpg');
+        const fieldFileName = `${field}${ext}`;
         const hFormData = new FormData();
-        hFormData.append('file', file);
+        hFormData.append(field, file, fieldFileName);
+        hFormData.append('field', field);
+        hFormData.append('fileName', fieldFileName);
+        hFormData.append('fieldName', field);
+        hFormData.append('file', file, fieldFileName);
         hFormData.append('nisn', activeCandidate.nisn || activeCandidate.id);
         hFormData.append('candidateId', activeCandidate.id);
         hFormData.append('studentName', activeCandidate.fullName);
-        hFormData.append('field', field);
         hFormData.append('folder', `berkas_murid/${(activeCandidate.fullName || `Murid_${activeCandidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
         hFormData.append('fileData', base64Data);
 
@@ -1353,7 +1359,11 @@ export default function SpmbLandingPage({
         });
         if (hRes.ok) {
           const hData = await hRes.json();
-          hostingRemoteUrl = hData.url || hData.fileUrl || '';
+          const rawUrl = hData.url || hData.fileUrl || '';
+          // Pastikan URL hosting bukan nama generic 'file.ext' lama
+          if (rawUrl && !rawUrl.endsWith('/file.jpg') && !rawUrl.endsWith('/file.png') && !rawUrl.endsWith('/file.pdf') && !rawUrl.includes('/file.')) {
+            hostingRemoteUrl = rawUrl;
+          }
           console.log('[Browser Direct Upload to Hosting OK]:', hostingRemoteUrl);
         }
       } catch (hErr) {
@@ -1384,12 +1394,22 @@ export default function SpmbLandingPage({
       setUploadProgress(prev => ({ ...prev, [field]: 100 }));
       setUploadStatus(prev => ({ ...prev, [field]: '✓ Berkas baru tersimpan (berkas lama otomatis terhapus)!' }));
 
-      // Perbarui docUploads & activeCandidate dengan URL hosting permanen
-      const effectiveFileUrl = hostingRemoteUrl || result.fileUrl || base64Data;
-      setDocUploads(prev => ({ ...prev, [field]: effectiveFileUrl }));
+      // Perbarui docUploads & activeCandidate dengan URL hosting permanen & base64 preview akurat
+      const localFileUrl = result.fileUrl || `/uploads/berkas_murid/${(activeCandidate.fullName || '').toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}/${field}${file.name.substring(file.name.lastIndexOf('.')) || (isPdf ? '.pdf' : '.jpg')}`;
+      const effectiveFileUrl = hostingRemoteUrl || localFileUrl;
+
+      // PENTING: Gunakan base64Data untuk instant preview langsung di browser tanpa lag atau masalah cache file dokumen lain
+      setDocUploads(prev => ({ ...prev, [field]: base64Data || effectiveFileUrl }));
       setDocUploadsRaw(prev => ({ ...prev, [field]: base64Data }));
       if (result.candidate) {
-        setActiveCandidate(result.candidate);
+        const cleanCandidateDocs = {
+          ...(result.candidate.documents || {}),
+          [field]: effectiveFileUrl
+        };
+        setActiveCandidate({
+          ...result.candidate,
+          documents: cleanCandidateDocs
+        });
       }
 
       if (result.isComplete) {
@@ -4412,11 +4432,53 @@ export default function SpmbLandingPage({
                         return lower.endsWith('.jpg') || lower.endsWith('.jpeg') || lower.endsWith('.png') || lower.endsWith('.webp') || lower.endsWith('.svg') || lower.startsWith('/uploads') || lower.startsWith('http');
                       };
 
-                      const currentAkta = docUploads.aktaPhoto || activeCandidate.documents?.aktaPhoto;
-                      const currentKk = docUploads.kkPhoto || activeCandidate.documents?.kkPhoto;
-                      const currentKtpAyah = docUploads.ktpAyahPhoto || activeCandidate.documents?.ktpAyahPhoto || docUploads.ktpPhoto || activeCandidate.documents?.ktpPhoto;
-                      const currentKtpIbu = docUploads.ktpIbuPhoto || activeCandidate.documents?.ktpIbuPhoto;
-                      const currentPasFoto = docUploads.pasPhoto || activeCandidate.documents?.pasPhoto;
+                      // Helper agar preview dokumen selalu tepat per field dan tidak tertukar dengan berkas akte lama
+                      const getSpecificDocUrl = (fieldKey: string, rawVal?: string, docVal?: string, candDocVal?: string) => {
+                        // 1. Raw Base64 hasil unggahan langsung di browser selalu paling akurat dan bebas dari isu cache/mismatch
+                        if (rawVal && typeof rawVal === 'string' && rawVal.trim().length > 0) {
+                          return rawVal;
+                        }
+                        // 2. Periksa apakah docVal atau candDocVal mengarah ke generic 'file.jpg' atau mismatch
+                        const checkVal = (u?: string) => {
+                          if (!u || typeof u !== 'string') return '';
+                          const lower = u.toLowerCase();
+                          // Jika bukan aktaPhoto tapi mengarah ke file.jpg / file.png (akibat bug nama file generik terdahulu), abaikan jika ada opsi yang lebih spesifik
+                          if (fieldKey !== 'aktaPhoto' && (lower.endsWith('/file.jpg') || lower.endsWith('/file.png') || lower.endsWith('/file.pdf') || lower.includes('/file.'))) {
+                            return '';
+                          }
+                          return u;
+                        };
+                        const validDoc = checkVal(docVal);
+                        if (validDoc) return validDoc;
+                        const validCandDoc = checkVal(candDocVal);
+                        if (validCandDoc) return validCandDoc;
+                        return docVal || candDocVal || '';
+                      };
+
+                      const openDocumentView = (url: string, title: string) => {
+                        if (!url) return;
+                        if (url.startsWith('data:')) {
+                          const isPdf = url.startsWith('data:application/pdf');
+                          const w = window.open('');
+                          if (w) {
+                            if (isPdf) {
+                              w.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>body{margin:0;padding:0;overflow:hidden;}</style></head><body><iframe src="${url}" style="width:100vw;height:100vh;border:none;"></iframe></body></html>`);
+                            } else {
+                              w.document.write(`<!DOCTYPE html><html><head><title>${title}</title><style>body{margin:0;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;}</style></head><body><img src="${url}" style="max-width:100%;max-height:100vh;object-fit:contain;box-shadow:0 10px 25px rgba(0,0,0,0.5);" /></body></html>`);
+                            }
+                            w.document.close();
+                            return;
+                          }
+                        }
+                        window.open(url, '_blank');
+                      };
+
+                      const currentAkta = getSpecificDocUrl('aktaPhoto', docUploadsRaw['aktaPhoto'], docUploads.aktaPhoto, activeCandidate.documents?.aktaPhoto);
+                      const currentKk = getSpecificDocUrl('kkPhoto', docUploadsRaw['kkPhoto'], docUploads.kkPhoto, activeCandidate.documents?.kkPhoto);
+                      const currentKtpAyah = getSpecificDocUrl('ktpAyahPhoto', docUploadsRaw['ktpAyahPhoto'], docUploads.ktpAyahPhoto, activeCandidate.documents?.ktpAyahPhoto) || 
+                                             getSpecificDocUrl('ktpPhoto', docUploadsRaw['ktpPhoto'], docUploads.ktpPhoto, activeCandidate.documents?.ktpPhoto);
+                      const currentKtpIbu = getSpecificDocUrl('ktpIbuPhoto', docUploadsRaw['ktpIbuPhoto'], docUploads.ktpIbuPhoto, activeCandidate.documents?.ktpIbuPhoto);
+                      const currentPasFoto = getSpecificDocUrl('pasPhoto', docUploadsRaw['pasPhoto'], docUploads.pasPhoto, activeCandidate.documents?.pasPhoto);
 
                       const uploadedCount = [currentAkta, currentKk, currentKtpAyah, currentKtpIbu, currentPasFoto].filter(Boolean).length;
                       const isAllDocsComplete = uploadedCount === 5;
@@ -4507,7 +4569,18 @@ export default function SpmbLandingPage({
                                         <span>Dokumen PDF</span>
                                       </div>
                                     )}
-                                    <a href={currentAkta} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 font-bold block text-center hover:underline">
+                                    <a 
+                                      href={currentAkta} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      onClick={(e) => {
+                                        if (currentAkta && currentAkta.startsWith('data:')) {
+                                          e.preventDefault();
+                                          openDocumentView(currentAkta, 'Akte Kelahiran');
+                                        }
+                                      }}
+                                      className="text-[11px] text-emerald-700 font-bold block text-center hover:underline cursor-pointer"
+                                    >
                                       Buka Dokumen Asli ↗
                                     </a>
                                   </div>
@@ -4597,7 +4670,18 @@ export default function SpmbLandingPage({
                                         <span>Dokumen PDF</span>
                                       </div>
                                     )}
-                                    <a href={currentKk} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 font-bold block text-center hover:underline">
+                                    <a 
+                                      href={currentKk} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      onClick={(e) => {
+                                        if (currentKk && currentKk.startsWith('data:')) {
+                                          e.preventDefault();
+                                          openDocumentView(currentKk, 'Kartu Keluarga');
+                                        }
+                                      }}
+                                      className="text-[11px] text-emerald-700 font-bold block text-center hover:underline cursor-pointer"
+                                    >
                                       Buka Dokumen Asli ↗
                                     </a>
                                   </div>
@@ -4687,7 +4771,18 @@ export default function SpmbLandingPage({
                                         <span>Dokumen PDF</span>
                                       </div>
                                     )}
-                                    <a href={currentKtpAyah} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 font-bold block text-center hover:underline">
+                                    <a 
+                                      href={currentKtpAyah} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      onClick={(e) => {
+                                        if (currentKtpAyah && currentKtpAyah.startsWith('data:')) {
+                                          e.preventDefault();
+                                          openDocumentView(currentKtpAyah, 'KTP Ayah / Wali');
+                                        }
+                                      }}
+                                      className="text-[11px] text-emerald-700 font-bold block text-center hover:underline cursor-pointer"
+                                    >
                                       Buka Dokumen Asli ↗
                                     </a>
                                   </div>
@@ -4777,7 +4872,18 @@ export default function SpmbLandingPage({
                                         <span>Dokumen PDF</span>
                                       </div>
                                     )}
-                                    <a href={currentKtpIbu} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 font-bold block text-center hover:underline">
+                                    <a 
+                                      href={currentKtpIbu} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      onClick={(e) => {
+                                        if (currentKtpIbu && currentKtpIbu.startsWith('data:')) {
+                                          e.preventDefault();
+                                          openDocumentView(currentKtpIbu, 'KTP Ibu');
+                                        }
+                                      }}
+                                      className="text-[11px] text-emerald-700 font-bold block text-center hover:underline cursor-pointer"
+                                    >
                                       Buka Dokumen Asli ↗
                                     </a>
                                   </div>
@@ -4868,7 +4974,18 @@ export default function SpmbLandingPage({
                                         (e.currentTarget as HTMLImageElement).src = fb;
                                       }}
                                     />
-                                    <a href={currentPasFoto} target="_blank" rel="noreferrer" className="text-[11px] text-emerald-700 font-bold block text-center hover:underline">
+                                    <a 
+                                      href={currentPasFoto} 
+                                      target="_blank" 
+                                      rel="noreferrer" 
+                                      onClick={(e) => {
+                                        if (currentPasFoto && currentPasFoto.startsWith('data:')) {
+                                          e.preventDefault();
+                                          openDocumentView(currentPasFoto, 'Pas Foto (3x4)');
+                                        }
+                                      }}
+                                      className="text-[11px] text-emerald-700 font-bold block text-center hover:underline cursor-pointer"
+                                    >
                                       Buka Dokumen Asli ↗
                                     </a>
                                   </div>

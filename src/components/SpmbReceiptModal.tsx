@@ -4,7 +4,8 @@ import { SchoolIdentity, SpmbCandidate, SpmbConfig } from '../types';
 import {
   generateTokenReceiptHtml,
   generateReRegReceiptHtml,
-  printSpmbReceiptDirect
+  printSpmbReceiptDirect,
+  formatReceiptPaymentMethod
 } from '../utils/spmbReceiptPrint';
 
 interface SpmbReceiptModalProps {
@@ -99,6 +100,28 @@ export default function SpmbReceiptModal({
   const isTokenPaid = Boolean(isSyahm || candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid || isCollective);
   const isReRegPaid = Boolean(isSyahm || candidate.reRegistrationStatus === 'paid' || candidate.reRegistrationPaid);
 
+  const tokenMethodInfo = formatReceiptPaymentMethod(
+    candidate.tokenPaymentMethod,
+    candidate.tokenPaymentType,
+    {
+      isCollective,
+      orderId: candidate.tokenPaymentOrderId,
+      vaNumbers: candidate.tokenVaNumbers,
+      defaultLabel: 'Tunai (Pembayaran di Sekolah)'
+    }
+  );
+
+  const reregMethodInfo = formatReceiptPaymentMethod(
+    candidate.reRegistrationPaymentMethod || candidate.reRegistrationMethod,
+    undefined,
+    {
+      orderId: candidate.reRegistrationOrderId,
+      defaultLabel: 'Tunai (Pembayaran di Sekolah)'
+    }
+  );
+
+  const activeMethodInfo = receiptType === 'token' ? tokenMethodInfo : reregMethodInfo;
+
   const handleTriggerPrint = async () => {
     try {
       setIsPrinting(true);
@@ -120,8 +143,17 @@ export default function SpmbReceiptModal({
               <FileText size={20} />
             </div>
             <div>
-              <h3 className="text-base font-black text-white m-0">Kuitansi Resmi SPMB</h3>
-              <p className="text-xs text-slate-400 m-0">
+              <div className="flex items-center gap-2">
+                <h3 className="text-base font-black text-white m-0">Kuitansi Resmi SPMB</h3>
+                <span className={`px-2 py-0.5 rounded-full text-[10px] font-black uppercase border ${
+                  activeMethodInfo.isCash 
+                    ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' 
+                    : 'bg-blue-500/20 text-blue-300 border-blue-500/40'
+                }`}>
+                  {activeMethodInfo.displayMethod}
+                </span>
+              </div>
+              <p className="text-xs text-slate-400 m-0 mt-0.5">
                 {candidate.fullName} • NISN: <span className="font-mono text-slate-200">{candidate.nisn}</span>
               </p>
             </div>
@@ -162,7 +194,9 @@ export default function SpmbReceiptModal({
             <CreditCard size={15} />
             <span>1. Kuitansi Token Formulir</span>
             {isTokenPaid ? (
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">Lunas</span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                Lunas ({tokenMethodInfo.displayMethod})
+              </span>
             ) : (
               <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">Belum Lunas</span>
             )}
@@ -180,7 +214,9 @@ export default function SpmbReceiptModal({
             <Building size={15} />
             <span>2. Kuitansi Daftar Ulang & Seragam</span>
             {isReRegPaid ? (
-              <span className="px-1.5 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">Lunas</span>
+              <span className="px-2 py-0.5 rounded-full bg-emerald-500/20 text-emerald-300 text-[10px] font-bold">
+                Lunas ({reregMethodInfo.displayMethod})
+              </span>
             ) : (
               <span className="px-1.5 py-0.5 rounded-full bg-amber-500/20 text-amber-300 text-[10px] font-bold">Belum Lunas</span>
             )}

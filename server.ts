@@ -2996,8 +2996,8 @@ async function startServer() {
         for (const file of files) {
           const originalName = file.originalname || "document.jpg";
           const ext = path.extname(originalName) || ".jpg";
-          const fileField = file.fieldname || field || path.parse(originalName).name;
-          const safeFileName = `${fileField}${ext}`;
+          const fileField = (field && field.trim()) || (file.fieldname && file.fieldname !== "file" ? file.fieldname : "") || path.parse(originalName).name;
+          const safeFileName = body.fileName || `${fileField}${ext}`;
           const destPath = path.join(targetDir, safeFileName);
 
           // Hapus otomatis berkas lama untuk field ini sebelum menulis berkas baru
@@ -3142,10 +3142,12 @@ async function startServer() {
           if (!candidate.documentsRaw || typeof candidate.documentsRaw !== 'object') candidate.documentsRaw = {};
 
           for (const sf of savedFiles) {
-            const k = sf.fieldName || path.parse(sf.fileName).name;
-            candidate.documents[k] = sf.filePath;
-            if (fileData) {
-              candidate.documentsRaw[k] = fileData;
+            const k = (sf.fieldName && sf.fieldName !== "file") ? sf.fieldName : (field && field.trim()) || path.parse(sf.fileName).name;
+            if (k && k !== "file") {
+              candidate.documents[k] = sf.filePath;
+              if (fileData) {
+                candidate.documentsRaw[k] = fileData;
+              }
             }
           }
           candidate.documentsFolder = `/uploads/${folderSubPath.replace(/\\/g, "/")}`;

@@ -1418,6 +1418,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
+    // Bersihkan key 'file' generik jika ada akibat kesalahan nama berkas lama
+    if (c.documents && typeof c.documents === 'object' && 'file' in c.documents) {
+      delete (c.documents as any)['file'];
+      changed = true;
+    }
+
     // 2. Validasi Kelengkapan Berkas Upload
     // Hanya dianggap LENGKAP jika SELURUH 5 berkas wajib telah benar-benar terunggah (bukan SVG sintetis / unsplash contoh)!
     const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
@@ -2410,19 +2416,27 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       const isPaid = status === 'paid';
-      const effectiveMethod = paymentMethod || "Manual Tunai / Loket SPMB";
+      const effectiveMethod = paymentMethod || "Pembayaran Tunai di Sekolah";
 
       if (type === 'token') {
         candidate.tokenPaid = isPaid;
         candidate.tokenPaymentStatus = isPaid ? 'paid' : 'unpaid';
-        candidate.tokenPaidAt = isPaid ? new Date().toISOString() : undefined;
+        candidate.tokenPaidAt = isPaid ? (candidate.tokenPaidAt || new Date().toISOString()) : undefined;
         candidate.tokenPaymentMethod = isPaid ? effectiveMethod : undefined;
+        candidate.tokenPaymentType = isPaid ? 'cash' : undefined;
+        if (isPaid && !candidate.tokenPaymentOrderId) {
+          candidate.tokenPaymentOrderId = `TUNAI-TKN-${candidate.nisn || candidate.id.slice(0, 6).toUpperCase()}`;
+        }
         if (amount) candidate.tokenAmount = Number(amount);
       } else if (type === 'reregistration') {
         candidate.reRegistrationPaid = isPaid;
         candidate.reRegistrationStatus = isPaid ? 'paid' : 'unpaid';
         candidate.reRegistrationPaidAt = isPaid ? (candidate.reRegistrationPaidAt || new Date().toISOString()) : undefined;
         candidate.reRegistrationPaymentMethod = isPaid ? effectiveMethod : undefined;
+        candidate.reRegistrationMethod = isPaid ? effectiveMethod : undefined;
+        if (isPaid && !candidate.reRegistrationOrderId) {
+          candidate.reRegistrationOrderId = `TUNAI-DU-${candidate.nisn || candidate.id.slice(0, 6).toUpperCase()}`;
+        }
         if (isPaid) {
           const finalAmt = Number(amount) || Number(candidate.reRegistrationAmount) || 560000;
           candidate.reRegistrationAmount = finalAmt;

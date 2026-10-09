@@ -8,7 +8,14 @@ import {
 } from '../types';
 import SpmbReceiptModal from './SpmbReceiptModal';
 import SpmbFinanceReport from './SpmbFinanceReport';
-import { printSpmbReceiptDirect, printRegistrationProofDirect, printRefundReceiptDirect, generateAuthenticPasPhotoSvgDataUrl, calculateReRegDetails } from '../utils/spmbReceiptPrint';
+import { 
+  printSpmbReceiptDirect, 
+  printRegistrationProofDirect, 
+  printRefundReceiptDirect, 
+  generateAuthenticPasPhotoSvgDataUrl, 
+  calculateReRegDetails,
+  formatReceiptPaymentMethod
+} from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
   CheckCircle2, 
@@ -700,12 +707,12 @@ export default function AdminSpmbManagement({
     }
   };
 
-  // Manual Toggle Payment (Token / Daftar Ulang Lunas / Belum Lunas di Loket SPMB)
+  // Manual Toggle Payment (Token / Daftar Ulang Lunas / Belum Lunas - Penerimaan Tunai di Sekolah)
   const handleManualSetPayment = async (
     candidate: SpmbCandidate, 
     type: 'token' | 'reregistration', 
     status: 'paid' | 'unpaid',
-    paymentMethod: string = 'Tunai (Loket SPMB)',
+    paymentMethod: string = 'Pembayaran Tunai di Sekolah',
     amount?: number
   ) => {
     const isSyahm = Boolean(
@@ -727,31 +734,45 @@ export default function AdminSpmbManagement({
               ? Number(candidate.reRegistrationAmount) 
               : calculatedFee));
 
-    const actionLabel = status === 'paid' ? 'Tandai LUNAS' : 'Tandai BELUM LUNAS';
+    const effectivePaymentMethod = 'Pembayaran Tunai di Sekolah';
     let effectiveAmount = defaultAmount;
 
-    if (status === 'paid' && type === 'reregistration') {
+    if (status === 'paid' && type === 'token') {
+      const isConfirmed = confirm(
+        `KONFIRMASI PENERIMAAN PEMBAYARAN TUNAI DI SEKOLAH:\n\n` +
+        `• Nama Calon Murid : ${candidate.fullName}\n` +
+        `• NISN : ${candidate.nisn}\n` +
+        `• Jenis Pembayaran : Pembelian Token Formulir Pendaftaran SPMB\n` +
+        `• Nominal Uang Tunai : Rp 50.000\n` +
+        `• Metode Pembayaran : Pembayaran Tunai di Sekolah\n\n` +
+        `Apakah uang tunai Rp 50.000 telah diterima di sekolah dan pembayaran Token ditandai LUNAS?`
+      );
+      if (!isConfirmed) return; // user cancelled
+    } else if (status === 'paid' && type === 'reregistration') {
       const inputAmountStr = prompt(
-        `Pelunasan Biaya Daftar Ulang & Seragam Murid Baru:\n` +
-        `Nama Siswa: ${candidate.fullName} (NISN: ${candidate.nisn})\n` +
-        `Gelombang: ${reregDetails.sessionName}\n\n` +
-        `Biaya Terhitung Sistem: Rp ${calculatedFee.toLocaleString('id-ID')}\n` +
-        `• Uang Gedung Net: Rp ${reregDetails.netBuildingFee.toLocaleString('id-ID')}\n` +
-        `• Paket Seragam Net: Rp ${reregDetails.netUniformTotal.toLocaleString('id-ID')}\n` +
-        `• SPP Juli: Rp ${reregDetails.effectiveJulySppFee.toLocaleString('id-ID')}\n\n` +
-        `Masukkan jumlah uang pelunasan yang disetorkan (Rupiah):`,
+        `PENERIMAAN PEMBAYARAN TUNAI DI SEKOLAH:\n` +
+        `Pelunasan Biaya Daftar Ulang & Paket Seragam Murid Baru\n\n` +
+        `Nama Siswa : ${candidate.fullName} (NISN: ${candidate.nisn})\n` +
+        `Gelombang  : ${reregDetails.sessionName}\n\n` +
+        `Rincian Biaya Sistem:\n` +
+        `• Uang Gedung Net : Rp ${reregDetails.netBuildingFee.toLocaleString('id-ID')}\n` +
+        `• Paket Seragam Net : Rp ${reregDetails.netUniformTotal.toLocaleString('id-ID')}\n` +
+        `• SPP Juli : Rp ${reregDetails.effectiveJulySppFee.toLocaleString('id-ID')}\n` +
+        `Total Terhitung : Rp ${calculatedFee.toLocaleString('id-ID')}\n\n` +
+        `Metode Pembayaran : Pembayaran Tunai di Sekolah\n\n` +
+        `Masukkan jumlah uang tunai yang disetorkan di sekolah (Rupiah):`,
         String(defaultAmount)
       );
       if (inputAmountStr === null) return; // user cancelled
       const parsed = parseInt(inputAmountStr.replace(/[^0-9]/g, ''), 10);
       if (isNaN(parsed) || parsed < 0) {
-        alert('Nominal pelunasan tidak valid.');
+        alert('Nominal pembayaran tunai tidak valid.');
         return;
       }
       effectiveAmount = parsed;
     } else {
       const typeLabel = type === 'token' ? 'Token Formulir (Rp 50.000)' : `Daftar Ulang & Seragam (Rp ${defaultAmount.toLocaleString('id-ID')})`;
-      if (!confirm(`${actionLabel} untuk pembayaran ${typeLabel} calon murid ${candidate.fullName}?`)) {
+      if (!confirm(`Batalkan / reset status pembayaran ${typeLabel} calon murid ${candidate.fullName}?`)) {
         return;
       }
     }
@@ -764,7 +785,7 @@ export default function AdminSpmbManagement({
           nisn: candidate.nisn,
           type,
           status,
-          paymentMethod,
+          paymentMethod: status === 'paid' ? effectivePaymentMethod : paymentMethod,
           amount: type === 'token' ? 50000 : effectiveAmount
         })
       });
@@ -775,7 +796,7 @@ export default function AdminSpmbManagement({
         if (selectedCandidate?.id === result.candidate.id) {
           setSelectedCandidate(result.candidate);
         }
-        alert(result.message || `Status pembayaran ${candidate.fullName} berhasil diperbarui!`);
+        alert(result.message || `Pembayaran tunai di sekolah untuk ${candidate.fullName} berhasil dicatat LUNAS!`);
         loadData();
       } else {
         const err = await res.json();
@@ -798,12 +819,17 @@ export default function AdminSpmbManagement({
 
       // 1. Unggah langsung ke server hosting resmi
       try {
+        const ext = file.name.substring(file.name.lastIndexOf('.')) || (file.type === 'application/pdf' ? '.pdf' : '.jpg');
+        const fieldFileName = `${field}${ext}`;
         const hFormData = new FormData();
-        hFormData.append('file', file);
+        hFormData.append(field, file, fieldFileName);
+        hFormData.append('field', field);
+        hFormData.append('fileName', fieldFileName);
+        hFormData.append('fieldName', field);
+        hFormData.append('file', file, fieldFileName);
         hFormData.append('nisn', candidate.nisn || candidate.id);
         hFormData.append('candidateId', candidate.id);
         hFormData.append('studentName', candidate.fullName);
-        hFormData.append('field', field);
         hFormData.append('folder', `berkas_murid/${(candidate.fullName || `Murid_${candidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
         hFormData.append('fileData', base64Data);
 
@@ -1909,19 +1935,46 @@ export default function AdminSpmbManagement({
                               <div className="space-y-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="text-[10px] font-bold text-slate-500">Token:</span>
-                                  {isTokenPaid ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
-                                      Lunas (50rb)
-                                    </span>
-                                  ) : isTokenPending ? (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-                                      Pending
-                                    </span>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                                      Belum Bayar
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const tokenMethod = formatReceiptPaymentMethod(candidate.tokenPaymentMethod, candidate.tokenPaymentType, {
+                                      isCollective,
+                                      orderId: candidate.tokenPaymentOrderId,
+                                      vaNumbers: candidate.tokenVaNumbers
+                                    });
+                                    return (
+                                      <>
+                                        {isTokenPaid ? (
+                                          <div className="flex items-center gap-1 flex-wrap">
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                              Lunas (50rb)
+                                            </span>
+                                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${tokenMethod.isCash ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                                              {tokenMethod.displayMethod}
+                                            </span>
+                                          </div>
+                                        ) : isTokenPending ? (
+                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                                            Pending
+                                          </span>
+                                        ) : (
+                                          <div className="flex items-center gap-1">
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                              Belum Bayar
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white text-[9.5px] font-bold rounded cursor-pointer transition-all shadow-2xs"
+                                              title="Terima Pembayaran Tunai Token Rp 50.000 di Sekolah"
+                                            >
+                                              <Banknote size={10} />
+                                              <span>+ Tunai</span>
+                                            </button>
+                                          </div>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                   {isTokenPaid && (
                                     <button
                                       type="button"
@@ -1982,30 +2035,53 @@ export default function AdminSpmbManagement({
                               <div className="pt-1.5 border-t border-slate-100 space-y-1">
                                 <div className="flex items-center gap-1.5 flex-wrap">
                                   <span className="text-[10px] font-bold text-slate-500">Daftar Ulang:</span>
-                                  {candidate.reRegistrationStatus === 'paid' ? (
-                                    <>
-                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
-                                        Lunas (Uk. {candidate.selectedUniformSize || 'L'})
-                                      </span>
-                                      <button
-                                        type="button"
-                                        onClick={() => {
-                                          setReceiptModalCandidate(candidate);
-                                          setReceiptModalType('rereg');
-                                          setIsReceiptModalOpen(true);
-                                        }}
-                                        className="text-[10px] text-teal-700 hover:text-teal-900 font-bold flex items-center gap-0.5 cursor-pointer"
-                                        title="Cetak Kuitansi DU"
-                                      >
-                                        <Printer size={10} />
-                                        <span>Kuitansi DU</span>
-                                      </button>
-                                    </>
-                                  ) : (
-                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                                      Belum Lunas
-                                    </span>
-                                  )}
+                                  {(() => {
+                                    const reregMethod = formatReceiptPaymentMethod(candidate.reRegistrationPaymentMethod || candidate.reRegistrationMethod, undefined, {
+                                      orderId: candidate.reRegistrationOrderId
+                                    });
+                                    return (
+                                      <>
+                                        {candidate.reRegistrationStatus === 'paid' ? (
+                                          <>
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                              Lunas (Uk. {candidate.selectedUniformSize || 'L'})
+                                            </span>
+                                            <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${reregMethod.isCash ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                                              {reregMethod.displayMethod}
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => {
+                                                setReceiptModalCandidate(candidate);
+                                                setReceiptModalType('rereg');
+                                                setIsReceiptModalOpen(true);
+                                              }}
+                                              className="text-[10px] text-teal-700 hover:text-teal-900 font-bold flex items-center gap-0.5 cursor-pointer"
+                                              title="Cetak Kuitansi DU"
+                                            >
+                                              <Printer size={10} />
+                                              <span>Kuitansi DU</span>
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <div className="flex items-center gap-1">
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                              Belum Lunas
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleManualSetPayment(candidate, 'reregistration', 'paid')}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-teal-600 hover:bg-teal-700 text-white text-[9.5px] font-bold rounded cursor-pointer transition-all shadow-2xs"
+                                              title="Terima Pembayaran Tunai Daftar Ulang di Sekolah"
+                                            >
+                                              <Banknote size={10} />
+                                              <span>+ Tunai DU</span>
+                                            </button>
+                                          </div>
+                                        )}
+                                      </>
+                                    );
+                                  })()}
                                 </div>
                               </div>
                             </div>
@@ -2535,32 +2611,53 @@ export default function AdminSpmbManagement({
 
                       {/* Status Biaya & Berkas Ringkas */}
                       <div className="mt-3 pt-2.5 border-t border-slate-100 space-y-1.5 text-xs">
-                        <div className="flex items-center justify-between text-[11px]">
-                          <span className="text-slate-500 font-bold">Token Online:</span>
-                          <div className="flex items-center gap-1">
-                            {isTokenPaid ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
-                                Lunas (50rb)
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                Belum Lunas
-                              </span>
-                            )}
-                            {isTokenPaid && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReceiptModalCandidate(candidate);
-                                  setReceiptModalType('token');
-                                  setIsReceiptModalOpen(true);
-                                }}
-                                className="text-emerald-700 hover:text-emerald-900 font-bold ml-1 cursor-pointer"
-                                title="Kuitansi Token"
-                              >
-                                <Printer size={11} />
-                              </button>
-                            )}
+                        <div className="flex items-center justify-between text-[11px] gap-2 flex-wrap">
+                          <span className="text-slate-500 font-bold">Token Formulir:</span>
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {(() => {
+                              const tokenMethod = formatReceiptPaymentMethod(candidate.tokenPaymentMethod, candidate.tokenPaymentType, {
+                                isCollective,
+                                orderId: candidate.tokenPaymentOrderId,
+                                vaNumbers: candidate.tokenVaNumbers
+                              });
+                              return isTokenPaid ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                    Lunas (50rb)
+                                  </span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${tokenMethod.isCash ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                                    {tokenMethod.displayMethod}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReceiptModalCandidate(candidate);
+                                      setReceiptModalType('token');
+                                      setIsReceiptModalOpen(true);
+                                    }}
+                                    className="text-emerald-700 hover:text-emerald-900 font-bold ml-0.5 cursor-pointer"
+                                    title="Kuitansi Token"
+                                  >
+                                    <Printer size={11} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                    Belum Lunas
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                    className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9.5px] rounded shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                                    title="Terima Pembayaran Tunai Token Rp 50.000 di Sekolah"
+                                  >
+                                    <Banknote size={10} />
+                                    <span>+ Tunai</span>
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -2581,32 +2678,51 @@ export default function AdminSpmbManagement({
                           </div>
                         )}
 
-                        <div className="flex items-center justify-between text-[11px]">
+                        <div className="flex items-center justify-between text-[11px] gap-2 flex-wrap">
                           <span className="text-slate-500 font-bold">Daftar Ulang:</span>
-                          <div className="flex items-center gap-1">
-                            {candidate.reRegistrationStatus === 'paid' ? (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
-                                LUNAS (Uk. {candidate.selectedUniformSize || 'L'})
-                              </span>
-                            ) : (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                Belum Lunas
-                              </span>
-                            )}
-                            {candidate.reRegistrationStatus === 'paid' && (
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setReceiptModalCandidate(candidate);
-                                  setReceiptModalType('rereg');
-                                  setIsReceiptModalOpen(true);
-                                }}
-                                className="text-teal-700 hover:text-teal-900 font-bold ml-1 cursor-pointer"
-                                title="Kuitansi DU"
-                              >
-                                <Printer size={11} />
-                              </button>
-                            )}
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {(() => {
+                              const reregMethod = formatReceiptPaymentMethod(candidate.reRegistrationPaymentMethod || candidate.reRegistrationMethod, undefined, {
+                                orderId: candidate.reRegistrationOrderId
+                              });
+                              return candidate.reRegistrationStatus === 'paid' ? (
+                                <div className="flex items-center gap-1">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                    LUNAS (Uk. {candidate.selectedUniformSize || 'L'})
+                                  </span>
+                                  <span className={`px-1.5 py-0.2 rounded text-[9px] font-bold ${reregMethod.isCash ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                                    {reregMethod.displayMethod}
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setReceiptModalCandidate(candidate);
+                                      setReceiptModalType('rereg');
+                                      setIsReceiptModalOpen(true);
+                                    }}
+                                    className="text-teal-700 hover:text-teal-900 font-bold ml-0.5 cursor-pointer"
+                                    title="Kuitansi DU"
+                                  >
+                                    <Printer size={11} />
+                                  </button>
+                                </div>
+                              ) : (
+                                <div className="flex items-center gap-1">
+                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                    Belum Lunas
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleManualSetPayment(candidate, 'reregistration', 'paid')}
+                                    className="px-2 py-0.5 bg-teal-600 hover:bg-teal-700 text-white font-bold text-[9.5px] rounded shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                                    title="Terima Pembayaran Tunai Daftar Ulang di Sekolah"
+                                  >
+                                    <Banknote size={10} />
+                                    <span>+ Tunai DU</span>
+                                  </button>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </div>
 
@@ -2875,54 +2991,105 @@ export default function AdminSpmbManagement({
                         </td>
 
                         <td className="py-3 px-4">
-                          {isTokenPaid ? (
-                            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
-                              <CheckCircle2 size={11} className="text-emerald-700" />
-                              <span>Lunas (Rp 50rb)</span>
-                            </span>
-                          ) : (
-                            <div className="space-y-1">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                                <Clock size={10} className="text-amber-700" />
-                                <span>Belum Lunas</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleManualSetPayment(cand, 'token', 'paid')}
-                                className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold block underline cursor-pointer"
-                              >
-                                Set Lunas Tunai
-                              </button>
-                            </div>
-                          )}
+                          {(() => {
+                            const tokenMethod = formatReceiptPaymentMethod(cand.tokenPaymentMethod, cand.tokenPaymentType, {
+                              isCollective: cand.registrationType === 'school_collective',
+                              orderId: cand.tokenPaymentOrderId,
+                              vaNumbers: cand.tokenVaNumbers
+                            });
+                            return isTokenPaid ? (
+                              <div className="space-y-1">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-emerald-100 text-emerald-900 border border-emerald-300">
+                                  <CheckCircle2 size={11} className="text-emerald-700" />
+                                  <span>Lunas (Rp 50rb)</span>
+                                </span>
+                                <div className="text-[10px] font-bold text-slate-600">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9.5px] inline-block ${tokenMethod.isCash ? 'bg-emerald-50 text-emerald-800 border border-emerald-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                                    {tokenMethod.displayMethod}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReceiptModalCandidate(cand);
+                                    setReceiptModalType('token');
+                                    setIsReceiptModalOpen(true);
+                                  }}
+                                  className="text-[10px] text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 cursor-pointer"
+                                  title="Cetak Kuitansi Token"
+                                >
+                                  <Printer size={10} />
+                                  <span>Kuitansi Token</span>
+                                </button>
+                              </div>
+                            ) : (
+                              <div className="space-y-1.5">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                  <Clock size={10} className="text-amber-700" />
+                                  <span>Belum Lunas</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleManualSetPayment(cand, 'token', 'paid')}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-emerald-600 hover:bg-emerald-700 text-white text-[10px] font-bold rounded-lg shadow-2xs cursor-pointer transition-all"
+                                  title="Terima Pembayaran Tunai Token Rp 50.000 di Sekolah"
+                                >
+                                  <Banknote size={11} />
+                                  <span>Terima Tunai (50rb)</span>
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         <td className="py-3 px-4">
-                          {isReregPaid ? (
-                            <div className="space-y-0.5">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-teal-100 text-teal-900 border border-teal-300">
-                                <CheckCircle2 size={11} className="text-teal-700" />
-                                <span>LUNAS DAFTAR ULANG</span>
-                              </span>
-                              <div className="text-[10px] text-slate-500">
-                                {cand.reRegistrationMethod || 'Midtrans Online'}
+                          {(() => {
+                            const reregMethod = formatReceiptPaymentMethod(cand.reRegistrationPaymentMethod || cand.reRegistrationMethod, undefined, {
+                              orderId: cand.reRegistrationOrderId
+                            });
+                            return isReregPaid ? (
+                              <div className="space-y-1">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-teal-100 text-teal-900 border border-teal-300">
+                                  <CheckCircle2 size={11} className="text-teal-700" />
+                                  <span>LUNAS DAFTAR ULANG</span>
+                                </span>
+                                <div className="text-[10px] font-bold text-slate-600">
+                                  <span className={`px-1.5 py-0.5 rounded text-[9.5px] inline-block ${reregMethod.isCash ? 'bg-teal-50 text-teal-800 border border-teal-200' : 'bg-blue-50 text-blue-800 border border-blue-200'}`}>
+                                    {reregMethod.displayMethod}
+                                  </span>
+                                </div>
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setReceiptModalCandidate(cand);
+                                    setReceiptModalType('rereg');
+                                    setIsReceiptModalOpen(true);
+                                  }}
+                                  className="text-[10px] text-teal-700 hover:text-teal-900 font-bold flex items-center gap-1 cursor-pointer"
+                                  title="Cetak Kuitansi DU"
+                                >
+                                  <Printer size={10} />
+                                  <span>Kuitansi DU</span>
+                                </button>
                               </div>
-                            </div>
-                          ) : (
-                            <div className="space-y-1">
-                              <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                                <Clock size={10} className="text-amber-700" />
-                                <span>Belum Lunas</span>
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => handleManualSetPayment(cand, 'reregistration', 'paid')}
-                                className="text-[10px] text-teal-700 hover:text-teal-900 font-bold block underline cursor-pointer"
-                              >
-                                Set Lunas Tunai (Loket)
-                              </button>
-                            </div>
-                          )}
+                            ) : (
+                              <div className="space-y-1.5">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                  <Clock size={10} className="text-amber-700" />
+                                  <span>Belum Lunas</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleManualSetPayment(cand, 'reregistration', 'paid')}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1 bg-teal-600 hover:bg-teal-700 text-white text-[10px] font-bold rounded-lg shadow-2xs cursor-pointer transition-all"
+                                  title="Terima Pembayaran Tunai Daftar Ulang di Sekolah"
+                                >
+                                  <Banknote size={11} />
+                                  <span>Terima Tunai DU</span>
+                                </button>
+                              </div>
+                            );
+                          })()}
                         </td>
 
                         <td className="py-3 px-4">
@@ -4987,16 +5154,38 @@ export default function AdminSpmbManagement({
 
                 {/* Quick Payment & Reconciliation Controls */}
                 <div className="p-4 rounded-2xl bg-gradient-to-r from-slate-900 to-slate-850 border border-emerald-500/30 space-y-3">
-                  <h4 className="font-black text-emerald-400 text-xs uppercase flex items-center gap-2">
-                    <ShieldCheck size={14} className="text-emerald-400" />
-                    <span>Kontrol Rekonsiliasi & Pembayaran</span>
-                  </h4>
+                  <div className="flex items-center justify-between flex-wrap gap-2">
+                    <h4 className="font-black text-emerald-400 text-xs uppercase flex items-center gap-2 m-0">
+                      <ShieldCheck size={14} className="text-emerald-400" />
+                      <span>Penerimaan Pembayaran Tunai & Rekonsiliasi SPMB</span>
+                    </h4>
+                    <div className="flex items-center gap-2 text-[10px] flex-wrap">
+                      <span className="text-slate-400">Metode Token:</span>
+                      <span className="font-bold text-emerald-300 bg-emerald-950/70 border border-emerald-700/50 px-1.5 py-0.5 rounded">
+                        {selectedCandidate.tokenPaid 
+                          ? formatReceiptPaymentMethod(selectedCandidate.tokenPaymentMethod, selectedCandidate.tokenPaymentType, {
+                              isCollective: selectedCandidate.registrationType === 'school_collective',
+                              orderId: selectedCandidate.tokenPaymentOrderId
+                            }).displayMethod 
+                          : 'Belum Lunas'}
+                      </span>
+                      <span className="text-slate-400 ml-1">Metode DU:</span>
+                      <span className="font-bold text-teal-300 bg-teal-950/70 border border-teal-700/50 px-1.5 py-0.5 rounded">
+                        {selectedCandidate.reRegistrationStatus === 'paid'
+                          ? formatReceiptPaymentMethod(selectedCandidate.reRegistrationPaymentMethod || selectedCandidate.reRegistrationMethod, undefined, {
+                              orderId: selectedCandidate.reRegistrationOrderId
+                            }).displayMethod
+                          : 'Belum Lunas'}
+                      </span>
+                    </div>
+                  </div>
+
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                     <button
                       type="button"
                       onClick={() => handleReconcileCandidate(selectedCandidate.nisn)}
                       disabled={isReconcilingSingle}
-                      className="px-3 py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer shadow-sm"
+                      className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-white font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border border-slate-700 shadow-sm transition-all"
                     >
                       <ArrowLeftRight size={13} className={isReconcilingSingle ? 'animate-spin' : ''} />
                       <span>Rekonsiliasi Live Midtrans</span>
@@ -5005,27 +5194,69 @@ export default function AdminSpmbManagement({
                     <button
                       type="button"
                       onClick={() => handleManualSetPayment(selectedCandidate, 'token', selectedCandidate.tokenPaid ? 'unpaid' : 'paid')}
-                      className={`px-3 py-2 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border ${
+                      className={`px-3 py-2.5 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border shadow-sm transition-all ${
                         selectedCandidate.tokenPaid 
                           ? 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900' 
-                          : 'bg-blue-600 text-white hover:bg-blue-500'
+                          : 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500'
                       }`}
+                      title={selectedCandidate.tokenPaid ? 'Batalkan status lunas token' : 'Terima pembayaran tunai token formulir (Rp 50.000) di sekolah'}
                     >
-                      <Coins size={13} />
-                      <span>{selectedCandidate.tokenPaid ? 'Reset Token Belum Lunas' : 'Tandai Token LUNAS'}</span>
+                      <Banknote size={14} />
+                      <span>{selectedCandidate.tokenPaid ? 'Reset Token (Belum Lunas)' : 'Tandai Lunas Token (Tunai di Sekolah)'}</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleManualSetPayment(selectedCandidate, 'reregistration', selectedCandidate.reRegistrationStatus === 'paid' ? 'unpaid' : 'paid')}
-                      className={`px-3 py-2 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border ${
+                      className={`px-3 py-2.5 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border shadow-sm transition-all ${
                         selectedCandidate.reRegistrationStatus === 'paid' 
                           ? 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900' 
-                          : 'bg-teal-600 text-white hover:bg-teal-500'
+                          : 'bg-teal-600 text-white border-teal-500 hover:bg-teal-500'
                       }`}
+                      title={selectedCandidate.reRegistrationStatus === 'paid' ? 'Batalkan status lunas daftar ulang' : 'Terima pembayaran tunai daftar ulang & seragam di sekolah'}
                     >
-                      <CreditCard size={13} />
-                      <span>{selectedCandidate.reRegistrationStatus === 'paid' ? 'Reset Daftar Ulang Belum Lunas' : 'Tandai DAFTAR ULANG LUNAS'}</span>
+                      <Banknote size={14} />
+                      <span>{selectedCandidate.reRegistrationStatus === 'paid' ? 'Reset DU (Belum Lunas)' : 'Tandai Lunas DU (Tunai di Sekolah)'}</span>
+                    </button>
+                  </div>
+
+                  {/* Kuitansi Cetak Resmi Links */}
+                  <div className="flex items-center gap-2 pt-1 border-t border-slate-800/80 flex-wrap">
+                    {selectedCandidate.tokenPaid && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReceiptModalCandidate(selectedCandidate);
+                          setReceiptModalType('token');
+                          setIsReceiptModalOpen(true);
+                        }}
+                        className="px-2.5 py-1.5 bg-emerald-950/50 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-600/40 font-bold text-[10.5px] rounded-lg flex items-center gap-1 cursor-pointer transition-all"
+                      >
+                        <Printer size={12} />
+                        <span>Kuitansi Token Resmi</span>
+                      </button>
+                    )}
+                    {selectedCandidate.reRegistrationStatus === 'paid' && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setReceiptModalCandidate(selectedCandidate);
+                          setReceiptModalType('rereg');
+                          setIsReceiptModalOpen(true);
+                        }}
+                        className="px-2.5 py-1.5 bg-teal-950/50 hover:bg-teal-900/60 text-teal-300 border border-teal-600/40 font-bold text-[10.5px] rounded-lg flex items-center gap-1 cursor-pointer transition-all"
+                      >
+                        <Printer size={12} />
+                        <span>Kuitansi Daftar Ulang Resmi</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => printRegistrationProofDirect(selectedCandidate, config, currentSchoolIdentity)}
+                      className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 font-bold text-[10.5px] rounded-lg flex items-center gap-1 cursor-pointer transition-all ml-auto"
+                    >
+                      <FileText size={12} />
+                      <span>Cetak Bukti Pendaftaran</span>
                     </button>
                   </div>
                 </div>

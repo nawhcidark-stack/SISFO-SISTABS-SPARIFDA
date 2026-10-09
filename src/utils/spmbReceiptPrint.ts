@@ -215,6 +215,134 @@ export function renderKopHeaderHtml(schoolIdentity?: SchoolIdentity, academicYea
 }
 
 /**
+ * Format keterangan Metode Pembayaran untuk Kuitansi Resmi SPMB & Kartu Bukti Pendaftaran:
+ * - Pembayaran Tunai: "Tunai (Pembayaran di Sekolah)" atau "Tunai"
+ * - Pembayaran Online (Midtrans): Sesuai metode yang dipakai calon murid (contoh: "Midtrans (QRIS)", "Midtrans (BCA Virtual Account)", dll)
+ */
+export function formatReceiptPaymentMethod(
+  rawMethod?: string,
+  rawType?: string,
+  options?: {
+    isCollective?: boolean;
+    orderId?: string;
+    vaNumbers?: Array<{ bank?: string; va_number?: string }>;
+    defaultLabel?: string;
+  }
+): {
+  displayMethod: string;
+  isCash: boolean;
+  isOnline: boolean;
+  isFree: boolean;
+} {
+  const methodStr = (rawMethod || '').trim();
+  const typeStr = (rawType || '').trim().toLowerCase();
+  const orderId = (options?.orderId || '').trim().toUpperCase();
+
+  // 1. Jalur Kolektif Gratis
+  if (options?.isCollective && (!methodStr || methodStr.toLowerCase().includes('kolektif') || methodStr.toLowerCase().includes('gratis'))) {
+    return {
+      displayMethod: 'Gratis (Jalur Kolektif SD/MI)',
+      isCash: false,
+      isOnline: false,
+      isFree: true
+    };
+  }
+
+  // 2. Beasiswa / Diskon 100%
+  if (methodStr.toLowerCase().includes('beasiswa') || methodStr.toLowerCase().includes('diskon 100%')) {
+    return {
+      displayMethod: 'Beasiswa Penuh (Diskon 100%)',
+      isCash: false,
+      isOnline: false,
+      isFree: true
+    };
+  }
+
+  // 3. Tunai / Cash di Sekolah / Loket SPMB
+  const isCash =
+    methodStr.toLowerCase().includes('tunai') ||
+    methodStr.toLowerCase().includes('cash') ||
+    methodStr.toLowerCase().includes('loket') ||
+    methodStr.toLowerCase().includes('sekolah') ||
+    typeStr === 'cash' ||
+    orderId.startsWith('TUNAI-') ||
+    orderId.startsWith('KASIR-');
+
+  if (isCash) {
+    return {
+      displayMethod: 'Tunai (Pembayaran di Sekolah)',
+      isCash: true,
+      isOnline: false,
+      isFree: false
+    };
+  }
+
+  // 4. Online Midtrans
+  if (methodStr) {
+    const lower = methodStr.toLowerCase();
+
+    let bankName = '';
+    if (options?.vaNumbers && options.vaNumbers.length > 0 && options.vaNumbers[0].bank) {
+      bankName = options.vaNumbers[0].bank.toUpperCase();
+    }
+
+    if (lower.includes('qris') || typeStr === 'qris') {
+      return { displayMethod: 'Midtrans (QRIS)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('gopay') || typeStr === 'gopay') {
+      return { displayMethod: 'Midtrans (GoPay / QRIS)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('shopeepay') || typeStr === 'shopeepay') {
+      return { displayMethod: 'Midtrans (ShopeePay)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('bank_transfer') || lower.includes('virtual account') || lower.includes('va')) {
+      const foundBank = ['BCA', 'BNI', 'BRI', 'MANDIRI', 'PERMATA', 'CIMB'].find(b =>
+        methodStr.toUpperCase().includes(b)
+      ) || bankName;
+      const bankLabel = foundBank ? ` (${foundBank} Virtual Account)` : ' (Bank Transfer / VA)';
+      return { displayMethod: `Midtrans${bankLabel}`, isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('echannel') || lower.includes('mandiri')) {
+      return { displayMethod: 'Midtrans (Mandiri Bill / VA)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('cstore') || lower.includes('indomaret') || lower.includes('alfamart')) {
+      const store = lower.includes('indomaret') ? 'Indomaret' : lower.includes('alfamart') ? 'Alfamart' : 'Gerai Retail';
+      return { displayMethod: `Midtrans (${store})`, isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('credit_card') || lower.includes('kartu kredit')) {
+      return { displayMethod: 'Midtrans (Kartu Kredit / Debit Online)', isCash: false, isOnline: true, isFree: false };
+    }
+
+    if (methodStr.startsWith('Midtrans (')) {
+      return { displayMethod: methodStr, isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('midtrans')) {
+      return { displayMethod: methodStr, isCash: false, isOnline: true, isFree: false };
+    }
+
+    return { displayMethod: `Midtrans (${methodStr})`, isCash: false, isOnline: true, isFree: false };
+  }
+
+  // Fallback jika ada Midtrans Order ID
+  if (orderId.startsWith('SPMB-') || orderId.startsWith('TRX-')) {
+    return {
+      displayMethod: 'Midtrans Online',
+      isCash: false,
+      isOnline: true,
+      isFree: false
+    };
+  }
+
+  // Default fallback
+  return {
+    displayMethod: options?.defaultLabel || 'Tunai (Pembayaran di Sekolah)',
+    isCash: true,
+    isOnline: false,
+    isFree: false
+  };
+}
+
+/**
  * Generate HTML Kuitansi Token Lunas
  */
 export async function generateTokenReceiptHtml(
@@ -232,10 +360,21 @@ export async function generateTokenReceiptHtml(
   const session = config?.sessions?.find(s => s.id === candidate.sessionId);
   const sessionName = session?.name || (candidate.sessionId === 'inden' ? 'Jalur Inden' : candidate.sessionId === 'gelombang-1' ? 'Gelombang 1' : candidate.sessionId === 'gelombang-2' ? 'Gelombang 2' : candidate.sessionId);
 
+  const methodInfo = formatReceiptPaymentMethod(
+    candidate.tokenPaymentMethod,
+    candidate.tokenPaymentType,
+    {
+      isCollective,
+      orderId: candidate.tokenPaymentOrderId,
+      vaNumbers: candidate.tokenVaNumbers,
+      defaultLabel: 'Tunai (Pembayaran di Sekolah)'
+    }
+  );
+
   let qrCodeDataUrl = '';
   try {
     qrCodeDataUrl = await QRCode.toDataURL(
-      `VALID-SPMB-TOKEN-${candidate.nisn}-${candidate.fullName}-${receiptNo}-${amount}`,
+      `VALID-SPMB-TOKEN-${candidate.nisn}-${candidate.fullName}-${receiptNo}-${amount}-${methodInfo.displayMethod}`,
       { width: 120, margin: 1 }
     );
   } catch (e) {
@@ -299,6 +438,14 @@ export async function generateTokenReceiptHtml(
               </td>
             </tr>
             <tr>
+              <td class="col-label">Metode Pembayaran</td>
+              <td class="col-colon">:</td>
+              <td class="col-value">
+                <strong style="color: ${methodInfo.isCash ? '#047857' : '#1d4ed8'};">${methodInfo.displayMethod}</strong>
+                ${methodInfo.isCash ? '<span class="badge-tag" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; margin-left:6px; font-size:9.5px;">PEMBAYARAN TUNAI DI SEKOLAH</span>' : '<span class="badge-tag" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; margin-left:6px; font-size:9.5px;">MIDTRANS ONLINE</span>'}
+              </td>
+            </tr>
+            <tr>
               <td class="col-label">Jalur / Sesi Pendaftaran</td>
               <td class="col-colon">:</td>
               <td class="col-value">
@@ -315,7 +462,7 @@ export async function generateTokenReceiptHtml(
             <tr>
               <td class="col-label">No. Transaksi / Order ID</td>
               <td class="col-colon">:</td>
-              <td class="col-value mono-text">${candidate.tokenPaymentOrderId || 'KASIR-OFFLINE-PANITIA'}</td>
+              <td class="col-value mono-text">${candidate.tokenPaymentOrderId || (methodInfo.isCash ? 'KASIR-TUNAI-SEKOLAH' : 'MIDTRANS-GATEWAY')}</td>
             </tr>
             <tr>
               <td class="col-label">Tanggal Pelunasan</td>
@@ -407,10 +554,19 @@ export async function generateReRegReceiptHtml(
   const payDateStr = formatIndoDate(candidate.reRegistrationPaidAt);
   const genderLabel = candidate.gender === 'L' ? 'Putra' : 'Putri';
 
+  const methodInfo = formatReceiptPaymentMethod(
+    candidate.reRegistrationPaymentMethod || candidate.reRegistrationMethod,
+    undefined,
+    {
+      orderId: candidate.reRegistrationOrderId,
+      defaultLabel: 'Tunai (Pembayaran di Sekolah)'
+    }
+  );
+
   let qrCodeDataUrl = '';
   try {
     qrCodeDataUrl = await QRCode.toDataURL(
-      `VALID-SPMB-DAFTAR-ULANG-${candidate.nisn}-${candidate.fullName}-${receiptNo}-${totalAmount}`,
+      `VALID-SPMB-DAFTAR-ULANG-${candidate.nisn}-${candidate.fullName}-${receiptNo}-${totalAmount}-${methodInfo.displayMethod}`,
       { width: 120, margin: 1 }
     );
   } catch (e) {
@@ -474,12 +630,30 @@ export async function generateReRegReceiptHtml(
               </td>
             </tr>
             <tr>
+              <td class="col-label">Metode Pembayaran</td>
+              <td class="col-colon">:</td>
+              <td class="col-value">
+                <strong style="color: ${methodInfo.isCash ? '#047857' : '#1d4ed8'};">${methodInfo.displayMethod}</strong>
+                ${methodInfo.isCash ? '<span class="badge-tag" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; margin-left:6px; font-size:9.5px;">PEMBAYARAN TUNAI DI SEKOLAH</span>' : '<span class="badge-tag" style="background:#eff6ff; color:#1d4ed8; border:1px solid #bfdbfe; margin-left:6px; font-size:9.5px;">MIDTRANS ONLINE</span>'}
+              </td>
+            </tr>
+            <tr>
               <td class="col-label">Jalur / Sesi SPMB</td>
               <td class="col-colon">:</td>
               <td class="col-value">
                 <strong>${details.sessionName}</strong>
                 ${candidate.schoolOriginType === 'maarif_jogosari' ? '<span class="badge-tag">Khusus SD Maarif Jogosari</span>' : ''}
               </td>
+            </tr>
+            <tr>
+              <td class="col-label">No. Transaksi / Order ID</td>
+              <td class="col-colon">:</td>
+              <td class="col-value mono-text">${candidate.reRegistrationOrderId || (methodInfo.isCash ? 'KASIR-TUNAI-SEKOLAH' : 'MIDTRANS-GATEWAY')}</td>
+            </tr>
+            <tr>
+              <td class="col-label">Tanggal Pelunasan</td>
+              <td class="col-colon">:</td>
+              <td class="col-value">${payDateStr}</td>
             </tr>
           </table>
 
@@ -833,6 +1007,25 @@ export async function generateRegistrationProofHtml(
   const session = config?.sessions?.find(s => s.id === candidate.sessionId);
   const sessionName = session?.name || (candidate.sessionId === 'inden' ? 'Jalur Inden' : candidate.sessionId === 'gelombang-1' ? 'Gelombang 1' : candidate.sessionId === 'gelombang-2' ? 'Gelombang 2' : candidate.sessionId || 'Reguler');
 
+  const tokenMethodInfo = formatReceiptPaymentMethod(
+    candidate.tokenPaymentMethod,
+    candidate.tokenPaymentType,
+    {
+      isCollective: candidate.registrationType === 'school_collective',
+      orderId: candidate.tokenPaymentOrderId,
+      vaNumbers: candidate.tokenVaNumbers,
+      defaultLabel: 'Tunai (Pembayaran di Sekolah)'
+    }
+  );
+  const reregMethodInfo = formatReceiptPaymentMethod(
+    candidate.reRegistrationPaymentMethod || candidate.reRegistrationMethod,
+    undefined,
+    {
+      orderId: candidate.reRegistrationOrderId,
+      defaultLabel: 'Tunai (Pembayaran di Sekolah)'
+    }
+  );
+
   let qrCodeDataUrl = '';
   try {
     qrCodeDataUrl = await QRCode.toDataURL(
@@ -999,9 +1192,9 @@ export async function generateRegistrationProofHtml(
                     <td class="col-label">Status Administrasi</td>
                     <td class="col-colon">:</td>
                     <td class="col-value">
-                      <span style="color: #15803d; font-weight: bold;">• Token Formulir: LUNAS</span>
+                      <span style="color: #15803d; font-weight: bold;">• Token Formulir: LUNAS (${tokenMethodInfo.displayMethod})</span>
                       <span style="margin-left: 10px; color: ${candidate.reRegistrationStatus === 'paid' ? '#15803d' : '#b45309'}; font-weight: bold;">
-                        • Daftar Ulang: ${candidate.reRegistrationStatus === 'paid' ? 'LUNAS / SELESAI' : 'BELUM LUNAS'}
+                        • Daftar Ulang: ${candidate.reRegistrationStatus === 'paid' ? `LUNAS (${reregMethodInfo.displayMethod})` : 'BELUM LUNAS'}
                       </span>
                     </td>
                   </tr>

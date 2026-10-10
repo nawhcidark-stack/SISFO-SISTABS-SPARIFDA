@@ -1470,14 +1470,13 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
   }
 
     const currentNisn = String(r.nisn || '').trim();
-    const isResetTarget = currentNisn === '0158483548' || currentNisn === '0152892235';
     
-    // Validasi form: hanya selesai jika ada No KK valid (>=8 digit) dan nama orang tua/wali
+    // Validasi form: selesai jika ada No KK valid (>=8 digit) dan nama orang tua/wali, atau r.is_form_completed = 1
     const hasRealFormData = Boolean(
       (r.kk_number && String(r.kk_number).trim().length >= 8) &&
       (r.father_name || r.mother_name || r.guardian_name || (fullFormData && (fullFormData.fatherName || fullFormData.motherName || fullFormData.guardianName)))
     );
-    const isFormDone = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(r.is_form_completed)));
+    const isFormDone = Boolean(r.is_form_completed) || hasRealFormData || (currentNisn === '0156620618');
     const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
     
     // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL (abaikan berkas contoh SVG / unsplash)
@@ -1506,7 +1505,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       (isRealDoc(documents.ktpAyahPhoto) || isRealDoc(documents.ktpPhoto)) && 
       isRealDoc(documents.ktpIbuPhoto)
     );
-    const hasDocs = !isResetTarget && hasActualMandatoryDocs;
+    const hasDocs = hasActualMandatoryDocs;
 
     const isSyahm = currentNisn === '0156620618';
     const resolvedFullName = isSyahm ? 'SYAHM AZIO HAFIZUDIN' : r.full_name;
@@ -2877,13 +2876,12 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const createdAt = c.createdAt || new Date().toISOString();
       const updatedAt = c.updatedAt || new Date().toISOString();
       const currentNisn = String(nisn || '').trim();
-      const isResetTarget = currentNisn === '0158483548' || currentNisn === '0152892235';
 
       const hasRealFormData = Boolean(
         (c.kkNumber && String(c.kkNumber).trim().length >= 8) &&
         (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
       );
-      const isCompleted = !isResetTarget && (hasRealFormData || (currentNisn === '0156620618' && Boolean(c.isFormCompleted)));
+      const isCompleted = Boolean(c.isFormCompleted) || hasRealFormData || (currentNisn === '0156620618');
       const isReregPaid = Boolean(c.reRegistrationPaid || c.reRegistrationStatus === 'paid' || c.reRegistrationPaidAt);
 
       const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
@@ -2895,10 +2893,10 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         (isRealDoc(c.documents.ktpAyahPhoto) || isRealDoc(c.documents.ktpPhoto)) && 
         isRealDoc(c.documents.ktpIbuPhoto)
       );
-      const isDocsUploaded = !isResetTarget && hasActualMandatoryDocs;
+      const isDocsUploaded = hasActualMandatoryDocs;
       const status = c.status === 'accepted' || (isReregPaid && (isDocsUploaded || isCompleted))
         ? 'accepted'
-        : (isResetTarget ? 'registered' : (c.status || (isCompleted ? 'form_submitted' : 'registered')));
+        : (c.status || (isCompleted ? 'form_submitted' : 'registered'));
 
       const transferHistory = c.transferHistory ? (typeof c.transferHistory === 'string' ? c.transferHistory : JSON.stringify(c.transferHistory)) : null;
       const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
@@ -3075,8 +3073,14 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
           \`nilai_rata_tp\`, \`nilai_kokurikuler\`, \`nilai_pts\`, \`nilai_pas\`, \`nilai_akhir_mapel\`
         ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`tp1_uh\`=VALUES(\`tp1_uh\`), \`nilai_tp1\`=VALUES(\`nilai_tp1\`),
-          \`nilai_rata_tp\`=VALUES(\`nilai_rata_tp\`), \`nilai_akhir_mapel\`=VALUES(\`nilai_akhir_mapel\`)
+          \`student_name\`=VALUES(\`student_name\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`), \`teacher_name\`=VALUES(\`teacher_name\`),
+          \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+          \`tp1_name\`=VALUES(\`tp1_name\`), \`tp1_tugas1\`=VALUES(\`tp1_tugas1\`), \`tp1_tugas2\`=VALUES(\`tp1_tugas2\`), \`tp1_uh\`=VALUES(\`tp1_uh\`), \`nilai_tp1\`=VALUES(\`nilai_tp1\`),
+          \`tp2_name\`=VALUES(\`tp2_name\`), \`tp2_tugas1\`=VALUES(\`tp2_tugas1\`), \`tp2_tugas2\`=VALUES(\`tp2_tugas2\`), \`tp2_uh\`=VALUES(\`tp2_uh\`), \`nilai_tp2\`=VALUES(\`nilai_tp2\`),
+          \`tp3_name\`=VALUES(\`tp3_name\`), \`tp3_tugas1\`=VALUES(\`tp3_tugas1\`), \`tp3_tugas2\`=VALUES(\`tp3_tugas2\`), \`tp3_uh\`=VALUES(\`tp3_uh\`), \`nilai_tp3\`=VALUES(\`nilai_tp3\`),
+          \`tp4_name\`=VALUES(\`tp4_name\`), \`tp4_tugas1\`=VALUES(\`tp4_tugas1\`), \`tp4_tugas2\`=VALUES(\`tp4_tugas2\`), \`tp4_uh\`=VALUES(\`tp4_uh\`), \`nilai_tp4\`=VALUES(\`nilai_tp4\`),
+          \`nilai_rata_tp\`=VALUES(\`nilai_rata_tp\`), \`nilai_kokurikuler\`=VALUES(\`nilai_kokurikuler\`), \`nilai_pts\`=VALUES(\`nilai_pts\`), \`nilai_pas\`=VALUES(\`nilai_pas\`), \`nilai_akhir_mapel\`=VALUES(\`nilai_akhir_mapel\`),
+          \`updated_at\`=NOW()
       `, [
         a.id, a.studentId || '', a.studentName || '', a.className || '', a.subject || '', a.teacherName || '',
         a.semester || 'Ganjil', a.academicYear || '2026/2027',
@@ -3243,6 +3247,51 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
   try {
     connection = await pool.getConnection();
     const typeKey = entityType.toLowerCase().trim();
+
+    // High performance chunked multi-row batch insert for Merdeka Assessments (Nilai Kurikulum Merdeka)
+    if (typeKey === "assessment" || typeKey === "merdeka" || typeKey === "merdeka_assessment" || typeKey === "merdekaassessments") {
+      const validItems = items.filter(it => it && typeof it === "object" && it.id);
+      const chunkSize = 50;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const a of chunk) {
+          placeholders.push("(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)");
+          values.push(
+            a.id, a.studentId || "", a.studentName || "", a.className || "", a.subject || "", a.teacherName || "",
+            a.semester || "Ganjil", a.academicYear || "2026/2027",
+            a.tp1Name || null, a.tp1Tugas1 || null, a.tp1Tugas2 || null, a.tp1Uh || null, Number(a.nilaiTp1) || null,
+            a.tp2Name || null, a.tp2Tugas1 || null, a.tp2Tugas2 || null, a.tp2Uh || null, Number(a.nilaiTp2) || null,
+            a.tp3Name || null, a.tp3Tugas1 || null, a.tp3Tugas2 || null, a.tp3Uh || null, Number(a.nilaiTp3) || null,
+            a.tp4Name || null, a.tp4Tugas1 || null, a.tp4Tugas2 || null, a.tp4Uh || null, Number(a.nilaiTp4) || null,
+            Number(a.nilaiRataTp) || null, Number(a.nilaiKokurikuler) || null, Number(a.nilaiPts) || null,
+            Number(a.nilaiPas) || null, Number(a.nilaiAkhirMapel) || null
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`merdeka_assessments\` (
+            \`id\`, \`student_id\`, \`student_name\`, \`class_name\`, \`subject\`, \`teacher_name\`,
+            \`semester\`, \`academic_year\`, \`tp1_name\`, \`tp1_tugas1\`, \`tp1_tugas2\`, \`tp1_uh\`, \`nilai_tp1\`,
+            \`tp2_name\`, \`tp2_tugas1\`, \`tp2_tugas2\`, \`tp2_uh\`, \`nilai_tp2\`,
+            \`tp3_name\`, \`tp3_tugas1\`, \`tp3_tugas2\`, \`tp3_uh\`, \`nilai_tp3\`,
+            \`tp4_name\`, \`tp4_tugas1\`, \`tp4_tugas2\`, \`tp4_uh\`, \`nilai_tp4\`,
+            \`nilai_rata_tp\`, \`nilai_kokurikuler\`, \`nilai_pts\`, \`nilai_pas\`, \`nilai_akhir_mapel\`
+          ) VALUES ${placeholders.join(", ")}
+          ON DUPLICATE KEY UPDATE
+            \`student_name\`=VALUES(\`student_name\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`), \`teacher_name\`=VALUES(\`teacher_name\`),
+            \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+            \`tp1_name\`=VALUES(\`tp1_name\`), \`tp1_tugas1\`=VALUES(\`tp1_tugas1\`), \`tp1_tugas2\`=VALUES(\`tp1_tugas2\`), \`tp1_uh\`=VALUES(\`tp1_uh\`), \`nilai_tp1\`=VALUES(\`nilai_tp1\`),
+            \`tp2_name\`=VALUES(\`tp2_name\`), \`tp2_tugas1\`=VALUES(\`tp2_tugas1\`), \`tp2_tugas2\`=VALUES(\`tp2_tugas2\`), \`tp2_uh\`=VALUES(\`tp2_uh\`), \`nilai_tp2\`=VALUES(\`nilai_tp2\`),
+            \`tp3_name\`=VALUES(\`tp3_name\`), \`tp3_tugas1\`=VALUES(\`tp3_tugas1\`), \`tp3_tugas2\`=VALUES(\`tp3_tugas2\`), \`tp3_uh\`=VALUES(\`tp3_uh\`), \`nilai_tp3\`=VALUES(\`nilai_tp3\`),
+            \`tp4_name\`=VALUES(\`tp4_name\`), \`tp4_tugas1\`=VALUES(\`tp4_tugas1\`), \`tp4_tugas2\`=VALUES(\`tp4_tugas2\`), \`tp4_uh\`=VALUES(\`tp4_uh\`), \`nilai_tp4\`=VALUES(\`nilai_tp4\`),
+            \`nilai_rata_tp\`=VALUES(\`nilai_rata_tp\`), \`nilai_kokurikuler\`=VALUES(\`nilai_kokurikuler\`), \`nilai_pts\`=VALUES(\`nilai_pts\`), \`nilai_pas\`=VALUES(\`nilai_pas\`), \`nilai_akhir_mapel\`=VALUES(\`nilai_akhir_mapel\`),
+            \`updated_at\`=NOW()
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
 
     // High performance chunked multi-row batch insert for Attendance Logs
     if (typeKey === 'attendance' || typeKey === 'attendance_log' || typeKey === 'attendancelogs') {

@@ -329,6 +329,9 @@ export default function SubjectTeacherPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('');
   const [tp3InputName, setTp3InputName] = useState<string>('');
   const [tp4InputName, setTp4InputName] = useState<string>('');
+  const [savedTpDescriptions, setSavedTpDescriptions] = useState<Record<string, { tp1Name?: string; tp2Name?: string; tp3Name?: string; tp4Name?: string }>>({});
+  const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
+  const [unsavedTpCache, setUnsavedTpCache] = useState<Record<string, { tp1Name: string; tp2Name: string; tp3Name: string; tp4Name: string }>>({});
 
   const handleAutoFillAllTpsFromJournals = () => {
     const norm = (s?: string) => (s || '').toLowerCase().trim();
@@ -384,30 +387,150 @@ export default function SubjectTeacherPanel({
     });
   };
 
-  useEffect(() => {
-    if (currentSubjectDefaultTps) {
-      setTp1InputName(currentSubjectDefaultTps[0] || '');
-      setTp2InputName(currentSubjectDefaultTps[1] || '');
-      setTp3InputName(currentSubjectDefaultTps[2] || '');
-      setTp4InputName(currentSubjectDefaultTps[3] || '');
+  // Fungsi pengambilan data deskripsi TP dari server
+  const fetchTpDescriptions = async () => {
+    try {
+      const res = await fetch('/api/tp-descriptions');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.descriptions) {
+          setSavedTpDescriptions(data.descriptions);
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal mengambil deskripsi TP:", e);
     }
-  }, [currentSubjectDefaultTps]);
+  };
+
+  useEffect(() => {
+    fetchTpDescriptions();
+  }, []);
+
+  // Simpan deskripsi TP secara mandiri untuk mapel yang aktif
+  const handleSaveTpDescriptions = async () => {
+    if (!selectedSubject) {
+      setFeedback({ type: 'error', text: 'Pilih mata pelajaran terlebih dahulu.' });
+      return;
+    }
+    setIsSavingTp(true);
+    try {
+      const res = await fetch('/api/tp-descriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: selectedSubject,
+          className: selectedGradeClass,
+          semester: selectedSemesterGrading,
+          academicYear: selectedYearGrading,
+          tp1Name: tp1InputName,
+          tp2Name: tp2InputName,
+          tp3Name: tp3InputName,
+          tp4Name: tp4InputName
+        })
+      });
+      if (res.ok) {
+        const subKey = (selectedSubject || '').trim().toLowerCase();
+        const classKey = (selectedGradeClass || '').trim().toLowerCase();
+        const semKey = (selectedSemesterGrading || 'ganjil').trim().toLowerCase();
+        const yearKey = (selectedYearGrading || '2026/2027').trim().toLowerCase();
+        const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+        
+        const updated = {
+          tp1Name: tp1InputName,
+          tp2Name: tp2InputName,
+          tp3Name: tp3InputName,
+          tp4Name: tp4InputName
+        };
+
+        setSavedTpDescriptions(prev => ({
+          ...prev,
+          [fullKey]: updated,
+          [subKey]: updated
+        }));
+
+        setFeedback({
+          type: 'success',
+          text: `Deskripsi Tujuan Pembelajaran (TP) untuk mapel ${selectedSubject} berhasil disimpan!`
+        });
+        fetchAssessments();
+      } else {
+        setFeedback({ type: 'error', text: 'Gagal menyimpan deskripsi TP ke server.' });
+      }
+    } catch (err: any) {
+      setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem saat menyimpan TP.' });
+    } finally {
+      setIsSavingTp(false);
+    }
+  };
+
+  // Saat berpindah mata pelajaran / kelas:
+  // TP otomatis berganti sesuai yang tersimpan untuk mapel tersebut (atau kosong jika belum diisi),
+  // dan jika kembali ke mapel yang sudah disimpan, otomatis terisi kembali sesuai simpanan awal.
+  useEffect(() => {
+    if (!selectedSubject) return;
+
+    const subKey = (selectedSubject || '').trim().toLowerCase();
+    const classKey = (selectedGradeClass || '').trim().toLowerCase();
+    const semKey = (selectedSemesterGrading || 'ganjil').trim().toLowerCase();
+    const yearKey = (selectedYearGrading || '2026/2027').trim().toLowerCase();
+    const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+
+    // 1. Cek dari draft belum tersimpan di sesi ini
+    const cachedDraft = unsavedTpCache[subKey] || unsavedTpCache[fullKey];
+    if (cachedDraft && (cachedDraft.tp1Name || cachedDraft.tp2Name || cachedDraft.tp3Name || cachedDraft.tp4Name)) {
+      setTp1InputName(cachedDraft.tp1Name || '');
+      setTp2InputName(cachedDraft.tp2Name || '');
+      setTp3InputName(cachedDraft.tp3Name || '');
+      setTp4InputName(cachedDraft.tp4Name || '');
+      return;
+    }
+
+    // 2. Cek dari savedTpDescriptions
+    const savedDesc = savedTpDescriptions[fullKey] || savedTpDescriptions[subKey];
+    if (savedDesc && (savedDesc.tp1Name || savedDesc.tp2Name || savedDesc.tp3Name || savedDesc.tp4Name)) {
+      setTp1InputName(savedDesc.tp1Name || '');
+      setTp2InputName(savedDesc.tp2Name || '');
+      setTp3InputName(savedDesc.tp3Name || '');
+      setTp4InputName(savedDesc.tp4Name || '');
+      return;
+    }
+
+    // 3. Cek dari merdekaAssessments yang sudah tersimpan di database
+    const matchedAss = merdekaAssessments.find(a => 
+      matchSubject(a.subject, selectedSubject) &&
+      (!selectedGradeClass || (a.className || '').trim().toLowerCase() === classKey) &&
+      (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+    ) || merdekaAssessments.find(a => 
+      matchSubject(a.subject, selectedSubject) &&
+      (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+    );
+
+    if (matchedAss && (matchedAss.tp1Name || matchedAss.tp2Name || matchedAss.tp3Name || matchedAss.tp4Name)) {
+      setTp1InputName(matchedAss.tp1Name || '');
+      setTp2InputName(matchedAss.tp2Name || '');
+      setTp3InputName(matchedAss.tp3Name || '');
+      setTp4InputName(matchedAss.tp4Name || '');
+      return;
+    }
+
+    // 4. Jika belum pernah disimpan untuk mapel ini, kosongkan agar guru dapat mengisinya
+    setTp1InputName('');
+    setTp2InputName('');
+    setTp3InputName('');
+    setTp4InputName('');
+  }, [selectedSubject, selectedGradeClass, selectedSemesterGrading, selectedYearGrading, savedTpDescriptions, merdekaAssessments]);
 
   const [gradeInputMap, setGradeInputMap] = useState<Record<string, {
     tp1Tugas1: string;
-    tp1Tugas2: string;
     tp1Uh: string;
 
     tp2Tugas1: string;
-    tp2Tugas2: string;
     tp2Uh: string;
 
     tp3Tugas1: string;
-    tp3Tugas2: string;
     tp3Uh: string;
 
     tp4Tugas1: string;
-    tp4Tugas2: string;
     tp4Uh: string;
 
     // legacy / computed
@@ -741,19 +864,15 @@ export default function SubjectTeacherPanel({
       if (match) {
         newMap[s.id] = {
           tp1Tugas1: match.tp1Tugas1 !== undefined && match.tp1Tugas1 !== null ? String(match.tp1Tugas1) : (match.tp1Grade !== undefined ? String(match.tp1Grade) : ''),
-          tp1Tugas2: match.tp1Tugas2 !== undefined && match.tp1Tugas2 !== null ? String(match.tp1Tugas2) : '',
           tp1Uh: match.tp1Uh !== undefined && match.tp1Uh !== null ? String(match.tp1Uh) : '',
 
           tp2Tugas1: match.tp2Tugas1 !== undefined && match.tp2Tugas1 !== null ? String(match.tp2Tugas1) : (match.tp2Grade !== undefined ? String(match.tp2Grade) : ''),
-          tp2Tugas2: match.tp2Tugas2 !== undefined && match.tp2Tugas2 !== null ? String(match.tp2Tugas2) : '',
           tp2Uh: match.tp2Uh !== undefined && match.tp2Uh !== null ? String(match.tp2Uh) : '',
 
           tp3Tugas1: match.tp3Tugas1 !== undefined && match.tp3Tugas1 !== null ? String(match.tp3Tugas1) : (match.tp3Grade !== undefined ? String(match.tp3Grade) : ''),
-          tp3Tugas2: match.tp3Tugas2 !== undefined && match.tp3Tugas2 !== null ? String(match.tp3Tugas2) : '',
           tp3Uh: match.tp3Uh !== undefined && match.tp3Uh !== null ? String(match.tp3Uh) : '',
 
           tp4Tugas1: match.tp4Tugas1 !== undefined && match.tp4Tugas1 !== null ? String(match.tp4Tugas1) : (match.tp4Grade !== undefined ? String(match.tp4Grade) : ''),
-          tp4Tugas2: match.tp4Tugas2 !== undefined && match.tp4Tugas2 !== null ? String(match.tp4Tugas2) : '',
           tp4Uh: match.tp4Uh !== undefined && match.tp4Uh !== null ? String(match.tp4Uh) : '',
 
           nilaiSumatifLM: String(match.nilaiSumatifLM ?? ''),
@@ -762,10 +881,10 @@ export default function SubjectTeacherPanel({
         };
       } else {
         newMap[s.id] = {
-          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
-          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
-          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
-          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+          tp1Tugas1: '', tp1Uh: '',
+          tp2Tugas1: '', tp2Uh: '',
+          tp3Tugas1: '', tp3Uh: '',
+          tp4Tugas1: '', tp4Uh: '',
           nilaiSumatifLM: '',
           nilaiSAS: '',
           deskripsiCapaian: ''
@@ -784,10 +903,10 @@ export default function SubjectTeacherPanel({
   const handleDownloadExcelTemplate = () => {
     const headers = [
       "No", "NIS", "Nama Siswa",
-      "TP1_Tugas1", "TP1_Tugas2", "TP1_UH",
-      "TP2_Tugas1", "TP2_Tugas2", "TP2_UH",
-      "TP3_Tugas1", "TP3_Tugas2", "TP3_UH",
-      "TP4_Tugas1", "TP4_Tugas2", "TP4_UH",
+      "TP1_Tugas", "TP1_UH",
+      "TP2_Tugas", "TP2_UH",
+      "TP3_Tugas", "TP3_UH",
+      "TP4_Tugas", "TP4_UH",
       "Kokurikuler", "PTS", "PAS"
     ];
 
@@ -795,10 +914,10 @@ export default function SubjectTeacherPanel({
       idx + 1,
       `"${st.nis || st.id}"`,
       `"${st.name.replace(/"/g, '""')}"`,
-      "", "", "",
-      "", "", "",
-      "", "", "",
-      "", "", "",
+      "", "",
+      "", "",
+      "", "",
+      "", "",
       "", "", ""
     ]);
 
@@ -822,10 +941,10 @@ export default function SubjectTeacherPanel({
   const handleExportExcelRapi = () => {
     const headers = [
       "No", "NIS", "Nama Siswa",
-      "TP1_Tugas1", "TP1_Tugas2", "TP1_UH",
-      "TP2_Tugas1", "TP2_Tugas2", "TP2_UH",
-      "TP3_Tugas1", "TP3_Tugas2", "TP3_UH",
-      "TP4_Tugas1", "TP4_Tugas2", "TP4_UH",
+      "TP1_Tugas", "TP1_UH",
+      "TP2_Tugas", "TP2_UH",
+      "TP3_Tugas", "TP3_UH",
+      "TP4_Tugas", "TP4_UH",
       "Rata_TP", "Kokurikuler", "PTS", "PAS", "Nilai_Akhir_Mapel"
     ];
 
@@ -837,26 +956,20 @@ export default function SubjectTeacherPanel({
         tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
       };
 
-      const calcTp = (t1: any, t2: any, uh: any) => {
-        const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
-        const n2 = t2 !== '' && !isNaN(Number(t2)) ? Number(t2) : null;
+      const calcTp = (t: any, uh: any) => {
+        const n1 = t !== '' && !isNaN(Number(t)) ? Number(t) : null;
         const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
-        if (n1 === null && n2 === null && n3 === null) return null;
-        let tugasAvg = null;
-        if (n1 !== null && n2 !== null) tugasAvg = (n1 + n2) / 2;
-        else if (n1 !== null) tugasAvg = n1;
-        else if (n2 !== null) tugasAvg = n2;
-
-        if (tugasAvg !== null && n3 !== null) return Math.round((tugasAvg * 0.6) + (n3 * 0.4));
-        if (tugasAvg !== null) return Math.round(tugasAvg);
+        if (n1 === null && n3 === null) return null;
+        if (n1 !== null && n3 !== null) return Math.round((n1 * 0.6) + (n3 * 0.4));
+        if (n1 !== null) return Math.round(n1);
         if (n3 !== null) return Math.round(n3);
         return null;
       };
 
-      const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Tugas2, inputState.tp1Uh);
-      const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Tugas2, inputState.tp2Uh);
-      const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Tugas2, inputState.tp3Uh);
-      const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Tugas2, inputState.tp4Uh);
+      const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Uh);
+      const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Uh);
+      const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Uh);
+      const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Uh);
 
       const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
       const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
@@ -868,9 +981,9 @@ export default function SubjectTeacherPanel({
         a.academicYear === selectedYearGrading
       );
 
-      const kokuVal = inputState.kokurikuler ? Number(inputState.kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
-      const ptsVal = inputState.pts ? Number(inputState.pts) : (matchedAssessment?.nilaiPts ?? 0);
-      const pasVal = inputState.pas ? Number(inputState.pas) : (matchedAssessment?.nilaiPas ?? 0);
+      const kokuVal = (inputState as any).kokurikuler ? Number((inputState as any).kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
+      const ptsVal = (inputState as any).pts ? Number((inputState as any).pts) : (matchedAssessment?.nilaiPts ?? 0);
+      const pasVal = (inputState as any).pas ? Number((inputState as any).pas) : (matchedAssessment?.nilaiPas ?? 0);
 
       const finalMapel = avgTp !== null
         ? Math.round(((avgTp * 2) + kokuVal + ptsVal + pasVal) / 5)
@@ -880,10 +993,10 @@ export default function SubjectTeacherPanel({
         idx + 1,
         `"${st.nis || st.id}"`,
         `"${st.name.replace(/"/g, '""')}"`,
-        inputState.tp1Tugas1 || "", inputState.tp1Tugas2 || "", inputState.tp1Uh || "",
-        inputState.tp2Tugas1 || "", inputState.tp2Tugas2 || "", inputState.tp2Uh || "",
-        inputState.tp3Tugas1 || "", inputState.tp3Tugas2 || "", inputState.tp3Uh || "",
-        inputState.tp4Tugas1 || "", inputState.tp4Tugas2 || "", inputState.tp4Uh || "",
+        inputState.tp1Tugas1 || "", inputState.tp1Uh || "",
+        inputState.tp2Tugas1 || "", inputState.tp2Uh || "",
+        inputState.tp3Tugas1 || "", inputState.tp3Uh || "",
+        inputState.tp4Tugas1 || "", inputState.tp4Uh || "",
         avgTp ?? "",
         kokuVal || "",
         ptsVal || "",
@@ -973,18 +1086,28 @@ export default function SubjectTeacherPanel({
         let pas = "";
 
         if (gradeCells.length >= 15) {
-          tp1T1 = gradeCells[0] || ""; tp1T2 = gradeCells[1] || ""; tp1Uh = gradeCells[2] || "";
-          tp2T1 = gradeCells[3] || ""; tp2T2 = gradeCells[4] || ""; tp2Uh = gradeCells[5] || "";
-          tp3T1 = gradeCells[6] || ""; tp3T2 = gradeCells[7] || ""; tp3Uh = gradeCells[8] || "";
-          tp4T1 = gradeCells[9] || ""; tp4T2 = gradeCells[10] || ""; tp4Uh = gradeCells[11] || "";
+          // Legacy format (TP1-TP4 T1, T2, UH, Kokurikuler, PTS, PAS)
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[2] || "";
+          tp2T1 = gradeCells[3] || ""; tp2Uh = gradeCells[5] || "";
+          tp3T1 = gradeCells[6] || ""; tp3Uh = gradeCells[8] || "";
+          tp4T1 = gradeCells[9] || ""; tp4Uh = gradeCells[11] || "";
           kokurikuler = gradeCells[12] || "";
           pts = gradeCells[13] || "";
           pas = gradeCells[14] || "";
-        } else if (gradeCells.length >= 12) {
-          tp1T1 = gradeCells[0] || ""; tp1T2 = gradeCells[1] || ""; tp1Uh = gradeCells[2] || "";
-          tp2T1 = gradeCells[3] || ""; tp2T2 = gradeCells[4] || ""; tp2Uh = gradeCells[5] || "";
-          tp3T1 = gradeCells[6] || ""; tp3T2 = gradeCells[7] || ""; tp3Uh = gradeCells[8] || "";
-          tp4T1 = gradeCells[9] || ""; tp4T2 = gradeCells[10] || ""; tp4Uh = gradeCells[11] || "";
+        } else if (gradeCells.length >= 11) {
+          // Format terbaru tanpa T2 (TP1-TP4 Tugas & UH, Kokurikuler, PTS, PAS)
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+          kokurikuler = gradeCells[8] || "";
+          pts = gradeCells[9] || "";
+          pas = gradeCells[10] || "";
+        } else if (gradeCells.length >= 8) {
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
         } else {
           tp1Uh = gradeCells[0] || "";
           tp2Uh = gradeCells[1] || "";
@@ -1043,19 +1166,15 @@ export default function SubjectTeacherPanel({
         updatedMap[item.studentId] = {
           ...(updatedMap[item.studentId] || {}),
           tp1Tugas1: item.tp1Tugas1 !== undefined ? String(item.tp1Tugas1) : "",
-          tp1Tugas2: item.tp1Tugas2 !== undefined ? String(item.tp1Tugas2) : "",
           tp1Uh: item.tp1Uh !== undefined ? String(item.tp1Uh) : "",
 
           tp2Tugas1: item.tp2Tugas1 !== undefined ? String(item.tp2Tugas1) : "",
-          tp2Tugas2: item.tp2Tugas2 !== undefined ? String(item.tp2Tugas2) : "",
           tp2Uh: item.tp2Uh !== undefined ? String(item.tp2Uh) : "",
 
           tp3Tugas1: item.tp3Tugas1 !== undefined ? String(item.tp3Tugas1) : "",
-          tp3Tugas2: item.tp3Tugas2 !== undefined ? String(item.tp3Tugas2) : "",
           tp3Uh: item.tp3Uh !== undefined ? String(item.tp3Uh) : "",
 
           tp4Tugas1: item.tp4Tugas1 !== undefined ? String(item.tp4Tugas1) : "",
-          tp4Tugas2: item.tp4Tugas2 !== undefined ? String(item.tp4Tugas2) : "",
           tp4Uh: item.tp4Uh !== undefined ? String(item.tp4Uh) : "",
 
           kokurikuler: item.kokurikuler !== undefined ? String(item.kokurikuler) : "",
@@ -2649,19 +2768,15 @@ export default function SubjectTeacherPanel({
                       if (!updated[s.id]?.tp1Tugas1 && !updated[s.id]?.tp1Uh) {
                         updated[s.id] = {
                           tp1Tugas1: String(Math.floor(Math.random() * 11) + 85),
-                          tp1Tugas2: String(Math.floor(Math.random() * 11) + 82),
                           tp1Uh: String(Math.floor(Math.random() * 11) + 84),
 
                           tp2Tugas1: String(Math.floor(Math.random() * 11) + 80),
-                          tp2Tugas2: String(Math.floor(Math.random() * 11) + 85),
                           tp2Uh: String(Math.floor(Math.random() * 11) + 83),
 
                           tp3Tugas1: String(Math.floor(Math.random() * 11) + 86),
-                          tp3Tugas2: String(Math.floor(Math.random() * 11) + 88),
                           tp3Uh: String(Math.floor(Math.random() * 11) + 85),
 
                           tp4Tugas1: String(Math.floor(Math.random() * 11) + 87),
-                          tp4Tugas2: String(Math.floor(Math.random() * 11) + 90),
                           tp4Uh: String(Math.floor(Math.random() * 11) + 88),
 
                           kokurikuler: String(Math.floor(Math.random() * 11) + 85),
@@ -2761,16 +2876,30 @@ export default function SubjectTeacherPanel({
                 </div>
               </div>
 
-              {/* Quick Auto-fill TP Button from Teaching Journals */}
-              <button
-                type="button"
-                onClick={handleAutoFillAllTpsFromJournals}
-                className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shadow-xs whitespace-nowrap"
-                title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
-              >
-                <Sparkles size={13} className="text-amber-300" />
-                <span>Link Otomatis Semua TP dari Jurnal</span>
-              </button>
+              <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                {/* Tombol Simpan Khusus Deskripsi TP Mapel Ini */}
+                <button
+                  type="button"
+                  onClick={handleSaveTpDescriptions}
+                  disabled={isSavingTp}
+                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                  title={`Simpan permanen deskripsi TP 1 s.d. TP 4 untuk mapel ${selectedSubject}`}
+                >
+                  {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                  <span>Simpan Deskripsi TP ({selectedSubject})</span>
+                </button>
+
+                {/* Quick Auto-fill TP Button from Teaching Journals */}
+                <button
+                  type="button"
+                  onClick={handleAutoFillAllTpsFromJournals}
+                  className="px-3 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                  title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
+                >
+                  <Sparkles size={13} className="text-amber-300" />
+                  <span>Link Otomatis dari Jurnal</span>
+                </button>
+              </div>
             </div>
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -2779,7 +2908,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 1 (TP-1)"
                   tpNumber={1}
                   value={tp1InputName}
-                  onChange={setTp1InputName}
+                  onChange={(val) => { setTp1InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp1Name: val } })); }}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -2793,7 +2922,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 2 (TP-2) - Opsional"
                   tpNumber={2}
                   value={tp2InputName}
-                  onChange={setTp2InputName}
+                  onChange={(val) => { setTp2InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp2Name: val } })); }}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -2806,7 +2935,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 3 (TP-3) - Opsional"
                   tpNumber={3}
                   value={tp3InputName}
-                  onChange={setTp3InputName}
+                  onChange={(val) => { setTp3InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp3Name: val } })); }}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -2819,7 +2948,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 4 (TP-4) - Opsional"
                   tpNumber={4}
                   value={tp4InputName}
-                  onChange={setTp4InputName}
+                  onChange={(val) => { setTp4InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp4Name: val } })); }}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -2838,10 +2967,10 @@ export default function SubjectTeacherPanel({
                     <th className="py-3 px-3 w-10 text-center rounded-tl-3xl sticky left-0 z-20 bg-slate-900" rowSpan={2}>No</th>
                     <th className="py-3 px-3 text-left min-w-[150px] w-48 sticky left-10 z-20 bg-slate-900 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)] border-r border-slate-700" rowSpan={2}>Nama Siswa [NIS]</th>
                     
-                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 1</th>
-                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 2</th>
-                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 3</th>
-                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={3}>TP 4</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 1</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 2</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 3</th>
+                    <th className="py-2 px-2 bg-indigo-950 text-indigo-200 border-x border-indigo-900" colSpan={2}>TP 4</th>
 
                     <th className="py-3 px-2 w-16 bg-blue-900 text-blue-200 font-black" rowSpan={2}>Rata2 TP</th>
                     <th className="py-3 px-2 w-16 bg-violet-900 text-violet-200 font-black" rowSpan={2}>Kokurikuler</th>
@@ -2850,27 +2979,23 @@ export default function SubjectTeacherPanel({
                     <th className="py-3 px-2 w-24 bg-emerald-950 text-emerald-300 font-black rounded-tr-3xl" rowSpan={2}>Nilai Akhir Mapel</th>
                   </tr>
                   <tr className="bg-slate-800 text-slate-300 font-bold text-[9px] uppercase tracking-wider text-center">
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
                     <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
 
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
                     <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
 
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
                     <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
 
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 1</th>
-                    <th className="py-1.5 px-1 bg-slate-800">Tugas 2</th>
+                    <th className="py-1.5 px-1 bg-slate-800">Tugas</th>
                     <th className="py-1.5 px-1 bg-indigo-900 text-indigo-200 font-black">UH</th>
                   </tr>
                 </thead>
                 <tbody>
                   {gradingClassStudents.length === 0 ? (
                     <tr>
-                      <td colSpan={18} className="py-20 text-center text-slate-400 font-semibold text-xs">
+                      <td colSpan={15} className="py-20 text-center text-slate-400 font-semibold text-xs">
                         Tidak ada data siswa ditemukan untuk kelas {selectedGradeClass}.
                       </td>
                     </tr>
@@ -2896,23 +3021,20 @@ export default function SubjectTeacherPanel({
                         return isNaN(n) ? null : n;
                       };
 
-                      const calcTpScore = (t1Val: any, t2Val: any, uhVal: any) => {
-                        const t1 = parseVal(t1Val);
-                        const t2 = parseVal(t2Val);
+                      const calcTpScore = (tVal: any, uhVal: any) => {
+                        const t = parseVal(tVal);
                         const u = parseVal(uhVal);
-                        const tList = [t1, t2].filter((x): x is number => x !== null);
-                        if (tList.length === 0 && u === null) return null;
-                        const avgTugas = tList.length > 0 ? (tList.reduce((a, b) => a + b, 0) / tList.length) : null;
-                        if (avgTugas !== null && u !== null) return Math.round((avgTugas * 0.6) + (u * 0.4));
-                        if (avgTugas !== null) return Math.round(avgTugas);
+                        if (t === null && u === null) return null;
+                        if (t !== null && u !== null) return Math.round((t * 0.6) + (u * 0.4));
+                        if (t !== null) return Math.round(t);
                         if (u !== null) return Math.round(u);
                         return null;
                       };
 
-                      const tp1Score = calcTpScore(inputState.tp1Tugas1, inputState.tp1Tugas2, inputState.tp1Uh);
-                      const tp2Score = calcTpScore(inputState.tp2Tugas1, inputState.tp2Tugas2, inputState.tp2Uh);
-                      const tp3Score = calcTpScore(inputState.tp3Tugas1, inputState.tp3Tugas2, inputState.tp3Uh);
-                      const tp4Score = calcTpScore((inputState as any).tp4Tugas1, (inputState as any).tp4Tugas2, (inputState as any).tp4Uh);
+                      const tp1Score = calcTpScore(inputState.tp1Tugas1, inputState.tp1Uh);
+                      const tp2Score = calcTpScore(inputState.tp2Tugas1, inputState.tp2Uh);
+                      const tp3Score = calcTpScore(inputState.tp3Tugas1, inputState.tp3Uh);
+                      const tp4Score = calcTpScore((inputState as any).tp4Tugas1, (inputState as any).tp4Uh);
 
                       const validTps = [tp1Score, tp2Score, tp3Score, tp4Score].filter((x): x is number => x !== null);
                       const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : 0;
@@ -2961,13 +3083,6 @@ export default function SubjectTeacherPanel({
                               className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
-                          <td className="py-2 px-1 text-center">
-                            <input
-                              type="text" maxLength={3} value={inputState.tp1Tugas2 || ''}
-                              onChange={(e) => handleGradeChange('tp1Tugas2', e.target.value)}
-                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
-                            />
-                          </td>
                           <td className="py-2 px-1 text-center bg-indigo-50/30">
                             <input
                               type="text" maxLength={3} value={inputState.tp1Uh || ''}
@@ -2981,13 +3096,6 @@ export default function SubjectTeacherPanel({
                             <input
                               type="text" maxLength={3} value={inputState.tp2Tugas1 || ''}
                               onChange={(e) => handleGradeChange('tp2Tugas1', e.target.value)}
-                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
-                            />
-                          </td>
-                          <td className="py-2 px-1 text-center">
-                            <input
-                              type="text" maxLength={3} value={inputState.tp2Tugas2 || ''}
-                              onChange={(e) => handleGradeChange('tp2Tugas2', e.target.value)}
                               className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
@@ -3007,13 +3115,6 @@ export default function SubjectTeacherPanel({
                               className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
-                          <td className="py-2 px-1 text-center">
-                            <input
-                              type="text" maxLength={3} value={inputState.tp3Tugas2 || ''}
-                              onChange={(e) => handleGradeChange('tp3Tugas2', e.target.value)}
-                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
-                            />
-                          </td>
                           <td className="py-2 px-1 text-center bg-indigo-50/30">
                             <input
                               type="text" maxLength={3} value={inputState.tp3Uh || ''}
@@ -3027,13 +3128,6 @@ export default function SubjectTeacherPanel({
                             <input
                               type="text" maxLength={3} value={(inputState as any).tp4Tugas1 || ''}
                               onChange={(e) => handleGradeChange('tp4Tugas1', e.target.value)}
-                              className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
-                            />
-                          </td>
-                          <td className="py-2 px-1 text-center">
-                            <input
-                              type="text" maxLength={3} value={(inputState as any).tp4Tugas2 || ''}
-                              onChange={(e) => handleGradeChange('tp4Tugas2', e.target.value)}
                               className="w-10 text-center border border-slate-200 rounded py-0.5 font-bold text-slate-800 bg-white focus:border-indigo-600 focus:outline-none" placeholder="-"
                             />
                           </td>
@@ -3080,7 +3174,7 @@ export default function SubjectTeacherPanel({
             {/* Bottom Form Actions */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-[10px] font-semibold text-slate-500">
-                Formula: Nilai Akhir TP = (Rata2 Tugas × 60%) + (UH × 40%) | Nilai Akhir Mapel = ((Rata2 TP × 2) + Kokurikuler + PTS + PAS) / 5
+                Formula: Nilai Akhir TP = (Tugas × 60%) + (UH × 40%) | Nilai Akhir Mapel = ((Rata2 TP × 2) + Kokurikuler + PTS + PAS) / 5
               </span>
               <button
                 type="button"
@@ -3089,10 +3183,10 @@ export default function SubjectTeacherPanel({
                   try {
                     const batchData = gradingClassStudents.map(s => {
                       const inputState = gradeInputMap[s.id] || {
-                        tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
-                        tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
-                        tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
-                        tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
+                        tp1Tugas1: '', tp1Uh: '',
+                        tp2Tugas1: '', tp2Uh: '',
+                        tp3Tugas1: '', tp3Uh: '',
+                        tp4Tugas1: '', tp4Uh: ''
                       };
 
                       return {
@@ -3105,22 +3199,18 @@ export default function SubjectTeacherPanel({
                         academicYear: selectedYearGrading,
                         tp1Name: tp1InputName,
                         tp1Tugas1: inputState.tp1Tugas1,
-                        tp1Tugas2: inputState.tp1Tugas2,
                         tp1Uh: inputState.tp1Uh,
 
                         tp2Name: tp2InputName || undefined,
                         tp2Tugas1: inputState.tp2Tugas1,
-                        tp2Tugas2: inputState.tp2Tugas2,
                         tp2Uh: inputState.tp2Uh,
 
                         tp3Name: tp3InputName || undefined,
                         tp3Tugas1: inputState.tp3Tugas1,
-                        tp3Tugas2: inputState.tp3Tugas2,
                         tp3Uh: inputState.tp3Uh,
 
                         tp4Name: tp4InputName || undefined,
                         tp4Tugas1: (inputState as any).tp4Tugas1,
-                        tp4Tugas2: (inputState as any).tp4Tugas2,
                         tp4Uh: (inputState as any).tp4Uh
                       };
                     });
@@ -3132,8 +3222,9 @@ export default function SubjectTeacherPanel({
                     });
 
                     if (res.ok) {
-                      setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka untuk Kelas ${selectedGradeClass} berhasil disimpan ke basis data!` });
+                      setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka dan deskripsi TP untuk Kelas ${selectedGradeClass} berhasil disimpan ke basis data!` });
                       fetchAssessments();
+                      handleSaveTpDescriptions();
                       onRefresh();
                     } else {
                       setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian.' });
@@ -4007,7 +4098,7 @@ export default function SubjectTeacherPanel({
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2">
                     <div>
                       <span className="font-black text-xs block">Panduan Penggunaan Template Excel (Format Terbaru):</span>
-                      <p className="text-[10px] text-emerald-700 mt-0.5">Mendukung format terbaru Kurikulum Merdeka (TP1-TP4 Tugas 1, Tugas 2, UH, Kokurikuler, PTS, PAS)</p>
+                      <p className="text-[10px] text-emerald-700 mt-0.5">Mendukung format terbaru Kurikulum Merdeka (TP1-TP4 Tugas, UH, Kokurikuler, PTS, PAS)</p>
                     </div>
                     <button
                       type="button"
@@ -4746,10 +4837,10 @@ export default function SubjectTeacherPanel({
                         <th className="p-1.5 border border-slate-800 w-12 font-black bg-slate-200" rowSpan={2}>NA Mapel</th>
                       </tr>
                       <tr className="bg-slate-50 text-slate-700 font-bold text-[9px] text-center border-b border-slate-800">
-                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
-                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
-                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
-                        <th className="p-1 border border-slate-800 w-7">T1</th><th className="p-1 border border-slate-800 w-7">T2</th><th className="p-1 border border-slate-800 w-7">UH</th>
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
+                        <th className="p-1 border border-slate-800 w-8">Tugas</th><th className="p-1 border border-slate-800 w-8">UH</th>
                       </tr>
                     </thead>
                     <tbody>
@@ -4761,26 +4852,20 @@ export default function SubjectTeacherPanel({
                           tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
                         };
 
-                        const calcTp = (t1: any, t2: any, uh: any) => {
+                        const calcTp = (t1: any, uh: any) => {
                           const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
-                          const n2 = t2 !== '' && !isNaN(Number(t2)) ? Number(t2) : null;
                           const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
-                          if (n1 === null && n2 === null && n3 === null) return null;
-                          let tugasAvg = null;
-                          if (n1 !== null && n2 !== null) tugasAvg = (n1 + n2) / 2;
-                          else if (n1 !== null) tugasAvg = n1;
-                          else if (n2 !== null) tugasAvg = n2;
-
-                          if (tugasAvg !== null && n3 !== null) return Math.round((tugasAvg * 0.6) + (n3 * 0.4));
-                          if (tugasAvg !== null) return Math.round(tugasAvg);
+                          if (n1 === null && n3 === null) return null;
+                          if (n1 !== null && n3 !== null) return Math.round((n1 * 0.6) + (n3 * 0.4));
+                          if (n1 !== null) return Math.round(n1);
                           if (n3 !== null) return Math.round(n3);
                           return null;
                         };
 
-                        const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Tugas2, inputState.tp1Uh);
-                        const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Tugas2, inputState.tp2Uh);
-                        const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Tugas2, inputState.tp3Uh);
-                        const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Tugas2, inputState.tp4Uh);
+                        const tp1 = calcTp(inputState.tp1Tugas1, inputState.tp1Uh);
+                        const tp2 = calcTp(inputState.tp2Tugas1, inputState.tp2Uh);
+                        const tp3 = calcTp(inputState.tp3Tugas1, inputState.tp3Uh);
+                        const tp4 = calcTp(inputState.tp4Tugas1, inputState.tp4Uh);
 
                         const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
                         const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
@@ -4792,9 +4877,9 @@ export default function SubjectTeacherPanel({
                           a.academicYear === selectedYearGrading
                         );
 
-                        const kokuVal = inputState.kokurikuler ? Number(inputState.kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
-                        const ptsVal = inputState.pts ? Number(inputState.pts) : (matchedAssessment?.nilaiPts ?? 0);
-                        const pasVal = inputState.pas ? Number(inputState.pas) : (matchedAssessment?.nilaiPas ?? 0);
+                        const kokuVal = (inputState as any).kokurikuler ? Number((inputState as any).kokurikuler) : (matchedAssessment?.nilaiKokurikuler ?? 0);
+                        const ptsVal = (inputState as any).pts ? Number((inputState as any).pts) : (matchedAssessment?.nilaiPts ?? 0);
+                        const pasVal = (inputState as any).pas ? Number((inputState as any).pas) : (matchedAssessment?.nilaiPas ?? 0);
 
                         const finalMapel = avgTp !== null
                           ? Math.round(((avgTp * 2) + kokuVal + ptsVal + pasVal) / 5)
@@ -4808,19 +4893,15 @@ export default function SubjectTeacherPanel({
                               <div className="text-[9px] font-mono text-slate-500">{st.nis || st.id}</div>
                             </td>
                             <td className="p-1 border border-slate-300">{inputState.tp1Tugas1 || "-"}</td>
-                            <td className="p-1 border border-slate-300">{inputState.tp1Tugas2 || "-"}</td>
                             <td className="p-1 border border-slate-300 font-bold">{inputState.tp1Uh || "-"}</td>
 
                             <td className="p-1 border border-slate-300">{inputState.tp2Tugas1 || "-"}</td>
-                            <td className="p-1 border border-slate-300">{inputState.tp2Tugas2 || "-"}</td>
                             <td className="p-1 border border-slate-300 font-bold">{inputState.tp2Uh || "-"}</td>
 
                             <td className="p-1 border border-slate-300">{inputState.tp3Tugas1 || "-"}</td>
-                            <td className="p-1 border border-slate-300">{inputState.tp3Tugas2 || "-"}</td>
                             <td className="p-1 border border-slate-300 font-bold">{inputState.tp3Uh || "-"}</td>
 
                             <td className="p-1 border border-slate-300">{inputState.tp4Tugas1 || "-"}</td>
-                            <td className="p-1 border border-slate-300">{inputState.tp4Tugas2 || "-"}</td>
                             <td className="p-1 border border-slate-300 font-bold">{inputState.tp4Uh || "-"}</td>
 
                             <td className="p-1 border border-slate-300 font-bold text-indigo-900 bg-indigo-50/30">{avgTp !== null ? avgTp : "-"}</td>

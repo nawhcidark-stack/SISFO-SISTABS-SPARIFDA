@@ -2234,10 +2234,22 @@ export default function HomeroomPanel({
             pas: match.nilaiPas !== undefined ? String(match.nilaiPas) : '',
             deskripsi: match.deskripsiCapaian || ''
           };
-          if (match.tp1Name && !tp1InputName) setTp1InputName(match.tp1Name);
-          if (match.tp2Name && !tp2InputName) setTp2InputName(match.tp2Name);
-          if (match.tp3Name && !tp3InputName) setTp3InputName(match.tp3Name);
-          if (match.tp4Name && !tp4InputName) setTp4InputName(match.tp4Name);
+          // Sinkronisasi deskripsi TP sesuai mapel yang dipilih
+          const matchedSubjectAss = merdekaAssessments.find(a =>
+            (a.subject || '').trim().toLowerCase() === (selectedSubjectForGrading || '').trim().toLowerCase() &&
+            (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+          );
+          if (matchedSubjectAss) {
+            setTp1InputName(matchedSubjectAss.tp1Name || '');
+            setTp2InputName(matchedSubjectAss.tp2Name || '');
+            setTp3InputName(matchedSubjectAss.tp3Name || '');
+            setTp4InputName(matchedSubjectAss.tp4Name || '');
+          } else {
+            setTp1InputName('');
+            setTp2InputName('');
+            setTp3InputName('');
+            setTp4InputName('');
+          }
         } else {
           fullGradeMap[st.id] = {
             tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
@@ -7424,7 +7436,7 @@ Wassalamualaikum Wr. Wb.
                   ⭐ Input Penilaian Rapor Merdeka & Kokurikuler
                 </h2>
                 <p className="text-slate-500 text-[11px] mt-0.5">
-                  Input nilai TP 1 s.d. TP 4 (Tugas 1, Tugas 2, UH), Rata-rata TP, Nilai Kokurikuler, PTS, dan PAS. Nilai Kokurikuler otomatis terhitung ke Nilai Akhir Mapel Rapor.
+                  Input nilai TP 1 s.d. TP 4 (Tugas, UH), Rata-rata TP, Nilai Kokurikuler, PTS, dan PAS. Nilai Kokurikuler otomatis terhitung ke Nilai Akhir Mapel Rapor.
                 </p>
 
                 {/* Filter Row */}
@@ -7636,10 +7648,10 @@ Wassalamualaikum Wr. Wb.
                         <tr className="bg-slate-800 text-white font-black border-b border-slate-700 uppercase text-[9.5px] tracking-wider">
                           <th className="py-3 px-3 w-10 text-center border-r border-slate-700 sticky left-0 z-20 bg-slate-800">No</th>
                           <th className="py-3 px-3 w-48 border-r border-slate-700 sticky left-10 z-20 bg-slate-800 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)]">NIS / Nama Siswa</th>
-                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 1</th>
-                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 2</th>
-                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 3</th>
-                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={3}>TP 4</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 1</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 2</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 3</th>
+                          <th className="py-3 px-2 text-center border-r border-slate-700 bg-slate-700/60" colSpan={2}>TP 4</th>
                           <th className="py-3 px-3 text-center border-r border-slate-700 bg-indigo-900/80">Rata TP</th>
                           <th className="py-3 px-3 text-center border-r border-slate-700 bg-purple-900/80 text-amber-300">⭐ Kokurikuler</th>
                           <th className="py-3 px-3 text-center border-r border-slate-700 bg-slate-700/60">PTS</th>
@@ -7649,17 +7661,13 @@ Wassalamualaikum Wr. Wb.
                         <tr className="bg-slate-700 text-slate-300 font-bold border-b border-slate-600 text-[9px]">
                           <th className="py-1 px-1 border-r border-slate-600 sticky left-0 z-20 bg-slate-700"></th>
                           <th className="py-1 px-1 border-r border-slate-600 sticky left-10 z-20 bg-slate-700 shadow-[3px_0_5px_-2px_rgba(0,0,0,0.3)]"></th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
                           <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
                           <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
                           <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T1</th>
-                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">T2</th>
+                          <th className="py-1 px-1 text-center w-11 border-r border-slate-600">Tugas</th>
                           <th className="py-1 px-1 text-center w-11 border-r border-slate-600">UH</th>
                           <th className="py-1 px-1 text-center w-12 border-r border-slate-600">Formative</th>
                           <th className="py-1 px-1 text-center w-20 border-r border-slate-600 text-amber-300">Wali Kelas</th>
@@ -7679,26 +7687,20 @@ Wassalamualaikum Wr. Wb.
                             pts: '', pas: ''
                           };
 
-                          const calcTp = (t1: any, t2: any, uh: any) => {
+                          const calcTp = (t1: any, uh: any) => {
                             const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
-                            const n2 = t2 !== '' && !isNaN(Number(t2)) ? Number(t2) : null;
                             const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
-                            if (n1 === null && n2 === null && n3 === null) return null;
-                            let tugasAvg = null;
-                            if (n1 !== null && n2 !== null) tugasAvg = (n1 + n2) / 2;
-                            else if (n1 !== null) tugasAvg = n1;
-                            else if (n2 !== null) tugasAvg = n2;
-
-                            if (tugasAvg !== null && n3 !== null) return Math.round((tugasAvg * 0.6) + (n3 * 0.4));
-                            if (tugasAvg !== null) return Math.round(tugasAvg);
+                            if (n1 === null && n3 === null) return null;
+                            if (n1 !== null && n3 !== null) return Math.round((n1 * 0.6) + (n3 * 0.4));
+                            if (n1 !== null) return Math.round(n1);
                             if (n3 !== null) return Math.round(n3);
                             return null;
                           };
 
-                          const tp1 = calcTp(state.tp1Tugas1, state.tp1Tugas2, state.tp1Uh);
-                          const tp2 = calcTp(state.tp2Tugas1, state.tp2Tugas2, state.tp2Uh);
-                          const tp3 = calcTp(state.tp3Tugas1, state.tp3Tugas2, state.tp3Uh);
-                          const tp4 = calcTp(state.tp4Tugas1, state.tp4Tugas2, state.tp4Uh);
+                          const tp1 = calcTp(state.tp1Tugas1, state.tp1Uh);
+                          const tp2 = calcTp(state.tp2Tugas1, state.tp2Uh);
+                          const tp3 = calcTp(state.tp3Tugas1, state.tp3Uh);
+                          const tp4 = calcTp(state.tp4Tugas1, state.tp4Uh);
 
                           const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
                           const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
@@ -7740,18 +7742,12 @@ Wassalamualaikum Wr. Wb.
                                 <input type="number" min={0} max={100} value={state.tp1Tugas1} onChange={e => updateField('tp1Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
                               </td>
                               <td className="p-1 border-r border-slate-100 text-center">
-                                <input type="number" min={0} max={100} value={state.tp1Tugas2} onChange={e => updateField('tp1Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
-                              </td>
-                              <td className="p-1 border-r border-slate-100 text-center">
                                 <input type="number" min={0} max={100} value={state.tp1Uh} onChange={e => updateField('tp1Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
                               </td>
 
                               {/* TP2 */}
                               <td className="p-1 border-r border-slate-100 text-center">
                                 <input type="number" min={0} max={100} value={state.tp2Tugas1} onChange={e => updateField('tp2Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
-                              </td>
-                              <td className="p-1 border-r border-slate-100 text-center">
-                                <input type="number" min={0} max={100} value={state.tp2Tugas2} onChange={e => updateField('tp2Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
                               </td>
                               <td className="p-1 border-r border-slate-100 text-center">
                                 <input type="number" min={0} max={100} value={state.tp2Uh} onChange={e => updateField('tp2Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
@@ -7762,18 +7758,12 @@ Wassalamualaikum Wr. Wb.
                                 <input type="number" min={0} max={100} value={state.tp3Tugas1} onChange={e => updateField('tp3Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
                               </td>
                               <td className="p-1 border-r border-slate-100 text-center">
-                                <input type="number" min={0} max={100} value={state.tp3Tugas2} onChange={e => updateField('tp3Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
-                              </td>
-                              <td className="p-1 border-r border-slate-100 text-center">
                                 <input type="number" min={0} max={100} value={state.tp3Uh} onChange={e => updateField('tp3Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
                               </td>
 
                               {/* TP4 */}
                               <td className="p-1 border-r border-slate-100 text-center">
                                 <input type="number" min={0} max={100} value={state.tp4Tugas1} onChange={e => updateField('tp4Tugas1', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
-                              </td>
-                              <td className="p-1 border-r border-slate-100 text-center">
-                                <input type="number" min={0} max={100} value={state.tp4Tugas2} onChange={e => updateField('tp4Tugas2', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />
                               </td>
                               <td className="p-1 border-r border-slate-100 text-center">
                                 <input type="number" min={0} max={100} value={state.tp4Uh} onChange={e => updateField('tp4Uh', e.target.value)} className="w-10 text-center font-bold text-slate-800 bg-slate-50 border border-slate-200 focus:border-purple-600 rounded px-0.5 py-1 text-[11px]" />

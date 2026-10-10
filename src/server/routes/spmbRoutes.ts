@@ -1415,20 +1415,23 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
 
     // 1. Validasi Kelengkapan Formulir Buku Induk
-    // Harus benar-benar ada data buku induk (No KK dan Nama Orang Tua / Wali), bukan sekadar data singkat pendaftaran awal!
+    // Jika data buku induk sudah diisi lengkap (No KK dan Nama Orang Tua/Wali), atau c.isFormCompleted sudah bernilai true, tandai lengkap
     const hasRealFormData = Boolean(
-      (c.kkNumber && String(c.kkNumber).trim().length >= 8) &&
+      ((c.kkNumber && String(c.kkNumber).trim().length >= 8) || (ffd.kkNumber && String(ffd.kkNumber).trim().length >= 8)) &&
       (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
     );
     
-    if (hasRealFormData) {
+    if (hasRealFormData || c.isFormCompleted) {
       if (!c.isFormCompleted) {
         c.isFormCompleted = true;
-        if (!c.formCompletedAt) c.formCompletedAt = ffd.formCompletedAt || c.createdAt || new Date().toISOString();
+        changed = true;
+      }
+      if (!c.formCompletedAt) {
+        c.formCompletedAt = ffd.formCompletedAt || c.createdAt || new Date().toISOString();
         changed = true;
       }
     } else {
-      // Jika belum mengisi No KK dan data orang tua, maka status formulir BELUM lengkap!
+      // Jika memang belum mengisi No KK dan data orang tua sama sekali
       if (c.isFormCompleted && currentNisn !== "0156620618" && currentNisn !== "3140631960" && currentNisn !== "3142636294") {
         c.isFormCompleted = false;
         delete c.formCompletedAt;

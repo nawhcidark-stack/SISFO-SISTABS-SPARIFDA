@@ -1982,27 +1982,7 @@ function loadState() {
       if (Array.isArray(data.spmbCandidates)) {
         spmbCandidates.length = 0;
         spmbCandidates.push(...data.spmbCandidates);
-        spmbCandidates.forEach(cand => {
-          const zeroDocsNisns = ['0156620618', '0149692295', '0143513820', '3140631960', '0141121650', '3142636294', '0158483548', '0152892235'];
-          if (zeroDocsNisns.includes(cand.nisn) || zeroDocsNisns.includes(cand.id)) {
-            cand.documentsUploaded = false;
-            delete (cand as any).documentsUploadedAt;
-            cand.documents = {};
-            cand.documentsRaw = {};
-            if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
-              cand.isFormCompleted = false;
-              delete (cand as any).formCompletedAt;
-              cand.status = 'registered';
-            }
-          } else if (cand.nisn === '3142814544' || cand.id === '3142814544') {
-            cand.documents = {
-              pasPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/pasPhoto.jpg",
-              kkPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/kkPhoto.jpg"
-            };
-            cand.documentsUploaded = false;
-            delete (cand as any).documentsUploadedAt;
-          }
-        });
+        // Data dokumen calon siswa dipertahankan murni dari database MySQL
       }
       if (data.backupConfig) Object.assign(backupConfig, data.backupConfig);
       if (Array.isArray(data.databaseBackups)) {
@@ -2083,238 +2063,19 @@ function applyDataFromMysql(pulledData: any) {
     const voidedBillIds = new Set(voidedPayments.map(v => v.billId).filter(Boolean));
     const voidedOrderIds = new Set(voidedPayments.map(v => v.orderId).filter(Boolean));
 
-    if (Array.isArray(pulledData.sppBills) && pulledData.sppBills.length > 0) {
-      // Build index of local SPP bills to preserve local cancellation state if newer
-      const localBillMap = new Map<string, SppBill>();
-      sppBills.forEach(b => {
-        localBillMap.set(b.id, b);
-        if (b.studentId && b.month && b.year) {
-          localBillMap.set(`${b.studentId}_${b.month}_${b.year}`, b);
-        }
-      });
-
-      const sppBillsToFixInMysql: SppBill[] = [];
-      const mergedSppBills = pulledData.sppBills.map((pulledBill: SppBill) => {
-        const localBill = localBillMap.get(pulledBill.id) ||
-                          localBillMap.get(`${pulledBill.studentId}_${pulledBill.month}_${pulledBill.year}`);
-
-        // 1. If bill in MySQL or local memory is WAIVED (Bebas Kebijakan / Prestasi), preserve WAIVED state completely
-        if (pulledBill.status === "waived" || (localBill && localBill.status === "waived")) {
-          const effectiveWaived = (localBill && localBill.status === "waived") ? localBill : pulledBill;
-          const waivedBill: SppBill = {
-            ...pulledBill,
-            ...effectiveWaived,
-            status: "waived",
-            paidAt: effectiveWaived.paidAt || pulledBill.paidAt || new Date().toISOString(),
-            paymentMethod: effectiveWaived.paymentMethod || pulledBill.paymentMethod || "Bebas SPP (Kebijakan Yayasan)",
-            orderId: effectiveWaived.orderId || pulledBill.orderId || `ORD-WAIVED-KEBIJAKAN-${pulledBill.id}`,
-            isVoidedByAdmin: false,
-            voidedAt: undefined,
-            voidReason: undefined
-          };
-          if ((effectiveWaived as any).achievementType) {
-            (waivedBill as any).achievementType = (effectiveWaived as any).achievementType;
-          }
-          if ((effectiveWaived as any).achievementDetail) {
-            (waivedBill as any).achievementDetail = (effectiveWaived as any).achievementDetail;
-          }
-          if (pulledBill.status !== "waived") {
-            sppBillsToFixInMysql.push(waivedBill);
-          }
-          return waivedBill;
-        }
-
-        const isVoided = Boolean(
-          pulledBill.isVoidedByAdmin ||
-          localBill?.isVoidedByAdmin ||
-          voidedBillIds.has(pulledBill.id) ||
-          (localBill && voidedBillIds.has(localBill.id)) ||
-          (pulledBill.orderId && voidedOrderIds.has(pulledBill.orderId)) ||
-          (localBill?.orderId && voidedOrderIds.has(localBill.orderId))
-        );
-
-        if (isVoided) {
-          const voidedBill: SppBill = {
-            ...pulledBill,
-            status: "unpaid",
-            paidAt: undefined,
-            paymentMethod: undefined,
-            orderId: undefined,
-            isVoidedByAdmin: true,
-            voidedAt: pulledBill.voidedAt || localBill?.voidedAt || new Date().toISOString(),
-            voidReason: pulledBill.voidReason || localBill?.voidReason || "Dibatalkan / Dikoreksi oleh Admin"
-          };
-          delete (voidedBill as any).transactionId;
-          if (pulledBill.status === "paid") {
-            sppBillsToFixInMysql.push(voidedBill);
-          }
-          return voidedBill;
-        }
-
-        // 2. CRITICAL PRESERVATION: If local memory marked it as paid, OR if pulled data is paid (and not voided),
-        // it is LUNAS and MUST NEVER revert to unpaid!
-        if ((localBill && localBill.status === "paid" && !localBill.isVoidedByAdmin) || (pulledBill.status === "paid")) {
-          const healedBill: SppBill = {
-            ...pulledBill,
-            status: "paid",
-            paidAt: pulledBill.status === "paid" ? (pulledBill.paidAt || localBill?.paidAt || new Date().toISOString()) : (localBill?.paidAt || new Date().toISOString()),
-            paymentMethod: pulledBill.status === "paid" ? (pulledBill.paymentMethod || localBill?.paymentMethod || "Manual Teller / Online") : (localBill?.paymentMethod || "Manual Teller / Online"),
-            orderId: pulledBill.orderId || localBill?.orderId,
-            transactionId: pulledBill.transactionId || localBill?.transactionId,
-            isVoidedByAdmin: false
-          };
-          delete (healedBill as any).voidedAt;
-          delete (healedBill as any).voidReason;
-          if (pulledBill.status !== "paid") {
-            sppBillsToFixInMysql.push(healedBill);
-          }
-          return healedBill;
-        }
-
-        // 3. Default to unpaid
-        return {
-          ...pulledBill,
-          status: "unpaid",
-          paidAt: undefined,
-          paymentMethod: undefined,
-          orderId: undefined,
-          isVoidedByAdmin: false
-        };
-      });
-
+    if (Array.isArray(pulledData.sppBills)) {
       sppBills.length = 0;
-      sppBills.push(...mergedSppBills);
-
-      if (sppBillsToFixInMysql.length > 0 && typeof persistEntities === "function") {
-        persistEntities("sppBills", sppBillsToFixInMysql).catch(err => {
-          console.error("[applyDataFromMysql] Gagal menyinkronkan status tagihan SPP ke MySQL:", err);
-        });
-      }
+      sppBills.push(...pulledData.sppBills);
     }
 
-    if (Array.isArray(pulledData.miscBills) && pulledData.miscBills.length > 0) {
-      const localMiscMap = new Map<string, MiscBill>();
-      miscBills.forEach(m => {
-        localMiscMap.set(m.id, m);
-        if (m.studentId && m.title) {
-          localMiscMap.set(`${m.studentId}_${m.title}`, m);
-        }
-      });
-
-      const miscBillsToFixInMysql: MiscBill[] = [];
-      const mergedMiscBills = pulledData.miscBills.map((pulledMisc: MiscBill) => {
-        const localMisc = localMiscMap.get(pulledMisc.id) ||
-                          localMiscMap.get(`${pulledMisc.studentId}_${pulledMisc.title}`);
-
-        const isVoided = Boolean(
-          pulledMisc.isVoidedByAdmin ||
-          localMisc?.isVoidedByAdmin ||
-          voidedBillIds.has(pulledMisc.id) ||
-          (pulledMisc.orderId && voidedOrderIds.has(pulledMisc.orderId)) ||
-          (localMisc?.orderId && voidedOrderIds.has(localMisc.orderId))
-        );
-
-        if (isVoided) {
-          const voidedMisc: MiscBill = {
-            ...pulledMisc,
-            status: "unpaid",
-            paidAt: undefined,
-            paymentMethod: undefined,
-            orderId: undefined,
-            isVoidedByAdmin: true,
-            voidedAt: pulledMisc.voidedAt || localMisc?.voidedAt || new Date().toISOString(),
-            voidReason: pulledMisc.voidReason || localMisc?.voidReason || "Dibatalkan / Dikoreksi oleh Admin"
-          };
-          delete (voidedMisc as any).transactionId;
-          if (pulledMisc.status === "paid") {
-            miscBillsToFixInMysql.push(voidedMisc);
-          }
-          return voidedMisc;
-        }
-
-        // CRITICAL PRESERVATION: If local memory marked it as paid, OR if pulled data is paid (and not voided),
-        // preserve PAID status and heal MySQL if needed
-        if ((localMisc && localMisc.status === "paid" && !localMisc.isVoidedByAdmin) || (pulledMisc.status === "paid")) {
-          const healedMisc: MiscBill = {
-            ...pulledMisc,
-            status: "paid",
-            paidAt: pulledMisc.status === "paid" ? (pulledMisc.paidAt || localMisc?.paidAt || new Date().toISOString()) : (localMisc?.paidAt || new Date().toISOString()),
-            paymentMethod: pulledMisc.status === "paid" ? (pulledMisc.paymentMethod || localMisc?.paymentMethod || "Manual Teller / Online") : (localMisc?.paymentMethod || "Manual Teller / Online"),
-            orderId: pulledMisc.orderId || localMisc?.orderId,
-            transactionId: pulledMisc.transactionId || localMisc?.transactionId,
-            isVoidedByAdmin: false
-          };
-          delete (healedMisc as any).voidedAt;
-          delete (healedMisc as any).voidReason;
-          if (pulledMisc.status !== "paid") {
-            miscBillsToFixInMysql.push(healedMisc);
-          }
-          return healedMisc;
-        }
-
-        return {
-          ...pulledMisc,
-          status: "unpaid",
-          paidAt: undefined,
-          paymentMethod: undefined,
-          orderId: undefined,
-          isVoidedByAdmin: false
-        };
-      });
-
+    if (Array.isArray(pulledData.miscBills)) {
       miscBills.length = 0;
-      miscBills.push(...mergedMiscBills);
-
-      if (miscBillsToFixInMysql.length > 0 && typeof persistEntities === "function") {
-        persistEntities("miscBills", miscBillsToFixInMysql).catch(err => {
-          console.error("[applyDataFromMysql] Gagal menyinkronkan status tagihan Non-SPP ke MySQL:", err);
-        });
-      }
+      miscBills.push(...pulledData.miscBills);
     }
 
-    if (Array.isArray(pulledData.savingsTransactions) && pulledData.savingsTransactions.length > 0) {
-      const localSavMap = new Map<string, SavingsTransaction>();
-      savingsTransactions.forEach(t => localSavMap.set(t.id, t));
-
-      const savTxsToFixInMysql: SavingsTransaction[] = [];
-      const mergedSavings = pulledData.savingsTransactions.map((pulledTx: SavingsTransaction) => {
-        const localTx = localSavMap.get(pulledTx.id);
-        const isVoided = Boolean(
-          pulledTx.isVoidedByAdmin ||
-          localTx?.isVoidedByAdmin ||
-          voidedBillIds.has(pulledTx.id) ||
-          (pulledTx.orderId && voidedOrderIds.has(pulledTx.orderId)) ||
-          (localTx?.orderId && voidedOrderIds.has(localTx.orderId))
-        );
-
-        if (isVoided) {
-          const voidedTx: SavingsTransaction = {
-            ...pulledTx,
-            status: "failed",
-            isVoidedByAdmin: true,
-            voidedAt: pulledTx.voidedAt || localTx?.voidedAt || new Date().toISOString(),
-            voidReason: pulledTx.voidReason || localTx?.voidReason || "Dibatalkan / Dikoreksi oleh Admin",
-            notes: (pulledTx.notes || "").includes("Dibatalkan") ? pulledTx.notes : `[DIBATALKAN ADMIN] ${pulledTx.notes || ""}`
-          };
-          if (pulledTx.status === "success") {
-            savTxsToFixInMysql.push(voidedTx);
-          }
-          return voidedTx;
-        }
-        return pulledTx;
-      });
-
-      const pulledIds = new Set(pulledData.savingsTransactions.map((t: any) => t.id));
-      const localOnly = savingsTransactions.filter(t => !pulledIds.has(t.id));
-
+    if (Array.isArray(pulledData.savingsTransactions)) {
       savingsTransactions.length = 0;
-      savingsTransactions.push(...mergedSavings, ...localOnly);
-
-      if (savTxsToFixInMysql.length > 0 && typeof persistEntities === "function") {
-        persistEntities("savingsTransactions", savTxsToFixInMysql).catch(err => {
-          console.error("[applyDataFromMysql] Gagal menyinkronkan status tabungan batal ke MySQL:", err);
-        });
-      }
+      savingsTransactions.push(...pulledData.savingsTransactions);
     }
 
     if (Array.isArray(pulledData.midtransTransactions) && pulledData.midtransTransactions.length > 0) {
@@ -3709,27 +3470,7 @@ async function startServer() {
     if (spmbArr) {
       spmbCandidates.length = 0;
       spmbCandidates.push(...spmbArr);
-      spmbCandidates.forEach(cand => {
-        const zeroDocsNisns = ['0156620618', '0149692295', '0143513820', '3140631960', '0141121650', '3142636294', '0158483548', '0152892235'];
-        if (zeroDocsNisns.includes(cand.nisn) || zeroDocsNisns.includes(cand.id)) {
-          cand.documentsUploaded = false;
-          delete (cand as any).documentsUploadedAt;
-          cand.documents = {};
-          cand.documentsRaw = {};
-          if (cand.nisn === '0158483548' || cand.nisn === '0152892235' || cand.id === '0158483548' || cand.id === '0152892235') {
-            cand.isFormCompleted = false;
-            delete (cand as any).formCompletedAt;
-            cand.status = 'registered';
-          }
-        } else if (cand.nisn === '3142814544' || cand.id === '3142814544') {
-          cand.documents = {
-            pasPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/pasPhoto.jpg",
-            kkPhoto: "/uploads/berkas_murid/MUHAMMAD_ZAFRAN_HARVIANTO/kkPhoto.jpg"
-          };
-          cand.documentsUploaded = false;
-          delete (cand as any).documentsUploadedAt;
-        }
-      });
+      // Data dokumen calon siswa dipertahankan murni dari database MySQL
     }
 
     const midtransArr = getArray([
@@ -5698,20 +5439,16 @@ async function startServer() {
     return isNaN(n) ? null : n;
   }
 
-  function calcTpScore(tugas1: any, tugas2: any, uh: any): number | null {
-    const t1 = parseVal(tugas1);
-    const t2 = parseVal(tugas2);
+  function calcTpScore(tugas: any, uh: any): number | null {
+    const t = parseVal(tugas);
     const u = parseVal(uh);
 
-    const tList = [t1, t2].filter((x): x is number => x !== null);
-    if (tList.length === 0 && u === null) return null;
+    if (t === null && u === null) return null;
 
-    const avgTugas = tList.length > 0 ? (tList.reduce((a, b) => a + b, 0) / tList.length) : null;
-
-    if (avgTugas !== null && u !== null) {
-      return Math.round((avgTugas * 0.6) + (u * 0.4));
-    } else if (avgTugas !== null) {
-      return Math.round(avgTugas);
+    if (t !== null && u !== null) {
+      return Math.round((t * 0.6) + (u * 0.4));
+    } else if (t !== null) {
+      return Math.round(t);
     } else if (u !== null) {
       return Math.round(u);
     }
@@ -5719,16 +5456,16 @@ async function startServer() {
   }
 
   function recalculateAssessmentScores(ass: MerdekaAssessment) {
-    const tp1 = calcTpScore(ass.tp1Tugas1, ass.tp1Tugas2, ass.tp1Uh);
+    const tp1 = calcTpScore(ass.tp1Tugas1, ass.tp1Uh);
     ass.nilaiTp1 = tp1 !== null ? tp1 : (ass.tp1Grade !== undefined ? Number(ass.tp1Grade) : undefined);
 
-    const tp2 = calcTpScore(ass.tp2Tugas1, ass.tp2Tugas2, ass.tp2Uh);
+    const tp2 = calcTpScore(ass.tp2Tugas1, ass.tp2Uh);
     ass.nilaiTp2 = tp2 !== null ? tp2 : (ass.tp2Grade !== undefined ? Number(ass.tp2Grade) : undefined);
 
-    const tp3 = calcTpScore(ass.tp3Tugas1, ass.tp3Tugas2, ass.tp3Uh);
+    const tp3 = calcTpScore(ass.tp3Tugas1, ass.tp3Uh);
     ass.nilaiTp3 = tp3 !== null ? tp3 : (ass.tp3Grade !== undefined ? Number(ass.tp3Grade) : undefined);
 
-    const tp4 = calcTpScore(ass.tp4Tugas1, ass.tp4Tugas2, ass.tp4Uh);
+    const tp4 = calcTpScore(ass.tp4Tugas1, ass.tp4Uh);
     ass.nilaiTp4 = tp4 !== null ? tp4 : (ass.tp4Grade !== undefined ? Number(ass.tp4Grade) : undefined);
 
     const validTps = [ass.nilaiTp1, ass.nilaiTp2, ass.nilaiTp3, ass.nilaiTp4].filter((x): x is number => x !== undefined && x !== null && !isNaN(x));
@@ -5828,22 +5565,22 @@ async function startServer() {
 
         tp1Name: tp1Name || (existing ? existing.tp1Name : undefined),
         tp1Tugas1: tp1Tugas1 !== undefined ? tp1Tugas1 : existing?.tp1Tugas1,
-        tp1Tugas2: tp1Tugas2 !== undefined ? tp1Tugas2 : existing?.tp1Tugas2,
+        tp1Tugas2: undefined,
         tp1Uh: tp1Uh !== undefined ? tp1Uh : existing?.tp1Uh,
 
         tp2Name: tp2Name || (existing ? existing.tp2Name : undefined),
         tp2Tugas1: tp2Tugas1 !== undefined ? tp2Tugas1 : existing?.tp2Tugas1,
-        tp2Tugas2: tp2Tugas2 !== undefined ? tp2Tugas2 : existing?.tp2Tugas2,
+        tp2Tugas2: undefined,
         tp2Uh: tp2Uh !== undefined ? tp2Uh : existing?.tp2Uh,
 
         tp3Name: tp3Name || (existing ? existing.tp3Name : undefined),
         tp3Tugas1: tp3Tugas1 !== undefined ? tp3Tugas1 : existing?.tp3Tugas1,
-        tp3Tugas2: tp3Tugas2 !== undefined ? tp3Tugas2 : existing?.tp3Tugas2,
+        tp3Tugas2: undefined,
         tp3Uh: tp3Uh !== undefined ? tp3Uh : existing?.tp3Uh,
 
         tp4Name: tp4Name || (existing ? existing.tp4Name : undefined),
         tp4Tugas1: tp4Tugas1 !== undefined ? tp4Tugas1 : existing?.tp4Tugas1,
-        tp4Tugas2: tp4Tugas2 !== undefined ? tp4Tugas2 : existing?.tp4Tugas2,
+        tp4Tugas2: undefined,
         tp4Uh: tp4Uh !== undefined ? tp4Uh : existing?.tp4Uh,
 
         nilaiKokurikuler: nilaiKokurikuler !== undefined ? Number(nilaiKokurikuler) : existing?.nilaiKokurikuler ?? 0,
@@ -5870,8 +5607,148 @@ async function startServer() {
       results.push(assessmentItem);
     });
 
+    // Simpan deskripsi TP ke curriculumConfig untuk mapel & kelas terkait
+    if (!(curriculumConfig as any).tpDescriptions) {
+      (curriculumConfig as any).tpDescriptions = {};
+    }
+    items.forEach((item: any) => {
+      if (item.subject && (item.tp1Name || item.tp2Name || item.tp3Name || item.tp4Name)) {
+        const cleanSub = item.subject.trim().toLowerCase();
+        const cleanClass = (item.className || "").trim().toLowerCase();
+        const cleanSem = (item.semester || (schoolIdentity as any).activeSemester || "Ganjil").trim().toLowerCase();
+        const cleanYear = (item.academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027").trim().toLowerCase();
+        const tpEntry = {
+          subject: item.subject,
+          className: item.className || "",
+          semester: item.semester || "Ganjil",
+          academicYear: item.academicYear || "2026/2027",
+          tp1Name: item.tp1Name || "",
+          tp2Name: item.tp2Name || "",
+          tp3Name: item.tp3Name || "",
+          tp4Name: item.tp4Name || "",
+          updatedAt: new Date().toISOString()
+        };
+        if (cleanClass) {
+          (curriculumConfig as any).tpDescriptions[`${cleanClass}_${cleanSub}_${cleanSem}_${cleanYear}`] = tpEntry;
+        }
+        (curriculumConfig as any).tpDescriptions[cleanSub] = tpEntry;
+      }
+    });
+
+    if (results.length > 0) {
+      directSaveEntitiesBatchToMysql("merdekaAssessments", results).catch(err => {
+        console.warn("[MySQL] Gagal batch save penilaian ke MySQL:", err?.message || err);
+      });
+    }
+
+    saveConfigToMysql("curriculumConfig", curriculumConfig).catch(err => {
+      console.warn("[MySQL] Gagal simpan curriculumConfig ke MySQL:", err?.message || err);
+    });
+
     saveState();
     return res.json({ success: true, count: results.length, merdekaAssessments, newAssessment: results[0] });
+  });
+
+  // Endpoints untuk Pengambilan dan Penyimpanan Mandiri Deskripsi TP Tiap Mapel
+  app.get("/api/tp-descriptions", (req, res) => {
+    const descMap: Record<string, any> = { ...((curriculumConfig as any).tpDescriptions || {}) };
+    
+    // Sinkronkan juga dari data merdekaAssessments yang sudah ada di memori/MySQL
+    merdekaAssessments.forEach(a => {
+      if (!a.subject) return;
+      const subKey = a.subject.trim().toLowerCase();
+      const classKey = (a.className || "").trim().toLowerCase();
+      const semKey = (a.semester || "ganjil").trim().toLowerCase();
+      const yearKey = (a.academicYear || "2026/2027").trim().toLowerCase();
+      const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+
+      if (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name) {
+        const itemData = {
+          subject: a.subject,
+          className: a.className,
+          semester: a.semester,
+          academicYear: a.academicYear,
+          tp1Name: a.tp1Name || "",
+          tp2Name: a.tp2Name || "",
+          tp3Name: a.tp3Name || "",
+          tp4Name: a.tp4Name || "",
+          updatedAt: a.updatedAt || a.createdAt
+        };
+        if (!descMap[fullKey] && classKey) {
+          descMap[fullKey] = itemData;
+        }
+        if (!descMap[subKey]) {
+          descMap[subKey] = itemData;
+        }
+      }
+    });
+
+    res.json({ success: true, descriptions: descMap });
+  });
+
+  app.post("/api/tp-descriptions", async (req, res) => {
+    const { subject, className, semester, academicYear, tp1Name, tp2Name, tp3Name, tp4Name } = req.body;
+    if (!subject) {
+      return res.status(400).json({ error: "Nama mata pelajaran wajib disertakan." });
+    }
+
+    if (!(curriculumConfig as any).tpDescriptions) {
+      (curriculumConfig as any).tpDescriptions = {};
+    }
+
+    const cleanSub = subject.trim().toLowerCase();
+    const cleanClass = (className || "").trim().toLowerCase();
+    const cleanSem = (semester || (schoolIdentity as any).activeSemester || "Ganjil").trim().toLowerCase();
+    const cleanYear = (academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027").trim().toLowerCase();
+
+    const tpData = {
+      subject,
+      className: className || "",
+      semester: semester || "Ganjil",
+      academicYear: academicYear || "2026/2027",
+      tp1Name: tp1Name || "",
+      tp2Name: tp2Name || "",
+      tp3Name: tp3Name || "",
+      tp4Name: tp4Name || "",
+      updatedAt: new Date().toISOString()
+    };
+
+    if (cleanClass) {
+      (curriculumConfig as any).tpDescriptions[`${cleanClass}_${cleanSub}_${cleanSem}_${cleanYear}`] = tpData;
+    }
+    (curriculumConfig as any).tpDescriptions[cleanSub] = tpData;
+
+    // Perbarui juga data penilaian merdeka di memori dan MySQL jika sudah ada
+    const affected: MerdekaAssessment[] = [];
+    merdekaAssessments.forEach(a => {
+      const matchSub = (a.subject || "").trim().toLowerCase() === cleanSub;
+      const matchClass = !className || (a.className || "").trim().toLowerCase() === cleanClass;
+      if (matchSub && matchClass) {
+        if (tp1Name !== undefined) a.tp1Name = tp1Name;
+        if (tp2Name !== undefined) a.tp2Name = tp2Name;
+        if (tp3Name !== undefined) a.tp3Name = tp3Name;
+        if (tp4Name !== undefined) a.tp4Name = tp4Name;
+        a.updatedAt = new Date().toISOString();
+        affected.push(a);
+      }
+    });
+
+    if (affected.length > 0) {
+      directSaveEntitiesBatchToMysql("merdekaAssessments", affected).catch(err => {
+        console.warn("[MySQL] Gagal update TP di assessments:", err?.message || err);
+      });
+    }
+
+    saveConfigToMysql("curriculumConfig", curriculumConfig).catch(err => {
+      console.warn("[MySQL] Gagal simpan TP ke curriculumConfig MySQL:", err?.message || err);
+    });
+
+    saveState();
+    res.json({
+      success: true,
+      message: `Deskripsi TP untuk mata pelajaran "${subject}" berhasil disimpan ke sistem dan MySQL!`,
+      tpData
+    });
   });
 
   // Batch import PTS & PAS from Waka Kurikulum

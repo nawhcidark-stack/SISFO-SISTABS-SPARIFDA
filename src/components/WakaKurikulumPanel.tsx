@@ -80,10 +80,10 @@ export const hasAssessmentData = (a?: MerdekaAssessment): boolean => {
   if (a.nilaiTp2 !== undefined && Number(a.nilaiTp2) > 0) return true;
   if (a.nilaiTp3 !== undefined && Number(a.nilaiTp3) > 0) return true;
   if (a.nilaiTp4 !== undefined && Number(a.nilaiTp4) > 0) return true;
-  if (a.tp1Uh || a.tp1Tugas1 || a.tp1Tugas2) return true;
-  if (a.tp2Uh || a.tp2Tugas1 || a.tp2Tugas2) return true;
-  if (a.tp3Uh || a.tp3Tugas1 || a.tp3Tugas2) return true;
-  if (a.tp4Uh || a.tp4Tugas1 || a.tp4Tugas2) return true;
+  if (a.tp1Uh || a.tp1Tugas1) return true;
+  if (a.tp2Uh || a.tp2Tugas1) return true;
+  if (a.tp3Uh || a.tp3Tugas1) return true;
+  if (a.tp4Uh || a.tp4Tugas1) return true;
   return false;
 };
 
@@ -2033,8 +2033,7 @@ export default function WakaKurikulumPanel({
                                       </span>
                                     </div>
                                     <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
-                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp1Tugas1 ?? '-'}</strong></p>
-                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp1Tugas2 ?? '-'}</strong></p>
+                                      <p>Tugas: <strong className="text-slate-900">{a.tp1Tugas1 ?? '-'}</strong></p>
                                       <p>UH / Sumatif: <strong className="text-slate-900">{a.tp1Uh ?? '-'}</strong></p>
                                     </div>
                                   </div>
@@ -2048,8 +2047,7 @@ export default function WakaKurikulumPanel({
                                       </span>
                                     </div>
                                     <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
-                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp2Tugas1 ?? '-'}</strong></p>
-                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp2Tugas2 ?? '-'}</strong></p>
+                                      <p>Tugas: <strong className="text-slate-900">{a.tp2Tugas1 ?? '-'}</strong></p>
                                       <p>UH / Sumatif: <strong className="text-slate-900">{a.tp2Uh ?? '-'}</strong></p>
                                     </div>
                                   </div>
@@ -2063,8 +2061,7 @@ export default function WakaKurikulumPanel({
                                       </span>
                                     </div>
                                     <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
-                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp3Tugas1 ?? '-'}</strong></p>
-                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp3Tugas2 ?? '-'}</strong></p>
+                                      <p>Tugas: <strong className="text-slate-900">{a.tp3Tugas1 ?? '-'}</strong></p>
                                       <p>UH / Sumatif: <strong className="text-slate-900">{a.tp3Uh ?? '-'}</strong></p>
                                     </div>
                                   </div>
@@ -2078,8 +2075,7 @@ export default function WakaKurikulumPanel({
                                       </span>
                                     </div>
                                     <div className="text-[11px] font-semibold text-slate-600 space-y-0.5 pt-1 border-t border-slate-200/60">
-                                      <p>Tugas 1: <strong className="text-slate-900">{a.tp4Tugas1 ?? '-'}</strong></p>
-                                      <p>Tugas 2: <strong className="text-slate-900">{a.tp4Tugas2 ?? '-'}</strong></p>
+                                      <p>Tugas: <strong className="text-slate-900">{a.tp4Tugas1 ?? '-'}</strong></p>
                                       <p>UH / Sumatif: <strong className="text-slate-900">{a.tp4Uh ?? '-'}</strong></p>
                                     </div>
                                   </div>

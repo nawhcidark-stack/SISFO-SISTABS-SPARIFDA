@@ -1417,17 +1417,17 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     // 1. Validasi Kelengkapan Formulir Buku Induk
     // Jika data buku induk sudah diisi lengkap (No KK dan Nama Orang Tua/Wali), atau c.isFormCompleted sudah bernilai true, tandai lengkap
     const hasRealFormData = Boolean(
-      ((c.kkNumber && String(c.kkNumber).trim().length >= 8) || (ffd.kkNumber && String(ffd.kkNumber).trim().length >= 8)) &&
-      (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName)
+      ((c.kkNumber && String(c.kkNumber).trim().length >= 8) || (ffd.kkNumber && String(ffd.kkNumber).trim().length >= 8) || (c.kk_number && String(c.kk_number).trim().length >= 8)) &&
+      (c.fatherName || c.motherName || c.guardianName || ffd.fatherName || ffd.motherName || ffd.guardianName || c.father_name || c.mother_name || c.guardian_name)
     );
     
-    if (hasRealFormData || c.isFormCompleted) {
+    if (hasRealFormData || c.isFormCompleted || c.formCompletedAt || c.form_completed_at) {
       if (!c.isFormCompleted) {
         c.isFormCompleted = true;
         changed = true;
       }
       if (!c.formCompletedAt) {
-        c.formCompletedAt = ffd.formCompletedAt || c.createdAt || new Date().toISOString();
+        c.formCompletedAt = ffd.formCompletedAt || c.form_completed_at || c.createdAt || new Date().toISOString();
         changed = true;
       }
     } else {
@@ -1446,8 +1446,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
     }
 
     // 2. Validasi Kelengkapan Berkas Upload
-    // Hanya dianggap LENGKAP jika SELURUH 5 berkas wajib telah benar-benar terunggah (bukan SVG sintetis / unsplash contoh)!
-    const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
+    const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.includes('unsplash.com'));
     const hasAllMandatoryDocs = Boolean(
       c.documents && 
       isRealDoc(c.documents.aktaPhoto) && 
@@ -1456,15 +1455,14 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       (isRealDoc(c.documents.ktpAyahPhoto) || isRealDoc(c.documents.ktpPhoto)) && 
       isRealDoc(c.documents.ktpIbuPhoto)
     );
-    if (hasAllMandatoryDocs) {
+    if (hasAllMandatoryDocs || Boolean(c.documentsUploadedAt || c.documents_uploaded_at)) {
       if (!c.documentsUploaded) {
         c.documentsUploaded = true;
-        if (!c.documentsUploadedAt) c.documentsUploadedAt = new Date().toISOString();
+        if (!c.documentsUploadedAt) c.documentsUploadedAt = c.documents_uploaded_at || new Date().toISOString();
         changed = true;
       }
     } else {
-      // Jika berkas belum lengkap (kurang salah satu dari 5 berkas wajib), status berkas BELUM LENGKAP!
-      if (c.documentsUploaded) {
+      if (c.documentsUploaded && (!c.documents || Object.keys(c.documents).length === 0)) {
         c.documentsUploaded = false;
         delete c.documentsUploadedAt;
         changed = true;
@@ -1782,7 +1780,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (!cand.tokenPaymentMethod) cand.tokenPaymentMethod = "Midtrans (Settlement)";
       cand.tokenAmount = cand.tokenAmount || 50000;
       cand.isFormCompleted = true;
-      cand.documentsUploaded = false;
+      cand.documentsUploaded = cand.documentsUploaded || Boolean(cand.documentsUploadedAt);
       cand.documentsFolder = folderUrl;
       cand.documentsFolderName = folderName;
       cand.googleDriveLink = folderUrl;
@@ -2386,6 +2384,9 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
               spmbCandidates[idx] = {
                 ...spmbCandidates[idx],
                 ...mc,
+                isFormCompleted: spmbCandidates[idx].isFormCompleted || mc.isFormCompleted,
+                documentsUploaded: spmbCandidates[idx].documentsUploaded || mc.documentsUploaded,
+                status: (spmbCandidates[idx].status === 'accepted' || mc.status === 'accepted') ? 'accepted' : (mc.status || spmbCandidates[idx].status),
                 tokenPaid: spmbCandidates[idx].tokenPaid || mc.tokenPaid,
                 tokenPaymentStatus: (spmbCandidates[idx].tokenPaymentStatus === 'paid' || mc.tokenPaymentStatus === 'paid') ? 'paid' : (mc.tokenPaymentStatus || spmbCandidates[idx].tokenPaymentStatus),
                 reRegistrationPaid: spmbCandidates[idx].reRegistrationPaid || mc.reRegistrationPaid,
@@ -2393,6 +2394,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
                 collectiveRefundStatus: (spmbCandidates[idx].collectiveRefundStatus === 'refunded' || mc.collectiveRefundStatus === 'refunded') ? 'refunded' : (mc.collectiveRefundStatus || spmbCandidates[idx].collectiveRefundStatus),
                 documents: { ...(spmbCandidates[idx].documents || {}), ...(mc.documents || {}) }
               };
+              healCandidateData(spmbCandidates[idx]);
               delete spmbCandidates[idx].documentsRaw;
               delete spmbCandidates[idx].documentsBase64;
             } else {
@@ -2831,7 +2833,12 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
     }
 
-    healCandidateData(candidate);
+    const changed = healCandidateData(candidate);
+    if (changed) {
+      candidate.updatedAt = new Date().toISOString();
+      saveState();
+      directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
+    }
     res.json(candidate);
   });
 

@@ -331,7 +331,6 @@ export default function SubjectTeacherPanel({
   const [tp4InputName, setTp4InputName] = useState<string>('');
   const [savedTpDescriptions, setSavedTpDescriptions] = useState<Record<string, { tp1Name?: string; tp2Name?: string; tp3Name?: string; tp4Name?: string }>>({});
   const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
-  const [unsavedTpCache, setUnsavedTpCache] = useState<Record<string, { tp1Name: string; tp2Name: string; tp3Name: string; tp4Name: string }>>({});
 
   const handleAutoFillAllTpsFromJournals = () => {
     const norm = (s?: string) => (s || '').toLowerCase().trim();
@@ -467,7 +466,13 @@ export default function SubjectTeacherPanel({
   // TP otomatis berganti sesuai yang tersimpan untuk mapel tersebut (atau kosong jika belum diisi),
   // dan jika kembali ke mapel yang sudah disimpan, otomatis terisi kembali sesuai simpanan awal.
   useEffect(() => {
-    if (!selectedSubject) return;
+    if (!selectedSubject) {
+      setTp1InputName('');
+      setTp2InputName('');
+      setTp3InputName('');
+      setTp4InputName('');
+      return;
+    }
 
     const subKey = (selectedSubject || '').trim().toLowerCase();
     const classKey = (selectedGradeClass || '').trim().toLowerCase();
@@ -475,17 +480,7 @@ export default function SubjectTeacherPanel({
     const yearKey = (selectedYearGrading || '2026/2027').trim().toLowerCase();
     const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
 
-    // 1. Cek dari draft belum tersimpan di sesi ini
-    const cachedDraft = unsavedTpCache[subKey] || unsavedTpCache[fullKey];
-    if (cachedDraft && (cachedDraft.tp1Name || cachedDraft.tp2Name || cachedDraft.tp3Name || cachedDraft.tp4Name)) {
-      setTp1InputName(cachedDraft.tp1Name || '');
-      setTp2InputName(cachedDraft.tp2Name || '');
-      setTp3InputName(cachedDraft.tp3Name || '');
-      setTp4InputName(cachedDraft.tp4Name || '');
-      return;
-    }
-
-    // 2. Cek dari savedTpDescriptions
+    // 1. Cek dari savedTpDescriptions (spesifik kelas/semester atau umum mapel)
     const savedDesc = savedTpDescriptions[fullKey] || savedTpDescriptions[subKey];
     if (savedDesc && (savedDesc.tp1Name || savedDesc.tp2Name || savedDesc.tp3Name || savedDesc.tp4Name)) {
       setTp1InputName(savedDesc.tp1Name || '');
@@ -495,7 +490,7 @@ export default function SubjectTeacherPanel({
       return;
     }
 
-    // 3. Cek dari merdekaAssessments yang sudah tersimpan di database
+    // 2. Cek dari merdekaAssessments yang sudah tersimpan di database
     const matchedAss = merdekaAssessments.find(a => 
       matchSubject(a.subject, selectedSubject) &&
       (!selectedGradeClass || (a.className || '').trim().toLowerCase() === classKey) &&
@@ -513,7 +508,7 @@ export default function SubjectTeacherPanel({
       return;
     }
 
-    // 4. Jika belum pernah disimpan untuk mapel ini, kosongkan agar guru dapat mengisinya
+    // 3. Jika belum pernah disimpan untuk mapel ini, otomatis kosongkan agar guru dapat mengisinya
     setTp1InputName('');
     setTp2InputName('');
     setTp3InputName('');
@@ -2908,7 +2903,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 1 (TP-1)"
                   tpNumber={1}
                   value={tp1InputName}
-                  onChange={(val) => { setTp1InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp1Name: val } })); }}
+                  onChange={setTp1InputName}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -2922,7 +2917,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 2 (TP-2) - Opsional"
                   tpNumber={2}
                   value={tp2InputName}
-                  onChange={(val) => { setTp2InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp2Name: val } })); }}
+                  onChange={setTp2InputName}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -2935,7 +2930,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 3 (TP-3) - Opsional"
                   tpNumber={3}
                   value={tp3InputName}
-                  onChange={(val) => { setTp3InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp3Name: val } })); }}
+                  onChange={setTp3InputName}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -2948,7 +2943,7 @@ export default function SubjectTeacherPanel({
                   label="Tujuan Pembelajaran 4 (TP-4) - Opsional"
                   tpNumber={4}
                   value={tp4InputName}
-                  onChange={(val) => { setTp4InputName(val); const k = (selectedSubject||'').trim().toLowerCase(); setUnsavedTpCache(p => ({ ...p, [k]: { ...(p[k]||{tp1Name:'',tp2Name:'',tp3Name:'',tp4Name:''}), tp4Name: val } })); }}
+                  onChange={setTp4InputName}
                   journals={allJournals.length > 0 ? allJournals : journals}
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
@@ -4115,7 +4110,7 @@ export default function SubjectTeacherPanel({
                     <li>
                       Urutan kolom format terbaru:
                       <div className="py-1.5 px-2.5 border border-emerald-200 bg-emerald-100/50 rounded-lg font-mono text-[9px] mt-1 text-slate-800 overflow-x-auto">
-                        No | NIS | Nama | TP1_T1 | TP1_T2 | TP1_UH | TP2_T1 | TP2_T2 | TP2_UH | TP3_T1 | TP3_T2 | TP3_UH | TP4_T1 | TP4_T2 | TP4_UH | Kokurikuler | PTS | PAS
+                        No | NIS | Nama | TP1_Tugas | TP1_UH | TP2_Tugas | TP2_UH | TP3_Tugas | TP3_UH | TP4_Tugas | TP4_UH | Kokurikuler | PTS | PAS
                       </div>
                     </li>
                     <li>Sistem mendeteksi siswa secara cerdas berdasarkan <strong>NIS</strong> atau <strong>Nama Lengkap</strong> yang sesuai di kelas terpilih.</li>

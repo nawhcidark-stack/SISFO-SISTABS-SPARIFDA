@@ -1473,13 +1473,12 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     
     // Validasi form: selesai jika ada No KK valid (>=8 digit) dan nama orang tua/wali, atau r.is_form_completed = 1
     const hasRealFormData = Boolean(
-      (r.kk_number && String(r.kk_number).trim().length >= 8) &&
+      ((r.kk_number && String(r.kk_number).trim().length >= 8) || (fullFormData && fullFormData.kkNumber && String(fullFormData.kkNumber).trim().length >= 8)) &&
       (r.father_name || r.mother_name || r.guardian_name || (fullFormData && (fullFormData.fatherName || fullFormData.motherName || fullFormData.guardianName)))
     );
-    const isFormDone = Boolean(r.is_form_completed) || hasRealFormData || (currentNisn === '0156620618');
+    const isFormDone = Boolean(r.is_form_completed) || hasRealFormData || (currentNisn === '0156620618') || Boolean(r.form_completed_at);
     const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
     
-    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL (abaikan berkas contoh SVG / unsplash)
     // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL
     if (documents && typeof documents === 'object') {
       const cleanedDocs: Record<string, string> = {};
@@ -1495,7 +1494,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       documents = Object.keys(cleanedDocs).length > 0 ? cleanedDocs : undefined;
     }
 
-    // Validasi berkas: hanya selesai jika SELURUH 5 berkas wajib telah benar-benar terunggah dan tersimpan asli
+    // Validasi berkas: selesai jika 5 berkas wajib telah terunggah atau documents_uploaded_at ada
     const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.includes('unsplash.com'));
     const hasActualMandatoryDocs = Boolean(
       documents && 
@@ -1505,7 +1504,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
       (isRealDoc(documents.ktpAyahPhoto) || isRealDoc(documents.ktpPhoto)) && 
       isRealDoc(documents.ktpIbuPhoto)
     );
-    const hasDocs = hasActualMandatoryDocs;
+    const hasDocs = hasActualMandatoryDocs || Boolean(r.documents_uploaded_at);
 
     const isSyahm = currentNisn === '0156620618';
     const resolvedFullName = isSyahm ? 'SYAHM AZIO HAFIZUDIN' : r.full_name;
@@ -1520,125 +1519,142 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     const resolvedVillage = isSyahm ? 'bulukandang' : r.village;
     const resolvedDistrict = isSyahm ? 'prigen' : r.district;
 
+    // Filter fullFormData agar field status otoritatif database tidak tertimpa data JSON lama
+    const extraFfd: any = {};
+    if (fullFormData && typeof fullFormData === 'object') {
+      const {
+        documentsRaw: _dr, documentsBase64: _db,
+        id: _id, nisn: _nisn, nik: _nik, registrationNo: _rn, registrationNumber: _rnn,
+        status: _st, isFormCompleted: _ifc, formCompletedAt: _fca,
+        documentsUploaded: _du, documentsUploadedAt: _dua, documents: _docs,
+        tokenPaid: _tp, tokenPaymentStatus: _tps, tokenPaymentOrderId: _tpo, tokenPaidAt: _tpa, tokenAmount: _ta,
+        reRegistrationPaid: _rrp, reRegistrationStatus: _rrs, reRegistrationPaidAt: _rrpa, reRegistrationMethod: _rrm,
+        reRegistrationAmount: _rra, buildingFeePaid: _bfp, julySppPaid: _jsp, uniformFeePaid: _ufp, totalReRegistrationPaid: _trrp,
+        sessionId: _sid, registrationType: _rt,
+        ...safeFields
+      } = fullFormData;
+      Object.assign(extraFfd, safeFields);
+    }
+
     const baseCandidate: any = {
-    id: r.id,
-    registrationNo: r.registration_no,
-    registrationNumber: r.registration_no,
-    nisn: r.nisn,
-    nik: isSyahm ? (r.nik || '3514122601150001') : r.nik,
-    fullName: resolvedFullName,
-    gender: isSyahm ? 'L' : r.gender,
-    birthPlace: resolvedBirthPlace,
-    birthDate: resolvedBirthDate,
-    phone: r.phone,
-    studentPhone: r.student_phone || undefined,
-    schoolOriginType: resolvedSchoolOriginType,
-    schoolOrigin: resolvedSchoolOrigin,
-    registrationType: r.registration_type,
-    sessionId: isSyahm ? 'inden' : r.session_id,
-    createdAt: r.created_at,
-    updatedAt: r.updated_at || undefined,
-    status: r.status === 'accepted' || (isReregPaid && (hasDocs || isFormDone)) ? 'accepted' : (r.status || (isFormDone ? 'form_submitted' : 'registered')),
-    originalSessionId: r.original_session_id || undefined,
-    previousSessionId: r.previous_session_id || undefined,
-    isTransferredSession: Boolean(r.is_transferred_session),
-    transferredAt: r.transferred_at || undefined,
-    transferReason: r.transfer_reason || undefined,
-    transferHistory,
-    tokenPaid: r.token_payment_status === 'paid' || Boolean(r.token_paid_at),
-    tokenPaymentStatus: r.token_payment_status || 'unpaid',
-    tokenPaymentOrderId: r.token_payment_order_id || undefined,
-    tokenPaidAt: r.token_paid_at || undefined,
-    tokenPaymentMethod: r.token_payment_method || undefined,
-    tokenAmount: r.token_amount !== null && r.token_amount !== undefined ? Number(r.token_amount) : undefined,
-    collectiveRefundStatus: r.collective_refund_status || 'none',
-    collectiveRefundAmount: r.collective_refund_amount !== null && r.collective_refund_amount !== undefined ? Number(r.collective_refund_amount) : undefined,
-    collectiveRefundedAt: r.collective_refunded_at || undefined,
-    collectiveRefundedBy: r.collective_refunded_by || undefined,
-    collectiveRefundRecipient: r.collective_refund_recipient || undefined,
-    collectiveRefundNote: r.collective_refund_note || undefined,
-    collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
-    isFormCompleted: isFormDone,
-    formCompletedAt: r.form_completed_at || (isFormDone ? (r.form_completed_at || r.created_at || new Date().toISOString()) : undefined),
-    nickname: isSyahm ? 'AZIO' : (r.nickname || undefined),
-    kkNumber: isSyahm ? (r.kk_number || '3514122601150001') : (r.kk_number || undefined),
-    birthCertNumber: isSyahm ? (r.birth_cert_number || '3514-LT-26012015-0001') : (r.birth_cert_number || undefined),
-    religion: r.religion || 'Islam',
-    address: resolvedAddress || undefined,
-    dusun: resolvedDusun || undefined,
-    rt: resolvedRt || undefined,
-    rw: resolvedRw || undefined,
-    village: resolvedVillage || undefined,
-    district: resolvedDistrict || undefined,
-    city: isSyahm ? 'Kabupaten Pasuruan' : (r.city || undefined),
-    postalCode: r.postal_code || undefined,
-    livingWith: r.living_with || undefined,
-    childOrder: r.child_order || undefined,
-    siblingsCount: r.siblings_count || undefined,
-    stepSiblingsCount: r.step_siblings_count || undefined,
-    transportation: r.transportation || undefined,
-    specialNeeds: r.special_needs || undefined,
-    height: r.height !== null && r.height !== undefined ? Number(r.height) : undefined,
-    weight: r.weight !== null && r.weight !== undefined ? Number(r.weight) : undefined,
-    distanceToSchool: r.distance_to_school || undefined,
-    travelTime: r.travel_time || undefined,
-    fatherName: r.father_name || undefined,
-    fatherNik: r.father_nik || undefined,
-    fatherBirthPlace: r.father_birth_place || undefined,
-    fatherBirthDate: r.father_birth_date || undefined,
-    fatherEducation: r.father_education || undefined,
-    fatherOccupation: r.father_occupation || undefined,
-    fatherIncome: r.father_income || undefined,
-    fatherPhone: r.father_phone || undefined,
-    fatherStatus: r.father_status || undefined,
-    fatherAddress: r.father_address || undefined,
-    motherName: r.mother_name || undefined,
-    motherNik: r.mother_nik || undefined,
-    motherBirthPlace: r.mother_birth_place || undefined,
-    motherBirthDate: r.mother_birth_date || undefined,
-    motherEducation: r.mother_education || undefined,
-    motherOccupation: r.mother_occupation || undefined,
-    motherIncome: r.mother_income || undefined,
-    motherPhone: r.mother_phone || undefined,
-    motherStatus: r.mother_status || undefined,
-    motherAddress: r.mother_address || undefined,
-    guardianName: r.guardian_name || undefined,
-    guardianNik: r.guardian_nik || undefined,
-    guardianBirthPlace: r.guardian_birth_place || undefined,
-    guardianBirthDate: r.guardian_birth_date || undefined,
-    guardianEducation: r.guardian_education || undefined,
-    guardianOccupation: r.guardian_occupation || undefined,
-    guardianIncome: r.guardian_income || undefined,
-    guardianPhone: r.guardian_phone || undefined,
-    guardianStatus: r.guardian_status || undefined,
-    guardianAddress: r.guardian_address || undefined,
-    guardianRelationship: r.guardian_relationship || undefined,
-    guardianRelation: r.guardian_relationship || undefined,
-    guardianIsSameAsFather: Boolean(r.guardian_is_same_as_father),
-    reRegistrationPaid: isReregPaid,
-    reRegistrationPaidAt: r.re_registration_paid_at || undefined,
-    reRegistrationMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
-    reRegistrationPaymentMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
-    reRegistrationOrderId: r.re_registration_order_id || undefined,
-    reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
-    reRegistrationAmount: isSyahm ? 560000 : (r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined),
-    buildingFeePaid: isSyahm ? 0 : (Number(r.building_fee_paid) || 0),
-    julySppPaid: isSyahm ? 200000 : (Number(r.july_spp_paid) || 0),
-    uniformFeePaid: isSyahm ? 360000 : (Number(r.uniform_fee_paid) || 0),
-    totalReRegistrationPaid: isSyahm ? 560000 : (Number(r.total_re_registration_paid) || 0),
-    selectedUniformSize: r.selected_uniform_size || undefined,
-    customUniformNote: r.custom_uniform_note || undefined,
-    uniformOrders,
-    uniformSizes,
-    documents,
-    documentsRaw: undefined,
-    documentsBase64: undefined,
-    documentsUploaded: hasDocs,
-    documentsUploadedAt: hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined,
-    fullFormData,
-    ...(fullFormData && typeof fullFormData === 'object' ? (({ documentsRaw: _dr, documentsBase64: _db, ...restFfd }: any) => restFfd)(fullFormData) : {})
-  };
-  return baseCandidate;
+      ...extraFfd,
+      id: r.id,
+      registrationNo: r.registration_no,
+      registrationNumber: r.registration_no,
+      nisn: r.nisn,
+      nik: isSyahm ? (r.nik || '3514122601150001') : (r.nik || extraFfd.nik),
+      fullName: resolvedFullName,
+      gender: isSyahm ? 'L' : (r.gender || extraFfd.gender),
+      birthPlace: resolvedBirthPlace || extraFfd.birthPlace,
+      birthDate: resolvedBirthDate || extraFfd.birthDate,
+      phone: r.phone || extraFfd.phone,
+      studentPhone: r.student_phone || extraFfd.studentPhone || undefined,
+      schoolOriginType: resolvedSchoolOriginType || extraFfd.schoolOriginType,
+      schoolOrigin: resolvedSchoolOrigin || extraFfd.schoolOrigin,
+      registrationType: r.registration_type || extraFfd.registrationType,
+      sessionId: isSyahm ? 'inden' : (r.session_id || extraFfd.sessionId),
+      createdAt: r.created_at,
+      updatedAt: r.updated_at || undefined,
+      status: r.status === 'accepted' || (isReregPaid && (hasDocs || isFormDone)) ? 'accepted' : (r.status || (isFormDone ? 'form_submitted' : 'registered')),
+      originalSessionId: r.original_session_id || undefined,
+      previousSessionId: r.previous_session_id || undefined,
+      isTransferredSession: Boolean(r.is_transferred_session),
+      transferredAt: r.transferred_at || undefined,
+      transferReason: r.transfer_reason || undefined,
+      transferHistory,
+      tokenPaid: r.token_payment_status === 'paid' || Boolean(r.token_paid_at),
+      tokenPaymentStatus: r.token_payment_status || 'unpaid',
+      tokenPaymentOrderId: r.token_payment_order_id || undefined,
+      tokenPaidAt: r.token_paid_at || undefined,
+      tokenPaymentMethod: r.token_payment_method || undefined,
+      tokenAmount: r.token_amount !== null && r.token_amount !== undefined ? Number(r.token_amount) : undefined,
+      collectiveRefundStatus: r.collective_refund_status || 'none',
+      collectiveRefundAmount: r.collective_refund_amount !== null && r.collective_refund_amount !== undefined ? Number(r.collective_refund_amount) : undefined,
+      collectiveRefundedAt: r.collective_refunded_at || undefined,
+      collectiveRefundedBy: r.collective_refunded_by || undefined,
+      collectiveRefundRecipient: r.collective_refund_recipient || undefined,
+      collectiveRefundNote: r.collective_refund_note || undefined,
+      collectiveRefundReceiptNo: r.collective_refund_receipt_no || undefined,
+      isFormCompleted: isFormDone,
+      formCompletedAt: r.form_completed_at || (isFormDone ? (r.form_completed_at || r.created_at || new Date().toISOString()) : undefined),
+      nickname: isSyahm ? 'AZIO' : (r.nickname || extraFfd.nickname || undefined),
+      kkNumber: isSyahm ? (r.kk_number || '3514122601150001') : (r.kk_number || extraFfd.kkNumber || undefined),
+      birthCertNumber: isSyahm ? (r.birth_cert_number || '3514-LT-26012015-0001') : (r.birth_cert_number || extraFfd.birthCertNumber || undefined),
+      religion: r.religion || extraFfd.religion || 'Islam',
+      address: resolvedAddress || extraFfd.address || undefined,
+      dusun: resolvedDusun || extraFfd.dusun || undefined,
+      rt: resolvedRt || extraFfd.rt || undefined,
+      rw: resolvedRw || extraFfd.rw || undefined,
+      village: resolvedVillage || extraFfd.village || undefined,
+      district: resolvedDistrict || extraFfd.district || undefined,
+      city: isSyahm ? 'Kabupaten Pasuruan' : (r.city || extraFfd.city || undefined),
+      postalCode: r.postal_code || extraFfd.postalCode || undefined,
+      livingWith: r.living_with || extraFfd.livingWith || undefined,
+      childOrder: r.child_order || extraFfd.childOrder || undefined,
+      siblingsCount: r.siblings_count || extraFfd.siblingsCount || undefined,
+      stepSiblingsCount: r.step_siblings_count || extraFfd.stepSiblingsCount || undefined,
+      transportation: r.transportation || extraFfd.transportation || undefined,
+      specialNeeds: r.special_needs || extraFfd.specialNeeds || undefined,
+      height: r.height !== null && r.height !== undefined ? Number(r.height) : (extraFfd.height ? Number(extraFfd.height) : undefined),
+      weight: r.weight !== null && r.weight !== undefined ? Number(r.weight) : (extraFfd.weight ? Number(extraFfd.weight) : undefined),
+      distanceToSchool: r.distance_to_school || extraFfd.distanceToSchool || undefined,
+      travelTime: r.travel_time || extraFfd.travelTime || undefined,
+      fatherName: r.father_name || extraFfd.fatherName || undefined,
+      fatherNik: r.father_nik || extraFfd.fatherNik || undefined,
+      fatherBirthPlace: r.father_birth_place || extraFfd.fatherBirthPlace || undefined,
+      fatherBirthDate: r.father_birth_date || extraFfd.fatherBirthDate || undefined,
+      fatherEducation: r.father_education || extraFfd.fatherEducation || undefined,
+      fatherOccupation: r.father_occupation || extraFfd.fatherOccupation || undefined,
+      fatherIncome: r.father_income || extraFfd.fatherIncome || undefined,
+      fatherPhone: r.father_phone || extraFfd.fatherPhone || undefined,
+      fatherStatus: r.father_status || extraFfd.fatherStatus || undefined,
+      fatherAddress: r.father_address || extraFfd.fatherAddress || undefined,
+      motherName: r.mother_name || extraFfd.motherName || undefined,
+      motherNik: r.mother_nik || extraFfd.motherNik || undefined,
+      motherBirthPlace: r.mother_birth_place || extraFfd.motherBirthPlace || undefined,
+      motherBirthDate: r.mother_birth_date || extraFfd.motherBirthDate || undefined,
+      motherEducation: r.mother_education || extraFfd.motherEducation || undefined,
+      motherOccupation: r.mother_occupation || extraFfd.motherOccupation || undefined,
+      motherIncome: r.mother_income || extraFfd.motherIncome || undefined,
+      motherPhone: r.mother_phone || extraFfd.motherPhone || undefined,
+      motherStatus: r.mother_status || extraFfd.motherStatus || undefined,
+      motherAddress: r.mother_address || extraFfd.motherAddress || undefined,
+      guardianName: r.guardian_name || extraFfd.guardianName || undefined,
+      guardianNik: r.guardian_nik || extraFfd.guardianNik || undefined,
+      guardianBirthPlace: r.guardian_birth_place || extraFfd.guardianBirthPlace || undefined,
+      guardianBirthDate: r.guardian_birth_date || extraFfd.guardianBirthDate || undefined,
+      guardianEducation: r.guardian_education || extraFfd.guardianEducation || undefined,
+      guardianOccupation: r.guardian_occupation || extraFfd.guardianOccupation || undefined,
+      guardianIncome: r.guardian_income || extraFfd.guardianIncome || undefined,
+      guardianPhone: r.guardian_phone || extraFfd.guardianPhone || undefined,
+      guardianStatus: r.guardian_status || extraFfd.guardianStatus || undefined,
+      guardianAddress: r.guardian_address || extraFfd.guardianAddress || undefined,
+      guardianRelationship: r.guardian_relationship || extraFfd.guardianRelationship || undefined,
+      guardianRelation: r.guardian_relationship || extraFfd.guardianRelation || undefined,
+      guardianIsSameAsFather: Boolean(r.guardian_is_same_as_father ?? extraFfd.guardianIsSameAsFather),
+      reRegistrationPaid: isReregPaid,
+      reRegistrationPaidAt: r.re_registration_paid_at || undefined,
+      reRegistrationMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
+      reRegistrationPaymentMethod: r.re_registration_method || (isReregPaid ? "Midtrans Online" : undefined),
+      reRegistrationOrderId: r.re_registration_order_id || undefined,
+      reRegistrationStatus: isReregPaid ? 'paid' : (r.re_registration_status || 'unpaid'),
+      reRegistrationAmount: isSyahm ? 560000 : (r.re_registration_amount !== null && r.re_registration_amount !== undefined ? Number(r.re_registration_amount) : undefined),
+      buildingFeePaid: isSyahm ? 0 : (Number(r.building_fee_paid) || 0),
+      julySppPaid: isSyahm ? 200000 : (Number(r.july_spp_paid) || 0),
+      uniformFeePaid: isSyahm ? 360000 : (Number(r.uniform_fee_paid) || 0),
+      totalReRegistrationPaid: isSyahm ? 560000 : (Number(r.total_re_registration_paid) || 0),
+      selectedUniformSize: r.selected_uniform_size || undefined,
+      customUniformNote: r.custom_uniform_note || undefined,
+      uniformOrders,
+      uniformSizes,
+      documents,
+      documentsRaw: undefined,
+      documentsBase64: undefined,
+      documentsUploaded: hasDocs,
+      documentsUploadedAt: hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined,
+      fullFormData
+    };
+    return baseCandidate;
 }
 
 // Fungsi untuk mencari calon murid langsung dari tabel MySQL spmb_candidates
@@ -2482,6 +2498,28 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
           }
         }
       }
+
+      // Pastikan kandidat yang telah mengisi KK dan orang tua di database berstatus is_form_completed = 1
+      try {
+        await connection.query(`
+          UPDATE \`spmb_candidates\` 
+          SET \`is_form_completed\` = 1,
+              \`form_completed_at\` = COALESCE(\`form_completed_at\`, \`created_at\`, NOW())
+          WHERE \`is_form_completed\` = 0 
+            AND (\`kk_number\` IS NOT NULL AND LENGTH(TRIM(\`kk_number\`)) >= 8)
+            AND (\`father_name\` IS NOT NULL OR \`mother_name\` IS NOT NULL OR \`guardian_name\` IS NOT NULL)
+        `);
+        await connection.query(`
+          UPDATE \`spmb_candidates\`
+          SET \`documents_uploaded_at\` = COALESCE(\`documents_uploaded_at\`, \`created_at\`, NOW())
+          WHERE \`documents_uploaded_at\` IS NULL
+            AND \`documents\` LIKE '%aktaPhoto%'
+            AND \`documents\` LIKE '%kkPhoto%'
+            AND \`documents\` LIKE '%pasPhoto%'
+            AND (\`documents\` LIKE '%ktpAyahPhoto%' OR \`documents\` LIKE '%ktpPhoto%')
+            AND \`documents\` LIKE '%ktpIbuPhoto%'
+        `);
+      } catch (_) {}
     } catch (colCheckErr: any) {
       console.warn('[MySQL Column Check Warning]:', colCheckErr.message || colCheckErr);
     }

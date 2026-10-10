@@ -1852,8 +1852,8 @@ export default function AdminSpmbManagement({
                       const hasAkta = isRealDoc(candidate.documents?.aktaPhoto || candidate.fullFormData?.documents?.aktaPhoto);
                       const hasKtpAyah = isRealDoc(candidate.documents?.ktpAyahPhoto || candidate.documents?.ktpPhoto || candidate.documents?.ktp || candidate.fullFormData?.documents?.ktpAyahPhoto || candidate.fullFormData?.documents?.ktpPhoto);
                       const hasKtpIbu = isRealDoc(candidate.documents?.ktpIbuPhoto || candidate.fullFormData?.documents?.ktpIbuPhoto);
-                      const allDocs = hasFoto && hasKk && hasAkta && hasKtpAyah && hasKtpIbu;
-                      const hasAnyDoc = hasFoto || hasKk || hasAkta || hasKtpAyah || hasKtpIbu;
+                      const allDocs = Boolean(candidate.documentsUploaded) || (hasFoto && hasKk && hasAkta && hasKtpAyah && hasKtpIbu);
+                      const hasAnyDoc = Boolean(candidate.documentsUploaded) || hasFoto || hasKk || hasAkta || hasKtpAyah || hasKtpIbu;
 
                       return (
                         <tr key={candidate.id} className="hover:bg-slate-50/80 transition-colors">
@@ -3235,8 +3235,8 @@ export default function AdminSpmbManagement({
                                 const docKk = isRealDoc(cand.documents?.kkPhoto || cand.fullFormData?.documents?.kkPhoto);
                                 const docAkta = isRealDoc(cand.documents?.aktaPhoto || cand.fullFormData?.documents?.aktaPhoto);
                                 const docKtpAyah = isRealDoc(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto || cand.documents?.ktp || cand.fullFormData?.documents?.ktpAyahPhoto || cand.fullFormData?.documents?.ktpPhoto);
-                                const docKtpIbu = isRealDoc(cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.ktpIbuPhoto);
-                                const allDocs = docFoto && docKk && docAkta && docKtpAyah && docKtpIbu;
+                                const allDocs = Boolean(cand.documentsUploaded) || (docFoto && docKk && docAkta && docKtpAyah && docKtpIbu);
+                                const hasAnyDoc = Boolean(cand.documentsUploaded) || Boolean(docFoto || docKk || docAkta || docKtpAyah || docKtpIbu);
 
                                 return (
                                   <div className="space-y-0.5">

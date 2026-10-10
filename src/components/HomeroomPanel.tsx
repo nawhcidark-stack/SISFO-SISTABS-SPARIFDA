@@ -2332,6 +2332,7 @@ export default function HomeroomPanel({
         setNotifMsg({ type: 'success', text: `🎉 Penilaian Kurikulum Merdeka & Nilai Kokurikuler Kelas ${currentTeacher.className} (${selectedSubjectForGrading}) berhasil disimpan!` });
         setShowSuccessCheck(true);
         fetchMerdekaAssessments();
+        if (onRefresh) onRefresh();
       } else {
         const d = await res1.json();
         setNotifMsg({ type: 'error', text: d.error || 'Gagal menyimpan nilai.' });
@@ -2395,6 +2396,7 @@ export default function HomeroomPanel({
         setNotifMsg({ type: 'success', text: '🎉 Nilai Kokurikuler berhasil disimpan & otomatis terhubung ke perhitungan Guru Mapel!' });
         setShowSuccessCheck(true);
         fetchMerdekaAssessments();
+        if (onRefresh) onRefresh();
       } else {
         const d = await res.json();
         setNotifMsg({ type: 'error', text: d.error || 'Gagal menyimpan nilai kokurikuler.' });

@@ -1458,15 +1458,14 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     } catch {}
   }
   let documentsRaw = undefined;
-  if (r.documents_raw) {
-    try {
-      documentsRaw = typeof r.documents_raw === 'string' ? JSON.parse(r.documents_raw) : r.documents_raw;
-    } catch {}
-  }
   let fullFormData: any = undefined;
   if (r.full_form_data) {
     try {
       fullFormData = typeof r.full_form_data === 'string' ? JSON.parse(r.full_form_data) : r.full_form_data;
+      if (fullFormData && typeof fullFormData === 'object') {
+        delete fullFormData.documentsRaw;
+        delete fullFormData.documentsBase64;
+      }
     } catch {}
   }
 
@@ -1482,13 +1481,14 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     const isReregPaid = r.re_registration_status === 'paid' || Boolean(r.re_registration_paid_at);
     
     // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL (abaikan berkas contoh SVG / unsplash)
+    // Validasi dokumen: Pertahankan seluruh berkas yang tercatat di database MySQL
     if (documents && typeof documents === 'object') {
       const cleanedDocs: Record<string, string> = {};
       for (const [docKey, docVal] of Object.entries(documents)) {
         if (!docVal || typeof docVal !== 'string') continue;
         if (docKey === 'file') continue;
         const trimmed = docVal.trim();
-        if (trimmed.endsWith('.svg') || trimmed.includes('unsplash.com')) continue;
+        if (trimmed.includes('unsplash.com')) continue;
         if (trimmed && (trimmed.startsWith('/uploads/') || trimmed.startsWith('data:') || trimmed.startsWith('http'))) {
           cleanedDocs[docKey] = trimmed;
         }
@@ -1497,7 +1497,7 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     }
 
     // Validasi berkas: hanya selesai jika SELURUH 5 berkas wajib telah benar-benar terunggah dan tersimpan asli
-    const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
+    const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.includes('unsplash.com'));
     const hasActualMandatoryDocs = Boolean(
       documents && 
       isRealDoc(documents.aktaPhoto) && 
@@ -1632,12 +1632,12 @@ export function mapMysqlRowToSpmbCandidate(r: any): any {
     uniformOrders,
     uniformSizes,
     documents,
-    documentsRaw,
-    documentsBase64: documentsRaw,
+    documentsRaw: undefined,
+    documentsBase64: undefined,
     documentsUploaded: hasDocs,
     documentsUploadedAt: hasDocs ? (r.documents_uploaded_at || r.created_at || new Date().toISOString()) : undefined,
     fullFormData,
-    ...(fullFormData && typeof fullFormData === 'object' ? fullFormData : {})
+    ...(fullFormData && typeof fullFormData === 'object' ? (({ documentsRaw: _dr, documentsBase64: _db, ...restFfd }: any) => restFfd)(fullFormData) : {})
   };
   return baseCandidate;
 }
@@ -2904,9 +2904,11 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const uniformOrders = c.uniformOrders ? (typeof c.uniformOrders === 'string' ? c.uniformOrders : JSON.stringify(c.uniformOrders)) : null;
       const uniformSizes = (c.uniformSizes || ffd.uniformSizes) ? (typeof (c.uniformSizes || ffd.uniformSizes) === 'string' ? (c.uniformSizes || ffd.uniformSizes) : JSON.stringify(c.uniformSizes || ffd.uniformSizes)) : null;
       const documents = c.documents ? (typeof c.documents === 'string' ? c.documents : JSON.stringify(c.documents)) : null;
-      const rawDocData = c.documentsRaw || c.documentsBase64 || ffd.documentsRaw || ffd.documentsBase64;
-      const documentsRaw = rawDocData ? (typeof rawDocData === 'string' ? rawDocData : JSON.stringify(rawDocData)) : null;
-      const fullFormData = c.fullFormData ? (typeof c.fullFormData === 'string' ? c.fullFormData : JSON.stringify(c.fullFormData)) : (Object.keys(ffd).length > 0 ? JSON.stringify(ffd) : null);
+      const documentsRaw = null;
+      const cleanFfd = { ...ffd };
+      delete cleanFfd.documentsRaw;
+      delete cleanFfd.documentsBase64;
+      const fullFormData = c.fullFormData ? (typeof c.fullFormData === 'string' ? c.fullFormData : JSON.stringify(c.fullFormData)) : (Object.keys(cleanFfd).length > 0 ? JSON.stringify(cleanFfd) : null);
 
       // Cari ID yang sudah ada di tabel spmb_candidates agar update selalu mengenai baris yang tepat
       let resolvedId = id;

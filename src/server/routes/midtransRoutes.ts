@@ -1571,17 +1571,31 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             actionTaken = true;
             detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} masih berstatus PENDING di Midtrans (Batas waktu: ${statusData.expiry_time || '24 jam'}).`;
           } else if (isExpired) {
-            const candIdx = spmbCandidates.findIndex(c => c.id === candidate.id);
-            if (candIdx !== -1) {
-              spmbCandidates.splice(candIdx, 1);
+            candidate.tokenSnapExpired = true;
+            candidate.tokenPaymentStatus = "pending";
+            candidate.snapExpiredAt = new Date().toISOString();
+
+            const threeDaysLater = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+            const y = threeDaysLater.getFullYear();
+            const mo = String(threeDaysLater.getMonth() + 1).padStart(2, '0');
+            const da = String(threeDaysLater.getDate()).padStart(2, '0');
+            const ho = String(threeDaysLater.getHours()).padStart(2, '0');
+            const mi = String(threeDaysLater.getMinutes()).padStart(2, '0');
+            const se = String(threeDaysLater.getSeconds()).padStart(2, '0');
+            const expiryStr = `${y}-${mo}-${da} ${ho}:${mi}:${se}`;
+
+            if (!candidate.tokenExpiryTime || new Date(candidate.tokenExpiryTime.replace(" ", "T")).getTime() < threeDaysLater.getTime()) {
+              candidate.tokenExpiryTime = expiryStr;
             }
+            candidate.cashPaymentDeadline = candidate.tokenExpiryTime;
+            candidate.updatedAt = new Date().toISOString();
             saveState();
             try {
-              const { directDeleteEntityFromMysql } = require("../mysqlService");
-              directDeleteEntityFromMysql("spmb_candidates", candidate.id).catch(() => {});
+              const { directSaveEntityToMysql } = require("../mysqlService");
+              directSaveEntityToMysql("spmb_candidates", candidate).catch(() => {});
             } catch (_) {}
             actionTaken = true;
-            detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} telah expired di Midtrans. Data awal calon murid baru telah dihapus dari sistem.`;
+            detailMessage = `Pembayaran token SPMB a.n ${candidate.fullName} telah expired di Midtrans. Masa tenggang diperpanjang 3 hari untuk opsi Bayar Tunai di Sekolah (s.d. ${candidate.tokenExpiryTime} WIB).`;
           }
         } else if (isRereg) {
           if (isSettled && candidate.reRegistrationStatus !== "paid") {
@@ -2665,13 +2679,26 @@ export function createMidtransRouter(deps: MidtransRouterDeps): Router {
             if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
             spmbActionTaken = true;
           } else if (isExpired) {
-            const candId = candidate.id;
-            spmbCandidates.splice(candIdx, 1);
+            candidate.tokenSnapExpired = true;
+            candidate.tokenPaymentStatus = "pending";
+            candidate.snapExpiredAt = new Date().toISOString();
+
+            const threeDaysLater = new Date(Date.now() + 3 * 24 * 60 * 60 * 1000);
+            const y = threeDaysLater.getFullYear();
+            const mo = String(threeDaysLater.getMonth() + 1).padStart(2, '0');
+            const da = String(threeDaysLater.getDate()).padStart(2, '0');
+            const ho = String(threeDaysLater.getHours()).padStart(2, '0');
+            const mi = String(threeDaysLater.getMinutes()).padStart(2, '0');
+            const se = String(threeDaysLater.getSeconds()).padStart(2, '0');
+            const expiryStr = `${y}-${mo}-${da} ${ho}:${mi}:${se}`;
+
+            if (!candidate.tokenExpiryTime || new Date(candidate.tokenExpiryTime.replace(" ", "T")).getTime() < threeDaysLater.getTime()) {
+              candidate.tokenExpiryTime = expiryStr;
+            }
+            candidate.cashPaymentDeadline = candidate.tokenExpiryTime;
+            candidate.updatedAt = new Date().toISOString();
             saveState();
-            try {
-              const { directDeleteEntityFromMysql } = require("../mysqlService");
-              directDeleteEntityFromMysql("spmb_candidates", candId).catch(() => {});
-            } catch (_) {}
+            if (persistEntity) persistEntity("spmbCandidates", candidate).catch(() => {});
             spmbActionTaken = true;
           }
         }

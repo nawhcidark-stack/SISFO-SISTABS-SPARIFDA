@@ -227,6 +227,7 @@ export function formatReceiptPaymentMethod(
     orderId?: string;
     vaNumbers?: Array<{ bank?: string; va_number?: string }>;
     defaultLabel?: string;
+    isCashAtSchool?: boolean;
   }
 ): {
   displayMethod: string;
@@ -260,11 +261,13 @@ export function formatReceiptPaymentMethod(
 
   // 3. Tunai / Cash di Sekolah / Loket SPMB
   const isCash =
+    Boolean(options?.isCashAtSchool) ||
+    typeStr === 'cash_school' ||
+    typeStr === 'cash' ||
     methodStr.toLowerCase().includes('tunai') ||
     methodStr.toLowerCase().includes('cash') ||
     methodStr.toLowerCase().includes('loket') ||
     methodStr.toLowerCase().includes('sekolah') ||
-    typeStr === 'cash' ||
     orderId.startsWith('TUNAI-') ||
     orderId.startsWith('KASIR-');
 
@@ -295,15 +298,30 @@ export function formatReceiptPaymentMethod(
     if (lower.includes('shopeepay') || typeStr === 'shopeepay') {
       return { displayMethod: 'Midtrans (ShopeePay)', isCash: false, isOnline: true, isFree: false };
     }
+    if (lower.includes('bca') || typeStr === 'bca_va') {
+      return { displayMethod: 'Midtrans (BCA Virtual Account)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('bni') || typeStr === 'bni_va') {
+      return { displayMethod: 'Midtrans (BNI Virtual Account)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('bri') || typeStr === 'bri_va') {
+      return { displayMethod: 'Midtrans (BRI Virtual Account)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('mandiri') || lower.includes('echannel') || typeStr === 'echannel') {
+      return { displayMethod: 'Midtrans (Mandiri Bill / VA)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('permata') || typeStr === 'permata_va') {
+      return { displayMethod: 'Midtrans (Permata Virtual Account)', isCash: false, isOnline: true, isFree: false };
+    }
+    if (lower.includes('cimb') || typeStr === 'cimb_va') {
+      return { displayMethod: 'Midtrans (CIMB Niaga VA)', isCash: false, isOnline: true, isFree: false };
+    }
     if (lower.includes('bank_transfer') || lower.includes('virtual account') || lower.includes('va')) {
       const foundBank = ['BCA', 'BNI', 'BRI', 'MANDIRI', 'PERMATA', 'CIMB'].find(b =>
         methodStr.toUpperCase().includes(b)
       ) || bankName;
       const bankLabel = foundBank ? ` (${foundBank} Virtual Account)` : ' (Bank Transfer / VA)';
       return { displayMethod: `Midtrans${bankLabel}`, isCash: false, isOnline: true, isFree: false };
-    }
-    if (lower.includes('echannel') || lower.includes('mandiri')) {
-      return { displayMethod: 'Midtrans (Mandiri Bill / VA)', isCash: false, isOnline: true, isFree: false };
     }
     if (lower.includes('cstore') || lower.includes('indomaret') || lower.includes('alfamart')) {
       const store = lower.includes('indomaret') ? 'Indomaret' : lower.includes('alfamart') ? 'Alfamart' : 'Gerai Retail';
@@ -512,6 +530,180 @@ export async function generateTokenReceiptHtml(
 
         <div class="receipt-footnote">
           <p><em>* Kuitansi ini diterbitkan secara sah dan otomatis oleh Sistem Informasi Akademik & SPMB ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.</em></p>
+        </div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
+/**
+ * Generate HTML Bukti Pendaftaran & Tagihan Pembayaran Token SPMB Tunai di Sekolah (3 Hari Tenggang Waktu)
+ */
+export async function generateTokenCashBillHtml(
+  candidate: SpmbCandidate,
+  config: SpmbConfig | null,
+  schoolIdentity?: SchoolIdentity
+): Promise<string> {
+  const academicYear = config?.academicYear || '2027/2028';
+  const amount = candidate.tokenAmount || candidate.tokenFee || 50000;
+  const terbilangText = angkaKeTerbilang(amount);
+  const billNo = `TGH-TKN/${new Date().getFullYear()}/${candidate.nisn || candidate.id.slice(0, 6).toUpperCase()}`;
+  const session = config?.sessions?.find(s => s.id === candidate.sessionId);
+  const sessionName = session?.name || (candidate.sessionId === 'inden' ? 'Jalur Inden' : candidate.sessionId === 'gelombang-1' ? 'Gelombang 1' : candidate.sessionId === 'gelombang-2' ? 'Gelombang 2' : candidate.sessionId);
+
+  const deadlineStr = candidate.cashPaymentDeadline || candidate.tokenExpiryTime
+    ? candidate.cashPaymentDeadline || candidate.tokenExpiryTime
+    : '3 Hari Sejak Pemilihan Bayar Tunai';
+
+  let qrCodeDataUrl = '';
+  try {
+    qrCodeDataUrl = await QRCode.toDataURL(
+      `TAGIHAN-SPMB-TOKEN-${candidate.nisn}-${candidate.fullName}-${billNo}-${amount}-TUNAI-SEKOLAH`,
+      { width: 120, margin: 1 }
+    );
+  } catch (e) {
+    console.error('QR generation error:', e);
+  }
+
+  return `
+    <!DOCTYPE html>
+    <html lang="id">
+    <head>
+      <meta charset="UTF-8" />
+      <title>Tagihan Token SPMB - ${candidate.fullName}</title>
+      <style>
+        ${getReceiptCss()}
+      </style>
+    </head>
+    <body>
+      <div class="receipt-container">
+        <!-- Official KOP -->
+        ${renderKopHeaderHtml(schoolIdentity, academicYear)}
+
+        <!-- Receipt Header Title -->
+        <div class="receipt-title-box">
+          <h1 class="receipt-main-title">BUKTI PENDAFTARAN & TAGIHAN PEMBAYARAN TOKEN FORMULIR SPMB</h1>
+          <div class="receipt-ref-badge">
+            <span>NO. TAGIHAN: <strong>${billNo}</strong></span>
+            <span class="status-pill" style="background:#fef3c7; color:#92400e; border:1px solid #f59e0b; padding: 4px 10px; border-radius: 9999px; font-weight: 800; font-size: 10px;">MENUNGGU PEMBAYARAN TUNAI DI SEKOLAH</span>
+          </div>
+        </div>
+
+        <!-- Receipt Body Details -->
+        <div class="receipt-body">
+          <table class="receipt-table">
+            <tr>
+              <td class="col-label">Nama Calon Murid</td>
+              <td class="col-colon">:</td>
+              <td class="col-value">
+                <strong>${candidate.fullName}</strong> 
+                <span class="sub-text">(NISN: ${candidate.nisn})</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="col-label">Asal Sekolah (SD/MI)</td>
+              <td class="col-colon">:</td>
+              <td class="col-value">${candidate.schoolOrigin || candidate.originSchool || '-'}</td>
+            </tr>
+            <tr>
+              <td class="col-label">Jalur / Gelombang</td>
+              <td class="col-colon">:</td>
+              <td class="col-value"><strong>${sessionName}</strong></td>
+            </tr>
+            <tr>
+              <td class="col-label">Total Tagihan Token</td>
+              <td class="col-colon">:</td>
+              <td class="col-value amount-box">
+                <span class="amount-number">Rp ${amount.toLocaleString('id-ID')}</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="col-label">Terbilang</td>
+              <td class="col-colon">:</td>
+              <td class="col-value terbilang-text">
+                <em># ${terbilangText} #</em>
+              </td>
+            </tr>
+            <tr>
+              <td class="col-label">Metode Pembayaran</td>
+              <td class="col-colon">:</td>
+              <td class="col-value">
+                <strong style="color: #047857;">Tunai (Pembayaran di Loket SPMB Sekolah)</strong>
+                <span class="badge-tag" style="background:#ecfdf5; color:#047857; border:1px solid #a7f3d0; margin-left:6px; font-size:9.5px; padding: 2px 6px; border-radius: 4px;">TENGGANG WAKTU 3 HARI</span>
+              </td>
+            </tr>
+            <tr>
+              <td class="col-label">Batas Waktu Pembayaran</td>
+              <td class="col-colon">:</td>
+              <td class="col-value" style="color: #b45309; font-weight: 800;">
+                ${deadlineStr ? deadlineStr.replace(' ', ' • Jam ') + ' WIB' : '3 Hari Sejak Registrasi'}
+                <div style="font-size: 10px; color: #dc2626; font-weight: 600; margin-top: 3px;">
+                  * Perhatian: Pembayaran harus diselesaikan maksimal dalam 3 hari. Jika setelah 3 hari belum dibayar, data pendaftaran akan otomatis dihapus oleh sistem.
+                </div>
+              </td>
+            </tr>
+            <tr>
+              <td class="col-label">Tempat Pembayaran</td>
+              <td class="col-colon">:</td>
+              <td class="col-value">
+                <strong>Kantor / Loket SPMB SMP Ma'arif NU Pandaan</strong><br/>
+                <span style="font-size: 10.5px; color: #475569;">${schoolIdentity?.address || 'Jl. Dr. Sutomo No. 1, Pandaan, Pasuruan'} (Pelayanan: Senin - Sabtu, 07.30 - 14.00 WIB)</span>
+              </td>
+            </tr>
+          </table>
+
+          <div style="margin-top: 14px; padding: 10px 14px; background: #f8fafc; border: 1px dashed #cbd5e1; border-radius: 8px; font-size: 10.5px; line-height: 1.5; color: #334155;">
+            <strong style="color: #0f172a;">Petunjuk Pembayaran di Sekolah:</strong>
+            <ol style="margin: 4px 0 0 16px; padding: 0;">
+              <li>Cetak lembar bukti/tagihan ini atau simpan tangkapan layarnya pada ponsel Anda.</li>
+              <li>Tunjukkan bukti/tagihan ini atau sebutkan <strong>NISN: ${candidate.nisn}</strong> kepada Petugas Loket SPMB.</li>
+              <li>Bayarkan uang tunai sejumlah <strong>Rp ${amount.toLocaleString('id-ID')}</strong> kepada Petugas Loket SPMB sebelum batas waktu 3 hari berakhir.</li>
+              <li>Petugas SPMB akan mengkonfirmasi pelunasan dan mengaktifkan akun Anda untuk pengisian formulir biodata lengkap dan berkas fisik.</li>
+            </ol>
+          </div>
+        </div>
+
+        <!-- Receipt Signatures -->
+        <div class="receipt-footer">
+          <div class="signature-column">
+            <p class="sig-title">Orang Tua / Calon Murid,</p>
+            <p class="sig-sub">Pendaftar</p>
+            <div class="sig-space"></div>
+            <p class="sig-name">( ${candidate.parentName || candidate.fullName} )</p>
+          </div>
+
+          <div class="signature-column">
+            <p class="sig-title">Panitia Pelayanan SPMB,</p>
+            <p class="sig-sub">${config?.spmbOfficerTitle || 'Pelayanan di Sekolah / Kantor SPMB'}</p>
+            <div class="sig-space sig-center-box">
+              ${config?.spmbOfficerSignatureUrl ? `<img src="${config.spmbOfficerSignatureUrl}" class="sig-img" alt="Ttd Panitia" referrerPolicy="no-referrer" />` : ''}
+            </div>
+            <p class="sig-name">${config?.spmbOfficerName && config.spmbOfficerName.trim() && !config.spmbOfficerName.includes('...') ? `<u>( ${config.spmbOfficerName.trim()} )</u>` : '( Petugas Loket SPMB )'}</p>
+          </div>
+
+          <div class="signature-column">
+            <p class="sig-title">Pandaan, ${formatIndoDate(new Date().toISOString())}</p>
+            <p class="sig-sub">${config?.spmbChairTitle || 'Ketua Panitia SPMB'},</p>
+            <div class="sig-space sig-with-stamp-flex">
+              ${(config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp) ? `<img src="${config?.spmbStampUrl || (schoolIdentity as any)?.schoolStamp || (schoolIdentity as any)?.stamp}" class="spmb-stamp-img" alt="Stempel SPMB" referrerPolicy="no-referrer" />` : ''}
+              ${(config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature) ? `<img src="${config?.spmbChairSignatureUrl || schoolIdentity?.principalSignature}" class="sig-img" alt="Ttd Ketua SPMB" referrerPolicy="no-referrer" />` : ''}
+            </div>
+            <p class="sig-name"><u>${config?.spmbChairName || schoolIdentity?.principal || 'Ketua Panitia SPMB'}</u></p>
+          </div>
+        </div>
+
+        <div class="receipt-verify-bar">
+          ${qrCodeDataUrl ? `<img src="${qrCodeDataUrl}" class="qr-image-small" alt="QR Validasi" />` : ''}
+          <div class="verify-text">
+            <strong>DOKUMEN RESMI BUKTI PENDAFTARAN & TAGIHAN SPMB</strong>
+            <span>Nomor Tagihan: ${billNo} • NISN: ${candidate.nisn}</span>
+            <span>Bawa dokumen ini ke Loket SPMB Sekolah untuk menyelesaikan pembayaran token pendaftaran.</span>
+          </div>
+        </div>
+
+        <div class="receipt-footnote">
+          <p><em>* Dokumen tagihan ini diterbitkan secara resmi oleh Sistem Informasi Akademik & SPMB ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}.</em></p>
         </div>
       </div>
     </body>
@@ -1278,7 +1470,7 @@ export async function printRegistrationProofDirect(
  * Buka window cetak / iframe dan langsung cetak kuitansi token / daftar ulang
  */
 export async function printSpmbReceiptDirect(
-  type: 'token' | 'rereg',
+  type: 'token' | 'rereg' | 'token_bill',
   candidate: SpmbCandidate,
   config: SpmbConfig | null,
   schoolIdentity?: SchoolIdentity,
@@ -1295,8 +1487,16 @@ export async function printSpmbReceiptDirect(
     } catch (_) {}
   }
 
+  const isTokenPaid = Boolean(
+    candidate.tokenPaymentStatus === 'paid' ||
+    candidate.tokenPaid ||
+    candidate.registrationType === 'school_collective'
+  );
+
   let html = '';
-  if (type === 'token') {
+  if (type === 'token_bill' || (type === 'token' && !isTokenPaid)) {
+    html = await generateTokenCashBillHtml(candidate, config, effectiveSchoolIdentity);
+  } else if (type === 'token') {
     html = await generateTokenReceiptHtml(candidate, config, effectiveSchoolIdentity);
   } else {
     html = await generateReRegReceiptHtml(candidate, config, effectiveSchoolIdentity, uniformSize);

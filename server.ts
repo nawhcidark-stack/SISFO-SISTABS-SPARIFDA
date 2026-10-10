@@ -388,7 +388,8 @@ let schoolIdentity = {
   iosUrl: "",
   favicon: "",
   paymentCardTemplate: "",
-  activeAcademicYear: "2026/2027"
+  activeAcademicYear: "2026/2027",
+  activeSemester: "Ganjil"
 };
 
 // WhatsApp API notification settings
@@ -1688,17 +1689,76 @@ function saveState(skipRemoteSync: boolean = false) {
     }
 
     // 2. SECONDARY NON-BLOCKING LOCAL BACKUP SNAPSHOT:
-    // Salinan cadangan darurat lokal ditulis asinkron tanpa memblokir server
-    try {
-      const tempPath = DATA_FILE + ".tmp";
-      fs.writeFile(tempPath, JSON.stringify(data), "utf-8", (err) => {
-        if (!err) {
-          fs.rename(tempPath, DATA_FILE, () => {});
-        }
-      });
-    } catch (_) {}
+    // Salinan cadangan darurat lokal didebounce dan ditulis asinkron tanpa memblokir server
+    triggerDebouncedLocalSave(() => data);
   } catch (error) {
     console.error("Failed to save state:", error);
+  }
+}
+
+// Thread-safe and debounced local backup writer with duplicate blob stripping for ultra-fast storage
+let localSaveTimer: NodeJS.Timeout | null = null;
+let isWritingLocalFile = false;
+let pendingLocalSave = false;
+
+function triggerDebouncedLocalSave(dataGetter: () => any) {
+  if (localSaveTimer) clearTimeout(localSaveTimer);
+  localSaveTimer = setTimeout(() => {
+    executeSafeLocalSave(dataGetter);
+  }, 800);
+}
+
+function executeSafeLocalSave(dataGetter: () => any) {
+  if (isWritingLocalFile) {
+    pendingLocalSave = true;
+    return;
+  }
+  isWritingLocalFile = true;
+  pendingLocalSave = false;
+  try {
+    const rawData = dataGetter();
+    // Hilangkan duplikasi data berkas base64 raksasa di snapshot backup lokal agar penyimpanan secepat kilat (<10ms)
+    let lightweightCandidates = rawData.spmbCandidates;
+    if (Array.isArray(lightweightCandidates)) {
+      lightweightCandidates = lightweightCandidates.map((c: any) => {
+        const { documentsRaw, documentsBase64, ...rest } = c;
+        if (rest.fullFormData) {
+          const { documentsRaw: _fr, documentsBase64: _fb, ...cleanFfd } = rest.fullFormData;
+          rest.fullFormData = cleanFfd;
+        }
+        return rest;
+      });
+    }
+    let lightweightBackups = rawData.databaseBackups;
+    if (Array.isArray(lightweightBackups)) {
+      lightweightBackups = lightweightBackups.slice(-3).map((b: any) => {
+        const { data, ...meta } = b;
+        return meta;
+      });
+    }
+    const cleanData = { ...rawData, spmbCandidates: lightweightCandidates, databaseBackups: lightweightBackups };
+    const jsonStr = JSON.stringify(cleanData);
+    const tempPath = DATA_FILE + ".tmp";
+    fs.writeFile(tempPath, jsonStr, "utf-8", (err) => {
+      isWritingLocalFile = false;
+      if (!err) {
+        fs.rename(tempPath, DATA_FILE, (renameErr) => {
+          if (renameErr) {
+            try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (_) {}
+          }
+          if (pendingLocalSave) {
+            executeSafeLocalSave(dataGetter);
+          }
+        });
+      } else {
+        try { if (fs.existsSync(tempPath)) fs.unlinkSync(tempPath); } catch (_) {}
+        if (pendingLocalSave) {
+          executeSafeLocalSave(dataGetter);
+        }
+      }
+    });
+  } catch (err) {
+    isWritingLocalFile = false;
   }
 }
 
@@ -3716,6 +3776,17 @@ async function startServer() {
       const snapshotStr = JSON.stringify(snapshot);
       const sizeBytes = getUtf8ByteLength(snapshotStr);
 
+      const backupsDir = path.join(process.cwd(), "backups");
+      if (!fs.existsSync(backupsDir)) {
+        try { fs.mkdirSync(backupsDir, { recursive: true }); } catch (_) {}
+      }
+      const backupFilePath = path.join(backupsDir, `${backupId}.json`);
+      try {
+        fs.writeFileSync(backupFilePath, snapshotStr, "utf-8");
+      } catch (writeErr) {
+        console.warn("[Backup File Save Warning]:", writeErr);
+      }
+
       const newBackup = {
         id: backupId,
         createdAt,
@@ -3723,7 +3794,7 @@ async function startServer() {
         description: description || (type === "auto" ? "Backup Otomatis Database" : "Backup Manual Admin"),
         sizeBytes,
         collections: counts,
-        data: snapshotStr
+        filePath: backupFilePath
       };
 
       databaseBackups.push(newBackup);
@@ -3734,7 +3805,12 @@ async function startServer() {
         const toRemove = sorted.slice(0, databaseBackups.length - backupConfig.maxBackups);
         for (const item of toRemove) {
           const idx = databaseBackups.findIndex(b => b.id === item.id);
-          if (idx > -1) databaseBackups.splice(idx, 1);
+          if (idx > -1) {
+            try {
+              if (item.filePath && fs.existsSync(item.filePath)) fs.unlinkSync(item.filePath);
+            } catch (_) {}
+            databaseBackups.splice(idx, 1);
+          }
         }
       }
 
@@ -3759,9 +3835,16 @@ async function startServer() {
       if (!backup) {
         return res.status(404).send("Backup tidak ditemukan.");
       }
+      let content = backup.data;
+      if (!content && backup.filePath && fs.existsSync(backup.filePath)) {
+        content = fs.readFileSync(backup.filePath, "utf-8");
+      }
+      if (!content) {
+        return res.status(404).send("File arsip backup tidak ditemukan pada media penyimpanan.");
+      }
       res.setHeader("Content-Disposition", `attachment; filename=SIS_Backup_${backup.id}.json`);
       res.setHeader("Content-Type", "application/json");
-      res.send(backup.data);
+      res.send(content);
     } catch (err: any) {
       console.error("Error downloading backup:", err);
       res.status(500).send("Gagal mengunduh file backup: " + err.message);
@@ -3777,7 +3860,15 @@ async function startServer() {
         return res.status(404).json({ error: "Backup tidak ditemukan." });
       }
 
-      const snapshot = JSON.parse(backup.data);
+      let content = backup.data;
+      if (!content && backup.filePath && fs.existsSync(backup.filePath)) {
+        content = fs.readFileSync(backup.filePath, "utf-8");
+      }
+      if (!content) {
+        return res.status(404).json({ error: "File arsip backup tidak ditemukan di media penyimpanan." });
+      }
+
+      const snapshot = JSON.parse(content);
       await restoreFullBackupSnapshot(snapshot);
 
       res.json({ success: true, message: "Restorasi data database berhasil diselesaikan." });
@@ -3900,6 +3991,7 @@ async function startServer() {
       if (paymentCardTemplate !== undefined) (schoolIdentity as any).paymentCardTemplate = String(paymentCardTemplate); // can be empty or base64 data URI
       if (favicon !== undefined) (schoolIdentity as any).favicon = String(favicon); // can be empty or base64 data URI
       if (activeAcademicYear !== undefined) (schoolIdentity as any).activeAcademicYear = String(activeAcademicYear).trim();
+      if ((req.body as any).activeSemester !== undefined) (schoolIdentity as any).activeSemester = String((req.body as any).activeSemester).trim();
 
       // Broadcast SSE notification
       const notification: RealtimeNotification = {
@@ -5712,8 +5804,8 @@ async function startServer() {
         return;
       }
 
-      const sem = semester || "Genap";
-      const year = academicYear || "2025/2026";
+      const sem = semester || (schoolIdentity as any).activeSemester || "Ganjil";
+      const year = academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027";
 
       const existingIdx = merdekaAssessments.findIndex(
         a => a.studentId === studentId &&
@@ -5859,8 +5951,8 @@ async function startServer() {
       return res.status(400).json({ error: "Data nilai kokurikuler tidak valid." });
     }
 
-    const sem = semester || "Genap";
-    const year = academicYear || "2025/2026";
+    const sem = semester || (schoolIdentity as any).activeSemester || "Ganjil";
+    const year = academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027";
     let updatedCount = 0;
 
     Object.entries(scores).forEach(([studentId, scoreVal]) => {
@@ -11293,7 +11385,8 @@ async function startServer() {
     broadcastNotification,
     sendWhatsappNotification,
     checkAndAutoTransferExpiredCandidates,
-    recordOrUpdateMidtransTransaction
+    recordOrUpdateMidtransTransaction,
+    treasurerTransactions
   }));
 
   // Dynamic PWA manifest.json generation synchronized with modern PWA standards
@@ -11462,6 +11555,17 @@ async function startServer() {
         const snapshotStr = JSON.stringify(snapshot);
         const sizeBytes = getUtf8ByteLength(snapshotStr);
 
+        const backupsDir = path.join(process.cwd(), "backups");
+        if (!fs.existsSync(backupsDir)) {
+          try { fs.mkdirSync(backupsDir, { recursive: true }); } catch (_) {}
+        }
+        const backupFilePath = path.join(backupsDir, `${backupId}.json`);
+        try {
+          fs.writeFileSync(backupFilePath, snapshotStr, "utf-8");
+        } catch (writeErr) {
+          console.warn("[Auto-Backup File Save Warning]:", writeErr);
+        }
+
         const newBackup = {
           id: backupId,
           createdAt,
@@ -11469,7 +11573,7 @@ async function startServer() {
           description: "Backup Otomatis Database (Siklus Periodik)",
           sizeBytes,
           collections: counts,
-          data: snapshotStr
+          filePath: backupFilePath
         };
 
         databaseBackups.push(newBackup);
@@ -11480,7 +11584,12 @@ async function startServer() {
           const toRemove = sorted.slice(0, databaseBackups.length - backupConfig.maxBackups);
           for (const item of toRemove) {
             const idx = databaseBackups.findIndex(b => b.id === item.id);
-            if (idx > -1) databaseBackups.splice(idx, 1);
+            if (idx > -1) {
+              try {
+                if (item.filePath && fs.existsSync(item.filePath)) fs.unlinkSync(item.filePath);
+              } catch (_) {}
+              databaseBackups.splice(idx, 1);
+            }
           }
         }
 

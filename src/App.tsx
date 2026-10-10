@@ -775,6 +775,9 @@ export default function App() {
       localStorage.removeItem('smp_maarif_logged_homeroom');
       setLoggedSubjectTeacher(null);
       localStorage.removeItem('smp_maarif_logged_subject_teacher');
+      if (userRole === 'waka_kurikulum' || userRole === 'admin' || userRole === 'principal') {
+        fetchMerdekaAssessments();
+      }
       if (studentsList.length > 0) {
         fetchStudentFullData(studentsList[0].id, true);
       } else {

@@ -130,6 +130,19 @@ export default function AdminSpmbManagement({
 
   // Selected Candidate Modal
   const [selectedCandidate, setSelectedCandidate] = useState<SpmbCandidate | null>(null);
+
+  // Helper untuk mendeteksi calon murid yang memilih opsi Bayar Tunai Token di Sekolah
+  const isCandidateCashToken = (cand?: SpmbCandidate | null) => {
+    if (!cand) return false;
+    return Boolean(
+      cand.isCashAtSchool ||
+      cand.tokenPaymentType === 'cash_school' ||
+      (cand.tokenPaymentMethod && (
+        cand.tokenPaymentMethod.toLowerCase().includes('tunai') ||
+        cand.tokenPaymentMethod.toLowerCase().includes('sekolah')
+      ))
+    );
+  };
   const [isUpdatingStatus, setIsUpdatingStatus] = useState<boolean>(false);
   const [statusUpdateNote, setStatusUpdateNote] = useState<string>('');
 
@@ -221,6 +234,17 @@ export default function AdminSpmbManagement({
 
   useEffect(() => {
     loadData();
+    const pollTimer = setInterval(() => {
+      fetch(`/api/spmb/candidates?_t=${Date.now()}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (Array.isArray(data)) {
+            setCandidates(data);
+          }
+        })
+        .catch(() => {});
+    }, 8000);
+    return () => clearInterval(pollTimer);
   }, []);
 
   // Public SPMB Registration URL
@@ -817,7 +841,20 @@ export default function AdminSpmbManagement({
       const base64Data = await compressAndResizeImage(file, 1000, 1000, 0.90);
       if (!base64Data) return;
 
-      // 1. Unggah langsung ke server hosting resmi
+      // 1. Simpan langsung ke backend sistem (Super cepat <50ms)
+      const res = await fetch('/api/spmb/upload-single-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: candidate.nisn,
+          candidateId: candidate.id,
+          field,
+          fileData: base64Data,
+          fileName: file.name
+        })
+      });
+
+      // 2. Sinkronkan ke mirror remote di latar belakang secara non-blocking
       try {
         const ext = file.name.substring(file.name.lastIndexOf('.')) || (file.type === 'application/pdf' ? '.pdf' : '.jpg');
         const fieldFileName = `${field}${ext}`;
@@ -836,22 +873,9 @@ export default function AdminSpmbManagement({
         fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
           method: 'POST',
           body: hFormData,
-          signal: AbortSignal.timeout(15000)
+          signal: AbortSignal.timeout(3000)
         }).catch(() => {});
       } catch (_) {}
-
-      // 2. Simpan ke backend sistem
-      const res = await fetch('/api/spmb/upload-single-document', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nisn: candidate.nisn,
-          candidateId: candidate.id,
-          field,
-          fileData: base64Data,
-          fileName: file.name
-        })
-      });
 
       if (res.ok) {
         const result = await res.json();
@@ -1941,6 +1965,7 @@ export default function AdminSpmbManagement({
                                       orderId: candidate.tokenPaymentOrderId,
                                       vaNumbers: candidate.tokenVaNumbers
                                     });
+                                    const isCashSelected = isCandidateCashToken(candidate);
                                     return (
                                       <>
                                         {isTokenPaid ? (
@@ -1952,10 +1977,37 @@ export default function AdminSpmbManagement({
                                               {tokenMethod.displayMethod}
                                             </span>
                                           </div>
+                                        ) : isCashSelected ? (
+                                          <div className="flex items-center gap-1 flex-wrap">
+                                            <span className="px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse flex items-center gap-1">
+                                              <Building2 size={10} className="text-amber-800" />
+                                              <span>Pilih Tunai</span>
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                              className="inline-flex items-center gap-1 px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-[10px] font-black rounded-lg shadow-sm shadow-emerald-600/30 cursor-pointer transition-all active:scale-95"
+                                              title="Terima Pembayaran Tunai Token Rp 50.000 di Loket Sekolah"
+                                            >
+                                              <Banknote size={11} />
+                                              <span>Terima Pembayaran Tunai Token Disekolah</span>
+                                            </button>
+                                          </div>
                                         ) : isTokenPending ? (
-                                          <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
-                                            Pending
-                                          </span>
+                                          <div className="flex items-center gap-1 flex-wrap">
+                                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                                              Pending
+                                            </span>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                              className="inline-flex items-center gap-1 px-1.5 py-0.5 bg-slate-600 hover:bg-emerald-700 text-white text-[9.5px] font-semibold rounded cursor-pointer transition-all shadow-2xs"
+                                              title="Terima Pembayaran Tunai Token Rp 50.000 di Sekolah"
+                                            >
+                                              <Banknote size={10} />
+                                              <span>+ Tunai</span>
+                                            </button>
+                                          </div>
                                         ) : (
                                           <div className="flex items-center gap-1">
                                             <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
@@ -2354,25 +2406,63 @@ export default function AdminSpmbManagement({
                                       <span>Cetak Kuitansi</span>
                                     </button>
                                   </>
-                                ) : isTokenPending ? (
+                                ) : isCandidateCashToken(candidate) ? (
                                   <div className="space-y-1">
                                     <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">
-                                      <Clock size={10} className="text-amber-600" />
-                                      <span>Pending Midtrans</span>
+                                      <Building2 size={10} className="text-amber-800" />
+                                      <span>Pilih Tunai di Sekolah</span>
                                     </span>
                                     <button
                                       type="button"
-                                      onClick={() => handleCheckCandidateMidtrans(candidate)}
-                                      className="text-[10px] text-indigo-700 hover:text-indigo-900 underline font-bold flex items-center gap-1 cursor-pointer"
+                                      onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                      className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-[10px] font-black rounded-lg shadow-sm shadow-emerald-600/30 cursor-pointer transition-all active:scale-95"
+                                      title="Terima Pembayaran Tunai Token Rp 50.000 di Loket Sekolah"
                                     >
-                                      <RefreshCw size={10} />
-                                      <span>Cek Midtrans</span>
+                                      <Banknote size={11} />
+                                      <span>Terima Pembayaran Tunai Token Disekolah</span>
+                                    </button>
+                                  </div>
+                                ) : isTokenPending ? (
+                                  <div className="space-y-1">
+                                    <div className="flex items-center gap-1">
+                                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 flex items-center gap-1 animate-pulse">
+                                        <Clock size={10} className="text-amber-600" />
+                                        <span>Pending Midtrans</span>
+                                      </span>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleCheckCandidateMidtrans(candidate)}
+                                        className="text-[10px] text-indigo-700 hover:text-indigo-900 underline font-bold flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <RefreshCw size={10} />
+                                        <span>Cek</span>
+                                      </button>
+                                    </div>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                      className="inline-flex items-center gap-1 px-2 py-0.5 bg-slate-600 hover:bg-emerald-700 text-white text-[9.5px] font-semibold rounded cursor-pointer transition-all shadow-2xs"
+                                      title="Terima Pembayaran Tunai Token Rp 50.000 di Sekolah"
+                                    >
+                                      <Banknote size={10} />
+                                      <span>+ Tunai</span>
                                     </button>
                                   </div>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
-                                    Belum Bayar Token
-                                  </span>
+                                  <div className="flex items-center gap-1">
+                                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
+                                      Belum Bayar
+                                    </span>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                      className="px-2 py-0.5 bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[9.5px] rounded shadow-2xs flex items-center gap-1 cursor-pointer transition-all"
+                                      title="Terima Pembayaran Tunai Token Rp 50.000 di Sekolah"
+                                    >
+                                      <Banknote size={10} />
+                                      <span>+ Tunai</span>
+                                    </button>
+                                  </div>
                                 )}
                               </div>
 
@@ -2641,10 +2731,26 @@ export default function AdminSpmbManagement({
                                     <Printer size={11} />
                                   </button>
                                 </div>
+                              ) : isCandidateCashToken(candidate) ? (
+                                <div className="flex flex-col gap-1 items-start">
+                                  <span className="px-2 py-0.5 rounded-full text-[9.5px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse flex items-center gap-1">
+                                    <Building2 size={10} className="text-amber-800" />
+                                    <span>Pilih Tunai di Sekolah</span>
+                                  </span>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleManualSetPayment(candidate, 'token', 'paid')}
+                                    className="px-2.5 py-1 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white font-black text-[10px] rounded-lg shadow-sm flex items-center gap-1 cursor-pointer transition-all active:scale-95"
+                                    title="Terima Pembayaran Tunai Token Rp 50.000 di Loket Sekolah"
+                                  >
+                                    <Banknote size={11} />
+                                    <span>Terima Pembayaran Tunai Token Disekolah</span>
+                                  </button>
+                                </div>
                               ) : (
                                 <div className="flex items-center gap-1">
                                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                    Belum Lunas
+                                    Pending (Online)
                                   </span>
                                   <button
                                     type="button"
@@ -3022,11 +3128,27 @@ export default function AdminSpmbManagement({
                                   <span>Kuitansi Token</span>
                                 </button>
                               </div>
+                            ) : isCandidateCashToken(cand) ? (
+                              <div className="space-y-1.5">
+                                <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase bg-amber-100 text-amber-900 border border-amber-300 animate-pulse">
+                                  <Building2 size={10} className="text-amber-800" />
+                                  <span>PILIH TUNAI DI SEKOLAH</span>
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => handleManualSetPayment(cand, 'token', 'paid')}
+                                  className="inline-flex items-center gap-1 px-2.5 py-1.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white text-[10px] font-black rounded-lg shadow-sm shadow-emerald-600/30 cursor-pointer transition-all active:scale-95"
+                                  title="Terima Pembayaran Tunai Token Rp 50.000 di Loket Sekolah"
+                                >
+                                  <Banknote size={12} />
+                                  <span>Terima Pembayaran Tunai Token Disekolah</span>
+                                </button>
+                              </div>
                             ) : (
                               <div className="space-y-1.5">
                                 <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase bg-amber-100 text-amber-900 border border-amber-300">
                                   <Clock size={10} className="text-amber-700" />
-                                  <span>Belum Lunas</span>
+                                  <span>Pending (Online)</span>
                                 </span>
                                 <button
                                   type="button"
@@ -5197,12 +5319,12 @@ export default function AdminSpmbManagement({
                       className={`px-3 py-2.5 font-bold text-[11px] rounded-xl flex items-center justify-center gap-1.5 cursor-pointer border shadow-sm transition-all ${
                         selectedCandidate.tokenPaid 
                           ? 'bg-amber-950/60 text-amber-200 border-amber-500/40 hover:bg-amber-900' 
-                          : 'bg-emerald-600 text-white border-emerald-500 hover:bg-emerald-500'
+                          : 'bg-gradient-to-r from-emerald-600 to-teal-600 text-white border-emerald-500 hover:from-emerald-700 hover:to-teal-700'
                       }`}
                       title={selectedCandidate.tokenPaid ? 'Batalkan status lunas token' : 'Terima pembayaran tunai token formulir (Rp 50.000) di sekolah'}
                     >
                       <Banknote size={14} />
-                      <span>{selectedCandidate.tokenPaid ? 'Reset Token (Belum Lunas)' : 'Tandai Lunas Token (Tunai di Sekolah)'}</span>
+                      <span>{selectedCandidate.tokenPaid ? 'Reset Token (Belum Lunas)' : 'Terima Pembayaran Tunai Token Disekolah'}</span>
                     </button>
 
                     <button

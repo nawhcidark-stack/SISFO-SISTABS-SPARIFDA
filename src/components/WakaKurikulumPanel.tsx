@@ -35,6 +35,64 @@ import {
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
+// Subject normalizer for reliable cross-matching (e.g. IPA <=> Ilmu Pengetahuan Alam)
+export const normalizeSubject = (subj?: string): string => {
+  if (!subj) return '';
+  const s = subj.trim().toLowerCase();
+  if (s === 'ipa' || s.includes('pengetahuan alam')) return 'IPA';
+  if (s === 'ips' || s.includes('pengetahuan sosial')) return 'IPS';
+  if (s === 'mtk' || s.includes('matematika')) return 'Matematika';
+  if (s === 'pai' || s.includes('agama islam')) return 'PAI';
+  if (s === 'pjok' || s.includes('jasmani') || s.includes('olahraga')) return 'PJOK';
+  if (s === 'b. indonesia' || s === 'bahasa indonesia' || s.includes('indonesia')) return 'B. Indonesia';
+  if (s === 'b. inggris' || s === 'bahasa inggris' || s.includes('inggris')) return 'B. Inggris';
+  if (s === 'b. daerah' || s === 'bahasa daerah' || s.includes('jawa')) return 'B. Daerah';
+  if (s.includes('pancasila') || s === 'pkn' || s === 'ppkn') return 'Pendidikan Pancasila';
+  if (s.includes('informatika') || s.includes('komputer')) return 'Informatika';
+  if (s.includes('seni') || s.includes('budaya') || s === 'sbk') return 'Seni Budaya';
+  if (s.includes('prakarya')) return 'Prakarya';
+  if (s.includes('aswaja') || s.includes('ke-nu-an')) return 'Aswaja';
+  if (s.includes('konseling') || s === 'bk') return 'Bimbingan Konseling';
+  if (s.includes('kokurikuler') || s.includes('p5')) return 'Kokurikuler';
+  return subj.trim();
+};
+
+export const isSameSubject = (a?: string, b?: string): boolean => {
+  if (!a || !b) return false;
+  const sA = a.toLowerCase().trim();
+  const sB = b.toLowerCase().trim();
+  if (sA === sB) return true;
+  return normalizeSubject(a).toLowerCase() === normalizeSubject(b).toLowerCase();
+};
+
+export const normClass = (cls?: string): string => {
+  return (cls || '').replace(/[\s-]/g, '').toUpperCase();
+};
+
+export const hasAssessmentData = (a?: MerdekaAssessment): boolean => {
+  if (!a) return false;
+  if (a.nilaiRataTp !== undefined && Number(a.nilaiRataTp) > 0) return true;
+  if (a.nilaiAkhirMapel !== undefined && Number(a.nilaiAkhirMapel) > 0) return true;
+  if (a.nilaiKokurikuler !== undefined && Number(a.nilaiKokurikuler) > 0) return true;
+  if (a.nilaiPts !== undefined && Number(a.nilaiPts) > 0) return true;
+  if (a.nilaiPas !== undefined && Number(a.nilaiPas) > 0) return true;
+  if (a.nilaiTp1 !== undefined && Number(a.nilaiTp1) > 0) return true;
+  if (a.nilaiTp2 !== undefined && Number(a.nilaiTp2) > 0) return true;
+  if (a.nilaiTp3 !== undefined && Number(a.nilaiTp3) > 0) return true;
+  if (a.nilaiTp4 !== undefined && Number(a.nilaiTp4) > 0) return true;
+  if (a.tp1Uh || a.tp1Tugas1 || a.tp1Tugas2) return true;
+  if (a.tp2Uh || a.tp2Tugas1 || a.tp2Tugas2) return true;
+  if (a.tp3Uh || a.tp3Tugas1 || a.tp3Tugas2) return true;
+  if (a.tp4Uh || a.tp4Tugas1 || a.tp4Tugas2) return true;
+  return false;
+};
+
+const getSemesterFromDate = (dateStr?: string): 'Ganjil' | 'Genap' => {
+  const d = dateStr ? new Date(dateStr) : new Date();
+  const m = d.getMonth() + 1;
+  return (m >= 7 && m <= 12) ? 'Ganjil' : 'Genap';
+};
+
 interface WakaKurikulumPanelProps {
   students: Student[];
   subjectTeachers: SubjectTeacher[];
@@ -69,32 +127,110 @@ export default function WakaKurikulumPanel({
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<Student | null>(null);
   const [expandedRowId, setExpandedRowId] = useState<string | null>(null);
 
+  // Live assessments state for real-time synchronization
+  const [liveAssessments, setLiveAssessments] = useState<MerdekaAssessment[]>(merdekaAssessments || []);
+  const [isRefreshingLive, setIsRefreshingLive] = useState<boolean>(false);
+
+  // Function to pull latest assessments from server
+  const fetchLiveAssessments = async () => {
+    setIsRefreshingLive(true);
+    try {
+      const res = await fetch(`/api/merdeka-assessments?_t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (Array.isArray(data)) {
+          setLiveAssessments(data);
+        }
+      }
+    } catch (e) {
+      console.error('Gagal mengambil data penilaian terbaru:', e);
+    } finally {
+      setIsRefreshingLive(false);
+    }
+  };
+
+  // Sync prop updates
+  React.useEffect(() => {
+    if (merdekaAssessments && merdekaAssessments.length > 0) {
+      setLiveAssessments(merdekaAssessments);
+    }
+  }, [merdekaAssessments]);
+
+  // Initial fetch on mount
+  React.useEffect(() => {
+    fetchLiveAssessments();
+  }, []);
+
+  // Smart initial semester & year
+  const initialSemester = useMemo(() => {
+    if (schoolIdentity?.activeSemester) return schoolIdentity.activeSemester;
+    const autoSem = getSemesterFromDate();
+    const source = liveAssessments.length > 0 ? liveAssessments : (merdekaAssessments || []);
+    if (source.length > 0) {
+      if (source.some(a => a.semester === autoSem)) return autoSem;
+      const foundSem = source.find(a => a.semester)?.semester;
+      if (foundSem) return foundSem;
+    }
+    return autoSem;
+  }, [schoolIdentity?.activeSemester, liveAssessments, merdekaAssessments]);
+
+  const initialAcademicYear = useMemo(() => {
+    if (schoolIdentity?.activeAcademicYear) return schoolIdentity.activeAcademicYear;
+    const source = liveAssessments.length > 0 ? liveAssessments : (merdekaAssessments || []);
+    if (source.length > 0) {
+      const foundYear = source.find(a => a.academicYear)?.academicYear;
+      if (foundYear) return foundYear;
+    }
+    return '2026/2027';
+  }, [schoolIdentity?.activeAcademicYear, liveAssessments, merdekaAssessments]);
+
   // Filter States
-  const [selectedSemester, setSelectedSemester] = useState<string>(
-    schoolIdentity?.activeSemester || 'Genap'
-  );
-  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(
-    schoolIdentity?.activeAcademicYear || '2025/2026'
-  );
+  const [selectedSemester, setSelectedSemester] = useState<string>(initialSemester);
+  const [selectedAcademicYear, setSelectedAcademicYear] = useState<string>(initialAcademicYear);
 
   React.useEffect(() => {
     if (schoolIdentity?.activeAcademicYear) {
       setSelectedAcademicYear(schoolIdentity.activeAcademicYear);
     }
+  }, [schoolIdentity?.activeAcademicYear]);
+
+  React.useEffect(() => {
     if (schoolIdentity?.activeSemester) {
       setSelectedSemester(schoolIdentity.activeSemester);
     }
-  }, [schoolIdentity?.activeAcademicYear, schoolIdentity?.activeSemester]);
+  }, [schoolIdentity?.activeSemester]);
+
+  // Auto-sync filter: jika data nilai tersedia dan filter saat ini menghasilkan 0 baris,
+  // otomatis sesuaikan ke periode yang berisi data nilai agar langsung tampil di Waka Kurikulum
+  React.useEffect(() => {
+    if (liveAssessments.length > 0) {
+      const matchCount = liveAssessments.filter(a => {
+        const matchSem = selectedSemester === 'all' || !selectedSemester || a.semester === selectedSemester;
+        const matchYear = selectedAcademicYear === 'all' || !selectedAcademicYear || a.academicYear === selectedAcademicYear;
+        return matchSem && matchYear;
+      }).length;
+
+      if (matchCount === 0) {
+        const itemWithData = liveAssessments.find(a => hasAssessmentData(a)) || liveAssessments[0];
+        if (itemWithData) {
+          if (itemWithData.semester && selectedSemester !== 'all') setSelectedSemester(itemWithData.semester);
+          if (itemWithData.academicYear && selectedAcademicYear !== 'all') setSelectedAcademicYear(itemWithData.academicYear);
+        }
+      }
+    }
+  }, [liveAssessments]);
 
   const academicYearOptions = useMemo(() => {
     const list = [
       schoolIdentity?.activeAcademicYear,
+      '2026/2027',
       '2025/2026',
       '2024/2025',
-      '2023/2024'
+      '2023/2024',
+      ...liveAssessments.map(a => a.academicYear).filter(Boolean)
     ].filter(Boolean) as string[];
     return Array.from(new Set(list));
-  }, [schoolIdentity?.activeAcademicYear]);
+  }, [schoolIdentity?.activeAcademicYear, liveAssessments]);
   const [selectedClassFilter, setSelectedClassFilter] = useState<string>('all');
   const [homeroomFilterType, setHomeroomFilterType] = useState<'all' | 'binaan' | 'cross_class'>('all');
   const [searchQuery, setSearchQuery] = useState<string>('');
@@ -131,67 +267,70 @@ export default function WakaKurikulumPanel({
     return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
   }, [activeStudents]);
 
-  // Distinct Subjects
+  // Distinct Subjects (with both aliases available for inspection)
   const availableSubjects = useMemo(() => {
     const set = new Set<string>();
     subjectTeachers.forEach(t => {
       if (t.subject) set.add(t.subject.trim());
     });
-    merdekaAssessments.forEach(a => {
+    liveAssessments.forEach(a => {
       if (a.subject) set.add(a.subject.trim());
     });
     return Array.from(set).sort();
-  }, [subjectTeachers, merdekaAssessments]);
+  }, [subjectTeachers, liveAssessments]);
 
-  // Assessment matching current sem & year
+  // Assessment matching current sem & year (supports 'all' semester & year)
   const filteredAssessments = useMemo(() => {
-    return merdekaAssessments.filter(
-      a => a.semester === selectedSemester && a.academicYear === selectedAcademicYear
-    );
-  }, [merdekaAssessments, selectedSemester, selectedAcademicYear]);
+    return liveAssessments.filter(a => {
+      const matchSem = selectedSemester === 'all' || !selectedSemester || a.semester === selectedSemester;
+      const matchYear = selectedAcademicYear === 'all' || !selectedAcademicYear || a.academicYear === selectedAcademicYear;
+      return matchSem && matchYear;
+    });
+  }, [liveAssessments, selectedSemester, selectedAcademicYear]);
 
   // List of all distinct teacher names
   const allTeacherNames = useMemo(() => {
     const list: string[] = [];
     subjectTeachers.forEach(t => { if (t.name) list.push(t.name.trim()); });
     homerooms.forEach(h => { if (h.name) list.push(h.name.trim()); });
-    merdekaAssessments.forEach(a => { if (a.teacherName) list.push(a.teacherName.trim()); });
+    liveAssessments.forEach(a => { if (a.teacherName) list.push(a.teacherName.trim()); });
     return Array.from(new Set(list)).sort();
-  }, [subjectTeachers, homerooms, merdekaAssessments]);
+  }, [subjectTeachers, homerooms, liveAssessments]);
 
   // Detailed Filtered Assessments for Waka Kurikulum Inspection
   const detailedAssessmentsList = useMemo(() => {
     return filteredAssessments.filter(a => {
       // Role filter
       if (detailRoleFilter === 'subject_teacher') {
-        const hasTp = (a.nilaiRataTp && a.nilaiRataTp > 0) || a.tp1Uh || a.tp1Tugas1;
+        const hasTp = hasAssessmentData(a);
         if (!hasTp) return false;
       } else if (detailRoleFilter === 'homeroom') {
-        const hasKoku = a.nilaiKokurikuler && a.nilaiKokurikuler > 0;
+        // Either has Kokurikuler OR teacher is a homeroom teacher (Wali Kelas)
+        const isHrTeacher = homerooms.some(h => h.name?.toLowerCase().trim() === a.teacherName?.toLowerCase().trim());
+        const hasKoku = (a.nilaiKokurikuler && a.nilaiKokurikuler > 0) || isHrTeacher;
         if (!hasKoku) return false;
       }
 
       // Teacher filter
       if (detailTeacherFilter !== 'all') {
-        const isMatchTeacher = a.teacherName?.toLowerCase() === detailTeacherFilter.toLowerCase();
-        const studentCls = a.className?.trim().toUpperCase();
-        const hrTeacher = homerooms.find(h => h.className && h.className.trim().toUpperCase() === studentCls);
-        const isMatchHomeroom = hrTeacher && hrTeacher.name.toLowerCase() === detailTeacherFilter.toLowerCase();
+        const isMatchTeacher = a.teacherName?.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim();
+        const hrTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(a.className));
+        const isMatchHomeroom = hrTeacher && hrTeacher.name.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim();
         if (!isMatchTeacher && !isMatchHomeroom) return false;
       }
 
-      // Subject filter
+      // Subject filter (using robust subject matcher)
       if (detailSubjectFilter !== 'all') {
-        if (a.subject?.toLowerCase() !== detailSubjectFilter.toLowerCase()) return false;
+        if (!isSameSubject(a.subject, detailSubjectFilter)) return false;
       }
 
-      // Class filter
+      // Class filter (using normalized class matcher)
       if (detailClassFilter !== 'all') {
-        if (a.className?.trim().toUpperCase() !== detailClassFilter.trim().toUpperCase()) return false;
+        if (normClass(a.className) !== normClass(detailClassFilter)) return false;
       }
 
       // Status filter
-      const isComplete = (a.nilaiRataTp && a.nilaiRataTp > 0) && (a.nilaiKokurikuler && a.nilaiKokurikuler > 0);
+      const isComplete = hasAssessmentData(a) && (a.nilaiKokurikuler && a.nilaiKokurikuler > 0);
       if (detailStatusFilter === 'complete' && !isComplete) return false;
       if (detailStatusFilter === 'incomplete' && isComplete) return false;
 
@@ -200,9 +339,9 @@ export default function WakaKurikulumPanel({
         const q = detailSearchQuery.toLowerCase();
         const nameMatch = a.studentName?.toLowerCase().includes(q);
         const idMatch = a.studentId?.toLowerCase().includes(q);
-        const subjMatch = a.subject?.toLowerCase().includes(q);
+        const subjMatch = a.subject?.toLowerCase().includes(q) || normalizeSubject(a.subject).toLowerCase().includes(q);
         const teacherMatch = a.teacherName?.toLowerCase().includes(q);
-        const classMatch = a.className?.toLowerCase().includes(q);
+        const classMatch = a.className?.toLowerCase().includes(q) || normClass(a.className).includes(normClass(q));
         if (!nameMatch && !idMatch && !subjMatch && !teacherMatch && !classMatch) return false;
       }
 
@@ -216,8 +355,10 @@ export default function WakaKurikulumPanel({
       const targetClass = teacher.className ? teacher.className.trim().toUpperCase() : 'SEMUA KELAS';
       
       let classStudentsList = activeStudents;
-      if (targetClass !== 'SEMUA KELAS') {
-        classStudentsList = activeStudents.filter(s => s.class && s.class.trim().toUpperCase() === targetClass);
+      if (selectedClassFilter !== 'all') {
+        classStudentsList = activeStudents.filter(s => s.class && normClass(s.class) === normClass(selectedClassFilter));
+      } else if (targetClass !== 'SEMUA KELAS') {
+        classStudentsList = activeStudents.filter(s => s.class && normClass(s.class) === normClass(targetClass));
       }
 
       const totalStudentsInClass = classStudentsList.length;
@@ -226,16 +367,32 @@ export default function WakaKurikulumPanel({
       const assessedCount = classStudentsList.filter(s => {
         return filteredAssessments.some(a => 
           a.studentId === s.id && 
-          a.subject.toLowerCase() === teacher.subject.toLowerCase() &&
-          a.nilaiRataTp !== undefined && a.nilaiRataTp > 0
+          isSameSubject(a.subject, teacher.subject) &&
+          hasAssessmentData(a)
         );
       }).length;
+
+      // Detect per-class breakdown of filled assessments for this subject
+      const assessedClassesBadges: Array<{ cls: string; count: number; total: number }> = [];
+      availableClasses.forEach(cls => {
+        const cStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(cls));
+        const cAssessed = cStudents.filter(s => {
+          return filteredAssessments.some(a => 
+            a.studentId === s.id && 
+            isSameSubject(a.subject, teacher.subject) &&
+            hasAssessmentData(a)
+          );
+        }).length;
+        if (cAssessed > 0) {
+          assessedClassesBadges.push({ cls, count: cAssessed, total: cStudents.length });
+        }
+      });
 
       const percentage = totalStudentsInClass > 0 ? Math.round((assessedCount / totalStudentsInClass) * 100) : 0;
 
       let status: 'selesai' | 'sebagian' | 'belum' = 'belum';
       if (percentage === 100) status = 'selesai';
-      else if (percentage > 0) status = 'sebagian';
+      else if (percentage > 0 || assessedCount > 0 || assessedClassesBadges.length > 0) status = 'sebagian';
 
       return {
         id: teacher.id,
@@ -244,13 +401,15 @@ export default function WakaKurikulumPanel({
         className: targetClass,
         totalStudents: totalStudentsInClass,
         assessedCount,
+        assessedClassesBadges,
+        assessedClassesCount: assessedClassesBadges.length,
         percentage,
         status
       };
     });
-  }, [subjectTeachers, students, filteredAssessments]);
+  }, [subjectTeachers, activeStudents, filteredAssessments, selectedClassFilter, availableClasses]);
 
-  // Monitoring Stats for Wali Kelas (Kokurikuler & Penilaian Lintas Kelas)
+  // Monitoring Stats for Wali Kelas (Kokurikuler & Penilaian Rapor Merdeka Lintas Mapel)
   const homeroomProgressList = useMemo(() => {
     const allClassesSet = new Set<string>();
     homerooms.forEach(hr => {
@@ -261,8 +420,8 @@ export default function WakaKurikulumPanel({
     });
 
     return Array.from(allClassesSet).sort().map(clsName => {
-      const primaryHr = homerooms.find(hr => hr.className && hr.className.trim().toUpperCase() === clsName);
-      const clsStudents = activeStudents.filter(s => s.class && s.class.trim().toUpperCase() === clsName);
+      const primaryHr = homerooms.find(hr => hr.className && normClass(hr.className) === normClass(clsName));
+      const clsStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(clsName));
       const totalStudents = clsStudents.length;
 
       // Count students with Kokurikuler score inputted (> 0)
@@ -270,20 +429,28 @@ export default function WakaKurikulumPanel({
         return filteredAssessments.some(a => a.studentId === s.id && a.nilaiKokurikuler !== undefined && a.nilaiKokurikuler > 0);
       }).length;
 
-      // Count distinct subjects evaluated for this class
-      const evaluatedSubjects = new Set<string>();
+      // Count distinct subjects evaluated for this class & breakdown badges
+      const evaluatedSubjectsMap: Record<string, number> = {};
       const assessedStudentIds = new Set<string>();
+
       filteredAssessments.forEach(a => {
         if (clsStudents.some(s => s.id === a.studentId)) {
-          if ((a.nilaiRataTp && a.nilaiRataTp > 0) || (a.nilaiKokurikuler && a.nilaiKokurikuler > 0)) {
+          if (hasAssessmentData(a)) {
             assessedStudentIds.add(a.studentId);
-            if (a.subject) evaluatedSubjects.add(a.subject);
+            const stdSubj = normalizeSubject(a.subject) || a.subject;
+            evaluatedSubjectsMap[stdSubj] = (evaluatedSubjectsMap[stdSubj] || 0) + 1;
           }
         }
       });
 
-      const percentage = totalStudents > 0 ? Math.round((kokuCount / totalStudents) * 100) : 0;
-      const totalAssessedPercentage = totalStudents > 0 ? Math.round((assessedStudentIds.size / totalStudents) * 100) : 0;
+      const evaluatedSubjectsBadges = Object.entries(evaluatedSubjectsMap).map(([name, count]) => ({
+        name,
+        count
+      }));
+
+      const kokuPercentage = totalStudents > 0 ? Math.round((kokuCount / totalStudents) * 100) : 0;
+      const mapelAssessedPercentage = totalStudents > 0 ? Math.round((assessedStudentIds.size / totalStudents) * 100) : 0;
+      const combinedPercentage = Math.max(kokuPercentage, mapelAssessedPercentage);
 
       return {
         id: primaryHr ? primaryHr.id : `cls-${clsName}`,
@@ -291,14 +458,18 @@ export default function WakaKurikulumPanel({
         className: clsName,
         totalStudents,
         kokuCount,
-        percentage,
-        totalAssessedPercentage,
-        evaluatedSubjectsCount: evaluatedSubjects.size,
+        kokuPercentage,
+        mapelAssessedCount: assessedStudentIds.size,
+        mapelAssessedPercentage,
+        percentage: combinedPercentage,
+        totalAssessedPercentage: mapelAssessedPercentage,
+        evaluatedSubjectsCount: Object.keys(evaluatedSubjectsMap).length,
+        evaluatedSubjectsBadges,
         hasPrimaryTeacher: !!primaryHr,
-        isCrossClass: !primaryHr || (primaryHr && evaluatedSubjects.size > 0)
+        isCrossClass: !primaryHr || (primaryHr && Object.keys(evaluatedSubjectsMap).length > 0)
       };
     });
-  }, [homerooms, availableClasses, students, filteredAssessments]);
+  }, [homerooms, availableClasses, activeStudents, filteredAssessments]);
 
   // Handle Parse Excel/CSV Input
   const handleParseImport = () => {
@@ -789,11 +960,15 @@ export default function WakaKurikulumPanel({
             </button>
 
             <button
-              onClick={() => onRefreshData && onRefreshData()}
-              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm"
+              onClick={() => {
+                fetchLiveAssessments();
+                if (onRefreshData) onRefreshData();
+              }}
+              disabled={isRefreshingLive}
+              className="px-4 py-2 bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-sm disabled:opacity-50"
             >
-              <RefreshCw size={14} />
-              <span>Muat Ulang Data</span>
+              <RefreshCw size={14} className={isRefreshingLive ? 'animate-spin' : ''} />
+              <span>{isRefreshingLive ? 'Memuat Data...' : 'Muat Ulang Data'}</span>
             </button>
           </div>
         </div>
@@ -805,10 +980,11 @@ export default function WakaKurikulumPanel({
             <select
               value={selectedSemester}
               onChange={(e) => setSelectedSemester(e.target.value)}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
               <option value="Ganjil">Semester Ganjil</option>
               <option value="Genap">Semester Genap</option>
+              <option value="all">Semua Semester (Gabungan)</option>
             </select>
           </div>
 
@@ -817,8 +993,9 @@ export default function WakaKurikulumPanel({
             <select
               value={selectedAcademicYear}
               onChange={(e) => setSelectedAcademicYear(e.target.value)}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
+              <option value="all">Semua Tahun Ajaran</option>
               {academicYearOptions.map(year => (
                 <option key={year} value={year}>{year}</option>
               ))}
@@ -830,7 +1007,7 @@ export default function WakaKurikulumPanel({
             <select
               value={selectedClassFilter}
               onChange={(e) => setSelectedClassFilter(e.target.value)}
-              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500"
+              className="w-full bg-slate-800/90 border border-slate-700 rounded-xl px-3 py-2 text-xs font-bold text-white focus:outline-none focus:border-indigo-500 cursor-pointer"
             >
               <option value="all">Semua Kelas ({activeStudents.length} Siswa)</option>
               {availableClasses.map(cls => (
@@ -959,7 +1136,9 @@ export default function WakaKurikulumPanel({
               <div>
                 <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">Total Data Nilai</p>
                 <h3 className="text-2xl font-black text-slate-900 mt-1">{filteredAssessments.length}</h3>
-                <p className="text-[10px] font-bold text-slate-500 mt-0.5">Tersimpan di Sistem</p>
+                <p className="text-[10px] font-bold text-slate-500 mt-0.5">
+                  {selectedSemester === 'all' ? 'Semua Semester' : `Semester ${selectedSemester}`} ({liveAssessments.length} Total Basis Data)
+                </p>
               </div>
               <div className="p-3 bg-blue-50 text-blue-600 rounded-xl">
                 <FileText size={22} />
@@ -977,6 +1156,44 @@ export default function WakaKurikulumPanel({
               </div>
             </div>
           </div>
+
+          {/* Alert Banner when Current Filter has 0 records but other records exist */}
+          {filteredAssessments.length === 0 && liveAssessments.length > 0 && (
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-2xl flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-amber-800 text-xs shadow-xs animate-fade-in">
+              <div className="flex items-center gap-2.5">
+                <AlertCircle size={20} className="text-amber-600 shrink-0" />
+                <div>
+                  <p className="font-extrabold text-xs text-amber-950">Informasi: Filter Periode Saat Ini Tidak Menemukan Nilai</p>
+                  <p className="text-[11px] text-amber-800 mt-0.5">
+                    Filter aktif: <strong>Semester {selectedSemester} - Tahun {selectedAcademicYear}</strong>. Namun terdeteksi <strong>{liveAssessments.length}</strong> data nilai tersimpan di sistem pada periode lain.
+                  </p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const autoSem = getSemesterFromDate();
+                    setSelectedSemester(autoSem);
+                    setSelectedAcademicYear('2026/2027');
+                  }}
+                  className="px-3 py-1.5 bg-amber-600 hover:bg-amber-700 text-white font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Beralih ke Semester Ganjil 2026/2027
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedSemester('all');
+                    setSelectedAcademicYear('all');
+                  }}
+                  className="px-3 py-1.5 bg-amber-100 hover:bg-amber-200 text-amber-900 font-bold rounded-xl text-xs transition-colors cursor-pointer"
+                >
+                  Tampilkan Semua Semester
+                </button>
+              </div>
+            </div>
+          )}
 
           {/* Table 1: Progress Guru Mapel */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm space-y-4">
@@ -1024,15 +1241,34 @@ export default function WakaKurikulumPanel({
                     )
                     .map(t => (
                       <tr key={t.id} className="hover:bg-slate-50/80 transition-colors">
-                        <td className="py-3 px-4 font-bold text-slate-900">{t.teacherName}</td>
+                        <td className="py-3 px-4 font-bold text-slate-900">
+                          <div>{t.teacherName}</div>
+                          {t.assessedClassesBadges && t.assessedClassesBadges.length > 0 && (
+                            <div className="flex flex-wrap gap-1 mt-1">
+                              {t.assessedClassesBadges.map((badge: any) => (
+                                <span key={badge.cls} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9.5px] font-extrabold rounded-md">
+                                  Kelas {badge.cls}: {badge.count}/{badge.total} siswa
+                                </span>
+                              ))}
+                            </div>
+                          )}
+                        </td>
                         <td className="py-3 px-4">
                           <span className="px-2.5 py-0.5 bg-slate-100 border border-slate-200 rounded-md font-bold text-slate-800 text-[11px]">
                             {t.subject}
                           </span>
                         </td>
-                        <td className="py-3 px-4 font-bold text-indigo-600">{t.className}</td>
+                        <td className="py-3 px-4 font-bold text-indigo-600">
+                          {selectedClassFilter !== 'all' ? `Kelas ${selectedClassFilter}` : t.className}
+                        </td>
                         <td className="py-3 px-4 text-center font-bold">
-                          {t.assessedCount} / {t.totalStudents} Siswa
+                          {selectedClassFilter !== 'all' ? (
+                            <span>{t.assessedCount} / {t.totalStudents} Siswa</span>
+                          ) : (
+                            <span>
+                              {t.assessedCount} Siswa {t.assessedClassesCount > 0 ? `(${t.assessedClassesCount} Rombel)` : ''}
+                            </span>
+                          )}
                         </td>
                         <td className="py-3 px-4 w-48">
                           <div className="flex items-center gap-2">
@@ -1164,28 +1400,63 @@ export default function WakaKurikulumPanel({
                         </div>
                         <h4 className="font-bold text-slate-900 text-sm mt-1.5">{hr.teacherName}</h4>
                       </div>
-                      <span className="text-xs font-black text-slate-700 shrink-0">{hr.percentage}%</span>
-                    </div>
-
-                    <div className="space-y-1">
-                      <div className="flex justify-between text-[10px] font-bold text-slate-500">
-                        <span>Progres Kokurikuler</span>
-                        <span>{hr.kokuCount}/{hr.totalStudents} Siswa</span>
-                      </div>
-                      <div className="bg-slate-200 h-2 rounded-full overflow-hidden">
-                        <div
-                          className={`h-full transition-all duration-500 ${
-                            hr.percentage === 100 ? 'bg-emerald-500' : hr.percentage > 0 ? 'bg-violet-600' : 'bg-slate-300'
-                          }`}
-                          style={{ width: `${hr.percentage}%` }}
-                        />
+                      <div className="text-right">
+                        <span className="text-xs font-black text-slate-700 block">{hr.percentage}%</span>
+                        <span className={`text-[9px] font-extrabold uppercase px-1.5 py-0.5 rounded-full ${
+                          hr.percentage === 100 ? 'bg-emerald-100 text-emerald-700' :
+                          hr.percentage > 0 ? 'bg-amber-100 text-amber-700' : 'bg-slate-200 text-slate-600'
+                        }`}>
+                          {hr.percentage === 100 ? 'Selesai' : hr.percentage > 0 ? 'Sebagian' : 'Belum'}
+                        </span>
                       </div>
                     </div>
 
-                    <div className="pt-2 border-t border-slate-200/60 flex items-center justify-between text-[10.5px] font-semibold text-slate-500">
-                      <span>Progres Penilaian Siswa:</span>
-                      <strong className="text-indigo-700">{hr.totalAssessedPercentage}% Terisi</strong>
+                    {/* Progress Mapel & Kokurikuler */}
+                    <div className="space-y-2 text-[10.5px]">
+                      <div>
+                        <div className="flex justify-between font-bold text-slate-600 mb-0.5">
+                          <span>Progres Input Mapel:</span>
+                          <span className="text-indigo-700 font-extrabold">{hr.mapelAssessedCount}/{hr.totalStudents} Siswa ({hr.mapelAssessedPercentage}%)</span>
+                        </div>
+                        <div className="bg-slate-200 h-2 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 ${
+                              hr.mapelAssessedPercentage === 100 ? 'bg-emerald-500' : hr.mapelAssessedPercentage > 0 ? 'bg-indigo-600' : 'bg-slate-300'
+                            }`}
+                            style={{ width: `${hr.mapelAssessedPercentage}%` }}
+                          />
+                        </div>
+                      </div>
+
+                      <div>
+                        <div className="flex justify-between font-bold text-slate-600 mb-0.5">
+                          <span>Progres Kokurikuler P5:</span>
+                          <span className="text-violet-700 font-extrabold">{hr.kokuCount}/{hr.totalStudents} Siswa ({hr.kokuPercentage}%)</span>
+                        </div>
+                        <div className="bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                          <div
+                            className={`h-full transition-all duration-500 ${
+                              hr.kokuPercentage === 100 ? 'bg-emerald-500' : hr.kokuPercentage > 0 ? 'bg-violet-600' : 'bg-slate-300'
+                            }`}
+                            style={{ width: `${hr.kokuPercentage}%` }}
+                          />
+                        </div>
+                      </div>
                     </div>
+
+                    {/* Badges of evaluated subjects in this class */}
+                    {hr.evaluatedSubjectsBadges && hr.evaluatedSubjectsBadges.length > 0 && (
+                      <div className="pt-2 border-t border-slate-200/60">
+                        <span className="text-[9.5px] font-extrabold uppercase text-slate-400 block mb-1">Mapel Terisi di Rombel ini:</span>
+                        <div className="flex flex-wrap gap-1">
+                          {hr.evaluatedSubjectsBadges.map((b: any) => (
+                            <span key={b.name} className="px-2 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 rounded-md text-[10px] font-extrabold">
+                              {b.name}: {b.count} siswa
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    )}
 
                     <button
                       type="button"
@@ -1196,6 +1467,7 @@ export default function WakaKurikulumPanel({
                         } else {
                           setDetailTeacherFilter('all');
                         }
+                        setDetailSubjectFilter('all');
                         setDetailRoleFilter('all');
                         setActiveTab('detail_nilai');
                       }}
@@ -1399,7 +1671,7 @@ export default function WakaKurikulumPanel({
                   </tr>
                 ) : (
                   filteredAssessments
-                    .filter(a => selectedClassFilter === 'all' || (a.className && a.className.trim().toUpperCase() === selectedClassFilter))
+                    .filter(a => selectedClassFilter === 'all' || (a.className && normClass(a.className) === normClass(selectedClassFilter)))
                     .map(a => {
                       const finalVal = a.nilaiAkhirMapel ?? a.nilaiRapor ?? 0;
                       return (
@@ -1636,7 +1908,7 @@ export default function WakaKurikulumPanel({
                     const finalVal = a.nilaiAkhirMapel ?? a.nilaiRapor ?? 0;
                     const isExpanded = expandedRowId === a.id;
                     const matchedStudent = students.find(s => s.id === a.studentId || s.nis === a.studentId);
-                    const hrTeacher = homerooms.find(h => h.className && h.className.trim().toUpperCase() === a.className?.trim().toUpperCase());
+                    const hrTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(a.className));
 
                     return (
                       <React.Fragment key={a.id || idx}>

@@ -44,6 +44,7 @@ import {
   Layers,
   ArrowLeft,
   Info,
+  Building,
   Building2,
   Coins,
   Receipt,
@@ -159,7 +160,7 @@ export default function SpmbLandingPage({
   const [isSearchingCandidate, setIsSearchingCandidate] = useState<boolean>(false);
   const [portalError, setPortalError] = useState<string | null>(null);
   const [portalTab, setPortalTab] = useState<'status' | 'form' | 'docs' | 'rereg' | 'card'>('status');
-  const [expiredNotice, setExpiredNotice] = useState<{ message: string; nisn?: string } | null>(null);
+  const [expiredNotice, setExpiredNotice] = useState<{ message: string; nisn?: string; candidate?: SpmbCandidate | null } | null>(null);
   const [copiedVa, setCopiedVa] = useState<boolean>(false);
   const [tokenTimeRemaining, setTokenTimeRemaining] = useState<{
     hours: number;
@@ -505,13 +506,17 @@ export default function SpmbLandingPage({
           },
           onError: (result: any) => {
             console.error('Midtrans Snap payment error:', result);
-            setSnapError(result?.status_message || 'Pembayaran dibatalkan atau ditolak oleh Midtrans.');
-            if (type === 'token') {
-              handleCancelTokenPayment(orderId || undefined);
+            setSnapError(result?.status_message || 'Jendela pembayaran Midtrans ditutup / dibatalkan. Anda dapat melanjutkan pembayaran online atau memilih opsi Bayar Tunai di Sekolah.');
+            setIsPayModalOpen(true);
+            const targetNisn = regForm.nisn || activeCandidate?.nisn;
+            if (targetNisn) {
+              handleCheckStatus(targetNisn);
             }
           },
           onClose: () => {
             console.log('Midtrans Snap closed by user');
+            setSnapError('Jendela pembayaran Midtrans telah ditutup. Anda dapat melanjutkan pembayaran online atau memilih Bayar Tunai di Sekolah (Tenggang Waktu 3 Hari).');
+            setIsPayModalOpen(true);
             const targetNisn = regForm.nisn || activeCandidate?.nisn;
             if (targetNisn) {
               handleCheckStatus(targetNisn);
@@ -601,11 +606,16 @@ export default function SpmbLandingPage({
       } else {
         const err = await res.json().catch(() => ({}));
         if (res.status === 410 || err.isExpired || err.expired || err.code === 'TOKEN_EXPIRED') {
+          if (err.candidate) {
+            setActiveCandidate(err.candidate);
+            setFullForm(initializeFullFormData(err.candidate));
+            setDocUploads(err.candidate.documents || {});
+          }
           setExpiredNotice({
-            message: err.error || err.message || 'Batas waktu pembayaran token pendaftaran di Midtrans telah kedaluwarsa (expired). Data pendaftaran awal telah dihapus otomatis dari sistem.',
-            nisn
+            message: err.error || err.message || 'Batas waktu pembayaran online Midtrans telah kedaluwarsa. Masa tenggang diperpanjang 3 hari untuk opsi Bayar Tunai di Sekolah. Calon murid dapat mencetak bukti tagihan untuk pembayaran di loket sekolah.',
+            nisn,
+            candidate: err.candidate || activeCandidate
           });
-          setActiveCandidate(null);
           setPortalError(null);
           setActiveTab('portal');
           return;
@@ -689,13 +699,19 @@ export default function SpmbLandingPage({
           const hours = Math.floor(totalSecs / 3600);
           const minutes = Math.floor((totalSecs % 3600) / 60);
           const seconds = totalSecs % 60;
+          const days = Math.floor(hours / 24);
+          const remHours = hours % 24;
+
+          const formattedString = days > 0
+            ? `${days} Hari ${remHours} Jam ${minutes} Menit ${seconds} Detik`
+            : `${hours} Jam ${minutes} Menit ${seconds} Detik`;
 
           setTokenTimeRemaining({
             hours,
             minutes,
             seconds,
             isExpired: false,
-            formattedString: `${hours} Jam ${minutes} Menit ${seconds} Detik`
+            formattedString
           });
         }
       } catch (e) {
@@ -954,6 +970,58 @@ export default function SpmbLandingPage({
     setSnapOrderId(null);
     setActiveCandidate(null);
     setRegError('Pembayaran token belum diselesaikan. Data pendaftaran tidak tersimpan di sistem. Silakan isi formulir pendaftaran kembali.');
+  };
+
+  // Helper untuk calon murid memilih Bayar Tunai di Sekolah (Tenggang waktu diperpanjang 3 hari)
+  const handleSelectCashAtSchool = async (candidateToSelect?: Partial<SpmbCandidate> | null) => {
+    const cand = candidateToSelect || activeCandidate;
+    const nisn = cand?.nisn || regForm.nisn || searchNisn;
+    const orderId = cand?.tokenPaymentOrderId || cand?.tokenOrderId || snapOrderId;
+
+    if (!nisn) {
+      alert('Nomor NISN calon murid tidak ditemukan.');
+      return;
+    }
+
+    try {
+      setIsProcessingTokenPay(true);
+      const res = await fetch('/api/spmb/select-token-cash', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ nisn, orderId })
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setIsPayModalOpen(false);
+        setSnapToken(null);
+        setSnapOrderId(null);
+        setActiveCandidate(data.candidate);
+        setSearchNisn(data.candidate.nisn);
+        setActiveTab('portal');
+        setPortalTab('status');
+        setExpiredNotice(null);
+        setPortalError(null);
+
+        // Langsung tawarkan cetak bukti / tagihan untuk dibawa ke sekolah
+        const wantPrint = window.confirm(
+          `Pilihan Bayar Tunai di Sekolah Berhasil!\n\n` +
+          `Batas waktu pembayaran token pendaftaran diperpanjang menjadi 3 HARI (s.d. ${data.expiryTime || data.candidate.tokenExpiryTime} WIB).\n\n` +
+          `Apakah Anda ingin langsung mencetak Bukti / Tagihan Pembayaran untuk dibawa ke Loket SPMB Sekolah?`
+        );
+        if (wantPrint) {
+          setReceiptModalCandidate(data.candidate);
+          setReceiptModalType('token');
+          setIsReceiptModalOpen(true);
+        }
+      } else {
+        alert(data.error || 'Gagal memilih pembayaran tunai di sekolah.');
+      }
+    } catch (e: any) {
+      alert('Koneksi gagal: ' + e.message);
+    } finally {
+      setIsProcessingTokenPay(false);
+    }
   };
 
   // 1. Step 1: Submit Initial Form and Trigger Token Midtrans Payment (Rp 50.000)
@@ -1335,8 +1403,24 @@ export default function SpmbLandingPage({
       setUploadProgress(prev => ({ ...prev, [field]: 65 }));
       setUploadStatus(prev => ({ ...prev, [field]: 'Menyimpan berkas permanen di server hosting...' }));
 
-      // 1. Unggah langsung dari browser ke Hosting Resmi (https://portal.smpmaarifpdn.sch.id/api/upload)
-      let hostingRemoteUrl = '';
+      // 1. Simpan langsung ke server aplikasi SPMB (Instant <200ms)
+      setUploadProgress(prev => ({ ...prev, [field]: 70 }));
+      setUploadStatus(prev => ({ ...prev, [field]: 'Menyimpan berkas permanen di server...' }));
+
+      // 1. Simpan langsung ke API aplikasi backend (Super cepat <50ms)
+      const res = await fetch('/api/spmb/upload-single-document', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          nisn: activeCandidate.nisn,
+          candidateId: activeCandidate.id,
+          field,
+          fileData: base64Data,
+          fileName: file.name
+        })
+      });
+
+      // 2. Sinkronisasi mirror ke portal hosting dijalankan asinkron di latar belakang tanpa menahan alur
       try {
         const ext = file.name.substring(file.name.lastIndexOf('.')) || (isPdf ? '.pdf' : '.jpg');
         const fieldFileName = `${field}${ext}`;
@@ -1352,38 +1436,12 @@ export default function SpmbLandingPage({
         hFormData.append('folder', `berkas_murid/${(activeCandidate.fullName || `Murid_${activeCandidate.nisn}`).toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}`);
         hFormData.append('fileData', base64Data);
 
-        const hRes = await fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
+        fetch('https://portal.smpmaarifpdn.sch.id/api/upload', {
           method: 'POST',
           body: hFormData,
-          signal: AbortSignal.timeout(15000)
-        });
-        if (hRes.ok) {
-          const hData = await hRes.json();
-          const rawUrl = hData.url || hData.fileUrl || '';
-          // Pastikan URL hosting bukan nama generic 'file.ext' lama
-          if (rawUrl && !rawUrl.endsWith('/file.jpg') && !rawUrl.endsWith('/file.png') && !rawUrl.endsWith('/file.pdf') && !rawUrl.includes('/file.')) {
-            hostingRemoteUrl = rawUrl;
-          }
-          console.log('[Browser Direct Upload to Hosting OK]:', hostingRemoteUrl);
-        }
-      } catch (hErr) {
-        console.warn('[Direct Browser Hosting Upload Note]:', hErr);
-      }
-
-      setUploadProgress(prev => ({ ...prev, [field]: 85 }));
-
-      // 2. Simpan juga ke API aplikasi backend
-      const res = await fetch('/api/spmb/upload-single-document', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          nisn: activeCandidate.nisn,
-          candidateId: activeCandidate.id,
-          field,
-          fileData: base64Data,
-          fileName: file.name
-        })
-      });
+          signal: AbortSignal.timeout(3000)
+        }).catch(() => {});
+      } catch (_) {}
 
       if (!res.ok) {
         const err = await res.json();
@@ -1396,7 +1454,7 @@ export default function SpmbLandingPage({
 
       // Perbarui docUploads & activeCandidate dengan URL hosting permanen & base64 preview akurat
       const localFileUrl = result.fileUrl || `/uploads/berkas_murid/${(activeCandidate.fullName || '').toUpperCase().trim().replace(/[^A-Z0-9]/g, '_').replace(/_+/g, '_')}/${field}${file.name.substring(file.name.lastIndexOf('.')) || (isPdf ? '.pdf' : '.jpg')}`;
-      const effectiveFileUrl = hostingRemoteUrl || localFileUrl;
+      const effectiveFileUrl = localFileUrl;
 
       // PENTING: Gunakan base64Data untuk instant preview langsung di browser tanpa lag atau masalah cache file dokumen lain
       setDocUploads(prev => ({ ...prev, [field]: base64Data || effectiveFileUrl }));
@@ -2945,61 +3003,77 @@ export default function SpmbLandingPage({
               </div>
 
               {expiredNotice && (
-                <div className="p-5 rounded-2xl bg-rose-50 border-2 border-rose-300 text-rose-950 text-xs space-y-3 shadow-sm animate-in fade-in">
+                <div className="p-5 rounded-2xl bg-amber-50/90 border-2 border-amber-300 text-amber-950 text-xs space-y-3.5 shadow-sm animate-in fade-in">
                   <div className="flex items-start gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-rose-100 text-rose-700 flex items-center justify-center shrink-0">
+                    <div className="w-10 h-10 rounded-xl bg-amber-100 text-amber-700 border border-amber-300 flex items-center justify-center shrink-0">
                       <AlertTriangle size={22} />
                     </div>
                     <div className="space-y-1">
-                      <p className="font-black text-rose-900 text-sm m-0">Batas Waktu Pembayaran Telah Kedaluwarsa (Expired)</p>
+                      <p className="font-black text-amber-950 text-sm m-0">Batas Waktu Pembayaran Online Midtrans Telah Kedaluwarsa</p>
                       <p className="m-0 text-slate-700 leading-relaxed">
                         {expiredNotice.message}
                       </p>
                     </div>
                   </div>
-                  <div className="p-3 bg-white/90 border border-rose-200 rounded-xl text-slate-700 space-y-1.5 text-[11px]">
-                    <p className="font-bold text-rose-800 m-0">Ketentuan Sistem Pendaftaran:</p>
-                    <p className="m-0 leading-relaxed">
-                      Karena pembayaran tidak diselesaikan sebelum batas waktu berakhir di Midtrans, seluruh data pendaftaran awal telah dihapus otomatis oleh sistem. <strong>Jika tidak langsung dibayarkan sesuai jangka waktu yang ditentukan maka data akan dihapus dan Calon Murid wajib mengisi ulang formulir.</strong>
+                  
+                  <div className="p-3.5 bg-white border border-amber-200 rounded-xl text-slate-700 space-y-2 text-[11px] leading-relaxed">
+                    <p className="font-bold text-emerald-900 m-0 flex items-center gap-1.5">
+                      <ShieldCheck size={14} className="text-emerald-600" />
+                      <span>Data Pendaftaran Anda Tetap Tersimpan di Sistem:</span>
                     </p>
-                    <p className="font-bold text-emerald-900 m-0 pt-1">
-                      🏢 <strong>Jika Kesulitan</strong> silahkan datang langsung ke <strong>Kantor SPMB SMP Maarif NU Pandaan</strong> untuk dibantu Petugas.
+                    <p className="m-0 text-slate-700">
+                      Karena pembayaran online Midtrans telah melewati batas waktu, Anda dapat memilih metode <strong>Bayar Tunai di Sekolah</strong>. Jeda waktu pembayaran secara otomatis <strong>diperpanjang menjadi 3 hari</strong>.
+                    </p>
+                    <p className="m-0 text-slate-700">
+                      Silakan cetak lembar bukti/tagihan pembayaran untuk dibawa ke Loket SPMB SMP Ma'arif NU Pandaan. <strong>Baru jika setelah 3 hari belum menyelesaikan pembayaran token, data pendaftaran siswa akan dihapus dari sistem.</strong>
+                    </p>
+                    <p className="font-bold text-emerald-900 m-0 pt-0.5">
+                      🏢 <strong>Alamat Loket:</strong> Kampus SMP Ma'arif NU Pandaan, Jl. Dr. Sutomo No. 1 Pandaan (07.30 - 14.00 WIB).
                     </p>
                   </div>
-                  <div className="flex justify-end pt-1">
+
+                  {/* Tombol Aksi: Bayar Tunai di Sekolah & Cetak Bukti/Tagihan */}
+                  <div className="flex flex-wrap items-center justify-end gap-2.5 pt-1">
                     <button
                       type="button"
                       onClick={() => {
-                        setExpiredNotice(null);
-                        setPortalError(null);
-                        setSearchNisn('');
-                        setRegForm({
-                          nisn: expiredNotice.nisn || '',
-                          fullName: '',
-                          nik: '',
-                          gender: 'L',
-                          birthPlace: 'Pasuruan',
-                          birthDate: '2014-05-12',
-                          phone: '',
-                          schoolOriginType: 'maarif_jogosari',
-                          manualSchoolName: '',
-                          schoolOrigin: 'SD MAARIF JOGOSARI',
-                          sessionId: config?.sessions?.find(s => s.isActive)?.id || 'gelombang-1',
-                          dusun: '',
-                          rt: '',
-                          rw: '',
-                          village: '',
-                          district: '',
-                          city: 'Pasuruan',
-                          postalCode: '67156',
-                          address: ''
-                        });
-                        setActiveTab('register');
+                        const targetCand = expiredNotice.candidate || activeCandidate || (expiredNotice.nisn ? { nisn: expiredNotice.nisn } as any : null);
+                        handleSelectCashAtSchool(targetCand);
                       }}
-                      className="px-5 py-2.5 bg-gradient-to-r from-rose-600 to-red-600 hover:from-rose-700 hover:to-red-700 text-white font-black text-xs rounded-xl shadow-sm flex items-center gap-2 cursor-pointer transition-all"
+                      disabled={isProcessingTokenPay}
+                      className="px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-extrabold text-xs rounded-xl shadow-md shadow-amber-600/20 flex items-center gap-2 cursor-pointer transition-all"
                     >
-                      <FileText size={15} />
-                      <span>Isi Ulang Formulir Data Awal Sekarang</span>
+                      <Building size={15} />
+                      <span>{isProcessingTokenPay ? 'Memproses...' : 'Pilih Bayar Tunai di Sekolah (3 Hari)'}</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const candForReceipt = expiredNotice.candidate || activeCandidate || (expiredNotice.nisn ? { nisn: expiredNotice.nisn, fullName: 'Calon Murid' } as any : null);
+                        if (candForReceipt) {
+                          setReceiptModalCandidate(candForReceipt);
+                          setReceiptModalType('token');
+                          setIsReceiptModalOpen(true);
+                        }
+                      }}
+                      className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center gap-2 cursor-pointer transition-all"
+                    >
+                      <Printer size={15} />
+                      <span>Cetak Bukti / Tagihan Sekolah</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (expiredNotice.nisn) {
+                          handleCheckStatus(expiredNotice.nisn);
+                        }
+                        setExpiredNotice(null);
+                      }}
+                      className="px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl border border-slate-300 transition-all cursor-pointer"
+                    >
+                      Tutup
                     </button>
                   </div>
                 </div>
@@ -3283,13 +3357,25 @@ export default function SpmbLandingPage({
                             </div>
                             <div>
                               <div className="flex items-center gap-2">
-                                <span className="px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider bg-amber-200 text-amber-950 border border-amber-300 flex items-center gap-1.5 animate-pulse">
-                                  <span className="w-2 h-2 rounded-full bg-amber-600"></span>
-                                  STATUS FORMULIR AWAL: PENDING
+                                <span className={`px-2.5 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider border flex items-center gap-1.5 animate-pulse ${
+                                  activeCandidate.isCashAtSchool || activeCandidate.tokenPaymentType === 'cash_school'
+                                    ? 'bg-emerald-100 text-emerald-950 border-emerald-300'
+                                    : 'bg-amber-200 text-amber-950 border-amber-300'
+                                }`}>
+                                  <span className={`w-2 h-2 rounded-full ${
+                                    activeCandidate.isCashAtSchool || activeCandidate.tokenPaymentType === 'cash_school'
+                                      ? 'bg-emerald-600'
+                                      : 'bg-amber-600'
+                                  }`}></span>
+                                  {activeCandidate.isCashAtSchool || activeCandidate.tokenPaymentType === 'cash_school'
+                                    ? 'METODE: TUNAI DI LOKET SEKOLAH (3 HARI)'
+                                    : 'STATUS FORMULIR AWAL: PENDING'}
                                 </span>
                               </div>
                               <p className="text-xs font-bold text-amber-900 mt-1 m-0">
-                                Menunggu Penyelesaian Pembayaran Token Pendaftaran Midtrans
+                                {activeCandidate.isCashAtSchool || activeCandidate.tokenPaymentType === 'cash_school'
+                                  ? 'Menunggu Pelunasan Tunai di Loket SPMB Sekolah (Tenggang Waktu 3 Hari)'
+                                  : 'Menunggu Penyelesaian Pembayaran Token Pendaftaran (Online Midtrans / Tunai di Sekolah)'}
                               </p>
                             </div>
                           </div>
@@ -3308,7 +3394,7 @@ export default function SpmbLandingPage({
                               <p className="text-xs font-extrabold text-slate-900 m-0">
                                 {activeCandidate.tokenExpiryTime
                                   ? `${activeCandidate.tokenExpiryTime.replace(' ', ' • Jam ')} WIB`
-                                  : '24 Jam sejak pendaftaran awal dimulai'}
+                                  : '3 Hari sejak pemilihan bayar tunai / pendaftaran'}
                               </p>
                             </div>
 
@@ -3336,8 +3422,8 @@ export default function SpmbLandingPage({
                               <span>Ketentuan Penting Batas Waktu Pembayaran:</span>
                             </p>
                             <p className="m-0 leading-relaxed text-slate-700">
-                              Harap segera selesaikan pembayaran token pendaftaran sebelum batas waktu berakhir.
-                              <strong> Jika tidak langsung dibayarkan sesuai jangka waktu yang ditentukan maka data akan dihapus dan Calon Murid wajib mengisi ulang formulir.</strong>
+                              Harap segera selesaikan pembayaran token pendaftaran. Jika pembayaran online Midtrans ditutup atau kedaluwarsa (expired), Anda dapat memilih <strong>Bayar Tunai di Sekolah</strong> dengan tenggang waktu <strong>diperpanjang menjadi 3 hari</strong> dan mencetak bukti tagihan. 
+                              <strong> Baru jika setelah 3 hari belum membayar token, data pendaftaran siswa akan dihapus dari sistem.</strong>
                             </p>
                             <div className="p-2.5 bg-white border border-rose-200 rounded-lg flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                               <span className="font-bold text-emerald-900">
@@ -3426,6 +3512,39 @@ export default function SpmbLandingPage({
                             >
                               <CreditCard size={15} />
                               <span>{isProcessingTokenPay ? 'Menghubungkan Midtrans...' : 'Lanjutkan Pembayaran (Midtrans)'}</span>
+                            </button>
+
+                            {/* Tombol Bayar Tunai di Sekolah (Tenggang Waktu 3 Hari) */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeCandidate) {
+                                  handleSelectCashAtSchool(activeCandidate);
+                                }
+                              }}
+                              disabled={isProcessingTokenPay}
+                              className="px-4 py-2.5 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-extrabold text-xs rounded-xl shadow-md shadow-amber-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                              title="Pilih bayar tunai di sekolah dan perpanjang tenggang waktu menjadi 3 hari"
+                            >
+                              <Building size={15} />
+                              <span>Bayar Tunai di Sekolah (3 Hari)</span>
+                            </button>
+
+                            {/* Tombol Cetak Bukti / Tagihan Pembayaran di Sekolah */}
+                            <button
+                              type="button"
+                              onClick={() => {
+                                if (activeCandidate) {
+                                  setReceiptModalCandidate(activeCandidate);
+                                  setReceiptModalType('token');
+                                  setIsReceiptModalOpen(true);
+                                }
+                              }}
+                              className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-md shadow-indigo-600/20 flex items-center justify-center gap-2 cursor-pointer transition-all"
+                              title="Cetak Bukti Tagihan untuk Pembayaran Tunai di Loket SPMB Sekolah"
+                            >
+                              <Printer size={15} />
+                              <span>Cetak Bukti Tagihan Sekolah</span>
                             </button>
 
                             {/* Tombol Cek Status Pembayaran Realtime */}
@@ -5631,8 +5750,24 @@ export default function SpmbLandingPage({
                 className="w-full py-3 bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs rounded-xl shadow-md cursor-pointer flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
               >
                 <CreditCard size={15} />
-                Buka / Tampilkan Jendela Midtrans Snap
+                Lanjutkan Pembayaran via Midtrans Snap
               </button>
+
+              {/* Button Bayar Tunai di Sekolah saat snap ditutup / dibatalkan */}
+              {snapPayType === 'token' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    const candToUse = activeCandidate || (regForm.nisn ? { nisn: regForm.nisn, fullName: regForm.fullName, tokenPaymentOrderId: snapOrderId } as any : null);
+                    handleSelectCashAtSchool(candToUse);
+                  }}
+                  disabled={isProcessingTokenPay}
+                  className="w-full py-3 bg-gradient-to-r from-amber-600 to-amber-700 hover:from-amber-700 hover:to-amber-800 text-white font-black text-xs rounded-xl shadow-md shadow-amber-600/20 cursor-pointer flex items-center justify-center gap-2 transition-transform active:scale-[0.98]"
+                >
+                  <Building size={16} />
+                  <span>Bayar Tunai di Sekolah (Tenggang Waktu 3 Hari)</span>
+                </button>
+              )}
 
               {snapRedirectUrl && (
                 <a
@@ -5645,19 +5780,38 @@ export default function SpmbLandingPage({
                 </a>
               )}
 
-              <button
-                type="button"
-                onClick={() => {
-                  if (snapPayType === 'token') {
-                    handleCancelTokenPayment(snapOrderId || undefined);
-                  } else {
+              <div className="flex items-center justify-between gap-2 pt-1">
+                <button
+                  type="button"
+                  onClick={() => {
                     setIsPayModalOpen(false);
-                  }
-                }}
-                className="w-full py-2 text-xs text-slate-500 hover:text-rose-600 transition-colors cursor-pointer"
-              >
-                {snapPayType === 'token' ? 'Batalkan Pendaftaran (Hapus Draft)' : 'Tutup Jendela Pembayaran'}
-              </button>
+                    const targetNisn = regForm.nisn || activeCandidate?.nisn;
+                    if (targetNisn) {
+                      handleCheckStatus(targetNisn);
+                    }
+                  }}
+                  className="flex-1 py-2 text-xs font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 rounded-xl transition-colors cursor-pointer"
+                >
+                  Tutup Jendela (Buka Portal)
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => {
+                    const conf = window.confirm('Apakah Anda yakin ingin membatalkan dan menghapus draft formulir pendaftaran ini?');
+                    if (conf) {
+                      if (snapPayType === 'token') {
+                        handleCancelTokenPayment(snapOrderId || undefined);
+                      } else {
+                        setIsPayModalOpen(false);
+                      }
+                    }
+                  }}
+                  className="py-2 px-3 text-xs text-rose-500 hover:text-rose-700 transition-colors cursor-pointer"
+                >
+                  Hapus Draft
+                </button>
+              </div>
             </div>
           </div>
         </div>

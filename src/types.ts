@@ -755,6 +755,11 @@ export interface SpmbCandidate {
   tokenBillKey?: string;
   tokenBillerCode?: string;
   tokenQrString?: string;
+  isCashAtSchool?: boolean;
+  cashSelectedAt?: string;
+  cashPaymentDeadline?: string;
+  tokenSnapExpired?: boolean;
+  snapExpiredAt?: string;
 
   // 1b. Pengembalian Uang Token Tunai / Cash (Khusus Jalur Kolektif yang membayar via online)
   collectiveRefundStatus?: 'none' | 'pending' | 'refunded';

@@ -271,9 +271,41 @@ export interface SubjectTeacher {
   username: string;
   name: string;
   subject: string; // e.g., "Matematika", "Bahasa Inggris", "IPA", etc.
+  subjectId?: string; // id mapel terhubung ke master data mapel
   className?: string; // e.g., "7-A" or "SEMUA KELAS"
   password?: string;
   skUrl?: string;
+}
+
+export interface CurriculumSubject {
+  id: string; // e.g., "mapel-pai", "mapel-bindo", "mapel-mtk"
+  code: string; // e.g., "PAI", "BINDO", "MAT"
+  name: string; // e.g., "Pendidikan Agama Islam dan Budi Pekerti"
+  category?: string; // e.g., "Muatan Nasional", "Muatan Lokal", "Peminatan"
+  kktp?: number; // default KKTP / KKM e.g., 75
+  tingkat?: string; // "Semua Tingkat" | "7" | "8" | "9"
+  orderNum?: number; // nomor urut tampilan rapor
+  description?: string;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export interface CurriculumTpDescription {
+  id?: string;
+  gradeLevel: string; // "7" | "8" | "9"
+  subject: string;
+  subjectId?: string;
+  semester: string; // "Ganjil" | "Genap"
+  academicYear: string; // e.g. "2026/2027"
+  tp1Name?: string;
+  tp2Name?: string;
+  tp3Name?: string;
+  tp4Name?: string;
+  isLocked?: boolean;
+  filledBy?: string; // Nama guru serumpun yang mengisi/mengunci TP
+  filledByRole?: string; // e.g., "Guru Bahasa Indonesia"
+  filledAt?: string;
+  updatedAt?: string;
 }
 
 export interface SubjectAttendanceEntry {
@@ -310,6 +342,7 @@ export interface ClassSchedule {
   day: 'Senin' | 'Selasa' | 'Rabu' | 'Kamis' | 'Jumat' | 'Sabtu';
   className: string;
   subject: string;
+  subjectId?: string;
   teacherId: string;
   teacherName: string;
   jamKe: string; // e.g. "1-2", "3-4", "5"

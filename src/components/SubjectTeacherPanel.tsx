@@ -329,7 +329,10 @@ export default function SubjectTeacherPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('');
   const [tp3InputName, setTp3InputName] = useState<string>('');
   const [tp4InputName, setTp4InputName] = useState<string>('');
-  const [savedTpDescriptions, setSavedTpDescriptions] = useState<Record<string, { tp1Name?: string; tp2Name?: string; tp3Name?: string; tp4Name?: string }>>({});
+  const [isTpLocked, setIsTpLocked] = useState<boolean>(false);
+  const [tpFilledBy, setTpFilledBy] = useState<string>('');
+  const [tpFilledAt, setTpFilledAt] = useState<string>('');
+  const [savedTpDescriptions, setSavedTpDescriptions] = useState<Record<string, { tp1Name?: string; tp2Name?: string; tp3Name?: string; tp4Name?: string; isLocked?: boolean; filledBy?: string; filledAt?: string }>>({});
   const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
 
   const handleAutoFillAllTpsFromJournals = () => {
@@ -386,7 +389,7 @@ export default function SubjectTeacherPanel({
     });
   };
 
-  // Fungsi pengambilan data deskripsi TP dari server
+  // Fungsi pengambilan data deskripsi TP dari server (terhubung antar kelas 1 tingkat)
   const fetchTpDescriptions = async () => {
     try {
       const res = await fetch('/api/tp-descriptions');
@@ -405,7 +408,7 @@ export default function SubjectTeacherPanel({
     fetchTpDescriptions();
   }, []);
 
-  // Simpan deskripsi TP secara mandiri untuk mapel yang aktif
+  // Simpan deskripsi TP secara mandiri untuk mapel yang aktif & KUNCI serumpun tingkat
   const handleSaveTpDescriptions = async () => {
     if (!selectedSubject) {
       setFeedback({ type: 'error', text: 'Pilih mata pelajaran terlebih dahulu.' });
@@ -413,45 +416,64 @@ export default function SubjectTeacherPanel({
     }
     setIsSavingTp(true);
     try {
+      // Ekstrak tingkat kelas (misal "7-A" -> "7")
+      const m = String(selectedGradeClass || '').match(/\d+/);
+      const gradeLevel = m ? m[0] : '7';
+
       const res = await fetch('/api/tp-descriptions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           subject: selectedSubject,
           className: selectedGradeClass,
+          gradeLevel,
           semester: selectedSemesterGrading,
           academicYear: selectedYearGrading,
           tp1Name: tp1InputName,
           tp2Name: tp2InputName,
           tp3Name: tp3InputName,
-          tp4Name: tp4InputName
+          tp4Name: tp4InputName,
+          isLocked: true,
+          filledBy: currentTeacher?.name || 'Guru Mata Pelajaran',
+          filledByRole: `Guru ${selectedSubject}`
         })
       });
       if (res.ok) {
+        const data = await res.json();
         const subKey = (selectedSubject || '').trim().toLowerCase();
         const classKey = (selectedGradeClass || '').trim().toLowerCase();
         const semKey = (selectedSemesterGrading || 'ganjil').trim().toLowerCase();
         const yearKey = (selectedYearGrading || '2026/2027').trim().toLowerCase();
         const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+        const levelKey = `tingkat_${gradeLevel}_${subKey}`;
         
         const updated = {
           tp1Name: tp1InputName,
           tp2Name: tp2InputName,
           tp3Name: tp3InputName,
-          tp4Name: tp4InputName
+          tp4Name: tp4InputName,
+          isLocked: true,
+          filledBy: currentTeacher?.name || 'Guru Mata Pelajaran',
+          filledAt: new Date().toISOString()
         };
 
         setSavedTpDescriptions(prev => ({
           ...prev,
           [fullKey]: updated,
-          [subKey]: updated
+          [subKey]: updated,
+          [levelKey]: updated
         }));
+
+        setIsTpLocked(true);
+        setTpFilledBy(currentTeacher?.name || 'Guru Mata Pelajaran');
+        setTpFilledAt(new Date().toISOString());
 
         setFeedback({
           type: 'success',
-          text: `Deskripsi Tujuan Pembelajaran (TP) untuk mapel ${selectedSubject} berhasil disimpan!`
+          text: `🔒 Judul TP untuk mapel ${selectedSubject} tingkat ${gradeLevel} berhasil disimpan, dikunci, dan otomatis terhubung ke seluruh kelas tingkat ${gradeLevel}!`
         });
         fetchAssessments();
+        fetchTpDescriptions();
       } else {
         setFeedback({ type: 'error', text: 'Gagal menyimpan deskripsi TP ke server.' });
       }
@@ -459,6 +481,37 @@ export default function SubjectTeacherPanel({
       setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem saat menyimpan TP.' });
     } finally {
       setIsSavingTp(false);
+    }
+  };
+
+  const handleUnlockTp = async () => {
+    if (!confirm(`Buka kunci judul TP untuk Mapel ${selectedSubject}?\n\nSetelah dibuka, Anda atau guru mapel serumpun lainnya dapat mengubah uraian TP. Mengunci kembali akan menyinkronkannya ke seluruh kelas dalam tingkat ini.`)) {
+      return;
+    }
+    const m = String(selectedGradeClass || '').match(/\d+/);
+    const gradeLevel = m ? m[0] : '7';
+    try {
+      const res = await fetch('/api/curriculum/tp-levels/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gradeLevel,
+          subject: selectedSubject,
+          className: selectedGradeClass,
+          semester: selectedSemesterGrading,
+          academicYear: selectedYearGrading
+        })
+      });
+      if (res.ok) {
+        setIsTpLocked(false);
+        setFeedback({
+          type: 'success',
+          text: `🔓 Kunci Judul TP berhasil dibuka! Silakan ubah judul TP lalu klik "Kunci & Simpan TP" untuk menyinkronkannya kembali.`
+        });
+        fetchTpDescriptions();
+      }
+    } catch (err: any) {
+      alert('Gagal membuka kunci TP: ' + err.message);
     }
   };
 
@@ -480,18 +533,32 @@ export default function SubjectTeacherPanel({
     const yearKey = (selectedYearGrading || '2026/2027').trim().toLowerCase();
     const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
 
-    // 1. Cek dari savedTpDescriptions (spesifik kelas/semester atau umum mapel)
-    const savedDesc = savedTpDescriptions[fullKey] || savedTpDescriptions[subKey];
+    // Ekstrak tingkat kelas untuk pencocokan serumpun tingkat (misal "7-A" -> "7")
+    const m = String(selectedGradeClass || '').match(/\d+/);
+    const gradeLevel = m ? m[0] : '7';
+    const levelKey = `tingkat_${gradeLevel}_${subKey}`;
+
+    // 1. Cek dari savedTpDescriptions (tingkat kelas serumpun, spesifik kelas, atau umum mapel)
+    const savedDesc = savedTpDescriptions[levelKey] || savedTpDescriptions[fullKey] || savedTpDescriptions[subKey];
     if (savedDesc && (savedDesc.tp1Name || savedDesc.tp2Name || savedDesc.tp3Name || savedDesc.tp4Name)) {
       setTp1InputName(savedDesc.tp1Name || '');
       setTp2InputName(savedDesc.tp2Name || '');
       setTp3InputName(savedDesc.tp3Name || '');
       setTp4InputName(savedDesc.tp4Name || '');
+      setIsTpLocked(savedDesc.isLocked ?? true);
+      setTpFilledBy(savedDesc.filledBy || '');
+      setTpFilledAt(savedDesc.filledAt || '');
       return;
     }
 
-    // 2. Cek dari merdekaAssessments yang sudah tersimpan di database
-    const matchedAss = merdekaAssessments.find(a => 
+    // 2. Cek dari merdekaAssessments yang sudah tersimpan di database pada tingkat yang sama
+    const matchedAssGrade = merdekaAssessments.find(a => 
+      matchSubject(a.subject, selectedSubject) &&
+      (a.className || '').includes(gradeLevel) &&
+      (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+    );
+
+    const matchedAss = matchedAssGrade || merdekaAssessments.find(a => 
       matchSubject(a.subject, selectedSubject) &&
       (!selectedGradeClass || (a.className || '').trim().toLowerCase() === classKey) &&
       (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
@@ -505,6 +572,8 @@ export default function SubjectTeacherPanel({
       setTp2InputName(matchedAss.tp2Name || '');
       setTp3InputName(matchedAss.tp3Name || '');
       setTp4InputName(matchedAss.tp4Name || '');
+      setIsTpLocked(true);
+      setTpFilledBy(matchedAss.teacherName || 'Guru Mata Pelajaran');
       return;
     }
 
@@ -513,6 +582,9 @@ export default function SubjectTeacherPanel({
     setTp2InputName('');
     setTp3InputName('');
     setTp4InputName('');
+    setIsTpLocked(false);
+    setTpFilledBy('');
+    setTpFilledAt('');
   }, [selectedSubject, selectedGradeClass, selectedSemesterGrading, selectedYearGrading, savedTpDescriptions, merdekaAssessments]);
 
   const [gradeInputMap, setGradeInputMap] = useState<Record<string, {
@@ -2872,17 +2944,31 @@ export default function SubjectTeacherPanel({
               </div>
 
               <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                {/* Tombol Simpan Khusus Deskripsi TP Mapel Ini */}
-                <button
-                  type="button"
-                  onClick={handleSaveTpDescriptions}
-                  disabled={isSavingTp}
-                  className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
-                  title={`Simpan permanen deskripsi TP 1 s.d. TP 4 untuk mapel ${selectedSubject}`}
-                >
-                  {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                  <span>Simpan Deskripsi TP ({selectedSubject})</span>
-                </button>
+                {/* Status Kunci & Nama Guru Pengisi */}
+                {isTpLocked ? (
+                  <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-amber-800 text-[10.5px] font-bold">
+                    <Lock size={12} className="text-amber-600 shrink-0" />
+                    <span>Terkunci oleh <strong>{tpFilledBy || 'Guru Serumpun'}</strong></span>
+                    <button
+                      type="button"
+                      onClick={handleUnlockTp}
+                      className="ml-1 px-2 py-0.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-extrabold text-[10px] cursor-pointer shadow-2xs transition-all"
+                    >
+                      Buka Kunci / Edit TP
+                    </button>
+                  </div>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSaveTpDescriptions}
+                    disabled={isSavingTp}
+                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                    title={`Simpan & Kunci Judul TP untuk seluruh kelas tingkat ini`}
+                  >
+                    {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                    <span>Kunci & Simpan TP ({selectedSubject})</span>
+                  </button>
+                )}
 
                 {/* Quick Auto-fill TP Button from Teaching Journals */}
                 <button
@@ -2909,6 +2995,10 @@ export default function SubjectTeacherPanel({
                   selectedClass={selectedGradeClass}
                   required={true}
                   placeholder="Uraian TP-1..."
+                  isLocked={isTpLocked}
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  onUnlock={handleUnlockTp}
                 />
               </div>
 
@@ -2922,6 +3012,10 @@ export default function SubjectTeacherPanel({
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
                   placeholder="Uraian TP-2 (opsional)..."
+                  isLocked={isTpLocked}
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  onUnlock={handleUnlockTp}
                 />
               </div>
 
@@ -2935,6 +3029,10 @@ export default function SubjectTeacherPanel({
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
                   placeholder="Uraian TP-3 (opsional)..."
+                  isLocked={isTpLocked}
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  onUnlock={handleUnlockTp}
                 />
               </div>
 
@@ -2948,6 +3046,10 @@ export default function SubjectTeacherPanel({
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
                   placeholder="Uraian TP-4 (opsional)..."
+                  isLocked={isTpLocked}
+                  filledBy={tpFilledBy}
+                  filledAt={tpFilledAt}
+                  onUnlock={handleUnlockTp}
                 />
               </div>
             </div>

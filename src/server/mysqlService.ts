@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import mysql from 'mysql2/promise';
-import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult } from '../types';
+import { MysqlDatabaseConfig, MysqlTestResult, MysqlSyncResult, CurriculumSubject, CurriculumTpDescription } from '../types';
 
 const CONFIG_FILE = path.join(process.cwd(), 'mysql_config.json');
 
@@ -959,6 +959,43 @@ CREATE TABLE IF NOT EXISTS \`notifications\` (
   \`created_at\` VARCHAR(64) NOT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_notif_student\` (\`student_id\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`curriculum_subjects\` (
+  \`id\` VARCHAR(64) NOT NULL,
+  \`code\` VARCHAR(32) NOT NULL,
+  \`name\` VARCHAR(150) NOT NULL,
+  \`category\` VARCHAR(64) DEFAULT 'Muatan Nasional',
+  \`kktp\` INT DEFAULT 75,
+  \`tingkat\` VARCHAR(32) DEFAULT 'Semua Tingkat',
+  \`order_num\` INT DEFAULT 0,
+  \`description\` TEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_csubj_code\` (\`code\`),
+  KEY \`idx_csubj_name\` (\`name\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`curriculum_tp_levels\` (
+  \`id\` VARCHAR(120) NOT NULL,
+  \`grade_level\` VARCHAR(16) NOT NULL,
+  \`subject_id\` VARCHAR(64) DEFAULT NULL,
+  \`subject_name\` VARCHAR(150) NOT NULL,
+  \`semester\` VARCHAR(16) NOT NULL,
+  \`academic_year\` VARCHAR(32) NOT NULL,
+  \`tp1_name\` TEXT DEFAULT NULL,
+  \`tp2_name\` TEXT DEFAULT NULL,
+  \`tp3_name\` TEXT DEFAULT NULL,
+  \`tp4_name\` TEXT DEFAULT NULL,
+  \`is_locked\` TINYINT(1) DEFAULT 1,
+  \`filled_by\` VARCHAR(150) DEFAULT NULL,
+  \`filled_by_role\` VARCHAR(100) DEFAULT NULL,
+  \`filled_at\` VARCHAR(64) DEFAULT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_tpl_grade_subj\` (\`grade_level\`, \`subject_name\`),
+  KEY \`idx_tpl_sem_year\` (\`semester\`, \`academic_year\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 CREATE TABLE IF NOT EXISTS \`app_configs\` (
@@ -2544,6 +2581,98 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
       }
     }
 
+    try {
+      const [stCols]: any = await connection.query("SHOW COLUMNS FROM `subject_teachers`");
+      const stColNames = new Set((stCols || []).map((c: any) => c.Field));
+      if (!stColNames.has('subject_id')) {
+        await connection.query("ALTER TABLE `subject_teachers` ADD COLUMN `subject_id` VARCHAR(64) DEFAULT NULL");
+      }
+    } catch (_) {}
+
+    try {
+      const [csCols]: any = await connection.query("SHOW COLUMNS FROM `class_schedules`");
+      const csColNames = new Set((csCols || []).map((c: any) => c.Field));
+      if (!csColNames.has('subject_id')) {
+        await connection.query("ALTER TABLE `class_schedules` ADD COLUMN `subject_id` VARCHAR(64) DEFAULT NULL");
+      }
+    } catch (_) {}
+
+    // Pastikan tabel curriculum_subjects dan curriculum_tp_levels selalu terbuat
+    try {
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS \`curriculum_subjects\` (
+          \`id\` VARCHAR(64) NOT NULL,
+          \`code\` VARCHAR(32) NOT NULL,
+          \`name\` VARCHAR(150) NOT NULL,
+          \`category\` VARCHAR(64) DEFAULT 'Muatan Nasional',
+          \`kktp\` INT DEFAULT 75,
+          \`tingkat\` VARCHAR(32) DEFAULT 'Semua Tingkat',
+          \`order_num\` INT DEFAULT 0,
+          \`description\` TEXT DEFAULT NULL,
+          \`created_at\` VARCHAR(64) DEFAULT NULL,
+          \`updated_at\` VARCHAR(64) DEFAULT NULL,
+          PRIMARY KEY (\`id\`),
+          KEY \`idx_csubj_code\` (\`code\`),
+          KEY \`idx_csubj_name\` (\`name\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+      await connection.query(`
+        CREATE TABLE IF NOT EXISTS \`curriculum_tp_levels\` (
+          \`id\` VARCHAR(120) NOT NULL,
+          \`grade_level\` VARCHAR(16) NOT NULL,
+          \`subject_id\` VARCHAR(64) DEFAULT NULL,
+          \`subject_name\` VARCHAR(150) NOT NULL,
+          \`semester\` VARCHAR(16) NOT NULL,
+          \`academic_year\` VARCHAR(32) NOT NULL,
+          \`tp1_name\` TEXT DEFAULT NULL,
+          \`tp2_name\` TEXT DEFAULT NULL,
+          \`tp3_name\` TEXT DEFAULT NULL,
+          \`tp4_name\` TEXT DEFAULT NULL,
+          \`is_locked\` TINYINT(1) DEFAULT 1,
+          \`filled_by\` VARCHAR(150) DEFAULT NULL,
+          \`filled_by_role\` VARCHAR(100) DEFAULT NULL,
+          \`filled_at\` VARCHAR(64) DEFAULT NULL,
+          \`updated_at\` VARCHAR(64) DEFAULT NULL,
+          PRIMARY KEY (\`id\`),
+          KEY \`idx_tpl_grade_subj\` (\`grade_level\`, \`subject_name\`),
+          KEY \`idx_tpl_sem_year\` (\`semester\`, \`academic_year\`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+      `);
+    } catch (tabErr) {
+      console.warn('[MySQL Curriculum Tables Init Warning]:', tabErr);
+    }
+
+    // Seed default master data mata pelajaran jika tabel masih kosong
+    try {
+      const [existingSubjects]: any = await connection.query("SELECT COUNT(*) as cnt FROM `curriculum_subjects`");
+      if (existingSubjects && existingSubjects[0] && existingSubjects[0].cnt === 0) {
+        const defaultSubjects = [
+          { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 1 },
+          { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 2 },
+          { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 3 },
+          { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 4 },
+          { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 5 },
+          { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 6 },
+          { id: 'mapel-bing', code: 'BIG', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 7 },
+          { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 8 },
+          { id: 'mapel-inf', code: 'INF', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 9 },
+          { id: 'mapel-sbk', code: 'SBK', name: 'Seni dan Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 10 },
+          { id: 'mapel-bjawa', code: 'BJAWA', name: 'Bahasa Jawa', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 11 },
+          { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 12 },
+          { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 13 }
+        ];
+        for (const s of defaultSubjects) {
+          await connection.query(
+            "INSERT IGNORE INTO `curriculum_subjects` (`id`, `code`, `name`, `category`, `kktp`, `tingkat`, `order_num`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+            [s.id, s.code, s.name, s.category, s.kktp, s.tingkat, s.order_num]
+          );
+        }
+        console.log('[MySQL] Master data mata pelajaran default berhasil di-seed.');
+      }
+    } catch (seedErr) {
+      console.warn('[MySQL Seed Subjects Warning]:', seedErr);
+    }
+
     return {
       success: true,
       message: 'Semua struktur tabel MySQL berhasil diverifikasi dan diinisialisasi.'
@@ -3172,12 +3301,57 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const st = data;
       await connection.query(`
         INSERT INTO \`subject_teachers\` (
-          \`id\`, \`username\`, \`name\`, \`subject\`, \`class_name\`, \`password\`, \`sk_url\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?)
+          \`id\`,\`username\`, \`name\`, \`subject\`, \`subject_id\`, \`class_name\`, \`password\`, \`sk_url\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`name\`=VALUES(\`name\`), \`subject\`=VALUES(\`subject\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
-      `, [st.id, st.username || '', st.name || '', st.subject || '', st.className || 'SEMUA KELAS', st.password || null, st.skUrl || null]);
+          \`name\`=VALUES(\`name\`), \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
+      `, [st.id, st.username || '', st.name || '', st.subject || '', st.subjectId || null, st.className || 'SEMUA KELAS', st.password || null, st.skUrl || null]);
       return { success: true, message: `Guru mapel "${st.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 13B. Curriculum Subjects (Master Data Mapel)
+    else if (typeKey === 'curriculum_subject' || typeKey === 'curriculum_subjects' || typeKey === 'curriculumsubject') {
+      const cs = data;
+      await connection.query(`
+        INSERT INTO \`curriculum_subjects\` (
+          \`id\`, \`code\`, \`name\`, \`category\`, \`kktp\`, \`tingkat\`, \`order_num\`, \`description\`, \`created_at\`, \`updated_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`code\`=VALUES(\`code\`), \`name\`=VALUES(\`name\`), \`category\`=VALUES(\`category\`),
+          \`kktp\`=VALUES(\`kktp\`), \`tingkat\`=VALUES(\`tingkat\`), \`order_num\`=VALUES(\`order_num\`),
+          \`description\`=VALUES(\`description\`), \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        cs.id, cs.code || '', cs.name || '', cs.category || 'Muatan Nasional',
+        Number(cs.kktp) || 75, cs.tingkat || 'Semua Tingkat', Number(cs.orderNum) || 0,
+        cs.description || null, cs.createdAt || new Date().toISOString(), cs.updatedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Mata pelajaran "${cs.name}" langsung tersimpan ke MySQL.` };
+    }
+
+    // 13C. Curriculum TP Descriptions (Per Tingkat / Grade Level)
+    else if (typeKey === 'curriculum_tp' || typeKey === 'curriculum_tp_levels' || typeKey === 'curriculumtp' || typeKey === 'curriculum_tp_level') {
+      const ctp = data;
+      await connection.query(`
+        INSERT INTO \`curriculum_tp_levels\` (
+          \`id\`, \`grade_level\`, \`subject_id\`, \`subject_name\`, \`semester\`, \`academic_year\`,
+          \`tp1_name\`, \`tp2_name\`, \`tp3_name\`, \`tp4_name\`, \`is_locked\`, \`filled_by\`,
+          \`filled_by_role\`, \`filled_at\`, \`updated_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`subject_id\`=VALUES(\`subject_id\`), \`subject_name\`=VALUES(\`subject_name\`),
+          \`tp1_name\`=VALUES(\`tp1_name\`), \`tp2_name\`=VALUES(\`tp2_name\`),
+          \`tp3_name\`=VALUES(\`tp3_name\`), \`tp4_name\`=VALUES(\`tp4_name\`),
+          \`is_locked\`=VALUES(\`is_locked\`), \`filled_by\`=VALUES(\`filled_by\`),
+          \`filled_by_role\`=VALUES(\`filled_by_role\`), \`filled_at\`=VALUES(\`filled_at\`),
+          \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        ctp.id, String(ctp.gradeLevel || '7'), ctp.subjectId || null, ctp.subject || ctp.subjectName || '',
+        ctp.semester || 'Ganjil', ctp.academicYear || '2026/2027',
+        ctp.tp1Name || null, ctp.tp2Name || null, ctp.tp3Name || null, ctp.tp4Name || null,
+        ctp.isLocked ? 1 : 0, ctp.filledBy || null, ctp.filledByRole || null,
+        ctp.filledAt || new Date().toISOString(), ctp.updatedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: `Judul TP tingkat ${ctp.gradeLevel} (${ctp.subject}) langsung tersimpan ke MySQL.` };
     }
 
     // 14. Sarpras Items
@@ -3781,6 +3955,13 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
       principalworkprograms: 'principal_work_programs',
       teacher_evaluation: 'teacher_evaluations',
       teacherevaluations: 'teacher_evaluations',
+      curriculum_subject: 'curriculum_subjects',
+      curriculum_subjects: 'curriculum_subjects',
+      curriculumsubject: 'curriculum_subjects',
+      curriculum_tp: 'curriculum_tp_levels',
+      curriculum_tp_levels: 'curriculum_tp_levels',
+      curriculumtp: 'curriculum_tp_levels',
+      curriculum_tp_level: 'curriculum_tp_levels',
       notification: 'notifications',
       notifications: 'notifications',
       config: 'app_configs'
@@ -3928,6 +4109,63 @@ export function triggerDebouncedMysqlSync(snapshotProvider: () => Promise<any> |
       isSyncInProgress = false;
     }
   }, delayMs);
+}
+
+export async function getAllCurriculumSubjectsFromMysql(): Promise<CurriculumSubject[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query('SELECT * FROM `curriculum_subjects` ORDER BY `order_num` ASC, `code` ASC');
+    return (rows || []).map((r: any) => ({
+      id: r.id,
+      code: r.code,
+      name: r.name,
+      category: r.category || 'Muatan Nasional',
+      kktp: Number(r.kktp) || 75,
+      tingkat: r.tingkat || 'Semua Tingkat',
+      orderNum: Number(r.order_num) || 0,
+      description: r.description || undefined,
+      createdAt: r.created_at || undefined,
+      updatedAt: r.updated_at || undefined
+    }));
+  } catch (err: any) {
+    console.warn('[MySQL] Failed to load curriculum_subjects:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
+}
+
+export async function getAllCurriculumTpFromMysql(): Promise<CurriculumTpDescription[]> {
+  const pool = createPool();
+  let connection: mysql.PoolConnection | null = null;
+  try {
+    connection = await pool.getConnection();
+    const [rows]: any = await connection.query('SELECT * FROM `curriculum_tp_levels` ORDER BY `grade_level` ASC, `subject_name` ASC');
+    return (rows || []).map((r: any) => ({
+      id: r.id,
+      gradeLevel: String(r.grade_level || '7'),
+      subjectId: r.subject_id || undefined,
+      subject: r.subject_name || '',
+      semester: r.semester || 'Ganjil',
+      academicYear: r.academic_year || '2026/2027',
+      tp1Name: r.tp1_name || '',
+      tp2Name: r.tp2_name || '',
+      tp3Name: r.tp3_name || '',
+      tp4Name: r.tp4_name || '',
+      isLocked: Boolean(r.is_locked),
+      filledBy: r.filled_by || undefined,
+      filledByRole: r.filled_by_role || undefined,
+      filledAt: r.filled_at || undefined,
+      updatedAt: r.updated_at || undefined
+    }));
+  } catch (err: any) {
+    console.warn('[MySQL] Failed to load curriculum_tp_levels:', err.message || err);
+    return [];
+  } finally {
+    if (connection) connection.release();
+  }
 }
 
 

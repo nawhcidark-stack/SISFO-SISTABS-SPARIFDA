@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import * as XLSX from 'xlsx';
-import { ClassSchedule, SubjectTeacher, HomeroomTeacher } from '../types';
+import { ClassSchedule, SubjectTeacher, HomeroomTeacher, CurriculumSubject } from '../types';
 import { 
   Calendar, 
   Clock, 
@@ -36,6 +36,7 @@ interface ScheduleViewProps {
   availableClasses: string[];
   subjectTeachers: SubjectTeacher[];
   homerooms: HomeroomTeacher[];
+  curriculumSubjects?: CurriculumSubject[];
   userClass?: string;
   userTeacherId?: string;
   userTeacherName?: string;
@@ -71,11 +72,30 @@ export default function ScheduleView({
   availableClasses,
   subjectTeachers,
   homerooms,
+  curriculumSubjects = [],
   userClass,
   userTeacherId,
   userTeacherName
 }: ScheduleViewProps) {
   const isEditable = role === 'waka_kurikulum';
+
+  // Master Data Mata Pelajaran state inside ScheduleView
+  const [internalSubjects, setInternalSubjects] = useState<CurriculumSubject[]>(curriculumSubjects);
+
+  useEffect(() => {
+    if (curriculumSubjects && curriculumSubjects.length > 0) {
+      setInternalSubjects(curriculumSubjects);
+    } else {
+      fetch('/api/curriculum/subjects')
+        .then(r => r.ok ? r.json() : null)
+        .then(data => {
+          if (data && Array.isArray(data.subjects)) {
+            setInternalSubjects(data.subjects);
+          }
+        })
+        .catch(() => {});
+    }
+  }, [curriculumSubjects]);
 
   // Sub tab: 'class_matrix' | 'teacher_workload' | 'teacher_mapping' | 'my_schedule' | 'manage'
   const [viewSubTab, setViewSubTab] = useState<'class_matrix' | 'teacher_workload' | 'teacher_mapping' | 'my_schedule' | 'manage'>(
@@ -116,6 +136,7 @@ export default function ScheduleView({
   const [formDay, setFormDay] = useState<typeof DAYS[number]>('Senin');
   const [formClassName, setFormClassName] = useState<string>(availableClasses[0] || '7-A');
   const [formSubject, setFormSubject] = useState<string>('Matematika');
+  const [formSubjectId, setFormSubjectId] = useState<string>('');
   const [formTeacher, setFormTeacher] = useState<{ id: string; name: string }>({ id: '', name: '' });
   const [formJamKe, setFormJamKe] = useState<string>('1-2');
   const [customJamInput, setCustomJamInput] = useState<string>('');
@@ -974,12 +995,13 @@ export default function ScheduleView({
     setFeedback(null);
     setClashError(null);
 
-    const finalJamKe = formJamKe === 'custom' ? (customJamInput.trim() || '1') : formJamKe;
+    const matchedSubj = internalSubjects.find(s => s.id === formSubjectId || s.name.toLowerCase() === formSubject.toLowerCase());
 
     const payload = {
       day: formDay,
       className: formClassName,
       subject: formSubject,
+      subjectId: formSubjectId || matchedSubj?.id || undefined,
       teacherId: formTeacher.id,
       teacherName: formTeacher.name,
       jamKe: finalJamKe,
@@ -1851,33 +1873,83 @@ export default function ScheduleView({
 
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="block text-[10px] font-black uppercase text-slate-500">Mata Pelajaran</label>
+                  <label className="block text-[10px] font-black uppercase text-slate-500">Mata Pelajaran (Master Data)</label>
                   {(() => {
                     const activeT = allTeachersList.find(t => t.id === formTeacher.id);
                     if (activeT?.mainSubject && activeT.mainSubject !== 'Tematik/Mapel' && activeT.mainSubject !== 'Mapel') {
                       return (
                         <button
                           type="button"
-                          onClick={() => setFormSubject(activeT.mainSubject)}
+                          onClick={() => {
+                            setFormSubject(activeT.mainSubject);
+                            const foundSub = internalSubjects.find(s => s.name.toLowerCase() === activeT.mainSubject.toLowerCase());
+                            if (foundSub) setFormSubjectId(foundSub.id);
+                          }}
                           className="text-[10px] font-bold text-indigo-600 bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md flex items-center gap-1 transition-all cursor-pointer"
                         >
-                          <Sparkles size={10} /> Sync: {activeT.mainSubject}
+                          <Sparkles size={10} /> Sync Guru: {activeT.mainSubject}
                         </button>
                       );
                     }
                     return null;
                   })()}
                 </div>
-                <input
-                  type="text"
-                  value={formSubject}
-                  onChange={(e) => setFormSubject(e.target.value)}
-                  placeholder="Contoh: Matematika, IPA, Bahasa Inggris..."
-                  className="w-full bg-slate-50 border border-slate-250 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
-                />
+                
+                {internalSubjects.length > 0 ? (
+                  <div className="space-y-1.5">
+                    <select
+                      value={formSubjectId || (internalSubjects.find(s => s.name.toLowerCase() === formSubject.toLowerCase())?.id || '')}
+                      onChange={(e) => {
+                        const sid = e.target.value;
+                        setFormSubjectId(sid);
+                        const sel = internalSubjects.find(s => s.id === sid);
+                        if (sel) {
+                          setFormSubject(sel.name);
+                        }
+                      }}
+                      className="w-full bg-slate-50 border border-slate-250 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300 cursor-pointer"
+                    >
+                      <option value="">-- Pilih Mata Pelajaran Terdaftar --</option>
+                      {internalSubjects.map(s => (
+                        <option key={s.id} value={s.id}>
+                          [{s.code}] {s.name} ({s.category || 'Nasional'})
+                        </option>
+                      ))}
+                    </select>
+
+                    {/* Jika mapel belum cocok atau ingin custom, sediakan input alternatif */}
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={formSubject}
+                        onChange={(e) => {
+                          setFormSubject(e.target.value);
+                          const matched = internalSubjects.find(s => s.name.toLowerCase() === e.target.value.toLowerCase());
+                          setFormSubjectId(matched ? matched.id : '');
+                        }}
+                        placeholder="Atau ketik nama mapel manual..."
+                        className="flex-1 bg-slate-50 border border-slate-200 rounded-lg p-2 text-xs font-semibold text-slate-700"
+                      />
+                      {formSubjectId && (
+                        <span className="font-mono text-[10px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200 px-2 py-1 rounded-md shrink-0">
+                          ID: {formSubjectId}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <input
+                    type="text"
+                    value={formSubject}
+                    onChange={(e) => setFormSubject(e.target.value)}
+                    placeholder="Contoh: Matematika, IPA, Bahasa Inggris..."
+                    className="w-full bg-slate-50 border border-slate-250 rounded-xl p-2.5 text-xs font-bold text-slate-800 focus:outline-none focus:ring-2 focus:ring-indigo-300"
+                  />
+                )}
+
                 <p className="text-[10px] text-slate-500 mt-1 flex items-center gap-1">
                   <Sparkles size={11} className="text-indigo-500 shrink-0" />
-                  <span>Mata pelajaran otomatis terisi saat Anda memilih Nama Guru.</span>
+                  <span>Terhubung ke Master Data Mapel agar ID mapel otomatis tersinkron ke penilaian TP & guru.</span>
                 </p>
               </div>
 

@@ -9,9 +9,9 @@ import compression from "compression";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -57,14 +57,33 @@ const homeroomTeachers: HomeroomTeacher[] = [
   { id: "ht-4", username: "wali9c", name: "Rina Wijayanti, S.Pd", className: "9-C", password: "wali123" }
 ];
 
+export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
+  { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 1 },
+  { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 2 },
+  { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 3 },
+  { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 4 },
+  { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 5 },
+  { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 6 },
+  { id: 'mapel-bing', code: 'BING', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 7 },
+  { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 8 },
+  { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 9 },
+  { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 10 },
+  { id: 'mapel-bjawa', code: 'BJAWA', name: 'Bahasa Jawa', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 11 },
+  { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 12 },
+  { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 13 }
+];
+
+const curriculumSubjects: CurriculumSubject[] = [...DEFAULT_CURRICULUM_SUBJECTS];
+const curriculumTpDescriptions: CurriculumTpDescription[] = [];
+
 const subjectTeachers: SubjectTeacher[] = [
-  { id: "st-1", username: "guru_math", name: "Drs. Heru Setyawan, M.Pd", subject: "Matematika", password: "mapel123" },
-  { id: "st-2", username: "guru_english", name: "Ibu Lindawati, S.Pd", subject: "Bahasa Inggris", password: "mapel123" },
-  { id: "st-3", username: "guru_ipa", name: "Budi Wijaya, S.Si", subject: "Ilmu Pengetahuan Alam", password: "mapel123" },
-  { id: "st-4", username: "guru_ips", name: "Dra. Siti Rahma", subject: "Ilmu Pengetahuan Sosial", password: "mapel123" },
-  { id: "st-5", username: "guru_indo", name: "Ahmad Fauzan, S.S", subject: "Bahasa Indonesia", password: "mapel123" },
-  { id: "st-6", username: "guru_agama", name: "KH. M. Syukron, S.Pd.I", subject: "Pendidikan Agama Islam", password: "mapel123" },
-  { id: "st-7", username: "guru_pjok", name: "Eko Prasetyo, S.Pd", subject: "Pendidikan Jasmani & OR", password: "mapel123" }
+  { id: "st-1", username: "guru_math", name: "Drs. Heru Setyawan, M.Pd", subject: "Matematika", subjectId: "mapel-mtk", password: "mapel123" },
+  { id: "st-2", username: "guru_english", name: "Ibu Lindawati, S.Pd", subject: "Bahasa Inggris", subjectId: "mapel-bing", password: "mapel123" },
+  { id: "st-3", username: "guru_ipa", name: "Budi Wijaya, S.Si", subject: "Ilmu Pengetahuan Alam", subjectId: "mapel-ipa", password: "mapel123" },
+  { id: "st-4", username: "guru_ips", name: "Dra. Siti Rahma", subject: "Ilmu Pengetahuan Sosial", subjectId: "mapel-ips", password: "mapel123" },
+  { id: "st-5", username: "guru_indo", name: "Ahmad Fauzan, S.S", subject: "Bahasa Indonesia", subjectId: "mapel-bindo", password: "mapel123" },
+  { id: "st-6", username: "guru_agama", name: "KH. M. Syukron, S.Pd.I", subject: "Pendidikan Agama Islam", subjectId: "mapel-pai", password: "mapel123" },
+  { id: "st-7", username: "guru_pjok", name: "Eko Prasetyo, S.Pd", subject: "Pendidikan Jasmani & OR", subjectId: "mapel-pjok", password: "mapel123" }
 ];
 
 const teacherSalaries: TeacherSalary[] = [];
@@ -1631,7 +1650,9 @@ function getFullSnapshotForMysql() {
     bkConfig,
     curriculumConfig,
     adminConfig,
-    spmbConfig
+    spmbConfig,
+    curriculumSubjects,
+    curriculumTpDescriptions
   };
 }
 
@@ -1677,7 +1698,9 @@ function saveState(skipRemoteSync: boolean = false) {
       spmbConfig,
       spmbCandidates,
       backupConfig,
-      databaseBackups
+      databaseBackups,
+      curriculumSubjects,
+      curriculumTpDescriptions
     };
     // 1. PRIMARY PERSISTENCE: Database MySQL Hostinger (authoritative cloud database)
     if (!skipRemoteSync) {
@@ -1989,6 +2012,14 @@ function loadState() {
         databaseBackups.length = 0;
         databaseBackups.push(...data.databaseBackups);
       }
+      if (Array.isArray(data.curriculumSubjects) && data.curriculumSubjects.length > 0) {
+        curriculumSubjects.length = 0;
+        curriculumSubjects.push(...data.curriculumSubjects);
+      }
+      if (Array.isArray(data.curriculumTpDescriptions)) {
+        curriculumTpDescriptions.length = 0;
+        curriculumTpDescriptions.push(...data.curriculumTpDescriptions);
+      }
       console.log("State loaded successfully from database");
       return true;
     }
@@ -2194,6 +2225,16 @@ function applyDataFromMysql(pulledData: any) {
       // tanpa ditimpa oleh cache atau file lokal
       spmbCandidates.length = 0;
       spmbCandidates.push(...pulledData.spmbCandidates);
+    }
+
+    if (Array.isArray(pulledData.curriculumSubjects) && pulledData.curriculumSubjects.length > 0) {
+      curriculumSubjects.length = 0;
+      curriculumSubjects.push(...pulledData.curriculumSubjects);
+    }
+
+    if (Array.isArray(pulledData.curriculumTpDescriptions) && pulledData.curriculumTpDescriptions.length > 0) {
+      curriculumTpDescriptions.length = 0;
+      curriculumTpDescriptions.push(...pulledData.curriculumTpDescriptions);
     }
 
     // Authoritative savings balance updates
@@ -4683,8 +4724,8 @@ async function startServer() {
   });
 
   app.post("/api/admin/subject-teachers", (req, res) => {
-    const { username, name, subject, password, skUrl } = req.body;
-    if (!username || !name || !subject) {
+    const { username, name, subject, subjectId, password, skUrl } = req.body;
+    if (!username || !name || (!subject && !subjectId)) {
       return res.status(400).json({ error: "Informasi Guru Mata Pelajaran tidak lengkap." });
     }
 
@@ -4693,17 +4734,29 @@ async function startServer() {
       return res.status(400).json({ error: `Username guru mapel "${username}" sudah digunakan.` });
     }
 
+    let resolvedSubject = subject ? subject.trim() : "";
+    let resolvedSubjectId = subjectId ? String(subjectId).trim() : undefined;
+    if (resolvedSubjectId && !resolvedSubject) {
+      const matchSub = curriculumSubjects.find(s => s.id === resolvedSubjectId);
+      if (matchSub) resolvedSubject = matchSub.name;
+    } else if (resolvedSubject && !resolvedSubjectId) {
+      const matchSub = curriculumSubjects.find(s => s.name.toLowerCase() === resolvedSubject.toLowerCase());
+      if (matchSub) resolvedSubjectId = matchSub.id;
+    }
+
     const newSt: SubjectTeacher = {
       id: `st-${Date.now()}`,
       username: username.trim(),
       name: name.trim(),
-      subject: subject.trim(),
+      subject: resolvedSubject,
+      subjectId: resolvedSubjectId,
       password: password ? String(password).trim() : "mapel123",
       skUrl: skUrl ? String(skUrl).trim() : ""
     };
 
     subjectTeachers.push(newSt);
     saveState();
+    directSaveEntityToMysql('subject_teacher', newSt).catch(() => {});
 
     const notification: RealtimeNotification = {
       id: `notif-st-add-${newSt.id}`,
@@ -4719,7 +4772,7 @@ async function startServer() {
 
   app.put("/api/admin/subject-teachers/:id", (req, res) => {
     const id = req.params.id;
-    const { username, name, subject, password, skUrl } = req.body;
+    const { username, name, subject, subjectId, password, skUrl } = req.body;
     
     const stIndex = subjectTeachers.findIndex(st => st.id === id);
     if (stIndex === -1) {
@@ -4736,10 +4789,12 @@ async function startServer() {
 
     if (name) subjectTeachers[stIndex].name = name.trim();
     if (subject) subjectTeachers[stIndex].subject = subject.trim();
+    if (subjectId !== undefined) subjectTeachers[stIndex].subjectId = subjectId ? String(subjectId).trim() : undefined;
     if (password !== undefined) subjectTeachers[stIndex].password = String(password).trim();
     if (skUrl !== undefined) subjectTeachers[stIndex].skUrl = String(skUrl).trim();
 
     saveState();
+    directSaveEntityToMysql('subject_teacher', subjectTeachers[stIndex]).catch(() => {});
     res.json({ success: true, subjectTeachers, updated: subjectTeachers[stIndex] });
   });
 
@@ -5649,105 +5704,328 @@ async function startServer() {
     return res.json({ success: true, count: results.length, merdekaAssessments, newAssessment: results[0] });
   });
 
-  // Endpoints untuk Pengambilan dan Penyimpanan Mandiri Deskripsi TP Tiap Mapel
-  app.get("/api/tp-descriptions", (req, res) => {
-    const descMap: Record<string, any> = { ...((curriculumConfig as any).tpDescriptions || {}) };
-    
-    // Sinkronkan juga dari data merdekaAssessments yang sudah ada di memori/MySQL
-    merdekaAssessments.forEach(a => {
-      if (!a.subject) return;
-      const subKey = a.subject.trim().toLowerCase();
-      const classKey = (a.className || "").trim().toLowerCase();
-      const semKey = (a.semester || "ganjil").trim().toLowerCase();
-      const yearKey = (a.academicYear || "2026/2027").trim().toLowerCase();
-      const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
-
-      if (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name) {
-        const itemData = {
-          subject: a.subject,
-          className: a.className,
-          semester: a.semester,
-          academicYear: a.academicYear,
-          tp1Name: a.tp1Name || "",
-          tp2Name: a.tp2Name || "",
-          tp3Name: a.tp3Name || "",
-          tp4Name: a.tp4Name || "",
-          updatedAt: a.updatedAt || a.createdAt
-        };
-        if (!descMap[fullKey] && classKey) {
-          descMap[fullKey] = itemData;
-        }
-        if (!descMap[subKey]) {
-          descMap[subKey] = itemData;
-        }
-      }
-    });
-
-    res.json({ success: true, descriptions: descMap });
+  // --- MASTER DATA MATA PELAJARAN (WAKA KURIKULUM) ---
+  app.get("/api/curriculum/subjects", (req, res) => {
+    if (curriculumSubjects.length === 0) {
+      curriculumSubjects.push(...DEFAULT_CURRICULUM_SUBJECTS);
+      saveState();
+    }
+    // Return sorted by orderNum
+    const sorted = [...curriculumSubjects].sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+    res.json({ success: true, subjects: sorted });
   });
 
-  app.post("/api/tp-descriptions", async (req, res) => {
-    const { subject, className, semester, academicYear, tp1Name, tp2Name, tp3Name, tp4Name } = req.body;
+  app.post("/api/curriculum/subjects", async (req, res) => {
+    const { code, name, category, kktp, tingkat, orderNum, description } = req.body;
+    if (!code || !name) {
+      return res.status(400).json({ error: "Kode dan Nama Mata Pelajaran wajib diisi." });
+    }
+
+    const cleanCode = code.trim().toUpperCase();
+    const cleanName = name.trim();
+    const existing = curriculumSubjects.find(s => s.code.toUpperCase() === cleanCode || s.name.toLowerCase() === cleanName.toLowerCase());
+    if (existing) {
+      return res.status(400).json({ error: `Mata pelajaran dengan kode "${cleanCode}" atau nama "${cleanName}" sudah terdaftar.` });
+    }
+
+    const newSubj: CurriculumSubject = {
+      id: req.body.id ? req.body.id.trim() : `mapel-${cleanCode.toLowerCase()}`,
+      code: cleanCode,
+      name: cleanName,
+      category: category ? category.trim() : 'Muatan Nasional',
+      kktp: Number(kktp) || 75,
+      tingkat: tingkat ? tingkat.trim() : 'Semua Tingkat',
+      orderNum: Number(orderNum) || (curriculumSubjects.length + 1),
+      description: description ? description.trim() : undefined,
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    };
+
+    curriculumSubjects.push(newSubj);
+    curriculumSubjects.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+
+    saveState();
+    directSaveEntityToMysql('curriculum_subject', newSubj).catch(err => console.warn('[MySQL Save Subject Error]:', err));
+
+    res.json({ success: true, message: `Mata pelajaran "${newSubj.name}" berhasil ditambahkan ke master data.`, subject: newSubj, subjects: curriculumSubjects });
+  });
+
+  app.put("/api/curriculum/subjects/:id", async (req, res) => {
+    const { id } = req.params;
+    const { code, name, category, kktp, tingkat, orderNum, description } = req.body;
+    const idx = curriculumSubjects.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Mata pelajaran tidak ditemukan." });
+    }
+
+    const oldName = curriculumSubjects[idx].name;
+    const cleanCode = code ? code.trim().toUpperCase() : curriculumSubjects[idx].code;
+    const cleanName = name ? name.trim() : curriculumSubjects[idx].name;
+
+    const dup = curriculumSubjects.find(s => s.id !== id && s.code.toUpperCase() === cleanCode);
+    if (dup) {
+      return res.status(400).json({ error: `Kode "${cleanCode}" sudah digunakan oleh mata pelajaran lain.` });
+    }
+
+    curriculumSubjects[idx] = {
+      ...curriculumSubjects[idx],
+      code: cleanCode,
+      name: cleanName,
+      category: category !== undefined ? category.trim() : curriculumSubjects[idx].category,
+      kktp: kktp !== undefined ? Number(kktp) : curriculumSubjects[idx].kktp,
+      tingkat: tingkat !== undefined ? tingkat.trim() : curriculumSubjects[idx].tingkat,
+      orderNum: orderNum !== undefined ? Number(orderNum) : curriculumSubjects[idx].orderNum,
+      description: description !== undefined ? description.trim() : curriculumSubjects[idx].description,
+      updatedAt: new Date().toISOString()
+    };
+
+    curriculumSubjects.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
+
+    // Cascade update ke guru mapel & jadwal mengajar yang terhubung
+    if (cleanName !== oldName) {
+      subjectTeachers.forEach(t => {
+        if (t.subjectId === id || t.subject.toLowerCase() === oldName.toLowerCase()) {
+          t.subject = cleanName;
+          t.subjectId = id;
+          directSaveEntityToMysql('subject_teacher', t).catch(() => {});
+        }
+      });
+      classSchedules.forEach(sch => {
+        if (sch.subjectId === id || sch.subject.toLowerCase() === oldName.toLowerCase()) {
+          sch.subject = cleanName;
+          sch.subjectId = id;
+          directSaveEntityToMysql('schedule', sch).catch(() => {});
+        }
+      });
+    }
+
+    saveState();
+    directSaveEntityToMysql('curriculum_subject', curriculumSubjects[idx]).catch(err => console.warn('[MySQL Update Subject Error]:', err));
+
+    res.json({ success: true, message: `Mata pelajaran "${cleanName}" berhasil diperbarui.`, subject: curriculumSubjects[idx], subjects: curriculumSubjects });
+  });
+
+  app.delete("/api/curriculum/subjects/:id", async (req, res) => {
+    const { id } = req.params;
+    const idx = curriculumSubjects.findIndex(s => s.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "Mata pelajaran tidak ditemukan." });
+    }
+
+    const removed = curriculumSubjects.splice(idx, 1)[0];
+    saveState();
+    directDeleteEntityFromMysql('curriculum_subject', id).catch(err => console.warn('[MySQL Delete Subject Error]:', err));
+
+    res.json({ success: true, message: `Mata pelajaran "${removed.name}" berhasil dihapus.`, removed, subjects: curriculumSubjects });
+  });
+
+  app.post("/api/curriculum/subjects/reset-defaults", async (req, res) => {
+    curriculumSubjects.length = 0;
+    curriculumSubjects.push(...DEFAULT_CURRICULUM_SUBJECTS);
+    saveState();
+
+    for (const s of DEFAULT_CURRICULUM_SUBJECTS) {
+      directSaveEntityToMysql('curriculum_subject', s).catch(() => {});
+    }
+
+    res.json({ success: true, message: "Master data mata pelajaran berhasil direset ke standar Kurikulum Merdeka.", subjects: curriculumSubjects });
+  });
+
+  // --- TUJUAN PEMBELAJARAN (TP) PER TINGKAT (WAKA KURIKULUM, GURU MAPEL & WALI KELAS) ---
+  app.get(["/api/curriculum/tp-levels", "/api/tp-descriptions"], (req, res) => {
+    const { gradeLevel, subject, semester, academicYear, className } = req.query;
+    let list = [...curriculumTpDescriptions];
+
+    let targetGrade = gradeLevel ? String(gradeLevel).trim() : '';
+    if (!targetGrade && className) {
+      const m = String(className).match(/\d+/);
+      if (m) targetGrade = m[0];
+    }
+
+    if (targetGrade) {
+      list = list.filter(tp => String(tp.gradeLevel).trim() === targetGrade);
+    }
+    if (subject) {
+      const s = String(subject).trim().toLowerCase();
+      list = list.filter(tp => tp.subject.trim().toLowerCase() === s);
+    }
+    if (semester) {
+      const sem = String(semester).trim().toLowerCase();
+      list = list.filter(tp => tp.semester.trim().toLowerCase() === sem);
+    }
+    if (academicYear) {
+      const y = String(academicYear).trim().toLowerCase();
+      list = list.filter(tp => tp.academicYear.trim().toLowerCase() === y);
+    }
+
+    // Build legacy descMap for backward compatibility
+    const descMap: Record<string, any> = { ...((curriculumConfig as any).tpDescriptions || {}) };
+    curriculumTpDescriptions.forEach(tp => {
+      const subKey = tp.subject.trim().toLowerCase();
+      const semKey = (tp.semester || "ganjil").trim().toLowerCase();
+      const yearKey = (tp.academicYear || "2026/2027").trim().toLowerCase();
+      const gradeKey = `tingkat_${tp.gradeLevel}_${subKey}_${semKey}_${yearKey}`;
+      descMap[gradeKey] = tp;
+      if (!descMap[subKey]) descMap[subKey] = tp;
+    });
+
+    res.json({ success: true, tpDescriptions: list, descriptions: descMap });
+  });
+
+  app.post(["/api/curriculum/tp-levels", "/api/tp-descriptions"], async (req, res) => {
+    const {
+      gradeLevel: rawGrade,
+      className,
+      subject,
+      subjectId,
+      semester,
+      academicYear,
+      tp1Name,
+      tp2Name,
+      tp3Name,
+      tp4Name,
+      isLocked,
+      filledBy,
+      filledByRole
+    } = req.body;
+
     if (!subject) {
       return res.status(400).json({ error: "Nama mata pelajaran wajib disertakan." });
     }
 
-    if (!(curriculumConfig as any).tpDescriptions) {
-      (curriculumConfig as any).tpDescriptions = {};
+    // Ekstrak tingkat kelas (misal "7-A" -> "7", "8" -> "8")
+    let gradeLevel = "7";
+    if (rawGrade) {
+      const m = String(rawGrade).match(/\d+/);
+      if (m) gradeLevel = m[0];
+      else gradeLevel = String(rawGrade).trim();
+    } else if (className) {
+      const m = String(className).match(/\d+/);
+      if (m) gradeLevel = m[0];
     }
 
-    const cleanSub = subject.trim().toLowerCase();
-    const cleanClass = (className || "").trim().toLowerCase();
-    const cleanSem = (semester || (schoolIdentity as any).activeSemester || "Ganjil").trim().toLowerCase();
-    const cleanYear = (academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027").trim().toLowerCase();
+    const cleanSubject = subject.trim();
+    const cleanSem = semester || (schoolIdentity as any).activeSemester || "Ganjil";
+    const cleanYear = academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027";
+    const recordId = `tpl-${gradeLevel}-${cleanSubject.toLowerCase().replace(/[^a-z0-9]/g, '_')}-${cleanSem.toLowerCase()}-${cleanYear.replace(/[^a-z0-9]/g, '_')}`;
 
-    const tpData = {
-      subject,
-      className: className || "",
-      semester: semester || "Ganjil",
-      academicYear: academicYear || "2026/2027",
-      tp1Name: tp1Name || "",
-      tp2Name: tp2Name || "",
-      tp3Name: tp3Name || "",
-      tp4Name: tp4Name || "",
-      updatedAt: new Date().toISOString()
+    let existingIdx = curriculumTpDescriptions.findIndex(tp =>
+      String(tp.gradeLevel).trim() === gradeLevel &&
+      tp.subject.trim().toLowerCase() === cleanSubject.toLowerCase() &&
+      tp.semester.trim().toLowerCase() === cleanSem.toLowerCase() &&
+      tp.academicYear.trim().toLowerCase() === cleanYear.toLowerCase()
+    );
+
+    const nowIso = new Date().toISOString();
+    const resolvedFilledBy = filledBy || (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].filledBy : undefined) || "Guru Mata Pelajaran";
+    const resolvedFilledAt = (existingIdx > -1 && curriculumTpDescriptions[existingIdx].filledAt) ? curriculumTpDescriptions[existingIdx].filledAt : nowIso;
+
+    const tpRecord: CurriculumTpDescription = {
+      id: recordId,
+      gradeLevel,
+      subject: cleanSubject,
+      subjectId: subjectId || undefined,
+      semester: cleanSem,
+      academicYear: cleanYear,
+      tp1Name: tp1Name !== undefined ? tp1Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp1Name : ''),
+      tp2Name: tp2Name !== undefined ? tp2Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp2Name : ''),
+      tp3Name: tp3Name !== undefined ? tp3Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp3Name : ''),
+      tp4Name: tp4Name !== undefined ? tp4Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp4Name : ''),
+      isLocked: isLocked !== undefined ? Boolean(isLocked) : true,
+      filledBy: resolvedFilledBy,
+      filledByRole: filledByRole || "Guru Mata Pelajaran",
+      filledAt: resolvedFilledAt,
+      updatedAt: nowIso
     };
 
-    if (cleanClass) {
-      (curriculumConfig as any).tpDescriptions[`${cleanClass}_${cleanSub}_${cleanSem}_${cleanYear}`] = tpData;
+    if (existingIdx > -1) {
+      curriculumTpDescriptions[existingIdx] = tpRecord;
+    } else {
+      curriculumTpDescriptions.push(tpRecord);
     }
-    (curriculumConfig as any).tpDescriptions[cleanSub] = tpData;
 
-    // Perbarui juga data penilaian merdeka di memori dan MySQL jika sudah ada
-    const affected: MerdekaAssessment[] = [];
+    // OTOMATIS HUBUNGKAN KE SELURUH KELAS DALAM 1 TINGKAT:
+    let affectedAssessmentsCount = 0;
+    const affectedAssessments: MerdekaAssessment[] = [];
     merdekaAssessments.forEach(a => {
-      const matchSub = (a.subject || "").trim().toLowerCase() === cleanSub;
-      const matchClass = !className || (a.className || "").trim().toLowerCase() === cleanClass;
-      if (matchSub && matchClass) {
+      const aSub = (a.subject || '').trim().toLowerCase();
+      const sSub = cleanSubject.toLowerCase();
+      if (aSub !== sSub) return;
+
+      const aClass = (a.className || '').trim();
+      const classMatch = aClass.startsWith(gradeLevel) || aClass.includes(gradeLevel);
+      const semMatch = !a.semester || a.semester.toLowerCase() === cleanSem.toLowerCase();
+      const yearMatch = !a.academicYear || a.academicYear.toLowerCase() === cleanYear.toLowerCase();
+
+      if (classMatch && semMatch && yearMatch) {
         if (tp1Name !== undefined) a.tp1Name = tp1Name;
         if (tp2Name !== undefined) a.tp2Name = tp2Name;
         if (tp3Name !== undefined) a.tp3Name = tp3Name;
         if (tp4Name !== undefined) a.tp4Name = tp4Name;
-        a.updatedAt = new Date().toISOString();
-        affected.push(a);
+        a.updatedAt = nowIso;
+        affectedAssessments.push(a);
+        affectedAssessmentsCount++;
       }
     });
 
-    if (affected.length > 0) {
-      directSaveEntitiesBatchToMysql("merdekaAssessments", affected).catch(err => {
-        console.warn("[MySQL] Gagal update TP di assessments:", err?.message || err);
+    if (affectedAssessments.length > 0) {
+      directSaveEntitiesBatchToMysql("merdekaAssessments", affectedAssessments).catch(err => {
+        console.warn("[MySQL] Batch sync assessment TP error:", err);
       });
     }
 
-    saveConfigToMysql("curriculumConfig", curriculumConfig).catch(err => {
-      console.warn("[MySQL] Gagal simpan TP ke curriculumConfig MySQL:", err?.message || err);
+    directSaveEntityToMysql("curriculum_tp", tpRecord).catch(err => {
+      console.warn("[MySQL] Save curriculum_tp error:", err);
     });
 
+    if (!(curriculumConfig as any).tpDescriptions) (curriculumConfig as any).tpDescriptions = {};
+    (curriculumConfig as any).tpDescriptions[`tingkat_${gradeLevel}_${cleanSubject.toLowerCase()}`] = tpRecord;
+    (curriculumConfig as any).tpDescriptions[cleanSubject.toLowerCase()] = tpRecord;
+
+    saveConfigToMysql("curriculumConfig", curriculumConfig).catch(() => {});
     saveState();
+
     res.json({
       success: true,
-      message: `Deskripsi TP untuk mata pelajaran "${subject}" berhasil disimpan ke sistem dan MySQL!`,
-      tpData
+      message: `Judul TP tingkat ${gradeLevel} (${cleanSubject}) berhasil dikunci dan terhubung otomatis ke seluruh kelas tingkat ${gradeLevel}!`,
+      tpRecord,
+      tpData: tpRecord,
+      affectedAssessmentsCount
+    });
+  });
+
+  app.post("/api/curriculum/tp-levels/unlock", async (req, res) => {
+    const { id, gradeLevel, subject, semester, academicYear, className } = req.body;
+    let target = curriculumTpDescriptions.find(tp => tp.id === id);
+
+    let targetGrade = gradeLevel ? String(gradeLevel).trim() : '';
+    if (!targetGrade && className) {
+      const m = String(className).match(/\d+/);
+      if (m) targetGrade = m[0];
+    }
+
+    if (!target && targetGrade && subject) {
+      const s = String(subject).trim().toLowerCase();
+      target = curriculumTpDescriptions.find(tp =>
+        String(tp.gradeLevel).trim() === targetGrade &&
+        tp.subject.trim().toLowerCase() === s
+      );
+    }
+
+    if (!target) {
+      return res.status(404).json({ error: "Data TP tingkat tidak ditemukan untuk dibuka kuncinya." });
+    }
+
+    target.isLocked = false;
+    target.updatedAt = new Date().toISOString();
+
+    saveState();
+    directSaveEntityToMysql("curriculum_tp", target).catch(err => console.warn("[MySQL Unlock TP Error]:", err));
+
+    res.json({
+      success: true,
+      message: `Kunci Judul TP tingkat ${target.gradeLevel} (${target.subject}) telah dibuka. Anda dapat mengedit judul TP sekarang.`,
+      tpRecord: target
     });
   });
 
@@ -6133,7 +6411,7 @@ async function startServer() {
   });
 
   app.post("/api/curriculum/schedules", (req, res) => {
-    const { day, className, subject, teacherId, teacherName, jamKe, startTime, endTime, alokasiWaktu, academicYear, semester, force } = req.body;
+    const { day, className, subject, subjectId, teacherId, teacherName, jamKe, startTime, endTime, alokasiWaktu, academicYear, semester, force } = req.body;
     if (!day || !className || !subject || !teacherName || !jamKe) {
       return res.status(400).json({ error: "Data jadwal tidak lengkap. Mohon isi Hari, Kelas, Mapel, Guru, dan Jam Ke." });
     }
@@ -6143,6 +6421,7 @@ async function startServer() {
       day,
       className: className.trim().toUpperCase(),
       subject,
+      subjectId: subjectId || undefined,
       teacherId: teacherId || '',
       teacherName,
       jamKe,
@@ -6174,13 +6453,14 @@ async function startServer() {
       return res.status(404).json({ error: "Jadwal tidak ditemukan." });
     }
 
-    const { day, className, subject, teacherId, teacherName, jamKe, startTime, endTime, alokasiWaktu, academicYear, semester, force } = req.body;
+    const { day, className, subject, subjectId, teacherId, teacherName, jamKe, startTime, endTime, alokasiWaktu, academicYear, semester, force } = req.body;
     
     const updatedSchedule: ClassSchedule = {
       ...classSchedules[index],
       day: day || classSchedules[index].day,
       className: className ? className.trim().toUpperCase() : classSchedules[index].className,
       subject: subject || classSchedules[index].subject,
+      subjectId: subjectId !== undefined ? (subjectId || undefined) : classSchedules[index].subjectId,
       teacherId: teacherId !== undefined ? teacherId : classSchedules[index].teacherId,
       teacherName: teacherName || classSchedules[index].teacherName,
       jamKe: jamKe || classSchedules[index].jamKe,

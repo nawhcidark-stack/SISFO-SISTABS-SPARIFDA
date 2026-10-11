@@ -1,6 +1,6 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Student, SubjectTeacher, HomeroomTeacher, MerdekaAssessment, SchoolIdentity, ClassSchedule } from '../types';
+import { Student, SubjectTeacher, HomeroomTeacher, MerdekaAssessment, SchoolIdentity, ClassSchedule, CurriculumSubject } from '../types';
 import ScheduleView from './ScheduleView';
 import { 
   BookOpen, 
@@ -31,7 +31,14 @@ import {
   ChevronUp,
   Award,
   Filter,
-  ClipboardCheck
+  ClipboardCheck,
+  Plus,
+  Trash2,
+  Edit2,
+  Layers,
+  Save,
+  Tag,
+  Hash
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -112,8 +119,181 @@ export default function WakaKurikulumPanel({
   schoolIdentity,
   onRefreshData
 }: WakaKurikulumPanelProps) {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'password'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'password'>('monitoring');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
+
+  // Master Data Mata Pelajaran State
+  const [curriculumSubjectsList, setCurriculumSubjectsList] = useState<CurriculumSubject[]>([]);
+  const [isLoadingSubjects, setIsLoadingSubjects] = useState<boolean>(false);
+  const [isSavingSubject, setIsSavingSubject] = useState<boolean>(false);
+  const [subjectFeedback, setSubjectFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [editingSubject, setEditingSubject] = useState<CurriculumSubject | null>(null);
+  const [showSubjectModal, setShowSubjectModal] = useState<boolean>(false);
+  const [subjectForm, setSubjectForm] = useState<{
+    id?: string;
+    code: string;
+    name: string;
+    category: string;
+    kktp: number;
+    tingkat: string;
+    orderNum: number;
+    description: string;
+  }>({
+    code: '',
+    name: '',
+    category: 'Muatan Nasional',
+    kktp: 75,
+    tingkat: 'Semua Tingkat',
+    orderNum: 1,
+    description: ''
+  });
+
+  const fetchCurriculumSubjects = async () => {
+    setIsLoadingSubjects(true);
+    try {
+      const res = await fetch(`/api/curriculum/subjects?_t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && Array.isArray(data.subjects)) {
+          setCurriculumSubjectsList(data.subjects);
+        }
+      }
+    } catch (err) {
+      console.warn("Gagal memuat master data mata pelajaran:", err);
+    } finally {
+      setIsLoadingSubjects(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCurriculumSubjects();
+  }, []);
+
+  const handleOpenAddSubject = () => {
+    setEditingSubject(null);
+    setSubjectForm({
+      code: '',
+      name: '',
+      category: 'Muatan Nasional',
+      kktp: 75,
+      tingkat: 'Semua Tingkat',
+      orderNum: (curriculumSubjectsList.length + 1),
+      description: ''
+    });
+    setSubjectFeedback(null);
+    setShowSubjectModal(true);
+  };
+
+  const handleOpenEditSubject = (subj: CurriculumSubject) => {
+    setEditingSubject(subj);
+    setSubjectForm({
+      id: subj.id,
+      code: subj.code,
+      name: subj.name,
+      category: subj.category || 'Muatan Nasional',
+      kktp: subj.kktp ?? 75,
+      tingkat: subj.tingkat || 'Semua Tingkat',
+      orderNum: subj.orderNum ?? 1,
+      description: subj.description || ''
+    });
+    setSubjectFeedback(null);
+    setShowSubjectModal(true);
+  };
+
+  const handleSaveSubject = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!subjectForm.code.trim() || !subjectForm.name.trim()) {
+      setSubjectFeedback({ type: 'error', text: 'Kode dan Nama Mata Pelajaran wajib diisi.' });
+      return;
+    }
+    setIsSavingSubject(true);
+    setSubjectFeedback(null);
+    try {
+      const isEdit = !!editingSubject?.id;
+      const url = isEdit ? `/api/curriculum/subjects/${editingSubject.id}` : '/api/curriculum/subjects';
+      const method = isEdit ? 'PUT' : 'POST';
+
+      const res = await fetch(url, {
+        method,
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          id: subjectForm.id || `mapel-${subjectForm.code.trim().toLowerCase().replace(/[^a-z0-9]/g, '')}`,
+          code: subjectForm.code.trim().toUpperCase(),
+          name: subjectForm.name.trim(),
+          category: subjectForm.category,
+          kktp: Number(subjectForm.kktp) || 75,
+          tingkat: subjectForm.tingkat,
+          orderNum: Number(subjectForm.orderNum) || 1,
+          description: subjectForm.description.trim()
+        })
+      });
+
+      const resData = await res.json();
+      if (res.ok) {
+        if (Array.isArray(resData.subjects)) {
+          setCurriculumSubjectsList(resData.subjects);
+        } else {
+          fetchCurriculumSubjects();
+        }
+        setShowSubjectModal(false);
+        setSubjectFeedback({
+          type: 'success',
+          text: resData.message || `Mata pelajaran ${subjectForm.name} berhasil disimpan ke master data.`
+        });
+        if (onRefreshData) onRefreshData();
+      } else {
+        setSubjectFeedback({ type: 'error', text: resData.error || 'Gagal menyimpan mata pelajaran.' });
+      }
+    } catch (err: any) {
+      setSubjectFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem saat menyimpan.' });
+    } finally {
+      setIsSavingSubject(false);
+    }
+  };
+
+  const handleDeleteSubject = async (subj: CurriculumSubject) => {
+    if (!confirm(`Hapus mata pelajaran "${subj.name}" (${subj.code}) dari master data?\n\nPerhatian: Guru dan jadwal yang terhubung akan tetap ada namun disarankan mengalihkan mapelnya.`)) {
+      return;
+    }
+    try {
+      const res = await fetch(`/api/curriculum/subjects/${subj.id}`, { method: 'DELETE' });
+      const resData = await res.json();
+      if (res.ok) {
+        if (Array.isArray(resData.subjects)) {
+          setCurriculumSubjectsList(resData.subjects);
+        } else {
+          fetchCurriculumSubjects();
+        }
+        setSubjectFeedback({ type: 'success', text: `Mata pelajaran "${subj.name}" berhasil dihapus.` });
+        if (onRefreshData) onRefreshData();
+      } else {
+        alert(resData.error || 'Gagal menghapus mata pelajaran.');
+      }
+    } catch (err: any) {
+      alert('Kesalahan saat menghapus: ' + err.message);
+    }
+  };
+
+  const handleResetDefaultSubjects = async () => {
+    if (!confirm('Kembalikan Master Data Mata Pelajaran ke standar Kurikulum Merdeka (13 Mapel Nasional & Lokal)?')) {
+      return;
+    }
+    try {
+      const res = await fetch('/api/curriculum/subjects/reset-defaults', { method: 'POST' });
+      const resData = await res.json();
+      if (res.ok) {
+        if (Array.isArray(resData.subjects)) {
+          setCurriculumSubjectsList(resData.subjects);
+        } else {
+          fetchCurriculumSubjects();
+        }
+        setSubjectFeedback({ type: 'success', text: 'Master data mata pelajaran berhasil direset ke standar Kurikulum Merdeka!' });
+        if (onRefreshData) onRefreshData();
+      }
+    } catch (err: any) {
+      alert('Gagal mereset: ' + err.message);
+    }
+  };
 
   // Detail Nilai Guru & Wali Kelas States
   const [detailRoleFilter, setDetailRoleFilter] = useState<'all' | 'subject_teacher' | 'homeroom'>('all');
@@ -257,6 +437,32 @@ export default function WakaKurikulumPanel({
       return !isMut && !isLulus;
     });
   }, [students]);
+
+  // Lookup map to get NIS instead of internal Student ID
+  const studentNisMap = useMemo(() => {
+    const map = new Map<string, string>();
+    students.forEach(s => {
+      const actualNis = (s.nis || '').trim();
+      if (actualNis) {
+        if (s.id) map.set(s.id, actualNis);
+        map.set(actualNis, actualNis);
+        if (s.name) map.set(s.name.toLowerCase().trim(), actualNis);
+      }
+    });
+    return map;
+  }, [students]);
+
+  const getStudentNis = (studentId?: string, studentName?: string): string => {
+    if (studentId && studentNisMap.has(studentId)) {
+      return studentNisMap.get(studentId)!;
+    }
+    if (studentName && studentNisMap.has(studentName.toLowerCase().trim())) {
+      return studentNisMap.get(studentName.toLowerCase().trim())!;
+    }
+    const matched = students.find(s => s.id === studentId || s.nis === studentId || (studentName && s.name.toLowerCase().trim() === studentName.toLowerCase().trim()));
+    if (matched && matched.nis) return matched.nis;
+    return studentId || '-';
+  };
 
   // Available Classes
   const availableClasses = useMemo(() => {
@@ -1045,6 +1251,25 @@ export default function WakaKurikulumPanel({
         </button>
 
         <button
+          onClick={() => setActiveTab('master_mapel')}
+          className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
+            activeTab === 'master_mapel'
+              ? 'border-indigo-600 text-indigo-600'
+              : 'border-transparent text-slate-500 hover:text-slate-800'
+          }`}
+        >
+          <Layers size={15} />
+          <span>Master Data Mata Pelajaran</span>
+          {curriculumSubjectsList.length > 0 && (
+            <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
+              activeTab === 'master_mapel' ? 'bg-indigo-100 text-indigo-700' : 'bg-slate-100 text-slate-600'
+            }`}>
+              {curriculumSubjectsList.length}
+            </span>
+          )}
+        </button>
+
+        <button
           onClick={() => setActiveTab('import_pts_pas')}
           className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
             activeTab === 'import_pts_pas'
@@ -1103,6 +1328,338 @@ export default function WakaKurikulumPanel({
           subjectTeachers={subjectTeachers}
           homerooms={homerooms}
         />
+      )}
+
+      {/* TAB: MASTER DATA MATA PELAJARAN (KURIKULUM MERDEKA) */}
+      {activeTab === 'master_mapel' && (
+        <div className="space-y-6 animate-fade-in text-left">
+          {/* Header Action Banner */}
+          <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-900 rounded-3xl p-6 text-white border border-indigo-700/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+            <div className="space-y-1">
+              <div className="flex items-center gap-2">
+                <span className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-indigo-300">
+                  <Layers size={18} />
+                </span>
+                <span className="text-xs font-black uppercase tracking-wider text-indigo-300">Kurikulum Merdeka</span>
+              </div>
+              <h2 className="text-xl font-black text-white">Master Data Mata Pelajaran (Mapel)</h2>
+              <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
+                Tiap mata pelajaran memiliki <strong>ID & Kode Unik</strong> yang terhubung langsung ke penentuan mata pelajaran guru pada tab <em>Guru Mapel</em>, menu <em>Atur Jadwal Mengajar</em>, dan penguncian <em>Tujuan Pembelajaran (TP)</em> pada penilaian guru &amp; wali kelas.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                type="button"
+                onClick={handleResetDefaultSubjects}
+                className="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-xs"
+                title="Reset kembali ke standar 13 mapel Kurikulum Merdeka"
+              >
+                <RefreshCw size={13} />
+                <span>Reset Standar Kurikulum</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleOpenAddSubject}
+                className="px-4 py-2 bg-indigo-600 hover:bg-indigo-500 text-white rounded-xl font-extrabold text-xs flex items-center gap-1.5 transition-all cursor-pointer shadow-sm shadow-indigo-600/30"
+              >
+                <Plus size={15} />
+                <span>Tambah Mata Pelajaran</span>
+              </button>
+            </div>
+          </div>
+
+          {/* Feedback message */}
+          {subjectFeedback && (
+            <div className={`p-4 rounded-2xl border text-xs font-bold flex items-center justify-between gap-3 animate-fade-in ${
+              subjectFeedback.type === 'success' 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-900' 
+                : 'bg-rose-50 border-rose-200 text-rose-900'
+            }`}>
+              <div className="flex items-center gap-2">
+                {subjectFeedback.type === 'success' ? <CheckCircle2 size={16} className="text-emerald-600 shrink-0" /> : <AlertCircle size={16} className="text-rose-600 shrink-0" />}
+                <span>{subjectFeedback.text}</span>
+              </div>
+              <button onClick={() => setSubjectFeedback(null)} className="p-1 hover:opacity-70 cursor-pointer">
+                <X size={14} />
+              </button>
+            </div>
+          )}
+
+          {/* Subjects Table Card */}
+          <div className="bg-white rounded-3xl border border-slate-200 shadow-sm overflow-hidden">
+            <div className="p-5 border-b border-slate-100 flex items-center justify-between gap-3 flex-wrap">
+              <div>
+                <h3 className="font-extrabold text-sm text-slate-900 flex items-center gap-2">
+                  <span>Daftar Mata Pelajaran Terdaftar</span>
+                  <span className="px-2 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 text-xs font-black">
+                    {curriculumSubjectsList.length} Mapel
+                  </span>
+                </h3>
+                <p className="text-[11px] text-slate-500 mt-0.5">
+                  ID Mapel otomatis digunakan untuk sinkronisasi nilai rapor, jadwal KBM, dan pengisian TP serumpun.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={fetchCurriculumSubjects}
+                disabled={isLoadingSubjects}
+                className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs flex items-center gap-1.5 transition-all cursor-pointer"
+              >
+                <RefreshCw size={13} className={isLoadingSubjects ? 'animate-spin' : ''} />
+                <span>Segarkan Data</span>
+              </button>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left text-xs border-collapse">
+                <thead>
+                  <tr className="bg-slate-900 text-white font-black uppercase text-[10px] tracking-wider">
+                    <th className="py-3 px-3 w-12 text-center">No</th>
+                    <th className="py-3 px-3">ID Mapel (Sistem)</th>
+                    <th className="py-3 px-3">Kode</th>
+                    <th className="py-3 px-3">Nama Mata Pelajaran</th>
+                    <th className="py-3 px-3">Kategori Muatan</th>
+                    <th className="py-3 px-3 text-center">KKTP / KKM</th>
+                    <th className="py-3 px-3">Tingkat Kelas</th>
+                    <th className="py-3 px-3 text-center w-28">Aksi</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-semibold text-slate-700">
+                  {isLoadingSubjects && curriculumSubjectsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-10 text-center text-slate-400 font-bold">
+                        <RefreshCw size={20} className="animate-spin mx-auto mb-2 text-indigo-600" />
+                        <span>Memuat data mata pelajaran...</span>
+                      </td>
+                    </tr>
+                  ) : curriculumSubjectsList.length === 0 ? (
+                    <tr>
+                      <td colSpan={8} className="py-10 text-center text-slate-400 font-bold">
+                        Belum ada data mata pelajaran. Klik tombol "Reset Standar Kurikulum" di atas untuk memuat 13 mapel resmi.
+                      </td>
+                    </tr>
+                  ) : (
+                    curriculumSubjectsList.map((subj, idx) => (
+                      <tr key={subj.id || idx} className="hover:bg-indigo-50/20 transition-colors">
+                        <td className="py-3 px-3 text-center font-bold text-slate-500">{subj.orderNum ?? (idx + 1)}</td>
+                        <td className="py-3 px-3">
+                          <span className="font-mono text-[11px] font-bold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded border border-indigo-200/60">
+                            {subj.id}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 font-mono font-black text-slate-900">
+                          <span className="px-1.5 py-0.5 bg-slate-100 border border-slate-200 rounded text-[11px]">
+                            {subj.code}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <div className="flex flex-col">
+                            <span className="font-extrabold text-slate-900 text-xs">{subj.name}</span>
+                            {subj.description && (
+                              <span className="text-[10px] text-slate-400 line-clamp-1">{subj.description}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${
+                            subj.category === 'Muatan Lokal'
+                              ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
+                              : subj.category === 'Peminatan'
+                              ? 'bg-purple-50 text-purple-800 border-purple-200'
+                              : 'bg-blue-50 text-blue-800 border-blue-200'
+                          }`}>
+                            {subj.category || 'Muatan Nasional'}
+                          </span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <span className="font-black text-slate-900 text-xs">{subj.kktp ?? 75}</span>
+                        </td>
+                        <td className="py-3 px-3">
+                          <span className="text-slate-600 text-xs font-semibold">{subj.tingkat || 'Semua Tingkat'}</span>
+                        </td>
+                        <td className="py-3 px-3 text-center">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <button
+                              type="button"
+                              onClick={() => handleOpenEditSubject(subj)}
+                              className="p-1.5 bg-slate-100 hover:bg-indigo-50 hover:text-indigo-600 text-slate-600 rounded-lg transition-colors cursor-pointer border border-slate-200"
+                              title="Edit Mapel"
+                            >
+                              <Edit2 size={13} />
+                            </button>
+                            <button
+                              type="button"
+                              onClick={() => handleDeleteSubject(subj)}
+                              className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-600 rounded-lg transition-colors cursor-pointer border border-rose-200"
+                              title="Hapus Mapel"
+                            >
+                              <Trash2 size={13} />
+                            </button>
+                          </div>
+                        </td>
+                      </tr>
+                    ))
+                  )}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Modal Form Tambah/Ubah Mata Pelajaran */}
+          {showSubjectModal && (
+            <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+              <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl border border-slate-200 text-left animate-scale-in space-y-4">
+                <div className="flex items-center justify-between pb-3 border-b border-slate-100">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-indigo-50 text-indigo-600 rounded-xl">
+                      <Layers size={18} />
+                    </span>
+                    <div>
+                      <h4 className="font-extrabold text-sm text-slate-900">
+                        {editingSubject ? 'Ubah Data Mata Pelajaran' : 'Tambah Mata Pelajaran Baru'}
+                      </h4>
+                      <p className="text-[10px] text-slate-400">Master Data Kurikulum Merdeka SMP Ma'arif NU Pandaan</p>
+                    </div>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => setShowSubjectModal(false)}
+                    className="p-1.5 text-slate-400 hover:text-slate-600 rounded-xl hover:bg-slate-100 cursor-pointer"
+                  >
+                    <X size={18} />
+                  </button>
+                </div>
+
+                <form onSubmit={handleSaveSubject} className="space-y-3.5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                        Kode Mapel *
+                      </label>
+                      <input
+                        type="text"
+                        required
+                        placeholder="Contoh: MAT, IPA, PAI"
+                        value={subjectForm.code}
+                        onChange={(e) => setSubjectForm(prev => ({ ...prev, code: e.target.value.toUpperCase() }))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl font-mono font-bold text-xs text-slate-800 uppercase focus:outline-none focus:border-indigo-600"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                        Nomor Urut Rapor
+                      </label>
+                      <input
+                        type="number"
+                        min={1}
+                        max={99}
+                        value={subjectForm.orderNum}
+                        onChange={(e) => setSubjectForm(prev => ({ ...prev, orderNum: Number(e.target.value) || 1 }))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:border-indigo-600"
+                      />
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                      Nama Lengkap Mata Pelajaran *
+                    </label>
+                    <input
+                      type="text"
+                      required
+                      placeholder="Contoh: Matematika, Bahasa Indonesia"
+                      value={subjectForm.name}
+                      onChange={(e) => setSubjectForm(prev => ({ ...prev, name: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:border-indigo-600"
+                    />
+                  </div>
+
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                        Kategori Muatan
+                      </label>
+                      <select
+                        value={subjectForm.category}
+                        onChange={(e) => setSubjectForm(prev => ({ ...prev, category: e.target.value }))}
+                        className="w-full px-2.5 py-2 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                      >
+                        <option value="Muatan Nasional">Muatan Nasional</option>
+                        <option value="Muatan Lokal">Muatan Lokal</option>
+                        <option value="Peminatan">Peminatan</option>
+                      </select>
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                        KKTP Standar
+                      </label>
+                      <input
+                        type="number"
+                        min={50}
+                        max={100}
+                        value={subjectForm.kktp}
+                        onChange={(e) => setSubjectForm(prev => ({ ...prev, kktp: Number(e.target.value) || 75 }))}
+                        className="w-full px-3 py-2 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:border-indigo-600"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                        Tingkat
+                      </label>
+                      <select
+                        value={subjectForm.tingkat}
+                        onChange={(e) => setSubjectForm(prev => ({ ...prev, tingkat: e.target.value }))}
+                        className="w-full px-2.5 py-2 border border-slate-200 rounded-xl font-bold text-xs text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
+                      >
+                        <option value="Semua Tingkat">Semua Tingkat (7, 8, 9)</option>
+                        <option value="7">Tingkat 7</option>
+                        <option value="8">Tingkat 8</option>
+                        <option value="9">Tingkat 9</option>
+                      </select>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-500 mb-1">
+                      Deskripsi / Catatan Tambahan (Opsional)
+                    </label>
+                    <textarea
+                      rows={2}
+                      placeholder="Catatan ruang lingkup materi, referensi buku ajar, dll."
+                      value={subjectForm.description}
+                      onChange={(e) => setSubjectForm(prev => ({ ...prev, description: e.target.value }))}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs text-slate-800 focus:outline-none focus:border-indigo-600"
+                    />
+                  </div>
+
+                  <div className="pt-3 border-t border-slate-100 flex items-center justify-end gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setShowSubjectModal(false)}
+                      className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl font-bold text-xs cursor-pointer"
+                    >
+                      Batal
+                    </button>
+                    <button
+                      type="submit"
+                      disabled={isSavingSubject}
+                      className="px-5 py-2 bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white rounded-xl font-extrabold text-xs flex items-center gap-1.5 cursor-pointer shadow-sm shadow-indigo-600/30"
+                    >
+                      {isSavingSubject ? <RefreshCw size={13} className="animate-spin" /> : <Save size={13} />}
+                      <span>{editingSubject ? 'Simpan Perubahan' : 'Tambahkan Mapel'}</span>
+                    </button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          )}
+        </div>
       )}
 
       {/* TAB 1: MONITORING PROGRESS */}
@@ -1676,7 +2233,7 @@ export default function WakaKurikulumPanel({
                       const finalVal = a.nilaiAkhirMapel ?? a.nilaiRapor ?? 0;
                       return (
                         <tr key={a.id} className="hover:bg-slate-50">
-                          <td className="py-2.5 px-3 font-mono font-bold text-slate-900">{a.studentId}</td>
+                          <td className="py-2.5 px-3 font-mono font-bold text-slate-900">{getStudentNis(a.studentId, a.studentName)}</td>
                           <td className="py-2.5 px-3 font-bold text-slate-900">{a.studentName}</td>
                           <td className="py-2.5 px-3 font-bold text-indigo-600">{a.className}</td>
                           <td className="py-2.5 px-3">{a.subject}</td>
@@ -1915,7 +2472,7 @@ export default function WakaKurikulumPanel({
                         <tr className={`hover:bg-slate-50 transition-colors ${isExpanded ? 'bg-indigo-50/30' : ''}`}>
                           <td className="py-3 px-3">
                             <div className="flex flex-col">
-                              <span className="font-mono font-bold text-slate-500 text-[10px]">#{a.studentId}</span>
+                              <span className="font-mono font-bold text-slate-500 text-[10px]">NIS: {getStudentNis(a.studentId, a.studentName)}</span>
                               <span className="font-extrabold text-slate-900 text-xs">{a.studentName}</span>
                             </div>
                           </td>

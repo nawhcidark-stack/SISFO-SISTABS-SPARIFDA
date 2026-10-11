@@ -2333,9 +2333,22 @@ export default function AdminPanel({
   const [formName, setFormName] = useState("");
   const [formClassName, setFormClassName] = useState("");
   const [formSubject, setFormSubject] = useState("");
+  const [formSubjectId, setFormSubjectId] = useState("");
+  const [adminCurriculumSubjects, setAdminCurriculumSubjects] = useState<CurriculumSubject[]>([]);
   const [formUsername, setFormUsername] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formSkUrl, setFormSkUrl] = useState("");
+
+  useEffect(() => {
+    fetch('/api/curriculum/subjects')
+      .then(r => r.ok ? r.json() : null)
+      .then(data => {
+        if (data && Array.isArray(data.subjects)) {
+          setAdminCurriculumSubjects(data.subjects);
+        }
+      })
+      .catch(() => {});
+  }, []);
   const [isActionLoading, setIsActionLoading] = useState(false);
   const [mgmtError, setMgmtError] = useState<string | null>(null);
   const [mgmtSuccess, setMgmtSuccess] = useState<string | null>(null);
@@ -2346,6 +2359,7 @@ export default function AdminPanel({
     setFormName("");
     setFormClassName("");
     setFormSubject("");
+    setFormSubjectId("");
     setFormUsername("");
     setFormPassword("");
     setFormSkUrl("");
@@ -13623,6 +13637,9 @@ export default function AdminPanel({
                     }
 
                     try {
+                      const matchedSubj = adminCurriculumSubjects.find(s => s.id === formSubjectId || s.name.toLowerCase() === formSubject.toLowerCase());
+                      const finalSubjectId = formSubjectId || matchedSubj?.id;
+
                       if (editingSubjectTeacherId) {
                         if (onUpdateSubjectTeacher) {
                           const res = await onUpdateSubjectTeacher(
@@ -13631,6 +13648,7 @@ export default function AdminPanel({
                               username: formUsername,
                               name: formName,
                               subject: formSubject,
+                              subjectId: finalSubjectId,
                               password: formPassword || undefined,
                               skUrl: formSkUrl,
                             },
@@ -13651,6 +13669,7 @@ export default function AdminPanel({
                             username: formUsername,
                             name: formName,
                             subject: formSubject,
+                            subjectId: finalSubjectId,
                             password: formPassword || "sandi123",
                             skUrl: formSkUrl,
                           });
@@ -13690,17 +13709,65 @@ export default function AdminPanel({
                   </div>
 
                   <div className="flex flex-col gap-1.5">
-                    <label className="font-bold text-slate-650">
-                      Kategori Mata Pelajaran (Mapel)
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder="Contoh: Matematika, IPA, PJOK, dll."
-                      value={formSubject}
-                      onChange={(e) => setFormSubject(e.target.value)}
-                      className="px-3 py-2 border border-slate-200 rounded-lg font-semibold text-slate-850 bg-white focus:outline-none focus:border-slate-800"
-                    />
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-slate-650">
+                        Mata Pelajaran (Mapel)
+                      </label>
+                      {formSubjectId && (
+                        <span className="font-mono text-[9px] font-bold text-teal-700 bg-teal-50 border border-teal-200 px-1.5 py-0.5 rounded">
+                          ID: {formSubjectId}
+                        </span>
+                      )}
+                    </div>
+
+                    {adminCurriculumSubjects.length > 0 ? (
+                      <div className="flex flex-col gap-1.5">
+                        <select
+                          value={formSubjectId || (adminCurriculumSubjects.find(s => s.name.toLowerCase() === formSubject.toLowerCase())?.id || '')}
+                          onChange={(e) => {
+                            const sid = e.target.value;
+                            setFormSubjectId(sid);
+                            const matched = adminCurriculumSubjects.find(s => s.id === sid);
+                            if (matched) {
+                              setFormSubject(matched.name);
+                            }
+                          }}
+                          className="px-3 py-2 border border-slate-200 rounded-lg font-semibold text-slate-850 bg-white focus:outline-none focus:border-slate-800 cursor-pointer"
+                        >
+                          <option value="">-- Pilih dari Master Data Mapel --</option>
+                          {adminCurriculumSubjects.map(s => (
+                            <option key={s.id} value={s.id}>
+                              [{s.code}] {s.name} ({s.category || 'Nasional'})
+                            </option>
+                          ))}
+                        </select>
+
+                        <input
+                          type="text"
+                          required
+                          placeholder="Atau sesuaikan nama mapel manual..."
+                          value={formSubject}
+                          onChange={(e) => {
+                            setFormSubject(e.target.value);
+                            const found = adminCurriculumSubjects.find(s => s.name.toLowerCase() === e.target.value.toLowerCase());
+                            setFormSubjectId(found ? found.id : '');
+                          }}
+                          className="px-3 py-1.5 border border-slate-200 rounded-lg text-xs font-semibold text-slate-850 bg-slate-50 focus:bg-white focus:outline-none focus:border-slate-800"
+                        />
+                      </div>
+                    ) : (
+                      <input
+                        type="text"
+                        required
+                        placeholder="Contoh: Matematika, IPA, PJOK, dll."
+                        value={formSubject}
+                        onChange={(e) => setFormSubject(e.target.value)}
+                        className="px-3 py-2 border border-slate-200 rounded-lg font-semibold text-slate-850 bg-white focus:outline-none focus:border-slate-800"
+                      />
+                    )}
+                    <span className="text-[10px] text-slate-400">
+                      Terhubung dengan Master Data Mapel Waka Kurikulum untuk penguncian TP & jadwal mengajar.
+                    </span>
                   </div>
 
                   <div className="flex flex-col gap-1.5">
@@ -13880,6 +13947,8 @@ export default function AdminPanel({
                                       setEditingSubjectTeacherId(st.id);
                                       setFormName(st.name);
                                       setFormSubject(st.subject);
+                                      const matchedSub = adminCurriculumSubjects.find(s => s.id === st.subjectId || s.name.toLowerCase() === st.subject.toLowerCase());
+                                      setFormSubjectId(st.subjectId || matchedSub?.id || "");
                                       setFormUsername(st.username);
                                       setFormPassword("");
                                       setFormSkUrl(st.skUrl || "");

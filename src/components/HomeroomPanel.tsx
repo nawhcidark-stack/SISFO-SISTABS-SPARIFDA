@@ -793,6 +793,122 @@ export default function HomeroomPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
   const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
   const [tp4InputName, setTp4InputName] = useState<string>('Evaluasi & pengerjaan proyek');
+  const [isTpLocked, setIsTpLocked] = useState<boolean>(false);
+  const [tpFilledBy, setTpFilledBy] = useState<string>('');
+  const [tpFilledAt, setTpFilledAt] = useState<string>('');
+  const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
+
+  // Sync TP from curriculum level for the selected subject and grade
+  const fetchHomeroomTpDescriptions = async () => {
+    try {
+      const res = await fetch('/api/tp-descriptions');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.descriptions) {
+          const targetClass = selectedGradingClass || currentTeacher?.className || '';
+          const m = String(targetClass).match(/\d+/);
+          const gradeLevel = m ? m[0] : '7';
+          const subKey = (selectedSubjectForGrading || '').trim().toLowerCase();
+          const levelKey = `tingkat_${gradeLevel}_${subKey}`;
+          const classKey = (targetClass || '').trim().toLowerCase();
+          const semKey = (kokurikulerSemester || 'ganjil').trim().toLowerCase();
+          const yearKey = (kokurikulerYear || '2026/2027').trim().toLowerCase();
+          const fullKey = `${classKey}_${subKey}_${semKey}_${yearKey}`;
+
+          const saved = data.descriptions[levelKey] || data.descriptions[fullKey] || data.descriptions[subKey];
+          if (saved && (saved.tp1Name || saved.tp2Name || saved.tp3Name || saved.tp4Name)) {
+            setTp1InputName(saved.tp1Name || '');
+            setTp2InputName(saved.tp2Name || '');
+            setTp3InputName(saved.tp3Name || '');
+            setTp4InputName(saved.tp4Name || '');
+            setIsTpLocked(saved.isLocked ?? true);
+            setTpFilledBy(saved.filledBy || '');
+            setTpFilledAt(saved.filledAt || '');
+          }
+        }
+      }
+    } catch (e) {
+      console.warn("Gagal memuat deskripsi TP di wali kelas:", e);
+    }
+  };
+
+  useEffect(() => {
+    fetchHomeroomTpDescriptions();
+  }, [selectedSubjectForGrading, selectedGradingClass, currentTeacher?.className, kokurikulerSemester, kokurikulerYear]);
+
+  const handleSaveHomeroomTp = async () => {
+    if (!selectedSubjectForGrading) return;
+    setIsSavingTp(true);
+    const targetClass = selectedGradingClass || currentTeacher?.className || '';
+    const m = String(targetClass).match(/\d+/);
+    const gradeLevel = m ? m[0] : '7';
+    try {
+      const res = await fetch('/api/tp-descriptions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          subject: selectedSubjectForGrading,
+          className: targetClass,
+          gradeLevel,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear,
+          tp1Name: tp1InputName,
+          tp2Name: tp2InputName,
+          tp3Name: tp3InputName,
+          tp4Name: tp4InputName,
+          isLocked: true,
+          filledBy: currentTeacher?.name || 'Wali Kelas',
+          filledByRole: `Wali Kelas ${targetClass}`
+        })
+      });
+      if (res.ok) {
+        setIsTpLocked(true);
+        setTpFilledBy(currentTeacher?.name || 'Wali Kelas');
+        setTpFilledAt(new Date().toISOString());
+        setNotifMsg({
+          type: 'success',
+          text: `🔒 Judul TP mapel ${selectedSubjectForGrading} berhasil disimpan dan dikunci untuk tingkat ${gradeLevel}!`
+        });
+        fetchHomeroomTpDescriptions();
+      }
+    } catch (err: any) {
+      alert('Gagal menyimpan TP: ' + err.message);
+    } finally {
+      setIsSavingTp(false);
+    }
+  };
+
+  const handleUnlockHomeroomTp = async () => {
+    if (!confirm(`Buka kunci judul TP untuk Mapel ${selectedSubjectForGrading}?\n\nSetelah dibuka, Anda dapat menyesuaikan judul TP ini.`)) {
+      return;
+    }
+    const targetClass = selectedGradingClass || currentTeacher?.className || '';
+    const m = String(targetClass).match(/\d+/);
+    const gradeLevel = m ? m[0] : '7';
+    try {
+      const res = await fetch('/api/curriculum/tp-levels/unlock', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          gradeLevel,
+          subject: selectedSubjectForGrading,
+          className: targetClass,
+          semester: kokurikulerSemester,
+          academicYear: kokurikulerYear
+        })
+      });
+      if (res.ok) {
+        setIsTpLocked(false);
+        setNotifMsg({
+          type: 'success',
+          text: `🔓 Kunci Judul TP berhasil dibuka! Silakan ubah judul lalu klik "Kunci & Simpan TP".`
+        });
+        fetchHomeroomTpDescriptions();
+      }
+    } catch (err: any) {
+      alert('Gagal membuka kunci TP: ' + err.message);
+    }
+  };
 
   const handleAutoFillAllTpsFromJournals = () => {
     const norm = (s?: string) => (s || '').toLowerCase().trim();
@@ -7529,16 +7645,44 @@ Wassalamualaikum Wr. Wb.
                     </p>
                   </div>
 
-                  {/* Quick Auto-fill TP Button */}
-                  <button
-                    type="button"
-                    onClick={handleAutoFillAllTpsFromJournals}
-                    className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 self-start sm:self-auto shadow-xs whitespace-nowrap"
-                    title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
-                  >
-                    <Sparkles size={13} className="text-amber-300" />
-                    <span>Link Otomatis Semua TP dari Jurnal</span>
-                  </button>
+                  <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
+                    {/* Status Kunci & Nama Guru Pengisi */}
+                    {isTpLocked ? (
+                      <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-amber-800 text-[10.5px] font-bold">
+                        <Lock size={12} className="text-amber-600 shrink-0" />
+                        <span>Terkunci oleh <strong>{tpFilledBy || 'Guru/Wali Kelas'}</strong></span>
+                        <button
+                          type="button"
+                          onClick={handleUnlockHomeroomTp}
+                          className="ml-1 px-2 py-0.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-extrabold text-[10px] cursor-pointer shadow-2xs transition-all"
+                        >
+                          Buka Kunci / Edit TP
+                        </button>
+                      </div>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={handleSaveHomeroomTp}
+                        disabled={isSavingTp}
+                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                        title={`Simpan & Kunci Judul TP untuk seluruh rombel tingkat ini`}
+                      >
+                        {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                        <span>Kunci & Simpan TP ({selectedSubjectForGrading})</span>
+                      </button>
+                    )}
+
+                    {/* Quick Auto-fill TP Button */}
+                    <button
+                      type="button"
+                      onClick={handleAutoFillAllTpsFromJournals}
+                      className="px-3 py-1.5 bg-purple-600 hover:bg-purple-700 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                      title="Ambil otomatis 4 TP dari jurnal pembelajaran terawal untuk mapel dan kelas ini"
+                    >
+                      <Sparkles size={13} className="text-amber-300" />
+                      <span>Link Otomatis Semua TP dari Jurnal</span>
+                    </button>
+                  </div>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
@@ -7553,6 +7697,10 @@ Wassalamualaikum Wr. Wb.
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       required={true}
                       placeholder="Uraian TP-1..."
+                      isLocked={isTpLocked}
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
 
@@ -7566,6 +7714,10 @@ Wassalamualaikum Wr. Wb.
                       selectedSubject={selectedSubjectForGrading}
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       placeholder="Uraian TP-2 (opsional)..."
+                      isLocked={isTpLocked}
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
 
@@ -7579,6 +7731,10 @@ Wassalamualaikum Wr. Wb.
                       selectedSubject={selectedSubjectForGrading}
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       placeholder="Uraian TP-3 (opsional)..."
+                      isLocked={isTpLocked}
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
 
@@ -7592,6 +7748,10 @@ Wassalamualaikum Wr. Wb.
                       selectedSubject={selectedSubjectForGrading}
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       placeholder="Uraian TP-4 (opsional)..."
+                      isLocked={isTpLocked}
+                      filledBy={tpFilledBy}
+                      filledAt={tpFilledAt}
+                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
                 </div>

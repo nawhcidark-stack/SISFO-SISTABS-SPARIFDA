@@ -3235,8 +3235,9 @@ export default function AdminSpmbManagement({
                                 const docKk = isRealDoc(cand.documents?.kkPhoto || cand.fullFormData?.documents?.kkPhoto);
                                 const docAkta = isRealDoc(cand.documents?.aktaPhoto || cand.fullFormData?.documents?.aktaPhoto);
                                 const docKtpAyah = isRealDoc(cand.documents?.ktpAyahPhoto || cand.documents?.ktpPhoto || cand.documents?.ktp || cand.fullFormData?.documents?.ktpAyahPhoto || cand.fullFormData?.documents?.ktpPhoto);
+                                const docKtpIbu = isRealDoc(cand.documents?.ktpIbuPhoto || cand.fullFormData?.documents?.ktpIbuPhoto);
                                 const allDocs = Boolean(cand.documentsUploaded) || (docFoto && docKk && docAkta && docKtpAyah && docKtpIbu);
-                                const hasAnyDoc = Boolean(cand.documentsUploaded) || Boolean(docFoto || docKk || docAkta || docKtpAyah || docKtpIbu);
+                                const hasDocs = Boolean(cand.documentsUploaded) || Boolean(docFoto || docKk || docAkta || docKtpAyah || docKtpIbu);
 
                                 return (
                                   <div className="space-y-0.5">

@@ -2277,40 +2277,15 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
 
     directSaveEntityToMysql("spmb_candidates", cand).catch(() => {});
 
-    // Pastikan terdaftar juga di tabel students sebagai Siswa Baru
-    let std = students.find(s => s.nisn === rawNisn || s.nis === rawNisn);
-    if (!std) {
-      std = {
-        id: `std-spmb-${rawNisn}`,
-        nis: rawNisn,
-        nisn: rawNisn,
-        name: "KRISHNA RASYID NIKAZ",
-        nickname: "KRISHNA",
-        class: "7-A",
-        gender: "L",
-        status: "Aktif",
-        phone: cand.phone || "081234567890",
-        email: `krishna${rawNisn}@smpmaarifnu.sch.id`,
-        password: rawNisn,
-        savingsBalance: 0,
-        address: cand.address || "Jl. Pandaan No. 12, Pasuruan",
-        birthPlace: cand.birthPlace || "Pasuruan",
-        birthDate: cand.birthDate || "2014-07-10",
-        nik: cand.nik || "3514121007140001",
-        kkNumber: cand.kkNumber || "3514120101140002",
-        parentName: "Wali Murid",
-        fatherName: "Wali Murid",
-        motherName: "Wali Murid",
-        photoUrl: `${folderUrl}/pasPhoto.svg`,
-        googleDriveLink: folderUrl
-      };
-      students.push(std);
-      directSaveEntityToMysql("students", std).catch(() => {});
-    } else {
-      std.name = "KRISHNA RASYID NIKAZ";
-      std.class = "7-A";
-      std.status = "Aktif";
-      std.photoUrl = `${folderUrl}/pasPhoto.svg`;
+    // Pastikan KRISHNA hanya ada di data SPMB, BUKAN di siswa aktif.
+    // Jika sebelumnya sempat masuk ke students, bersihkan dari memori dan MySQL.
+    const stdIdx = students.findIndex(s => s.nisn === rawNisn || s.nis === rawNisn || s.id === `std-spmb-${rawNisn}` || (s.name && s.name.toUpperCase().includes("KRISHNA RASYID NIKAZ")));
+    if (stdIdx !== -1) {
+      const removedId = students[stdIdx].id;
+      students.splice(stdIdx, 1);
+      directDeleteEntityFromMysql("students", removedId).catch(() => {});
+      directDeleteEntityFromMysql("students", `std-spmb-${rawNisn}`).catch(() => {});
+      directDeleteEntityFromMysql("students", rawNisn).catch(() => {});
     }
 
     // Catat transaksi kas bendahara pembayaran tunai token & daftar ulang

@@ -11,6 +11,7 @@ import {
   isSppBillOverdue,
   MiscBill,
   ClassSchedule,
+  CurriculumSubject,
 } from "../types";
 import ScheduleView from "./ScheduleView";
 import { SavingsPassbookModal } from "./SavingsPassbookModal";
@@ -284,6 +285,9 @@ interface AdminPanelProps {
     className: string;
     password?: string;
     skUrl?: string;
+    subject?: string;
+    subjectId?: string;
+    subjects?: string[];
   }) => Promise<boolean>;
   onUpdateHomeroom?: (
     id: string,
@@ -293,6 +297,9 @@ interface AdminPanelProps {
       className?: string;
       password?: string;
       skUrl?: string;
+      subject?: string;
+      subjectId?: string;
+      subjects?: string[];
     },
   ) => Promise<boolean>;
   onDeleteHomeroom?: (id: string) => Promise<boolean>;
@@ -301,6 +308,7 @@ interface AdminPanelProps {
     username: string;
     name: string;
     subject: string;
+    subjectId?: string;
     password?: string;
     skUrl?: string;
   }) => Promise<boolean>;
@@ -310,6 +318,7 @@ interface AdminPanelProps {
       username?: string;
       name?: string;
       subject?: string;
+      subjectId?: string;
       password?: string;
       skUrl?: string;
     },
@@ -1313,11 +1322,11 @@ export default function AdminPanel({
     let filename = "";
 
     if (type === "homeroom") {
-      headers = "username,nama,kelas,password\n";
+      headers = "username,nama,kelas,password,mapel\n";
       rows = [
-        "sitiaminah,Ibu Siti Aminah S.Pd,7-A,wali1234",
-        "bambang_8a,Drs. Bambang Harianto,8-A,",
-        "wardah,Ustadzah Wardah M.Pd,9-B,pancasilaku",
+        "sitiaminah,Ibu Siti Aminah S.Pd,7-A,wali123,Pendidikan Pancasila",
+        "bambang_8a,Drs. Bambang Harianto,8-A,wali123,Matematika",
+        "wardah,Ustadzah Wardah M.Pd,9-B,wali123,Bahasa Indonesia",
       ];
       filename = "template_import_wali_kelas.csv";
     } else {
@@ -1348,7 +1357,7 @@ export default function AdminPanel({
     let filename = "";
 
     if (type === "homeroom") {
-      headers = "username,nama,kelas,password\n";
+      headers = "username,nama,kelas,password,mapel\n";
       rows = homerooms.map((h) => {
         const cleanName =
           h.name.includes(",") || h.name.includes('"')
@@ -1358,7 +1367,11 @@ export default function AdminPanel({
           h.className.includes(",") || h.className.includes('"')
             ? `"${h.className.replace(/"/g, '""')}"`
             : h.className;
-        return `${h.username},${cleanName},${cleanClassName},${h.password || ""}`;
+        const cleanSubject =
+          (h.subject || "").includes(",") || (h.subject || "").includes('"')
+            ? `"${(h.subject || "").replace(/"/g, '""')}"`
+            : (h.subject || "");
+        return `${h.username},${cleanName},${cleanClassName},${h.password || ""},${cleanSubject}`;
       });
       filename = `data_wali_kelas_update_massal_${new Date().toISOString().split("T")[0]}.csv`;
     } else {
@@ -1485,6 +1498,13 @@ export default function AdminPanel({
               h.includes("class") ||
               h.includes("bimbingan"),
           );
+          subjectIdx = headers.findIndex(
+            (h) =>
+              h.includes("mapel") ||
+              h.includes("subject") ||
+              h.includes("mata") ||
+              h.includes("pelajaran"),
+          );
           if (usernameIdx === -1 || nameIdx === -1 || classIdx === -1) {
             setTeacherImportError(
               'Format kolom CSV Wali Kelas salah! Pastikan ada kolom "username", "nama", dan "kelas".',
@@ -1525,6 +1545,7 @@ export default function AdminPanel({
           if (importTeacherType === "homeroom") {
             const classVal = cols[classIdx];
             if (!classVal) continue;
+            const subVal = subjectIdx !== -1 ? (cols[subjectIdx] || "") : "";
 
             const isExist = homerooms.some(
               (h) =>
@@ -1535,6 +1556,7 @@ export default function AdminPanel({
               username: userVal.trim().toLowerCase().replace(/\s+/g, ""),
               name: nameVal.trim(),
               className: classVal.trim(),
+              subject: subVal.trim() || undefined,
               password: passVal.trim() || undefined,
               isExisting: isExist,
             });
@@ -2334,7 +2356,21 @@ export default function AdminPanel({
   const [formClassName, setFormClassName] = useState("");
   const [formSubject, setFormSubject] = useState("");
   const [formSubjectId, setFormSubjectId] = useState("");
-  const [adminCurriculumSubjects, setAdminCurriculumSubjects] = useState<CurriculumSubject[]>([]);
+  const [adminCurriculumSubjects, setAdminCurriculumSubjects] = useState<CurriculumSubject[]>([
+    { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional' },
+    { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional' },
+    { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional' },
+    { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam', category: 'Muatan Nasional' },
+    { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial', category: 'Muatan Nasional' },
+    { id: 'mapel-bing', code: 'BING', name: 'Bahasa Inggris', category: 'Muatan Nasional' },
+    { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', category: 'Muatan Nasional' },
+    { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional' },
+    { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional' },
+    { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional' },
+    { id: 'mapel-bjawa', code: 'BJAWA', name: 'Bahasa Jawa', category: 'Muatan Lokal' },
+    { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal' },
+    { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal' }
+  ]);
   const [formUsername, setFormUsername] = useState("");
   const [formPassword, setFormPassword] = useState("");
   const [formSkUrl, setFormSkUrl] = useState("");
@@ -13163,7 +13199,35 @@ export default function AdminPanel({
                   memberikan otorisasi presensi harian siswa.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsActionLoading(true);
+                    setMgmtError(null);
+                    setMgmtSuccess(null);
+                    try {
+                      const res = await fetch("/api/admin/homerooms/sync-subjects", { method: "POST" });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setMgmtSuccess(`Berhasil menyinkronkan penugasan mapel & kredensial untuk ${data.total || 0} akun Wali Kelas!`);
+                        onRefresh();
+                      } else {
+                        setMgmtError("Gagal menyinkronkan data mata pelajaran wali kelas.");
+                      }
+                    } catch {
+                      setMgmtError("Kendala koneksi sistem saat sinkronisasi.");
+                    } finally {
+                      setIsActionLoading(false);
+                    }
+                  }}
+                  disabled={isActionLoading}
+                  className="px-3.5 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg text-xs font-bold hover:shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                  title="Otomatisasi penugasan mata pelajaran default & sinkronisasi kredensial login"
+                >
+                  <Zap size={13} className="text-yellow-300" />
+                  <span>Sinkronisasi Mapel Wali Kelas</span>
+                </button>
                 <button
                   type="button"
                   onClick={() => handleExportTeachers("homeroom")}
@@ -13195,8 +13259,8 @@ export default function AdminPanel({
                 <h4 className="font-extrabold text-slate-800 text-xs uppercase tracking-wider mb-4 flex items-center gap-1.5">
                   <PlusCircle size={14} className="text-indigo-600" />
                   {editingHomeroomId
-                    ? "Ubah Informasi Wali Kelas"
-                    : "Daftar Wali Kelas Baru"}
+                    ? "Ubah Informasi & Penugasan Mapel Wali Kelas"
+                    : "Daftar Wali Kelas Baru & Penugasan Mapel"}
                 </h4>
 
                 <form
@@ -13217,6 +13281,9 @@ export default function AdminPanel({
                     }
 
                     try {
+                      const matchedSubj = adminCurriculumSubjects.find(s => s.id === formSubjectId || s.name.toLowerCase() === formSubject.toLowerCase());
+                      const finalSubjectId = formSubjectId || matchedSubj?.id;
+
                       if (editingHomeroomId) {
                         if (onUpdateHomeroom) {
                           const res = await onUpdateHomeroom(
@@ -13227,11 +13294,13 @@ export default function AdminPanel({
                               className: formClassName,
                               password: formPassword || undefined,
                               skUrl: formSkUrl,
+                              subject: formSubject,
+                              subjectId: finalSubjectId,
                             },
                           );
                           if (res) {
                             setMgmtSuccess(
-                              "Berhasil memperbarui data Wali Kelas!",
+                              "Berhasil memperbarui data dan penugasan mapel Wali Kelas!",
                             );
                             resetForm();
                             onRefresh();
@@ -13245,12 +13314,14 @@ export default function AdminPanel({
                             username: formUsername,
                             name: formName,
                             className: formClassName,
-                            password: formPassword,
+                            password: formPassword || "wali123",
                             skUrl: formSkUrl,
+                            subject: formSubject,
+                            subjectId: finalSubjectId,
                           });
                           if (res) {
                             setMgmtSuccess(
-                              "Berhasil mendaftarkan Wali Kelas baru!",
+                              "Berhasil mendaftarkan Wali Kelas baru beserta penugasan mapel!",
                             );
                             resetForm();
                             onRefresh();
@@ -13297,6 +13368,69 @@ export default function AdminPanel({
                     />
                   </div>
 
+                  {/* Penugasan Mata Pelajaran yang Diampu */}
+                  <div className="flex flex-col gap-1.5 bg-blue-50/60 p-3 rounded-lg border border-blue-200/70">
+                    <div className="flex items-center justify-between">
+                      <label className="font-bold text-blue-900 flex items-center gap-1.5">
+                        <BookOpen size={13} className="text-blue-700" />
+                        <span>Mata Pelajaran yang Diampu (KBM)</span>
+                      </label>
+                      {formSubjectId && (
+                        <span className="font-mono text-[9px] font-bold text-blue-700 bg-blue-100/70 px-1.5 py-0.5 rounded border border-blue-200">
+                          ID: {formSubjectId}
+                        </span>
+                      )}
+                    </div>
+
+                    <p className="text-[10px] text-blue-700/85 leading-tight font-medium">
+                      Pilih mata pelajaran yang diajarkan oleh wali kelas ini untuk memperbaiki validasi login pendidik dan integrasi penilaian rapor/jurnal KBM.
+                    </p>
+
+                    <select
+                      value={formSubjectId || (adminCurriculumSubjects.find(s => s.name.toLowerCase() === formSubject.toLowerCase())?.id || '')}
+                      onChange={(e) => {
+                        const sid = e.target.value;
+                        setFormSubjectId(sid);
+                        const matched = adminCurriculumSubjects.find(s => s.id === sid);
+                        if (matched) {
+                          setFormSubject(matched.name);
+                        } else if (!sid) {
+                          setFormSubject('');
+                        }
+                      }}
+                      className="px-3 py-2 border border-blue-200 rounded-lg font-semibold text-slate-850 bg-white focus:outline-none focus:border-blue-600 cursor-pointer text-xs"
+                    >
+                      <option value="">-- Pilih dari Master Mapel Kurikulum --</option>
+                      {adminCurriculumSubjects.map(s => (
+                        <option key={s.id} value={s.id}>
+                          [{s.code}] {s.name} ({s.category || 'Muatan Nasional'})
+                        </option>
+                      ))}
+                    </select>
+
+                    <input
+                      type="text"
+                      placeholder="Atau ketik nama mapel penugasan..."
+                      value={formSubject}
+                      onChange={(e) => {
+                        const val = e.target.value;
+                        setFormSubject(val);
+                        const matched = adminCurriculumSubjects.find(s => s.name.toLowerCase() === val.toLowerCase());
+                        if (matched) setFormSubjectId(matched.id);
+                      }}
+                      className="px-3 py-1.5 border border-blue-200 rounded-lg font-semibold text-slate-850 bg-white focus:outline-none focus:border-blue-600 text-xs"
+                    />
+
+                    {formSubject && (
+                      <div className="flex items-center gap-1.5 mt-0.5">
+                        <span className="text-[10px] text-blue-800 font-bold">Mapel Terpilih:</span>
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-blue-600 text-white font-extrabold text-[10px] rounded">
+                          ✓ {formSubject}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+
                   <div className="flex flex-col gap-1.5">
                     <label className="font-bold text-slate-650">
                       Username Login
@@ -13328,17 +13462,21 @@ export default function AdminPanel({
                       placeholder={
                         editingHomeroomId
                           ? "Isi untuk mereset sandi wali kelas ini"
-                          : "Masukkan sandi minimal 6 karakter"
+                          : "Masukkan sandi (bawaan: wali123)"
                       }
                       value={formPassword}
                       onChange={(e) => setFormPassword(e.target.value)}
                       className="px-3 py-2 border border-slate-200 rounded-lg font-semibold text-slate-850 bg-white focus:outline-none focus:border-amber-600 focus:ring-1 focus:ring-amber-500"
                     />
-                    {editingHomeroomId && (
+                    {editingHomeroomId ? (
                       <p className="text-[10px] text-amber-700/85 italic leading-tight font-medium mt-0.5">
                         *Kosongkan saja untuk tetap memakai sandi lama (
                         {editingHomeroomId ? "Sandi Aktif" : ""}). Isi minimal 6
                         karakter jika ingin mereset sandi akun ini.
+                      </p>
+                    ) : (
+                      <p className="text-[10px] text-amber-700/85 italic leading-tight font-medium mt-0.5">
+                        *Jika dikosongkan saat daftar baru, sandi otomatis diset ke &quot;wali123&quot;.
                       </p>
                     )}
                   </div>
@@ -13421,6 +13559,7 @@ export default function AdminPanel({
                             <th className="py-2.5 px-4 text-center">
                               Kelas Binaan
                             </th>
+                            <th className="py-2.5 px-4">Mata Pelajaran Diampu</th>
                             <th className="py-2.5 px-4">Username Akun</th>
                             <th className="py-2.5 px-4 text-center">
                               Aksi Operasional
@@ -13458,6 +13597,33 @@ export default function AdminPanel({
                                   Kelas {hr.className}
                                 </span>
                               </td>
+                              <td className="py-3 px-4">
+                                {hr.subject ? (
+                                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md text-[11px] font-bold bg-teal-50 border border-teal-200 text-teal-850 shadow-3xs">
+                                    <BookOpen size={12} className="text-teal-650" />
+                                    <span>{hr.subject}</span>
+                                  </span>
+                                ) : (
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      setEditingHomeroomId(hr.id);
+                                      setFormName(hr.name);
+                                      setFormClassName(hr.className);
+                                      setFormUsername(hr.username);
+                                      setFormPassword("");
+                                      setFormSkUrl(hr.skUrl || "");
+                                      setFormSubject("");
+                                      setFormSubjectId("");
+                                    }}
+                                    className="inline-flex items-center gap-1 px-2 py-1 rounded text-[10px] font-extrabold bg-amber-50 hover:bg-amber-100 border border-amber-200 text-amber-800 transition-colors cursor-pointer"
+                                    title="Pilih dan tugaskan mata pelajaran untuk wali kelas ini"
+                                  >
+                                    <AlertTriangle size={11} className="text-amber-600" />
+                                    <span>+ Tugaskan Mapel</span>
+                                  </button>
+                                )}
+                              </td>
                               <td className="py-3 px-4 font-mono font-bold text-slate-650 text-left">
                                 {hr.username}
                               </td>
@@ -13472,6 +13638,8 @@ export default function AdminPanel({
                                       setFormUsername(hr.username);
                                       setFormPassword("");
                                       setFormSkUrl(hr.skUrl || "");
+                                      setFormSubject(hr.subject || "");
+                                      setFormSubjectId(hr.subjectId || "");
                                     }}
                                     className="p-1 px-2 border border-slate-200 hover:border-slate-800 hover:bg-slate-50 rounded text-[10px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer flex items-center gap-1 transition-all"
                                   >

@@ -51,10 +51,10 @@ const notifications: RealtimeNotification[] = [
 const attendanceLogs: AttendanceLog[] = [];
 
 const homeroomTeachers: HomeroomTeacher[] = [
-  { id: "ht-1", username: "wali7a", name: "Budi Santoso, S.Pd", className: "7-A", password: "wali123" },
-  { id: "ht-2", username: "wali7b", name: "Endang Lastari, S.Pd", className: "7-B", password: "wali123" },
-  { id: "ht-3", username: "wali8a", name: "Joko Susilo, S.Pd", className: "8-A", password: "wali123" },
-  { id: "ht-4", username: "wali9c", name: "Rina Wijayanti, S.Pd", className: "9-C", password: "wali123" }
+  { id: "ht-1", username: "wali7a", name: "Budi Santoso, S.Pd", className: "7-A", password: "wali123", subject: "Pendidikan Pancasila", subjectId: "mapel-ppkn" },
+  { id: "ht-2", username: "wali7b", name: "Endang Lastari, S.Pd", className: "7-B", password: "wali123", subject: "Bahasa Indonesia", subjectId: "mapel-bindo" },
+  { id: "ht-3", username: "wali8a", name: "Joko Susilo, S.Pd", className: "8-A", password: "wali123", subject: "Matematika", subjectId: "mapel-mtk" },
+  { id: "ht-4", username: "wali9c", name: "Rina Wijayanti, S.Pd", className: "9-C", password: "wali123", subject: "Ilmu Pengetahuan Alam", subjectId: "mapel-ipa" }
 ];
 
 export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
@@ -4644,7 +4644,7 @@ async function startServer() {
   });
 
   app.post("/api/admin/homerooms", (req, res) => {
-    const { username, name, className, password, skUrl } = req.body;
+    const { username, name, className, password, skUrl, subject, subjectId, subjects } = req.body;
     if (!username || !name || !className) {
       return res.status(400).json({ error: "Informasi Wali Kelas tidak lengkap." });
     }
@@ -4654,23 +4654,59 @@ async function startServer() {
       return res.status(400).json({ error: `Username wali kelas "${username}" sudah digunakan.` });
     }
 
+    let resolvedSubject = subject ? String(subject).trim() : "";
+    let resolvedSubjectId = subjectId ? String(subjectId).trim() : undefined;
+    if (resolvedSubjectId && !resolvedSubject) {
+      const matchSub = curriculumSubjects.find(s => s.id === resolvedSubjectId);
+      if (matchSub) resolvedSubject = matchSub.name;
+    } else if (resolvedSubject && !resolvedSubjectId) {
+      const matchSub = curriculumSubjects.find(s => s.name.toLowerCase() === resolvedSubject.toLowerCase());
+      if (matchSub) resolvedSubjectId = matchSub.id;
+    }
+
     const newHt: HomeroomTeacher = {
       id: `ht-${Date.now()}`,
       username: username.trim(),
       name: name.trim(),
       className: className.trim(),
       password: password ? String(password).trim() : "wali123",
-      skUrl: skUrl ? String(skUrl).trim() : ""
+      skUrl: skUrl ? String(skUrl).trim() : "",
+      subject: resolvedSubject || undefined,
+      subjectId: resolvedSubjectId || undefined,
+      subjects: Array.isArray(subjects) ? subjects : (resolvedSubject ? [resolvedSubject] : [])
     };
 
     homeroomTeachers.push(newHt);
+
+    // Also auto-sync/link to subjectTeachers so login and KBM records work seamlessly
+    if (resolvedSubject) {
+      const existingSt = subjectTeachers.find(st => st.username.toLowerCase() === newHt.username.toLowerCase());
+      if (existingSt) {
+        existingSt.subject = resolvedSubject;
+        existingSt.subjectId = resolvedSubjectId;
+        existingSt.className = newHt.className;
+        existingSt.name = newHt.name;
+        if (newHt.password) existingSt.password = newHt.password;
+      } else {
+        subjectTeachers.push({
+          id: `st-sync-${newHt.id}`,
+          username: newHt.username,
+          name: newHt.name,
+          subject: resolvedSubject,
+          subjectId: resolvedSubjectId,
+          className: newHt.className,
+          password: newHt.password || "wali123"
+        });
+      }
+    }
+
     saveState();
 
     // Notify
     const notification: RealtimeNotification = {
       id: `notif-ht-add-${newHt.id}`,
       title: "Wali Kelas Baru",
-      message: `Akun Wali kelas baru ${newHt.name} (Kelas ${newHt.className}) telah didaftarkan oleh Admin.`,
+      message: `Akun Wali kelas baru ${newHt.name} (Kelas ${newHt.className}${newHt.subject ? `, Mapel: ${newHt.subject}` : ""}) telah didaftarkan oleh Admin.`,
       type: "info",
       createdAt: new Date().toISOString()
     };
@@ -4681,12 +4717,14 @@ async function startServer() {
 
   app.put("/api/admin/homerooms/:id", (req, res) => {
     const id = req.params.id;
-    const { username, name, className, password, skUrl } = req.body;
+    const { username, name, className, password, skUrl, subject, subjectId, subjects } = req.body;
     
     const htIndex = homeroomTeachers.findIndex(ht => ht.id === id);
     if (htIndex === -1) {
       return res.status(404).json({ error: "Wali kelas tidak ditemukan." });
     }
+
+    const prevUsername = homeroomTeachers[htIndex].username;
 
     if (username) {
       const dup = homeroomTeachers.find(ht => ht.username.toLowerCase() === username.toLowerCase() && ht.id !== id);
@@ -4698,11 +4736,108 @@ async function startServer() {
 
     if (name) homeroomTeachers[htIndex].name = name.trim();
     if (className) homeroomTeachers[htIndex].className = className.trim();
-    if (password !== undefined) homeroomTeachers[htIndex].password = String(password).trim();
+    if (password !== undefined && String(password).trim().length > 0) {
+      homeroomTeachers[htIndex].password = String(password).trim();
+    }
     if (skUrl !== undefined) homeroomTeachers[htIndex].skUrl = String(skUrl).trim();
+
+    if (subject !== undefined || subjectId !== undefined) {
+      let resolvedSubject = subject !== undefined ? String(subject).trim() : (homeroomTeachers[htIndex].subject || "");
+      let resolvedSubjectId = subjectId !== undefined ? (subjectId ? String(subjectId).trim() : undefined) : homeroomTeachers[htIndex].subjectId;
+      if (resolvedSubjectId && !resolvedSubject) {
+        const matchSub = curriculumSubjects.find(s => s.id === resolvedSubjectId);
+        if (matchSub) resolvedSubject = matchSub.name;
+      } else if (resolvedSubject && !resolvedSubjectId) {
+        const matchSub = curriculumSubjects.find(s => s.name.toLowerCase() === resolvedSubject.toLowerCase());
+        if (matchSub) resolvedSubjectId = matchSub.id;
+      }
+      homeroomTeachers[htIndex].subject = resolvedSubject || undefined;
+      homeroomTeachers[htIndex].subjectId = resolvedSubjectId || undefined;
+    }
+    if (subjects !== undefined) {
+      homeroomTeachers[htIndex].subjects = Array.isArray(subjects) ? subjects : [];
+    }
+
+    // Auto-sync with subjectTeachers
+    const currHt = homeroomTeachers[htIndex];
+    if (currHt.subject) {
+      const existingSt = subjectTeachers.find(st => 
+        st.username.toLowerCase() === currHt.username.toLowerCase() || 
+        st.username.toLowerCase() === prevUsername.toLowerCase()
+      );
+      if (existingSt) {
+        existingSt.username = currHt.username;
+        existingSt.name = currHt.name;
+        existingSt.subject = currHt.subject;
+        existingSt.subjectId = currHt.subjectId;
+        existingSt.className = currHt.className;
+        if (currHt.password) existingSt.password = currHt.password;
+      } else {
+        subjectTeachers.push({
+          id: `st-sync-${currHt.id}`,
+          username: currHt.username,
+          name: currHt.name,
+          subject: currHt.subject,
+          subjectId: currHt.subjectId,
+          className: currHt.className,
+          password: currHt.password || "wali123"
+        });
+      }
+    }
 
     saveState();
     res.json({ success: true, homeroomTeachers, updated: homeroomTeachers[htIndex] });
+  });
+
+  // Bulk / quick sync homeroom teachers subjects & credentials
+  app.post("/api/admin/homerooms/sync-subjects", (req, res) => {
+    const defaultSubjectPool = [
+      { name: "Pendidikan Pancasila", id: "mapel-ppkn" },
+      { name: "Bahasa Indonesia", id: "mapel-bindo" },
+      { name: "Matematika", id: "mapel-mtk" },
+      { name: "Ilmu Pengetahuan Alam", id: "mapel-ipa" },
+      { name: "Ilmu Pengetahuan Sosial", id: "mapel-ips" },
+      { name: "Bahasa Inggris", id: "mapel-bing" },
+      { name: "Pendidikan Agama Islam", id: "mapel-pai" }
+    ];
+
+    let updatedCount = 0;
+    homeroomTeachers.forEach((ht, idx) => {
+      let changed = false;
+      if (!ht.subject) {
+        const fallback = defaultSubjectPool[idx % defaultSubjectPool.length];
+        ht.subject = fallback.name;
+        ht.subjectId = fallback.id;
+        changed = true;
+      }
+      if (!ht.password) {
+        ht.password = "wali123";
+        changed = true;
+      }
+      if (changed) updatedCount++;
+
+      // Ensure synced in subjectTeachers
+      if (ht.subject) {
+        const existingSt = subjectTeachers.find(st => st.username.toLowerCase() === ht.username.toLowerCase());
+        if (!existingSt) {
+          subjectTeachers.push({
+            id: `st-sync-${ht.id}`,
+            username: ht.username,
+            name: ht.name,
+            subject: ht.subject,
+            subjectId: ht.subjectId,
+            className: ht.className,
+            password: ht.password || "wali123"
+          });
+        } else {
+          existingSt.subject = ht.subject;
+          existingSt.subjectId = ht.subjectId;
+        }
+      }
+    });
+
+    saveState();
+    res.json({ success: true, homeroomTeachers, updatedCount, total: homeroomTeachers.length });
   });
 
   app.delete("/api/admin/homerooms/:id", (req, res) => {
@@ -10225,10 +10360,20 @@ async function startServer() {
 
     if (Array.isArray(homerooms)) {
       homerooms.forEach((inputHt: any) => {
-        const { username, name, className, password } = inputHt;
+        const { username, name, className, password, subject, subjectId } = inputHt;
         if (!username || !name || !className) {
           // Skip invalid rows
           return;
+        }
+
+        let resolvedSubject = subject ? String(subject).trim() : "";
+        let resolvedSubjectId = subjectId ? String(subjectId).trim() : undefined;
+        if (resolvedSubjectId && !resolvedSubject) {
+          const matchSub = curriculumSubjects.find(s => s.id === resolvedSubjectId);
+          if (matchSub) resolvedSubject = matchSub.name;
+        } else if (resolvedSubject && !resolvedSubjectId) {
+          const matchSub = curriculumSubjects.find(s => s.name.toLowerCase() === resolvedSubject.toLowerCase());
+          if (matchSub) resolvedSubjectId = matchSub.id;
         }
 
         const existingHt = homeroomTeachers.find(ht => ht.username.toLowerCase() === username.toString().toLowerCase().trim());
@@ -10236,6 +10381,10 @@ async function startServer() {
           existingHt.name = name.trim();
           existingHt.className = className.trim();
           if (password) existingHt.password = String(password).trim();
+          if (resolvedSubject) {
+            existingHt.subject = resolvedSubject;
+            existingHt.subjectId = resolvedSubjectId;
+          }
           homeroomsUpdated++;
         } else {
           homeroomTeachers.push({
@@ -10243,7 +10392,9 @@ async function startServer() {
             username: username.toString().toLowerCase().trim(),
             name: name.trim(),
             className: className.trim(),
-            password: password ? String(password).trim() : "wali123"
+            password: password ? String(password).trim() : "wali123",
+            subject: resolvedSubject || undefined,
+            subjectId: resolvedSubjectId || undefined
           });
           homeroomsAdded++;
         }

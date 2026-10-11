@@ -85,7 +85,9 @@
         "username": { "type": "string", "description": "Portal username" },
         "name": { "type": "string", "description": "Full formal name and degree of teacher" },
         "className": { "type": "string", "description": "Assigned class grade" },
-        "password": { "type": "string", "description": "Account password" }
+        "password": { "type": "string", "description": "Account password" },
+        "subject": { "type": "string", "description": "Assigned subject taught by homeroom teacher" },
+        "subjectId": { "type": "string", "description": "Assigned subject identifier" }
       },
       "required": ["id", "username", "name", "className", "password"]
     },

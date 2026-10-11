@@ -758,16 +758,43 @@ export default function App() {
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
       fetchStudentFullData('', true);
-      setLoggedSubjectTeacher(null);
-      localStorage.removeItem('smp_maarif_logged_subject_teacher');
+
+      // Link assigned subject profile if available
+      let targetSt = subjectTeacher;
+      if (!targetSt && homeroom.subject) {
+        targetSt = subjectTeachersList.find(st => st.username.toLowerCase() === homeroom.username.toLowerCase()) || {
+          id: `st-sync-${homeroom.id}`,
+          username: homeroom.username,
+          name: homeroom.name,
+          subject: homeroom.subject,
+          subjectId: homeroom.subjectId,
+          className: homeroom.className,
+          password: homeroom.password
+        };
+      }
+      if (targetSt) {
+        setLoggedSubjectTeacher(targetSt);
+        localStorage.setItem('smp_maarif_logged_subject_teacher', JSON.stringify(targetSt));
+      } else {
+        setLoggedSubjectTeacher(null);
+        localStorage.removeItem('smp_maarif_logged_subject_teacher');
+      }
     } else if (userRole === 'subject_teacher' && subjectTeacher) {
       setLoggedSubjectTeacher(subjectTeacher);
       localStorage.setItem('smp_maarif_logged_subject_teacher', JSON.stringify(subjectTeacher));
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
       fetchStudentFullData('', true);
-      setLoggedHomeroom(null);
-      localStorage.removeItem('smp_maarif_logged_homeroom');
+
+      // Check if this subject teacher is also a homeroom teacher
+      const matchedHr = homeroomsList.find(h => h.username.toLowerCase() === subjectTeacher.username.toLowerCase()) || null;
+      if (matchedHr) {
+        setLoggedHomeroom(matchedHr);
+        localStorage.setItem('smp_maarif_logged_homeroom', JSON.stringify(matchedHr));
+      } else {
+        setLoggedHomeroom(null);
+        localStorage.removeItem('smp_maarif_logged_homeroom');
+      }
     } else {
       setLoggedStudentId(null);
       localStorage.removeItem('smp_maarif_student_id');
@@ -1455,7 +1482,16 @@ export default function App() {
   };
 
   // Create Homeroom Teacher CRUD
-  const handleCreateHomeroom = async (homeroomData: { username: string; name: string; className: string; password?: string }): Promise<boolean> => {
+  const handleCreateHomeroom = async (homeroomData: {
+    username: string;
+    name: string;
+    className: string;
+    password?: string;
+    skUrl?: string;
+    subject?: string;
+    subjectId?: string;
+    subjects?: string[];
+  }): Promise<boolean> => {
     try {
       const res = await fetch('/api/admin/homerooms', {
         method: 'POST',
@@ -1477,7 +1513,19 @@ export default function App() {
   };
 
   // Update Homeroom Teacher CRUD
-  const handleUpdateHomeroom = async (id: string, homeroomData: { username?: string; name?: string; className?: string; password?: string }): Promise<boolean> => {
+  const handleUpdateHomeroom = async (
+    id: string,
+    homeroomData: {
+      username?: string;
+      name?: string;
+      className?: string;
+      password?: string;
+      skUrl?: string;
+      subject?: string;
+      subjectId?: string;
+      subjects?: string[];
+    }
+  ): Promise<boolean> => {
     try {
       const res = await fetch(`/api/admin/homerooms/${id}`, {
         method: 'PUT',
@@ -2464,7 +2512,7 @@ export default function App() {
               ) : role === 'homeroom' ? (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-amber-50 text-amber-850 border border-amber-150 rounded-lg text-xs font-bold shadow-sm">
                   <ClipboardCheck size={13} className="text-amber-700" />
-                  <span>Wali Kelas: {loggedHomeroom?.name || 'Wali Kelas'} (Kelas {loggedHomeroom?.className})</span>
+                  <span>Wali Kelas: {loggedHomeroom?.name || 'Wali Kelas'} (Kelas {loggedHomeroom?.className}){loggedHomeroom?.subject ? ` • Mapel: ${loggedHomeroom.subject}` : ''}</span>
                 </div>
               ) : role === 'subject_teacher' ? (
                 <div className="inline-flex items-center gap-1.5 px-3 py-1 bg-teal-50 text-teal-850 border border-teal-150 rounded-lg text-xs font-extrabold shadow-sm">

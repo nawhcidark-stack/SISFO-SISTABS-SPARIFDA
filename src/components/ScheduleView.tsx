@@ -996,6 +996,7 @@ export default function ScheduleView({
     setClashError(null);
 
     const matchedSubj = internalSubjects.find(s => s.id === formSubjectId || s.name.toLowerCase() === formSubject.toLowerCase());
+    const finalJamKe = formJamKe === 'custom' ? (customJamInput.trim() || '1') : formJamKe;
 
     const payload = {
       day: formDay,

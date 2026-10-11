@@ -264,6 +264,9 @@ export interface HomeroomTeacher {
   className: string; // e.g., "7-A", "7-B", "8-A", "9-C"
   password?: string;
   skUrl?: string;
+  subject?: string; // Mata pelajaran yang diampu oleh wali kelas (e.g., "Matematika", "Bahasa Indonesia", etc.)
+  subjectId?: string; // ID master mapel terhubung ke master data mapel
+  subjects?: string[]; // Daftar multi-mapel bila mengampu lebih dari 1 mapel
 }
 
 export interface SubjectTeacher {

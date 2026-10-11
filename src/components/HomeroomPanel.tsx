@@ -787,7 +787,22 @@ export default function HomeroomPanel({
   const [kokurikulerScores, setKokurikulerScores] = useState<Record<string, string>>({});
   const [isSavingKokurikuler, setIsSavingKokurikuler] = useState<boolean>(false);
 
-  const [selectedSubjectForGrading, setSelectedSubjectForGrading] = useState<string>('Pendidikan Pancasila');
+  // Selected class for grading & rapor (defaults to homeroom class but can be changed to any class)
+  const [selectedGradingClass, setSelectedGradingClass] = useState<string>(currentTeacher?.className || '');
+
+  useEffect(() => {
+    if (currentTeacher?.className && !selectedGradingClass) {
+      setSelectedGradingClass(currentTeacher.className);
+    }
+  }, [currentTeacher?.className]);
+
+  const [selectedSubjectForGrading, setSelectedSubjectForGrading] = useState<string>(() => currentTeacher?.subject || 'Pendidikan Pancasila');
+
+  useEffect(() => {
+    if (currentTeacher?.subject) {
+      setSelectedSubjectForGrading(currentTeacher.subject);
+    }
+  }, [currentTeacher?.subject]);
   const [gradeInputMap, setGradeInputMap] = useState<Record<string, any>>({});
   const [tp1InputName, setTp1InputName] = useState<string>('Memahami konsep dasar dan penerapannya');
   const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
@@ -978,14 +993,7 @@ export default function HomeroomPanel({
     }
   }, [schoolIdentity?.activeAcademicYear]);
 
-  // Selected class for grading & rapor (defaults to homeroom class but can be changed to any class)
-  const [selectedGradingClass, setSelectedGradingClass] = useState<string>(currentTeacher?.className || '');
 
-  useEffect(() => {
-    if (currentTeacher?.className && !selectedGradingClass) {
-      setSelectedGradingClass(currentTeacher.className);
-    }
-  }, [currentTeacher?.className]);
 
   // Filter students who are in this homeroom teacher's class
   const classStudents = useMemo(() => {
@@ -6967,6 +6975,19 @@ Wassalamualaikum Wr. Wb.
                         <span>Kelas Binaan: <strong className="text-white font-extrabold">{currentTeacher.className}</strong></span>
                         <span className="opacity-40">•</span>
                         <span>Username: <strong className="text-white font-mono font-bold">@{currentTeacher.username}</strong></span>
+                        <span className="opacity-40">•</span>
+                        <span>Mata Pelajaran: <strong className="text-emerald-300 font-extrabold">{currentTeacher.subject || 'Belum Ditugaskan Admin'}</strong></span>
+                      </div>
+                      <div className="mt-2 flex flex-wrap items-center gap-2">
+                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-white/20 backdrop-blur-sm text-[11px] font-bold text-white border border-white/25">
+                          <BookOpen size={12} className="text-emerald-300" />
+                          <span>Mapel KBM: {currentTeacher.subject || 'Belum Ditugaskan (Hubungi Admin)'}</span>
+                        </span>
+                        {currentTeacher.subject && (
+                          <span className="text-[10px] text-emerald-300 font-extrabold bg-emerald-950/80 border border-emerald-500/50 px-2.5 py-0.5 rounded-full">
+                            ✓ Akun Pendidik &amp; KBM Terverifikasi
+                          </span>
+                        )}
                       </div>
                       {currentTeacher.skUrl && (
                         <div className="mt-3">

@@ -6,7 +6,7 @@ import { TpJournalSelector } from './TpJournalSelector';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
-  Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer, Lock,
+  Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer, Lock, Unlock,
   User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2, ShieldAlert, Megaphone, CreditCard
 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';

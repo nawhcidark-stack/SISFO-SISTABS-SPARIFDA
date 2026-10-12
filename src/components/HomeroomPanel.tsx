@@ -15,7 +15,7 @@ import { printClassFinancialRecapPdf } from '../utils/financialRecapPrint';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
-  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key, Lock,
+  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key, Lock, Unlock,
   Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
   LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw, ArrowUpDown
 } from 'lucide-react';

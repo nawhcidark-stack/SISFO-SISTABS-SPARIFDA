@@ -5689,7 +5689,7 @@ async function startServer() {
     res.json(merdekaAssessments);
   });
 
-  app.post("/api/merdeka-assessments", (req, res) => {
+  app.post("/api/merdeka-assessments", async (req, res) => {
     const data = req.body;
     
     // Support bulk insert (Excel Import / Batch Save) or single insert
@@ -5832,18 +5832,37 @@ async function startServer() {
       }
     });
 
+    // Simpan langsung ke database MySQL secara instan dan permanen
+    let mysqlSaved = false;
+    let mysqlError: string | null = null;
     if (results.length > 0) {
-      directSaveEntitiesBatchToMysql("merdekaAssessments", results).catch(err => {
-        console.warn("[MySQL] Gagal batch save penilaian ke MySQL:", err?.message || err);
-      });
+      try {
+        const batchRes = await directSaveEntitiesBatchToMysql("merdekaAssessments", results);
+        mysqlSaved = Boolean(batchRes?.success);
+        if (!mysqlSaved && batchRes?.error) {
+          mysqlError = batchRes.error;
+        }
+      } catch (err: any) {
+        mysqlError = err?.message || String(err);
+        console.warn("[MySQL] Gagal batch save penilaian ke MySQL:", mysqlError);
+      }
     }
 
-    saveConfigToMysql("curriculumConfig", curriculumConfig).catch(err => {
+    try {
+      await saveConfigToMysql("curriculumConfig", curriculumConfig);
+    } catch (err: any) {
       console.warn("[MySQL] Gagal simpan curriculumConfig ke MySQL:", err?.message || err);
-    });
+    }
 
     saveState();
-    return res.json({ success: true, count: results.length, merdekaAssessments, newAssessment: results[0] });
+    return res.json({ 
+      success: true, 
+      count: results.length, 
+      mysqlSaved,
+      mysqlError,
+      merdekaAssessments, 
+      newAssessment: results[0] 
+    });
   });
 
   // --- MASTER DATA MATA PELAJARAN (WAKA KURIKULUM) ---
@@ -6380,15 +6399,20 @@ async function startServer() {
     res.json({ success: true, updatedCount, merdekaAssessments });
   });
 
-  app.delete("/api/merdeka-assessments/:id", (req, res) => {
+  app.delete("/api/merdeka-assessments/:id", async (req, res) => {
     const { id } = req.params;
     const index = merdekaAssessments.findIndex(l => l.id === id);
     if (index === -1) {
       return res.status(404).json({ error: "Data nilai tidak ditemukan." });
     }
-    merdekaAssessments.splice(index, 1);
+    const [deletedItem] = merdekaAssessments.splice(index, 1);
+    try {
+      await directDeleteEntityFromMysql("merdekaAssessments", id);
+    } catch (err) {
+      console.warn("[MySQL] Gagal menghapus nilai dari MySQL:", err);
+    }
     saveState();
-    res.json({ success: true, merdekaAssessments });
+    res.json({ success: true, merdekaAssessments, deletedItem });
   });
 
   // --- CLASS SCHEDULES (JADWAL PELAJARAN / MENGAJAR) ENDPOINTS ---

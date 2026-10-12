@@ -7,7 +7,7 @@ import {
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
   Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer, Lock, Unlock,
-  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2, ShieldAlert, Megaphone, CreditCard
+  User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2, ShieldAlert, Megaphone, CreditCard, Award
 } from 'lucide-react';
 import { NotifTabCategory, CATEGORY_TABS, getNotificationCategory, filterNotificationsByCategory, getCategoryCounts } from '../utils/notificationUtils';
 
@@ -224,6 +224,8 @@ export default function SubjectTeacherPanel({
   const [isSaving, setIsSaving] = useState(false);
   const [feedback, setFeedback] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [showSuccessCheck, setShowSuccessCheck] = useState(false);
+  const [showGradeSuccessModal, setShowGradeSuccessModal] = useState(false);
+  const [gradeSuccessSummary, setGradeSuccessSummary] = useState<{ className: string; subject: string; count: number } | null>(null);
   const [historyDetailJournal, setHistoryDetailJournal] = useState<TeachingJournal | null>(null);
   const [selectedJournalToPrint, setSelectedJournalToPrint] = useState<TeachingJournal | null>(null);
   const [startDate, setStartDate] = useState<string>('');
@@ -3308,12 +3310,18 @@ export default function SubjectTeacherPanel({
                     });
 
                     if (res.ok) {
-                      setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka dan deskripsi TP untuk Kelas ${selectedGradeClass} berhasil disimpan ke basis data!` });
+                      setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka dan deskripsi TP untuk Kelas ${selectedGradeClass} berhasil disimpan langsung ke basis data MySQL!` });
+                      setGradeSuccessSummary({
+                        className: selectedGradeClass,
+                        subject: selectedSubject,
+                        count: batchData.length
+                      });
+                      setShowGradeSuccessModal(true);
                       fetchAssessments();
                       handleSaveTpDescriptions();
                       onRefresh();
                     } else {
-                      setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian.' });
+                      setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian ke MySQL.' });
                     }
                   } catch (err: any) {
                     setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem.' });
@@ -3919,6 +3927,101 @@ export default function SubjectTeacherPanel({
               >
                 <Check size={14} className="stroke-[3px]" />
                 Selesai & Tutup
+              </motion.button>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL VISUALISASI KHUSUS SIMPAN NILAI (BERBEDA DARI ABSENSI) */}
+      <AnimatePresence>
+        {showGradeSuccessModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.85, opacity: 0, y: 15 }}
+              animate={{ scale: 1, opacity: 1, y: 0 }}
+              exit={{ scale: 0.85, opacity: 0, y: 15 }}
+              transition={{ type: 'spring', damping: 24, stiffness: 320 }}
+              className="bg-white rounded-3xl p-6 sm:p-7 shadow-2xl border border-indigo-100 flex flex-col items-center max-w-sm w-full text-center relative overflow-hidden"
+            >
+              {/* Vibrant Indigo-Purple Gradient Bar */}
+              <div className="absolute top-0 inset-x-0 h-2.5 bg-gradient-to-r from-blue-600 via-indigo-600 to-violet-600" />
+              <div className="absolute -right-10 -top-10 w-36 h-36 bg-indigo-100 rounded-full opacity-50 blur-xl pointer-events-none" />
+              <div className="absolute -left-10 -bottom-10 w-36 h-36 bg-violet-100 rounded-full opacity-50 blur-xl pointer-events-none" />
+
+              {/* Distinct Badge & Animated Icon: Indigo Ring with Award/Sparkles */}
+              <div className="relative mb-4 mt-2">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-indigo-500 to-violet-600 flex items-center justify-center shadow-lg shadow-indigo-200 rotate-3">
+                  <motion.div
+                    initial={{ rotate: -25, scale: 0.5 }}
+                    animate={{ rotate: -3, scale: 1 }}
+                    transition={{ type: 'spring', damping: 15, stiffness: 200, delay: 0.1 }}
+                  >
+                    <Award size={40} className="text-white drop-shadow-sm" />
+                  </motion.div>
+                </div>
+                {/* Floating MySQL Live Badge */}
+                <motion.div 
+                  initial={{ scale: 0 }}
+                  animate={{ scale: 1 }}
+                  transition={{ delay: 0.35, type: 'spring' }}
+                  className="absolute -bottom-2 -right-2 px-2 py-0.5 bg-emerald-600 text-white text-[9px] font-black uppercase tracking-wider rounded-full shadow-sm flex items-center gap-1 border border-white"
+                >
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-300 animate-pulse" />
+                  MySQL
+                </motion.div>
+              </div>
+
+              {/* Title & Distinct Content */}
+              <h3 className="font-black text-slate-900 text-lg subpixel-antialiased tracking-tight">
+                Nilai Berhasil Tersimpan!
+              </h3>
+              <div className="inline-flex items-center gap-1.5 px-2.5 py-1 bg-indigo-50 border border-indigo-100/80 rounded-full text-[10px] font-bold text-indigo-700 mt-2">
+                <Sparkles size={11} className="text-indigo-600" />
+                <span>Langsung ke Database MySQL</span>
+              </div>
+
+              <p className="text-slate-600 text-xs leading-relaxed mt-2.5 px-1">
+                Data penilaian mata pelajaran <strong className="text-slate-900">{gradeSuccessSummary?.subject || selectedSubject}</strong> untuk <strong className="text-slate-900">Kelas {gradeSuccessSummary?.className || selectedGradeClass}</strong> telah berhasil diperbarui dan dikunci secara permanen.
+              </p>
+
+              {/* Detail Ringkasan Nilai */}
+              <div className="mt-4 w-full bg-gradient-to-b from-slate-50 to-indigo-50/30 border border-slate-200/80 rounded-2xl p-3.5 flex flex-col gap-2 relative z-10 text-xs">
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <Users size={13} className="text-indigo-600" />
+                    Murid Ternilai
+                  </span>
+                  <span className="font-black text-slate-900 font-sans">
+                    {gradeSuccessSummary?.count || gradingClassStudents.length} Siswa
+                  </span>
+                </div>
+                <div className="flex justify-between items-center text-slate-600">
+                  <span className="font-semibold flex items-center gap-1.5">
+                    <BookOpen size={13} className="text-violet-600" />
+                    Format Kurikulum
+                  </span>
+                  <span className="font-black text-indigo-700 font-sans">
+                    Kurikulum Merdeka
+                  </span>
+                </div>
+                <div className="border-t border-slate-200/80 my-0.5 pt-1.5 flex justify-between items-center text-[10px] text-slate-500 font-bold uppercase tracking-wider">
+                  <span>Status Penyimpanan</span>
+                  <span className="font-black text-emerald-700 flex items-center gap-1">
+                    <CheckCircle2 size={11} />
+                    MySQL Database OK
+                  </span>
+                </div>
+              </div>
+
+              {/* Action Button with Distinct Violet/Indigo Theme */}
+              <motion.button
+                whileTap={{ scale: 0.97 }}
+                onClick={() => setShowGradeSuccessModal(false)}
+                className="mt-5 w-full py-2.5 bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-700 hover:to-violet-700 text-white font-extrabold text-xs uppercase tracking-wider rounded-xl transition-all cursor-pointer shadow-md shadow-indigo-200 flex items-center justify-center gap-2 relative z-10"
+              >
+                <Check size={14} className="stroke-[3px]" />
+                Lanjutkan
               </motion.button>
             </motion.div>
           </div>

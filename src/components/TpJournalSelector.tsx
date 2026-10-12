@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { BookOpen, Search, Sparkles, Check, ChevronDown, Calendar, Hash, X, Link2, Filter, Lock, Unlock, User } from 'lucide-react';
+import { BookOpen, Search, Sparkles, Check, ChevronDown, Calendar, Hash, X, Link2, Filter, Lock, Unlock, User, Edit3, History } from 'lucide-react';
 import { TeachingJournal } from '../types';
 
 export interface TpJournalSelectorProps {
@@ -17,6 +17,9 @@ export interface TpJournalSelectorProps {
   isLocked?: boolean;
   filledBy?: string;
   filledAt?: string;
+  editedBy?: string;
+  editedAt?: string;
+  editedByRole?: string;
   onUnlock?: () => void;
 }
 
@@ -34,6 +37,9 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
   isLocked = false,
   filledBy,
   filledAt,
+  editedBy,
+  editedAt,
+  editedByRole,
   onUnlock
 }) => {
   const [isOpen, setIsOpen] = useState(false);
@@ -201,17 +207,34 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
         />
       </div>
 
-      {/* Teacher Attribution info */}
-      {filledBy && (
-        <div className="flex items-center justify-between text-[9px] text-slate-500 font-semibold px-0.5">
-          <span className="flex items-center gap-1 truncate" title={`Diisi oleh: ${filledBy}`}>
-            <User size={10} className="text-indigo-600 shrink-0" />
-            <span>Keterangan: <strong className="text-slate-800 font-bold">{filledBy}</strong></span>
-          </span>
-          {filledAt && (
-            <span className="text-[8px] text-slate-400 shrink-0">
-              {new Date(filledAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
-            </span>
+      {/* Teacher Attribution & Edited By info */}
+      {(filledBy || editedBy) && (
+        <div className="flex flex-col gap-0.5 text-[9px] text-slate-500 font-semibold px-0.5 mt-0.5">
+          {filledBy && (
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1 truncate" title={`Diisi awal oleh: ${filledBy}`}>
+                <User size={10} className="text-indigo-600 shrink-0" />
+                <span>Pengisi Awal: <strong className="text-slate-800 font-bold">{filledBy}</strong></span>
+              </span>
+              {filledAt && (
+                <span className="text-[8px] text-slate-400 shrink-0">
+                  {new Date(filledAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' })}
+                </span>
+              )}
+            </div>
+          )}
+          {editedBy && (
+            <div className="flex items-center justify-between text-amber-700 bg-amber-50/70 border border-amber-200/60 rounded px-1.5 py-0.5">
+              <span className="flex items-center gap-1 truncate" title={`Diedit / Dibuka kuncinya oleh: ${editedBy}${editedByRole ? ` (${editedByRole})` : ''}`}>
+                <Edit3 size={10} className="text-amber-600 shrink-0" />
+                <span>Diedit oleh: <strong className="text-amber-900 font-black">{editedBy}</strong></span>
+              </span>
+              {editedAt && (
+                <span className="text-[8px] text-amber-600 font-mono shrink-0">
+                  {new Date(editedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+                </span>
+              )}
+            </div>
           )}
         </div>
       )}

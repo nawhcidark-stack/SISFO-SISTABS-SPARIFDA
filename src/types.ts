@@ -308,6 +308,16 @@ export interface CurriculumTpDescription {
   filledBy?: string; // Nama guru serumpun yang mengisi/mengunci TP
   filledByRole?: string; // e.g., "Guru Bahasa Indonesia"
   filledAt?: string;
+  editedBy?: string; // Nama guru serumpun yang membuka kunci atau mengedit TP
+  editedByRole?: string; // Role guru yang mengedit TP
+  editedAt?: string; // Waktu pengeditan/pembukaan kunci TP
+  editHistory?: Array<{
+    editorName: string;
+    editorRole?: string;
+    action: 'unlock' | 'edit';
+    timestamp: string;
+    note?: string;
+  }>;
   updatedAt?: string;
 }
 

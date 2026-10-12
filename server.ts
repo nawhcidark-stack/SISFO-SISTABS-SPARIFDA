@@ -6021,7 +6021,9 @@ async function startServer() {
       tp4Name,
       isLocked,
       filledBy,
-      filledByRole
+      filledByRole,
+      editedBy,
+      editedByRole
     } = req.body;
 
     if (!subject) {
@@ -6052,8 +6054,27 @@ async function startServer() {
     );
 
     const nowIso = new Date().toISOString();
-    const resolvedFilledBy = filledBy || (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].filledBy : undefined) || "Guru Mata Pelajaran";
-    const resolvedFilledAt = (existingIdx > -1 && curriculumTpDescriptions[existingIdx].filledAt) ? curriculumTpDescriptions[existingIdx].filledAt : nowIso;
+    const existingRecord = existingIdx > -1 ? curriculumTpDescriptions[existingIdx] : undefined;
+    const resolvedFilledBy = existingRecord?.filledBy || filledBy || "Guru Mata Pelajaran";
+    const resolvedFilledAt = existingRecord?.filledAt || nowIso;
+
+    // Catat siapa yang mengedit (jika ini pembaruan/edit dari guru lain atau sama)
+    const effectiveEditor = editedBy || filledBy || (existingRecord ? existingRecord.editedBy : undefined);
+    const effectiveEditorRole = editedByRole || filledByRole || (existingRecord ? existingRecord.editedByRole : undefined);
+    const effectiveEditedAt = (existingRecord && (editedBy || (filledBy && filledBy !== existingRecord.filledBy))) ? nowIso : (existingRecord?.editedAt || (editedBy ? nowIso : undefined));
+
+    const updatedHistory = existingRecord?.editHistory ? [...existingRecord.editHistory] : [];
+    if (editedBy || (filledBy && existingRecord && filledBy !== existingRecord.filledBy)) {
+      const editorName = editedBy || filledBy || "Guru Serumpun";
+      updatedHistory.unshift({
+        editorName,
+        editorRole: effectiveEditorRole || "Guru Mata Pelajaran",
+        action: 'edit',
+        timestamp: nowIso,
+        note: `Menyimpan perubahan uraian TP (${cleanSubject} Tk. ${gradeLevel})`
+      });
+      if (updatedHistory.length > 20) updatedHistory.length = 20;
+    }
 
     const tpRecord: CurriculumTpDescription = {
       id: recordId,
@@ -6062,14 +6083,18 @@ async function startServer() {
       subjectId: subjectId || undefined,
       semester: cleanSem,
       academicYear: cleanYear,
-      tp1Name: tp1Name !== undefined ? tp1Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp1Name : ''),
-      tp2Name: tp2Name !== undefined ? tp2Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp2Name : ''),
-      tp3Name: tp3Name !== undefined ? tp3Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp3Name : ''),
-      tp4Name: tp4Name !== undefined ? tp4Name : (existingIdx > -1 ? curriculumTpDescriptions[existingIdx].tp4Name : ''),
+      tp1Name: tp1Name !== undefined ? tp1Name : (existingRecord?.tp1Name ?? ''),
+      tp2Name: tp2Name !== undefined ? tp2Name : (existingRecord?.tp2Name ?? ''),
+      tp3Name: tp3Name !== undefined ? tp3Name : (existingRecord?.tp3Name ?? ''),
+      tp4Name: tp4Name !== undefined ? tp4Name : (existingRecord?.tp4Name ?? ''),
       isLocked: isLocked !== undefined ? Boolean(isLocked) : true,
       filledBy: resolvedFilledBy,
-      filledByRole: filledByRole || "Guru Mata Pelajaran",
+      filledByRole: filledByRole || (existingRecord?.filledByRole) || "Guru Mata Pelajaran",
       filledAt: resolvedFilledAt,
+      editedBy: effectiveEditor,
+      editedByRole: effectiveEditorRole,
+      editedAt: effectiveEditedAt,
+      editHistory: updatedHistory,
       updatedAt: nowIso
     };
 
@@ -6130,7 +6155,7 @@ async function startServer() {
   });
 
   app.post("/api/curriculum/tp-levels/unlock", async (req, res) => {
-    const { id, gradeLevel, subject, semester, academicYear, className } = req.body;
+    const { id, gradeLevel, subject, semester, academicYear, className, unlockedBy, unlockedByRole } = req.body;
     let target = curriculumTpDescriptions.find(tp => tp.id === id);
 
     let targetGrade = gradeLevel ? String(gradeLevel).trim() : '';
@@ -6151,15 +6176,33 @@ async function startServer() {
       return res.status(404).json({ error: "Data TP tingkat tidak ditemukan untuk dibuka kuncinya." });
     }
 
+    const nowIso = new Date().toISOString();
     target.isLocked = false;
-    target.updatedAt = new Date().toISOString();
+    target.updatedAt = nowIso;
+
+    // Catat nama guru yang membuka kunci/mengedit
+    if (unlockedBy) {
+      target.editedBy = unlockedBy;
+      target.editedByRole = unlockedByRole || "Guru Mata Pelajaran";
+      target.editedAt = nowIso;
+      
+      if (!target.editHistory) target.editHistory = [];
+      target.editHistory.unshift({
+        editorName: unlockedBy,
+        editorRole: unlockedByRole || "Guru Mata Pelajaran",
+        action: 'unlock',
+        timestamp: nowIso,
+        note: `Membuka kunci TP untuk penyesuaian materi (${target.subject} Tk. ${target.gradeLevel})`
+      });
+      if (target.editHistory.length > 20) target.editHistory.length = 20;
+    }
 
     saveState();
     directSaveEntityToMysql("curriculum_tp", target).catch(err => console.warn("[MySQL Unlock TP Error]:", err));
 
     res.json({
       success: true,
-      message: `Kunci Judul TP tingkat ${target.gradeLevel} (${target.subject}) telah dibuka. Anda dapat mengedit judul TP sekarang.`,
+      message: `Kunci Judul TP tingkat ${target.gradeLevel} (${target.subject}) telah dibuka oleh ${unlockedBy || 'Guru Serumpun'}. Semua guru serumpun dapat mengedit judul TP sekarang.`,
       tpRecord: target
     });
   });

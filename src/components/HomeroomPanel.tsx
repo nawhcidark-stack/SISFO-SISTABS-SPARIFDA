@@ -811,6 +811,9 @@ export default function HomeroomPanel({
   const [isTpLocked, setIsTpLocked] = useState<boolean>(false);
   const [tpFilledBy, setTpFilledBy] = useState<string>('');
   const [tpFilledAt, setTpFilledAt] = useState<string>('');
+  const [tpEditedBy, setTpEditedBy] = useState<string>('');
+  const [tpEditedAt, setTpEditedAt] = useState<string>('');
+  const [tpEditedByRole, setTpEditedByRole] = useState<string>('');
   const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
 
   // Sync TP from curriculum level for the selected subject and grade
@@ -839,6 +842,9 @@ export default function HomeroomPanel({
             setIsTpLocked(saved.isLocked ?? true);
             setTpFilledBy(saved.filledBy || '');
             setTpFilledAt(saved.filledAt || '');
+            setTpEditedBy(saved.editedBy || '');
+            setTpEditedAt(saved.editedAt || '');
+            setTpEditedByRole(saved.editedByRole || '');
           }
         }
       }
@@ -857,6 +863,7 @@ export default function HomeroomPanel({
     const targetClass = selectedGradingClass || currentTeacher?.className || '';
     const m = String(targetClass).match(/\d+/);
     const gradeLevel = m ? m[0] : '7';
+    const teacherName = currentTeacher?.name || 'Wali Kelas';
     try {
       const res = await fetch('/api/tp-descriptions', {
         method: 'POST',
@@ -872,14 +879,20 @@ export default function HomeroomPanel({
           tp3Name: tp3InputName,
           tp4Name: tp4InputName,
           isLocked: true,
-          filledBy: currentTeacher?.name || 'Wali Kelas',
-          filledByRole: `Wali Kelas ${targetClass}`
+          filledBy: tpFilledBy || teacherName,
+          filledByRole: `Wali Kelas ${targetClass}`,
+          editedBy: teacherName,
+          editedByRole: `Wali Kelas ${targetClass}`
         })
       });
       if (res.ok) {
+        const nowIso = new Date().toISOString();
         setIsTpLocked(true);
-        setTpFilledBy(currentTeacher?.name || 'Wali Kelas');
-        setTpFilledAt(new Date().toISOString());
+        if (!tpFilledBy) setTpFilledBy(teacherName);
+        if (!tpFilledAt) setTpFilledAt(nowIso);
+        setTpEditedBy(teacherName);
+        setTpEditedAt(nowIso);
+        setTpEditedByRole(`Wali Kelas ${targetClass}`);
         setNotifMsg({
           type: 'success',
           text: `🔒 Judul TP mapel ${selectedSubjectForGrading} berhasil disimpan dan dikunci untuk tingkat ${gradeLevel}!`
@@ -894,12 +907,13 @@ export default function HomeroomPanel({
   };
 
   const handleUnlockHomeroomTp = async () => {
-    if (!confirm(`Buka kunci judul TP untuk Mapel ${selectedSubjectForGrading}?\n\nSetelah dibuka, Anda dapat menyesuaikan judul TP ini.`)) {
+    if (!confirm(`Buka kunci judul TP untuk Mapel ${selectedSubjectForGrading}?\n\nSetelah dibuka, seluruh guru serumpun mapel ini dapat mengedit uraian TP. Keterangan pembuka kunci/pengedit akan tercatat.`)) {
       return;
     }
     const targetClass = selectedGradingClass || currentTeacher?.className || '';
     const m = String(targetClass).match(/\d+/);
     const gradeLevel = m ? m[0] : '7';
+    const teacherName = currentTeacher?.name || 'Wali Kelas';
     try {
       const res = await fetch('/api/curriculum/tp-levels/unlock', {
         method: 'POST',
@@ -909,14 +923,20 @@ export default function HomeroomPanel({
           subject: selectedSubjectForGrading,
           className: targetClass,
           semester: kokurikulerSemester,
-          academicYear: kokurikulerYear
+          academicYear: kokurikulerYear,
+          unlockedBy: teacherName,
+          unlockedByRole: `Wali Kelas ${targetClass}`
         })
       });
       if (res.ok) {
+        const nowIso = new Date().toISOString();
         setIsTpLocked(false);
+        setTpEditedBy(teacherName);
+        setTpEditedAt(nowIso);
+        setTpEditedByRole(`Wali Kelas ${targetClass}`);
         setNotifMsg({
           type: 'success',
-          text: `🔓 Kunci Judul TP berhasil dibuka! Silakan ubah judul lalu klik "Kunci & Simpan TP".`
+          text: `🔓 Kunci Judul TP berhasil dibuka oleh ${teacherName}! Anda dan guru serumpun dapat mengubah uraian TP sekarang.`
         });
         fetchHomeroomTpDescriptions();
       }
@@ -7667,30 +7687,45 @@ Wassalamualaikum Wr. Wb.
                   </div>
 
                   <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                    {/* Status Kunci & Nama Guru Pengisi */}
+                    {/* Status Kunci & Nama Guru Pengisi / Pengedit */}
                     {isTpLocked ? (
                       <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-amber-800 text-[10.5px] font-bold">
                         <Lock size={12} className="text-amber-600 shrink-0" />
-                        <span>Terkunci oleh <strong>{tpFilledBy || 'Guru/Wali Kelas'}</strong></span>
+                        <span>
+                          Terkunci oleh <strong>{tpFilledBy || 'Guru/Wali Kelas'}</strong>
+                          {tpEditedBy && tpEditedBy !== tpFilledBy && (
+                            <span className="text-amber-700 ml-1 font-semibold">(diedit: <strong className="text-amber-900">{tpEditedBy}</strong>)</span>
+                          )}
+                        </span>
                         <button
                           type="button"
                           onClick={handleUnlockHomeroomTp}
-                          className="ml-1 px-2 py-0.5 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-extrabold text-[10px] cursor-pointer shadow-2xs transition-all"
+                          className="ml-1 px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-extrabold text-[10px] cursor-pointer shadow-2xs transition-all flex items-center gap-1"
+                          title="Semua guru serumpun berhak membuka kunci & mengedit uraian TP ini"
                         >
-                          Buka Kunci / Edit TP
+                          <Unlock size={11} className="text-amber-700" />
+                          <span>Buka Kunci / Edit TP</span>
                         </button>
                       </div>
                     ) : (
-                      <button
-                        type="button"
-                        onClick={handleSaveHomeroomTp}
-                        disabled={isSavingTp}
-                        className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
-                        title={`Simpan & Kunci Judul TP untuk seluruh rombel tingkat ini`}
-                      >
-                        {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                        <span>Kunci & Simpan TP ({selectedSubjectForGrading})</span>
-                      </button>
+                      <div className="flex items-center gap-2">
+                        {tpEditedBy && (
+                          <span className="text-[10px] text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1">
+                            <Unlock size={11} className="text-amber-600" />
+                            <span>Kunci terbuka • Diedit oleh <strong>{tpEditedBy}</strong></span>
+                          </span>
+                        )}
+                        <button
+                          type="button"
+                          onClick={handleSaveHomeroomTp}
+                          disabled={isSavingTp}
+                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                          title={`Simpan & Kunci Judul TP untuk seluruh rombel tingkat ini`}
+                        >
+                          {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                          <span>Kunci & Simpan TP ({selectedSubjectForGrading})</span>
+                        </button>
+                      </div>
                     )}
 
                     {/* Quick Auto-fill TP Button */}
@@ -7721,6 +7756,9 @@ Wassalamualaikum Wr. Wb.
                       isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
                       onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
@@ -7738,6 +7776,9 @@ Wassalamualaikum Wr. Wb.
                       isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
                       onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
@@ -7755,6 +7796,9 @@ Wassalamualaikum Wr. Wb.
                       isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
                       onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
@@ -7772,6 +7816,9 @@ Wassalamualaikum Wr. Wb.
                       isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
+                      editedBy={tpEditedBy}
+                      editedAt={tpEditedAt}
+                      editedByRole={tpEditedByRole}
                       onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>

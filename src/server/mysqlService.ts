@@ -992,6 +992,10 @@ CREATE TABLE IF NOT EXISTS \`curriculum_tp_levels\` (
   \`filled_by\` VARCHAR(150) DEFAULT NULL,
   \`filled_by_role\` VARCHAR(100) DEFAULT NULL,
   \`filled_at\` VARCHAR(64) DEFAULT NULL,
+  \`edited_by\` VARCHAR(150) DEFAULT NULL,
+  \`edited_by_role\` VARCHAR(100) DEFAULT NULL,
+  \`edited_at\` VARCHAR(64) DEFAULT NULL,
+  \`edit_history\` LONGTEXT DEFAULT NULL,
   \`updated_at\` VARCHAR(64) DEFAULT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_tpl_grade_subj\` (\`grade_level\`, \`subject_name\`),
@@ -2632,12 +2636,34 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
           \`filled_by\` VARCHAR(150) DEFAULT NULL,
           \`filled_by_role\` VARCHAR(100) DEFAULT NULL,
           \`filled_at\` VARCHAR(64) DEFAULT NULL,
+          \`edited_by\` VARCHAR(150) DEFAULT NULL,
+          \`edited_by_role\` VARCHAR(100) DEFAULT NULL,
+          \`edited_at\` VARCHAR(64) DEFAULT NULL,
+          \`edit_history\` LONGTEXT DEFAULT NULL,
           \`updated_at\` VARCHAR(64) DEFAULT NULL,
           PRIMARY KEY (\`id\`),
           KEY \`idx_tpl_grade_subj\` (\`grade_level\`, \`subject_name\`),
           KEY \`idx_tpl_sem_year\` (\`semester\`, \`academic_year\`)
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
       `);
+
+      // Migration: Pastikan kolom edited_by, edited_by_role, edited_at, edit_history ada
+      try {
+        const [ctpCols]: any = await connection.query("SHOW COLUMNS FROM `curriculum_tp_levels`");
+        const ctpColNames = new Set((ctpCols || []).map((c: any) => c.Field));
+        if (!ctpColNames.has('edited_by')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edited_by` VARCHAR(150) DEFAULT NULL");
+        }
+        if (!ctpColNames.has('edited_by_role')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edited_by_role` VARCHAR(100) DEFAULT NULL");
+        }
+        if (!ctpColNames.has('edited_at')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edited_at` VARCHAR(64) DEFAULT NULL");
+        }
+        if (!ctpColNames.has('edit_history')) {
+          await connection.query("ALTER TABLE `curriculum_tp_levels` ADD COLUMN `edit_history` LONGTEXT DEFAULT NULL");
+        }
+      } catch (_) {}
     } catch (tabErr) {
       console.warn('[MySQL Curriculum Tables Init Warning]:', tabErr);
     }
@@ -3335,21 +3361,27 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
         INSERT INTO \`curriculum_tp_levels\` (
           \`id\`, \`grade_level\`, \`subject_id\`, \`subject_name\`, \`semester\`, \`academic_year\`,
           \`tp1_name\`, \`tp2_name\`, \`tp3_name\`, \`tp4_name\`, \`is_locked\`, \`filled_by\`,
-          \`filled_by_role\`, \`filled_at\`, \`updated_at\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          \`filled_by_role\`, \`filled_at\`, \`edited_by\`, \`edited_by_role\`, \`edited_at\`,
+          \`edit_history\`, \`updated_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
           \`subject_id\`=VALUES(\`subject_id\`), \`subject_name\`=VALUES(\`subject_name\`),
           \`tp1_name\`=VALUES(\`tp1_name\`), \`tp2_name\`=VALUES(\`tp2_name\`),
           \`tp3_name\`=VALUES(\`tp3_name\`), \`tp4_name\`=VALUES(\`tp4_name\`),
           \`is_locked\`=VALUES(\`is_locked\`), \`filled_by\`=VALUES(\`filled_by\`),
           \`filled_by_role\`=VALUES(\`filled_by_role\`), \`filled_at\`=VALUES(\`filled_at\`),
+          \`edited_by\`=VALUES(\`edited_by\`), \`edited_by_role\`=VALUES(\`edited_by_role\`),
+          \`edited_at\`=VALUES(\`edited_at\`), \`edit_history\`=VALUES(\`edit_history\`),
           \`updated_at\`=VALUES(\`updated_at\`)
       `, [
         ctp.id, String(ctp.gradeLevel || '7'), ctp.subjectId || null, ctp.subject || ctp.subjectName || '',
         ctp.semester || 'Ganjil', ctp.academicYear || '2026/2027',
         ctp.tp1Name || null, ctp.tp2Name || null, ctp.tp3Name || null, ctp.tp4Name || null,
         ctp.isLocked ? 1 : 0, ctp.filledBy || null, ctp.filledByRole || null,
-        ctp.filledAt || new Date().toISOString(), ctp.updatedAt || new Date().toISOString()
+        ctp.filledAt || new Date().toISOString(),
+        ctp.editedBy || null, ctp.editedByRole || null, ctp.editedAt || null,
+        ctp.editHistory ? JSON.stringify(ctp.editHistory) : null,
+        ctp.updatedAt || new Date().toISOString()
       ]);
       return { success: true, message: `Judul TP tingkat ${ctp.gradeLevel} (${ctp.subject}) langsung tersimpan ke MySQL.` };
     }
@@ -4158,6 +4190,10 @@ export async function getAllCurriculumTpFromMysql(): Promise<CurriculumTpDescrip
       filledBy: r.filled_by || undefined,
       filledByRole: r.filled_by_role || undefined,
       filledAt: r.filled_at || undefined,
+      editedBy: r.edited_by || undefined,
+      editedByRole: r.edited_by_role || undefined,
+      editedAt: r.edited_at || undefined,
+      editHistory: r.edit_history ? (() => { try { return JSON.parse(r.edit_history); } catch (_) { return undefined; } })() : undefined,
       updatedAt: r.updated_at || undefined
     }));
   } catch (err: any) {

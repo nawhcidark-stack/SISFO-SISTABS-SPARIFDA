@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { BookOpen, Search, Sparkles, Check, ChevronDown, Calendar, Hash, X, Link2, Filter, Lock, Unlock, User, Edit3, History } from 'lucide-react';
+import { BookOpen, Search, Sparkles, Check, ChevronDown, Calendar, Hash, X, Link2, Filter, User, Edit3, History } from 'lucide-react';
 import { TeachingJournal } from '../types';
 
 export interface TpJournalSelectorProps {
@@ -34,13 +34,11 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
   selectedSubject = '',
   selectedClass = '',
   required = false,
-  isLocked = false,
   filledBy,
   filledAt,
   editedBy,
   editedAt,
-  editedByRole,
-  onUnlock
+  editedByRole
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -142,51 +140,31 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
         <label className="text-[10px] font-black uppercase text-indigo-600 tracking-wider flex items-center gap-1">
           <span>{label}</span>
           {required && <span className="text-rose-500 font-bold">*</span>}
-          {isLocked && (
-            <span className="inline-flex items-center gap-0.5 px-1.5 py-0.2 rounded bg-amber-50 text-amber-700 border border-amber-200 text-[8.5px] font-extrabold normal-case">
-              <Lock size={9} /> Terkunci
-            </span>
-          )}
         </label>
 
         <div className="flex items-center gap-1">
-          {/* If locked, show Edit button */}
-          {isLocked && onUnlock && (
-            <button
-              type="button"
-              onClick={onUnlock}
-              className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9px] font-extrabold bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 transition-all cursor-pointer shadow-2xs"
-              title="Buka kunci untuk mengedit Judul TP"
-            >
-              <Unlock size={10} className="text-amber-600" />
-              <span>Edit TP</span>
-            </button>
-          )}
-
-          {/* Button to open Journal Dropdown (only if not locked) */}
-          {!isLocked && (
-            <button
-              type="button"
-              onClick={() => setIsOpen(!isOpen)}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold transition-all cursor-pointer shadow-2xs ${
-                isOpen
-                  ? 'bg-indigo-600 text-white shadow-indigo-200'
-                  : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
-              }`}
-              title="Pilih dari Jurnal Pembelajaran yang sudah diisi"
-            >
-              <Link2 size={11} className={isOpen ? 'text-white' : 'text-indigo-600'} />
-              <span>Link Jurnal</span>
-              {relevantCount > 0 && (
-                <span className={`px-1 py-0.2 rounded-full text-[8.5px] font-black ${
-                  isOpen ? 'bg-indigo-800 text-indigo-100' : 'bg-indigo-200 text-indigo-800'
-                }`}>
-                  {relevantCount}
-                </span>
-              )}
-              <ChevronDown size={10} className={`transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
-            </button>
-          )}
+          {/* Button to open Journal Dropdown */}
+          <button
+            type="button"
+            onClick={() => setIsOpen(!isOpen)}
+            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-lg text-[9.5px] font-bold transition-all cursor-pointer shadow-2xs ${
+              isOpen
+                ? 'bg-indigo-600 text-white shadow-indigo-200'
+                : 'bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200'
+            }`}
+            title="Pilih dari Jurnal Pembelajaran yang sudah diisi"
+          >
+            <Link2 size={11} className={isOpen ? 'text-white' : 'text-indigo-600'} />
+            <span>Link Jurnal</span>
+            {relevantCount > 0 && (
+              <span className={`px-1 py-0.2 rounded-full text-[8.5px] font-black ${
+                isOpen ? 'bg-indigo-800 text-indigo-100' : 'bg-indigo-200 text-indigo-800'
+              }`}>
+                {relevantCount}
+              </span>
+            )}
+            <ChevronDown size={10} className={`transition-transform duration-150 ${isOpen ? 'rotate-180' : ''}`} />
+          </button>
         </div>
       </div>
 
@@ -194,16 +172,11 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
       <div className="relative">
         <textarea
           value={value}
-          onChange={(e) => !isLocked && onChange(e.target.value)}
-          readOnly={isLocked}
+          onChange={(e) => onChange(e.target.value)}
           rows={2}
           maxLength={150}
-          className={`w-full border rounded-xl p-2.5 text-[11px] leading-relaxed font-bold transition-colors ${
-            isLocked
-              ? 'border-amber-200/80 bg-amber-50/20 text-slate-800 cursor-not-allowed select-none'
-              : 'border-slate-200 focus:border-indigo-600 focus:outline-none text-slate-800 bg-slate-50/30 hover:bg-white focus:bg-white placeholder:text-slate-400'
-          }`}
-          placeholder={isLocked ? '(Terkunci - klik Edit TP untuk mengubah)' : (placeholder || `Isi uraian ${label}...`)}
+          className="w-full border rounded-xl p-2.5 text-[11px] leading-relaxed font-bold transition-colors border-slate-200 focus:border-indigo-600 focus:outline-none text-slate-800 bg-slate-50/30 hover:bg-white focus:bg-white placeholder:text-slate-400"
+          placeholder={placeholder || `Isi uraian ${label}...`}
         />
       </div>
 
@@ -224,13 +197,13 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
             </div>
           )}
           {editedBy && (
-            <div className="flex items-center justify-between text-amber-700 bg-amber-50/70 border border-amber-200/60 rounded px-1.5 py-0.5">
-              <span className="flex items-center gap-1 truncate" title={`Diedit / Dibuka kuncinya oleh: ${editedBy}${editedByRole ? ` (${editedByRole})` : ''}`}>
-                <Edit3 size={10} className="text-amber-600 shrink-0" />
-                <span>Diedit oleh: <strong className="text-amber-900 font-black">{editedBy}</strong></span>
+            <div className="flex items-center justify-between text-indigo-700 bg-indigo-50/70 border border-indigo-200/60 rounded px-1.5 py-0.5">
+              <span className="flex items-center gap-1 truncate" title={`Diedit oleh: ${editedBy}${editedByRole ? ` (${editedByRole})` : ''}`}>
+                <Edit3 size={10} className="text-indigo-600 shrink-0" />
+                <span>Diedit oleh: <strong className="text-indigo-900 font-black">{editedBy}</strong></span>
               </span>
               {editedAt && (
-                <span className="text-[8px] text-amber-600 font-mono shrink-0">
+                <span className="text-[8px] text-indigo-600 font-mono shrink-0">
                   {new Date(editedAt).toLocaleDateString('id-ID', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
                 </span>
               )}

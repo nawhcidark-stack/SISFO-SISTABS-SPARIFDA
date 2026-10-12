@@ -329,7 +329,6 @@ export default function SubjectTeacherPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('');
   const [tp3InputName, setTp3InputName] = useState<string>('');
   const [tp4InputName, setTp4InputName] = useState<string>('');
-  const [isTpLocked, setIsTpLocked] = useState<boolean>(false);
   const [tpFilledBy, setTpFilledBy] = useState<string>('');
   const [tpFilledAt, setTpFilledAt] = useState<string>('');
   const [tpEditedBy, setTpEditedBy] = useState<string>('');
@@ -437,7 +436,7 @@ export default function SubjectTeacherPanel({
           tp2Name: tp2InputName,
           tp3Name: tp3InputName,
           tp4Name: tp4InputName,
-          isLocked: true,
+          isLocked: false,
           filledBy: tpFilledBy || teacherName,
           filledByRole: `Guru ${selectedSubject}`,
           editedBy: teacherName,
@@ -459,7 +458,7 @@ export default function SubjectTeacherPanel({
           tp2Name: tp2InputName,
           tp3Name: tp3InputName,
           tp4Name: tp4InputName,
-          isLocked: true,
+          isLocked: false,
           filledBy: tpFilledBy || teacherName,
           filledAt: tpFilledAt || nowIso,
           editedBy: teacherName,
@@ -474,7 +473,6 @@ export default function SubjectTeacherPanel({
           [levelKey]: updated
         }));
 
-        setIsTpLocked(true);
         if (!tpFilledBy) setTpFilledBy(teacherName);
         if (!tpFilledAt) setTpFilledAt(nowIso);
         setTpEditedBy(teacherName);
@@ -483,7 +481,7 @@ export default function SubjectTeacherPanel({
 
         setFeedback({
           type: 'success',
-          text: `🔒 Judul TP untuk mapel ${selectedSubject} tingkat ${gradeLevel} berhasil disimpan, dikunci, dan otomatis terhubung ke seluruh kelas tingkat ${gradeLevel}!`
+          text: `Deskripsi TP untuk mapel ${selectedSubject} tingkat ${gradeLevel} berhasil disimpan dan otomatis terhubung ke seluruh kelas tingkat ${gradeLevel}!`
         });
         fetchAssessments();
         fetchTpDescriptions();
@@ -494,44 +492,6 @@ export default function SubjectTeacherPanel({
       setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem saat menyimpan TP.' });
     } finally {
       setIsSavingTp(false);
-    }
-  };
-
-  const handleUnlockTp = async () => {
-    if (!confirm(`Buka kunci judul TP untuk Mapel ${selectedSubject}?\n\nSetelah dibuka, seluruh guru serumpun mapel ini dapat mengedit uraian TP. Keterangan nama yang membuka/mengedit akan tercatat di sistem.`)) {
-      return;
-    }
-    const m = String(selectedGradeClass || '').match(/\d+/);
-    const gradeLevel = m ? m[0] : '7';
-    const teacherName = currentTeacher?.name || 'Guru Mata Pelajaran';
-    try {
-      const res = await fetch('/api/curriculum/tp-levels/unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gradeLevel,
-          subject: selectedSubject,
-          className: selectedGradeClass,
-          semester: selectedSemesterGrading,
-          academicYear: selectedYearGrading,
-          unlockedBy: teacherName,
-          unlockedByRole: `Guru ${selectedSubject}`
-        })
-      });
-      if (res.ok) {
-        setIsTpLocked(false);
-        const nowIso = new Date().toISOString();
-        setTpEditedBy(teacherName);
-        setTpEditedAt(nowIso);
-        setTpEditedByRole(`Guru ${selectedSubject}`);
-        setFeedback({
-          type: 'success',
-          text: `🔓 Kunci Judul TP berhasil dibuka oleh ${teacherName}! Semua guru serumpun dapat mengubah uraian TP, lalu klik "Kunci & Simpan TP" untuk menyinkronkan kembali.`
-        });
-        fetchTpDescriptions();
-      }
-    } catch (err: any) {
-      alert('Gagal membuka kunci TP: ' + err.message);
     }
   };
 
@@ -565,7 +525,6 @@ export default function SubjectTeacherPanel({
       setTp2InputName(savedDesc.tp2Name || '');
       setTp3InputName(savedDesc.tp3Name || '');
       setTp4InputName(savedDesc.tp4Name || '');
-      setIsTpLocked(savedDesc.isLocked ?? true);
       setTpFilledBy(savedDesc.filledBy || '');
       setTpFilledAt(savedDesc.filledAt || '');
       setTpEditedBy(savedDesc.editedBy || '');
@@ -595,7 +554,6 @@ export default function SubjectTeacherPanel({
       setTp2InputName(matchedAss.tp2Name || '');
       setTp3InputName(matchedAss.tp3Name || '');
       setTp4InputName(matchedAss.tp4Name || '');
-      setIsTpLocked(true);
       setTpFilledBy(matchedAss.teacherName || 'Guru Mata Pelajaran');
       setTpEditedBy('');
       setTpEditedAt('');
@@ -608,7 +566,6 @@ export default function SubjectTeacherPanel({
     setTp2InputName('');
     setTp3InputName('');
     setTp4InputName('');
-    setIsTpLocked(false);
     setTpFilledBy('');
     setTpFilledAt('');
     setTpEditedBy('');
@@ -2973,46 +2930,30 @@ export default function SubjectTeacherPanel({
               </div>
 
               <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                {/* Status Kunci & Nama Guru Pengisi / Pengedit */}
-                {isTpLocked ? (
-                  <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-amber-800 text-[10.5px] font-bold">
-                    <Lock size={12} className="text-amber-600 shrink-0" />
+                {/* Keterangan Pengedit / Pengisi */}
+                {(tpEditedBy || tpFilledBy) && (
+                  <div className="flex items-center gap-1.5 bg-indigo-50 border border-indigo-200/70 px-3 py-1.5 rounded-xl text-indigo-900 text-[10.5px] font-semibold">
+                    <User size={12} className="text-indigo-600 shrink-0" />
                     <span>
-                      Terkunci oleh <strong>{tpFilledBy || 'Guru Serumpun'}</strong>
-                      {tpEditedBy && tpEditedBy !== tpFilledBy && (
-                        <span className="text-amber-700 ml-1 font-semibold">(diedit: <strong className="text-amber-900">{tpEditedBy}</strong>)</span>
+                      {tpEditedBy ? (
+                        <>Terakhir diedit oleh <strong className="font-extrabold text-indigo-950">{tpEditedBy}</strong></>
+                      ) : (
+                        <>Diisi oleh <strong className="font-extrabold text-indigo-950">{tpFilledBy}</strong></>
                       )}
                     </span>
-                    <button
-                      type="button"
-                      onClick={handleUnlockTp}
-                      className="ml-1 px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-extrabold text-[10px] cursor-pointer shadow-2xs transition-all flex items-center gap-1"
-                      title="Semua guru serumpun berhak membuka kunci & mengedit uraian TP ini"
-                    >
-                      <Unlock size={11} className="text-amber-700" />
-                      <span>Buka Kunci / Edit TP</span>
-                    </button>
-                  </div>
-                ) : (
-                  <div className="flex items-center gap-2">
-                    {tpEditedBy && (
-                      <span className="text-[10px] text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1">
-                        <Unlock size={11} className="text-amber-600" />
-                        <span>Kunci terbuka • Terakhir diedit oleh <strong>{tpEditedBy}</strong></span>
-                      </span>
-                    )}
-                    <button
-                      type="button"
-                      onClick={handleSaveTpDescriptions}
-                      disabled={isSavingTp}
-                      className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
-                      title={`Simpan & Kunci Judul TP untuk seluruh kelas tingkat ini`}
-                    >
-                      {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                      <span>Kunci & Simpan TP ({selectedSubject})</span>
-                    </button>
                   </div>
                 )}
+
+                <button
+                  type="button"
+                  onClick={handleSaveTpDescriptions}
+                  disabled={isSavingTp}
+                  className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                  title={`Simpan Deskripsi TP untuk seluruh kelas tingkat ini`}
+                >
+                  {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                  <span>Simpan Deskripsi TP ({selectedSubject})</span>
+                </button>
 
                 {/* Quick Auto-fill TP Button from Teaching Journals */}
                 <button
@@ -3039,13 +2980,11 @@ export default function SubjectTeacherPanel({
                   selectedClass={selectedGradeClass}
                   required={true}
                   placeholder="Uraian TP-1..."
-                  isLocked={isTpLocked}
                   filledBy={tpFilledBy}
                   filledAt={tpFilledAt}
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
-                  onUnlock={handleUnlockTp}
                 />
               </div>
 
@@ -3059,13 +2998,11 @@ export default function SubjectTeacherPanel({
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
                   placeholder="Uraian TP-2 (opsional)..."
-                  isLocked={isTpLocked}
                   filledBy={tpFilledBy}
                   filledAt={tpFilledAt}
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
-                  onUnlock={handleUnlockTp}
                 />
               </div>
 
@@ -3079,13 +3016,11 @@ export default function SubjectTeacherPanel({
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
                   placeholder="Uraian TP-3 (opsional)..."
-                  isLocked={isTpLocked}
                   filledBy={tpFilledBy}
                   filledAt={tpFilledAt}
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
-                  onUnlock={handleUnlockTp}
                 />
               </div>
 
@@ -3099,13 +3034,11 @@ export default function SubjectTeacherPanel({
                   selectedSubject={selectedSubject}
                   selectedClass={selectedGradeClass}
                   placeholder="Uraian TP-4 (opsional)..."
-                  isLocked={isTpLocked}
                   filledBy={tpFilledBy}
                   filledAt={tpFilledAt}
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
-                  onUnlock={handleUnlockTp}
                 />
               </div>
             </div>

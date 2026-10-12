@@ -808,7 +808,6 @@ export default function HomeroomPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
   const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
   const [tp4InputName, setTp4InputName] = useState<string>('Evaluasi & pengerjaan proyek');
-  const [isTpLocked, setIsTpLocked] = useState<boolean>(false);
   const [tpFilledBy, setTpFilledBy] = useState<string>('');
   const [tpFilledAt, setTpFilledAt] = useState<string>('');
   const [tpEditedBy, setTpEditedBy] = useState<string>('');
@@ -839,7 +838,6 @@ export default function HomeroomPanel({
             setTp2InputName(saved.tp2Name || '');
             setTp3InputName(saved.tp3Name || '');
             setTp4InputName(saved.tp4Name || '');
-            setIsTpLocked(saved.isLocked ?? true);
             setTpFilledBy(saved.filledBy || '');
             setTpFilledAt(saved.filledAt || '');
             setTpEditedBy(saved.editedBy || '');
@@ -878,7 +876,7 @@ export default function HomeroomPanel({
           tp2Name: tp2InputName,
           tp3Name: tp3InputName,
           tp4Name: tp4InputName,
-          isLocked: true,
+          isLocked: false,
           filledBy: tpFilledBy || teacherName,
           filledByRole: `Wali Kelas ${targetClass}`,
           editedBy: teacherName,
@@ -887,7 +885,6 @@ export default function HomeroomPanel({
       });
       if (res.ok) {
         const nowIso = new Date().toISOString();
-        setIsTpLocked(true);
         if (!tpFilledBy) setTpFilledBy(teacherName);
         if (!tpFilledAt) setTpFilledAt(nowIso);
         setTpEditedBy(teacherName);
@@ -895,7 +892,7 @@ export default function HomeroomPanel({
         setTpEditedByRole(`Wali Kelas ${targetClass}`);
         setNotifMsg({
           type: 'success',
-          text: `🔒 Judul TP mapel ${selectedSubjectForGrading} berhasil disimpan dan dikunci untuk tingkat ${gradeLevel}!`
+          text: `Judul TP mapel ${selectedSubjectForGrading} berhasil disimpan untuk tingkat ${gradeLevel}!`
         });
         fetchHomeroomTpDescriptions();
       }
@@ -903,45 +900,6 @@ export default function HomeroomPanel({
       alert('Gagal menyimpan TP: ' + err.message);
     } finally {
       setIsSavingTp(false);
-    }
-  };
-
-  const handleUnlockHomeroomTp = async () => {
-    if (!confirm(`Buka kunci judul TP untuk Mapel ${selectedSubjectForGrading}?\n\nSetelah dibuka, seluruh guru serumpun mapel ini dapat mengedit uraian TP. Keterangan pembuka kunci/pengedit akan tercatat.`)) {
-      return;
-    }
-    const targetClass = selectedGradingClass || currentTeacher?.className || '';
-    const m = String(targetClass).match(/\d+/);
-    const gradeLevel = m ? m[0] : '7';
-    const teacherName = currentTeacher?.name || 'Wali Kelas';
-    try {
-      const res = await fetch('/api/curriculum/tp-levels/unlock', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          gradeLevel,
-          subject: selectedSubjectForGrading,
-          className: targetClass,
-          semester: kokurikulerSemester,
-          academicYear: kokurikulerYear,
-          unlockedBy: teacherName,
-          unlockedByRole: `Wali Kelas ${targetClass}`
-        })
-      });
-      if (res.ok) {
-        const nowIso = new Date().toISOString();
-        setIsTpLocked(false);
-        setTpEditedBy(teacherName);
-        setTpEditedAt(nowIso);
-        setTpEditedByRole(`Wali Kelas ${targetClass}`);
-        setNotifMsg({
-          type: 'success',
-          text: `🔓 Kunci Judul TP berhasil dibuka oleh ${teacherName}! Anda dan guru serumpun dapat mengubah uraian TP sekarang.`
-        });
-        fetchHomeroomTpDescriptions();
-      }
-    } catch (err: any) {
-      alert('Gagal membuka kunci TP: ' + err.message);
     }
   };
 
@@ -7687,46 +7645,30 @@ Wassalamualaikum Wr. Wb.
                   </div>
 
                   <div className="flex items-center gap-2 self-start sm:self-auto flex-wrap">
-                    {/* Status Kunci & Nama Guru Pengisi / Pengedit */}
-                    {isTpLocked ? (
-                      <div className="flex items-center gap-1.5 bg-amber-50 border border-amber-200 px-3 py-1.5 rounded-xl text-amber-800 text-[10.5px] font-bold">
-                        <Lock size={12} className="text-amber-600 shrink-0" />
+                    {/* Keterangan Pengedit / Pengisi */}
+                    {(tpEditedBy || tpFilledBy) && (
+                      <div className="flex items-center gap-1.5 bg-purple-50 border border-purple-200/70 px-3 py-1.5 rounded-xl text-purple-900 text-[10.5px] font-semibold">
+                        <User size={12} className="text-purple-600 shrink-0" />
                         <span>
-                          Terkunci oleh <strong>{tpFilledBy || 'Guru/Wali Kelas'}</strong>
-                          {tpEditedBy && tpEditedBy !== tpFilledBy && (
-                            <span className="text-amber-700 ml-1 font-semibold">(diedit: <strong className="text-amber-900">{tpEditedBy}</strong>)</span>
+                          {tpEditedBy ? (
+                            <>Terakhir diedit oleh <strong className="font-extrabold text-purple-950">{tpEditedBy}</strong></>
+                          ) : (
+                            <>Diisi oleh <strong className="font-extrabold text-purple-950">{tpFilledBy}</strong></>
                           )}
                         </span>
-                        <button
-                          type="button"
-                          onClick={handleUnlockHomeroomTp}
-                          className="ml-1 px-2.5 py-1 bg-white hover:bg-amber-100 text-amber-900 border border-amber-300 rounded-lg font-extrabold text-[10px] cursor-pointer shadow-2xs transition-all flex items-center gap-1"
-                          title="Semua guru serumpun berhak membuka kunci & mengedit uraian TP ini"
-                        >
-                          <Unlock size={11} className="text-amber-700" />
-                          <span>Buka Kunci / Edit TP</span>
-                        </button>
-                      </div>
-                    ) : (
-                      <div className="flex items-center gap-2">
-                        {tpEditedBy && (
-                          <span className="text-[10px] text-amber-800 bg-amber-50 px-2 py-1 rounded-lg border border-amber-200 font-bold flex items-center gap-1">
-                            <Unlock size={11} className="text-amber-600" />
-                            <span>Kunci terbuka • Diedit oleh <strong>{tpEditedBy}</strong></span>
-                          </span>
-                        )}
-                        <button
-                          type="button"
-                          onClick={handleSaveHomeroomTp}
-                          disabled={isSavingTp}
-                          className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
-                          title={`Simpan & Kunci Judul TP untuk seluruh rombel tingkat ini`}
-                        >
-                          {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
-                          <span>Kunci & Simpan TP ({selectedSubjectForGrading})</span>
-                        </button>
                       </div>
                     )}
+
+                    <button
+                      type="button"
+                      onClick={handleSaveHomeroomTp}
+                      disabled={isSavingTp}
+                      className="px-3.5 py-1.5 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white rounded-xl font-extrabold text-[10.5px] transition-all cursor-pointer flex items-center gap-1.5 shadow-xs whitespace-nowrap"
+                      title={`Simpan Deskripsi TP untuk seluruh rombel tingkat ini`}
+                    >
+                      {isSavingTp ? <Loader2 size={13} className="animate-spin" /> : <Save size={13} />}
+                      <span>Simpan Deskripsi TP ({selectedSubjectForGrading})</span>
+                    </button>
 
                     {/* Quick Auto-fill TP Button */}
                     <button
@@ -7753,13 +7695,11 @@ Wassalamualaikum Wr. Wb.
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       required={true}
                       placeholder="Uraian TP-1..."
-                      isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
-                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
 
@@ -7773,13 +7713,11 @@ Wassalamualaikum Wr. Wb.
                       selectedSubject={selectedSubjectForGrading}
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       placeholder="Uraian TP-2 (opsional)..."
-                      isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
-                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
 
@@ -7793,13 +7731,11 @@ Wassalamualaikum Wr. Wb.
                       selectedSubject={selectedSubjectForGrading}
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       placeholder="Uraian TP-3 (opsional)..."
-                      isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
-                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
 
@@ -7813,13 +7749,11 @@ Wassalamualaikum Wr. Wb.
                       selectedSubject={selectedSubjectForGrading}
                       selectedClass={selectedGradingClass || currentTeacher.className}
                       placeholder="Uraian TP-4 (opsional)..."
-                      isLocked={isTpLocked}
                       filledBy={tpFilledBy}
                       filledAt={tpFilledAt}
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
-                      onUnlock={handleUnlockHomeroomTp}
                     />
                   </div>
                 </div>

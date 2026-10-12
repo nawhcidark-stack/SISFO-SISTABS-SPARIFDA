@@ -5996,15 +5996,17 @@ async function startServer() {
     // Build legacy descMap for backward compatibility
     const descMap: Record<string, any> = { ...((curriculumConfig as any).tpDescriptions || {}) };
     curriculumTpDescriptions.forEach(tp => {
+      tp.isLocked = false;
       const subKey = tp.subject.trim().toLowerCase();
       const semKey = (tp.semester || "ganjil").trim().toLowerCase();
       const yearKey = (tp.academicYear || "2026/2027").trim().toLowerCase();
       const gradeKey = `tingkat_${tp.gradeLevel}_${subKey}_${semKey}_${yearKey}`;
-      descMap[gradeKey] = tp;
-      if (!descMap[subKey]) descMap[subKey] = tp;
+      descMap[gradeKey] = { ...tp, isLocked: false };
+      if (!descMap[subKey]) descMap[subKey] = { ...tp, isLocked: false };
     });
 
-    res.json({ success: true, tpDescriptions: list, descriptions: descMap });
+    const sanitizedList = list.map(tp => ({ ...tp, isLocked: false }));
+    res.json({ success: true, tpDescriptions: sanitizedList, descriptions: descMap });
   });
 
   app.post(["/api/curriculum/tp-levels", "/api/tp-descriptions"], async (req, res) => {
@@ -6087,7 +6089,7 @@ async function startServer() {
       tp2Name: tp2Name !== undefined ? tp2Name : (existingRecord?.tp2Name ?? ''),
       tp3Name: tp3Name !== undefined ? tp3Name : (existingRecord?.tp3Name ?? ''),
       tp4Name: tp4Name !== undefined ? tp4Name : (existingRecord?.tp4Name ?? ''),
-      isLocked: isLocked !== undefined ? Boolean(isLocked) : true,
+      isLocked: false,
       filledBy: resolvedFilledBy,
       filledByRole: filledByRole || (existingRecord?.filledByRole) || "Guru Mata Pelajaran",
       filledAt: resolvedFilledAt,

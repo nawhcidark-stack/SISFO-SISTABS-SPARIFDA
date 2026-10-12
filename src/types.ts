@@ -472,7 +472,7 @@ export interface MerdekaAssessment {
   tp1Tugas1?: number | string;
   tp1Tugas2?: number | string;
   tp1Uh?: number | string;
-  nilaiTp1?: number; // (Rata2 Tugas * 0.6) + (UH * 0.4)
+  nilaiTp1?: number; // (Rata2 Tugas * 0.7) + (UH * 0.3)
 
   // TP 2
   tp2Name?: string;
@@ -500,7 +500,7 @@ export interface MerdekaAssessment {
   nilaiKokurikuler?: number; // Khusus Wali Kelas, terhubung ke Guru Mapel
   nilaiPts?: number; // Input Waka Kurikulum
   nilaiPas?: number; // Input Waka Kurikulum
-  nilaiAkhirMapel?: number; // ((Nilai Rata2 TP * 2) + Kokurikuler + PTS + PAS) / 5
+  nilaiAkhirMapel?: number; // ((Nilai Rata2 TP * 3) + Kokurikuler + PTS + PAS) / 6
 
   // Legacy/Fallback compatibility
   tp1Grade?: number;

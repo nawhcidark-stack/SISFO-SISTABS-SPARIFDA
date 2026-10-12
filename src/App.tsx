@@ -2769,6 +2769,7 @@ export default function App() {
             merdekaAssessments={merdekaAssessmentsList}
             classSchedules={schedulesList}
             schoolIdentity={schoolIdentity}
+            attendanceLogs={attendanceList}
             onRefreshData={handleReload}
           />
         ) : (

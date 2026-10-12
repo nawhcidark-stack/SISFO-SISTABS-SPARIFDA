@@ -58,17 +58,17 @@ const homeroomTeachers: HomeroomTeacher[] = [
 ];
 
 export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
-  { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 1 },
+  { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 1 },
   { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 2 },
   { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 3 },
   { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 4 },
-  { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 5 },
-  { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 6 },
+  { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 5 },
+  { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 6 },
   { id: 'mapel-bing', code: 'BING', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 7 },
-  { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 8 },
-  { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 9 },
+  { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 8 },
+  { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 9 },
   { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 10 },
-  { id: 'mapel-bjawa', code: 'BJAWA', name: 'Bahasa Jawa', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 11 },
+  { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 11 },
   { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 12 },
   { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 13 }
 ];
@@ -5636,7 +5636,7 @@ async function startServer() {
     if (t === null && u === null) return null;
 
     if (t !== null && u !== null) {
-      return Math.round((t * 0.6) + (u * 0.4));
+      return Math.round((t * 0.7) + (u * 0.3));
     } else if (t !== null) {
       return Math.round(t);
     } else if (u !== null) {
@@ -5666,8 +5666,8 @@ async function startServer() {
     const pts = Number(ass.nilaiPts) || 0;
     const pas = Number(ass.nilaiPas) || 0;
 
-    // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 2) + Nilai Kokurikuler + PTS + PAS) / 5
-    const finalMapel = Math.round(((avgTp * 2) + koku + pts + pas) / 5);
+    // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 3) + Nilai Kokurikuler + PTS + PAS) / 6
+    const finalMapel = Math.round(((avgTp * 3) + koku + pts + pas) / 6);
     ass.nilaiAkhirMapel = finalMapel;
 
     // Fallbacks
@@ -5676,6 +5676,13 @@ async function startServer() {
     ass.nilaiSAS = pas;
     ass.nilaiRapor = finalMapel;
     ass.updatedAt = new Date().toISOString();
+  }
+
+  // Recalculate existing assessments to match revised formula
+  try {
+    merdekaAssessments.forEach(recalculateAssessmentScores);
+  } catch (err) {
+    console.warn("[MerdekaAssessments] Gagal kalkulasi ulang pada startup:", err);
   }
 
   app.get("/api/merdeka-assessments", (req, res) => {
@@ -5840,11 +5847,46 @@ async function startServer() {
   });
 
   // --- MASTER DATA MATA PELAJARAN (WAKA KURIKULUM) ---
-  app.get("/api/curriculum/subjects", (req, res) => {
+  const syncOfficialCurriculumSubjects = () => {
     if (curriculumSubjects.length === 0) {
       curriculumSubjects.push(...DEFAULT_CURRICULUM_SUBJECTS);
       saveState();
+    } else {
+      const officialMap: Record<string, { name: string; orderNum: number; code?: string }> = {
+        'mapel-pai': { name: 'Pendidikan Agama Islam', orderNum: 1 },
+        'mapel-ppkn': { name: 'Pendidikan Pancasila', orderNum: 2 },
+        'mapel-bindo': { name: 'Bahasa Indonesia', orderNum: 3 },
+        'mapel-mtk': { name: 'Matematika', orderNum: 4 },
+        'mapel-ipa': { name: 'Ilmu Pengetahuan Alam (IPA)', orderNum: 5 },
+        'mapel-ips': { name: 'Ilmu Pengetahuan Sosial (IPS)', orderNum: 6 },
+        'mapel-bing': { name: 'Bahasa Inggris', orderNum: 7 },
+        'mapel-seni': { name: 'Seni Budaya', orderNum: 8 },
+        'mapel-pjok': { name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', orderNum: 9 },
+        'mapel-infor': { name: 'Informatika', orderNum: 10 },
+        'mapel-bjawa': { name: 'Muatan Lokal: Bahasa Daerah', orderNum: 11, code: 'MULOK' }
+      };
+
+      let changed = false;
+      curriculumSubjects.forEach(s => {
+        const off = officialMap[s.id];
+        if (off) {
+          if (s.name !== off.name || s.orderNum !== off.orderNum) {
+            s.name = off.name;
+            s.orderNum = off.orderNum;
+            if (off.code) s.code = off.code;
+            changed = true;
+          }
+        }
+      });
+      if (changed) {
+        saveState();
+      }
     }
+  };
+  syncOfficialCurriculumSubjects();
+
+  app.get("/api/curriculum/subjects", (req, res) => {
+    syncOfficialCurriculumSubjects();
     // Return sorted by orderNum
     const sorted = [...curriculumSubjects].sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
     res.json({ success: true, subjects: sorted });

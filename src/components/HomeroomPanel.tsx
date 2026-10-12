@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 import BukuIndukManagement from './BukuIndukManagement';
 import ScheduleView from './ScheduleView';
 import { SavingsPassbookModal } from './SavingsPassbookModal';
@@ -17,7 +18,8 @@ import {
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
   Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key, Lock, Unlock,
   Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
-  LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw, ArrowUpDown
+  LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw, ArrowUpDown,
+  FileSpreadsheet, Upload, X
 } from 'lucide-react';
 
 // Standalone Type-Safe Print Helper Functions (Isolated from JSX rendering context)
@@ -775,7 +777,7 @@ export default function HomeroomPanel({
   const [selectedDate, setSelectedDate] = useState(todayStr);
   const [passbookStudent, setPassbookStudent] = useState<Student | null>(null);
   const [recapModalStudent, setRecapModalStudent] = useState<Student | null>(null);
-  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'rapor_merdeka' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal'>('record');
+  const [activeSubTab, setActiveSubTab] = useState<'record' | 'history' | 'rekap_absensi' | 'finance' | 'profile' | 'perkembangan' | 'pkg' | 'buku_induk' | 'kokurikuler' | 'jadwal'>('record');
   const [showMoreMenu, setShowMoreMenu] = useState(false);
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
@@ -964,6 +966,7 @@ export default function HomeroomPanel({
   const [excelParseError, setExcelParseError] = useState<string | null>(null);
   const [excelParsedPreview, setExcelParsedPreview] = useState<any[]>([]);
   const [isSavingFullGrades, setIsSavingFullGrades] = useState<boolean>(false);
+  const [isProcessingExcelFile, setIsProcessingExcelFile] = useState<boolean>(false);
 
   useEffect(() => {
     if (schoolIdentity?.activeAcademicYear) {
@@ -2276,7 +2279,7 @@ export default function HomeroomPanel({
       fetchCounseling();
       fetchAnnouncements();
       fetchMeetings();
-    } else if (activeSubTab === 'rapor_merdeka' || activeSubTab === 'kokurikuler') {
+    } else if (activeSubTab === 'kokurikuler') {
       fetchMerdekaAssessments();
     } else if (activeSubTab === 'profile') {
       fetchPrincipalWorkPrograms();
@@ -2286,7 +2289,7 @@ export default function HomeroomPanel({
   }, [activeSubTab, currentTeacher.className]);
 
   useEffect(() => {
-    if ((activeSubTab === 'kokurikuler' || activeSubTab === 'rapor_merdeka') && gradingStudents.length > 0) {
+    if (activeSubTab === 'kokurikuler' && gradingStudents.length > 0) {
       const initialMap: Record<string, string> = {};
       const fullGradeMap: Record<string, any> = {};
 
@@ -2491,6 +2494,439 @@ export default function HomeroomPanel({
     setShowSuccessCheck(true);
   };
 
+  // 1. Download Template Excel (.xlsx) untuk Penilaian Wali Kelas
+  const handleDownloadHomeroomExcelTemplate = () => {
+    try {
+      const targetClass = selectedGradingClass || currentTeacher.className;
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Kokurikuler", "PTS", "PAS"
+      ];
+
+      const dataRows = gradingStudents.map((st, idx) => [
+        idx + 1,
+        String(st.nis || st.id || ''),
+        st.name || '',
+        "", "",
+        "", "",
+        "", "",
+        "", "",
+        "", "", ""
+      ]);
+
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+
+      // Set column widths
+      ws['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 16 }, // NIS
+        { wch: 32 }, // Nama Siswa
+        { wch: 12 }, // TP1_Tugas
+        { wch: 12 }, // TP1_UH
+        { wch: 12 }, // TP2_Tugas
+        { wch: 12 }, // TP2_UH
+        { wch: 12 }, // TP3_Tugas
+        { wch: 12 }, // TP3_UH
+        { wch: 12 }, // TP4_Tugas
+        { wch: 12 }, // TP4_UH
+        { wch: 14 }, // Kokurikuler
+        { wch: 10 }, // PTS
+        { wch: 10 }  // PAS
+      ];
+
+      // Format NIS as text to preserve leading zeros
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+      for (let R = 1; R <= range.e.r; ++R) {
+        const nisCellAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        if (ws[nisCellAddr]) {
+          ws[nisCellAddr].t = 's';
+          ws[nisCellAddr].z = '@';
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Template Penilaian");
+
+      const safeClass = targetClass.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSubj = (selectedSubjectForGrading || 'Mapel').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSem = kokurikulerSemester.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeYear = kokurikulerYear.replace(/[^a-zA-Z0-9_-]/g, '-');
+      const filename = `Template_Penilaian_Kelas_${safeClass}_${safeSubj}_${safeSem}_${safeYear}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+      setNotifMsg({ type: 'success', text: `📥 Berhasil mengunduh template Excel penilaian (${filename})!` });
+    } catch (err: any) {
+      console.error("Error generating Excel template:", err);
+      setNotifMsg({ type: 'error', text: `Gagal membuat template Excel: ${err.message || err}` });
+    }
+  };
+
+  // 2. Export Excel Rapi (.xlsx) untuk Penilaian Wali Kelas
+  const handleExportHomeroomExcelRapi = () => {
+    try {
+      const targetClass = selectedGradingClass || currentTeacher.className;
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Rata_TP", "Kokurikuler", "PTS", "PAS", "Nilai_Akhir_Mapel"
+      ];
+
+      const calcTp = (t1: any, uh: any) => {
+        const n1 = t1 !== '' && t1 !== null && t1 !== undefined && !isNaN(Number(t1)) ? Number(t1) : null;
+        const n3 = uh !== '' && uh !== null && uh !== undefined && !isNaN(Number(uh)) ? Number(uh) : null;
+        if (n1 === null && n3 === null) return null;
+        if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
+        if (n1 !== null) return Math.round(n1);
+        if (n3 !== null) return Math.round(n3);
+        return null;
+      };
+
+      const dataRows = gradingStudents.map((st, idx) => {
+        const state = gradeInputMap[st.id] || {
+          tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
+          tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
+          tp3Tugas1: '', tp3Tugas2: '', tp3Uh: '',
+          tp4Tugas1: '', tp4Tugas2: '', tp4Uh: '',
+          kokurikuler: kokurikulerScores[st.id] || '0',
+          pts: '', pas: ''
+        };
+
+        const tp1 = calcTp(state.tp1Tugas1, state.tp1Uh);
+        const tp2 = calcTp(state.tp2Tugas1, state.tp2Uh);
+        const tp3 = calcTp(state.tp3Tugas1, state.tp3Uh);
+        const tp4 = calcTp(state.tp4Tugas1, state.tp4Uh);
+
+        const validTps = [tp1, tp2, tp3, tp4].filter((x): x is number => x !== null);
+        const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : null;
+
+        const koku = Number(state.kokurikuler) || Number(kokurikulerScores[st.id]) || 0;
+        const pts = state.pts !== '' && !isNaN(Number(state.pts)) ? Number(state.pts) : 0;
+        const pas = state.pas !== '' && !isNaN(Number(state.pas)) ? Number(state.pas) : 0;
+
+        const finalMapel = avgTp !== null 
+          ? Math.round(((avgTp * 3) + koku + pts + pas) / 6) 
+          : null;
+
+        return [
+          idx + 1,
+          String(st.nis || st.id || ''),
+          st.name || '',
+          state.tp1Tugas1 !== undefined ? state.tp1Tugas1 : '',
+          state.tp1Uh !== undefined ? state.tp1Uh : '',
+          state.tp2Tugas1 !== undefined ? state.tp2Tugas1 : '',
+          state.tp2Uh !== undefined ? state.tp2Uh : '',
+          state.tp3Tugas1 !== undefined ? state.tp3Tugas1 : '',
+          state.tp3Uh !== undefined ? state.tp3Uh : '',
+          state.tp4Tugas1 !== undefined ? state.tp4Tugas1 : '',
+          state.tp4Uh !== undefined ? state.tp4Uh : '',
+          avgTp !== null ? avgTp : '',
+          koku || '',
+          pts || '',
+          pas || '',
+          finalMapel !== null ? finalMapel : ''
+        ];
+      });
+
+      const titleRows = [
+        ["REKAP NILAI PENILAIAN KURIKULUM MERDEKA & KOKURIKULER"],
+        [`Sekolah: ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}`],
+        [`Kelas: ${targetClass} | Mata Pelajaran: ${selectedSubjectForGrading}`],
+        [`Semester: ${kokurikulerSemester} | Tahun Ajaran: ${kokurikulerYear} | Wali Kelas: ${currentTeacher.name}`],
+        [] // Blank row
+      ];
+
+      const allRows = [...titleRows, headers, ...dataRows];
+      const ws = XLSX.utils.aoa_to_sheet(allRows);
+
+      ws['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 16 }, // NIS
+        { wch: 32 }, // Nama Siswa
+        { wch: 11 }, // TP1_Tugas
+        { wch: 11 }, // TP1_UH
+        { wch: 11 }, // TP2_Tugas
+        { wch: 11 }, // TP2_UH
+        { wch: 11 }, // TP3_Tugas
+        { wch: 11 }, // TP3_UH
+        { wch: 11 }, // TP4_Tugas
+        { wch: 11 }, // TP4_UH
+        { wch: 11 }, // Rata_TP
+        { wch: 13 }, // Kokurikuler
+        { wch: 10 }, // PTS
+        { wch: 10 }, // PAS
+        { wch: 14 }  // Nilai_Akhir_Mapel
+      ];
+
+      // Format NIS cells
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+      for (let R = 5; R <= range.e.r; ++R) {
+        const nisCellAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        if (ws[nisCellAddr]) {
+          ws[nisCellAddr].t = 's';
+          ws[nisCellAddr].z = '@';
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Rekap Penilaian");
+
+      const safeClass = targetClass.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSubj = (selectedSubjectForGrading || 'Mapel').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSem = kokurikulerSemester.replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeYear = kokurikulerYear.replace(/[^a-zA-Z0-9_-]/g, '-');
+      const filename = `Rekap_Nilai_Kelas_${safeClass}_${safeSubj}_${safeSem}_${safeYear}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+      setNotifMsg({ type: 'success', text: `📊 Berhasil mengekspor rekap nilai Excel (${filename})!` });
+    } catch (err: any) {
+      console.error("Error exporting Excel:", err);
+      setNotifMsg({ type: 'error', text: `Gagal mengekspor file Excel: ${err.message || err}` });
+    }
+  };
+
+  // 3. Helper to parse matrix of rows (from XLSX or text) into excelParsedPreview
+  const processMatrixRows = (matrix: (string | number)[][]) => {
+    if (!matrix || matrix.length === 0) {
+      setExcelParseError("Data kosong. Silakan unggah file Excel atau tempel data terlebih dahulu.");
+      setExcelParsedPreview([]);
+      return;
+    }
+
+    try {
+      const parsedData: any[] = [];
+      let headerIndex = -1;
+
+      // Find header row
+      for (let i = 0; i < Math.min(matrix.length, 10); i++) {
+        const rowStr = matrix[i].map(c => String(c ?? '').trim().toLowerCase()).join(' ');
+        if (
+          (rowStr.includes("nis") || rowStr.includes("nama")) &&
+          (rowStr.includes("tp") || rowStr.includes("tugas") || rowStr.includes("koku") || rowStr.includes("uh") || matrix[i].length >= 3)
+        ) {
+          headerIndex = i;
+          break;
+        }
+      }
+
+      const rowsToProcess = headerIndex !== -1 ? matrix.slice(headerIndex + 1) : matrix;
+
+      rowsToProcess.forEach((rawRow) => {
+        const cells = rawRow.map(c => String(c ?? '').trim().replace(/^["']|["']$/g, ''));
+        if (cells.length < 2 || cells.every(c => c === '')) return;
+
+        // Skip potential repeated header
+        if (
+          cells[0].toLowerCase().includes("nis") ||
+          cells[0].toLowerCase().includes("no") ||
+          cells[1]?.toLowerCase().includes("nama") ||
+          cells[1]?.toLowerCase().includes("nis")
+        ) {
+          return;
+        }
+
+        // Detect if first column is row number (No: 1, 2, 3...)
+        let shift = 0;
+        if (!isNaN(Number(cells[0])) && Number(cells[0]) < 1000 && (cells[1] || '').length >= 2) {
+          shift = 1;
+        }
+
+        const rawNis = cells[shift] || "";
+        const nameInput = cells[shift + 1] || "";
+
+        if (!rawNis && !nameInput) return;
+
+        // Clean NIS for matching
+        const cleanRawNis = rawNis.replace(/[^a-zA-Z0-9]/g, '');
+        const cleanNameInput = nameInput.toLowerCase().trim();
+
+        // Match against gradingStudents first, fallback to all students
+        const studentPool = gradingStudents.length > 0 ? gradingStudents : students;
+        const matched = studentPool.find(s => {
+          const sNis = String(s.nis || '').replace(/[^a-zA-Z0-9]/g, '');
+          const sId = String(s.id || '').replace(/[^a-zA-Z0-9]/g, '');
+          const sName = (s.name || '').toLowerCase().trim();
+
+          if (cleanRawNis && (sNis === cleanRawNis || sId === cleanRawNis)) return true;
+          if (cleanNameInput && (sName === cleanNameInput || sName.includes(cleanNameInput) || cleanNameInput.includes(sName))) return true;
+          return false;
+        });
+
+        const gradeCells = cells.slice(shift + 2);
+
+        let tp1T1 = "", tp1Uh = "";
+        let tp2T1 = "", tp2Uh = "";
+        let tp3T1 = "", tp3Uh = "";
+        let tp4T1 = "", tp4Uh = "";
+        let kokurikuler = "";
+        let pts = "";
+        let pas = "";
+
+        if (gradeCells.length >= 13) {
+          // Format with Rata_TP: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH, Rata_TP, Kokurikuler, PTS, PAS
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+          kokurikuler = gradeCells[9] || "";
+          pts = gradeCells[10] || "";
+          pas = gradeCells[11] || "";
+        } else if (gradeCells.length >= 11) {
+          // Standard template: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH, Kokurikuler, PTS, PAS
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+          kokurikuler = gradeCells[8] || "";
+          pts = gradeCells[9] || "";
+          pas = gradeCells[10] || "";
+        } else if (gradeCells.length >= 8) {
+          // 8 TP cols only
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+        } else {
+          tp1Uh = gradeCells[0] || "";
+          tp2Uh = gradeCells[1] || "";
+          tp3Uh = gradeCells[2] || "";
+          tp4Uh = gradeCells[3] || "";
+          pts = gradeCells[4] || "";
+          pas = gradeCells[5] || "";
+        }
+
+        parsedData.push({
+          studentId: matched?.id,
+          studentName: matched ? matched.name : nameInput || "Siswa Tidak Ditemukan",
+          inputName: nameInput,
+          nis: matched?.nis || rawNis || "-",
+          className: matched?.class || "-",
+          matched: !!matched,
+          tp1Tugas1: tp1T1, tp1Uh,
+          tp2Tugas1: tp2T1, tp2Uh,
+          tp3Tugas1: tp3T1, tp3Uh,
+          tp4Tugas1: tp4T1, tp4Uh,
+          kokurikuler, pts, pas
+        });
+      });
+
+      const matchedCount = parsedData.filter(d => d.matched).length;
+      if (parsedData.length === 0) {
+        setExcelParseError("Tidak ada baris data valid yang terdeteksi.");
+        setExcelParsedPreview([]);
+      } else if (matchedCount === 0) {
+        setExcelParseError("Gagal mencocokkan data baris dengan siswa terdaftar. Pastikan NIS atau Nama sesuai dengan daftar siswa.");
+        setExcelParsedPreview(parsedData);
+      } else {
+        setExcelParsedPreview(parsedData);
+        setExcelParseError(null);
+      }
+    } catch (err: any) {
+      console.error("Error processing matrix:", err);
+      setExcelParseError("Kesalahan saat memproses data: " + (err.message || err));
+    }
+  };
+
+  // Upload handler for .xlsx, .xls, .csv, .tsv, .txt
+  const handleHomeroomExcelFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setIsProcessingExcelFile(true);
+    setExcelParseError(null);
+    try {
+      const fileName = file.name.toLowerCase();
+      let matrix: any[][] = [];
+
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as any[][];
+      } else {
+        const text = await file.text();
+        setExcelPasteContent(text);
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const delimiter = lines[0]?.includes('\t') ? '\t' : (lines[0]?.includes(';') ? ';' : ',');
+        matrix = lines.map(line => line.split(delimiter));
+      }
+
+      processMatrixRows(matrix);
+    } catch (err: any) {
+      console.error("Error reading uploaded file:", err);
+      setExcelParseError("Gagal membaca berkas: " + (err.message || err));
+    } finally {
+      setIsProcessingExcelFile(false);
+      e.target.value = '';
+    }
+  };
+
+  // Paste / Textarea parse trigger
+  const handleParseHomeroomPastedExcel = () => {
+    if (!excelPasteContent.trim()) {
+      setExcelParseError("Silakan tempel data dari Excel atau unggah file terlebih dahulu.");
+      return;
+    }
+    const lines = excelPasteContent.trim().split(/\r?\n/).filter(l => l.trim().length > 0);
+    const delimiter = lines[0]?.includes('\t') ? '\t' : (lines[0]?.includes(';') ? ';' : ',');
+    const matrix = lines.map(line => line.split(delimiter));
+    processMatrixRows(matrix);
+  };
+
+  // Apply parsed items to gradeInputMap & kokurikulerScores
+  const applyHomeroomExcelImportToState = () => {
+    const updatedMap = { ...gradeInputMap };
+    const updatedKoku = { ...kokurikulerScores };
+    let importCount = 0;
+
+    excelParsedPreview.forEach(item => {
+      if (item.matched && item.studentId) {
+        updatedMap[item.studentId] = {
+          ...(updatedMap[item.studentId] || {}),
+          tp1Tugas1: item.tp1Tugas1 !== undefined ? String(item.tp1Tugas1) : "",
+          tp1Uh: item.tp1Uh !== undefined ? String(item.tp1Uh) : "",
+
+          tp2Tugas1: item.tp2Tugas1 !== undefined ? String(item.tp2Tugas1) : "",
+          tp2Uh: item.tp2Uh !== undefined ? String(item.tp2Uh) : "",
+
+          tp3Tugas1: item.tp3Tugas1 !== undefined ? String(item.tp3Tugas1) : "",
+          tp3Uh: item.tp3Uh !== undefined ? String(item.tp3Uh) : "",
+
+          tp4Tugas1: item.tp4Tugas1 !== undefined ? String(item.tp4Tugas1) : "",
+          tp4Uh: item.tp4Uh !== undefined ? String(item.tp4Uh) : "",
+
+          kokurikuler: item.kokurikuler !== undefined && item.kokurikuler !== "" ? String(item.kokurikuler) : (updatedMap[item.studentId]?.kokurikuler || "0"),
+          pts: item.pts !== undefined ? String(item.pts) : "",
+          pas: item.pas !== undefined ? String(item.pas) : ""
+        };
+
+        if (item.kokurikuler !== undefined && item.kokurikuler !== "") {
+          updatedKoku[item.studentId] = String(item.kokurikuler);
+        }
+
+        importCount++;
+      }
+    });
+
+    setGradeInputMap(updatedMap);
+    setKokurikulerScores(updatedKoku);
+    setShowExcelModal(false);
+    setExcelPasteContent('');
+    setExcelParsedPreview([]);
+    setNotifMsg({
+      type: 'success',
+      text: `🎉 Berhasil memuat & menerapkan nilai ${importCount} siswa dari Excel ke tabel penilaian!`
+    });
+    setShowSuccessCheck(true);
+  };
+
   const handleSaveKokurikulerBatch = async (e: React.FormEvent) => {
     e.preventDefault();
     setIsSavingKokurikuler(true);
@@ -2523,14 +2959,14 @@ export default function HomeroomPanel({
   };
 
   useEffect(() => {
-    const list = (activeSubTab === 'rapor_merdeka' || activeSubTab === 'kokurikuler') ? gradingStudents : classStudents;
+    const list = activeSubTab === 'kokurikuler' ? gradingStudents : classStudents;
     if (list.length > 0 && (!selectedReportStudentId || !list.some(s => s.id === selectedReportStudentId))) {
       setSelectedReportStudentId(list[0].id);
     }
   }, [classStudents, gradingStudents, activeSubTab, selectedReportStudentId]);
 
   const selectedStudent = useMemo(() => {
-    const list = (activeSubTab === 'rapor_merdeka' || activeSubTab === 'kokurikuler') ? gradingStudents : classStudents;
+    const list = activeSubTab === 'kokurikuler' ? gradingStudents : classStudents;
     return list.find(s => s.id === selectedReportStudentId) || list[0] || null;
   }, [classStudents, gradingStudents, activeSubTab, selectedReportStudentId]);
 
@@ -3428,7 +3864,6 @@ Wassalamualaikum Wr. Wb.
           { id: 'finance', label: 'Keuangan', icon: '💳' },
           { id: 'perkembangan', label: 'Perkembangan', icon: '📈' },
           { id: 'kokurikuler', label: 'Nilai Kokurikuler', icon: '⭐' },
-          { id: 'rapor_merdeka', label: 'Rapor Merdeka', icon: '🎓' },
           { id: 'buku_induk', label: 'Buku Induk', icon: '📗' },
           { id: 'pkg', label: 'PKG', icon: '🎖️' },
           { id: 'profile', label: 'Profil', icon: '👤' },
@@ -3555,20 +3990,6 @@ Wassalamualaikum Wr. Wb.
               >
                 <span className="text-sm">👤</span>
                 <span className="inline">Profil & Sandi</span>
-              </button>
-
-              <button
-                id="tab-btn-rapor"
-                onClick={() => setActiveSubTab('rapor_merdeka')}
-                className={`py-2 px-3 flex-1 md:flex-none justify-center md:justify-start text-xs font-bold rounded-lg cursor-pointer transition-all flex items-center gap-2 whitespace-nowrap focus:outline-none ${
-                  activeSubTab === 'rapor_merdeka'
-                    ? 'bg-indigo-650 text-white shadow-md'
-                    : 'text-indigo-600 bg-indigo-50/50 hover:bg-indigo-50'
-                }`}
-                title="Halaman Rapor Kurikulum Merdeka Siswa"
-              >
-                <span className="text-sm">🎓</span>
-                <span className="inline">Rapor Merdeka</span>
               </button>
 
               <button
@@ -7113,434 +7534,6 @@ Wassalamualaikum Wr. Wb.
             </div>
           )}
 
-          {activeSubTab === 'rapor_merdeka' && (
-            <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
-              {/* Page Title Card */}
-              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
-                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-violet-600 to-indigo-600" />
-                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Wali Kelas (Homeroom Teacher)</span>
-                <h2 className="font-extrabold text-lg text-slate-900 mt-1 flex items-center gap-2">
-                  🎓 Rekap Rapor Akhir Siswa (Kurikulum Merdeka)
-                </h2>
-                <p className="text-slate-500 text-[11px] mt-0.5">
-                  Kolektif nilai rapor hasil asessment mata pelajaran. Cetak lembar rapor resmi per individu dengan format standar kementerian pendidikan.
-                </p>
-
-                {/* Filter Row */}
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-4 pt-4 border-t border-slate-100">
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas Rapor</label>
-                    <select
-                      value={selectedGradingClass || currentTeacher.className}
-                      onChange={(e) => setSelectedGradingClass(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
-                    >
-                      {allClassNames.map(cls => (
-                        <option key={cls} value={cls}>
-                          Kelas {cls} {cls.toLowerCase() === currentTeacher.className.toLowerCase() ? '(Kelas Binaan Anda)' : ''}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Semester</label>
-                    <select
-                      value={selectedReportSemester}
-                      onChange={(e) => setSelectedReportSemester(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
-                    >
-                      <option value="Ganjil">Semester Ganjil</option>
-                      <option value="Genap">Semester Genap</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Tahun Ajaran</label>
-                    <select
-                      value={selectedReportYear}
-                      onChange={(e) => setSelectedReportYear(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
-                    >
-                      {Array.from(new Set([
-                        ...(schoolIdentity?.activeAcademicYear ? [schoolIdentity.activeAcademicYear] : []),
-                        '2025/2026',
-                        '2024/2025',
-                        '2023/2024'
-                      ])).map(year => (
-                        <option key={year} value={year}>{year}</option>
-                      ))}
-                    </select>
-                  </div>
-                </div>
-              </div>
-
-              {/* Core Grid Column Panels */}
-              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
-                {/* Left Student Selector Roster (4 Cols) */}
-                <div className="lg:col-span-4 flex flex-col gap-4">
-                  <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm">
-                    <div className="flex justify-between items-center pb-2 border-b border-slate-100 mb-3">
-                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Daftar Siswa Kelas {selectedGradingClass || currentTeacher.className}</span>
-                    </div>
-                    <div className="flex flex-col gap-1.5 max-h-[500px] overflow-y-auto pr-1">
-                      {gradingStudents.map((s, idx) => {
-                        const isSelected = selectedReportStudentId === s.id;
-                        
-                        // Find average grade for this student
-                        const scores = merdekaAssessments.filter(a => 
-                          a.studentId === s.id && 
-                          a.semester === selectedReportSemester && 
-                          a.academicYear === selectedReportYear
-                        );
-
-                        let sumFinal = 0;
-                        scores.forEach(a => {
-                          const avgF = a.nilaiFormatif !== undefined ? Number(a.nilaiFormatif) : Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0) + (a.tp4Grade !== undefined ? Number(a.tp4Grade) : Number(a.tp1Grade || 0))) / 4);
-                          const finalSc = a.nilaiRapor !== undefined ? Number(a.nilaiRapor) : Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
-                          sumFinal += finalSc;
-                        });
-
-                        const meanScore = scores.length > 0 ? Math.round(sumFinal / scores.length) : 0;
-
-                        return (
-                          <button
-                            key={s.id}
-                            onClick={() => setSelectedReportStudentId(s.id)}
-                            className={`w-full text-left p-3 rounded-2xl flex items-center justify-between cursor-pointer transition-all ${
-                              isSelected 
-                                ? 'bg-slate-900 border border-slate-900 shadow-sm text-white' 
-                                : 'bg-slate-50 hover:bg-slate-100 border border-slate-200 text-slate-800'
-                            }`}
-                          >
-                            <div className="flex items-center gap-2.5 min-w-0">
-                              <span className={`h-6 w-6 shrink-0 rounded-lg text-[10px] font-black flex items-center justify-center ${
-                                isSelected ? 'bg-indigo-650 text-white' : 'bg-slate-200 text-slate-600'
-                              }`}>
-                                {idx + 1}
-                              </span>
-                              <div className="min-w-0">
-                                <div className="font-extrabold text-xs truncate leading-tight">{s.name}</div>
-                                <div className={`text-[9px] font-mono mt-0.5 ${isSelected ? 'text-slate-400' : 'text-slate-400'}`}>NIS: {s.nis}</div>
-                              </div>
-                            </div>
-                            {meanScore > 0 ? (
-                              <span className={`px-2 py-0.5 rounded-md font-sans text-[10px] font-black shrink-0 ${
-                                isSelected ? 'bg-indigo-500 text-white' : 'bg-indigo-50 text-indigo-700'
-                              }`}>
-                                {meanScore} Avg
-                              </span>
-                            ) : (
-                              <span className="text-[9px] text-slate-400">Belum Ada</span>
-                            )}
-                          </button>
-                        );
-                      })}
-                    </div>
-                  </div>
-                </div>
-
-                {/* Right Student Report Card Preview Panel (8 Cols) */}
-                <div className="lg:col-span-8 flex flex-col gap-6">
-                  {selectedStudent ? (() => {
-                    const scores = merdekaAssessments.filter(a => 
-                      a.studentId === selectedStudent.id && 
-                      a.semester === selectedReportSemester && 
-                      a.academicYear === selectedReportYear
-                    );
-
-                    const att = { Hadir: 0, Sakit: 0, Izin: 0, Alpa: 0, Terlambat: 0 };
-                    attendanceLogs.forEach(l => {
-                      if (l.studentId === selectedStudent.id) {
-                        if (att[l.status] !== undefined) att[l.status]++;
-                      }
-                    });
-
-                    const noteText = waliKelasNotes[selectedStudent.id] || "Ananda menunjukkan keseriusan belajar yang konsisten. Terus tingkatkan kemampuan di semua rumpun keilmuan.";
-
-                    return (
-                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-6">
-                        
-                        {/* Toolbar Actions */}
-                        <div className="flex items-center justify-between pb-4 border-b border-slate-100 flex-wrap gap-3">
-                          <div>
-                            <h3 className="font-black text-xs text-slate-400 uppercase tracking-wider">Halaman Pratinjau Rapor</h3>
-                            <p className="font-black text-slate-900 text-base leading-none mt-1">{selectedStudent.name}</p>
-                          </div>
-                          <button
-                            type="button"
-                            onClick={() => {
-                              const printWin = window.open("", "_blank");
-                              if (!printWin) return;
-                              
-                              const officialHeaderKop = schoolIdentity?.letterhead 
-                                ? `<img src="${schoolIdentity.letterhead}" class="kop-img" referrerPolicy="no-referrer" />`
-                                : `<div class="p-4 border-b-2 border-black text-center" style="margin-bottom:20px;">
-                                     <h2 style="margin:0; font-size:16px; font-weight:bold;">${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
-                                     <p style="margin:2px 0 0; font-size:11px;">Jl. Dr. Sutomo No.1 Pandaan Pasuruan | Telp: ${schoolIdentity?.phone || "-"}</p>
-                                   </div>`;
-
-                              const rowGrids = scores.length === 0 
-                                ? `<tr><td colspan="7" style="text-align:center; padding: 20px;">Belum ada asessment mata pelajaran terdaftar untuk semester ini</td></tr>`
-                                : scores.map((a, idx) => {
-                                    const avgF = a.nilaiFormatif !== undefined ? Number(a.nilaiFormatif) : Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0) + (a.tp4Grade !== undefined ? Number(a.tp4Grade) : Number(a.tp1Grade || 0))) / 4);
-                                    const finalSc = a.nilaiRapor !== undefined ? Number(a.nilaiRapor) : Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
-                                    
-                                    let capNotes = "";
-                                    if (finalSc >= 85) {
-                                      capNotes = `Menunjukkan pemahaman prima dalam ${a.tp1Name}. Konsisten mempertahankan nilai istimewa.`;
-                                    } else if (finalSc >= 75) {
-                                      capNotes = `Menunjukkan pemahaman tuntas dalam ${a.tp1Name}. Perlu pendalaman lanjut pada materi sumatif.`;
-                                    } else {
-                                      capNotes = `Menunjukkan perlu bimbingan khusus dalam ${a.tp1Name}. Butuh intervensi remedial berkala.`;
-                                    }
-
-                                    return `
-                                      <tr>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${idx + 1}</td>
-                                        <td style="padding: 8px; border: 1px solid #cbd5e1; font-weight:bold;">${a.subject}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${avgF}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${a.nilaiSumatifLM || 0}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1;">${a.nilaiSAS || 0}</td>
-                                        <td style="text-align:center; padding: 8px; border: 1px solid #cbd5e1; font-weight:bold; background:#f8fafc;">${finalSc}</td>
-                                        <td style="padding: 8px; border: 1px solid #cbd5e1; font-size:10px; line-height:1.4;">${capNotes}</td>
-                                      </tr>
-                                    `;
-                                  }).join('');
-
-                              printWin.document.write(`
-                                <html>
-                                  <head>
-                                    <title>RAPOR AKHIR - ${selectedStudent.name}</title>
-                                    <style>
-                                      body { font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif; padding: 30px; color: #000; font-size: 11.5px; line-height:1.5; }
-                                      .kop-img { width:100%; height:auto; display:block; border-bottom:3px double #000; padding-bottom:10px; margin-bottom:20px; }
-                                      .meta-table { width:100%; border-collapse:collapse; margin-bottom:20px; }
-                                      .meta-table td { padding: 4px 0; font-size: 11px; }
-                                      .meta-table td.label { font-weight:bold; width: 15%; }
-                                      .meta-table td.val { width: 35%; }
-                                      .main-report { width:100%; border-collapse:collapse; margin-bottom:25px; }
-                                      .main-report th { background:#f1f5f9; padding:8px; border:1px solid #64748b; font-weight:bold; font-size:10.5px; text-transform:uppercase; text-align:center;}
-                                      .main-report td { border:1px solid #64748b; }
-                                      .att-table { width:45%; border-collapse:collapse; margin-bottom:25px; }
-                                      .att-table td, .att-table th { border:1px solid #64748b; padding:6px; }
-                                      .notes-box { border:1px solid #64748b; padding:12px; border-radius:4px; font-style:italic; margin-bottom:30px; font-weight:bold;}
-                                      .sig-grid { width:100%; margin-top:40px; border-collapse:collapse; }
-                                      .sig-grid td { text-align:center; width:33%; padding:10px 0; font-weight:bold;}
-                                    </style>
-                                  </head>
-                                  <body>
-                                    ${officialHeaderKop}
-                                    <div style="text-align:center; font-size:13px; font-weight:bold; text-transform:uppercase; margin-bottom:20px; text-decoration:underline;">LAPOR HASIL BELAJAR AKHIR (RAPOR MERDEKA)</div>
-                                    
-                                    <table class="meta-table">
-                                      <tr>
-                                        <td class="label">Nama Siswa</td><td class="val">: <strong>${selectedStudent.name}</strong></td>
-                                        <td class="label">Kelas / Fase</td><td class="val">: ${selectedStudent.class} / Fase D</td>
-                                      </tr>
-                                      <tr>
-                                        <td class="label">NIS / NISN</td><td class="val">: ${selectedStudent.nis || "-"}</td>
-                                        <td class="label">Semester</td><td class="val">: ${selectedReportSemester}</td>
-                                      </tr>
-                                      <tr>
-                                        <td class="label">Sekolah</td><td class="val">: ${schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</td>
-                                        <td class="label">Tahun Ajaran</td><td class="val">: ${selectedReportYear}</td>
-                                      </tr>
-                                    </table>
-
-                                    <h3 style="margin: 0 0 8px; font-size:11px; text-transform:uppercase; text-decoration:underline;">A. LAPORAN NILAI KOMPETENSI REKAP MATA PELAJARAN</h3>
-                                    <table class="main-report">
-                                      <thead>
-                                        <tr>
-                                          <th style="width:5%">No</th>
-                                          <th style="width:25%">Mata Pelajaran</th>
-                                          <th style="width:10%">Formatif (TP)</th>
-                                          <th style="width:10%">Sumatif LM</th>
-                                          <th style="width:10%">Sumatif SAS</th>
-                                          <th style="width:10%">Nilai Rapor</th>
-                                          <th style="width:30%">Capaian Kompetensi / Deskripsi Merdeka</th>
-                                        </tr>
-                                      </thead>
-                                      <tbody>
-                                        ${rowGrids}
-                                      </tbody>
-                                    </table>
-
-                                    <div style="display:flex; justify-content:space-between; gap:20px;">
-                                      <table class="att-table">
-                                        <thead>
-                                          <tr style="background:#f1f5f9;"><th colspan="2" style="font-weight:bold; font-size:10px; text-transform:uppercase;">B. REKAPITULASI KEHADIRAN</th></tr>
-                                        </thead>
-                                        <tbody>
-                                          <tr><td>Sakit (S)</td><td style="text-align:center; font-weight:bold;">${att.Sakit} Hari</td></tr>
-                                          <tr><td>Izin (I)</td><td style="text-align:center; font-weight:bold;">${att.Izin} Hari</td></tr>
-                                          <tr><td>Alpa / Tanpa Keterangan (A)</td><td style="text-align:center; font-weight:bold;">${att.Alpa} Hari</td></tr>
-                                        </tbody>
-                                      </table>
-
-                                      <div style="width:50%;">
-                                        <h3 style="margin: 0 0 6px; font-size:11px; text-transform:uppercase; text-decoration:underline;">C. CATATAN WALI KELAS</h3>
-                                        <div class="notes-box">
-                                          "${noteText}"
-                                        </div>
-                                      </div>
-                                    </div>
-
-                                    <table class="sig-grid">
-                                      <tr>
-                                        <td>Orang Tua / Wali Siswa<div style="height:60px"></div>( ..................................... )</td>
-                                        <td>Wali Kelas Kelas ${selectedStudent.class}<div style="height:60px"></div><u><strong>${currentTeacher.name}</strong></u></td>
-                                        <td>Mengetahui,<br/>Kepala Sekolah<div style="height:60px"></div><u><strong>${schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</strong></u></td>
-                                      </tr>
-                                    </table>
-                                    <script>window.print(); setTimeout(function(){window.close();},5000);</script>
-                                  </body>
-                                </html>
-                              `);
-                              printWin.document.close();
-                            }}
-                            className="px-4 py-2 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs"
-                          >
-                            <Printer size={13} />
-                            Print Rapor Lembar Cetak
-                          </button>
-                        </div>
-
-                        {/* Student Metadata Panel */}
-                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 bg-slate-50 p-4 rounded-2xl border border-slate-150 text-xs">
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">NIS</span>
-                            <span className="font-extrabold text-slate-800 font-mono">{selectedStudent.nis || "-"}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Kelas / Fase</span>
-                            <span className="font-extrabold text-slate-800">{selectedStudent.class} / Fase D</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Semester</span>
-                            <span className="font-extrabold text-slate-800">{selectedReportSemester}</span>
-                          </div>
-                          <div>
-                            <span className="text-[10px] text-slate-400 font-bold block uppercase">Mata Pelajaran Dinilai</span>
-                            <span className="font-extrabold text-slate-800">{scores.length} Subjects</span>
-                          </div>
-                        </div>
-
-                        {/* Matched Assessments Table */}
-                        <div className="flex flex-col gap-2">
-                          <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Laporan Nilai Rekap Pembelajaran Komparatif</span>
-                          <div className="border border-slate-200 rounded-3xl overflow-hidden shadow-2xs">
-                            <table className="w-full border-collapse text-xs select-none">
-                              <thead>
-                                <tr className="bg-slate-900 text-white font-extrabold uppercase text-[9px] text-center">
-                                  <th className="py-2.5 px-3 text-center w-10">No</th>
-                                  <th className="py-2.5 px-3 text-left">Mata Pelajaran</th>
-                                  <th className="py-2.5 px-2">Avg Formatif (TP)</th>
-                                  <th className="py-2.5 px-2">Sumatif M/L</th>
-                                  <th className="py-2.5 px-2">SAS</th>
-                                  <th className="py-2.5 px-3 bg-slate-950 text-emerald-400">Total Akhir</th>
-                                </tr>
-                              </thead>
-                              <tbody>
-                                {scores.length === 0 ? (
-                                  <tr>
-                                    <td colSpan={6} className="py-12 text-center text-slate-400 font-semibold">
-                                      Belum ada rekap nilai kualifikasi Kurikulum Merdeka pelajaran untuk siswa ini.
-                                    </td>
-                                  </tr>
-                                ) : (
-                                  scores.map((a, idx) => {
-                                    const avgF = a.nilaiFormatif !== undefined ? Number(a.nilaiFormatif) : Math.round((Number(a.tp1Grade || 0) + Number(a.tp2Grade || a.tp1Grade || 0) + Number(a.tp3Grade || a.tp1Grade || 0) + (a.tp4Grade !== undefined ? Number(a.tp4Grade) : Number(a.tp1Grade || 0))) / 4);
-                                    const finalSc = a.nilaiRapor !== undefined ? Number(a.nilaiRapor) : Math.round((avgF + Number(a.nilaiSumatifLM || 0) + Number(a.nilaiSAS || 0)) / 3);
-
-                                    return (
-                                      <tr key={idx} className="border-b border-slate-100 hover:bg-slate-50/50 transition-colors">
-                                        <td className="py-2.5 px-3 text-center text-slate-400 font-bold">{idx + 1}</td>
-                                        <td className="py-2.5 px-3 text-left font-black text-slate-800">{a.subject}</td>
-                                        <td className="py-2.5 px-2 text-center font-bold text-indigo-600">{avgF}</td>
-                                        <td className="py-2.5 px-2 text-center text-slate-700">{a.nilaiSumatifLM || 0}</td>
-                                        <td className="py-2.5 px-2 text-center text-slate-700">{a.nilaiSAS || 0}</td>
-                                        <td className="py-2.5 px-3 text-center bg-slate-50 font-black text-slate-900 leading-none">
-                                          <span className={`px-2 py-0.5 rounded ${
-                                            finalSc >= 75 ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-850'
-                                          }`}>
-                                            {finalSc}
-                                          </span>
-                                        </td>
-                                      </tr>
-                                    );
-                                  })
-                                )}
-                              </tbody>
-                            </table>
-                          </div>
-                        </div>
-
-                        {/* Bottom Attendance Card & Wali Kelas Note Edit */}
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 items-stretch">
-                          {/* Attendance Summary */}
-                          <div className="bg-slate-50/40 p-4 rounded-3xl border border-slate-200 text-xs flex flex-col gap-3">
-                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Rekap Kehadiran Presensi Pelajaran</span>
-                            <div className="grid grid-cols-3 gap-2 mt-1">
-                              <div className="bg-white p-3 rounded-2xl border border-slate-150 text-center">
-                                <span className="text-[10px] text-slate-400 block font-bold">Sakit (S)</span>
-                                <span className="text-sm font-black text-amber-600 font-mono">{att.Sakit}</span>
-                              </div>
-                              <div className="bg-white p-3 rounded-2xl border border-slate-150 text-center">
-                                <span className="text-[10px] text-slate-400 block font-bold">Izin (I)</span>
-                                <span className="text-sm font-black text-indigo-600 font-mono">{att.Izin}</span>
-                              </div>
-                              <div className="bg-white p-3 rounded-2xl border border-slate-150 text-center">
-                                <span className="text-[10px] text-slate-400 block font-bold">Alpa (A)</span>
-                                <span className="text-sm font-black text-rose-600 font-mono">{att.Alpa}</span>
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Homeroom Notes Form */}
-                          <div className="bg-slate-50/40 p-4 rounded-3xl border border-slate-200 flex flex-col gap-2.5">
-                            <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Catatan Khusus Wali Kelas</span>
-                            <textarea
-                              rows={2}
-                              value={waliKelasNotes[selectedStudent.id] || ''}
-                              onChange={(e) => {
-                                const txt = e.target.value;
-                                setWaliKelasNotes(prev => ({
-                                  ...prev,
-                                  [selectedStudent.id]: txt
-                                }));
-                              }}
-                              placeholder="Wali kelas silakan menulis arahan rujukan peningkatan belajar siswa..."
-                              className="w-full bg-white border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-2.5 font-bold text-slate-800 text-[11px] leading-relaxed"
-                            />
-                            <div className="flex justify-end">
-                              <button
-                                type="button"
-                                onClick={() => {
-                                  setNotifMsg({ type: 'success', text: "Catatan wali kelas disinkronkan ke rapor" });
-                                  setShowSuccessCheck(true);
-                                  setTimeout(() => setShowSuccessCheck(false), 2000);
-                                }}
-                                className="px-3 py-1.5 bg-slate-900 border border-slate-900 hover:bg-slate-800 text-white rounded-lg text-[10px] font-black uppercase tracking-wider cursor-pointer"
-                              >
-                                Update Catatan
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-
-                      </div>
-                    );
-                  })() : (
-                    <div className="py-20 text-center text-slate-400 font-semibold bg-white border border-slate-200 rounded-3xl shadow-sm text-xs">
-                      Pilih siswa di atas untuk memuat data rapor kurikulum merdeka.
-                    </div>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
           {activeSubTab === 'kokurikuler' && (
             <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
               {/* Header Card */}
@@ -7766,12 +7759,47 @@ Wassalamualaikum Wr. Wb.
                     <h3 className="font-extrabold text-sm text-slate-900">
                       Tabel Penilaian Rapor Merdeka & Kokurikuler ({gradingStudents.length} Siswa) - Kelas {selectedGradingClass || currentTeacher.className}
                     </h3>
-                    <p className="text-slate-400 text-[10.5px]">
-                      Poin TP1..TP4, Rata TP, Kokurikuler (Wali Kelas), PTS & PAS otomatis membentuk Nilai Akhir Mapel.
+                    <p className="text-slate-500 text-[10.5px]">
+                      Formula: Nilai TP = (Tugas × 70%) + (UH × 30%) | NA = ((3 × Rata TP) + Kokurikuler + PTS + PAS) / 6
                     </p>
                   </div>
 
                   <div className="flex flex-wrap items-center gap-2 self-end sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExcelPasteContent('');
+                        setExcelParseError(null);
+                        setExcelParsedPreview([]);
+                        setShowExcelModal(true);
+                      }}
+                      className="px-3 py-2 rounded-xl border border-emerald-300 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Import Nilai dari file Excel (.xlsx) atau tempel data spreadsheet"
+                    >
+                      <Upload size={14} className="text-emerald-600" />
+                      <span>Import dari MS Excel</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleDownloadHomeroomExcelTemplate}
+                      className="px-3 py-2 rounded-xl border border-teal-300 bg-teal-50 hover:bg-teal-100 text-teal-800 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Unduh format template Excel resmi dengan daftar nama & NIS siswa kelas ini"
+                    >
+                      <Download size={14} className="text-teal-600" />
+                      <span>Unduh Template Excel</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={handleExportHomeroomExcelRapi}
+                      className="px-3 py-2 rounded-xl border border-indigo-300 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 font-extrabold text-xs transition-colors flex items-center gap-1.5 cursor-pointer shadow-xs"
+                      title="Ekspor seluruh rekap penilaian kelas ke file Excel (.xlsx)"
+                    >
+                      <FileSpreadsheet size={14} className="text-indigo-600" />
+                      <span>Export Excel Rapi</span>
+                    </button>
+
                     <button
                       type="button"
                       onClick={handleFillSampleGrades}
@@ -7853,7 +7881,7 @@ Wassalamualaikum Wr. Wb.
                             const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
                             const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
                             if (n1 === null && n3 === null) return null;
-                            if (n1 !== null && n3 !== null) return Math.round((n1 * 0.6) + (n3 * 0.4));
+                            if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
                             if (n1 !== null) return Math.round(n1);
                             if (n3 !== null) return Math.round(n3);
                             return null;
@@ -7872,7 +7900,7 @@ Wassalamualaikum Wr. Wb.
                           const pas = state.pas !== '' && !isNaN(Number(state.pas)) ? Number(state.pas) : 0;
 
                           const finalMapel = avgTp !== null 
-                            ? Math.round(((avgTp * 2) + koku + pts + pas) / 5) 
+                            ? Math.round(((avgTp * 3) + koku + pts + pas) / 6) 
                             : null;
 
                           const updateField = (field: string, val: string) => {
@@ -8047,10 +8075,10 @@ Wassalamualaikum Wr. Wb.
           onClick={() => setShowMoreMenu(prev => !prev)}
           className="flex-1 py-1 flex flex-col items-center justify-center gap-0.5 cursor-pointer transition-all"
         >
-          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
-            <LayoutGrid size={20} className={(['perkembangan', 'rapor_merdeka', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
+          <div className={`p-1.5 rounded-xl transition-colors ${(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'bg-indigo-50 text-indigo-600' : 'text-slate-400'}`}>
+            <LayoutGrid size={20} className={(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'stroke-[2.5px]' : 'stroke-[1.8px]'} />
           </div>
-          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'rapor_merdeka', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
+          <span className={`text-[9.5px] leading-none ${(['perkembangan', 'profile', 'pkg', 'kokurikuler', 'buku_induk', 'jadwal'].includes(activeSubTab) || showMoreMenu) ? 'text-indigo-650 font-bold' : 'text-slate-400'}`}>Lainnya</span>
         </button>
       </div>
 
@@ -8158,25 +8186,6 @@ Wassalamualaikum Wr. Wb.
                   <div>
                     <h5 className="font-extrabold text-xs text-slate-800">Perkembangan Siswa</h5>
                     <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pantau kepribadian, pelanggaran, &amp; konseling siswa</p>
-                  </div>
-                </button>
-
-                <button
-                  type="button"
-                  onClick={() => {
-                    setActiveSubTab('rapor_merdeka');
-                    setShowMoreMenu(false);
-                  }}
-                  className={`p-4 border rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all ${
-                    activeSubTab === 'rapor_merdeka'
-                      ? 'border-indigo-600 bg-indigo-50/50'
-                      : 'border-slate-150 hover:bg-slate-50'
-                  }`}
-                >
-                  <span className="p-2 w-fit bg-indigo-50 rounded-xl text-indigo-700 text-lg">🎓</span>
-                  <div>
-                    <h5 className="font-extrabold text-xs text-slate-800">Rapor Merdeka</h5>
-                    <p className="text-[10px] text-slate-500 mt-0.5 leading-tight">Pengelolaan rapor kurikulum merdeka terintegrasi</p>
                   </div>
                 </button>
 
@@ -9284,6 +9293,237 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 </div>
 
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* MODAL IMPORT EXCEL PENILAIAN WALI KELAS */}
+      <AnimatePresence>
+        {showExcelModal && (
+          <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/60 backdrop-blur-md no-print p-4">
+            <motion.div
+              initial={{ scale: 0.95, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.95, opacity: 0 }}
+              className="bg-white rounded-3xl overflow-hidden shadow-2xl border border-slate-200 flex flex-col max-w-4xl w-full text-left relative"
+            >
+              {/* Modal Header */}
+              <div className="px-6 py-4 bg-emerald-700 text-white flex justify-between items-center select-none">
+                <div>
+                  <h4 className="font-extrabold text-sm uppercase text-white tracking-wider flex items-center gap-2">
+                    <FileSpreadsheet size={18} />
+                    Import Nilai Penilaian Merdeka & Kokurikuler dari MS Excel
+                  </h4>
+                  <p className="text-[11px] text-emerald-100 mt-0.5">
+                    Kelas {selectedGradingClass || currentTeacher.className} &bull; Mapel {selectedSubjectForGrading} &bull; Pemetaan otomatis berdasar NIS atau Nama Siswa.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => setShowExcelModal(false)}
+                  className="p-1.5 hover:bg-emerald-800 rounded-lg text-emerald-100 hover:text-white transition-all cursor-pointer"
+                >
+                  <X size={16} />
+                </button>
+              </div>
+
+              {/* Modal Content */}
+              <div className="p-6 overflow-y-auto max-h-[75vh] flex flex-col gap-4">
+                {/* Instructions */}
+                <div className="bg-emerald-50 border border-emerald-200 rounded-2xl p-4 text-[11px] leading-relaxed text-emerald-900 flex flex-col gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-emerald-200/60 pb-2">
+                    <div>
+                      <span className="font-black text-xs block text-emerald-950">Panduan Penggunaan Template Excel Wali Kelas:</span>
+                      <p className="text-[10px] text-emerald-700 mt-0.5">
+                        Mendukung file Excel langsung (.xlsx, .xls) atau Salin-Tempel (Copy-Paste) tabel data.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleDownloadHomeroomExcelTemplate}
+                      className="px-3 py-1.5 bg-emerald-700 hover:bg-emerald-800 text-white font-extrabold text-xs rounded-xl shadow-xs transition-colors flex items-center gap-1.5 shrink-0 self-start sm:self-auto cursor-pointer"
+                    >
+                      <Download size={13} />
+                      <span>Unduh Template Excel (.xlsx)</span>
+                    </button>
+                  </div>
+
+                  <ol className="list-decimal pl-4 flex flex-col gap-1 text-[10.5px]">
+                    <li>Unduh <strong>Template Excel</strong> di atas yang telah terisi otomatis dengan seluruh nama & NIS siswa di kelas.</li>
+                    <li>
+                      Urutan kolom template standar:
+                      <div className="py-1.5 px-2.5 border border-emerald-200 bg-emerald-100/60 rounded-lg font-mono text-[9px] mt-1 text-slate-800 overflow-x-auto whitespace-nowrap">
+                        No | NIS | Nama Siswa | TP1_Tugas | TP1_UH | TP2_Tugas | TP2_UH | TP3_Tugas | TP3_UH | TP4_Tugas | TP4_UH | Kokurikuler | PTS | PAS
+                      </div>
+                    </li>
+                    <li>Isi nilai-nilai pada file Excel, lalu <strong>unggah berkas Excel (.xlsx / .xls)</strong> di bawah atau cukup <strong>blok & salin tabel nilai lalu tempel (Ctrl+V)</strong> ke kotak teks.</li>
+                    <li>Sistem otomatis mendeteksi baris siswa dan mencocokkan data secara cerdas berdasar NIS atau Nama Siswa.</li>
+                  </ol>
+                </div>
+
+                {/* Upload file or Paste Area */}
+                <div className="grid grid-cols-1 gap-3">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                    <span className="text-[10px] font-black uppercase text-slate-500 tracking-wider">
+                      Unggah File Excel (.xlsx / .xls) atau Tempel Teks
+                    </span>
+                    <label className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 text-indigo-700 rounded-xl text-xs font-bold cursor-pointer transition-colors">
+                      <Upload size={14} className="text-indigo-600" />
+                      <span>{isProcessingExcelFile ? "Membaca Berkas..." : "Pilih File Excel (.xlsx / .xls / .csv)"}</span>
+                      <input
+                        type="file"
+                        accept=".xlsx,.xls,.csv,.tsv,.txt"
+                        className="hidden"
+                        onChange={handleHomeroomExcelFileUpload}
+                        disabled={isProcessingExcelFile}
+                      />
+                    </label>
+                  </div>
+
+                  <textarea
+                    rows={6}
+                    value={excelPasteContent}
+                    onChange={(e) => setExcelPasteContent(e.target.value)}
+                    placeholder="Contoh salin-tempel dari spreadsheet:&#10;No&#9;NIS&#9;Nama Siswa&#9;TP1_Tugas&#9;TP1_UH&#9;TP2_Tugas&#9;TP2_UH&#9;TP3_Tugas&#9;TP3_UH&#9;TP4_Tugas&#9;TP4_UH&#9;Kokurikuler&#9;PTS&#9;PAS&#10;1&#9;24001&#9;Achmad Fauzi&#9;85&#9;88&#9;90&#9;85&#9;88&#9;92&#9;80&#9;85&#9;90&#9;86&#9;88"
+                    className="w-full border border-slate-200 focus:border-emerald-600 focus:outline-none rounded-2xl p-3 font-mono text-xs bg-slate-50/50 leading-relaxed"
+                  />
+                </div>
+
+                {excelParseError && (
+                  <div className="p-3 bg-rose-50 border border-rose-200 text-rose-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
+                    <AlertCircle size={15} className="text-rose-600 shrink-0" />
+                    <span>{excelParseError}</span>
+                  </div>
+                )}
+
+                {/* Parse Action Button */}
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleParseHomeroomPastedExcel}
+                    className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-1.5"
+                  >
+                    <Check size={14} />
+                    <span>PROSES & TINJAU DATA EXCEL</span>
+                  </button>
+                  {excelPasteContent && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setExcelPasteContent('');
+                        setExcelParseError(null);
+                        setExcelParsedPreview([]);
+                      }}
+                      className="px-3 py-2 text-slate-500 hover:text-slate-800 hover:bg-slate-100 rounded-xl text-xs font-bold transition-all"
+                    >
+                      Bersihkan Kotak
+                    </button>
+                  )}
+                </div>
+
+                {/* Matches Preview Table */}
+                {excelParsedPreview.length > 0 && (
+                  <div className="border border-slate-200 rounded-2xl overflow-hidden mt-1 shadow-sm">
+                    <div className="bg-slate-100 px-4 py-2.5 border-b border-slate-200 flex justify-between items-center">
+                      <span className="text-[10px] font-black uppercase text-slate-700 tracking-wider">
+                        Hasil Pemetaan Siswa ({excelParsedPreview.filter(p => p.matched).length} dari {excelParsedPreview.length} Baris Cocok)
+                      </span>
+                      <span className="text-[10.5px] font-bold text-slate-500">
+                        {excelParsedPreview.filter(p => p.matched).length === gradingStudents.length 
+                          ? '✅ Seluruh siswa kelas cocok' 
+                          : `${excelParsedPreview.filter(p => p.matched).length} siswa teridentifikasi`}
+                      </span>
+                    </div>
+                    <div className="max-h-[240px] overflow-y-auto">
+                      <table className="w-full text-[11px] border-collapse text-left">
+                        <thead className="bg-slate-50 text-slate-600 sticky top-0 font-bold border-b border-slate-200 text-[10px]">
+                          <tr>
+                            <th className="py-2 px-3">NIS</th>
+                            <th className="py-2 px-3">Nama Siswa</th>
+                            <th className="py-2 px-2 text-center">TP 1</th>
+                            <th className="py-2 px-2 text-center">TP 2</th>
+                            <th className="py-2 px-2 text-center">TP 3</th>
+                            <th className="py-2 px-2 text-center">TP 4</th>
+                            <th className="py-2 px-2 text-center text-purple-700 font-extrabold">Kokurikuler</th>
+                            <th className="py-2 px-2 text-center">PTS</th>
+                            <th className="py-2 px-2 text-center">PAS</th>
+                            <th className="py-2 px-3 text-right">Status</th>
+                          </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                          {excelParsedPreview.map((item, idx) => (
+                            <tr key={idx} className={`transition-colors ${item.matched ? 'bg-emerald-50/30 hover:bg-emerald-50/60' : 'bg-rose-50/40 hover:bg-rose-50/70'}`}>
+                              <td className="py-1.5 px-3 font-mono font-medium">{item.nis || "-"}</td>
+                              <td className="py-1.5 px-3 font-bold text-slate-900">
+                                <div>{item.studentName}</div>
+                                {item.inputName && item.inputName !== item.studentName && (
+                                  <div className="text-[9.5px] text-slate-400 font-normal">Input: {item.inputName}</div>
+                                )}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp1Tugas1 || item.tp1Uh ? `${item.tp1Tugas1 || '-'}/${item.tp1Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp2Tugas1 || item.tp2Uh ? `${item.tp2Tugas1 || '-'}/${item.tp2Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp3Tugas1 || item.tp3Uh ? `${item.tp3Tugas1 || '-'}/${item.tp3Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">
+                                {item.tp4Tugas1 || item.tp4Uh ? `${item.tp4Tugas1 || '-'}/${item.tp4Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-bold text-purple-800">
+                                {item.kokurikuler || '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono">{item.pts || '-'}</td>
+                              <td className="py-1.5 px-2 text-center font-mono">{item.pas || '-'}</td>
+                              <td className="py-1.5 px-3 text-right">
+                                {item.matched ? (
+                                  <span className="px-2 py-0.5 bg-emerald-100 text-emerald-800 font-black text-[9px] rounded-md uppercase">
+                                    Cocok
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 bg-rose-100 text-rose-800 font-black text-[9px] rounded-md uppercase">
+                                    Tidak Ditemukan
+                                  </span>
+                                )}
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Modal Footer */}
+              <div className="px-6 py-4 bg-slate-50 border-t border-slate-200 flex justify-between items-center">
+                <div className="text-[11px] text-slate-500 font-medium">
+                  {excelParsedPreview.filter(p => p.matched).length > 0 && (
+                    <span>Siap menerapkan nilai untuk <strong>{excelParsedPreview.filter(p => p.matched).length} siswa</strong> terverifikasi.</span>
+                  )}
+                </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setShowExcelModal(false)}
+                    className="px-4 py-2 border border-slate-200 text-slate-600 hover:text-slate-800 hover:bg-slate-100 rounded-xl font-bold text-xs cursor-pointer transition-all"
+                  >
+                    Batal
+                  </button>
+                  <button
+                    type="button"
+                    disabled={excelParsedPreview.filter(p => p.matched).length === 0}
+                    onClick={applyHomeroomExcelImportToState}
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl cursor-pointer transition-all flex items-center gap-1.5 shadow-md shadow-emerald-600/20"
+                  >
+                    <Check size={14} />
+                    <span>TERAPKAN NILAI KE TABEL PENILAIAN</span>
+                  </button>
+                </div>
               </div>
             </motion.div>
           </div>

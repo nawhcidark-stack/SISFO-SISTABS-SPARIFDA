@@ -1013,7 +1013,7 @@ export default function SubjectTeacherPanel({
         const n1 = t !== '' && !isNaN(Number(t)) ? Number(t) : null;
         const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
         if (n1 === null && n3 === null) return null;
-        if (n1 !== null && n3 !== null) return Math.round((n1 * 0.6) + (n3 * 0.4));
+        if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
         if (n1 !== null) return Math.round(n1);
         if (n3 !== null) return Math.round(n3);
         return null;
@@ -1039,7 +1039,7 @@ export default function SubjectTeacherPanel({
       const pasVal = (inputState as any).pas ? Number((inputState as any).pas) : (matchedAssessment?.nilaiPas ?? 0);
 
       const finalMapel = avgTp !== null
-        ? Math.round(((avgTp * 2) + kokuVal + ptsVal + pasVal) / 5)
+        ? Math.round(((avgTp * 3) + kokuVal + ptsVal + pasVal) / 6)
         : null;
 
       return [
@@ -3111,7 +3111,7 @@ export default function SubjectTeacherPanel({
                         const t = parseVal(tVal);
                         const u = parseVal(uhVal);
                         if (t === null && u === null) return null;
-                        if (t !== null && u !== null) return Math.round((t * 0.6) + (u * 0.4));
+                        if (t !== null && u !== null) return Math.round((t * 0.7) + (u * 0.3));
                         if (t !== null) return Math.round(t);
                         if (u !== null) return Math.round(u);
                         return null;
@@ -3129,8 +3129,8 @@ export default function SubjectTeacherPanel({
                       const ptsVal = matchedAss?.nilaiPts ?? 0;
                       const pasVal = matchedAss?.nilaiPas ?? 0;
 
-                      // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 2) + Nilai Kokurikuler + PTS + PAS) / 5
-                      const finalMapelScore = Math.round(((avgTp * 2) + kokurikulerVal + ptsVal + pasVal) / 5);
+                      // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 3) + Nilai Kokurikuler + PTS + PAS) / 6
+                      const finalMapelScore = Math.round(((avgTp * 3) + kokurikulerVal + ptsVal + pasVal) / 6);
 
                       const handleGradeChange = (field: string, val: string) => {
                         let cleanIdx = val;
@@ -3260,7 +3260,7 @@ export default function SubjectTeacherPanel({
             {/* Bottom Form Actions */}
             <div className="p-4 bg-slate-50 border-t border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3">
               <span className="text-[10px] font-semibold text-slate-500">
-                Formula: Nilai Akhir TP = (Tugas × 60%) + (UH × 40%) | Nilai Akhir Mapel = ((Rata2 TP × 2) + Kokurikuler + PTS + PAS) / 5
+                Formula: Nilai Akhir TP = (Tugas × 70%) + (UH × 30%) | Nilai Akhir Mapel = ((Rata2 TP × 3) + Kokurikuler + PTS + PAS) / 6
               </span>
               <button
                 type="button"
@@ -4942,7 +4942,7 @@ export default function SubjectTeacherPanel({
                           const n1 = t1 !== '' && !isNaN(Number(t1)) ? Number(t1) : null;
                           const n3 = uh !== '' && !isNaN(Number(uh)) ? Number(uh) : null;
                           if (n1 === null && n3 === null) return null;
-                          if (n1 !== null && n3 !== null) return Math.round((n1 * 0.6) + (n3 * 0.4));
+                          if (n1 !== null && n3 !== null) return Math.round((n1 * 0.7) + (n3 * 0.3));
                           if (n1 !== null) return Math.round(n1);
                           if (n3 !== null) return Math.round(n3);
                           return null;
@@ -4968,7 +4968,7 @@ export default function SubjectTeacherPanel({
                         const pasVal = (inputState as any).pas ? Number((inputState as any).pas) : (matchedAssessment?.nilaiPas ?? 0);
 
                         const finalMapel = avgTp !== null
-                          ? Math.round(((avgTp * 2) + kokuVal + ptsVal + pasVal) / 5)
+                          ? Math.round(((avgTp * 3) + kokuVal + ptsVal + pasVal) / 6)
                           : null;
 
                         return (

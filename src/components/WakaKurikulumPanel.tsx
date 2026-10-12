@@ -748,7 +748,7 @@ export default function WakaKurikulumPanel({
 
     const officialKopHtml = schoolIdentity?.letterhead
       ? `<div style="width: 100%; margin: 0 0 8px 0; padding: 0;">
-           <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; max-height: 105px; display: block; border: none; margin: 0; padding: 0;" alt="KOP Resmi Sekolah" />
+           <img src="${schoolIdentity.letterhead}" style="width: 100%; height: auto; display: block; border: none; margin: 0; padding: 0;" alt="KOP Resmi Sekolah" />
          </div>`
       : `<div style="width: 100%; text-align: center; margin-bottom: 8px;">
            <div style="font-size: 10pt; font-weight: 700; letter-spacing: 0.5px;">LEMBAGA PENDIDIKAN MA'ARIF NU</div>
@@ -938,7 +938,7 @@ export default function WakaKurikulumPanel({
           <style>
             @page {
               size: A4 portrait;
-              margin: 4mm 8mm 4mm 8mm;
+              margin: 4mm 6mm 4mm 6mm;
             }
             * {
               box-sizing: border-box;

@@ -77,6 +77,14 @@ export const normClass = (cls?: string): string => {
   return (cls || '').replace(/[\s-]/g, '').toUpperCase();
 };
 
+export const normalizeTeacherName = (name?: string): string => {
+  if (!name) return '';
+  return name.toLowerCase()
+    .replace(/(drs\.|dra\.|h\.|hj\.|s\.pd|s\.mat|s\.psi|s\.kom|s\.s|shi|m\.pd|a\.md|\.|,)/gi, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+};
+
 export const OFFICIAL_REPORT_ORDER: string[] = [
   'Pendidikan Agama Islam',
   'Pendidikan Pancasila',
@@ -1039,7 +1047,11 @@ export default function WakaKurikulumPanel({
     const list: string[] = [];
     subjectTeachers.forEach(t => { if (t.name) list.push(t.name.trim()); });
     homerooms.forEach(h => { if (h.name) list.push(h.name.trim()); });
-    liveAssessments.forEach(a => { if (a.teacherName) list.push(a.teacherName.trim()); });
+    liveAssessments.forEach(a => { 
+      if (a.teacherName && a.teacherName.trim() !== 'Guru Mapel') {
+        list.push(a.teacherName.trim()); 
+      }
+    });
     return Array.from(new Set(list)).sort();
   }, [subjectTeachers, homerooms, liveAssessments]);
 
@@ -1052,17 +1064,58 @@ export default function WakaKurikulumPanel({
         if (!hasTp) return false;
       } else if (detailRoleFilter === 'homeroom') {
         // Either has Kokurikuler OR teacher is a homeroom teacher (Wali Kelas)
-        const isHrTeacher = homerooms.some(h => h.name?.toLowerCase().trim() === a.teacherName?.toLowerCase().trim());
+        const isHrTeacher = homerooms.some(h => 
+          h.name?.toLowerCase().trim() === a.teacherName?.toLowerCase().trim() ||
+          normalizeTeacherName(h.name) === normalizeTeacherName(a.teacherName)
+        );
         const hasKoku = (a.nilaiKokurikuler && a.nilaiKokurikuler > 0) || isHrTeacher;
         if (!hasKoku) return false;
       }
 
       // Teacher filter
       if (detailTeacherFilter !== 'all') {
-        const isMatchTeacher = a.teacherName?.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim();
+        const normTarget = detailTeacherFilter.toLowerCase().trim();
+        const aTeacher = (a.teacherName || '').toLowerCase().trim();
+
+        // 1. Direct name match (exact or normalized without gelar/titles)
+        const isDirectMatch = aTeacher === normTarget || 
+          normalizeTeacherName(aTeacher) === normalizeTeacherName(normTarget) ||
+          (aTeacher.length > 3 && normTarget.length > 3 && (aTeacher.includes(normTarget) || normTarget.includes(aTeacher)));
+
+        // 2. Homeroom teacher match
         const hrTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(a.className));
-        const isMatchHomeroom = hrTeacher && hrTeacher.name.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim();
-        if (!isMatchTeacher && !isMatchHomeroom) return false;
+        const isHomeroomMatch = hrTeacher && (
+          hrTeacher.name.toLowerCase().trim() === normTarget ||
+          normalizeTeacherName(hrTeacher.name) === normalizeTeacherName(normTarget)
+        );
+
+        // 3. Subject Teacher Assignment Match:
+        // If the filtered teacher is an assigned teacher for this subject:
+        const assignedTeachers = subjectTeachers.filter(st => 
+          st.name.toLowerCase().trim() === normTarget ||
+          normalizeTeacherName(st.name) === normalizeTeacherName(normTarget)
+        );
+
+        const isAssignedSubjectTeacher = assignedTeachers.some(st => {
+          const matchSubj = isSameSubject(a.subject, st.subject);
+          const matchCls = !st.className || st.className.toUpperCase() === 'SEMUA KELAS' || normClass(st.className) === normClass(a.className);
+          // If the assessment belongs to this teacher's subject & class:
+          // it matches if the assessment was saved under this teacher's name OR generic 'guru mapel' / empty / default
+          const isGenericTeacher = !aTeacher || aTeacher === 'guru mapel' || aTeacher.includes('guru') || isDirectMatch;
+          return matchSubj && matchCls && isGenericTeacher;
+        });
+
+        // 4. Also check if homeroom is the assigned subject teacher for this subject
+        const assignedHr = homerooms.find(h => 
+          (h.name.toLowerCase().trim() === normTarget || normalizeTeacherName(h.name) === normalizeTeacherName(normTarget)) &&
+          isSameSubject(a.subject, h.subject) &&
+          (!h.className || normClass(h.className) === normClass(a.className))
+        );
+        const isAssignedHrSubject = Boolean(assignedHr);
+
+        if (!isDirectMatch && !isHomeroomMatch && !isAssignedSubjectTeacher && !isAssignedHrSubject) {
+          return false;
+        }
       }
 
       // Subject filter (using robust subject matcher)
@@ -1093,7 +1146,7 @@ export default function WakaKurikulumPanel({
 
       return true;
     });
-  }, [filteredAssessments, detailRoleFilter, detailTeacherFilter, detailSubjectFilter, detailClassFilter, detailStatusFilter, detailSearchQuery, homerooms]);
+  }, [filteredAssessments, detailRoleFilter, detailTeacherFilter, detailSubjectFilter, detailClassFilter, detailStatusFilter, detailSearchQuery, homerooms, subjectTeachers]);
 
   // Monitoring Stats for Subject Teachers
   const teacherProgressList = useMemo(() => {
@@ -2413,8 +2466,14 @@ export default function WakaKurikulumPanel({
                             onClick={() => {
                               setDetailTeacherFilter(t.teacherName);
                               setDetailSubjectFilter(t.subject);
-                              if (t.className !== 'SEMUA KELAS') setDetailClassFilter(t.className);
-                              setDetailRoleFilter('subject_teacher');
+                              if (t.className && t.className !== 'SEMUA KELAS') {
+                                setDetailClassFilter(t.className);
+                              } else {
+                                setDetailClassFilter('all');
+                              }
+                              setDetailRoleFilter('all');
+                              setDetailStatusFilter('all');
+                              setDetailSearchQuery('');
                               setActiveTab('detail_nilai');
                             }}
                             className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 mx-auto cursor-pointer"
@@ -3038,7 +3097,11 @@ export default function WakaKurikulumPanel({
 
                           <td className="py-3 px-3">
                             <div className="flex flex-col">
-                              <span className="font-bold text-slate-900">{a.teacherName || 'Guru Mapel'}</span>
+                              <span className="font-bold text-slate-900">
+                                {a.teacherName && a.teacherName !== 'Guru Mapel'
+                                  ? a.teacherName
+                                  : (detailTeacherFilter !== 'all' ? `${detailTeacherFilter} (Mapel)` : 'Guru Mapel')}
+                              </span>
                               {hrTeacher && (
                                 <span className="text-[9.5px] font-semibold text-violet-600">
                                   Wali: {hrTeacher.name}

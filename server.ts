@@ -11,7 +11,7 @@ import compression from "compression";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription } from "./src/types";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
-import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql } from "./src/server/mysqlService";
+import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
 import { createSpmbRouter, generateAuthenticDocumentSvg } from "./src/server/routes/spmbRoutes";
 import { createMidtransRouter } from "./src/server/routes/midtransRoutes";
@@ -73,7 +73,7 @@ export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
   { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', orderNum: 13 }
 ];
 
-const curriculumSubjects: CurriculumSubject[] = [...DEFAULT_CURRICULUM_SUBJECTS];
+const curriculumSubjects: CurriculumSubject[] = [];
 const curriculumTpDescriptions: CurriculumTpDescription[] = [];
 
 const subjectTeachers: SubjectTeacher[] = [
@@ -2012,7 +2012,7 @@ function loadState() {
         databaseBackups.length = 0;
         databaseBackups.push(...data.databaseBackups);
       }
-      if (Array.isArray(data.curriculumSubjects) && data.curriculumSubjects.length > 0) {
+      if (Array.isArray(data.curriculumSubjects)) {
         curriculumSubjects.length = 0;
         curriculumSubjects.push(...data.curriculumSubjects);
       }
@@ -2227,7 +2227,7 @@ function applyDataFromMysql(pulledData: any) {
       spmbCandidates.push(...pulledData.spmbCandidates);
     }
 
-    if (Array.isArray(pulledData.curriculumSubjects) && pulledData.curriculumSubjects.length > 0) {
+    if (Array.isArray(pulledData.curriculumSubjects)) {
       curriculumSubjects.length = 0;
       curriculumSubjects.push(...pulledData.curriculumSubjects);
     }
@@ -2263,6 +2263,38 @@ function applyDataFromMysql(pulledData: any) {
   } catch (err) {
     console.error("Gagal menerapkan data dari MySQL:", err);
     return false;
+  }
+}
+
+let isAutoSyncRunning = false;
+let lastAutoSyncTimestamp = 0;
+
+export async function runAutoSyncWithMysql(force = false): Promise<boolean> {
+  if (isAutoSyncRunning) return false;
+  const now = Date.now();
+  if (!force && now - lastAutoSyncTimestamp < 15000) {
+    return true;
+  }
+  isAutoSyncRunning = true;
+  try {
+    const pullResult = await pullDataFromMysql();
+    if (pullResult.success && pullResult.data) {
+      applyDataFromMysql(pullResult.data);
+      lastAutoSyncTimestamp = Date.now();
+      lastMysqlSyncTime = new Date().toISOString();
+      mysqlDatabaseStatus = "ONLINE";
+      mysqlDatabaseError = null;
+      dbSyncStatus = "DATABASE MYSQL ONLINE (PRIMARY ENGINE)";
+      return true;
+    } else {
+      console.warn("[Auto-Sync Warning] Gagal sync dari MySQL:", pullResult.message);
+      return false;
+    }
+  } catch (err: any) {
+    console.warn("[Auto-Sync Exception]:", err?.message || err);
+    return false;
+  } finally {
+    isAutoSyncRunning = false;
   }
 }
 
@@ -2507,6 +2539,13 @@ async function startServer() {
   isInitialSyncCompleted = true;
   console.log(` [STARTUP] ✅ Inisialisasi database selesai. Status MySQL: ${mysqlDatabaseStatus}`);
   console.log("=================================================");
+
+  // DAEMON SINKRONISASI OTOMATIS: Berjalan berkala agar data Dev dan Publik selalu sinkron permanen
+  setInterval(() => {
+    runAutoSyncWithMysql(false).catch((err) => {
+      console.warn("[Background Sync Daemon Error]:", err?.message || err);
+    });
+  }, 25000);
 
   const app = express();
   app.use(compression({
@@ -4639,11 +4678,17 @@ async function startServer() {
   });
 
   // --- HOMEROOM TEACHERS (WALI KELAS) ENDPOINTS ---
-  app.get("/api/homerooms", (req, res) => {
+  app.get("/api/homerooms", async (req, res) => {
+    // If homerooms in memory lack subjects (such as from stale local cache)
+    // or if the client requests fresh data, synchronize from MySQL authoritative database
+    const missingSubjects = homeroomTeachers.length > 0 && homeroomTeachers.some(h => !h.subject);
+    if (req.query.fresh === 'true' || missingSubjects) {
+      await runAutoSyncWithMysql(missingSubjects);
+    }
     res.json(homeroomTeachers);
   });
 
-  app.post("/api/admin/homerooms", (req, res) => {
+  app.post("/api/admin/homerooms", async (req, res) => {
     const { username, name, className, password, skUrl, subject, subjectId, subjects } = req.body;
     if (!username || !name || !className) {
       return res.status(400).json({ error: "Informasi Wali Kelas tidak lengkap." });
@@ -4679,6 +4724,7 @@ async function startServer() {
     homeroomTeachers.push(newHt);
 
     // Also auto-sync/link to subjectTeachers so login and KBM records work seamlessly
+    let syncedSt: SubjectTeacher | null = null;
     if (resolvedSubject) {
       const existingSt = subjectTeachers.find(st => st.username.toLowerCase() === newHt.username.toLowerCase());
       if (existingSt) {
@@ -4687,8 +4733,9 @@ async function startServer() {
         existingSt.className = newHt.className;
         existingSt.name = newHt.name;
         if (newHt.password) existingSt.password = newHt.password;
+        syncedSt = existingSt;
       } else {
-        subjectTeachers.push({
+        syncedSt = {
           id: `st-sync-${newHt.id}`,
           username: newHt.username,
           name: newHt.name,
@@ -4696,11 +4743,17 @@ async function startServer() {
           subjectId: resolvedSubjectId,
           className: newHt.className,
           password: newHt.password || "wali123"
-        });
+        };
+        subjectTeachers.push(syncedSt);
       }
     }
 
     saveState();
+    // Direct permanent persistence to MySQL Primary Engine
+    directSaveEntityToMysql('homeroom_teacher', newHt).catch(err => console.warn('[MySQL Save Homeroom Error]:', err));
+    if (syncedSt) {
+      directSaveEntityToMysql('subject_teacher', syncedSt).catch(err => console.warn('[MySQL Save Linked Subject Teacher Error]:', err));
+    }
 
     // Notify
     const notification: RealtimeNotification = {
@@ -4715,7 +4768,7 @@ async function startServer() {
     res.json({ success: true, homeroomTeachers, added: newHt });
   });
 
-  app.put("/api/admin/homerooms/:id", (req, res) => {
+  app.put("/api/admin/homerooms/:id", async (req, res) => {
     const id = req.params.id;
     const { username, name, className, password, skUrl, subject, subjectId, subjects } = req.body;
     
@@ -4760,6 +4813,7 @@ async function startServer() {
 
     // Auto-sync with subjectTeachers
     const currHt = homeroomTeachers[htIndex];
+    let syncedSt: SubjectTeacher | null = null;
     if (currHt.subject) {
       const existingSt = subjectTeachers.find(st => 
         st.username.toLowerCase() === currHt.username.toLowerCase() || 
@@ -4772,8 +4826,9 @@ async function startServer() {
         existingSt.subjectId = currHt.subjectId;
         existingSt.className = currHt.className;
         if (currHt.password) existingSt.password = currHt.password;
+        syncedSt = existingSt;
       } else {
-        subjectTeachers.push({
+        syncedSt = {
           id: `st-sync-${currHt.id}`,
           username: currHt.username,
           name: currHt.name,
@@ -4781,11 +4836,18 @@ async function startServer() {
           subjectId: currHt.subjectId,
           className: currHt.className,
           password: currHt.password || "wali123"
-        });
+        };
+        subjectTeachers.push(syncedSt);
       }
     }
 
     saveState();
+    // Direct permanent persistence to MySQL Primary Engine
+    directSaveEntityToMysql('homeroom_teacher', homeroomTeachers[htIndex]).catch(err => console.warn('[MySQL Save Homeroom Error]:', err));
+    if (syncedSt) {
+      directSaveEntityToMysql('subject_teacher', syncedSt).catch(err => console.warn('[MySQL Save Linked Subject Teacher Error]:', err));
+    }
+
     res.json({ success: true, homeroomTeachers, updated: homeroomTeachers[htIndex] });
   });
 
@@ -4814,13 +4876,16 @@ async function startServer() {
         ht.password = "wali123";
         changed = true;
       }
-      if (changed) updatedCount++;
+      if (changed) {
+        updatedCount++;
+        directSaveEntityToMysql('homeroom_teacher', ht).catch(() => {});
+      }
 
       // Ensure synced in subjectTeachers
       if (ht.subject) {
         const existingSt = subjectTeachers.find(st => st.username.toLowerCase() === ht.username.toLowerCase());
         if (!existingSt) {
-          subjectTeachers.push({
+          const newSt = {
             id: `st-sync-${ht.id}`,
             username: ht.username,
             name: ht.name,
@@ -4828,10 +4893,13 @@ async function startServer() {
             subjectId: ht.subjectId,
             className: ht.className,
             password: ht.password || "wali123"
-          });
+          };
+          subjectTeachers.push(newSt);
+          directSaveEntityToMysql('subject_teacher', newSt).catch(() => {});
         } else {
           existingSt.subject = ht.subject;
           existingSt.subjectId = ht.subjectId;
+          directSaveEntityToMysql('subject_teacher', existingSt).catch(() => {});
         }
       }
     });
@@ -4849,12 +4917,34 @@ async function startServer() {
 
     const removed = homeroomTeachers.splice(idx, 1)[0];
     saveState();
+    directDeleteEntityFromMysql('homeroom_teacher', id).catch(err => console.error(err));
     deleteDocFromFirestore("homeroomTeachers", id).catch(err => console.error(err));
     res.json({ success: true, homeroomTeachers, removed });
   });
 
+  // Explicit live sync between app and MySQL Primary Engine
+  app.post("/api/admin/sync-live-database", async (req, res) => {
+    try {
+      const ok = await runAutoSyncWithMysql(true);
+      res.json({
+        success: ok,
+        homeroomsCount: homeroomTeachers.length,
+        homeroomsWithSubject: homeroomTeachers.filter(h => !!h.subject).length,
+        subjectTeachersCount: subjectTeachers.length,
+        curriculumSubjectsCount: curriculumSubjects.length,
+        studentsCount: students.length,
+        timestamp: new Date().toISOString()
+      });
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err?.message || String(err) });
+    }
+  });
+
   // --- SUBJECT TEACHERS (GURU MAPEL) ENDPOINTS ---
-  app.get("/api/subject-teachers", (req, res) => {
+  app.get("/api/subject-teachers", async (req, res) => {
+    if (req.query.fresh === 'true') {
+      await runAutoSyncWithMysql();
+    }
     res.json(subjectTeachers);
   });
 
@@ -4942,6 +5032,7 @@ async function startServer() {
 
     const removed = subjectTeachers.splice(idx, 1)[0];
     saveState();
+    directDeleteEntityFromMysql('subject_teacher', id).catch(err => console.error(err));
     res.json({ success: true, subjectTeachers, removed });
   });
 
@@ -5866,47 +5957,17 @@ async function startServer() {
   });
 
   // --- MASTER DATA MATA PELAJARAN (WAKA KURIKULUM) ---
-  const syncOfficialCurriculumSubjects = () => {
-    if (curriculumSubjects.length === 0) {
-      curriculumSubjects.push(...DEFAULT_CURRICULUM_SUBJECTS);
-      saveState();
-    } else {
-      const officialMap: Record<string, { name: string; orderNum: number; code?: string }> = {
-        'mapel-pai': { name: 'Pendidikan Agama Islam', orderNum: 1 },
-        'mapel-ppkn': { name: 'Pendidikan Pancasila', orderNum: 2 },
-        'mapel-bindo': { name: 'Bahasa Indonesia', orderNum: 3 },
-        'mapel-mtk': { name: 'Matematika', orderNum: 4 },
-        'mapel-ipa': { name: 'Ilmu Pengetahuan Alam (IPA)', orderNum: 5 },
-        'mapel-ips': { name: 'Ilmu Pengetahuan Sosial (IPS)', orderNum: 6 },
-        'mapel-bing': { name: 'Bahasa Inggris', orderNum: 7 },
-        'mapel-seni': { name: 'Seni Budaya', orderNum: 8 },
-        'mapel-pjok': { name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', orderNum: 9 },
-        'mapel-infor': { name: 'Informatika', orderNum: 10 },
-        'mapel-bjawa': { name: 'Muatan Lokal: Bahasa Daerah', orderNum: 11, code: 'MULOK' }
-      };
-
-      let changed = false;
-      curriculumSubjects.forEach(s => {
-        const off = officialMap[s.id];
-        if (off) {
-          if (s.name !== off.name || s.orderNum !== off.orderNum) {
-            s.name = off.name;
-            s.orderNum = off.orderNum;
-            if (off.code) s.code = off.code;
-            changed = true;
-          }
-        }
-      });
-      if (changed) {
-        saveState();
+  app.get("/api/curriculum/subjects", async (req, res) => {
+    // Selalu sinkronkan dengan database MySQL sebagai Primary Authoritative Engine
+    try {
+      const mysqlSubjects = await getAllCurriculumSubjectsFromMysql();
+      if (Array.isArray(mysqlSubjects) && mysqlSubjects.length > 0) {
+        curriculumSubjects.length = 0;
+        curriculumSubjects.push(...mysqlSubjects);
       }
+    } catch (dbErr: any) {
+      console.warn("[Subjects API] Gagal memuat langsung dari MySQL, menggunakan cache memori:", dbErr?.message || dbErr);
     }
-  };
-  syncOfficialCurriculumSubjects();
-
-  app.get("/api/curriculum/subjects", (req, res) => {
-    syncOfficialCurriculumSubjects();
-    // Return sorted by orderNum
     const sorted = [...curriculumSubjects].sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
     res.json({ success: true, subjects: sorted });
   });
@@ -5941,9 +6002,9 @@ async function startServer() {
     curriculumSubjects.sort((a, b) => (Number(a.orderNum) || 0) - (Number(b.orderNum) || 0));
 
     saveState();
-    directSaveEntityToMysql('curriculum_subject', newSubj).catch(err => console.warn('[MySQL Save Subject Error]:', err));
+    await directSaveEntityToMysql('curriculum_subject', newSubj).catch(err => console.warn('[MySQL Save Subject Error]:', err));
 
-    res.json({ success: true, message: `Mata pelajaran "${newSubj.name}" berhasil ditambahkan ke master data.`, subject: newSubj, subjects: curriculumSubjects });
+    res.json({ success: true, message: `Mata pelajaran "${newSubj.name}" berhasil ditambahkan ke master data & database MySQL.`, subject: newSubj, subjects: curriculumSubjects });
   });
 
   app.put("/api/curriculum/subjects/:id", async (req, res) => {
@@ -5996,23 +6057,70 @@ async function startServer() {
     }
 
     saveState();
-    directSaveEntityToMysql('curriculum_subject', curriculumSubjects[idx]).catch(err => console.warn('[MySQL Update Subject Error]:', err));
+    await directSaveEntityToMysql('curriculum_subject', curriculumSubjects[idx]).catch(err => console.warn('[MySQL Update Subject Error]:', err));
 
-    res.json({ success: true, message: `Mata pelajaran "${cleanName}" berhasil diperbarui.`, subject: curriculumSubjects[idx], subjects: curriculumSubjects });
+    res.json({ success: true, message: `Mata pelajaran "${cleanName}" berhasil diperbarui di MySQL.`, subject: curriculumSubjects[idx], subjects: curriculumSubjects });
   });
 
   app.delete("/api/curriculum/subjects/:id", async (req, res) => {
     const { id } = req.params;
-    const idx = curriculumSubjects.findIndex(s => s.id === id);
-    if (idx === -1) {
-      return res.status(404).json({ error: "Mata pelajaran tidak ditemukan." });
+    const targetId = id.trim();
+    const idx = curriculumSubjects.findIndex(s => s.id === targetId || s.code.toUpperCase() === targetId.toUpperCase());
+    
+    let removedName = targetId;
+    let removedCode = '';
+    let finalId = targetId;
+
+    if (idx !== -1) {
+      const removed = curriculumSubjects[idx];
+      removedName = removed.name;
+      removedCode = removed.code;
+      finalId = removed.id;
+      curriculumSubjects.splice(idx, 1);
     }
 
-    const removed = curriculumSubjects.splice(idx, 1)[0];
-    saveState();
-    directDeleteEntityFromMysql('curriculum_subject', id).catch(err => console.warn('[MySQL Delete Subject Error]:', err));
+    // Hapus permanen dari database MySQL Hostinger
+    try {
+      const pool = getSharedPool();
+      const conn = await pool.getConnection();
+      try {
+        const aliasIds = [
+          finalId,
+          finalId === 'mapel-seni' ? 'mapel-sbk' : (finalId === 'mapel-sbk' ? 'mapel-seni' : finalId),
+          finalId === 'mapel-infor' ? 'mapel-inf' : (finalId === 'mapel-inf' ? 'mapel-infor' : finalId),
+          finalId === 'mapel-bjawa' ? 'mapel-mulok' : finalId
+        ];
+        await conn.query(
+          "DELETE FROM `curriculum_subjects` WHERE `id` IN (?) OR `code` = ? OR LOWER(`name`) = LOWER(?)",
+          [aliasIds, removedCode || finalId, removedName]
+        );
+        console.log(`[MySQL Delete Subject] Berhasil menghapus permanen mapel "${removedName}" (${finalId}) dari MySQL.`);
+      } finally {
+        conn.release();
+      }
+    } catch (mysqlErr: any) {
+      console.warn('[MySQL Delete Subject Error]:', mysqlErr?.message || mysqlErr);
+    }
 
-    res.json({ success: true, message: `Mata pelajaran "${removed.name}" berhasil dihapus.`, removed, subjects: curriculumSubjects });
+    // Bersihkan juga dari array memori jika ada entri dengan id / nama / kode yang sama
+    const remaining = curriculumSubjects.filter(s => 
+      s.id !== finalId && 
+      s.name.toLowerCase() !== removedName.toLowerCase() && 
+      (!removedCode || s.code.toUpperCase() !== removedCode.toUpperCase())
+    );
+    curriculumSubjects.length = 0;
+    curriculumSubjects.push(...remaining);
+
+    // Tulis segera snapshot lokal darurat tanpa delay
+    saveState(true);
+    executeSafeLocalSave(() => getFullSnapshotForMysql());
+
+    res.json({ 
+      success: true, 
+      message: `Mata pelajaran "${removedName}" berhasil dihapus permanen dari sistem & database MySQL.`, 
+      removed: { id: finalId, name: removedName, code: removedCode }, 
+      subjects: curriculumSubjects 
+    });
   });
 
   app.post("/api/curriculum/subjects/reset-defaults", async (req, res) => {
@@ -6020,11 +6128,28 @@ async function startServer() {
     curriculumSubjects.push(...DEFAULT_CURRICULUM_SUBJECTS);
     saveState();
 
-    for (const s of DEFAULT_CURRICULUM_SUBJECTS) {
-      directSaveEntityToMysql('curriculum_subject', s).catch(() => {});
+    try {
+      const pool = getSharedPool();
+      const conn = await pool.getConnection();
+      try {
+        await conn.query("DELETE FROM `curriculum_subjects`");
+        for (const s of DEFAULT_CURRICULUM_SUBJECTS) {
+          await conn.query(
+            "INSERT INTO `curriculum_subjects` (`id`, `code`, `name`, `category`, `kktp`, `tingkat`, `order_num`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+            [s.id, s.code, s.name, s.category, s.kktp, s.tingkat, s.orderNum]
+          );
+        }
+        await conn.query(
+          "INSERT INTO `app_configs` (`config_key`, `config_value`, `updated_at`) VALUES ('curriculum_subjects_seeded', 'true', NOW()) ON DUPLICATE KEY UPDATE `updated_at`=NOW()"
+        );
+      } finally {
+        conn.release();
+      }
+    } catch (err: any) {
+      console.warn('[MySQL Reset Subjects Error]:', err?.message || err);
     }
 
-    res.json({ success: true, message: "Master data mata pelajaran berhasil direset ke standar Kurikulum Merdeka.", subjects: curriculumSubjects });
+    res.json({ success: true, message: "Master data mata pelajaran berhasil direset ke standar Kurikulum Merdeka di database MySQL.", subjects: curriculumSubjects });
   });
 
   // --- TUJUAN PEMBELAJARAN (TP) PER TINGKAT (WAKA KURIKULUM, GURU MAPEL & WALI KELAS) ---

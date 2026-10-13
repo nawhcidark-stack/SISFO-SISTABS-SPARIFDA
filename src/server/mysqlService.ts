@@ -538,6 +538,9 @@ CREATE TABLE IF NOT EXISTS \`homeroom_teachers\` (
   \`class_name\` VARCHAR(32) NOT NULL,
   \`password\` VARCHAR(128) DEFAULT NULL,
   \`sk_url\` TEXT DEFAULT NULL,
+  \`subject\` VARCHAR(100) DEFAULT NULL,
+  \`subject_id\` VARCHAR(64) DEFAULT NULL,
+  \`subjects\` TEXT DEFAULT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_hr_class\` (\`class_name\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1158,7 +1161,8 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (homeroomTeachers.length > 0) {
     out += `\n-- Data Wali Kelas (${homeroomTeachers.length} baris)\n`;
     for (const hr of homeroomTeachers) {
-      out += `INSERT INTO \`homeroom_teachers\` (\`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`) VALUES (${sqlEscape(hr.id)}, ${sqlEscape(hr.username)}, ${sqlEscape(hr.name)}, ${sqlEscape(hr.className)}, ${sqlEscape(hr.password)}, ${sqlEscape(hr.skUrl)}) ON DUPLICATE KEY UPDATE \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`);\n`;
+      const hrSubjectsStr = Array.isArray(hr.subjects) ? JSON.stringify(hr.subjects) : (hr.subject ? JSON.stringify([hr.subject]) : null);
+      out += `INSERT INTO \`homeroom_teachers\` (\`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`, \`subject\`, \`subject_id\`, \`subjects\`) VALUES (${sqlEscape(hr.id)}, ${sqlEscape(hr.username)}, ${sqlEscape(hr.name)}, ${sqlEscape(hr.className)}, ${sqlEscape(hr.password)}, ${sqlEscape(hr.skUrl)}, ${sqlEscape(hr.subject)}, ${sqlEscape(hr.subjectId)}, ${sqlEscape(hrSubjectsStr)}) ON DUPLICATE KEY UPDATE \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`), \`subjects\`=VALUES(\`subjects\`);\n`;
     }
   }
 
@@ -1979,14 +1983,24 @@ export async function pullDataFromMysql(): Promise<{
     // 7. Homeroom Teachers
     if (hasTable('homeroom_teachers')) {
       const [rows]: any = await connection.query('SELECT * FROM `homeroom_teachers`');
-      resultData.homeroomTeachers = rows.map((r: any) => ({
-        id: r.id,
-        username: r.username,
-        name: r.name,
-        className: r.class_name,
-        password: r.password || undefined,
-        skUrl: r.sk_url || undefined
-      }));
+      resultData.homeroomTeachers = rows.map((r: any) => {
+        let parsedSubjects: string[] = [];
+        try {
+          if (r.subjects) parsedSubjects = typeof r.subjects === 'string' ? JSON.parse(r.subjects) : r.subjects;
+        } catch (_) {}
+        if (parsedSubjects.length === 0 && r.subject) parsedSubjects = [r.subject];
+        return {
+          id: r.id,
+          username: r.username,
+          name: r.name,
+          className: r.class_name,
+          password: r.password || undefined,
+          skUrl: r.sk_url || undefined,
+          subject: r.subject || undefined,
+          subjectId: r.subject_id || undefined,
+          subjects: parsedSubjects
+        };
+      });
       counts.homeroomTeachers = resultData.homeroomTeachers.length;
     }
 
@@ -2381,7 +2395,43 @@ export async function pullDataFromMysql(): Promise<{
       counts.notifications = resultData.notifications.length;
     }
 
-    // 27. App Configs
+    // 27. Curriculum Subjects
+    if (hasTable('curriculum_subjects')) {
+      const [rows]: any = await connection.query('SELECT * FROM `curriculum_subjects` ORDER BY `order_num` ASC, `code` ASC');
+      resultData.curriculumSubjects = rows.map((r: any) => ({
+        id: r.id,
+        code: r.code,
+        name: r.name,
+        category: r.category || 'Muatan Nasional',
+        kktp: Number(r.kktp) || 75,
+        tingkat: r.tingkat || 'Semua Tingkat',
+        orderNum: Number(r.order_num) || 0,
+        description: r.description || undefined,
+        createdAt: r.created_at || undefined,
+        updatedAt: r.updated_at || undefined
+      }));
+      counts.curriculumSubjects = resultData.curriculumSubjects.length;
+    }
+
+    // 28. Curriculum TP Descriptions
+    if (hasTable('curriculum_tp_levels')) {
+      const [rows]: any = await connection.query('SELECT * FROM `curriculum_tp_levels`');
+      resultData.curriculumTpDescriptions = rows.map((r: any) => ({
+        id: r.id,
+        subject: r.subject,
+        gradeLevel: r.grade_level,
+        semester: r.semester || 'Ganjil',
+        academicYear: r.academic_year || '2026/2027',
+        tp1Name: r.tp1_name || '',
+        tp2Name: r.tp2_name || '',
+        tp3Name: r.tp3_name || '',
+        tp4Name: r.tp4_name || '',
+        updatedAt: r.updated_at || new Date().toISOString()
+      }));
+      counts.curriculumTpDescriptions = resultData.curriculumTpDescriptions.length;
+    }
+
+    // 29. App Configs
     if (hasTable('app_configs')) {
       const [rows]: any = await connection.query('SELECT * FROM `app_configs`');
       resultData.configs = {};
@@ -2668,32 +2718,39 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
       console.warn('[MySQL Curriculum Tables Init Warning]:', tabErr);
     }
 
-    // Seed default master data mata pelajaran jika tabel masih kosong
+    // Seed default master data mata pelajaran hanya sekali saat inisialisasi awal database pertama kali
     try {
-      const [existingSubjects]: any = await connection.query("SELECT COUNT(*) as cnt FROM `curriculum_subjects`");
-      if (existingSubjects && existingSubjects[0] && existingSubjects[0].cnt === 0) {
-        const defaultSubjects = [
-          { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam dan Budi Pekerti', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 1 },
-          { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 2 },
-          { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 3 },
-          { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 4 },
-          { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 5 },
-          { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 6 },
-          { id: 'mapel-bing', code: 'BIG', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 7 },
-          { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 8 },
-          { id: 'mapel-inf', code: 'INF', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 9 },
-          { id: 'mapel-sbk', code: 'SBK', name: 'Seni dan Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 10 },
-          { id: 'mapel-bjawa', code: 'BJAWA', name: 'Bahasa Jawa', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 11 },
-          { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 12 },
-          { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 13 }
-        ];
-        for (const s of defaultSubjects) {
-          await connection.query(
-            "INSERT IGNORE INTO `curriculum_subjects` (`id`, `code`, `name`, `category`, `kktp`, `tingkat`, `order_num`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
-            [s.id, s.code, s.name, s.category, s.kktp, s.tingkat, s.order_num]
-          );
+      const [initFlag]: any = await connection.query("SELECT `config_value` FROM `app_configs` WHERE `config_key` = 'curriculum_subjects_seeded'");
+      const hasBeenSeeded = initFlag && initFlag.length > 0;
+      if (!hasBeenSeeded) {
+        const [existingSubjects]: any = await connection.query("SELECT COUNT(*) as cnt FROM `curriculum_subjects`");
+        if (existingSubjects && existingSubjects[0] && existingSubjects[0].cnt === 0) {
+          const defaultSubjects = [
+            { id: 'mapel-pai', code: 'PAI', name: 'Pendidikan Agama Islam', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 1 },
+            { id: 'mapel-ppkn', code: 'PPKN', name: 'Pendidikan Pancasila', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 2 },
+            { id: 'mapel-bindo', code: 'BINDO', name: 'Bahasa Indonesia', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 3 },
+            { id: 'mapel-mtk', code: 'MAT', name: 'Matematika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 4 },
+            { id: 'mapel-ipa', code: 'IPA', name: 'Ilmu Pengetahuan Alam (IPA)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 5 },
+            { id: 'mapel-ips', code: 'IPS', name: 'Ilmu Pengetahuan Sosial (IPS)', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 6 },
+            { id: 'mapel-bing', code: 'BING', name: 'Bahasa Inggris', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 7 },
+            { id: 'mapel-seni', code: 'SENI', name: 'Seni Budaya', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 8 },
+            { id: 'mapel-pjok', code: 'PJOK', name: 'Pendidikan Jasmani, Olahraga, dan Kesehatan', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 9 },
+            { id: 'mapel-infor', code: 'INFOR', name: 'Informatika', category: 'Muatan Nasional', kktp: 75, tingkat: 'Semua Tingkat', order_num: 10 },
+            { id: 'mapel-bjawa', code: 'MULOK', name: 'Muatan Lokal: Bahasa Daerah', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 11 },
+            { id: 'mapel-barab', code: 'BARAB', name: 'Bahasa Arab', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 12 },
+            { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, tingkat: 'Semua Tingkat', order_num: 13 }
+          ];
+          for (const s of defaultSubjects) {
+            await connection.query(
+              "INSERT IGNORE INTO `curriculum_subjects` (`id`, `code`, `name`, `category`, `kktp`, `tingkat`, `order_num`, `created_at`, `updated_at`) VALUES (?, ?, ?, ?, ?, ?, ?, NOW(), NOW())",
+              [s.id, s.code, s.name, s.category, s.kktp, s.tingkat, s.order_num]
+            );
+          }
+          console.log('[MySQL] Master data mata pelajaran default berhasil di-seed.');
         }
-        console.log('[MySQL] Master data mata pelajaran default berhasil di-seed.');
+        await connection.query(
+          "INSERT INTO `app_configs` (`config_key`, `config_value`, `updated_at`) VALUES ('curriculum_subjects_seeded', 'true', NOW()) ON DUPLICATE KEY UPDATE `updated_at`=NOW()"
+        );
       }
     } catch (seedErr) {
       console.warn('[MySQL Seed Subjects Warning]:', seedErr);
@@ -3312,13 +3369,15 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     // 12. Homeroom Teachers
     else if (typeKey === 'homeroom' || typeKey === 'homeroom_teacher' || typeKey === 'homeroomteachers') {
       const hr = data;
+      const subjectsJson = Array.isArray(hr.subjects) ? JSON.stringify(hr.subjects) : (hr.subject ? JSON.stringify([hr.subject]) : null);
       await connection.query(`
         INSERT INTO \`homeroom_teachers\` (
-          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`, \`subject\`, \`subject_id\`, \`subjects\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
-      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null]);
+          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`),
+          \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`), \`subjects\`=VALUES(\`subjects\`)
+      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null, hr.subject || null, hr.subjectId || null, subjectsJson]);
       return { success: true, message: `Wali kelas "${hr.name}" langsung tersimpan ke MySQL.` };
     }
 
@@ -4000,7 +4059,22 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
     };
 
     const tableName = tableMap[typeKey] || typeKey;
-    await connection.query(`DELETE FROM \`${tableName}\` WHERE \`id\` = ?`, [id]);
+    if (tableName === 'curriculum_subjects') {
+      const aliasMap: Record<string, string[]> = {
+        'mapel-seni': ['mapel-sbk', 'SENI', 'SBK'],
+        'mapel-sbk': ['mapel-seni', 'SENI', 'SBK'],
+        'mapel-infor': ['mapel-inf', 'INFOR', 'INF'],
+        'mapel-inf': ['mapel-infor', 'INFOR', 'INF'],
+        'mapel-bjawa': ['mapel-mulok', 'MULOK', 'BJAWA']
+      };
+      const extraIds = aliasMap[id] || [id];
+      await connection.query(
+        "DELETE FROM `curriculum_subjects` WHERE `id` = ? OR `code` = ? OR LOWER(`name`) = LOWER(?) OR `id` IN (?)",
+        [id, id, id, extraIds]
+      );
+    } else {
+      await connection.query(`DELETE FROM \`${tableName}\` WHERE \`id\` = ?`, [id]);
+    }
     return {
       success: true,
       message: `Data ID "${id}" pada tabel "${tableName}" berhasil dihapus langsung dari MySQL.`

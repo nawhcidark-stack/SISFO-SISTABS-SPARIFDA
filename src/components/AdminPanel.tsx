@@ -13191,15 +13191,48 @@ export default function AdminPanel({
           >
             <div className="p-6 border-b border-slate-100 bg-slate-50 flex items-center justify-between flex-wrap gap-4">
               <div>
-                <h3 className="text-slate-900 font-extrabold text-base">
-                  Manajemen Akun Wali Kelas (Absensi)
-                </h3>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <h3 className="text-slate-900 font-extrabold text-base">
+                    Manajemen Akun Wali Kelas (Absensi)
+                  </h3>
+                  <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shadow-3xs">
+                    <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse"></span>
+                    Sinkron Live MySQL Publik
+                  </span>
+                </div>
                 <p className="text-xs text-slate-500 mt-1">
-                  Daftarkan dan kelola akun bimbingan wali kelas untuk
-                  memberikan otorisasi presensi harian siswa.
+                  Daftarkan dan kelola akun bimbingan wali kelas. Seluruh penugasan mata pelajaran otomatis sinkron permanen dengan server database MySQL publik.
                 </p>
               </div>
               <div className="flex items-center gap-2 flex-wrap">
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsActionLoading(true);
+                    setMgmtError(null);
+                    setMgmtSuccess(null);
+                    try {
+                      const res = await fetch("/api/admin/sync-live-database", { method: "POST" });
+                      if (res.ok) {
+                        const data = await res.json();
+                        setMgmtSuccess(`Sinkronisasi berhasil! ${data.homeroomsWithSubject || 0} dari ${data.homeroomsCount || 0} akun Wali Kelas terisi mapel.`);
+                        onRefresh();
+                      } else {
+                        setMgmtError("Gagal menyinkronkan data dengan database MySQL.");
+                      }
+                    } catch {
+                      setMgmtError("Kendala koneksi sistem saat sinkronisasi.");
+                    } finally {
+                      setIsActionLoading(false);
+                    }
+                  }}
+                  disabled={isActionLoading}
+                  className="px-3.5 py-2 bg-gradient-to-r from-emerald-600 to-teal-700 text-white rounded-lg text-xs font-bold hover:shadow-md active:scale-95 transition-all flex items-center gap-1.5 cursor-pointer shadow-sm disabled:opacity-50"
+                  title="Tarik & sinkronkan seketika seluruh data terbaru dari database MySQL publik"
+                >
+                  <RefreshCw size={13} className={isActionLoading ? "animate-spin" : ""} />
+                  <span>Sinkron Database Publik</span>
+                </button>
                 <button
                   type="button"
                   onClick={async () => {

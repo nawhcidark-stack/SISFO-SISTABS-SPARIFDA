@@ -285,7 +285,7 @@ export default function WakaKurikulumPanel({
   };
 
   const handleDeleteSubject = async (subj: CurriculumSubject) => {
-    if (!confirm(`Hapus mata pelajaran "${subj.name}" (${subj.code}) dari master data?\n\nPerhatian: Guru dan jadwal yang terhubung akan tetap ada namun disarankan mengalihkan mapelnya.`)) {
+    if (!confirm(`Hapus mata pelajaran "${subj.name}" (${subj.code}) dari master data?\n\nPerhatian: Mapel ini akan dihapus permanen dari sistem dan basis data MySQL.`)) {
       return;
     }
     try {
@@ -295,9 +295,9 @@ export default function WakaKurikulumPanel({
         if (Array.isArray(resData.subjects)) {
           setCurriculumSubjectsList(resData.subjects);
         } else {
-          fetchCurriculumSubjects();
+          await fetchCurriculumSubjects();
         }
-        setSubjectFeedback({ type: 'success', text: `Mata pelajaran "${subj.name}" berhasil dihapus.` });
+        setSubjectFeedback({ type: 'success', text: `Mata pelajaran "${subj.name}" berhasil dihapus permanen dari database MySQL.` });
         if (onRefreshData) onRefreshData();
       } else {
         alert(resData.error || 'Gagal menghapus mata pelajaran.');
@@ -662,14 +662,17 @@ export default function WakaKurikulumPanel({
       const pts = a && a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
 
       let naPts = 0;
-      if (pts > 0 && avgTp > 0) {
-        naPts = Math.round(((avgTp * 3) + koku + (pts * 2)) / 6);
+      if (avgTp > 0 && pts > 0) {
+        // Perhitungan NA khusus Rapor Tengah Semester: (Rata-rata TP x 80%) + (ASTS x 20%)
+        naPts = Math.round((avgTp * 0.8) + (pts * 0.2));
+      } else if (avgTp > 0 && pts === 0) {
+        // Jika ASTS belum diisi, gunakan Rata-rata TP
+        naPts = Math.round(avgTp);
+      } else if (pts > 0 && avgTp === 0) {
+        // Jika TP belum diisi, gunakan ASTS
+        naPts = Math.round(pts);
       } else if (a && a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
         naPts = Number(a.nilaiAkhirMapel);
-      } else if (pts > 0) {
-        naPts = pts;
-      } else if (avgTp > 0) {
-        naPts = avgTp;
       }
 
       let desc = '';
@@ -708,14 +711,15 @@ export default function WakaKurikulumPanel({
         const pts = a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
 
         let naPts = 0;
-        if (pts > 0 && avgTp > 0) {
-          naPts = Math.round(((avgTp * 3) + koku + (pts * 2)) / 6);
+        if (avgTp > 0 && pts > 0) {
+          // Perhitungan NA khusus Rapor Tengah Semester: (Rata-rata TP x 80%) + (ASTS x 20%)
+          naPts = Math.round((avgTp * 0.8) + (pts * 0.2));
+        } else if (avgTp > 0 && pts === 0) {
+          naPts = Math.round(avgTp);
+        } else if (pts > 0 && avgTp === 0) {
+          naPts = Math.round(pts);
         } else if (a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
           naPts = Number(a.nilaiAkhirMapel);
-        } else if (pts > 0) {
-          naPts = pts;
-        } else if (avgTp > 0) {
-          naPts = avgTp;
         }
 
         let desc = a.deskripsiCapaian || (naPts >= 75 ? 'Menunjukkan capaian kompetensi yang tuntas.' : '-');

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
+import * as XLSX from 'xlsx';
 import ScheduleView from './ScheduleView';
 import { TpJournalSelector } from './TpJournalSelector';
 import { 
@@ -954,42 +955,94 @@ export default function SubjectTeacherPanel({
     return (sub1 || '').trim().toLowerCase() === (sub2 || '').trim().toLowerCase();
   }
 
-  // Download Template Excel Penilaian Format Terbaru
+  // Download Template Excel Penilaian Format Terbaru (.xlsx & .csv)
   const handleDownloadExcelTemplate = () => {
-    const headers = [
-      "No", "NIS", "Nama Siswa",
-      "TP1_Tugas", "TP1_UH",
-      "TP2_Tugas", "TP2_UH",
-      "TP3_Tugas", "TP3_UH",
-      "TP4_Tugas", "TP4_UH",
-      "Kokurikuler", "PTS", "PAS"
-    ];
+    try {
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Kokurikuler", "PTS", "PAS"
+      ];
 
-    const rows = gradingClassStudents.map((st, idx) => [
-      idx + 1,
-      `"${st.nis || st.id}"`,
-      `"${st.name.replace(/"/g, '""')}"`,
-      "", "",
-      "", "",
-      "", "",
-      "", "",
-      "", "", ""
-    ]);
+      const dataRows = gradingClassStudents.map((st, idx) => [
+        idx + 1,
+        st.nis || st.id || "",
+        st.name || "",
+        "", "",
+        "", "",
+        "", "",
+        "", "",
+        "", "", ""
+      ]);
 
-    const csvContent = "\uFEFF" + [
-      headers.join(","),
-      ...rows.map(r => r.join(","))
-    ].join("\n");
+      const ws = XLSX.utils.aoa_to_sheet([headers, ...dataRows]);
+      ws['!cols'] = [
+        { wch: 6 },  // No
+        { wch: 16 }, // NIS
+        { wch: 32 }, // Nama Siswa
+        { wch: 12 }, // TP1_Tugas
+        { wch: 12 }, // TP1_UH
+        { wch: 12 }, // TP2_Tugas
+        { wch: 12 }, // TP2_UH
+        { wch: 12 }, // TP3_Tugas
+        { wch: 12 }, // TP3_UH
+        { wch: 12 }, // TP4_Tugas
+        { wch: 12 }, // TP4_UH
+        { wch: 14 }, // Kokurikuler
+        { wch: 10 }, // PTS
+        { wch: 10 }  // PAS
+      ];
 
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.setAttribute("href", url);
-    link.setAttribute("download", `Template_Penilaian_Format_Terbaru_${selectedGradeClass}_${(selectedSubject || 'Mapel').replace(/\s+/g, '_')}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    setFeedback({ type: 'success', text: "Template Excel format terbaru berhasil diunduh!" });
+      // Format NIS column as text
+      const range = XLSX.utils.decode_range(ws['!ref'] || 'A1:A1');
+      for (let R = 1; R <= range.e.r; ++R) {
+        const nisAddr = XLSX.utils.encode_cell({ r: R, c: 1 });
+        if (ws[nisAddr]) {
+          ws[nisAddr].t = 's';
+          ws[nisAddr].z = '@';
+        }
+      }
+
+      const wb = XLSX.utils.book_new();
+      XLSX.utils.book_append_sheet(wb, ws, "Template Penilaian");
+
+      const safeClass = (selectedGradeClass || 'Kelas').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const safeSubj = (selectedSubject || 'Mapel').replace(/[^a-zA-Z0-9_-]/g, '_');
+      const filename = `Template_Penilaian_${safeClass}_${safeSubj}.xlsx`;
+
+      XLSX.writeFile(wb, filename);
+      setFeedback({ type: 'success', text: `📥 Berhasil mengunduh template Excel (.xlsx) resmi untuk Kelas ${selectedGradeClass}!` });
+    } catch (err: any) {
+      console.warn("Fallback to CSV template download:", err);
+      // Fallback CSV download if XLSX writer encounters environment issue
+      const headers = [
+        "No", "NIS", "Nama Siswa",
+        "TP1_Tugas", "TP1_UH",
+        "TP2_Tugas", "TP2_UH",
+        "TP3_Tugas", "TP3_UH",
+        "TP4_Tugas", "TP4_UH",
+        "Kokurikuler", "PTS", "PAS"
+      ];
+      const rows = gradingClassStudents.map((st, idx) => [
+        idx + 1,
+        `"${st.nis || st.id}"`,
+        `"${st.name.replace(/"/g, '""')}"`,
+        "", "", "", "", "", "", "", "", "", "", ""
+      ]);
+      const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(r => r.join(","))].join("\n");
+      const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.setAttribute("href", url);
+      link.setAttribute("download", `Template_Penilaian_${selectedGradeClass}_${(selectedSubject || 'Mapel').replace(/\s+/g, '_')}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      setFeedback({ type: 'success', text: "Template Excel format CSV berhasil diunduh!" });
+    }
   };
 
   // Export Excel Rapi Penilaian Format Terbaru
@@ -1087,6 +1140,147 @@ export default function SubjectTeacherPanel({
     setFeedback({ type: 'success', text: "Data nilai berhasil diexport ke Excel dengan rapi!" });
   };
 
+  const processSubjectExcelMatrix = (matrix: any[][]) => {
+    if (!matrix || matrix.length === 0) {
+      setExcelParseError("Tidak ada data dalam berkas atau teks yang diinput.");
+      setExcelParsedPreview([]);
+      return;
+    }
+
+    // 1. Detect header row by scanning for keywords: nis, no, nama, tp
+    let headerIndex = -1;
+    for (let r = 0; r < Math.min(matrix.length, 10); r++) {
+      const rowStr = matrix[r].map(c => String(c ?? '').toLowerCase()).join(" ");
+      if ((rowStr.includes("nis") || rowStr.includes("nama")) && (rowStr.includes("tp") || rowStr.includes("nilai") || rowStr.includes("pts") || rowStr.includes("no"))) {
+        headerIndex = r;
+        break;
+      }
+    }
+
+    const rowsToProcess = headerIndex !== -1 ? matrix.slice(headerIndex + 1) : matrix;
+    const parsedData: any[] = [];
+
+    rowsToProcess.forEach((rawRow) => {
+      const cells = rawRow.map(c => String(c ?? '').trim().replace(/^["']|["']$/g, ''));
+      if (cells.length < 2 || cells.every(c => c === '')) return;
+
+      // Skip header row if repeated
+      if (
+        cells[0].toLowerCase().includes("nis") || 
+        cells[0].toLowerCase().includes("no") || 
+        cells[1]?.toLowerCase().includes("nama") || 
+        cells[1]?.toLowerCase().includes("nis")
+      ) {
+        return;
+      }
+
+      // Check if first column is sequence No (1, 2, 3...)
+      let shift = 0;
+      if (!isNaN(Number(cells[0])) && Number(cells[0]) < 1000 && (cells[1] || '').length >= 2) {
+        shift = 1;
+      }
+
+      const rawNis = cells[shift] || "";
+      const nameInput = cells[shift + 1] || "";
+
+      if (!rawNis && !nameInput) return;
+
+      // Clean string for matching
+      const cleanRawNis = rawNis.replace(/[^a-zA-Z0-9]/g, '');
+      const cleanNameInput = nameInput.toLowerCase().trim();
+
+      const matched = gradingClassStudents.find(s => {
+        const sNis = String(s.nis || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sId = String(s.id || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sName = (s.name || '').toLowerCase().trim();
+
+        if (cleanRawNis && (sNis === cleanRawNis || sId === cleanRawNis)) return true;
+        if (cleanNameInput && (sName === cleanNameInput || sName.includes(cleanNameInput) || cleanNameInput.includes(sName))) return true;
+        return false;
+      }) || students.find(s => {
+        const sNis = String(s.nis || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sId = String(s.id || '').replace(/[^a-zA-Z0-9]/g, '');
+        const sName = (s.name || '').toLowerCase().trim();
+
+        if (cleanRawNis && (sNis === cleanRawNis || sId === cleanRawNis)) return true;
+        if (cleanNameInput && (sName === cleanNameInput || sName.includes(cleanNameInput) || cleanNameInput.includes(sName))) return true;
+        return false;
+      });
+
+      const gradeCells = cells.slice(shift + 2);
+
+      let tp1T1 = "", tp1Uh = "";
+      let tp2T1 = "", tp2Uh = "";
+      let tp3T1 = "", tp3Uh = "";
+      let tp4T1 = "", tp4Uh = "";
+      let kokurikuler = "";
+      let pts = "";
+      let pas = "";
+
+      if (gradeCells.length >= 13) {
+        // Format with Rata_TP: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH, Rata_TP, Kokurikuler, PTS, PAS
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+        tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+        tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+        tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+        kokurikuler = gradeCells[9] || "";
+        pts = gradeCells[10] || "";
+        pas = gradeCells[11] || "";
+      } else if (gradeCells.length >= 11) {
+        // Standard template format: TP1_Tugas, TP1_UH, TP2_Tugas, TP2_UH, TP3_Tugas, TP3_UH, TP4_Tugas, TP4_UH, Kokurikuler, PTS, PAS
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+        tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+        tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+        tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+        kokurikuler = gradeCells[8] || "";
+        pts = gradeCells[9] || "";
+        pas = gradeCells[10] || "";
+      } else if (gradeCells.length >= 8) {
+        // 8 columns TP: TP1_T, TP1_UH, TP2_T, TP2_UH, TP3_T, TP3_UH, TP4_T, TP4_UH
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
+        tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
+        tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
+        tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
+      } else if (gradeCells.length >= 4) {
+        // Simple 4 TP columns (TP1, TP2, TP3, TP4)
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+        tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
+        tp3T1 = gradeCells[2] || ""; tp3Uh = gradeCells[2] || "";
+        tp4T1 = gradeCells[3] || ""; tp4Uh = gradeCells[3] || "";
+        pts = gradeCells[4] || "";
+        pas = gradeCells[5] || "";
+      } else {
+        tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+        tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
+      }
+
+      parsedData.push({
+        studentId: matched?.id,
+        studentName: matched ? matched.name : (nameInput || "Siswa Tidak Ditemukan"),
+        nis: matched?.nis || rawNis || "-",
+        className: matched?.class || selectedGradeClass || "-",
+        matched: !!matched,
+        tp1Tugas1: tp1T1, tp1Uh,
+        tp2Tugas1: tp2T1, tp2Uh,
+        tp3Tugas1: tp3T1, tp3Uh,
+        tp4Tugas1: tp4T1, tp4Uh,
+        kokurikuler, pts, pas
+      });
+    });
+
+    const verifiedMatches = parsedData.filter(d => d.matched);
+    if (parsedData.length === 0) {
+      setExcelParseError("Tidak ada baris data valid yang terdeteksi.");
+      setExcelParsedPreview([]);
+    } else if (verifiedMatches.length === 0) {
+      setExcelParseError("Gagal mencocokkan data baris dengan siswa terdaftar. Pastikan NIS atau Nama sesuai.");
+      setExcelParsedPreview(parsedData);
+    } else {
+      setExcelParsedPreview(parsedData);
+      setExcelParseError(null);
+    }
+  };
+
   const handleImportExcelData = () => {
     if (!excelPasteContent.trim()) {
       setExcelParseError("Silakan tempel data dari Excel atau unggah file terlebih dahulu.");
@@ -1094,119 +1288,9 @@ export default function SubjectTeacherPanel({
     }
 
     try {
-      const rows = excelPasteContent.trim().split("\n");
-      const parsedData: any[] = [];
-      
-      rows.forEach((row, idx) => {
-        const cells = row.split(/\t|,/).map(c => c.trim().replace(/^["']|["']$/g, ''));
-        if (cells.length < 2) return;
-
-        // Skip header row if detected
-        if (idx === 0 && (
-          cells[0].toLowerCase().includes("nis") || 
-          cells[0].toLowerCase().includes("no") || 
-          cells[1].toLowerCase().includes("nama") || 
-          cells[1].toLowerCase().includes("nis") || 
-          (cells[2] && cells[2].toLowerCase().includes("tp"))
-        )) {
-          return;
-        }
-
-        // Determine shift if column 0 is No
-        let shift = 0;
-        if (!isNaN(Number(cells[0])) && Number(cells[0]) < 1000 && (cells[1] || '').length >= 3) {
-          shift = 1;
-        }
-
-        const rawNis = cells[shift] || "";
-        const nameInput = cells[shift + 1] || "";
-
-        if (!rawNis && !nameInput) return;
-
-        // Try to match student
-        const matched = students.find(s => 
-          (rawNis && s.nis && String(s.nis).trim() === String(rawNis).trim()) || 
-          (nameInput && s.name.toLowerCase() === nameInput.toLowerCase()) ||
-          (nameInput && s.name.toLowerCase().includes(nameInput.toLowerCase()))
-        );
-
-        const gradeCells = cells.slice(shift + 2);
-
-        let tp1T1 = "", tp1T2 = "", tp1Uh = "";
-        let tp2T1 = "", tp2T2 = "", tp2Uh = "";
-        let tp3T1 = "", tp3T2 = "", tp3Uh = "";
-        let tp4T1 = "", tp4T2 = "", tp4Uh = "";
-        let kokurikuler = "";
-        let pts = "";
-        let pas = "";
-
-        if (gradeCells.length >= 15) {
-          // Legacy format (TP1-TP4 T1, T2, UH, Kokurikuler, PTS, PAS)
-          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[2] || "";
-          tp2T1 = gradeCells[3] || ""; tp2Uh = gradeCells[5] || "";
-          tp3T1 = gradeCells[6] || ""; tp3Uh = gradeCells[8] || "";
-          tp4T1 = gradeCells[9] || ""; tp4Uh = gradeCells[11] || "";
-          kokurikuler = gradeCells[12] || "";
-          pts = gradeCells[13] || "";
-          pas = gradeCells[14] || "";
-        } else if (gradeCells.length >= 11) {
-          // Format terbaru tanpa T2 (TP1-TP4 Tugas & UH, Kokurikuler, PTS, PAS)
-          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
-          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
-          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
-          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
-          kokurikuler = gradeCells[8] || "";
-          pts = gradeCells[9] || "";
-          pas = gradeCells[10] || "";
-        } else if (gradeCells.length >= 8) {
-          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[1] || "";
-          tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
-          tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
-          tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
-        } else {
-          tp1Uh = gradeCells[0] || "";
-          tp2Uh = gradeCells[1] || "";
-          tp3Uh = gradeCells[2] || "";
-          tp4Uh = gradeCells[3] || "";
-          pts = gradeCells[4] || "";
-          pas = gradeCells[5] || "";
-        }
-
-        if (matched) {
-          parsedData.push({
-            studentId: matched.id,
-            studentName: matched.name,
-            nis: matched.nis,
-            className: matched.class,
-            tp1Tugas1: tp1T1, tp1Tugas2: tp1T2, tp1Uh: tp1Uh,
-            tp2Tugas1: tp2T1, tp2Tugas2: tp2T2, tp2Uh: tp2Uh,
-            tp3Tugas1: tp3T1, tp3Tugas2: tp3T2, tp3Uh: tp3Uh,
-            tp4Tugas1: tp4T1, tp4Tugas2: tp4T2, tp4Uh: tp4Uh,
-            kokurikuler, pts, pas,
-            matched: true
-          });
-        } else {
-          parsedData.push({
-            nis: rawNis || "-",
-            studentName: nameInput || "Siswa Tidak Ditemukan",
-            matched: false,
-            tp1Tugas1: tp1T1, tp1Tugas2: tp1T2, tp1Uh: tp1Uh,
-            tp2Tugas1: tp2T1, tp2Tugas2: tp2T2, tp2Uh: tp2Uh,
-            tp3Tugas1: tp3T1, tp3Tugas2: tp3T2, tp3Uh: tp3Uh,
-            tp4Tugas1: tp4T1, tp4Tugas2: tp4T2, tp4Uh: tp4Uh,
-            kokurikuler, pts, pas
-          });
-        }
-      });
-
-      const verifiedMatches = parsedData.filter(d => d.matched);
-      if (verifiedMatches.length === 0) {
-        setExcelParseError("Gagal mencocokkan data baris dengan siswa terdaftar. Pastikan NIS atau Nama sesuai.");
-        setExcelParsedPreview([]);
-      } else {
-        setExcelParsedPreview(parsedData);
-        setExcelParseError(null);
-      }
+      const rows = excelPasteContent.trim().split(/\r?\n/).filter(r => r.trim().length > 0);
+      const matrix = rows.map(row => row.split(/\t|,/));
+      processSubjectExcelMatrix(matrix);
     } catch (err: any) {
       setExcelParseError("Kesalahan saat memproses data: " + err.message);
     }
@@ -1246,21 +1330,40 @@ export default function SubjectTeacherPanel({
     setExcelParsedPreview([]);
     setFeedback({
       type: 'success',
-      text: `Berhasil mencocokkan & memuat nilai untuk ${importCount} siswa dari Excel ke tabel.`
+      text: `🎉 Berhasil memuat data nilai (TP1, TP2, TP3, TP4, PTS, PAS) untuk ${importCount} siswa ke tabel penilaian.`
     });
   };
 
-  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target?.result as string;
-      if (text) {
+
+    setExcelParseError(null);
+    try {
+      const fileName = file.name.toLowerCase();
+      let matrix: any[][] = [];
+
+      if (fileName.endsWith('.xlsx') || fileName.endsWith('.xls')) {
+        const buffer = await file.arrayBuffer();
+        const workbook = XLSX.read(buffer, { type: 'array', cellDates: false, raw: false });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        matrix = XLSX.utils.sheet_to_json(sheet, { header: 1, raw: false, defval: '' }) as any[][];
+      } else {
+        const text = await file.text();
         setExcelPasteContent(text);
+        const lines = text.split(/\r?\n/).filter(l => l.trim().length > 0);
+        const delimiter = lines[0]?.includes('\t') ? '\t' : (lines[0]?.includes(';') ? ';' : ',');
+        matrix = lines.map(line => line.split(delimiter));
       }
-    };
-    reader.readAsText(file);
+
+      processSubjectExcelMatrix(matrix);
+    } catch (err: any) {
+      console.error("Error reading uploaded file:", err);
+      setExcelParseError("Gagal membaca berkas Excel: " + (err.message || err));
+    } finally {
+      e.target.value = '';
+    }
   };
 
   // Class students roster
@@ -4315,12 +4418,12 @@ export default function SubjectTeacherPanel({
                 {/* Upload or Area Input */}
                 <div className="flex flex-col gap-1.5">
                   <div className="flex justify-between items-center">
-                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metode Tempel Data (Copy-Paste) atau Unggah CSV/TXT</span>
+                    <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">Metode Tempel Data (Copy-Paste) atau Unggah Berkas (.xlsx, .xls, .csv)</span>
                     <label className="text-xs text-indigo-600 hover:text-indigo-800 font-bold cursor-pointer">
-                      <span>📁 Unggah Berkas</span>
+                      <span>📁 Unggah Berkas Excel / CSV</span>
                       <input
                         type="file"
-                        accept=".csv,.tsv,.txt"
+                        accept=".xlsx,.xls,.csv,.tsv,.txt"
                         className="hidden"
                         onChange={handleFileUpload}
                       />
@@ -4330,7 +4433,7 @@ export default function SubjectTeacherPanel({
                     rows={8}
                     value={excelPasteContent}
                     onChange={(e) => setExcelPasteContent(e.target.value)}
-                    placeholder="NIS&#9;Nama&#9;Nilai TP1&#9;Nilai TP2&#9;Nilai TP3&#9;Nilai TP4&#9;Nilai LM&#9;Nilai SAS&#10;24001&#9;Achmad Fauzi&#9;85&#9;80&#9;90&#9;85&#9;88&#9;82"
+                    placeholder="No&#9;NIS&#9;Nama Siswa&#9;TP1_Tugas&#9;TP1_UH&#9;TP2_Tugas&#9;TP2_UH&#9;TP3_Tugas&#9;TP3_UH&#9;TP4_Tugas&#9;TP4_UH&#9;Kokurikuler&#9;PTS&#9;PAS&#10;1&#9;24001&#9;Achmad Fauzi&#9;85&#9;80&#9;90&#9;85&#9;88&#9;82&#9;90&#9;86&#9;85&#9;80&#9;85"
                     className="w-full border border-slate-200 focus:border-indigo-600 focus:outline-none rounded-xl p-3 font-mono text-xs bg-slate-50/50 leading-relaxed"
                   />
                 </div>
@@ -4349,7 +4452,7 @@ export default function SubjectTeacherPanel({
                     onClick={handleImportExcelData}
                     className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer"
                   >
-                    MOCK & REVIEW DATA COCOK
+                    PROSES & COCOKKAN DATA EXCEL
                   </button>
                 </div>
 
@@ -4365,12 +4468,12 @@ export default function SubjectTeacherPanel({
                           <tr className="bg-slate-100 text-slate-700 font-bold border-b border-slate-200">
                             <th className="py-2 px-3">NIS</th>
                             <th className="py-2 px-3">Nama Input</th>
-                            <th className="py-2 px-2 text-center">TP1</th>
-                            <th className="py-2 px-2 text-center">TP2</th>
-                            <th className="py-2 px-2 text-center">TP3</th>
-                            <th className="py-2 px-2 text-center">TP4</th>
-                            <th className="py-2 px-2 text-center">Sum LM</th>
-                            <th className="py-2 px-2 text-center">SAS</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP1 (T/UH)</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP2 (T/UH)</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP3 (T/UH)</th>
+                            <th className="py-2 px-2 text-center" title="Tugas / UH">TP4 (T/UH)</th>
+                            <th className="py-2 px-2 text-center">PTS/ASTS</th>
+                            <th className="py-2 px-2 text-center">PAS/SAS</th>
                             <th className="py-2 px-3 text-right">Status Match</th>
                           </tr>
                         </thead>
@@ -4379,12 +4482,20 @@ export default function SubjectTeacherPanel({
                             <tr key={idx} className={`border-b border-slate-100 ${item.matched ? 'bg-emerald-50/30' : 'bg-rose-50/30'}`}>
                               <td className="py-1.5 px-3 font-mono">{item.nis || "-"}</td>
                               <td className="py-1.5 px-3 font-bold text-slate-800">{item.studentName}</td>
-                              <td className="py-1.5 px-2 text-center">{item.tp1Grade}</td>
-                              <td className="py-1.5 px-2 text-center">{item.tp2Grade ?? "-"}</td>
-                              <td className="py-1.5 px-2 text-center">{item.tp3Grade ?? "-"}</td>
-                              <td className="py-1.5 px-2 text-center">{item.tp4Grade ?? "-"}</td>
-                              <td className="py-1.5 px-2 text-center">{item.nilaiSumatifLM}</td>
-                              <td className="py-1.5 px-2 text-center">{item.nilaiSAS}</td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp1Tugas1 || item.tp1Uh ? `${item.tp1Tugas1 || '-'}/${item.tp1Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp2Tugas1 || item.tp2Uh ? `${item.tp2Tugas1 || '-'}/${item.tp2Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp3Tugas1 || item.tp3Uh ? `${item.tp3Tugas1 || '-'}/${item.tp3Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-indigo-900">
+                                {item.tp4Tugas1 || item.tp4Uh ? `${item.tp4Tugas1 || '-'}/${item.tp4Uh || '-'}` : '-'}
+                              </td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-amber-800">{item.pts || "-"}</td>
+                              <td className="py-1.5 px-2 text-center font-mono font-bold text-amber-800">{item.pas || "-"}</td>
                               <td className="py-1.5 px-3 text-right">
                                 {item.matched ? (
                                   <span className="px-1.5 py-0.5 bg-emerald-100 text-emerald-800 font-black text-[9px] rounded-md uppercase">Terdaftar</span>

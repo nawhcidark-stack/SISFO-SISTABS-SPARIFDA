@@ -2797,13 +2797,16 @@ export default function HomeroomPanel({
           tp2T1 = gradeCells[2] || ""; tp2Uh = gradeCells[3] || "";
           tp3T1 = gradeCells[4] || ""; tp3Uh = gradeCells[5] || "";
           tp4T1 = gradeCells[6] || ""; tp4Uh = gradeCells[7] || "";
-        } else {
-          tp1Uh = gradeCells[0] || "";
-          tp2Uh = gradeCells[1] || "";
-          tp3Uh = gradeCells[2] || "";
-          tp4Uh = gradeCells[3] || "";
+        } else if (gradeCells.length >= 4) {
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+          tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
+          tp3T1 = gradeCells[2] || ""; tp3Uh = gradeCells[2] || "";
+          tp4T1 = gradeCells[3] || ""; tp4Uh = gradeCells[3] || "";
           pts = gradeCells[4] || "";
           pas = gradeCells[5] || "";
+        } else {
+          tp1T1 = gradeCells[0] || ""; tp1Uh = gradeCells[0] || "";
+          tp2T1 = gradeCells[1] || ""; tp2Uh = gradeCells[1] || "";
         }
 
         parsedData.push({

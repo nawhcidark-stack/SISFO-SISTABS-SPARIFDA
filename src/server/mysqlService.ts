@@ -538,9 +538,6 @@ CREATE TABLE IF NOT EXISTS \`homeroom_teachers\` (
   \`class_name\` VARCHAR(32) NOT NULL,
   \`password\` VARCHAR(128) DEFAULT NULL,
   \`sk_url\` TEXT DEFAULT NULL,
-  \`subject\` VARCHAR(100) DEFAULT NULL,
-  \`subject_id\` VARCHAR(64) DEFAULT NULL,
-  \`subjects\` TEXT DEFAULT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_hr_class\` (\`class_name\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1161,8 +1158,7 @@ ${COMPLETE_TABLES_SQL.trim()}
   if (homeroomTeachers.length > 0) {
     out += `\n-- Data Wali Kelas (${homeroomTeachers.length} baris)\n`;
     for (const hr of homeroomTeachers) {
-      const hrSubjectsStr = Array.isArray(hr.subjects) ? JSON.stringify(hr.subjects) : (hr.subject ? JSON.stringify([hr.subject]) : null);
-      out += `INSERT INTO \`homeroom_teachers\` (\`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`, \`subject\`, \`subject_id\`, \`subjects\`) VALUES (${sqlEscape(hr.id)}, ${sqlEscape(hr.username)}, ${sqlEscape(hr.name)}, ${sqlEscape(hr.className)}, ${sqlEscape(hr.password)}, ${sqlEscape(hr.skUrl)}, ${sqlEscape(hr.subject)}, ${sqlEscape(hr.subjectId)}, ${sqlEscape(hrSubjectsStr)}) ON DUPLICATE KEY UPDATE \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`), \`subjects\`=VALUES(\`subjects\`);\n`;
+      out += `INSERT INTO \`homeroom_teachers\` (\`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`) VALUES (${sqlEscape(hr.id)}, ${sqlEscape(hr.username)}, ${sqlEscape(hr.name)}, ${sqlEscape(hr.className)}, ${sqlEscape(hr.password)}, ${sqlEscape(hr.skUrl)}) ON DUPLICATE KEY UPDATE \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`);\n`;
     }
   }
 
@@ -1983,24 +1979,14 @@ export async function pullDataFromMysql(): Promise<{
     // 7. Homeroom Teachers
     if (hasTable('homeroom_teachers')) {
       const [rows]: any = await connection.query('SELECT * FROM `homeroom_teachers`');
-      resultData.homeroomTeachers = rows.map((r: any) => {
-        let parsedSubjects: string[] = [];
-        try {
-          if (r.subjects) parsedSubjects = typeof r.subjects === 'string' ? JSON.parse(r.subjects) : r.subjects;
-        } catch (_) {}
-        if (parsedSubjects.length === 0 && r.subject) parsedSubjects = [r.subject];
-        return {
-          id: r.id,
-          username: r.username,
-          name: r.name,
-          className: r.class_name,
-          password: r.password || undefined,
-          skUrl: r.sk_url || undefined,
-          subject: r.subject || undefined,
-          subjectId: r.subject_id || undefined,
-          subjects: parsedSubjects
-        };
-      });
+      resultData.homeroomTeachers = rows.map((r: any) => ({
+        id: r.id,
+        username: r.username,
+        name: r.name,
+        className: r.class_name,
+        password: r.password || undefined,
+        skUrl: r.sk_url || undefined
+      }));
       counts.homeroomTeachers = resultData.homeroomTeachers.length;
     }
 
@@ -3369,15 +3355,13 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     // 12. Homeroom Teachers
     else if (typeKey === 'homeroom' || typeKey === 'homeroom_teacher' || typeKey === 'homeroomteachers') {
       const hr = data;
-      const subjectsJson = Array.isArray(hr.subjects) ? JSON.stringify(hr.subjects) : (hr.subject ? JSON.stringify([hr.subject]) : null);
       await connection.query(`
         INSERT INTO \`homeroom_teachers\` (
-          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`, \`subject\`, \`subject_id\`, \`subjects\`
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`
+        ) VALUES (?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`),
-          \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`), \`subjects\`=VALUES(\`subjects\`)
-      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null, hr.subject || null, hr.subjectId || null, subjectsJson]);
+          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
+      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null]);
       return { success: true, message: `Wali kelas "${hr.name}" langsung tersimpan ke MySQL.` };
     }
 

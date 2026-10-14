@@ -2266,38 +2266,6 @@ function applyDataFromMysql(pulledData: any) {
   }
 }
 
-let isAutoSyncRunning = false;
-let lastAutoSyncTimestamp = 0;
-
-export async function runAutoSyncWithMysql(force = false): Promise<boolean> {
-  if (isAutoSyncRunning) return false;
-  const now = Date.now();
-  if (!force && now - lastAutoSyncTimestamp < 15000) {
-    return true;
-  }
-  isAutoSyncRunning = true;
-  try {
-    const pullResult = await pullDataFromMysql();
-    if (pullResult.success && pullResult.data) {
-      applyDataFromMysql(pullResult.data);
-      lastAutoSyncTimestamp = Date.now();
-      lastMysqlSyncTime = new Date().toISOString();
-      mysqlDatabaseStatus = "ONLINE";
-      mysqlDatabaseError = null;
-      dbSyncStatus = "DATABASE MYSQL ONLINE (PRIMARY ENGINE)";
-      return true;
-    } else {
-      console.warn("[Auto-Sync Warning] Gagal sync dari MySQL:", pullResult.message);
-      return false;
-    }
-  } catch (err: any) {
-    console.warn("[Auto-Sync Exception]:", err?.message || err);
-    return false;
-  } finally {
-    isAutoSyncRunning = false;
-  }
-}
-
 loadMysqlConfig();
 const mysqlActiveCfg = getSanitizedConfig();
 const hasMysqlConfigured = Boolean(
@@ -2539,13 +2507,6 @@ async function startServer() {
   isInitialSyncCompleted = true;
   console.log(` [STARTUP] ✅ Inisialisasi database selesai. Status MySQL: ${mysqlDatabaseStatus}`);
   console.log("=================================================");
-
-  // DAEMON SINKRONISASI OTOMATIS: Berjalan berkala agar data Dev dan Publik selalu sinkron permanen
-  setInterval(() => {
-    runAutoSyncWithMysql(false).catch((err) => {
-      console.warn("[Background Sync Daemon Error]:", err?.message || err);
-    });
-  }, 25000);
 
   const app = express();
   app.use(compression({
@@ -4678,17 +4639,11 @@ async function startServer() {
   });
 
   // --- HOMEROOM TEACHERS (WALI KELAS) ENDPOINTS ---
-  app.get("/api/homerooms", async (req, res) => {
-    // If homerooms in memory lack subjects (such as from stale local cache)
-    // or if the client requests fresh data, synchronize from MySQL authoritative database
-    const missingSubjects = homeroomTeachers.length > 0 && homeroomTeachers.some(h => !h.subject);
-    if (req.query.fresh === 'true' || missingSubjects) {
-      await runAutoSyncWithMysql(missingSubjects);
-    }
+  app.get("/api/homerooms", (req, res) => {
     res.json(homeroomTeachers);
   });
 
-  app.post("/api/admin/homerooms", async (req, res) => {
+  app.post("/api/admin/homerooms", (req, res) => {
     const { username, name, className, password, skUrl, subject, subjectId, subjects } = req.body;
     if (!username || !name || !className) {
       return res.status(400).json({ error: "Informasi Wali Kelas tidak lengkap." });
@@ -4724,7 +4679,6 @@ async function startServer() {
     homeroomTeachers.push(newHt);
 
     // Also auto-sync/link to subjectTeachers so login and KBM records work seamlessly
-    let syncedSt: SubjectTeacher | null = null;
     if (resolvedSubject) {
       const existingSt = subjectTeachers.find(st => st.username.toLowerCase() === newHt.username.toLowerCase());
       if (existingSt) {
@@ -4733,9 +4687,8 @@ async function startServer() {
         existingSt.className = newHt.className;
         existingSt.name = newHt.name;
         if (newHt.password) existingSt.password = newHt.password;
-        syncedSt = existingSt;
       } else {
-        syncedSt = {
+        subjectTeachers.push({
           id: `st-sync-${newHt.id}`,
           username: newHt.username,
           name: newHt.name,
@@ -4743,17 +4696,11 @@ async function startServer() {
           subjectId: resolvedSubjectId,
           className: newHt.className,
           password: newHt.password || "wali123"
-        };
-        subjectTeachers.push(syncedSt);
+        });
       }
     }
 
     saveState();
-    // Direct permanent persistence to MySQL Primary Engine
-    directSaveEntityToMysql('homeroom_teacher', newHt).catch(err => console.warn('[MySQL Save Homeroom Error]:', err));
-    if (syncedSt) {
-      directSaveEntityToMysql('subject_teacher', syncedSt).catch(err => console.warn('[MySQL Save Linked Subject Teacher Error]:', err));
-    }
 
     // Notify
     const notification: RealtimeNotification = {
@@ -4768,7 +4715,7 @@ async function startServer() {
     res.json({ success: true, homeroomTeachers, added: newHt });
   });
 
-  app.put("/api/admin/homerooms/:id", async (req, res) => {
+  app.put("/api/admin/homerooms/:id", (req, res) => {
     const id = req.params.id;
     const { username, name, className, password, skUrl, subject, subjectId, subjects } = req.body;
     
@@ -4813,7 +4760,6 @@ async function startServer() {
 
     // Auto-sync with subjectTeachers
     const currHt = homeroomTeachers[htIndex];
-    let syncedSt: SubjectTeacher | null = null;
     if (currHt.subject) {
       const existingSt = subjectTeachers.find(st => 
         st.username.toLowerCase() === currHt.username.toLowerCase() || 
@@ -4826,9 +4772,8 @@ async function startServer() {
         existingSt.subjectId = currHt.subjectId;
         existingSt.className = currHt.className;
         if (currHt.password) existingSt.password = currHt.password;
-        syncedSt = existingSt;
       } else {
-        syncedSt = {
+        subjectTeachers.push({
           id: `st-sync-${currHt.id}`,
           username: currHt.username,
           name: currHt.name,
@@ -4836,18 +4781,11 @@ async function startServer() {
           subjectId: currHt.subjectId,
           className: currHt.className,
           password: currHt.password || "wali123"
-        };
-        subjectTeachers.push(syncedSt);
+        });
       }
     }
 
     saveState();
-    // Direct permanent persistence to MySQL Primary Engine
-    directSaveEntityToMysql('homeroom_teacher', homeroomTeachers[htIndex]).catch(err => console.warn('[MySQL Save Homeroom Error]:', err));
-    if (syncedSt) {
-      directSaveEntityToMysql('subject_teacher', syncedSt).catch(err => console.warn('[MySQL Save Linked Subject Teacher Error]:', err));
-    }
-
     res.json({ success: true, homeroomTeachers, updated: homeroomTeachers[htIndex] });
   });
 
@@ -4876,16 +4814,13 @@ async function startServer() {
         ht.password = "wali123";
         changed = true;
       }
-      if (changed) {
-        updatedCount++;
-        directSaveEntityToMysql('homeroom_teacher', ht).catch(() => {});
-      }
+      if (changed) updatedCount++;
 
       // Ensure synced in subjectTeachers
       if (ht.subject) {
         const existingSt = subjectTeachers.find(st => st.username.toLowerCase() === ht.username.toLowerCase());
         if (!existingSt) {
-          const newSt = {
+          subjectTeachers.push({
             id: `st-sync-${ht.id}`,
             username: ht.username,
             name: ht.name,
@@ -4893,13 +4828,10 @@ async function startServer() {
             subjectId: ht.subjectId,
             className: ht.className,
             password: ht.password || "wali123"
-          };
-          subjectTeachers.push(newSt);
-          directSaveEntityToMysql('subject_teacher', newSt).catch(() => {});
+          });
         } else {
           existingSt.subject = ht.subject;
           existingSt.subjectId = ht.subjectId;
-          directSaveEntityToMysql('subject_teacher', existingSt).catch(() => {});
         }
       }
     });
@@ -4917,34 +4849,12 @@ async function startServer() {
 
     const removed = homeroomTeachers.splice(idx, 1)[0];
     saveState();
-    directDeleteEntityFromMysql('homeroom_teacher', id).catch(err => console.error(err));
     deleteDocFromFirestore("homeroomTeachers", id).catch(err => console.error(err));
     res.json({ success: true, homeroomTeachers, removed });
   });
 
-  // Explicit live sync between app and MySQL Primary Engine
-  app.post("/api/admin/sync-live-database", async (req, res) => {
-    try {
-      const ok = await runAutoSyncWithMysql(true);
-      res.json({
-        success: ok,
-        homeroomsCount: homeroomTeachers.length,
-        homeroomsWithSubject: homeroomTeachers.filter(h => !!h.subject).length,
-        subjectTeachersCount: subjectTeachers.length,
-        curriculumSubjectsCount: curriculumSubjects.length,
-        studentsCount: students.length,
-        timestamp: new Date().toISOString()
-      });
-    } catch (err: any) {
-      res.status(500).json({ success: false, error: err?.message || String(err) });
-    }
-  });
-
   // --- SUBJECT TEACHERS (GURU MAPEL) ENDPOINTS ---
-  app.get("/api/subject-teachers", async (req, res) => {
-    if (req.query.fresh === 'true') {
-      await runAutoSyncWithMysql();
-    }
+  app.get("/api/subject-teachers", (req, res) => {
     res.json(subjectTeachers);
   });
 
@@ -5032,7 +4942,6 @@ async function startServer() {
 
     const removed = subjectTeachers.splice(idx, 1)[0];
     saveState();
-    directDeleteEntityFromMysql('subject_teacher', id).catch(err => console.error(err));
     res.json({ success: true, subjectTeachers, removed });
   });
 

@@ -111,13 +111,7 @@ export function createMysqlRouter(providers: MysqlRouteDataProviders): Router {
       if (providers.onStatusChange && result.success) {
         providers.onStatusChange("ONLINE", null);
       }
-      // Return lightweight summary without serializing the massive 29MB payload
-      res.json({
-        success: result.success,
-        message: result.message,
-        counts: result.counts,
-        timestamp: new Date().toISOString()
-      });
+      res.json(result);
     } catch (err: any) {
       if (providers.onStatusChange) {
         providers.onStatusChange("OFFLINE", err.message);

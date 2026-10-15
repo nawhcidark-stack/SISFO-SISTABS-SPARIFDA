@@ -612,7 +612,7 @@ export default function App() {
 
   const fetchHomerooms = async () => {
     try {
-      const hrRes = await fetchNoCache('/api/homerooms');
+      const hrRes = await fetchNoCache('/api/homerooms?fresh=true');
       if (hrRes.ok) {
         const hrData = await hrRes.json();
         setHomeroomsList(hrData);
@@ -624,7 +624,7 @@ export default function App() {
 
   const fetchSubjectTeachers = async () => {
     try {
-      const stRes = await fetchNoCache('/api/subject-teachers');
+      const stRes = await fetchNoCache('/api/subject-teachers?fresh=true');
       if (stRes.ok) {
         const stData = await stRes.json();
         setSubjectTeachersList(stData);
@@ -909,11 +909,13 @@ export default function App() {
             }
           });
 
-        // Always keep curriculum schedules, assessments, and bills synchronized in real-time across all devices/views
+        // Always keep curriculum schedules, assessments, homerooms, and bills synchronized in real-time across all devices/views
         fetchSchedules();
         fetchMerdekaAssessments();
         fetchMiscBills();
         fetchAttendance();
+        fetchHomerooms();
+        fetchSubjectTeachers();
 
       } catch (err) {
         console.error('Error handling push SSE message', err);
@@ -930,9 +932,25 @@ export default function App() {
       setTimeStr(now.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit', second: '2-digit' }) + ' WIB');
     }, 1000);
 
+    // Window focus re-synchronization: When returning from public web or another tab, automatically refresh state
+    const onWindowFocus = () => {
+      fetchHomerooms();
+      fetchSubjectTeachers();
+      fetchAttendance();
+    };
+    window.addEventListener('focus', onWindowFocus);
+
+    // Continuous background client poll (every 30s) to keep dev and public perfectly synchronized
+    const liveClientSyncInterval = setInterval(() => {
+      fetchHomerooms();
+      fetchSubjectTeachers();
+    }, 30000);
+
     return () => {
       sse.close();
       clearInterval(clockInterval);
+      window.removeEventListener('focus', onWindowFocus);
+      clearInterval(liveClientSyncInterval);
     };
   }, []);
 

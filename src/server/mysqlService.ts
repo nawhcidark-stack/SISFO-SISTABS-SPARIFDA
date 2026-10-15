@@ -538,6 +538,8 @@ CREATE TABLE IF NOT EXISTS \`homeroom_teachers\` (
   \`class_name\` VARCHAR(32) NOT NULL,
   \`password\` VARCHAR(128) DEFAULT NULL,
   \`sk_url\` TEXT DEFAULT NULL,
+  \`subject\` VARCHAR(150) DEFAULT NULL,
+  \`subject_id\` VARCHAR(64) DEFAULT NULL,
   PRIMARY KEY (\`id\`),
   KEY \`idx_hr_class\` (\`class_name\`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
@@ -1985,7 +1987,9 @@ export async function pullDataFromMysql(): Promise<{
         name: r.name,
         className: r.class_name,
         password: r.password || undefined,
-        skUrl: r.sk_url || undefined
+        skUrl: r.sk_url || undefined,
+        subject: r.subject || undefined,
+        subjectId: r.subject_id || undefined
       }));
       counts.homeroomTeachers = resultData.homeroomTeachers.length;
     }
@@ -2634,6 +2638,18 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
       const csColNames = new Set((csCols || []).map((c: any) => c.Field));
       if (!csColNames.has('subject_id')) {
         await connection.query("ALTER TABLE `class_schedules` ADD COLUMN `subject_id` VARCHAR(64) DEFAULT NULL");
+      }
+    } catch (_) {}
+
+    // Auto-migration: Ensure subject and subject_id exist on homeroom_teachers
+    try {
+      const [existingHrCols]: any = await connection.query("SHOW COLUMNS FROM `homeroom_teachers`");
+      const existingHrColNames = new Set((existingHrCols || []).map((c: any) => c.Field));
+      if (!existingHrColNames.has('subject')) {
+        await connection.query("ALTER TABLE `homeroom_teachers` ADD COLUMN `subject` VARCHAR(150) DEFAULT NULL");
+      }
+      if (!existingHrColNames.has('subject_id')) {
+        await connection.query("ALTER TABLE `homeroom_teachers` ADD COLUMN `subject_id` VARCHAR(64) DEFAULT NULL");
       }
     } catch (_) {}
 
@@ -3357,11 +3373,11 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
       const hr = data;
       await connection.query(`
         INSERT INTO \`homeroom_teachers\` (
-          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`
-        ) VALUES (?, ?, ?, ?, ?, ?)
+          \`id\`, \`username\`, \`name\`, \`class_name\`, \`password\`, \`sk_url\`, \`subject\`, \`subject_id\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         ON DUPLICATE KEY UPDATE
-          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`)
-      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null]);
+          \`name\`=VALUES(\`name\`), \`class_name\`=VALUES(\`class_name\`), \`password\`=VALUES(\`password\`), \`sk_url\`=VALUES(\`sk_url\`), \`subject\`=VALUES(\`subject\`), \`subject_id\`=VALUES(\`subject_id\`)
+      `, [hr.id, hr.username || '', hr.name || '', hr.className || '', hr.password || null, hr.skUrl || null, hr.subject || null, hr.subjectId || null]);
       return { success: true, message: `Wali kelas "${hr.name}" langsung tersimpan ke MySQL.` };
     }
 

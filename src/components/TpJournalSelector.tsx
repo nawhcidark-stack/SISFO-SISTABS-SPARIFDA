@@ -21,6 +21,8 @@ export interface TpJournalSelectorProps {
   editedAt?: string;
   editedByRole?: string;
   onUnlock?: () => void;
+  linkedTpId?: string;
+  linkedTpCode?: string;
 }
 
 export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
@@ -38,7 +40,9 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
   filledAt,
   editedBy,
   editedAt,
-  editedByRole
+  editedByRole,
+  linkedTpId,
+  linkedTpCode
 }) => {
   const [isOpen, setIsOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
@@ -179,6 +183,14 @@ export const TpJournalSelector: React.FC<TpJournalSelectorProps> = ({
           placeholder={placeholder || `Isi uraian ${label}...`}
         />
       </div>
+
+      {/* Linked Shared TP Badge */}
+      {(linkedTpId || linkedTpCode) && (
+        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded-lg bg-indigo-50 border border-indigo-200/80 text-[9.5px] font-black text-indigo-800 w-fit">
+          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500 animate-pulse" />
+          <span>Relasi Bank TP: {linkedTpCode || linkedTpId}</span>
+        </div>
+      )}
 
       {/* Teacher Attribution & Edited By info */}
       {(filledBy || editedBy) && (

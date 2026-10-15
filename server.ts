@@ -9,7 +9,8 @@ import compression from "compression";
 
 // Local storage files aren't strictly required, we can manage clean in-memory state that behaves like a database,
 // allowing instant and reliable reads/writes without FS permission locks.
-import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription } from "./src/types";
+import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective } from "./src/types";
+import { generateSeedSharedTps } from "./src/server/seedSharedTps";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
@@ -50,11 +51,50 @@ const notifications: RealtimeNotification[] = [
 
 const attendanceLogs: AttendanceLog[] = [];
 
+export const AUTHORITATIVE_HOMEROOM_MAP: Record<string, { subject: string; subjectId: string }> = {
+  "wali7a": { subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa" },
+  "wali7b": { subject: "Ilmu Pengetahuan Sosial (IPS)", subjectId: "mapel-ips" },
+  "wali7c": { subject: "Bahasa Indonesia", subjectId: "mapel-bindo" },
+  "wali7d": { subject: "Ilmu Pengetahuan Sosial (IPS)", subjectId: "mapel-ips" },
+  "wali7e": { subject: "Pendidikan Pancasila", subjectId: "mapel-ppkn" },
+  "wali7f": { subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa" },
+  "wali7g": { subject: "Matematika", subjectId: "mapel-mtk" },
+  "wali8a": { subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa" },
+  "wali8b": { subject: "Bahasa Indonesia", subjectId: "mapel-bindo" },
+  "wali8c": { subject: "Seni Budaya", subjectId: "mapel-seni" },
+  "wali8d": { subject: "Seni Budaya", subjectId: "mapel-seni" },
+  "wali8e": { subject: "Pendidikan Agama Islam", subjectId: "mapel-pai" },
+  "wali8f": { subject: "Bahasa Inggris", subjectId: "mapel-bing" },
+  "wali9a": { subject: "Ilmu Pengetahuan Sosial (IPS)", subjectId: "mapel-ips" },
+  "wali9b": { subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa" },
+  "wali9c": { subject: "Bahasa Indonesia", subjectId: "mapel-bindo" },
+  "wali9d": { subject: "Pendidikan Agama Islam", subjectId: "mapel-pai" },
+  "wali9e": { subject: "Bahasa Indonesia", subjectId: "mapel-bindo" },
+  "wali9f": { subject: "Bahasa Inggris", subjectId: "mapel-bing" },
+  "wali9g": { subject: "Pendidikan Jasmani, Olahraga, dan Kesehatan", subjectId: "mapel-pjok" }
+};
+
 const homeroomTeachers: HomeroomTeacher[] = [
-  { id: "ht-1", username: "wali7a", name: "Budi Santoso, S.Pd", className: "7-A", password: "wali123", subject: "Pendidikan Pancasila", subjectId: "mapel-ppkn" },
-  { id: "ht-2", username: "wali7b", name: "Endang Lastari, S.Pd", className: "7-B", password: "wali123", subject: "Bahasa Indonesia", subjectId: "mapel-bindo" },
-  { id: "ht-3", username: "wali8a", name: "Joko Susilo, S.Pd", className: "8-A", password: "wali123", subject: "Matematika", subjectId: "mapel-mtk" },
-  { id: "ht-4", username: "wali9c", name: "Rina Wijayanti, S.Pd", className: "9-C", password: "wali123", subject: "Ilmu Pengetahuan Alam", subjectId: "mapel-ipa" }
+  { id: "ht-1", username: "wali7a", name: "Faizza Amaliah Putri, S.Pd.", className: "7-A", password: "wali123", subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa", subjects: ["Ilmu Pengetahuan Alam (IPA)"] },
+  { id: "ht-2", username: "wali7b", name: "Naning Agustiningsih., S Pd.", className: "7-B", password: "wali123", subject: "Ilmu Pengetahuan Sosial (IPS)", subjectId: "mapel-ips", subjects: ["Ilmu Pengetahuan Sosial (IPS)"] },
+  { id: "ht-1784121108409-0-2ohs", username: "wali7c", name: "Lutfiatus Sholicha, S.Pd.", className: "7-C", password: "wali123", subject: "Bahasa Indonesia", subjectId: "mapel-bindo", subjects: ["Bahasa Indonesia"] },
+  { id: "ht-1784121108409-1-v46w", username: "wali7d", name: "Andy Ashari, S Pd.", className: "7-D", password: "wali123", subject: "Ilmu Pengetahuan Sosial (IPS)", subjectId: "mapel-ips", subjects: ["Ilmu Pengetahuan Sosial (IPS)"] },
+  { id: "ht-1784121108409-2-hcla", username: "wali7e", name: "Ahmad Muqaffialaq, S.Sos", className: "7-E", password: "wali123", subject: "Pendidikan Pancasila", subjectId: "mapel-ppkn", subjects: ["Pendidikan Pancasila"] },
+  { id: "ht-1784121108409-3-uw2k", username: "wali7f", name: "H. Akhmadun , S Si", className: "7-F", password: "wali123", subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa", subjects: ["Ilmu Pengetahuan Alam (IPA)"] },
+  { id: "ht-1784121108409-4-zuxq", username: "wali7g", name: "H. Khomsin, S Pd.", className: "7-G", password: "wali123", subject: "Matematika", subjectId: "mapel-mtk", subjects: ["Matematika"] },
+  { id: "ht-3", username: "wali8a", name: "Savira Mahdia, S.Pd.", className: "8-A", password: "wali123", subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa", subjects: ["Ilmu Pengetahuan Alam (IPA)"] },
+  { id: "ht-1781957135755-0-rxrv", username: "wali8b", name: "Hj. Rumzatul Wathoniyah, S.Pd.", className: "8-B", password: "wali123", subject: "Bahasa Indonesia", subjectId: "mapel-bindo", subjects: ["Bahasa Indonesia"] },
+  { id: "ht-1781755701028", username: "wali8c", name: "Wahyuning Kurnia Rizki, S.Pd.", className: "8-C", password: "wali123", subject: "Seni Budaya", subjectId: "mapel-seni", subjects: ["Seni Budaya"] },
+  { id: "ht-1781951425666", username: "wali8d", name: "Hamidah Rohmaningsih, S.Pd.", className: "8-D", password: "wali123", subject: "Seni Budaya", subjectId: "mapel-seni", subjects: ["Seni Budaya"] },
+  { id: "ht-1781957135755-1-2qh9", username: "wali8e", name: "Mochammad Samak, S.Pd", className: "8-E", password: "wali123", subject: "Pendidikan Agama Islam", subjectId: "mapel-pai", subjects: ["Pendidikan Agama Islam"] },
+  { id: "ht-1781957135755-2-2dpr", username: "wali8f", name: "Zainul Arifin, S.Pd.", className: "8-F", password: "wali123", subject: "Bahasa Inggris", subjectId: "mapel-bing", subjects: ["Bahasa Inggris"] },
+  { id: "ht-1781957135755-3-uzyp", username: "wali9a", name: "Rifdatur Rochimah, S.Pd", className: "9-A", password: "wali123", subject: "Ilmu Pengetahuan Sosial (IPS)", subjectId: "mapel-ips", subjects: ["Ilmu Pengetahuan Sosial (IPS)"] },
+  { id: "ht-1781930323241", username: "wali9b", name: "Okta Defa Yulkhamidah, S.Pd.", className: "9-B", password: "wali123", subject: "Ilmu Pengetahuan Alam (IPA)", subjectId: "mapel-ipa", subjects: ["Ilmu Pengetahuan Alam (IPA)"] },
+  { id: "ht-4", username: "wali9c", name: "Dra. Rokhiyah", className: "9-C", password: "wali123", subject: "Bahasa Indonesia", subjectId: "mapel-bindo", subjects: ["Bahasa Indonesia"] },
+  { id: "ht-1781957135755-4-qumv", username: "wali9d", name: "H. Imron Hamzah, SHI", className: "9-D", password: "wali123", subject: "Pendidikan Agama Islam", subjectId: "mapel-pai", subjects: ["Pendidikan Agama Islam"] },
+  { id: "ht-1781957135755-5-k7d5", username: "wali9e", name: "Dany Rahmat Tamami, S.Pd.", className: "9-E", password: "wali123", subject: "Bahasa Indonesia", subjectId: "mapel-bindo", subjects: ["Bahasa Indonesia"] },
+  { id: "ht-1781957135755-6-in1k", username: "wali9f", name: "H. Sukandar, S Pd.", className: "9-F", password: "wali123", subject: "Bahasa Inggris", subjectId: "mapel-bing", subjects: ["Bahasa Inggris"] },
+  { id: "ht-1781957135755-7-8hjw", username: "wali9g", name: "Mansur Suprianto, S.Pd", className: "9-G", password: "wali123", subject: "Pendidikan Jasmani, Olahraga, dan Kesehatan", subjectId: "mapel-pjok", subjects: ["Pendidikan Jasmani, Olahraga, dan Kesehatan"] }
 ];
 
 export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
@@ -75,6 +115,7 @@ export const DEFAULT_CURRICULUM_SUBJECTS: CurriculumSubject[] = [
 
 const curriculumSubjects: CurriculumSubject[] = [];
 const curriculumTpDescriptions: CurriculumTpDescription[] = [];
+const sharedLearningObjectives: SharedLearningObjective[] = [];
 
 const subjectTeachers: SubjectTeacher[] = [
   { id: "st-1", username: "guru_math", name: "Drs. Heru Setyawan, M.Pd", subject: "Matematika", subjectId: "mapel-mtk", password: "mapel123" },
@@ -1652,7 +1693,8 @@ function getFullSnapshotForMysql() {
     adminConfig,
     spmbConfig,
     curriculumSubjects,
-    curriculumTpDescriptions
+    curriculumTpDescriptions,
+    sharedLearningObjectives
   };
 }
 
@@ -1700,7 +1742,8 @@ function saveState(skipRemoteSync: boolean = false) {
       backupConfig,
       databaseBackups,
       curriculumSubjects,
-      curriculumTpDescriptions
+      curriculumTpDescriptions,
+      sharedLearningObjectives
     };
     // 1. PRIMARY PERSISTENCE: Database MySQL Hostinger (authoritative cloud database)
     if (!skipRemoteSync) {
@@ -1873,12 +1916,44 @@ function loadState() {
       }
       if (Array.isArray(data.homeroomTeachers)) {
         homeroomTeachers.length = 0;
-        homeroomTeachers.push(...data.homeroomTeachers);
+        data.homeroomTeachers.forEach((ht: HomeroomTeacher) => {
+          const authMap = AUTHORITATIVE_HOMEROOM_MAP[ht.username.toLowerCase()];
+          if (authMap) {
+            ht.subject = authMap.subject;
+            ht.subjectId = authMap.subjectId;
+            ht.subjects = [authMap.subject];
+          }
+          if (!ht.password) ht.password = "wali123";
+          homeroomTeachers.push(ht);
+        });
       }
       if (Array.isArray(data.subjectTeachers)) {
         subjectTeachers.length = 0;
         subjectTeachers.push(...data.subjectTeachers);
       }
+      // Ensure all homeroom teachers are synchronized into subjectTeachers
+      homeroomTeachers.forEach(ht => {
+        if (ht.subject) {
+          const st = subjectTeachers.find(s => s.username.toLowerCase() === ht.username.toLowerCase());
+          if (st) {
+            st.name = ht.name;
+            st.subject = ht.subject;
+            st.subjectId = ht.subjectId;
+            st.className = ht.className;
+            if (ht.password) st.password = ht.password;
+          } else {
+            subjectTeachers.push({
+              id: `st-sync-${ht.id}`,
+              username: ht.username,
+              name: ht.name,
+              subject: ht.subject,
+              subjectId: ht.subjectId,
+              className: ht.className,
+              password: ht.password || "wali123"
+            });
+          }
+        }
+      });
       if (Array.isArray(data.teachingJournals)) {
         teachingJournals.length = 0;
         teachingJournals.push(...data.teachingJournals);
@@ -2020,7 +2095,15 @@ function loadState() {
         curriculumTpDescriptions.length = 0;
         curriculumTpDescriptions.push(...data.curriculumTpDescriptions);
       }
-      console.log("State loaded successfully from database");
+      if (Array.isArray(data.sharedLearningObjectives) && data.sharedLearningObjectives.length > 0) {
+        sharedLearningObjectives.length = 0;
+        sharedLearningObjectives.push(...data.sharedLearningObjectives);
+      } else {
+        const seeded = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
+        sharedLearningObjectives.length = 0;
+        sharedLearningObjectives.push(...seeded);
+      }
+      console.log(`State loaded successfully from database (${sharedLearningObjectives.length} shared TPs ready)`);
       return true;
     }
   } catch (error) {
@@ -2126,13 +2209,46 @@ function applyDataFromMysql(pulledData: any) {
 
     if (Array.isArray(pulledData.homeroomTeachers) && pulledData.homeroomTeachers.length > 0) {
       homeroomTeachers.length = 0;
-      homeroomTeachers.push(...pulledData.homeroomTeachers);
+      pulledData.homeroomTeachers.forEach((ht: HomeroomTeacher) => {
+        const authMap = AUTHORITATIVE_HOMEROOM_MAP[ht.username.toLowerCase()];
+        if (authMap) {
+          ht.subject = authMap.subject;
+          ht.subjectId = authMap.subjectId;
+          ht.subjects = [authMap.subject];
+        }
+        if (!ht.password) ht.password = "wali123";
+        homeroomTeachers.push(ht);
+      });
     }
 
     if (Array.isArray(pulledData.subjectTeachers) && pulledData.subjectTeachers.length > 0) {
       subjectTeachers.length = 0;
       subjectTeachers.push(...pulledData.subjectTeachers);
     }
+
+    // Ensure all homeroom teachers are synchronized into subjectTeachers
+    homeroomTeachers.forEach(ht => {
+      if (ht.subject) {
+        const st = subjectTeachers.find(s => s.username.toLowerCase() === ht.username.toLowerCase());
+        if (st) {
+          st.name = ht.name;
+          st.subject = ht.subject;
+          st.subjectId = ht.subjectId;
+          st.className = ht.className;
+          if (ht.password) st.password = ht.password;
+        } else {
+          subjectTeachers.push({
+            id: `st-sync-${ht.id}`,
+            username: ht.username,
+            name: ht.name,
+            subject: ht.subject,
+            subjectId: ht.subjectId,
+            className: ht.className,
+            password: ht.password || "wali123"
+          });
+        }
+      }
+    });
 
     if (Array.isArray(pulledData.teachingJournals) && pulledData.teachingJournals.length > 0) {
       teachingJournals.length = 0;
@@ -4640,6 +4756,18 @@ async function startServer() {
 
   // --- HOMEROOM TEACHERS (WALI KELAS) ENDPOINTS ---
   app.get("/api/homerooms", (req, res) => {
+    homeroomTeachers.forEach(ht => {
+      const authMap = AUTHORITATIVE_HOMEROOM_MAP[ht.username.toLowerCase()];
+      if (authMap) {
+        if (!ht.subject) {
+          ht.subject = authMap.subject;
+          ht.subjectId = authMap.subjectId;
+        }
+        if (!ht.subjects || ht.subjects.length === 0) {
+          ht.subjects = [ht.subject || authMap.subject];
+        }
+      }
+    });
     res.json(homeroomTeachers);
   });
 
@@ -4791,24 +4919,26 @@ async function startServer() {
 
   // Bulk / quick sync homeroom teachers subjects & credentials
   app.post("/api/admin/homerooms/sync-subjects", (req, res) => {
-    const defaultSubjectPool = [
-      { name: "Pendidikan Pancasila", id: "mapel-ppkn" },
-      { name: "Bahasa Indonesia", id: "mapel-bindo" },
-      { name: "Matematika", id: "mapel-mtk" },
-      { name: "Ilmu Pengetahuan Alam", id: "mapel-ipa" },
-      { name: "Ilmu Pengetahuan Sosial", id: "mapel-ips" },
-      { name: "Bahasa Inggris", id: "mapel-bing" },
-      { name: "Pendidikan Agama Islam", id: "mapel-pai" }
-    ];
-
     let updatedCount = 0;
-    homeroomTeachers.forEach((ht, idx) => {
+    homeroomTeachers.forEach((ht) => {
       let changed = false;
-      if (!ht.subject) {
-        const fallback = defaultSubjectPool[idx % defaultSubjectPool.length];
-        ht.subject = fallback.name;
-        ht.subjectId = fallback.id;
-        changed = true;
+      const authMap = AUTHORITATIVE_HOMEROOM_MAP[ht.username.toLowerCase()];
+      if (authMap) {
+        if (ht.subject !== authMap.subject || ht.subjectId !== authMap.subjectId) {
+          ht.subject = authMap.subject;
+          ht.subjectId = authMap.subjectId;
+          ht.subjects = [authMap.subject];
+          changed = true;
+        }
+      } else if (!ht.subject) {
+        // Fallback search in subjectTeachers or classSchedules
+        const matchSt = subjectTeachers.find(st => st.username.toLowerCase() === ht.username.toLowerCase());
+        if (matchSt && matchSt.subject) {
+          ht.subject = matchSt.subject;
+          ht.subjectId = matchSt.subjectId;
+          ht.subjects = [matchSt.subject];
+          changed = true;
+        }
       }
       if (!ht.password) {
         ht.password = "wali123";
@@ -4830,8 +4960,11 @@ async function startServer() {
             password: ht.password || "wali123"
           });
         } else {
+          existingSt.name = ht.name;
           existingSt.subject = ht.subject;
           existingSt.subjectId = ht.subjectId;
+          existingSt.className = ht.className;
+          if (ht.password) existingSt.password = ht.password;
         }
       }
     });
@@ -5680,7 +5813,16 @@ async function startServer() {
 
   // Recalculate existing assessments to match revised formula
   try {
-    merdekaAssessments.forEach(recalculateAssessmentScores);
+    merdekaAssessments.forEach(ass => {
+      recalculateAssessmentScores(ass);
+      // Synchronize authoritative teacher for IPA in 8-D, 8-F, 9-C to Drs. Husnan
+      const isIpa = (ass.subject || "").toLowerCase().includes("pengetahuan alam") || (ass.subject || "").toLowerCase() === "ipa";
+      if (isIpa && ["8-D", "8-F", "9-C"].includes(ass.className)) {
+        if (!ass.teacherName || ass.teacherName === "Dra. Rokhiyah" || ass.teacherName === "Guru Mapel" || ass.teacherName === "Guru") {
+          ass.teacherName = "Drs. Husnan";
+        }
+      }
+    });
   } catch (err) {
     console.warn("[MerdekaAssessments] Gagal kalkulasi ulang pada startup:", err);
   }
@@ -5705,18 +5847,22 @@ async function startServer() {
         teacherName,
         semester,
         academicYear,
+        tp1Id,
         tp1Name,
         tp1Tugas1,
         tp1Tugas2,
         tp1Uh,
+        tp2Id,
         tp2Name,
         tp2Tugas1,
         tp2Tugas2,
         tp2Uh,
+        tp3Id,
         tp3Name,
         tp3Tugas1,
         tp3Tugas2,
         tp3Uh,
+        tp4Id,
         tp4Name,
         tp4Tugas1,
         tp4Tugas2,
@@ -5760,21 +5906,25 @@ async function startServer() {
         semester: sem,
         academicYear: year,
 
+        tp1Id: tp1Id || (existing ? existing.tp1Id : undefined),
         tp1Name: tp1Name || (existing ? existing.tp1Name : undefined),
         tp1Tugas1: tp1Tugas1 !== undefined ? tp1Tugas1 : existing?.tp1Tugas1,
         tp1Tugas2: undefined,
         tp1Uh: tp1Uh !== undefined ? tp1Uh : existing?.tp1Uh,
 
+        tp2Id: tp2Id || (existing ? existing.tp2Id : undefined),
         tp2Name: tp2Name || (existing ? existing.tp2Name : undefined),
         tp2Tugas1: tp2Tugas1 !== undefined ? tp2Tugas1 : existing?.tp2Tugas1,
         tp2Tugas2: undefined,
         tp2Uh: tp2Uh !== undefined ? tp2Uh : existing?.tp2Uh,
 
+        tp3Id: tp3Id || (existing ? existing.tp3Id : undefined),
         tp3Name: tp3Name || (existing ? existing.tp3Name : undefined),
         tp3Tugas1: tp3Tugas1 !== undefined ? tp3Tugas1 : existing?.tp3Tugas1,
         tp3Tugas2: undefined,
         tp3Uh: tp3Uh !== undefined ? tp3Uh : existing?.tp3Uh,
 
+        tp4Id: tp4Id || (existing ? existing.tp4Id : undefined),
         tp4Name: tp4Name || (existing ? existing.tp4Name : undefined),
         tp4Tugas1: tp4Tugas1 !== undefined ? tp4Tugas1 : existing?.tp4Tugas1,
         tp4Tugas2: undefined,
@@ -6301,6 +6451,309 @@ async function startServer() {
       success: true,
       message: `Kunci Judul TP tingkat ${target.gradeLevel} (${target.subject}) telah dibuka oleh ${unlockedBy || 'Guru Serumpun'}. Semua guru serumpun dapat mengedit judul TP sekarang.`,
       tpRecord: target
+    });
+  });
+
+  // =========================================================================
+  // --- BANK TP BERSAMA (KURIKULUM MERDEKA - WAKA KURIKULUM & GURU SERUMPUN) ---
+  // =========================================================================
+
+  // 1. GET: Ambil daftar Bank TP Bersama dengan filter & search
+  app.get("/api/curriculum/shared-tps", (req, res) => {
+    const { subjectId, subject, gradeLevel, className, semester, academicYear, status, search } = req.query;
+    let list = [...sharedLearningObjectives];
+
+    // Ekstrak tingkat kelas jika parameter className diberikan (contoh: "7-A" -> "7")
+    let targetGrade = gradeLevel ? String(gradeLevel).trim() : '';
+    if (!targetGrade && className) {
+      const m = String(className).match(/\d+/);
+      if (m) targetGrade = m[0];
+    }
+
+    if (targetGrade && targetGrade !== 'all' && targetGrade !== 'Semua') {
+      list = list.filter(tp => String(tp.gradeLevel).trim() === targetGrade);
+    }
+
+    if (subjectId && subjectId !== 'all') {
+      list = list.filter(tp => tp.subjectId.toLowerCase() === String(subjectId).toLowerCase());
+    } else if (subject && subject !== 'all' && subject !== 'Semua') {
+      const s = String(subject).trim().toLowerCase();
+      list = list.filter(tp => 
+        tp.subjectName.toLowerCase().includes(s) || 
+        s.includes(tp.subjectName.toLowerCase()) ||
+        tp.subjectId.toLowerCase() === s
+      );
+    }
+
+    if (semester && semester !== 'all' && semester !== 'Semua') {
+      const sem = String(semester).trim().toLowerCase();
+      list = list.filter(tp => tp.semester.toLowerCase() === sem);
+    }
+
+    if (academicYear && academicYear !== 'all') {
+      const yr = String(academicYear).trim().toLowerCase();
+      list = list.filter(tp => tp.academicYear.toLowerCase() === yr);
+    }
+
+    if (status && status !== 'all') {
+      const st = String(status).trim().toLowerCase();
+      list = list.filter(tp => tp.status.toLowerCase() === st);
+    }
+
+    if (search) {
+      const q = String(search).trim().toLowerCase();
+      list = list.filter(tp =>
+        tp.code.toLowerCase().includes(q) ||
+        tp.title.toLowerCase().includes(q) ||
+        tp.subjectName.toLowerCase().includes(q) ||
+        (tp.creatorName && tp.creatorName.toLowerCase().includes(q))
+      );
+    }
+
+    // Urutkan berdasarkan Mapel, Jenjang, dan Nomor TP
+    list.sort((a, b) => {
+      if (a.subjectName !== b.subjectName) return a.subjectName.localeCompare(b.subjectName);
+      if (a.gradeLevel !== b.gradeLevel) return Number(a.gradeLevel) - Number(b.gradeLevel);
+      return (a.tpNumber || 0) - (b.tpNumber || 0);
+    });
+
+    res.json({
+      success: true,
+      count: list.length,
+      totalBank: sharedLearningObjectives.length,
+      tps: list
+    });
+  });
+
+  // 2. POST: Tambah TP Baru ke Bank TP Bersama (oleh Guru Mapel / Waka Kurikulum)
+  app.post("/api/curriculum/shared-tps", (req, res) => {
+    const {
+      code,
+      subjectId,
+      subjectName,
+      gradeLevel: rawGrade,
+      className,
+      semester,
+      academicYear,
+      tpNumber,
+      title,
+      creatorId,
+      creatorName,
+      creatorRole,
+      status
+    } = req.body;
+
+    if (!title || typeof title !== 'string' || title.trim().length < 5) {
+      return res.status(400).json({ error: "Rumusan Tujuan Pembelajaran (TP) wajib diisi minimal 5 karakter." });
+    }
+
+    // Ekstrak jenjang kelas
+    let gradeLevel = "7";
+    if (rawGrade) {
+      const m = String(rawGrade).match(/\d+/);
+      if (m) gradeLevel = m[0];
+      else gradeLevel = String(rawGrade).trim();
+    } else if (className) {
+      const m = String(className).match(/\d+/);
+      if (m) gradeLevel = m[0];
+    }
+
+    // Cari keselarasan Mata Pelajaran
+    let matchedSubject = curriculumSubjects.find(s => 
+      (subjectId && s.id.toLowerCase() === String(subjectId).toLowerCase()) ||
+      (subjectName && s.name.toLowerCase() === String(subjectName).toLowerCase())
+    );
+
+    const resolvedSubId = matchedSubject ? matchedSubject.id : (subjectId || `mapel-${(subjectName || 'gen').toLowerCase().replace(/[^a-z0-9]/g, '')}`);
+    const resolvedSubName = matchedSubject ? matchedSubject.name : (subjectName || 'Mata Pelajaran');
+    const resolvedSubCode = matchedSubject ? matchedSubject.code : 'TP';
+    const cleanSem = semester || (schoolIdentity as any).activeSemester || "Ganjil";
+    const cleanYear = academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027";
+    const nowIso = new Date().toISOString();
+
+    // Tentukan nomor TP & kode jika belum ada
+    const existingInScope = sharedLearningObjectives.filter(tp =>
+      tp.subjectId === resolvedSubId &&
+      tp.gradeLevel === gradeLevel &&
+      tp.semester.toLowerCase() === cleanSem.toLowerCase()
+    );
+
+    const resolvedTpNum = Number(tpNumber) || (existingInScope.length + 1);
+    const resolvedCode = code && code.trim().length > 0 
+      ? code.trim().toUpperCase() 
+      : `TP-${resolvedSubCode}-${gradeLevel}.${resolvedTpNum}`;
+
+    const newTp: SharedLearningObjective = {
+      id: `tp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+      code: resolvedCode,
+      subjectId: resolvedSubId,
+      subjectName: resolvedSubName,
+      gradeLevel,
+      semester: cleanSem,
+      academicYear: cleanYear,
+      tpNumber: resolvedTpNum,
+      title: title.trim(),
+      creatorId: creatorId || undefined,
+      creatorName: creatorName || 'Guru Mata Pelajaran',
+      creatorRole: creatorRole || `Guru ${resolvedSubName}`,
+      status: status || 'Aktif',
+      revisionRequests: [],
+      createdAt: nowIso,
+      updatedAt: nowIso
+    };
+
+    sharedLearningObjectives.push(newTp);
+    saveState();
+
+    res.json({
+      success: true,
+      message: `🎉 Berhasil menambahkan ${resolvedCode} ke Bank TP Bersama! Guru serumpun mapel ${resolvedSubName} tingkat ${gradeLevel} dapat langsung melihat dan menggunakannya.`,
+      tp: newTp
+    });
+  });
+
+  // 3. PUT: Ubah TP Bersama (KHUSUS WAKA KURIKULUM / ADMIN)
+  app.put("/api/curriculum/shared-tps/:id", (req, res) => {
+    const { id } = req.params;
+    const {
+      title,
+      code,
+      tpNumber,
+      status,
+      gradeLevel,
+      semester,
+      academicYear,
+      userRole
+    } = req.body;
+
+    const target = sharedLearningObjectives.find(tp => tp.id === id);
+    if (!target) {
+      return res.status(404).json({ error: "TP bersama tidak ditemukan." });
+    }
+
+    if (userRole && !['waka_kurikulum', 'admin', 'principal'].includes(userRole.toLowerCase())) {
+      return res.status(403).json({ error: "Akses ditolak. Perubahan data master Bank TP Bersama hanya dapat dilakukan oleh Waka Kurikulum." });
+    }
+
+    if (title && typeof title === 'string') target.title = title.trim();
+    if (code && typeof code === 'string') target.code = code.trim().toUpperCase();
+    if (tpNumber !== undefined) target.tpNumber = Number(tpNumber);
+    if (status) target.status = status;
+    if (gradeLevel) target.gradeLevel = String(gradeLevel).trim();
+    if (semester) target.semester = semester;
+    if (academicYear) target.academicYear = academicYear;
+    target.updatedAt = new Date().toISOString();
+
+    saveState();
+
+    res.json({
+      success: true,
+      message: `Data TP [${target.code}] berhasil diperbarui oleh Waka Kurikulum.`,
+      tp: target
+    });
+  });
+
+  // 4. DELETE: Hapus TP Bersama (KHUSUS WAKA KURIKULUM / ADMIN)
+  app.delete("/api/curriculum/shared-tps/:id", (req, res) => {
+    const { id } = req.params;
+    const { userRole } = req.query;
+
+    if (userRole && !['waka_kurikulum', 'admin', 'principal'].includes(String(userRole).toLowerCase())) {
+      return res.status(403).json({ error: "Akses ditolak. Penghapusan TP bersama hanya dapat dilakukan oleh Waka Kurikulum." });
+    }
+
+    const idx = sharedLearningObjectives.findIndex(tp => tp.id === id);
+    if (idx === -1) {
+      return res.status(404).json({ error: "TP bersama tidak ditemukan." });
+    }
+
+    const deleted = sharedLearningObjectives.splice(idx, 1)[0];
+    saveState();
+
+    res.json({
+      success: true,
+      message: `TP [${deleted.code}] berhasil dihapus dari Bank TP Bersama oleh Waka Kurikulum.`
+    });
+  });
+
+  // 5. POST: Ajukan Perubahan TP ke Waka Kurikulum (oleh Guru Mapel / Wali Kelas)
+  app.post("/api/curriculum/shared-tps/:id/revision-request", (req, res) => {
+    const { id } = req.params;
+    const { teacherId, teacherName, teacherRole, note } = req.body;
+
+    if (!note || typeof note !== 'string' || note.trim().length < 5) {
+      return res.status(400).json({ error: "Catatan atau usulan perbaikan wajib diisi minimal 5 karakter." });
+    }
+
+    const target = sharedLearningObjectives.find(tp => tp.id === id);
+    if (!target) {
+      return res.status(404).json({ error: "TP bersama tidak ditemukan." });
+    }
+
+    if (!target.revisionRequests) target.revisionRequests = [];
+    const revId = `rev-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`;
+    target.revisionRequests.unshift({
+      id: revId,
+      teacherId,
+      teacherName: teacherName || "Guru Mata Pelajaran",
+      teacherRole: teacherRole || `Guru ${target.subjectName}`,
+      note: note.trim(),
+      requestedAt: new Date().toISOString(),
+      status: 'pending'
+    });
+    target.updatedAt = new Date().toISOString();
+
+    saveState();
+
+    res.json({
+      success: true,
+      message: `Usulan perubahan untuk [${target.code}] berhasil diajukan ke Waka Kurikulum.`,
+      requestId: revId
+    });
+  });
+
+  // 6. POST: Proses Pengajuan Revisi TP (Disetujui / Ditolak oleh Waka Kurikulum)
+  app.post("/api/curriculum/shared-tps/:id/resolve-revision", (req, res) => {
+    const { id } = req.params;
+    const { requestId, action, newTitle } = req.body;
+
+    const target = sharedLearningObjectives.find(tp => tp.id === id);
+    if (!target || !target.revisionRequests) {
+      return res.status(404).json({ error: "Data TP atau pengajuan revisi tidak ditemukan." });
+    }
+
+    const rev = target.revisionRequests.find(r => r.id === requestId);
+    if (!rev) {
+      return res.status(404).json({ error: "Pengajuan revisi tidak ditemukan." });
+    }
+
+    rev.status = action === 'approved' ? 'approved' : 'rejected';
+    if (action === 'approved' && newTitle && typeof newTitle === 'string' && newTitle.trim().length > 3) {
+      target.title = newTitle.trim();
+    }
+    target.updatedAt = new Date().toISOString();
+
+    saveState();
+
+    res.json({
+      success: true,
+      message: `Pengajuan revisi dari ${rev.teacherName} telah ${action === 'approved' ? 'disetujui' : 'ditolak'}.`,
+      tp: target
+    });
+  });
+
+  // 7. POST: Reset / Standarisasi Bank TP Bersama (Kurikulum Merdeka)
+  app.post("/api/curriculum/shared-tps/reset-defaults", (req, res) => {
+    const seeded = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
+    sharedLearningObjectives.length = 0;
+    sharedLearningObjectives.push(...seeded);
+    saveState();
+
+    res.json({
+      success: true,
+      message: `Bank TP Bersama berhasil direset ke standar resmi Kurikulum Merdeka (${seeded.length} TP).`,
+      count: seeded.length,
+      tps: seeded
     });
   });
 

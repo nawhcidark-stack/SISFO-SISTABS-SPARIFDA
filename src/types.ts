@@ -264,6 +264,7 @@ export interface HomeroomTeacher {
   className: string; // e.g., "7-A", "7-B", "8-A", "9-C"
   password?: string;
   skUrl?: string;
+  role?: string;
   subject?: string; // Mata pelajaran yang diampu oleh wali kelas (e.g., "Matematika", "Bahasa Indonesia", etc.)
   subjectId?: string; // ID master mapel terhubung ke master data mapel
   subjects?: string[]; // Daftar multi-mapel bila mengampu lebih dari 1 mapel
@@ -273,6 +274,7 @@ export interface SubjectTeacher {
   id: string;
   username: string;
   name: string;
+  role?: string;
   subject: string; // e.g., "Matematika", "Bahasa Inggris", "IPA", etc.
   subjectId?: string; // id mapel terhubung ke master data mapel
   className?: string; // e.g., "7-A" or "SEMUA KELAS"
@@ -319,6 +321,33 @@ export interface CurriculumTpDescription {
     note?: string;
   }>;
   updatedAt?: string;
+}
+
+export interface SharedLearningObjective {
+  id: string; // e.g. "tp-mat-7-01", "tp-1738..."
+  code: string; // e.g. "TP-7-01", "TP-MAT-7.1"
+  subjectId: string; // ID Mata Pelajaran (e.g. "mapel-mtk")
+  subjectName: string; // Nama Mata Pelajaran (e.g. "Matematika")
+  gradeLevel: string; // "7" | "8" | "9"
+  semester: string; // "Ganjil" | "Genap"
+  academicYear: string; // e.g. "2026/2027"
+  tpNumber?: number; // 1 | 2 | 3 | 4
+  title: string; // Rumusan Tujuan Pembelajaran (TP)
+  creatorId?: string; // ID Guru pembuat
+  creatorName: string; // Nama guru / Waka Kurikulum
+  creatorRole?: string; // e.g. "Guru Matematika"
+  status: 'Aktif' | 'Disetujui' | 'Menunggu Verifikasi' | 'Nonaktif';
+  revisionRequests?: Array<{
+    id: string;
+    teacherId?: string;
+    teacherName: string;
+    teacherRole?: string;
+    note: string;
+    requestedAt: string;
+    status: 'pending' | 'approved' | 'rejected';
+  }>;
+  createdAt: string;
+  updatedAt: string;
 }
 
 export interface SubjectAttendanceEntry {
@@ -463,11 +492,13 @@ export interface MerdekaAssessment {
   studentName: string;
   className: string;
   subject: string;
+  teacherId?: string;
   teacherName: string;
   semester: string; // "Ganjil" | "Genap"
   academicYear: string; // e.g. "2025/2026"
 
   // TP 1
+  tp1Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
   tp1Name?: string;
   tp1Tugas1?: number | string;
   tp1Tugas2?: number | string;
@@ -475,6 +506,7 @@ export interface MerdekaAssessment {
   nilaiTp1?: number; // (Rata2 Tugas * 0.7) + (UH * 0.3)
 
   // TP 2
+  tp2Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
   tp2Name?: string;
   tp2Tugas1?: number | string;
   tp2Tugas2?: number | string;
@@ -482,6 +514,7 @@ export interface MerdekaAssessment {
   nilaiTp2?: number;
 
   // TP 3
+  tp3Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
   tp3Name?: string;
   tp3Tugas1?: number | string;
   tp3Tugas2?: number | string;
@@ -489,6 +522,7 @@ export interface MerdekaAssessment {
   nilaiTp3?: number;
 
   // TP 4
+  tp4Id?: string; // Relasi ke Bank TP Bersama (SharedLearningObjective.id)
   tp4Name?: string;
   tp4Tugas1?: number | string;
   tp4Tugas2?: number | string;

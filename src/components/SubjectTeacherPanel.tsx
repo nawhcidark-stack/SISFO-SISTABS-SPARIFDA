@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher } from '../types';
+import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher, SharedLearningObjective } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import ScheduleView from './ScheduleView';
 import { TpJournalSelector } from './TpJournalSelector';
+import { SharedTpBankView } from './SharedTpBankView';
+import { SharedTpQuickSelector } from './SharedTpQuickSelector';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
@@ -332,6 +334,16 @@ export default function SubjectTeacherPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('');
   const [tp3InputName, setTp3InputName] = useState<string>('');
   const [tp4InputName, setTp4InputName] = useState<string>('');
+  const [tp1Id, setTp1Id] = useState<string>('');
+  const [tp2Id, setTp2Id] = useState<string>('');
+  const [tp3Id, setTp3Id] = useState<string>('');
+  const [tp4Id, setTp4Id] = useState<string>('');
+  const [penilaianSubTab, setPenilaianSubTab] = useState<'input_nilai' | 'bank_tp'>('input_nilai');
+  const activeGradingGrade = useMemo(() => {
+    const m = String(selectedGradeClass || '').match(/\d+/);
+    return m ? m[0] : '7';
+  }, [selectedGradeClass]);
+  const [showAddSharedTpModal, setShowAddSharedTpModal] = useState<boolean>(false);
   const [tpFilledBy, setTpFilledBy] = useState<string>('');
   const [tpFilledAt, setTpFilledAt] = useState<string>('');
   const [tpEditedBy, setTpEditedBy] = useState<string>('');
@@ -339,6 +351,27 @@ export default function SubjectTeacherPanel({
   const [tpEditedByRole, setTpEditedByRole] = useState<string>('');
   const [savedTpDescriptions, setSavedTpDescriptions] = useState<Record<string, { tp1Name?: string; tp2Name?: string; tp3Name?: string; tp4Name?: string; isLocked?: boolean; filledBy?: string; filledAt?: string; editedBy?: string; editedAt?: string; editedByRole?: string }>>({});
   const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
+
+  // Handle selecting a TP from Bank TP Bersama (one shared source, sets relation ID & title)
+  const handleSelectSharedTp = (tp: SharedLearningObjective, slot: 1 | 2 | 3 | 4) => {
+    if (slot === 1) {
+      setTp1InputName(tp.title);
+      setTp1Id(tp.id);
+    } else if (slot === 2) {
+      setTp2InputName(tp.title);
+      setTp2Id(tp.id);
+    } else if (slot === 3) {
+      setTp3InputName(tp.title);
+      setTp3Id(tp.id);
+    } else if (slot === 4) {
+      setTp4InputName(tp.title);
+      setTp4Id(tp.id);
+    }
+    setFeedback({
+      type: 'success',
+      text: `🎉 Tujuan Pembelajaran ${slot} berhasil dihubungkan ke Bank TP [${tp.code}]!`
+    });
+  };
 
   const handleAutoFillAllTpsFromJournals = () => {
     const norm = (s?: string) => (s || '').toLowerCase().trim();
@@ -557,6 +590,10 @@ export default function SubjectTeacherPanel({
       setTp2InputName(matchedAss.tp2Name || '');
       setTp3InputName(matchedAss.tp3Name || '');
       setTp4InputName(matchedAss.tp4Name || '');
+      setTp1Id(matchedAss.tp1Id || '');
+      setTp2Id(matchedAss.tp2Id || '');
+      setTp3Id(matchedAss.tp3Id || '');
+      setTp4Id(matchedAss.tp4Id || '');
       setTpFilledBy(matchedAss.teacherName || 'Guru Mata Pelajaran');
       setTpEditedBy('');
       setTpEditedAt('');
@@ -569,6 +606,10 @@ export default function SubjectTeacherPanel({
     setTp2InputName('');
     setTp3InputName('');
     setTp4InputName('');
+    setTp1Id('');
+    setTp2Id('');
+    setTp3Id('');
+    setTp4Id('');
     setTpFilledBy('');
     setTpFilledAt('');
     setTpEditedBy('');
@@ -2859,7 +2900,66 @@ export default function SubjectTeacherPanel({
       {/* View: Penilaian Kurikulum Merdeka */}
       {activeSubTab === 'penilaian' && (
         <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
-          {/* Header & Filter Card */}
+          {/* Sub Navigation Bar: Input Penilaian Siswa vs Bank TP Bersama */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setPenilaianSubTab('input_nilai')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                penilaianSubTab === 'input_nilai'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <ClipboardCheck size={15} />
+              <span>Input Penilaian Siswa</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setPenilaianSubTab('bank_tp')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                penilaianSubTab === 'bank_tp'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <BookOpen size={15} />
+              <span>Bank TP Bersama (Kurikulum Merdeka)</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                penilaianSubTab === 'bank_tp' ? 'bg-indigo-700 text-indigo-100' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+              }`}>
+                Tersinkron Otomatis
+              </span>
+            </button>
+          </div>
+
+          {/* VIEW 1: BANK TP BERSAMA */}
+          {penilaianSubTab === 'bank_tp' && (
+            <SharedTpBankView
+              isWaka={false}
+              currentUser={{
+                id: currentTeacher.id,
+                name: currentTeacher.name,
+                role: currentTeacher.role || `Guru ${selectedSubject}`
+              }}
+              initialSubject={selectedSubject}
+              initialGradeLevel={activeGradingGrade}
+              initialSemester={selectedSemesterGrading}
+              initialAcademicYear={selectedYearGrading}
+              activeClass={selectedGradeClass}
+              onUseTp={(tp, slot) => {
+                handleSelectSharedTp(tp, slot);
+                setPenilaianSubTab('input_nilai');
+              }}
+              embedded={true}
+            />
+          )}
+
+          {/* VIEW 2: INPUT PENILAIAN SISWA */}
+          {penilaianSubTab === 'input_nilai' && (
+            <div className="flex flex-col gap-6">
+              {/* Header & Filter Card */}
           <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
             <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-emerald-500 to-indigo-600" />
             
@@ -3072,6 +3172,25 @@ export default function SubjectTeacherPanel({
                 </button>
               </div>
             </div>
+
+            {/* Quick Auto-matching Shared TP Selector */}
+            <SharedTpQuickSelector
+              selectedSubject={selectedSubject}
+              selectedClass={selectedGradeClass}
+              semester={selectedSemesterGrading}
+              academicYear={selectedYearGrading}
+              tp1Id={tp1Id}
+              tp2Id={tp2Id}
+              tp3Id={tp3Id}
+              tp4Id={tp4Id}
+              tp1Name={tp1InputName}
+              tp2Name={tp2InputName}
+              tp3Name={tp3InputName}
+              tp4Name={tp4InputName}
+              onSelectTp={handleSelectSharedTp}
+              onOpenFullBank={() => setPenilaianSubTab('bank_tp')}
+              onOpenAddTpModal={() => setPenilaianSubTab('bank_tp')}
+            />
             
             <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
@@ -3090,6 +3209,7 @@ export default function SubjectTeacherPanel({
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
+                  linkedTpId={tp1Id}
                 />
               </div>
 
@@ -3108,6 +3228,7 @@ export default function SubjectTeacherPanel({
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
+                  linkedTpId={tp2Id}
                 />
               </div>
 
@@ -3126,6 +3247,7 @@ export default function SubjectTeacherPanel({
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
+                  linkedTpId={tp3Id}
                 />
               </div>
 
@@ -3144,6 +3266,7 @@ export default function SubjectTeacherPanel({
                   editedBy={tpEditedBy}
                   editedAt={tpEditedAt}
                   editedByRole={tpEditedByRole}
+                  linkedTpId={tp4Id}
                 />
               </div>
             </div>
@@ -3388,18 +3511,22 @@ export default function SubjectTeacherPanel({
                         teacherName: currentTeacher.name,
                         semester: selectedSemesterGrading,
                         academicYear: selectedYearGrading,
+                        tp1Id: tp1Id || undefined,
                         tp1Name: tp1InputName,
                         tp1Tugas1: inputState.tp1Tugas1,
                         tp1Uh: inputState.tp1Uh,
 
+                        tp2Id: tp2Id || undefined,
                         tp2Name: tp2InputName || undefined,
                         tp2Tugas1: inputState.tp2Tugas1,
                         tp2Uh: inputState.tp2Uh,
 
+                        tp3Id: tp3Id || undefined,
                         tp3Name: tp3InputName || undefined,
                         tp3Tugas1: inputState.tp3Tugas1,
                         tp3Uh: inputState.tp3Uh,
 
+                        tp4Id: tp4Id || undefined,
                         tp4Name: tp4InputName || undefined,
                         tp4Tugas1: (inputState as any).tp4Tugas1,
                         tp4Uh: (inputState as any).tp4Uh
@@ -3449,6 +3576,8 @@ export default function SubjectTeacherPanel({
               </button>
             </div>
           </div>
+            </div>
+          )}
         </div>
       )}
 

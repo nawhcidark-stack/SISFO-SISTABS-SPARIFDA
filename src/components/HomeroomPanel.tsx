@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction } from '../types';
+import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction, SharedLearningObjective } from '../types';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import BukuIndukManagement from './BukuIndukManagement';
@@ -7,6 +7,8 @@ import ScheduleView from './ScheduleView';
 import { SavingsPassbookModal } from './SavingsPassbookModal';
 import { StudentFinancialRecapModal } from './StudentFinancialRecapModal';
 import { TpJournalSelector } from './TpJournalSelector';
+import { SharedTpBankView } from './SharedTpBankView';
+import { SharedTpQuickSelector } from './SharedTpQuickSelector';
 import { 
   exportSppRecapToExcel, 
   exportMiscRecapToExcel, 
@@ -810,12 +812,39 @@ export default function HomeroomPanel({
   const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
   const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
   const [tp4InputName, setTp4InputName] = useState<string>('Evaluasi & pengerjaan proyek');
+  const [tp1Id, setTp1Id] = useState<string>('');
+  const [tp2Id, setTp2Id] = useState<string>('');
+  const [tp3Id, setTp3Id] = useState<string>('');
+  const [tp4Id, setTp4Id] = useState<string>('');
+  const [homeroomPenilaianSubTab, setHomeroomPenilaianSubTab] = useState<'input_nilai' | 'bank_tp'>('input_nilai');
   const [tpFilledBy, setTpFilledBy] = useState<string>('');
   const [tpFilledAt, setTpFilledAt] = useState<string>('');
   const [tpEditedBy, setTpEditedBy] = useState<string>('');
   const [tpEditedAt, setTpEditedAt] = useState<string>('');
   const [tpEditedByRole, setTpEditedByRole] = useState<string>('');
   const [isSavingTp, setIsSavingTp] = useState<boolean>(false);
+
+  const handleSelectSharedTp = (tp: SharedLearningObjective, slot: 1 | 2 | 3 | 4) => {
+    if (slot === 1) {
+      setTp1InputName(tp.title);
+      setTp1Id(tp.id);
+    } else if (slot === 2) {
+      setTp2InputName(tp.title);
+      setTp2Id(tp.id);
+    } else if (slot === 3) {
+      setTp3InputName(tp.title);
+      setTp3Id(tp.id);
+    } else if (slot === 4) {
+      setTp4InputName(tp.title);
+      setTp4Id(tp.id);
+    }
+  };
+
+  const gradingGradeLevel = useMemo(() => {
+    const targetClass = selectedGradingClass || currentTeacher?.className || '';
+    const m = String(targetClass).match(/\d+/);
+    return m ? m[0] : '7';
+  }, [selectedGradingClass, currentTeacher?.className]);
 
   // Sync TP from curriculum level for the selected subject and grade
   const fetchHomeroomTpDescriptions = async () => {
@@ -845,6 +874,18 @@ export default function HomeroomPanel({
             setTpEditedBy(saved.editedBy || '');
             setTpEditedAt(saved.editedAt || '');
             setTpEditedByRole(saved.editedByRole || '');
+          }
+
+          const matchedAss = merdekaAssessments.find(a => 
+            (a.className === targetClass || (a.className && a.className.startsWith(gradeLevel))) &&
+            a.subject?.toLowerCase() === (selectedSubjectForGrading || '').toLowerCase() &&
+            (a.tp1Id || a.tp2Id || a.tp3Id || a.tp4Id)
+          );
+          if (matchedAss) {
+            if (matchedAss.tp1Id) setTp1Id(matchedAss.tp1Id);
+            if (matchedAss.tp2Id) setTp2Id(matchedAss.tp2Id);
+            if (matchedAss.tp3Id) setTp3Id(matchedAss.tp3Id);
+            if (matchedAss.tp4Id) setTp4Id(matchedAss.tp4Id);
           }
         }
       }
@@ -2399,21 +2440,25 @@ export default function HomeroomPanel({
           teacherName: currentTeacher.name,
           semester: kokurikulerSemester,
           academicYear: kokurikulerYear,
+          tp1Id: tp1Id || undefined,
           tp1Name: tp1InputName,
           tp1Tugas1: inputState.tp1Tugas1,
           tp1Tugas2: inputState.tp1Tugas2,
           tp1Uh: inputState.tp1Uh,
 
+          tp2Id: tp2Id || undefined,
           tp2Name: tp2InputName || undefined,
           tp2Tugas1: inputState.tp2Tugas1,
           tp2Tugas2: inputState.tp2Tugas2,
           tp2Uh: inputState.tp2Uh,
 
+          tp3Id: tp3Id || undefined,
           tp3Name: tp3InputName || undefined,
           tp3Tugas1: inputState.tp3Tugas1,
           tp3Tugas2: inputState.tp3Tugas2,
           tp3Uh: inputState.tp3Uh,
 
+          tp4Id: tp4Id || undefined,
           tp4Name: tp4InputName || undefined,
           tp4Tugas1: inputState.tp4Tugas1,
           tp4Tugas2: inputState.tp4Tugas2,
@@ -7545,7 +7590,66 @@ Wassalamualaikum Wr. Wb.
 
           {activeSubTab === 'kokurikuler' && (
             <div className="flex flex-col gap-6 text-left animate-fade-in mb-12">
-              {/* Header Card */}
+              {/* Sub Navigation Bar: Input Penilaian & Kokurikuler vs Bank TP Bersama */}
+              <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+                <button
+                  type="button"
+                  onClick={() => setHomeroomPenilaianSubTab('input_nilai')}
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                    homeroomPenilaianSubTab === 'input_nilai'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
+                      : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  <ClipboardCheck size={15} />
+                  <span>Input Penilaian & Kokurikuler</span>
+                </button>
+
+                <button
+                  type="button"
+                  onClick={() => setHomeroomPenilaianSubTab('bank_tp')}
+                  className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                    homeroomPenilaianSubTab === 'bank_tp'
+                      ? 'bg-purple-600 text-white shadow-md shadow-purple-600/25'
+                      : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+                  }`}
+                >
+                  <BookOpen size={15} />
+                  <span>Bank TP Bersama (Kurikulum Merdeka)</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                    homeroomPenilaianSubTab === 'bank_tp' ? 'bg-purple-700 text-purple-100' : 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                  }`}>
+                    Tersinkron Otomatis
+                  </span>
+                </button>
+              </div>
+
+              {/* VIEW 1: BANK TP BERSAMA */}
+              {homeroomPenilaianSubTab === 'bank_tp' && (
+                <SharedTpBankView
+                  isWaka={false}
+                  currentUser={{
+                    id: currentTeacher.id,
+                    name: currentTeacher.name,
+                    role: currentTeacher.role || `Wali Kelas ${currentTeacher.className}`
+                  }}
+                  initialSubject={selectedSubjectForGrading}
+                  initialGradeLevel={gradingGradeLevel}
+                  initialSemester={kokurikulerSemester}
+                  initialAcademicYear={kokurikulerYear}
+                  activeClass={selectedGradingClass || currentTeacher.className}
+                  onUseTp={(tp, slot) => {
+                    handleSelectSharedTp(tp, slot);
+                    setHomeroomPenilaianSubTab('input_nilai');
+                  }}
+                  embedded={true}
+                />
+              )}
+
+              {/* VIEW 2: FORM PENILAIAN */}
+              {homeroomPenilaianSubTab === 'input_nilai' && (
+                <div className="flex flex-col gap-6">
+                  {/* Header Card */}
               <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
                 <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-600 to-indigo-600" />
                 <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Khusus Wali Kelas ({currentTeacher.className})</span>
@@ -7685,6 +7789,25 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 </div>
 
+                {/* Quick Auto-matching Shared TP Selector */}
+                <SharedTpQuickSelector
+                  selectedSubject={selectedSubjectForGrading}
+                  selectedClass={selectedGradingClass || currentTeacher.className}
+                  semester={kokurikulerSemester}
+                  academicYear={kokurikulerYear}
+                  tp1Id={tp1Id}
+                  tp2Id={tp2Id}
+                  tp3Id={tp3Id}
+                  tp4Id={tp4Id}
+                  tp1Name={tp1InputName}
+                  tp2Name={tp2InputName}
+                  tp3Name={tp3InputName}
+                  tp4Name={tp4InputName}
+                  onSelectTp={handleSelectSharedTp}
+                  onOpenFullBank={() => setHomeroomPenilaianSubTab('bank_tp')}
+                  onOpenAddTpModal={() => setHomeroomPenilaianSubTab('bank_tp')}
+                />
+
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3.5">
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
                     <TpJournalSelector
@@ -7702,6 +7825,7 @@ Wassalamualaikum Wr. Wb.
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
+                      linkedTpId={tp1Id}
                     />
                   </div>
 
@@ -7720,6 +7844,7 @@ Wassalamualaikum Wr. Wb.
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
+                      linkedTpId={tp2Id}
                     />
                   </div>
 
@@ -7738,6 +7863,7 @@ Wassalamualaikum Wr. Wb.
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
+                      linkedTpId={tp3Id}
                     />
                   </div>
 
@@ -7756,6 +7882,7 @@ Wassalamualaikum Wr. Wb.
                       editedBy={tpEditedBy}
                       editedAt={tpEditedAt}
                       editedByRole={tpEditedByRole}
+                      linkedTpId={tp4Id}
                     />
                   </div>
                 </div>
@@ -8011,7 +8138,9 @@ Wassalamualaikum Wr. Wb.
             </div>
           )}
         </div>
-      </div>
+      )}
+    </div>
+  </div>
 
       {/* ================= PERSISTENT BOTTOM NAVIGATION BAR (Selaras di Semua Akun) ================= */}
       <div 

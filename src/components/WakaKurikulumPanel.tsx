@@ -1,7 +1,8 @@
-import React, { useState, useMemo, useEffect } from 'react';
+import React, { useState, useMemo, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
 import { Student, SubjectTeacher, HomeroomTeacher, MerdekaAssessment, SchoolIdentity, ClassSchedule, CurriculumSubject, AttendanceLog } from '../types';
 import ScheduleView from './ScheduleView';
+import { SharedTpBankView } from './SharedTpBankView';
 import { 
   BookOpen, 
   FileSpreadsheet, 
@@ -107,6 +108,24 @@ export const DEFAULT_REPORT_SUBJECTS: Array<{ id: string; code: string; name: st
   { id: 'mapel-aswaja', code: 'ASWAJA', name: 'Ke-NU-an / Aswaja', category: 'Muatan Lokal', kktp: 75, orderNum: 13 },
 ];
 
+export const cleanTeacherName = (name?: string): string => {
+  if (!name) return '';
+  return name
+    .toLowerCase()
+    .replace(/(s\.pd\.?i?|m\.pd\.?i?|s\.si|s\.mat|s\.sos|shi|s\.kom|a\.md|s\.s|s\.psi|dra\.|drs\.|h\.|hj\.|kh\.)/gi, '')
+    .replace(/[^a-z0-9]/g, '')
+    .trim();
+};
+
+export const getCanonicalTeacherId = (id?: string): string => {
+  if (!id) return '';
+  const trimmed = id.trim();
+  if (trimmed.startsWith('st-sync-')) {
+    return trimmed.replace('st-sync-', '');
+  }
+  return trimmed;
+};
+
 export const hasAssessmentData = (a?: MerdekaAssessment): boolean => {
   if (!a) return false;
   if (a.nilaiRataTp !== undefined && Number(a.nilaiRataTp) > 0) return true;
@@ -118,10 +137,15 @@ export const hasAssessmentData = (a?: MerdekaAssessment): boolean => {
   if (a.nilaiTp2 !== undefined && Number(a.nilaiTp2) > 0) return true;
   if (a.nilaiTp3 !== undefined && Number(a.nilaiTp3) > 0) return true;
   if (a.nilaiTp4 !== undefined && Number(a.nilaiTp4) > 0) return true;
-  if (a.tp1Uh || a.tp1Tugas1) return true;
-  if (a.tp2Uh || a.tp2Tugas1) return true;
-  if (a.tp3Uh || a.tp3Tugas1) return true;
-  if (a.tp4Uh || a.tp4Tugas1) return true;
+  if (a.tp1Uh || a.tp1Tugas1 || a.tp1Tugas2) return true;
+  if (a.tp2Uh || a.tp2Tugas1 || a.tp2Tugas2) return true;
+  if (a.tp3Uh || a.tp3Tugas1 || a.tp3Tugas2) return true;
+  if (a.tp4Uh || a.tp4Tugas1 || a.tp4Tugas2) return true;
+  if (a.nilaiFormatif !== undefined && Number(a.nilaiFormatif) > 0) return true;
+  if (a.nilaiSumatifLM !== undefined && Number(a.nilaiSumatifLM) > 0) return true;
+  if (a.nilaiSAS !== undefined && Number(a.nilaiSAS) > 0) return true;
+  if (a.nilaiRapor !== undefined && Number(a.nilaiRapor) > 0) return true;
+  if (a.deskripsiCapaian && a.deskripsiCapaian.trim().length > 0) return true;
   return false;
 };
 
@@ -153,6 +177,7 @@ export default function WakaKurikulumPanel({
   onRefreshData
 }: WakaKurikulumPanelProps) {
   const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'rapor_tengah_semester' | 'password'>('monitoring');
+  const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp'>('mapel_list');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
 
   // Master Data Mata Pelajaran State
@@ -334,7 +359,7 @@ export default function WakaKurikulumPanel({
   const [detailSubjectFilter, setDetailSubjectFilter] = useState<string>('all');
   const [detailClassFilter, setDetailClassFilter] = useState<string>('all');
   const [detailSearchQuery, setDetailSearchQuery] = useState<string>('');
-  const [detailStatusFilter, setDetailStatusFilter] = useState<'all' | 'complete' | 'incomplete'>('all');
+  const [detailStatusFilter, setDetailStatusFilter] = useState<'all' | 'complete' | 'incomplete' | 'mapel_filled' | 'koku_filled'>('all');
 
   // Selected Student for Modal View
   const [selectedStudentDetail, setSelectedStudentDetail] = useState<Student | null>(null);
@@ -1013,17 +1038,20 @@ export default function WakaKurikulumPanel({
     printWin.document.close();
   };
 
-  // Distinct Subjects (with both aliases available for inspection)
+  // Distinct Canonical Subjects for filter dropdowns (normalized and sorted)
   const availableSubjects = useMemo(() => {
     const set = new Set<string>();
     subjectTeachers.forEach(t => {
-      if (t.subject) set.add(t.subject.trim());
+      if (t.subject) set.add(normalizeSubject(t.subject.trim()));
+    });
+    classSchedules.forEach(s => {
+      if (s.subject) set.add(normalizeSubject(s.subject.trim()));
     });
     liveAssessments.forEach(a => {
-      if (a.subject) set.add(a.subject.trim());
+      if (a.subject) set.add(normalizeSubject(a.subject.trim()));
     });
-    return Array.from(set).sort();
-  }, [subjectTeachers, liveAssessments]);
+    return Array.from(set).filter(Boolean).sort((a, b) => a.localeCompare(b, 'id'));
+  }, [subjectTeachers, classSchedules, liveAssessments]);
 
   // Assessment matching current sem & year (supports 'all' semester & year)
   const filteredAssessments = useMemo(() => {
@@ -1034,101 +1062,326 @@ export default function WakaKurikulumPanel({
     });
   }, [liveAssessments, selectedSemester, selectedAcademicYear]);
 
-  // List of all distinct teacher names
-  const allTeacherNames = useMemo(() => {
-    const list: string[] = [];
-    subjectTeachers.forEach(t => { if (t.name) list.push(t.name.trim()); });
-    homerooms.forEach(h => { if (h.name) list.push(h.name.trim()); });
-    liveAssessments.forEach(a => { if (a.teacherName) list.push(a.teacherName.trim()); });
-    return Array.from(new Set(list)).sort();
-  }, [subjectTeachers, homerooms, liveAssessments]);
+  // Distinct Teacher Options for filter dropdown (using teacher ID as value, displaying teacher Name)
+  const allTeacherOptions = useMemo(() => {
+    interface TeacherOpt {
+      id: string; // Canonical ID (e.g. 'st-1784121769274-0-scop', 'ht-4')
+      name: string; // Display Name (e.g. 'Drs. Husnan')
+      rawIds: string[]; // Linked IDs e.g. ['ht-4', 'st-sync-ht-4']
+      role: 'subject_teacher' | 'homeroom' | 'both';
+      subject?: string;
+      className?: string;
+    }
+
+    const teacherMap = new Map<string, TeacherOpt>();
+
+    // 1. Process subject teachers
+    subjectTeachers.forEach(st => {
+      if (!st.name || st.name.trim().toLowerCase() === 'guru mapel' || st.name.trim().toLowerCase() === 'guru') return;
+      const canonicalId = getCanonicalTeacherId(st.id);
+      const name = st.name.trim();
+      const existing = teacherMap.get(canonicalId) || Array.from(teacherMap.values()).find(t => cleanTeacherName(t.name) === cleanTeacherName(name));
+      if (existing) {
+        if (!existing.rawIds.includes(st.id)) existing.rawIds.push(st.id);
+        if (st.subject && !existing.subject) existing.subject = st.subject;
+        if (existing.role === 'homeroom') existing.role = 'both';
+      } else {
+        teacherMap.set(canonicalId, {
+          id: canonicalId,
+          name,
+          rawIds: [canonicalId, st.id],
+          role: 'subject_teacher',
+          subject: st.subject,
+          className: st.className
+        });
+      }
+    });
+
+    // 2. Process homeroom teachers
+    homerooms.forEach(hr => {
+      if (!hr.name || hr.name.trim().toLowerCase() === 'wali kelas') return;
+      const canonicalId = getCanonicalTeacherId(hr.id);
+      const name = hr.name.trim();
+      const existing = teacherMap.get(canonicalId) || Array.from(teacherMap.values()).find(t => cleanTeacherName(t.name) === cleanTeacherName(name));
+      if (existing) {
+        if (!existing.rawIds.includes(hr.id)) existing.rawIds.push(hr.id);
+        if (hr.className) existing.className = hr.className;
+        existing.role = 'both';
+      } else {
+        teacherMap.set(canonicalId, {
+          id: canonicalId,
+          name,
+          rawIds: [canonicalId, hr.id],
+          role: 'homeroom',
+          className: hr.className
+        });
+      }
+    });
+
+    // 3. Process schedules to ensure any scheduled teacher is mapped
+    classSchedules.forEach(sch => {
+      if (!sch.teacherName || sch.teacherName.trim().toLowerCase() === 'guru mapel') return;
+      const schId = sch.teacherId ? getCanonicalTeacherId(sch.teacherId) : '';
+      const name = sch.teacherName.trim();
+      const existing = (schId ? teacherMap.get(schId) : null) || Array.from(teacherMap.values()).find(t => cleanTeacherName(t.name) === cleanTeacherName(name));
+      if (existing) {
+        if (schId && !existing.rawIds.includes(schId)) existing.rawIds.push(schId);
+        if (sch.subject && !existing.subject) existing.subject = sch.subject;
+      } else if (schId) {
+        teacherMap.set(schId, {
+          id: schId,
+          name,
+          rawIds: [schId],
+          role: 'subject_teacher',
+          subject: sch.subject,
+          className: sch.className
+        });
+      }
+    });
+
+    return Array.from(teacherMap.values()).sort((a, b) => a.name.localeCompare(b.name, 'id'));
+  }, [subjectTeachers, homerooms, classSchedules]);
+
+  // Selected teacher entity from detailTeacherFilter (supports ID or fallback Name)
+  const selectedTeacherObj = useMemo(() => {
+    if (detailTeacherFilter === 'all') return null;
+    const filterCanonical = getCanonicalTeacherId(detailTeacherFilter);
+    const byId = allTeacherOptions.find(t => 
+      t.id === filterCanonical || 
+      t.rawIds.some(rid => getCanonicalTeacherId(rid) === filterCanonical)
+    );
+    if (byId) return byId;
+
+    const cleanFilter = cleanTeacherName(detailTeacherFilter);
+    return allTeacherOptions.find(t => 
+      t.name.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim() ||
+      (cleanTeacherName(t.name) === cleanFilter)
+    ) || null;
+  }, [detailTeacherFilter, allTeacherOptions]);
+
+  // Helper to determine assigned teaching classes for a teacher based on schedule, assessments, and teacher record
+  const getTeacherClasses = useCallback((teacherName: string, subject: string, explicitClass?: string) => {
+    const cleanT = cleanTeacherName(teacherName);
+    const classesSet = new Set<string>();
+
+    // 1. From classSchedules matching teacher and subject
+    classSchedules.forEach(s => {
+      if (isSameSubject(s.subject, subject)) {
+        const cleanS = cleanTeacherName(s.teacherName);
+        if (
+          (s.teacherName && s.teacherName.toLowerCase().trim() === teacherName.toLowerCase().trim()) ||
+          (cleanS && cleanT && (cleanS === cleanT || cleanS.includes(cleanT) || cleanT.includes(cleanS)))
+        ) {
+          if (s.className) classesSet.add(s.className.trim().toUpperCase());
+        }
+      }
+    });
+
+    // 2. From assessments directly inputted by this teacher for this subject
+    filteredAssessments.forEach(a => {
+      if (isSameSubject(a.subject, subject) && hasAssessmentData(a)) {
+        const cleanA = cleanTeacherName(a.teacherName);
+        if (
+          (a.teacherName && a.teacherName.toLowerCase().trim() === teacherName.toLowerCase().trim()) ||
+          (cleanA && cleanT && (cleanA === cleanT || cleanA.includes(cleanT) || cleanT.includes(cleanA)))
+        ) {
+          if (a.className) classesSet.add(a.className.trim().toUpperCase());
+        }
+      }
+    });
+
+    // 3. From explicit class if assigned and not generic
+    if (explicitClass && explicitClass !== 'SEMUA KELAS') {
+      classesSet.add(explicitClass.trim().toUpperCase());
+    }
+
+    return Array.from(classesSet);
+  }, [classSchedules, filteredAssessments]);
 
   // Detailed Filtered Assessments for Waka Kurikulum Inspection
   const detailedAssessmentsList = useMemo(() => {
     return filteredAssessments.filter(a => {
-      // Role filter
-      if (detailRoleFilter === 'subject_teacher') {
-        const hasTp = hasAssessmentData(a);
-        if (!hasTp) return false;
-      } else if (detailRoleFilter === 'homeroom') {
-        // Either has Kokurikuler OR teacher is a homeroom teacher (Wali Kelas)
-        const isHrTeacher = homerooms.some(h => h.name?.toLowerCase().trim() === a.teacherName?.toLowerCase().trim());
-        const hasKoku = (a.nilaiKokurikuler && a.nilaiKokurikuler > 0) || isHrTeacher;
-        if (!hasKoku) return false;
-      }
+      // 1. Must have assessment data
+      const hasTp = hasAssessmentData(a);
+      if (!hasTp) return false;
 
-      // Teacher filter
-      if (detailTeacherFilter !== 'all') {
-        const isMatchTeacher = a.teacherName?.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim();
-        const hrTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(a.className));
-        const isMatchHomeroom = hrTeacher && hrTeacher.name.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim();
-        if (!isMatchTeacher && !isMatchHomeroom) return false;
-      }
-
-      // Subject filter (using robust subject matcher)
-      if (detailSubjectFilter !== 'all') {
-        if (!isSameSubject(a.subject, detailSubjectFilter)) return false;
-      }
-
-      // Class filter (using normalized class matcher)
+      // 2. Class filter (using normalized class matcher)
       if (detailClassFilter !== 'all') {
         if (normClass(a.className) !== normClass(detailClassFilter)) return false;
       }
 
-      // Status filter
-      const isComplete = hasAssessmentData(a) && (a.nilaiKokurikuler && a.nilaiKokurikuler > 0);
+      // 3. Subject filter (using robust subject matcher)
+      if (detailSubjectFilter !== 'all') {
+        if (!isSameSubject(a.subject, detailSubjectFilter)) return false;
+      }
+
+      // Resolve authoritative scheduled teacher for this assessment's class and subject
+      const sched = classSchedules.find(s => 
+        normClass(s.className) === normClass(a.className) && 
+        isSameSubject(s.subject, a.subject)
+      );
+      const scheduledTeacherName = sched?.teacherName?.trim();
+      const scheduledTeacherId = sched?.teacherId ? getCanonicalTeacherId(sched.teacherId) : '';
+
+      // Resolve homeroom teacher for this assessment's class
+      const hrTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(a.className));
+      const homeroomTeacherName = hrTeacher?.name?.trim();
+      const homeroomTeacherId = hrTeacher?.id ? getCanonicalTeacherId(hrTeacher.id) : '';
+
+      // Check score types
+      const hasSubjectScores = (a.nilaiRataTp && Number(a.nilaiRataTp) > 0) ||
+        Boolean(a.tp1Uh || a.tp1Tugas1 || a.tp1Tugas2 || a.tp2Uh || a.tp2Tugas1 || a.tp2Tugas2 || a.tp3Uh || a.tp3Tugas1 || a.tp4Uh || a.tp4Tugas1 || a.nilaiTp1 || a.nilaiTp2 || (a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0));
+      const hasKokuScore = Boolean(a.nilaiKokurikuler && Number(a.nilaiKokurikuler) > 0);
+
+      // 4. Role filter
+      if (detailRoleFilter === 'subject_teacher') {
+        if (!hasSubjectScores) return false;
+      } else if (detailRoleFilter === 'homeroom') {
+        if (!hasKokuScore) return false;
+      }
+
+      // 5. Teacher filter (using ID as primary anchor, with Name matching fallback)
+      if (detailTeacherFilter !== 'all') {
+        const cleanTarget = selectedTeacherObj ? cleanTeacherName(selectedTeacherObj.name) : cleanTeacherName(detailTeacherFilter);
+        const cleanActual = cleanTeacherName(a.teacherName);
+        const cleanSched = cleanTeacherName(scheduledTeacherName);
+        const cleanHr = cleanTeacherName(homeroomTeacherName);
+
+        const targetIds = selectedTeacherObj
+          ? selectedTeacherObj.rawIds.map(getCanonicalTeacherId)
+          : [getCanonicalTeacherId(detailTeacherFilter)];
+
+        const actualTeacherId = a.teacherId ? getCanonicalTeacherId(a.teacherId) : '';
+
+        // a. Direct match with assessment recorded teacher (by ID or Name)
+        const isDirectTeacher = (
+          (actualTeacherId && targetIds.includes(actualTeacherId)) ||
+          (a.teacherName && selectedTeacherObj && a.teacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
+          (cleanActual.length > 0 && cleanTarget.length > 0 && (cleanActual === cleanTarget || cleanActual.includes(cleanTarget) || cleanTarget.includes(cleanActual)))
+        );
+
+        // b. Scheduled teacher match for this class and subject (by ID or Name)
+        const isScheduled = (
+          (scheduledTeacherId && targetIds.includes(scheduledTeacherId)) ||
+          (scheduledTeacherName && selectedTeacherObj && scheduledTeacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
+          (cleanSched.length > 0 && cleanTarget.length > 0 && (cleanSched === cleanTarget || cleanSched.includes(cleanTarget) || cleanTarget.includes(cleanSched)))
+        );
+
+        // c. Homeroom match for this student's class (by ID or Name)
+        const isHomeroomMatch = (
+          (homeroomTeacherId && targetIds.includes(homeroomTeacherId)) ||
+          (homeroomTeacherName && selectedTeacherObj && homeroomTeacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
+          (cleanHr.length > 0 && cleanTarget.length > 0 && cleanHr === cleanTarget)
+        );
+
+        if (detailRoleFilter === 'homeroom') {
+          // Explicitly inspecting Wali Kelas (Kokurikuler)
+          if (!isHomeroomMatch) return false;
+        } else if (detailRoleFilter === 'subject_teacher') {
+          // Explicitly inspecting Guru Mapel:
+          // Must be the direct teacher who inputted OR the scheduled teacher for this subject & class
+          if (!isDirectTeacher && !isScheduled) return false;
+        } else {
+          // Role is 'all':
+          const matchesAsSubject = isDirectTeacher || isScheduled;
+          const matchesAsHomeroom = isHomeroomMatch && (
+            hasKokuScore || detailSubjectFilter === 'all'
+          );
+
+          if (!matchesAsSubject && !matchesAsHomeroom) {
+            return false;
+          }
+        }
+      }
+
+      // 6. Status filter
+      const isComplete = hasSubjectScores && hasKokuScore;
       if (detailStatusFilter === 'complete' && !isComplete) return false;
       if (detailStatusFilter === 'incomplete' && isComplete) return false;
+      if (detailStatusFilter === 'mapel_filled' && !hasSubjectScores) return false;
+      if (detailStatusFilter === 'koku_filled' && !hasKokuScore) return false;
 
-      // Text Search
+      // 7. Text Search Query
       if (detailSearchQuery.trim()) {
-        const q = detailSearchQuery.toLowerCase();
+        const q = detailSearchQuery.toLowerCase().trim();
         const nameMatch = a.studentName?.toLowerCase().includes(q);
         const idMatch = a.studentId?.toLowerCase().includes(q);
         const subjMatch = a.subject?.toLowerCase().includes(q) || normalizeSubject(a.subject).toLowerCase().includes(q);
-        const teacherMatch = a.teacherName?.toLowerCase().includes(q);
+        const teacherMatch = a.teacherName?.toLowerCase().includes(q) || (scheduledTeacherName && scheduledTeacherName.toLowerCase().includes(q));
         const classMatch = a.className?.toLowerCase().includes(q) || normClass(a.className).includes(normClass(q));
         if (!nameMatch && !idMatch && !subjMatch && !teacherMatch && !classMatch) return false;
       }
 
       return true;
     });
-  }, [filteredAssessments, detailRoleFilter, detailTeacherFilter, detailSubjectFilter, detailClassFilter, detailStatusFilter, detailSearchQuery, homerooms]);
+  }, [filteredAssessments, detailRoleFilter, detailTeacherFilter, detailSubjectFilter, detailClassFilter, detailStatusFilter, detailSearchQuery, homerooms, classSchedules, selectedTeacherObj]);
 
   // Monitoring Stats for Subject Teachers
   const teacherProgressList = useMemo(() => {
     return subjectTeachers.map(teacher => {
-      const targetClass = teacher.className ? teacher.className.trim().toUpperCase() : 'SEMUA KELAS';
-      
+      const assignedClasses = getTeacherClasses(teacher.name, teacher.subject, teacher.className);
+      const cleanTarget = cleanTeacherName(teacher.name);
+
+      let targetClassDisplay = 'SEMUA KELAS';
+      if (assignedClasses.length > 0) {
+        targetClassDisplay = assignedClasses.join(', ');
+      } else if (teacher.className && teacher.className !== 'SEMUA KELAS') {
+        targetClassDisplay = teacher.className;
+      }
+
       let classStudentsList = activeStudents;
       if (selectedClassFilter !== 'all') {
+        // If a specific class filter is selected in header
         classStudentsList = activeStudents.filter(s => s.class && normClass(s.class) === normClass(selectedClassFilter));
-      } else if (targetClass !== 'SEMUA KELAS') {
-        classStudentsList = activeStudents.filter(s => s.class && normClass(s.class) === normClass(targetClass));
+      } else if (assignedClasses.length > 0) {
+        // Filter students belonging to this teacher's assigned classes
+        classStudentsList = activeStudents.filter(s => s.class && assignedClasses.some(c => normClass(c) === normClass(s.class)));
+      } else if (teacher.className && teacher.className !== 'SEMUA KELAS') {
+        classStudentsList = activeStudents.filter(s => s.class && normClass(s.class) === normClass(teacher.className));
       }
 
       const totalStudentsInClass = classStudentsList.length;
 
-      // Count students with assessment completed for this teacher's subject
-      const assessedCount = classStudentsList.filter(s => {
-        return filteredAssessments.some(a => 
-          a.studentId === s.id && 
-          isSameSubject(a.subject, teacher.subject) &&
-          hasAssessmentData(a)
+      // Helper to test if an assessment belongs to this teacher
+      const matchesThisTeacher = (a: MerdekaAssessment) => {
+        if (!isSameSubject(a.subject, teacher.subject) || !hasAssessmentData(a)) {
+          return false;
+        }
+
+        const cleanA = cleanTeacherName(a.teacherName);
+        const isDirect = (a.teacherName && a.teacherName.toLowerCase().trim() === teacher.name.toLowerCase().trim()) ||
+          (cleanA.length > 0 && cleanTarget.length > 0 && (cleanA === cleanTarget || cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA)));
+
+        const isSched = classSchedules.some(sch => 
+          normClass(sch.className) === normClass(a.className) &&
+          isSameSubject(sch.subject, a.subject) &&
+          (
+            sch.teacherName?.toLowerCase().trim() === teacher.name.toLowerCase().trim() ||
+            cleanTeacherName(sch.teacherName) === cleanTarget
+          )
         );
+
+        const isGeneric = !a.teacherName || a.teacherName.toLowerCase().trim() === 'guru mapel' || a.teacherName.toLowerCase().trim() === 'guru';
+        const isGenericMatch = isGeneric && (isSched || (assignedClasses.length > 0 ? assignedClasses.some(c => normClass(c) === normClass(a.className)) : true));
+
+        return isDirect || isSched || isGenericMatch;
+      };
+
+      // Count students with assessment completed for this teacher's subject & class
+      const assessedCount = classStudentsList.filter(s => {
+        return filteredAssessments.some(a => a.studentId === s.id && matchesThisTeacher(a));
       }).length;
 
-      // Detect per-class breakdown of filled assessments for this subject
+      // Detect per-class breakdown of filled assessments for this teacher's classes
       const assessedClassesBadges: Array<{ cls: string; count: number; total: number }> = [];
-      availableClasses.forEach(cls => {
+      const classesToEvaluate = assignedClasses.length > 0 ? assignedClasses : availableClasses;
+
+      classesToEvaluate.forEach(cls => {
         const cStudents = activeStudents.filter(s => s.class && normClass(s.class) === normClass(cls));
         const cAssessed = cStudents.filter(s => {
-          return filteredAssessments.some(a => 
-            a.studentId === s.id && 
-            isSameSubject(a.subject, teacher.subject) &&
-            hasAssessmentData(a)
-          );
+          return filteredAssessments.some(a => a.studentId === s.id && matchesThisTeacher(a));
         }).length;
+
         if (cAssessed > 0) {
           assessedClassesBadges.push({ cls, count: cAssessed, total: cStudents.length });
         }
@@ -1137,14 +1390,15 @@ export default function WakaKurikulumPanel({
       const percentage = totalStudentsInClass > 0 ? Math.round((assessedCount / totalStudentsInClass) * 100) : 0;
 
       let status: 'selesai' | 'sebagian' | 'belum' = 'belum';
-      if (percentage === 100) status = 'selesai';
+      if (percentage === 100 && totalStudentsInClass > 0) status = 'selesai';
       else if (percentage > 0 || assessedCount > 0 || assessedClassesBadges.length > 0) status = 'sebagian';
 
       return {
         id: teacher.id,
         teacherName: teacher.name,
         subject: teacher.subject,
-        className: targetClass,
+        className: targetClassDisplay,
+        assignedClasses,
         totalStudents: totalStudentsInClass,
         assessedCount,
         assessedClassesBadges,
@@ -1153,7 +1407,7 @@ export default function WakaKurikulumPanel({
         status
       };
     });
-  }, [subjectTeachers, activeStudents, filteredAssessments, selectedClassFilter, availableClasses]);
+  }, [subjectTeachers, activeStudents, filteredAssessments, selectedClassFilter, availableClasses, getTeacherClasses, classSchedules]);
 
   // Monitoring Stats for Wali Kelas (Kokurikuler & Penilaian Rapor Merdeka Lintas Mapel)
   const homeroomProgressList = useMemo(() => {
@@ -1885,15 +2139,67 @@ export default function WakaKurikulumPanel({
       {/* TAB: MASTER DATA MATA PELAJARAN (KURIKULUM MERDEKA) */}
       {activeTab === 'master_mapel' && (
         <div className="space-y-6 animate-fade-in text-left">
-          {/* Header Action Banner */}
-          <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-900 rounded-3xl p-6 text-white border border-indigo-700/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
-            <div className="space-y-1">
-              <div className="flex items-center gap-2">
-                <span className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-indigo-300">
-                  <Layers size={18} />
-                </span>
-                <span className="text-xs font-black uppercase tracking-wider text-indigo-300">Kurikulum Merdeka</span>
-              </div>
+          {/* Sub Navigation Bar: Master Mapel & Bank TP Bersama */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setMasterMapelSubTab('mapel_list')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                masterMapelSubTab === 'mapel_list'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <Layers size={15} />
+              <span>Daftar Mata Pelajaran</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                masterMapelSubTab === 'mapel_list' ? 'bg-indigo-700 text-indigo-100' : 'bg-slate-100 text-slate-600'
+              }`}>
+                {curriculumSubjectsList.length}
+              </span>
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setMasterMapelSubTab('bank_tp')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                masterMapelSubTab === 'bank_tp'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <BookOpen size={15} />
+              <span>Bank TP Bersama (Kurikulum Merdeka)</span>
+              <span className={`px-2 py-0.5 rounded-full text-[10px] font-black ${
+                masterMapelSubTab === 'bank_tp' ? 'bg-indigo-700 text-indigo-100' : 'bg-amber-100 text-amber-800 border border-amber-200'
+              }`}>
+                Tersinkronisasi Otomatis
+              </span>
+            </button>
+          </div>
+
+          {/* VIEW 1: BANK TP BERSAMA */}
+          {masterMapelSubTab === 'bank_tp' && (
+            <SharedTpBankView
+              isWaka={true}
+              currentUser={{ name: 'Waka Kurikulum', role: 'waka_kurikulum' }}
+              subjectsList={curriculumSubjectsList}
+              embedded={true}
+            />
+          )}
+
+          {/* VIEW 2: DAFTAR MATA PELAJARAN */}
+          {masterMapelSubTab === 'mapel_list' && (
+            <div className="space-y-6">
+              {/* Header Action Banner */}
+              <div className="bg-gradient-to-r from-indigo-900 via-slate-900 to-slate-900 rounded-3xl p-6 text-white border border-indigo-700/40 shadow-sm flex flex-col md:flex-row md:items-center justify-between gap-4">
+                <div className="space-y-1">
+                  <div className="flex items-center gap-2">
+                    <span className="p-2 bg-indigo-500/20 border border-indigo-400/30 rounded-xl text-indigo-300">
+                      <Layers size={18} />
+                    </span>
+                    <span className="text-xs font-black uppercase tracking-wider text-indigo-300">Kurikulum Merdeka</span>
+                  </div>
               <h2 className="text-xl font-black text-white">Master Data Mata Pelajaran (Mapel)</h2>
               <p className="text-xs text-slate-300 max-w-2xl leading-relaxed">
                 Tiap mata pelajaran memiliki <strong>ID & Kode Unik</strong> yang terhubung langsung ke penentuan mata pelajaran guru pada tab <em>Guru Mapel</em>, menu <em>Atur Jadwal Mengajar</em>, dan penguncian <em>Tujuan Pembelajaran (TP)</em> pada penilaian guru &amp; wali kelas.
@@ -2211,6 +2517,8 @@ export default function WakaKurikulumPanel({
               </div>
             </div>
           )}
+            </div>
+          )}
         </div>
       )}
 
@@ -2355,9 +2663,22 @@ export default function WakaKurikulumPanel({
                           {t.assessedClassesBadges && t.assessedClassesBadges.length > 0 && (
                             <div className="flex flex-wrap gap-1 mt-1">
                               {t.assessedClassesBadges.map((badge: any) => (
-                                <span key={badge.cls} className="px-1.5 py-0.5 bg-emerald-50 text-emerald-800 border border-emerald-200 text-[9.5px] font-extrabold rounded-md">
+                                <button
+                                  key={badge.cls}
+                                  type="button"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setDetailTeacherFilter(getCanonicalTeacherId(t.id));
+                                    setDetailSubjectFilter(normalizeSubject(t.subject));
+                                    setDetailClassFilter(badge.cls);
+                                    setDetailRoleFilter('subject_teacher');
+                                    setActiveTab('detail_nilai');
+                                  }}
+                                  className="px-1.5 py-0.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border border-emerald-200 text-[9.5px] font-extrabold rounded-md cursor-pointer transition-colors"
+                                  title={`Lihat detail nilai Kelas ${badge.cls}`}
+                                >
                                   Kelas {badge.cls}: {badge.count}/{badge.total} siswa
-                                </span>
+                                </button>
                               ))}
                             </div>
                           )}
@@ -2368,16 +2689,22 @@ export default function WakaKurikulumPanel({
                           </span>
                         </td>
                         <td className="py-3 px-4 font-bold text-indigo-600">
-                          {selectedClassFilter !== 'all' ? `Kelas ${selectedClassFilter}` : t.className}
+                          {selectedClassFilter !== 'all' ? (
+                            `Kelas ${selectedClassFilter}`
+                          ) : t.assignedClasses && t.assignedClasses.length > 4 ? (
+                            <span title={t.className}>
+                              {t.assignedClasses.slice(0, 3).join(', ')}{' '}
+                              <span className="text-[10px] text-slate-400 font-semibold">(+{t.assignedClasses.length - 3} kelas)</span>
+                            </span>
+                          ) : (
+                            t.className
+                          )}
                         </td>
                         <td className="py-3 px-4 text-center font-bold">
-                          {selectedClassFilter !== 'all' ? (
-                            <span>{t.assessedCount} / {t.totalStudents} Siswa</span>
-                          ) : (
-                            <span>
-                              {t.assessedCount} Siswa {t.assessedClassesCount > 0 ? `(${t.assessedClassesCount} Rombel)` : ''}
-                            </span>
-                          )}
+                          <span>
+                            {t.assessedCount} / {t.totalStudents} Siswa
+                            {t.assessedClassesCount > 0 && selectedClassFilter === 'all' ? ` (${t.assessedClassesCount} Rombel)` : ''}
+                          </span>
                         </td>
                         <td className="py-3 px-4 w-48">
                           <div className="flex items-center gap-2">
@@ -2411,13 +2738,18 @@ export default function WakaKurikulumPanel({
                           <button
                             type="button"
                             onClick={() => {
-                              setDetailTeacherFilter(t.teacherName);
-                              setDetailSubjectFilter(t.subject);
-                              if (t.className !== 'SEMUA KELAS') setDetailClassFilter(t.className);
+                              setDetailTeacherFilter(getCanonicalTeacherId(t.id));
+                              setDetailSubjectFilter(normalizeSubject(t.subject));
+                              if (selectedClassFilter !== 'all') {
+                                setDetailClassFilter(selectedClassFilter);
+                              } else {
+                                setDetailClassFilter('all');
+                              }
                               setDetailRoleFilter('subject_teacher');
                               setActiveTab('detail_nilai');
                             }}
-                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 mx-auto cursor-pointer"
+                            className="px-2.5 py-1 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200/60 rounded-lg text-[10px] font-extrabold transition-all flex items-center gap-1 mx-auto cursor-pointer shadow-3xs"
+                            title={`Buka rincian nilai ${t.subject} - ${t.teacherName}`}
                           >
                             <Eye size={12} />
                             <span>Detail Nilai</span>
@@ -2571,13 +2903,13 @@ export default function WakaKurikulumPanel({
                       type="button"
                       onClick={() => {
                         setDetailClassFilter(hr.className);
-                        if (hr.teacherName && hr.teacherName !== 'Wali Kelas Lintas Kelas / Pengampu') {
-                          setDetailTeacherFilter(hr.teacherName);
+                        if (hr.hasPrimaryTeacher && hr.id && !hr.id.startsWith('cls-')) {
+                          setDetailTeacherFilter(getCanonicalTeacherId(hr.id));
                         } else {
                           setDetailTeacherFilter('all');
                         }
                         setDetailSubjectFilter('all');
-                        setDetailRoleFilter('all');
+                        setDetailRoleFilter('homeroom');
                         setActiveTab('detail_nilai');
                       }}
                       className="w-full mt-2 py-1.5 bg-violet-50 hover:bg-violet-100 text-violet-700 border border-violet-200/60 rounded-xl text-[10.5px] font-extrabold transition-all flex items-center justify-center gap-1.5 cursor-pointer shadow-2xs"
@@ -2879,7 +3211,7 @@ export default function WakaKurikulumPanel({
                 </select>
               </div>
 
-              {/* Filter Nama Guru */}
+              {/* Filter Nama Guru (Acuan filter menggunakan ID Guru, menampilkan Nama Guru) */}
               <div>
                 <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Guru / Wali</label>
                 <select
@@ -2888,8 +3220,10 @@ export default function WakaKurikulumPanel({
                   className="w-full bg-white border border-slate-200 rounded-xl px-2.5 py-1.5 text-xs font-bold text-slate-800 focus:outline-none focus:border-indigo-600 cursor-pointer"
                 >
                   <option value="all">Semua Guru / Wali</option>
-                  {allTeacherNames.map(name => (
-                    <option key={name} value={name}>{name}</option>
+                  {allTeacherOptions.map(t => (
+                    <option key={t.id} value={t.id}>
+                      {t.name}
+                    </option>
                   ))}
                 </select>
               </div>
@@ -2934,6 +3268,8 @@ export default function WakaKurikulumPanel({
                 >
                   <option value="all">Semua Status</option>
                   <option value="complete">Lengkap (Guru & Wali)</option>
+                  <option value="mapel_filled">Terisi Guru Mapel (TP & UH)</option>
+                  <option value="koku_filled">Terisi Wali (Kokurikuler)</option>
                   <option value="incomplete">Belum Lengkap</option>
                 </select>
               </div>
@@ -3009,7 +3345,60 @@ export default function WakaKurikulumPanel({
                 {detailedAssessmentsList.length === 0 ? (
                   <tr>
                     <td colSpan={8} className="py-12 text-center text-slate-400 font-bold">
-                      Tidak ada data penilaian yang cocok dengan kriteria filter Anda.
+                      <div className="flex flex-col items-center justify-center gap-2.5 max-w-lg mx-auto">
+                        <div className="w-12 h-12 rounded-2xl bg-amber-50 border border-amber-200 flex items-center justify-center text-amber-600 shadow-2xs">
+                          <AlertCircle size={24} />
+                        </div>
+                        <span className="text-slate-800 font-black text-sm">
+                          {detailTeacherFilter !== 'all' && detailSubjectFilter !== 'all'
+                            ? `Belum Ada Nilai Terdata untuk ${detailTeacherFilter}`
+                            : 'Tidak Ada Data Penilaian Sesuai Filter'}
+                        </span>
+                        <p className="text-xs text-slate-500 font-normal leading-relaxed">
+                          {detailTeacherFilter !== 'all' && detailSubjectFilter !== 'all'
+                            ? `Guru ${detailTeacherFilter} belum menginput nilai untuk mata pelajaran ${detailSubjectFilter}${detailClassFilter !== 'all' ? ` di Kelas ${detailClassFilter}` : ''}. Silakan pilih guru lain atau gunakan tombol di bawah untuk meninjau seluruh nilai tersimpan.`
+                            : 'Periksa kembali pilihan guru, kelas, mapel, atau periode semester & tahun ajaran di atas.'}
+                        </p>
+                        <div className="flex items-center gap-2 flex-wrap justify-center pt-2">
+                          {detailTeacherFilter !== 'all' && (
+                            <button
+                              type="button"
+                              onClick={() => setDetailTeacherFilter('all')}
+                              className="px-3 py-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-3xs"
+                            >
+                              <Users size={13} />
+                              <span>Semua Guru {detailSubjectFilter !== 'all' ? `(${detailSubjectFilter})` : ''}</span>
+                            </button>
+                          )}
+                          {detailClassFilter !== 'all' && (
+                            <button
+                              type="button"
+                              onClick={() => setDetailClassFilter('all')}
+                              className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 border border-slate-200 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer"
+                            >
+                              <Filter size={13} />
+                              <span>Semua Kelas</span>
+                            </button>
+                          )}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setDetailRoleFilter('all');
+                              setDetailTeacherFilter('all');
+                              setDetailSubjectFilter('all');
+                              setDetailClassFilter('all');
+                              setDetailSearchQuery('');
+                              setDetailStatusFilter('all');
+                              setSelectedSemester('all');
+                              setSelectedAcademicYear('all');
+                            }}
+                            className="px-3.5 py-1.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer shadow-sm"
+                          >
+                            <RefreshCw size={13} />
+                            <span>Reset Semua Filter</span>
+                          </button>
+                        </div>
+                      </div>
                     </td>
                   </tr>
                 ) : (
@@ -3018,6 +3407,11 @@ export default function WakaKurikulumPanel({
                     const isExpanded = expandedRowId === a.id;
                     const matchedStudent = students.find(s => s.id === a.studentId || s.nis === a.studentId);
                     const hrTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(a.className));
+                    const sched = classSchedules.find(s => 
+                      normClass(s.className) === normClass(a.className) && 
+                      isSameSubject(s.subject, a.subject)
+                    );
+                    const scheduledTeacherName = sched?.teacherName?.trim();
 
                     return (
                       <React.Fragment key={a.id || idx}>
@@ -3037,8 +3431,15 @@ export default function WakaKurikulumPanel({
                           </td>
 
                           <td className="py-3 px-3">
-                            <div className="flex flex-col">
-                              <span className="font-bold text-slate-900">{a.teacherName || 'Guru Mapel'}</span>
+                            <div className="flex flex-col gap-0.5">
+                              <span className="font-bold text-slate-900">
+                                {scheduledTeacherName || a.teacherName || 'Guru Mapel'}
+                              </span>
+                              {a.teacherName && scheduledTeacherName && cleanTeacherName(a.teacherName) !== cleanTeacherName(scheduledTeacherName) && a.teacherName.toLowerCase() !== 'guru mapel' && (
+                                <span className="text-[9px] text-amber-700 font-medium">
+                                  (Akun: {a.teacherName})
+                                </span>
+                              )}
                               {hrTeacher && (
                                 <span className="text-[9.5px] font-semibold text-violet-600">
                                   Wali: {hrTeacher.name}

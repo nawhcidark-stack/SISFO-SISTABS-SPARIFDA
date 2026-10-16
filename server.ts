@@ -2369,6 +2369,27 @@ function applyDataFromMysql(pulledData: any) {
       curriculumTpDescriptions.push(...pulledData.curriculumTpDescriptions);
     }
 
+    if (Array.isArray(pulledData.sharedLearningObjectives) && pulledData.sharedLearningObjectives.length > 0) {
+      const genuineTps = pulledData.sharedLearningObjectives.filter((tp: any) => {
+        const isDummySeed = tp.id && tp.id.startsWith('tp-mapel-') && !tp.id.includes('ganjil') && !tp.id.includes('genap');
+        return !isDummySeed;
+      });
+      sharedLearningObjectives.length = 0;
+      sharedLearningObjectives.push(...genuineTps);
+    }
+
+    // Pastikan seluruh TP asli dari curriculumTpDescriptions selalu tersinkronisasi ke Bank TP Bersama
+    const genuineFromCurriculum = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
+    genuineFromCurriculum.forEach(gtp => {
+      const exists = sharedLearningObjectives.some(existing => 
+        existing.id === gtp.id || 
+        (existing.subjectId === gtp.subjectId && existing.gradeLevel === gtp.gradeLevel && existing.tpNumber === gtp.tpNumber && (existing.semester || '').toLowerCase() === (gtp.semester || '').toLowerCase())
+      );
+      if (!exists) {
+        sharedLearningObjectives.push(gtp);
+      }
+    });
+
     // Authoritative savings balance updates
     applyAuthoritativeSavingsBalances(students);
 
@@ -6403,6 +6424,29 @@ async function startServer() {
       console.warn("[MySQL] Save curriculum_tp error:", err);
     });
 
+    // Otomatis sinkronisasi ke Bank TP Bersama (sharedLearningObjectives) & database MySQL
+    const newSharedTps = generateSeedSharedTps(curriculumSubjects, [tpRecord]);
+    newSharedTps.forEach(nst => {
+      const existIdx = sharedLearningObjectives.findIndex(item =>
+        item.id === nst.id ||
+        (item.subjectId === nst.subjectId && item.gradeLevel === nst.gradeLevel && item.tpNumber === nst.tpNumber && item.semester.toLowerCase() === nst.semester.toLowerCase())
+      );
+      if (existIdx > -1) {
+        sharedLearningObjectives[existIdx] = {
+          ...sharedLearningObjectives[existIdx],
+          title: nst.title,
+          updatedAt: nowIso
+        };
+      } else {
+        sharedLearningObjectives.push(nst);
+      }
+    });
+    if (newSharedTps.length > 0) {
+      directSaveEntitiesBatchToMysql("shared_learning_objectives", newSharedTps).catch(err => {
+        console.warn("[MySQL] Batch sync shared_learning_objectives error:", err);
+      });
+    }
+
     if (!(curriculumConfig as any).tpDescriptions) (curriculumConfig as any).tpDescriptions = {};
     (curriculumConfig as any).tpDescriptions[`tingkat_${gradeLevel}_${cleanSubject.toLowerCase()}`] = tpRecord;
     (curriculumConfig as any).tpDescriptions[cleanSubject.toLowerCase()] = tpRecord;
@@ -6478,6 +6522,20 @@ async function startServer() {
 
   // 1. GET: Ambil daftar Bank TP Bersama dengan filter & search
   app.get("/api/curriculum/shared-tps", (req, res) => {
+    // Sinkronisasi otomatis jika ada TP kurikulum guru yang belum ada di Bank TP Bersama
+    if (curriculumTpDescriptions.length > 0) {
+      const genuineFromCurriculum = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
+      genuineFromCurriculum.forEach(gtp => {
+        const exists = sharedLearningObjectives.some(existing => 
+          existing.id === gtp.id || 
+          (existing.subjectId === gtp.subjectId && existing.gradeLevel === gtp.gradeLevel && existing.tpNumber === gtp.tpNumber && (existing.semester || '').toLowerCase() === (gtp.semester || '').toLowerCase())
+        );
+        if (!exists) {
+          sharedLearningObjectives.push(gtp);
+        }
+      });
+    }
+
     const { subjectId, subject, gradeLevel, className, semester, academicYear, status, search } = req.query;
     let list = [...sharedLearningObjectives];
 
@@ -6621,6 +6679,9 @@ async function startServer() {
     };
 
     sharedLearningObjectives.push(newTp);
+    directSaveEntityToMysql("shared_learning_objective", newTp).catch(err => {
+      console.warn("[MySQL] Direct save shared TP error:", err);
+    });
     saveState();
 
     res.json({
@@ -6662,6 +6723,9 @@ async function startServer() {
     if (academicYear) target.academicYear = academicYear;
     target.updatedAt = new Date().toISOString();
 
+    directSaveEntityToMysql("shared_learning_objective", target).catch(err => {
+      console.warn("[MySQL] Direct update shared TP error:", err);
+    });
     saveState();
 
     res.json({
@@ -6686,6 +6750,9 @@ async function startServer() {
     }
 
     const deleted = sharedLearningObjectives.splice(idx, 1)[0];
+    directDeleteEntityFromMysql("shared_learning_objective", id).catch(err => {
+      console.warn("[MySQL] Direct delete shared TP error:", err);
+    });
     saveState();
 
     res.json({
@@ -6721,6 +6788,9 @@ async function startServer() {
     });
     target.updatedAt = new Date().toISOString();
 
+    directSaveEntityToMysql("shared_learning_objective", target).catch(err => {
+      console.warn("[MySQL] Direct save revision request shared TP error:", err);
+    });
     saveState();
 
     res.json({
@@ -6751,6 +6821,9 @@ async function startServer() {
     }
     target.updatedAt = new Date().toISOString();
 
+    directSaveEntityToMysql("shared_learning_objective", target).catch(err => {
+      console.warn("[MySQL] Direct save resolve revision shared TP error:", err);
+    });
     saveState();
 
     res.json({
@@ -6765,6 +6838,9 @@ async function startServer() {
     const seeded = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
     sharedLearningObjectives.length = 0;
     sharedLearningObjectives.push(...seeded);
+    directSaveEntitiesBatchToMysql("shared_learning_objectives", seeded).catch(err => {
+      console.warn("[MySQL] Direct batch save reset shared TPs error:", err);
+    });
     saveState();
 
     res.json({

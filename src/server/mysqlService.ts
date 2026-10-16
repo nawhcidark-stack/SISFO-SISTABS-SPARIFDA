@@ -176,7 +176,30 @@ export async function saveConfigToMysql(configId: string, data: any, overrideCon
   try {
     connection = await pool.getConnection();
     await connection.query(`
-      CREATE TABLE IF NOT EXISTS \`app_configs\` (
+      CREATE TABLE IF NOT EXISTS \`shared_learning_objectives\` (
+  \`id\` VARCHAR(120) NOT NULL,
+  \`code\` VARCHAR(64) NOT NULL,
+  \`subject_id\` VARCHAR(64) NOT NULL,
+  \`subject_name\` VARCHAR(150) NOT NULL,
+  \`grade_level\` VARCHAR(16) NOT NULL,
+  \`semester\` VARCHAR(16) NOT NULL,
+  \`academic_year\` VARCHAR(32) NOT NULL,
+  \`tp_number\` INT DEFAULT 1,
+  \`title\` TEXT NOT NULL,
+  \`creator_id\` VARCHAR(64) DEFAULT NULL,
+  \`creator_name\` VARCHAR(150) DEFAULT NULL,
+  \`creator_role\` VARCHAR(100) DEFAULT NULL,
+  \`status\` VARCHAR(32) DEFAULT "Aktif",
+  \`revision_requests\` LONGTEXT DEFAULT NULL,
+  \`created_at\` VARCHAR(64) DEFAULT NULL,
+  \`updated_at\` VARCHAR(64) DEFAULT NULL,
+  PRIMARY KEY (\`id\`),
+  KEY \`idx_slo_subject\` (\`subject_id\`),
+  KEY \`idx_slo_grade\` (\`grade_level\`),
+  KEY \`idx_slo_sem\` (\`semester\`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+CREATE TABLE IF NOT EXISTS \`app_configs\` (
         \`id\` VARCHAR(64) NOT NULL,
         \`data\` LONGTEXT NOT NULL,
         \`updated_at\` TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
@@ -2421,6 +2444,30 @@ export async function pullDataFromMysql(): Promise<{
       counts.curriculumTpDescriptions = resultData.curriculumTpDescriptions.length;
     }
 
+    // 28B. Shared Learning Objectives (Bank TP Bersama)
+    if (hasTable("shared_learning_objectives")) {
+      const [rows]: any = await connection.query("SELECT * FROM \`shared_learning_objectives\`");
+      resultData.sharedLearningObjectives = rows.map((r: any) => ({
+        id: r.id,
+        code: r.code,
+        subjectId: r.subject_id,
+        subjectName: r.subject_name,
+        gradeLevel: String(r.grade_level || "7"),
+        semester: r.semester || "Ganjil",
+        academicYear: r.academic_year || "2026/2027",
+        tpNumber: Number(r.tp_number) || 1,
+        title: r.title || "",
+        creatorId: r.creator_id || undefined,
+        creatorName: r.creator_name || "Admin Kurikulum",
+        creatorRole: r.creator_role || "Admin / Guru Pengampu",
+        status: r.status || "Aktif",
+        revisionRequests: r.revision_requests ? (() => { try { return JSON.parse(r.revision_requests); } catch (_) { return []; } })() : [],
+        createdAt: r.created_at || new Date().toISOString(),
+        updatedAt: r.updated_at || new Date().toISOString()
+      }));
+      counts.sharedLearningObjectives = resultData.sharedLearningObjectives.length;
+    }
+
     // 29. App Configs
     if (hasTable('app_configs')) {
       const [rows]: any = await connection.query('SELECT * FROM `app_configs`');
@@ -2722,7 +2769,7 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
 
     // Seed default master data mata pelajaran hanya sekali saat inisialisasi awal database pertama kali
     try {
-      const [initFlag]: any = await connection.query("SELECT `config_value` FROM `app_configs` WHERE `config_key` = 'curriculum_subjects_seeded'");
+      const [initFlag]: any = await connection.query("SELECT `id` FROM `app_configs` WHERE `id` = 'curriculum_subjects_seeded'");
       const hasBeenSeeded = initFlag && initFlag.length > 0;
       if (!hasBeenSeeded) {
         const [existingSubjects]: any = await connection.query("SELECT COUNT(*) as cnt FROM `curriculum_subjects`");
@@ -2751,7 +2798,7 @@ export async function ensureAllMysqlTablesExist(): Promise<{ success: boolean; m
           console.log('[MySQL] Master data mata pelajaran default berhasil di-seed.');
         }
         await connection.query(
-          "INSERT INTO `app_configs` (`config_key`, `config_value`, `updated_at`) VALUES ('curriculum_subjects_seeded', 'true', NOW()) ON DUPLICATE KEY UPDATE `updated_at`=NOW()"
+          "INSERT INTO `app_configs` (`id`, `data`, `updated_at`) VALUES ('curriculum_subjects_seeded', 'true', NOW()) ON DUPLICATE KEY UPDATE `updated_at`=NOW()"
         );
       }
     } catch (seedErr) {
@@ -3446,6 +3493,34 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     }
 
     // 14. Sarpras Items
+    else if (typeKey === 'shared_learning_objective' || typeKey === 'shared_learning_objectives' || typeKey === 'sharedlearningobjective' || typeKey === 'sharedlearningobjectives' || typeKey === 'shared_tp' || typeKey === 'shared_tps') {
+      const slo = data;
+      await connection.query(`
+        INSERT INTO \`shared_learning_objectives\` (
+          \`id\`, \`code\`, \`subject_id\`, \`subject_name\`, \`grade_level\`, \`semester\`, \`academic_year\`,
+          \`tp_number\`, \`title\`, \`creator_id\`, \`creator_name\`, \`creator_role\`, \`status\`,
+          \`revision_requests\`, \`created_at\`, \`updated_at\`
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON DUPLICATE KEY UPDATE
+          \`code\`=VALUES(\`code\`), \`subject_id\`=VALUES(\`subject_id\`), \`subject_name\`=VALUES(\`subject_name\`),
+          \`grade_level\`=VALUES(\`grade_level\`), \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+          \`tp_number\`=VALUES(\`tp_number\`), \`title\`=VALUES(\`title\`), \`creator_id\`=VALUES(\`creator_id\`),
+          \`creator_name\`=VALUES(\`creator_name\`), \`creator_role\`=VALUES(\`creator_role\`), \`status\`=VALUES(\`status\`),
+          \`revision_requests\`=VALUES(\`revision_requests\`), \`updated_at\`=VALUES(\`updated_at\`)
+      `, [
+        slo.id, slo.code || '', slo.subjectId || '', slo.subjectName || '',
+        String(slo.gradeLevel || '7'), slo.semester || 'Ganjil', slo.academicYear || '2026/2027',
+        Number(slo.tpNumber) || 1, slo.title || '', slo.creatorId || null,
+        slo.creatorName || 'Admin Kurikulum', slo.creatorRole || 'Admin / Guru Pengampu',
+        slo.status || 'Aktif',
+        slo.revisionRequests ? JSON.stringify(slo.revisionRequests) : null,
+        slo.createdAt || new Date().toISOString(),
+        slo.updatedAt || new Date().toISOString()
+      ]);
+      return { success: true, message: "TP Bersama [" + slo.code + "] langsung tersimpan ke MySQL." };
+    }
+
+    // 14. Sarpras Items
     else if (typeKey === 'sarpras_item' || typeKey === 'sarprasitems') {
       const s = data;
       await connection.query(`
@@ -3629,6 +3704,45 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
             \`status\`=VALUES(\`status\`),
             \`notes\`=VALUES(\`notes\`),
             \`subject_notes\`=VALUES(\`subject_notes\`)
+        `, values);
+        savedCount += chunk.length;
+      }
+      return { success: true, count: savedCount };
+    }
+
+    // High performance chunked multi-row batch insert for Shared Learning Objectives (Bank TP Bersama)
+    if (typeKey === 'shared_learning_objectives' || typeKey === 'shared_learning_objective' || typeKey === 'sharedlearningobjectives' || typeKey === 'sharedtps') {
+      const validItems = items.filter(it => it && typeof it === 'object' && it.id);
+      const chunkSize = 50;
+      for (let i = 0; i < validItems.length; i += chunkSize) {
+        const chunk = validItems.slice(i, i + chunkSize);
+        const placeholders: string[] = [];
+        const values: any[] = [];
+        for (const t of chunk) {
+          placeholders.push('(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)');
+          values.push(
+            t.id, t.code || '', t.subjectId || '', t.subjectName || '',
+            String(t.gradeLevel || '7'), t.semester || 'Ganjil', t.academicYear || '2026/2027',
+            Number(t.tpNumber) || 1, t.title || '', t.creatorId || null,
+            t.creatorName || 'Admin Kurikulum', t.creatorRole || 'Admin / Guru Pengampu',
+            t.status || 'Aktif',
+            t.revisionRequests ? JSON.stringify(t.revisionRequests) : null,
+            t.createdAt || new Date().toISOString(),
+            t.updatedAt || new Date().toISOString()
+          );
+        }
+        await connection.query(`
+          INSERT INTO \`shared_learning_objectives\` (
+            \`id\`, \`code\`, \`subject_id\`, \`subject_name\`, \`grade_level\`, \`semester\`, \`academic_year\`,
+            \`tp_number\`, \`title\`, \`creator_id\`, \`creator_name\`, \`creator_role\`, \`status\`,
+            \`revision_requests\`, \`created_at\`, \`updated_at\`
+          ) VALUES ${placeholders.join(', ')}
+          ON DUPLICATE KEY UPDATE
+            \`code\`=VALUES(\`code\`), \`subject_id\`=VALUES(\`subject_id\`), \`subject_name\`=VALUES(\`subject_name\`),
+            \`grade_level\`=VALUES(\`grade_level\`), \`semester\`=VALUES(\`semester\`), \`academic_year\`=VALUES(\`academic_year\`),
+            \`tp_number\`=VALUES(\`tp_number\`), \`title\`=VALUES(\`title\`), \`creator_id\`=VALUES(\`creator_id\`),
+            \`creator_name\`=VALUES(\`creator_name\`), \`creator_role\`=VALUES(\`creator_role\`), \`status\`=VALUES(\`status\`),
+            \`revision_requests\`=VALUES(\`revision_requests\`), \`updated_at\`=VALUES(\`updated_at\`)
         `, values);
         savedCount += chunk.length;
       }
@@ -4053,6 +4167,12 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
       curriculum_tp_levels: 'curriculum_tp_levels',
       curriculumtp: 'curriculum_tp_levels',
       curriculum_tp_level: 'curriculum_tp_levels',
+      shared_learning_objective: 'shared_learning_objectives',
+      shared_learning_objectives: 'shared_learning_objectives',
+      sharedlearningobjective: 'shared_learning_objectives',
+      sharedlearningobjectives: 'shared_learning_objectives',
+      shared_tp: 'shared_learning_objectives',
+      shared_tps: 'shared_learning_objectives',
       notification: 'notifications',
       notifications: 'notifications',
       config: 'app_configs'

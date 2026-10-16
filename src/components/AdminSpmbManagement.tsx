@@ -14,7 +14,8 @@ import {
   printRefundReceiptDirect, 
   generateAuthenticPasPhotoSvgDataUrl, 
   calculateReRegDetails,
-  formatReceiptPaymentMethod
+  formatReceiptPaymentMethod,
+  classifySchoolOrigin
 } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
@@ -678,7 +679,7 @@ export default function AdminSpmbManagement({
       phone: candidate.phone || candidate.fatherPhone || candidate.motherPhone || '',
       studentPhone: candidate.studentPhone || '',
       schoolOrigin: candidate.schoolOrigin || '',
-      schoolOriginType: (candidate.schoolOriginType as any) || 'maarif',
+      schoolOriginType: classifySchoolOrigin(candidate.schoolOrigin, candidate.schoolOriginType).type,
       registrationType: candidate.registrationType || 'school_collective',
       sessionId: candidate.sessionId || 'inden',
       address: candidate.address || '',
@@ -960,11 +961,13 @@ export default function AdminSpmbManagement({
     }
     const matchesGender = filterGender === 'all' || c.gender === filterGender;
 
-    const isMaarif = c.schoolOriginType === 'maarif_jogosari' || (c.schoolOrigin || '').toLowerCase().includes('maarif');
+    const schoolClass = classifySchoolOrigin(c.schoolOrigin, c.schoolOriginType);
     const matchesSchoolOrigin = 
       filterSchoolOrigin === 'all' ||
-      (filterSchoolOrigin === 'maarif' && isMaarif) ||
-      (filterSchoolOrigin === 'other' && !isMaarif);
+      (filterSchoolOrigin === 'maarif' && schoolClass.isLpMaarif) ||
+      (filterSchoolOrigin === 'maarif_jogosari' && schoolClass.isJogosari) ||
+      (filterSchoolOrigin === 'lp_maarif' && schoolClass.isLpMaarif && !schoolClass.isJogosari) ||
+      (filterSchoolOrigin === 'other' && !schoolClass.isLpMaarif);
 
     let matchesCollective = true;
     if (filterCollective === 'online_individual') {
@@ -1045,9 +1048,14 @@ export default function AdminSpmbManagement({
   const malePercent = totalRegistered > 0 ? Math.round((maleCount / totalRegistered) * 100) : 0;
   const femalePercent = totalRegistered > 0 ? Math.round((femaleCount / totalRegistered) * 100) : 0;
 
-  // 2. School Origin Statistics (SD Maarif vs SD Umum)
-  const maarifCount = candidates.filter(c => c.schoolOriginType === 'maarif_jogosari' || (c.schoolOrigin || '').toLowerCase().includes('maarif')).length;
-  const umumCount = candidates.filter(c => !(c.schoolOriginType === 'maarif_jogosari' || (c.schoolOrigin || '').toLowerCase().includes('maarif'))).length;
+  // 2. School Origin Statistics (SD Maarif Jogosari vs SD/MI LP. Maarif vs SD Umum)
+  const jogosariCount = candidates.filter(c => classifySchoolOrigin(c.schoolOrigin, c.schoolOriginType).isJogosari).length;
+  const lpMaarifOnlyCount = candidates.filter(c => {
+    const sc = classifySchoolOrigin(c.schoolOrigin, c.schoolOriginType);
+    return sc.isLpMaarif && !sc.isJogosari;
+  }).length;
+  const maarifCount = candidates.filter(c => classifySchoolOrigin(c.schoolOrigin, c.schoolOriginType).isLpMaarif).length;
+  const umumCount = candidates.filter(c => !classifySchoolOrigin(c.schoolOrigin, c.schoolOriginType).isLpMaarif).length;
   const maarifPercent = totalRegistered > 0 ? Math.round((maarifCount / totalRegistered) * 100) : 0;
   const umumPercent = totalRegistered > 0 ? Math.round((umumCount / totalRegistered) * 100) : 0;
 
@@ -1599,9 +1607,10 @@ export default function AdminSpmbManagement({
                 onChange={(e) => setFilterSchoolOrigin(e.target.value as any)}
                 className="px-3 py-2 bg-slate-50 border border-slate-300 rounded-xl text-xs text-slate-900 font-bold focus:outline-none focus:ring-2 focus:ring-emerald-500"
               >
-                <option value="all">Semua Asal SD</option>
-                <option value="maarif">✨ SD Ma'arif ({maarifCount})</option>
-                <option value="other">SD Umum / Luar ({umumCount})</option>
+                <option value="all">Semua Asal SD ({candidates.length})</option>
+                <option value="maarif_jogosari">🌟 SD Ma'arif Jogosari ({jogosariCount})</option>
+                <option value="lp_maarif">🏫 SD/MI LP. Ma'arif ({lpMaarifOnlyCount})</option>
+                <option value="other">🏢 SD Umum / Luar ({umumCount})</option>
               </select>
 
               {/* Filter Jenis Kelamin */}
@@ -1844,7 +1853,7 @@ export default function AdminSpmbManagement({
                       const isTokenPending = candidate.tokenPaymentStatus === 'pending';
                       const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
                       const isRefunded = candidate.collectiveRefundStatus === 'refunded';
-                      const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF');
+                      const schoolClass = classifySchoolOrigin(candidate.schoolOrigin, candidate.schoolOriginType);
 
                       const isRealDoc = (val?: string) => Boolean(val && typeof val === 'string' && val.trim().length > 0 && !val.endsWith('.svg') && !val.includes('unsplash.com'));
                       const hasFoto = isRealDoc(candidate.documents?.pasPhoto || candidate.fullFormData?.documents?.pasPhoto);
@@ -1887,14 +1896,27 @@ export default function AdminSpmbManagement({
                                   <span>{candidate.phone || '-'}</span>
                                 </div>
                                 <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                                  {isMaarif ? (
-                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black">
-                                      <Sparkles size={10} className="text-emerald-700" />
-                                      <span>SD Ma'arif Jogosari</span>
+                                  {schoolClass.isJogosari ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 border border-emerald-300 text-[10px] font-black shadow-2xs">
+                                      <Sparkles size={10} className="text-emerald-700 shrink-0" />
+                                      <span>{schoolClass.displayName}</span>
+                                      <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 rounded-sm font-bold">Jogosari</span>
+                                    </span>
+                                  ) : schoolClass.isLpMaarif ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 text-sky-950 border border-sky-300 text-[10px] font-black shadow-2xs">
+                                      <Building2 size={10} className="text-sky-700 shrink-0" />
+                                      <span>{schoolClass.displayName}</span>
+                                      <span className="text-[9px] bg-sky-200 text-sky-900 px-1 rounded-sm font-bold">LP. Ma'arif</span>
+                                    </span>
+                                  ) : schoolClass.isAlumni ? (
+                                    <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-black shadow-2xs">
+                                      <Award size={10} className="text-amber-700 shrink-0" />
+                                      <span>{schoolClass.displayName}</span>
+                                      <span className="text-[9px] bg-amber-200 text-amber-900 px-1 rounded-sm font-bold">Alumni</span>
                                     </span>
                                   ) : (
                                     <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200">
-                                      {candidate.schoolOrigin || 'SD Umum'}
+                                      {schoolClass.displayName || 'SD Umum'}
                                     </span>
                                   )}
                                 </div>
@@ -2286,7 +2308,7 @@ export default function AdminSpmbManagement({
                       const isTokenPending = candidate.tokenPaymentStatus === 'pending';
                       const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
                       const isRefunded = candidate.collectiveRefundStatus === 'refunded';
-                      const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF');
+                      const schoolClass = classifySchoolOrigin(candidate.schoolOrigin, candidate.schoolOriginType);
 
                       return (
                         <tr key={candidate.id} className="hover:bg-slate-50/80 transition-colors">
@@ -2323,13 +2345,26 @@ export default function AdminSpmbManagement({
                           <td className="py-3.5 px-4">
                             <span className="font-mono text-slate-900 font-bold">{candidate.nisn}</span>
                             <div className="mt-0.5 flex items-center gap-1.5 flex-wrap">
-                              {isMaarif ? (
-                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black">
-                                  <Sparkles size={10} className="text-emerald-700" />
-                                  <span>SD Ma'arif</span>
+                              {schoolClass.isJogosari ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 border border-emerald-300 text-[10px] font-black">
+                                  <Sparkles size={10} className="text-emerald-700 shrink-0" />
+                                  <span>{schoolClass.displayName}</span>
+                                  <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 rounded-xs font-bold">Jogosari</span>
+                                </span>
+                              ) : schoolClass.isLpMaarif ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 text-sky-950 border border-sky-300 text-[10px] font-black">
+                                  <Building2 size={10} className="text-sky-700 shrink-0" />
+                                  <span>{schoolClass.displayName}</span>
+                                  <span className="text-[9px] bg-sky-200 text-sky-900 px-1 rounded-xs font-bold">LP. Ma'arif</span>
+                                </span>
+                              ) : schoolClass.isAlumni ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-black">
+                                  <Award size={10} className="text-amber-700 shrink-0" />
+                                  <span>{schoolClass.displayName}</span>
+                                  <span className="text-[9px] bg-amber-200 text-amber-900 px-1 rounded-xs font-bold">Alumni</span>
                                 </span>
                               ) : (
-                                <span className="text-[11px] text-slate-600 font-medium">{candidate.schoolOrigin || 'SD Lainnya'}</span>
+                                <span className="text-[11px] text-slate-700 font-semibold">{schoolClass.displayName || 'SD Lainnya'}</span>
                               )}
                             </div>
                           </td>
@@ -2625,8 +2660,7 @@ export default function AdminSpmbManagement({
                 const isCollective = candidate.registrationType === 'school_collective';
                 const isTokenPending = candidate.tokenPaymentStatus === 'pending';
                 const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
-                const isRefunded = candidate.collectiveRefundStatus === 'refunded';
-                const isMaarif = candidate.schoolOriginType === 'maarif_jogosari' || (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF');
+                const schoolClass = classifySchoolOrigin(candidate.schoolOrigin, candidate.schoolOriginType);
 
                 return (
                   <div key={candidate.id} className="bg-white border border-slate-200 rounded-3xl p-4 shadow-xs hover:border-emerald-300 transition-all flex flex-col justify-between gap-3">
@@ -2677,14 +2711,27 @@ export default function AdminSpmbManagement({
                             NISN: <span className="font-bold text-emerald-800">{candidate.nisn}</span> • {candidate.gender === 'P' || (candidate.gender as string) === 'female' ? 'Perempuan' : 'Laki-laki'}
                           </p>
                           <div className="mt-1 flex items-center gap-1.5 flex-wrap">
-                            {isMaarif ? (
-                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-900 border border-emerald-300 text-[10px] font-black">
-                                <Sparkles size={10} className="text-emerald-700" />
-                                <span>SD Ma'arif</span>
+                            {schoolClass.isJogosari ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-950 border border-emerald-300 text-[10px] font-black truncate max-w-[220px]">
+                                <Sparkles size={10} className="text-emerald-700 shrink-0" />
+                                <span className="truncate">{schoolClass.displayName}</span>
+                                <span className="text-[9px] bg-emerald-200 text-emerald-900 px-1 rounded-xs font-bold shrink-0">Jogosari</span>
+                              </span>
+                            ) : schoolClass.isLpMaarif ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-100 text-sky-950 border border-sky-300 text-[10px] font-black truncate max-w-[220px]">
+                                <Building2 size={10} className="text-sky-700 shrink-0" />
+                                <span className="truncate">{schoolClass.displayName}</span>
+                                <span className="text-[9px] bg-sky-200 text-sky-900 px-1 rounded-xs font-bold shrink-0">LP. Ma'arif</span>
+                              </span>
+                            ) : schoolClass.isAlumni ? (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-950 border border-amber-300 text-[10px] font-black truncate max-w-[220px]">
+                                <Award size={10} className="text-amber-700 shrink-0" />
+                                <span className="truncate">{schoolClass.displayName}</span>
+                                <span className="text-[9px] bg-amber-200 text-amber-900 px-1 rounded-xs font-bold shrink-0">Alumni</span>
                               </span>
                             ) : (
                               <span className="text-[10px] text-slate-600 font-medium bg-slate-100 px-2 py-0.5 rounded-full border border-slate-200 truncate max-w-[180px]">
-                                {candidate.schoolOrigin || 'SD Lainnya'}
+                                {schoolClass.displayName || 'SD Lainnya'}
                               </span>
                             )}
                             <span className="text-[10px] font-bold uppercase bg-slate-100 text-slate-700 px-2 py-0.5 rounded-full border border-slate-300">
@@ -5655,8 +5702,16 @@ export default function AdminSpmbManagement({
                     <input
                       type="text"
                       value={editInitialForm.schoolOrigin}
-                      onChange={e => setEditInitialForm(prev => ({ ...prev, schoolOrigin: e.target.value.toUpperCase() }))}
-                      placeholder="Contoh: SD MAARIF JOGOSARI"
+                      onChange={e => {
+                        const val = e.target.value.toUpperCase();
+                        const cls = classifySchoolOrigin(val, editInitialForm.schoolOriginType);
+                        setEditInitialForm(prev => ({ 
+                          ...prev, 
+                          schoolOrigin: val,
+                          schoolOriginType: cls.type
+                        }));
+                      }}
+                      placeholder="Contoh: SD MAARIF JOGOSARI atau SD MAARIF RIYADUL ARKHAM"
                       className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden"
                     />
                   </div>
@@ -5665,13 +5720,64 @@ export default function AdminSpmbManagement({
                     <label className="text-slate-300 font-bold block">Kategori Sekolah Asal</label>
                     <select
                       value={editInitialForm.schoolOriginType}
-                      onChange={e => setEditInitialForm(prev => ({ ...prev, schoolOriginType: e.target.value as any }))}
+                      onChange={e => {
+                        const newType = e.target.value;
+                        setEditInitialForm(prev => {
+                          let newSchoolName = prev.schoolOrigin;
+                          if (newType === 'maarif_jogosari' && (!newSchoolName || !newSchoolName.includes('JOGOSARI'))) {
+                            newSchoolName = (config?.maarifSchoolName || 'SD MAARIF JOGOSARI').toUpperCase();
+                          }
+                          return {
+                            ...prev,
+                            schoolOriginType: newType as any,
+                            schoolOrigin: newSchoolName
+                          };
+                        });
+                      }}
                       className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-bold focus:border-amber-400 focus:outline-hidden cursor-pointer"
                     >
-                      <option value="maarif">LP. Ma'arif NU (Diskon Gedung Rp 0)</option>
-                      <option value="other">Sekolah Lain (SD/MI Negeri/Swasta Luar)</option>
-                      <option value="alumni">Keluarga Alumni Ma'arif</option>
+                      <option value="maarif_jogosari">🌟 SD Ma'arif Jogosari (Diskon Uang Gedung & Seragam)</option>
+                      <option value="lp_maarif">🏫 SD/MI LP. Ma'arif (Bonus Seragam Olahraga Inden)</option>
+                      <option value="other">🏢 Sekolah Lain (SD/MI Negeri/Swasta Luar)</option>
+                      <option value="alumni">🎖️ Keluarga Alumni Ma'arif</option>
                     </select>
+                  </div>
+
+                  {/* Info Badge Preview Berdasarkan Kata Kunci */}
+                  <div className="sm:col-span-2 p-3 rounded-xl border border-slate-700/80 bg-slate-900/90 text-xs">
+                    {(() => {
+                      const cls = classifySchoolOrigin(editInitialForm.schoolOrigin, editInitialForm.schoolOriginType);
+                      if (cls.isJogosari) {
+                        return (
+                          <div className="flex items-center gap-2 text-emerald-400 font-bold">
+                            <Sparkles size={16} className="text-emerald-400 shrink-0" />
+                            <span>Terdeteksi <strong>SD Ma'arif Jogosari</strong>: Mendapatkan Potongan Khusus Uang Gedung & Diskon Seragam SD Maarif Jogosari.</span>
+                          </div>
+                        );
+                      }
+                      if (cls.isLpMaarif) {
+                        return (
+                          <div className="flex items-center gap-2 text-sky-400 font-bold">
+                            <Building2 size={16} className="text-sky-400 shrink-0" />
+                            <span>Terdeteksi <strong>SD/MI LP. Ma'arif NU</strong> ({cls.displayName}): Berhak atas <strong>Bonus 1 Set Seragam Olahraga</strong> pada Sesi Inden. Tidak dikenakan diskon khusus Jogosari.</span>
+                          </div>
+                        );
+                      }
+                      if (cls.isAlumni) {
+                        return (
+                          <div className="flex items-center gap-2 text-amber-400 font-bold">
+                            <Award size={16} className="text-amber-400 shrink-0" />
+                            <span>Kategori: <strong>Keluarga Alumni Ma'arif</strong>.</span>
+                          </div>
+                        );
+                      }
+                      return (
+                        <div className="flex items-center gap-2 text-slate-400 font-medium">
+                          <Building2 size={16} className="text-slate-500 shrink-0" />
+                          <span>Kategori: <strong>SD Lainnya / Umum</strong> (Tarif dan diskon standar gelombang).</span>
+                        </div>
+                      );
+                    })()}
                   </div>
 
                   <div className="space-y-1">

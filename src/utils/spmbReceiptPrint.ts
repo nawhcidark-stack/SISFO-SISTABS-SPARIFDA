@@ -29,6 +29,78 @@ export function angkaKeTerbilang(nilai: number): string {
   return convert(Math.floor(nilai)).replace(/\s+/g, ' ').trim() + ' Rupiah';
 }
 
+export type SchoolOriginCategory = 'maarif_jogosari' | 'lp_maarif' | 'other' | 'alumni';
+
+/**
+ * Klasifikasi Asal Sekolah SPMB sesuai instruksi:
+ * 1. Gunakan kata kunci "Maarif Jogosari" jika berasal dari SD Maarif Jogosari (maarif_jogosari)
+ * 2. Jika dari SD/MI LP. Maarif gunakan kata kunci "Maarif" atau "Ma'arif" (lp_maarif)
+ * 3. Sekolah lain (other)
+ */
+export function classifySchoolOrigin(schoolOrigin?: string, explicitType?: string): {
+  type: SchoolOriginCategory;
+  isJogosari: boolean;
+  isLpMaarif: boolean;
+  isAlumni: boolean;
+  displayName: string;
+  categoryTag: string;
+} {
+  const normSchool = (schoolOrigin || '').toUpperCase().replace(/['’`]/g, '');
+  const normType = (explicitType || '').toUpperCase().replace(/['’`]/g, '');
+
+  if (explicitType === 'alumni' || normType === 'ALUMNI') {
+    return {
+      type: 'alumni',
+      isJogosari: false,
+      isLpMaarif: false,
+      isAlumni: true,
+      displayName: schoolOrigin && schoolOrigin.trim().length > 0 ? schoolOrigin.trim() : 'Alumni Ma\'arif',
+      categoryTag: 'Alumni'
+    };
+  }
+
+  // 1. Penentuan asal SD Maarif Jogosari: kata kunci "Maarif Jogosari"
+  const isJogosari = normSchool.includes('MAARIF JOGOSARI') || 
+    (!normSchool && normType.includes('MAARIF_JOGOSARI'));
+
+  if (isJogosari) {
+    return {
+      type: 'maarif_jogosari',
+      isJogosari: true,
+      isLpMaarif: true,
+      isAlumni: false,
+      displayName: schoolOrigin && schoolOrigin.trim().length > 0 ? schoolOrigin.trim() : 'SD Ma\'arif Jogosari',
+      categoryTag: 'Afiliasi Jogosari'
+    };
+  }
+
+  // 2. Penentuan asal SD/MI LP. Maarif: kata kunci "Maarif" atau "Ma'arif"
+  const isLpMaarif = normSchool.includes('MAARIF') || 
+    normType.includes('LP_MAARIF') || 
+    normType === 'MAARIF';
+
+  if (isLpMaarif) {
+    return {
+      type: 'lp_maarif',
+      isJogosari: false,
+      isLpMaarif: true,
+      isAlumni: false,
+      displayName: schoolOrigin && schoolOrigin.trim().length > 0 ? schoolOrigin.trim() : 'SD/MI LP. Ma\'arif',
+      categoryTag: 'LP. Ma\'arif'
+    };
+  }
+
+  // 3. Sekolah Lain (SD/MI Negeri/Swasta Luar)
+  return {
+    type: 'other',
+    isJogosari: false,
+    isLpMaarif: false,
+    isAlumni: false,
+    displayName: schoolOrigin && schoolOrigin.trim().length > 0 ? schoolOrigin.trim() : 'SD Lainnya (Umum)',
+    categoryTag: 'SD Umum'
+  };
+}
+
 /**
  * Menghitung rincian biaya pendaftaran ulang dan seragam
  */
@@ -83,14 +155,9 @@ export function calculateReRegDetails(
     : [];
   const rawUniformTotal = uniformItems.reduce((sum, item) => sum + item.price, 0);
 
-  const isLpMaarif = candidate.schoolOriginType === 'maarif_jogosari' || 
-    candidate.schoolOriginType === 'lp_maarif' ||
-    (candidate.schoolOrigin && (candidate.schoolOrigin.toUpperCase().includes('MAARIF') || candidate.schoolOrigin.toUpperCase().includes("MA'ARIF"))) ||
-    (candidate.schoolOriginType && (candidate.schoolOriginType.toUpperCase().includes('MAARIF') || candidate.schoolOriginType.toUpperCase().includes("MA'ARIF")));
-
-  const isJogosari = candidate.schoolOriginType === 'maarif_jogosari' || 
-    (candidate.schoolOrigin && candidate.schoolOrigin.toUpperCase().includes('MAARIF JOGOSARI')) ||
-    (candidate.schoolOriginType && candidate.schoolOriginType.toUpperCase().includes('MAARIF JOGOSARI'));
+  const schoolInfo = classifySchoolOrigin(candidate.schoolOrigin, candidate.schoolOriginType);
+  const isLpMaarif = schoolInfo.isLpMaarif;
+  const isJogosari = schoolInfo.isJogosari;
 
   // Diskon Gelombang Uang Gedung
   const session = config?.sessions?.find(s => s.id === candidate.sessionId);
@@ -834,7 +901,7 @@ export async function generateReRegReceiptHtml(
               <td class="col-colon">:</td>
               <td class="col-value">
                 <strong>${details.sessionName}</strong>
-                ${candidate.schoolOriginType === 'maarif_jogosari' ? '<span class="badge-tag">Khusus SD Maarif Jogosari</span>' : ''}
+                ${details.isJogosari ? '<span class="badge-tag">Khusus SD Maarif Jogosari</span>' : details.isMaarif ? '<span class="badge-tag" style="background:#e0f2fe;color:#0369a1;">LP. Ma\'arif</span>' : ''}
               </td>
             </tr>
             <tr>
@@ -1359,7 +1426,12 @@ export async function generateRegistrationProofHtml(
                   <tr>
                     <td class="col-label">Asal Sekolah (SD/MI)</td>
                     <td class="col-colon">:</td>
-                    <td class="col-value"><strong>${candidate.schoolOrigin || '-'}</strong> ${candidate.schoolOriginType === 'maarif_jogosari' ? '<span class="badge-tag">Khusus Maarif Jogosari</span>' : ''}</td>
+                    <td class="col-value"><strong>${candidate.schoolOrigin || '-'}</strong> ${(() => {
+                      const info = classifySchoolOrigin(candidate.schoolOrigin, candidate.schoolOriginType);
+                      if (info.isJogosari) return '<span class="badge-tag">Khusus Maarif Jogosari</span>';
+                      if (info.isLpMaarif) return '<span class="badge-tag" style="background:#e0f2fe;color:#0369a1;">LP. Ma\'arif</span>';
+                      return '';
+                    })()}</td>
                   </tr>
                   <tr>
                     <td class="col-label">Jalur / Sesi SPMB</td>

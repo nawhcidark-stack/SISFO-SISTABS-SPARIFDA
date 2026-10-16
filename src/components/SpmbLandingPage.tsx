@@ -80,11 +80,21 @@ export const getNormalizedEduValue = (val?: string) => {
   return match || val;
 };
 
+export function isSchoolMaarifJogosari(schoolOriginType?: string, schoolOrigin?: string): boolean {
+  const norm = (schoolOrigin || '').toUpperCase().replace(/['’`.]/g, '');
+  if (norm.trim().length > 0) {
+    return norm.includes('MAARIF JOGOSARI');
+  }
+  return schoolOriginType === 'maarif_jogosari';
+}
+
 export function isSchoolLpMaarif(schoolOriginType?: string, schoolOrigin?: string): boolean {
-  if (!schoolOriginType && !schoolOrigin) return false;
-  if (schoolOriginType === 'maarif_jogosari' || schoolOriginType === 'lp_maarif') return true;
-  const s = `${schoolOriginType || ''} ${schoolOrigin || ''}`.toUpperCase();
-  return s.includes('MAARIF') || s.includes("MA'ARIF");
+  const norm = (schoolOrigin || '').toUpperCase().replace(/['’`.]/g, '');
+  if (norm.trim().length > 0) {
+    return norm.includes('MAARIF');
+  }
+  if (!schoolOriginType) return false;
+  return schoolOriginType === 'maarif_jogosari' || schoolOriginType === 'lp_maarif' || schoolOriginType === 'maarif';
 }
 
 interface SpmbLandingPageProps {
@@ -797,16 +807,8 @@ export default function SpmbLandingPage({
     const julySppFee = config.julySppFee || 200000;
     const baseFee = config.reRegistrationBaseFee || 0;
     
-    const isMaarif = schoolOriginType === 'maarif_jogosari' || 
-      customSchoolName.toUpperCase().includes('MAARIF JOGOSARI') ||
-      schoolOriginType.toUpperCase().includes('MAARIF JOGOSARI');
-
-    const isLpMaarif = isMaarif ||
-      schoolOriginType === 'lp_maarif' ||
-      customSchoolName.toUpperCase().includes('MAARIF') ||
-      customSchoolName.toUpperCase().includes("MA'ARIF") ||
-      schoolOriginType.toUpperCase().includes('MAARIF') ||
-      schoolOriginType.toUpperCase().includes("MA'ARIF");
+    const isMaarif = isSchoolMaarifJogosari(schoolOriginType, customSchoolName);
+    const isLpMaarif = isSchoolLpMaarif(schoolOriginType, customSchoolName);
 
     // Check session wave discount (percentage for Building Fee)
     const session = config.sessions.find(s => s.id === sessionId);
@@ -871,16 +873,8 @@ export default function SpmbLandingPage({
     const baseFee = config?.reRegistrationBaseFee || 0;
     const session = config?.sessions.find(s => s.id === sessionId);
 
-    const isMaarif = schoolOriginType === 'maarif_jogosari' || 
-      customSchoolName.toUpperCase().includes('MAARIF JOGOSARI') ||
-      schoolOriginType.toUpperCase().includes('MAARIF JOGOSARI');
-
-    const isLpMaarif = isMaarif ||
-      schoolOriginType === 'lp_maarif' ||
-      customSchoolName.toUpperCase().includes('MAARIF') ||
-      customSchoolName.toUpperCase().includes("MA'ARIF") ||
-      schoolOriginType.toUpperCase().includes('MAARIF') ||
-      schoolOriginType.toUpperCase().includes("MA'ARIF");
+    const isMaarif = isSchoolMaarifJogosari(schoolOriginType, customSchoolName);
+    const isLpMaarif = isSchoolLpMaarif(schoolOriginType, customSchoolName);
 
     const discountPercent = typeof session?.discountPercent === 'number'
       ? session.discountPercent

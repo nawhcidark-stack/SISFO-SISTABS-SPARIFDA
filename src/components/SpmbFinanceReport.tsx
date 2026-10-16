@@ -34,7 +34,7 @@ import {
   ChevronRight
 } from 'lucide-react';
 import { SpmbCandidate, SpmbConfig, SchoolIdentity } from '../types';
-import { calculateReRegDetails, printHtmlSafely, formatIndoDate, renderKopHeaderHtml, getReceiptCss } from '../utils/spmbReceiptPrint';
+import { calculateReRegDetails, printHtmlSafely, formatIndoDate, renderKopHeaderHtml, getReceiptCss, classifySchoolOrigin } from '../utils/spmbReceiptPrint';
 
 interface SpmbFinanceReportProps {
   candidates: SpmbCandidate[];
@@ -1536,14 +1536,30 @@ export default function SpmbFinanceReport({
                         <p className="text-[10px] text-slate-500 font-mono m-0">NISN: {tx.nisn}</p>
                       </td>
                       <td className="py-3 px-3">
-                        {tx.isMaarif ? (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
-                            <Sparkles size={10} />
-                            <span>SD Maarif Jogosari</span>
-                          </span>
-                        ) : (
-                          <span className="text-[11px] text-slate-600">{tx.schoolOrigin}</span>
-                        )}
+                        {(() => {
+                          const cls = classifySchoolOrigin(tx.schoolOrigin);
+                          if (cls.isJogosari) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-50 text-emerald-800 border border-emerald-200 text-[10px] font-bold">
+                                <Sparkles size={10} className="shrink-0" />
+                                <span>{cls.displayName}</span>
+                                <span className="text-[9px] bg-emerald-200 text-emerald-950 px-1 rounded-xs font-bold">Jogosari</span>
+                              </span>
+                            );
+                          }
+                          if (cls.isLpMaarif) {
+                            return (
+                              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-sky-50 text-sky-800 border border-sky-200 text-[10px] font-bold">
+                                <Building2 size={10} className="shrink-0" />
+                                <span>{cls.displayName}</span>
+                                <span className="text-[9px] bg-sky-200 text-sky-950 px-1 rounded-xs font-bold">LP. Ma'arif</span>
+                              </span>
+                            );
+                          }
+                          return (
+                            <span className="text-[11px] text-slate-600 font-medium">{tx.schoolOrigin || 'SD Umum'}</span>
+                          );
+                        })()}
                       </td>
                       <td className="py-3 px-3">
                         <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${

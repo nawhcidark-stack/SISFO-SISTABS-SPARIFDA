@@ -981,11 +981,21 @@ function toProperCase(val?: string | null): string {
     .replace(/(?:^|[\s\-\/\.])([a-z\u00C0-\u017F])/g, (m) => m.toUpperCase());
 }
 
+export function isSchoolMaarifJogosari(schoolOriginType?: string, schoolOrigin?: string): boolean {
+  const norm = (schoolOrigin || '').toUpperCase().replace(/['’`.]/g, '');
+  if (norm.trim().length > 0) {
+    return norm.includes('MAARIF JOGOSARI');
+  }
+  return schoolOriginType === 'maarif_jogosari';
+}
+
 export function isSchoolLpMaarif(schoolOriginType?: string, schoolOrigin?: string): boolean {
-  if (!schoolOriginType && !schoolOrigin) return false;
-  if (schoolOriginType === 'maarif_jogosari' || schoolOriginType === 'lp_maarif') return true;
-  const s = `${schoolOriginType || ''} ${schoolOrigin || ''}`.toUpperCase();
-  return s.includes('MAARIF') || s.includes("MA'ARIF");
+  const norm = (schoolOrigin || '').toUpperCase().replace(/['’`.]/g, '');
+  if (norm.trim().length > 0) {
+    return norm.includes('MAARIF');
+  }
+  if (!schoolOriginType) return false;
+  return schoolOriginType === 'maarif_jogosari' || schoolOriginType === 'lp_maarif' || schoolOriginType === 'maarif';
 }
 
 export function checkSiblingKkMatch(
@@ -2951,9 +2961,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       const effectiveSchoolOrigin = String(rawSchool).trim().toUpperCase();
 
       const isLpMaarif = isSchoolLpMaarif(schoolOriginType, effectiveSchoolOrigin);
-      const isJogosari = schoolOriginType === 'maarif_jogosari' || 
-        effectiveSchoolOrigin.toUpperCase().includes('MAARIF JOGOSARI') ||
-        (originSchool || '').toUpperCase().includes('MAARIF JOGOSARI');
+      const isJogosari = isSchoolMaarifJogosari(schoolOriginType, effectiveSchoolOrigin);
 
       // Calculate fees: Uang Gedung (with wave discount in % and SD Maarif discount), SPP Juli 2027, and Uniforms
       const normGender: 'L' | 'P' = (cleanGender === "female" || cleanGender === "P") ? "P" : "L";
@@ -3013,8 +3021,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         existingCandidate.phone = cleanPhone;
         existingCandidate.parentName = parentName || existingCandidate.parentName;
         existingCandidate.originSchool = effectiveSchoolOrigin;
-        existingCandidate.schoolOrigin = effectiveSchoolOrigin;
-        existingCandidate.schoolOriginType = schoolOriginType || (isJogosari ? 'maarif_jogosari' : 'other');
+        existingCandidate.schoolOriginType = isJogosari ? 'maarif_jogosari' : (isLpMaarif ? 'lp_maarif' : (schoolOriginType || 'other'));
         existingCandidate.registrationType = registrationType || existingCandidate.registrationType || 'online_individual';
         existingCandidate.email = email || existingCandidate.email;
         if (cleanAddress) existingCandidate.address = cleanAddress;
@@ -3060,7 +3067,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
           birthDate: req.body.birthDate || "",
           phone: cleanPhone,
           schoolOrigin: effectiveSchoolOrigin,
-          schoolOriginType: schoolOriginType || (isJogosari ? 'maarif_jogosari' : 'other'),
+          schoolOriginType: isJogosari ? 'maarif_jogosari' : (isLpMaarif ? 'lp_maarif' : (schoolOriginType || 'other')),
           registrationType: registrationType || 'online_individual',
           sessionId: selectedSession?.id || "gelombang-1",
           sessionName: selectedSession?.name || "Gelombang 1",
@@ -3619,9 +3626,7 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
 
       const isLpMaarif = isSchoolLpMaarif(candidate.schoolOriginType, candidate.schoolOrigin || candidate.originSchool);
-      const isJogosari = candidate.schoolOriginType === 'maarif_jogosari' || 
-        (candidate.schoolOrigin || '').toUpperCase().includes('MAARIF JOGOSARI') ||
-        (candidate.originSchool || '').toUpperCase().includes('MAARIF JOGOSARI');
+      const isJogosari = isSchoolMaarifJogosari(candidate.schoolOriginType, candidate.schoolOrigin || candidate.originSchool);
 
       const selectedSession = spmbConfig.sessions.find(s => s.id === candidate.sessionId) || spmbConfig.sessions[0];
       const buildingFee = spmbConfig.buildingFee || 1500000;
@@ -4951,7 +4956,25 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (phone !== undefined) candidate.phone = String(phone).trim();
       if (studentPhone !== undefined) candidate.studentPhone = String(studentPhone).trim();
       if (schoolOrigin !== undefined) candidate.schoolOrigin = String(schoolOrigin).trim();
-      if (schoolOriginType !== undefined) candidate.schoolOriginType = schoolOriginType;
+
+      // Penentuan asal SD Maarif Jogosari dan SD/MI dari LP. Maarif:
+      // 1. Kata kunci "Maarif Jogosari" jika berasal dari SD Maarif Jogosari (maarif_jogosari)
+      // 2. Kata kunci "Maarif atau Ma'arif" jika berasal dari SD/MI LP. Maarif (lp_maarif)
+      // 3. Sekolah umum / alumni
+      const normSchool = (candidate.schoolOrigin || '').toUpperCase().replace(/['’`.]/g, '');
+      const hasSchoolName = normSchool.trim().length > 0;
+      if (hasSchoolName) {
+        if (normSchool.includes('MAARIF JOGOSARI')) {
+          candidate.schoolOriginType = 'maarif_jogosari';
+        } else if (normSchool.includes('MAARIF')) {
+          candidate.schoolOriginType = (schoolOriginType === 'alumni' || candidate.schoolOriginType === 'alumni') ? 'alumni' : 'lp_maarif';
+        } else {
+          candidate.schoolOriginType = (schoolOriginType === 'alumni' || candidate.schoolOriginType === 'alumni') ? 'alumni' : (schoolOriginType || 'other');
+        }
+      } else if (schoolOriginType !== undefined) {
+        candidate.schoolOriginType = schoolOriginType;
+      }
+
       if (registrationType !== undefined) candidate.registrationType = registrationType;
       if (sessionId !== undefined) candidate.sessionId = sessionId;
       if (selectedUniformSize !== undefined) candidate.selectedUniformSize = selectedUniformSize;
@@ -4959,6 +4982,64 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (fatherName !== undefined) candidate.fatherName = String(fatherName).trim();
       if (motherName !== undefined) candidate.motherName = String(motherName).trim();
       if (guardianName !== undefined) candidate.guardianName = String(guardianName).trim();
+
+      // Sinkronisasi ulang biaya daftar ulang jika calon murid belum lunas daftar ulang
+      if (!candidate.reRegistrationPaid && candidate.reRegistrationStatus !== 'paid') {
+        const isJogo = isSchoolMaarifJogosari(candidate.schoolOriginType, candidate.schoolOrigin);
+        const isLp = isSchoolLpMaarif(candidate.schoolOriginType, candidate.schoolOrigin);
+        const selectedSession = spmbConfig.sessions.find(s => s.id === candidate.sessionId) || spmbConfig.sessions[0];
+        const buildingFee = spmbConfig.buildingFee || 1500000;
+        const julySppFee = spmbConfig.julySppFee || 200000;
+        const baseAdmFee = spmbConfig.reRegistrationBaseFee || 0;
+        const discountPercent = typeof selectedSession?.discountPercent === "number"
+          ? selectedSession.discountPercent
+          : (selectedSession?.discountAmount ? Math.round((selectedSession.discountAmount / (buildingFee || 1)) * 100) : 0);
+        const buildingWaveDiscount = Math.round(buildingFee * (discountPercent / 100));
+
+        let maarifBuildingDiscount = 0;
+        if (isJogo) {
+          if (spmbConfig.maarifBuildingDiscountType === 'percent') {
+            maarifBuildingDiscount = Math.round(buildingFee * ((spmbConfig.maarifBuildingDiscount || 0) / 100));
+          } else {
+            maarifBuildingDiscount = spmbConfig.maarifBuildingDiscount || 0;
+          }
+        }
+
+        const totalBuildingDiscount = Math.min(buildingFee, buildingWaveDiscount + maarifBuildingDiscount);
+        const netBuildingFee = Math.max(0, buildingFee - totalBuildingDiscount);
+
+        const eligibleUniforms = spmbConfig.uniformItems.filter(u => 
+          (u.gender === "both" || u.gender === "all" || (u.gender as string) === candidate.gender || 
+           (candidate.gender === "L" && u.gender === "male") || (candidate.gender === "P" && u.gender === "female")) &&
+          (!candidate.selectedUniforms || candidate.selectedUniforms.includes(u.id))
+        );
+        const rawUniformTotal = eligibleUniforms.reduce((sum, item) => sum + item.price, 0);
+
+        let maarifUniformDiscount = 0;
+        if (isJogo) {
+          if (spmbConfig.maarifUniformDiscountType === 'percent') {
+            maarifUniformDiscount = Math.round(rawUniformTotal * ((spmbConfig.maarifUniformDiscount || 0) / 100));
+          } else {
+            maarifUniformDiscount = spmbConfig.maarifUniformDiscount || 0;
+          }
+        }
+
+        let sportsUniformBonus = 0;
+        const allowBonus = selectedSession?.sportsUniformBonusForMaarif ?? spmbConfig.maarifIndenSportsUniformBonus ?? true;
+        if (selectedSession.id === 'inden' && isLp && allowBonus) {
+          const sportsItem = eligibleUniforms.find(u => u.id === 'u-1' || u.name.toLowerCase().includes('olahraga'));
+          sportsUniformBonus = sportsItem ? sportsItem.price : 125000;
+        }
+
+        const netUniformTotal = Math.max(0, rawUniformTotal - maarifUniformDiscount - sportsUniformBonus);
+        const isSiblingFreeSpp = Boolean(selectedSession.id === 'inden' && (candidate.freeFirstMonthSpp || candidate.isSiblingKkMatch));
+        const effectiveJulySppFee = isSiblingFreeSpp ? 0 : julySppFee;
+
+        const recalculatedTotal = netBuildingFee + effectiveJulySppFee + baseAdmFee + netUniformTotal;
+        candidate.reRegistrationFee = recalculatedTotal;
+        candidate.reRegistrationAmount = recalculatedTotal;
+        candidate.uniformCost = netUniformTotal;
+      }
 
       candidate.updatedAt = new Date().toISOString();
 

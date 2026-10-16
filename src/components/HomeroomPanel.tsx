@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction, SharedLearningObjective } from '../types';
+import { isSameSubject, normClass, isSameClass } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import BukuIndukManagement from './BukuIndukManagement';
@@ -1523,6 +1524,54 @@ export default function HomeroomPanel({
     });
   }, [classSchedules, currentTeacher]);
 
+  // Modul Penilaian Wali Kelas: Hanya tampilkan mapel yang diampu dan kelas yang diajar saja (sesuai jadwal pelajaran / monitoring jam mengajar)
+  const homeroomGradingSubjects = useMemo(() => {
+    const set = new Set<string>();
+    teacherSchedules.forEach(s => {
+      if (s.subject && s.subject.trim()) {
+        const sub = s.subject.trim();
+        const lower = sub.toLowerCase();
+        if (!lower.includes('bimbingan wali') && !lower.includes('upacara') && !lower.includes('senam') && !lower.includes('apel')) {
+          set.add(sub);
+        }
+      }
+    });
+    if (currentTeacher?.subject && currentTeacher.subject.trim()) {
+      set.add(currentTeacher.subject.trim());
+    }
+    const arr = Array.from(set);
+    if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
+    return currentTeacher?.subject ? [currentTeacher.subject] : ['Pendidikan Pancasila'];
+  }, [teacherSchedules, currentTeacher?.subject]);
+
+  const homeroomGradingClasses = useMemo(() => {
+    const set = new Set<string>();
+    // 1. Selalu sertakan kelas binaan wali kelas
+    if (currentTeacher?.className && currentTeacher.className.trim()) {
+      set.add(currentTeacher.className.trim());
+    }
+    // 2. Kelas yang diajar sesuai jadwal pelajaran / monitoring jam mengajar
+    teacherSchedules.forEach(s => {
+      if (s.className && s.className.trim()) {
+        set.add(s.className.trim());
+      }
+    });
+    return Array.from(set).sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+  }, [currentTeacher?.className, teacherSchedules]);
+
+  // Otomatis sinkronisasi pilihan mapel & kelas penilaian wali kelas jika di luar daftar
+  useEffect(() => {
+    if (homeroomGradingSubjects.length > 0 && !homeroomGradingSubjects.some(s => isSameSubject(s, selectedSubjectForGrading))) {
+      setSelectedSubjectForGrading(homeroomGradingSubjects[0]);
+    }
+  }, [homeroomGradingSubjects, selectedSubjectForGrading]);
+
+  useEffect(() => {
+    if (homeroomGradingClasses.length > 0 && (!selectedGradingClass || !homeroomGradingClasses.includes(selectedGradingClass))) {
+      setSelectedGradingClass(currentTeacher?.className || homeroomGradingClasses[0]);
+    }
+  }, [homeroomGradingClasses, selectedGradingClass, currentTeacher?.className]);
+
   const [journalModalMode, setJournalModalMode] = useState<'binaan' | 'kelas_lain'>('binaan');
 
   // Schedules filtered by modal mode (Kelas Binaan vs Kelas Lain)
@@ -2334,19 +2383,31 @@ export default function HomeroomPanel({
       const initialMap: Record<string, string> = {};
       const fullGradeMap: Record<string, any> = {};
 
+      // Sinkronisasi deskripsi TP sesuai mapel yang dipilih
+      const matchedSubjectAss = merdekaAssessments.find(a =>
+        isSameSubject(a.subject, selectedSubjectForGrading) &&
+        (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
+      );
+      if (matchedSubjectAss) {
+        if (matchedSubjectAss.tp1Name) setTp1InputName(matchedSubjectAss.tp1Name);
+        if (matchedSubjectAss.tp2Name) setTp2InputName(matchedSubjectAss.tp2Name);
+        if (matchedSubjectAss.tp3Name) setTp3InputName(matchedSubjectAss.tp3Name);
+        if (matchedSubjectAss.tp4Name) setTp4InputName(matchedSubjectAss.tp4Name);
+      }
+
       gradingStudents.forEach(st => {
         const match = merdekaAssessments.find(a => 
           a.studentId === st.id && 
-          a.subject?.toLowerCase() === selectedSubjectForGrading.toLowerCase() &&
-          a.semester === kokurikulerSemester && 
-          a.academicYear === kokurikulerYear
+          isSameSubject(a.subject, selectedSubjectForGrading) &&
+          (a.semester || '').toLowerCase() === kokurikulerSemester.toLowerCase() && 
+          (a.academicYear || '').toLowerCase() === kokurikulerYear.toLowerCase()
         );
 
         // General kokurikuler score
         const generalMatch = merdekaAssessments.find(a =>
           a.studentId === st.id &&
-          a.semester === kokurikulerSemester &&
-          a.academicYear === kokurikulerYear &&
+          (a.semester || '').toLowerCase() === kokurikulerSemester.toLowerCase() &&
+          (a.academicYear || '').toLowerCase() === kokurikulerYear.toLowerCase() &&
           a.nilaiKokurikuler !== undefined &&
           a.nilaiKokurikuler > 0
         );
@@ -2380,22 +2441,6 @@ export default function HomeroomPanel({
             pas: match.nilaiPas !== undefined ? String(match.nilaiPas) : '',
             deskripsi: match.deskripsiCapaian || ''
           };
-          // Sinkronisasi deskripsi TP sesuai mapel yang dipilih
-          const matchedSubjectAss = merdekaAssessments.find(a =>
-            (a.subject || '').trim().toLowerCase() === (selectedSubjectForGrading || '').trim().toLowerCase() &&
-            (a.tp1Name || a.tp2Name || a.tp3Name || a.tp4Name)
-          );
-          if (matchedSubjectAss) {
-            setTp1InputName(matchedSubjectAss.tp1Name || '');
-            setTp2InputName(matchedSubjectAss.tp2Name || '');
-            setTp3InputName(matchedSubjectAss.tp3Name || '');
-            setTp4InputName(matchedSubjectAss.tp4Name || '');
-          } else {
-            setTp1InputName('');
-            setTp2InputName('');
-            setTp3InputName('');
-            setTp4InputName('');
-          }
         } else {
           fullGradeMap[st.id] = {
             tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
@@ -7663,43 +7708,34 @@ Wassalamualaikum Wr. Wb.
                 {/* Filter Row */}
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4 mt-4 pt-4 border-t border-slate-100">
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas Penilaian</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">Pilih Kelas Penilaian</label>
+                      <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">Kelas Diajar ({homeroomGradingClasses.length})</span>
+                    </div>
                     <select
                       value={selectedGradingClass || currentTeacher.className}
                       onChange={(e) => setSelectedGradingClass(e.target.value)}
                       className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
                     >
-                      {allClassNames.map(cls => (
+                      {homeroomGradingClasses.map(cls => (
                         <option key={cls} value={cls}>
-                          Kelas {cls} {cls.toLowerCase() === currentTeacher.className.toLowerCase() ? '(Kelas Binaan Anda)' : ''}
+                          Kelas {cls} {cls.toLowerCase() === currentTeacher.className.toLowerCase() ? '(Kelas Binaan Anda)' : '(Jadwal Mengajar)'}
                         </option>
                       ))}
                     </select>
                   </div>
 
                   <div>
-                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Mata Pelajaran</label>
+                    <div className="flex items-center justify-between mb-1.5">
+                      <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">Mata Pelajaran</label>
+                      <span className="text-[9px] font-bold text-purple-700 bg-purple-50 px-1.5 py-0.5 rounded">Jadwal Mengajar</span>
+                    </div>
                     <select
                       value={selectedSubjectForGrading}
                       onChange={(e) => setSelectedSubjectForGrading(e.target.value)}
-                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors"
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-purple-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
                     >
-                      {[
-                        'Pendidikan Pancasila',
-                        'Bahasa Indonesia',
-                        'Matematika',
-                        'Ilmu Pengetahuan Alam',
-                        'Ilmu Pengetahuan Sosial',
-                        'Bahasa Inggris',
-                        'Informatika',
-                        'Pendidikan Jasmani & OR',
-                        'Seni Budaya',
-                        'Prakarya',
-                        'Bahasa Jawa',
-                        'Pendidikan Agama Islam',
-                        'Aswaja',
-                        'Bimbingan Konseling'
-                      ].map(subj => (
+                      {homeroomGradingSubjects.map(subj => (
                         <option key={subj} value={subj}>{subj}</option>
                       ))}
                     </select>

@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher, SharedLearningObjective } from '../types';
+import { isSameSubject, normClass, isSameClass } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import ScheduleView from './ScheduleView';
@@ -687,6 +688,60 @@ export default function SubjectTeacherPanel({
     });
   }, [classSchedules, currentTeacher]);
 
+  // Modul Penilaian: Hanya tampilkan mapel yang diampu dan kelas yang diajar saja sesuai jadwal pelajaran / monitoring jam mengajar
+  const allowedSubjects = useMemo(() => {
+    const set = new Set<string>();
+    teacherSchedules.forEach(s => {
+      if (s.subject && s.subject.trim()) {
+        const sub = s.subject.trim();
+        const lower = sub.toLowerCase();
+        if (!lower.includes('bimbingan wali') && !lower.includes('upacara') && !lower.includes('senam') && !lower.includes('apel')) {
+          set.add(sub);
+        }
+      }
+    });
+    if (currentTeacher?.subject && currentTeacher.subject.trim()) {
+      set.add(currentTeacher.subject.trim());
+    }
+    const arr = Array.from(set);
+    if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
+    return currentTeacher?.subject ? [currentTeacher.subject] : ['Matematika'];
+  }, [teacherSchedules, currentTeacher?.subject]);
+
+  const allowedClasses = useMemo(() => {
+    const set = new Set<string>();
+    teacherSchedules.forEach(s => {
+      if (s.className && s.className.trim()) {
+        if (!selectedSubject || isSameSubject(s.subject, selectedSubject)) {
+          set.add(s.className.trim());
+        }
+      }
+    });
+    if (set.size === 0) {
+      teacherSchedules.forEach(s => {
+        if (s.className && s.className.trim()) set.add(s.className.trim());
+      });
+    }
+    const arr = Array.from(set);
+    if (arr.length > 0) {
+      return arr.sort((a, b) => a.localeCompare(b, undefined, { numeric: true, sensitivity: 'base' }));
+    }
+    return availableClasses;
+  }, [teacherSchedules, selectedSubject, availableClasses]);
+
+  // Otomatis sinkronisasi selectedSubject & selectedGradeClass jika di luar jadwal yang diampu
+  useEffect(() => {
+    if (allowedSubjects.length > 0 && !allowedSubjects.some(s => isSameSubject(s, selectedSubject))) {
+      setSelectedSubject(allowedSubjects[0]);
+    }
+  }, [allowedSubjects, selectedSubject]);
+
+  useEffect(() => {
+    if (allowedClasses.length > 0 && !allowedClasses.includes(selectedGradeClass)) {
+      setSelectedGradeClass(allowedClasses[0]);
+    }
+  }, [allowedClasses, selectedGradeClass]);
+
   const [selectedScheduleId, setSelectedScheduleId] = useState<string>('');
 
   const getIndonesianDay = (dateStr: string) => {
@@ -954,9 +1009,9 @@ export default function SubjectTeacherPanel({
     gradingClassStudents.forEach(s => {
       const match = merdekaAssessments.find(a => 
         a.studentId === s.id && 
-        matchSubject(a.subject, selectedSubject) && 
-        a.semester === selectedSemesterGrading && 
-        a.academicYear === selectedYearGrading
+        isSameSubject(a.subject, selectedSubject) && 
+        (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() && 
+        (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
       );
       if (match) {
         newMap[s.id] = {
@@ -993,7 +1048,7 @@ export default function SubjectTeacherPanel({
   }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, selectedSubject]);
 
   function matchSubject(sub1: string, sub2: string): boolean {
-    return (sub1 || '').trim().toLowerCase() === (sub2 || '').trim().toLowerCase();
+    return isSameSubject(sub1, sub2);
   }
 
   // Download Template Excel Penilaian Format Terbaru (.xlsx & .csv)
@@ -3057,29 +3112,35 @@ export default function SubjectTeacherPanel({
             {/* Filter Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4">
               <div>
-                <label className="block text-[10px] font-black uppercase text-indigo-600 tracking-wider mb-1.5">Mata Pelajaran</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-black uppercase text-indigo-600 tracking-wider">Mata Pelajaran</label>
+                  <span className="text-[9px] font-bold text-indigo-500 bg-indigo-50 px-1.5 py-0.5 rounded">Jadwal Mengajar</span>
+                </div>
                 <select
                   value={selectedSubject}
                   onChange={(e) => setSelectedSubject(e.target.value)}
                   className="w-full bg-indigo-50/50 border border-indigo-200 hover:border-indigo-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-black text-indigo-900 transition-colors cursor-pointer"
                 >
-                  {subjectOptions.map(subj => (
+                  {allowedSubjects.map(subj => (
                     <option key={subj} value={subj}>{subj}</option>
                   ))}
                 </select>
               </div>
 
               <div>
-                <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">Pilih Kelas</label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider">Pilih Kelas</label>
+                  <span className="text-[9px] font-bold text-emerald-600 bg-emerald-50 px-1.5 py-0.5 rounded">Kelas Diajar ({allowedClasses.length})</span>
+                </div>
                 <select
                   value={selectedGradeClass}
                   onChange={(e) => setSelectedGradeClass(e.target.value)}
                   className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-black text-slate-800 transition-colors cursor-pointer"
                 >
-                  {availableClasses.length === 0 ? (
-                    <option value="">Tidak ada kelas terdaftar</option>
+                  {allowedClasses.length === 0 ? (
+                    <option value="">Tidak ada kelas di jadwal</option>
                   ) : (
-                    availableClasses.map(c => (
+                    allowedClasses.map(c => (
                       <option key={c} value={c}>Kelas {c}</option>
                     ))
                   )}
@@ -3324,9 +3385,9 @@ export default function SubjectTeacherPanel({
                       // Get matched assessment to display Kokurikuler, PTS, PAS
                       const matchedAss = merdekaAssessments.find(a =>
                         a.studentId === s.id &&
-                        matchSubject(a.subject, currentTeacher.subject) &&
-                        a.semester === selectedSemesterGrading &&
-                        a.academicYear === selectedYearGrading
+                        isSameSubject(a.subject, selectedSubject) &&
+                        (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() &&
+                        (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
                       );
 
                       const parseVal = (v: any) => {
@@ -3506,7 +3567,7 @@ export default function SubjectTeacherPanel({
                       return {
                         studentId: s.id,
                         studentName: s.name,
-                        className: s.class,
+                        className: s.class || selectedGradeClass,
                         subject: selectedSubject,
                         teacherName: currentTeacher.name,
                         semester: selectedSemesterGrading,

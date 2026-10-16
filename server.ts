@@ -11,6 +11,7 @@ import compression from "compression";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective } from "./src/types";
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
+import { isSameSubject, isSameSemester, isSameAcademicYear } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
@@ -2096,13 +2097,28 @@ function loadState() {
         curriculumTpDescriptions.push(...data.curriculumTpDescriptions);
       }
       if (Array.isArray(data.sharedLearningObjectives) && data.sharedLearningObjectives.length > 0) {
+        // Hapus contoh dummy TP (id berformat tp-mapel-*) dan sisakan TP asli guru & admin
+        const genuineTps = data.sharedLearningObjectives.filter((tp: any) => {
+          const isDummySeed = tp.id && tp.id.startsWith('tp-mapel-') && !tp.id.includes('ganjil') && !tp.id.includes('genap');
+          return !isDummySeed;
+        });
         sharedLearningObjectives.length = 0;
-        sharedLearningObjectives.push(...data.sharedLearningObjectives);
+        sharedLearningObjectives.push(...genuineTps);
       } else {
-        const seeded = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
         sharedLearningObjectives.length = 0;
-        sharedLearningObjectives.push(...seeded);
       }
+
+      // Pastikan seluruh TP asli dari curriculumTpDescriptions (dibuat admin di panel admin utama / guru) selalu tersinkronisasi
+      const genuineFromCurriculum = generateSeedSharedTps(curriculumSubjects, curriculumTpDescriptions);
+      genuineFromCurriculum.forEach(gtp => {
+        const exists = sharedLearningObjectives.some(existing => 
+          existing.id === gtp.id || 
+          (existing.subjectId === gtp.subjectId && existing.gradeLevel === gtp.gradeLevel && existing.tpNumber === gtp.tpNumber && (existing.semester || '').toLowerCase() === (gtp.semester || '').toLowerCase())
+        );
+        if (!exists) {
+          sharedLearningObjectives.push(gtp);
+        }
+      });
       console.log(`State loaded successfully from database (${sharedLearningObjectives.length} shared TPs ready)`);
       return true;
     }
@@ -5880,7 +5896,9 @@ async function startServer() {
         deskripsiCapaian
       } = item;
 
-      if (!studentId || !studentName || !className || !subject) {
+      const resolvedClass = String(className || item.class || item.kelas || (students.find(st => st.id === studentId)?.class) || "").trim();
+      const cleanStudentName = String(studentName || (students.find(st => st.id === studentId)?.name) || "").trim();
+      if (!studentId || !cleanStudentName || !subject) {
         return;
       }
 
@@ -5889,9 +5907,9 @@ async function startServer() {
 
       const existingIdx = merdekaAssessments.findIndex(
         a => a.studentId === studentId &&
-             a.subject === subject &&
-             a.semester === sem &&
-             a.academicYear === year
+             isSameSubject(a.subject, subject) &&
+             isSameSemester(a.semester, sem) &&
+             isSameAcademicYear(a.academicYear, year)
       );
 
       const existing = existingIdx !== -1 ? merdekaAssessments[existingIdx] : null;
@@ -5899,9 +5917,9 @@ async function startServer() {
       const assessmentItem: MerdekaAssessment = {
         id: existing ? existing.id : `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
         studentId,
-        studentName,
-        className,
-        subject,
+        studentName: cleanStudentName,
+        className: resolvedClass || (existing ? existing.className : "7-A"),
+        subject: existing ? existing.subject : subject,
         teacherName: teacherName || (existing ? existing.teacherName : "Guru Mapel"),
         semester: sem,
         academicYear: year,

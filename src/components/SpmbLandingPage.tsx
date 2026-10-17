@@ -1040,8 +1040,9 @@ export default function SpmbLandingPage({
       setRegError('Nama lengkap calon murid wajib diisi.');
       return;
     }
-    if (!regForm.nisn.trim() || regForm.nisn.trim().length < 8) {
-      setRegError('Nomor NISN wajib diisi dengan benar (minimal 8-10 digit).');
+    const cleanNisn = regForm.nisn.replace(/\D/g, '');
+    if (!cleanNisn || cleanNisn.length !== 10) {
+      setRegError('Nomor NISN calon murid wajib tepat 10 digit angka.');
       return;
     }
     if (!regForm.phone.trim()) {
@@ -1230,9 +1231,22 @@ export default function SpmbLandingPage({
     const effectiveFullName = fullForm.fullName?.trim() || activeCandidate.fullName?.trim();
     if (!effectiveFullName) missingFields.push("Nama Lengkap Murid");
     if (!fullForm.nickname?.trim()) missingFields.push("Nama Panggilan");
-    const effectiveNik = fullForm.nik?.trim() || activeCandidate.nik?.trim();
-    if (!effectiveNik) missingFields.push("NIK Murid (16 digit)");
-    if (!fullForm.kkNumber?.trim()) missingFields.push("Nomor Kartu Keluarga (KK)");
+    const rawNik = fullForm.nik?.trim() || activeCandidate.nik?.trim() || '';
+    const cleanNik = rawNik.replace(/\D/g, '');
+    const effectiveNik = cleanNik;
+    if (!cleanNik) {
+      missingFields.push("NIK Murid (Wajib 16 digit)");
+    } else if (cleanNik.length !== 16) {
+      missingFields.push("NIK Murid harus tepat 16 digit");
+    }
+
+    const cleanKk = (fullForm.kkNumber || '').replace(/\D/g, '');
+    if (!cleanKk) {
+      missingFields.push("Nomor Kartu Keluarga (KK: Wajib 16 digit)");
+    } else if (cleanKk.length !== 16) {
+      missingFields.push("Nomor Kartu Keluarga (KK) harus tepat 16 digit");
+    }
+
     if (!fullForm.birthCertNumber?.trim()) missingFields.push("Nomor Registrasi Akta Kelahiran");
     const effectiveBirthPlace = fullForm.birthPlace?.trim() || activeCandidate.birthPlace?.trim();
     if (!effectiveBirthPlace) missingFields.push("Tempat Lahir Murid");
@@ -1247,7 +1261,12 @@ export default function SpmbLandingPage({
 
     // Data Ayah
     if (!fullForm.fatherName?.trim()) missingFields.push("Nama Lengkap Ayah");
-    if (!fullForm.fatherNik?.trim()) missingFields.push("NIK Ayah Kandung");
+    const cleanFatherNik = (fullForm.fatherNik || '').replace(/\D/g, '');
+    if (!cleanFatherNik) {
+      missingFields.push("NIK Ayah Kandung (Wajib 16 digit)");
+    } else if (cleanFatherNik.length !== 16) {
+      missingFields.push("NIK Ayah Kandung harus tepat 16 digit");
+    }
     if (!fullForm.fatherBirthPlace?.trim()) missingFields.push("Tempat Lahir Ayah");
     if (!fullForm.fatherBirthDate?.trim()) missingFields.push("Tanggal Lahir Ayah");
     if (!fullForm.fatherEducation?.trim()) missingFields.push("Pendidikan Terakhir Ayah");
@@ -1257,7 +1276,12 @@ export default function SpmbLandingPage({
 
     // Data Ibu
     if (!fullForm.motherName?.trim()) missingFields.push("Nama Lengkap Ibu");
-    if (!fullForm.motherNik?.trim()) missingFields.push("NIK Ibu Kandung");
+    const cleanMotherNik = (fullForm.motherNik || '').replace(/\D/g, '');
+    if (!cleanMotherNik) {
+      missingFields.push("NIK Ibu Kandung (Wajib 16 digit)");
+    } else if (cleanMotherNik.length !== 16) {
+      missingFields.push("NIK Ibu Kandung harus tepat 16 digit");
+    }
     if (!fullForm.motherBirthPlace?.trim()) missingFields.push("Tempat Lahir Ibu");
     if (!fullForm.motherBirthDate?.trim()) missingFields.push("Tanggal Lahir Ibu");
     if (!fullForm.motherEducation?.trim()) missingFields.push("Pendidikan Terakhir Ibu");
@@ -1267,7 +1291,12 @@ export default function SpmbLandingPage({
 
     if (hasGuardian) {
       if (!fullForm.guardianName?.trim()) missingFields.push("Nama Lengkap Wali");
-      if (!fullForm.guardianNik?.trim()) missingFields.push("NIK Wali");
+      const cleanGuardianNik = (fullForm.guardianNik || '').replace(/\D/g, '');
+      if (!cleanGuardianNik) {
+        missingFields.push("NIK Wali (Wajib 16 digit)");
+      } else if (cleanGuardianNik.length !== 16) {
+        missingFields.push("NIK Wali harus tepat 16 digit");
+      }
       if (!fullForm.guardianOccupation?.trim()) missingFields.push("Pekerjaan Wali");
       if (!fullForm.guardianPhone?.trim()) missingFields.push("No. HP / WA Wali");
     }
@@ -2637,12 +2666,13 @@ export default function SpmbLandingPage({
                 <input
                   type="text"
                   required
-                  placeholder="Contoh: 0123456789"
+                  maxLength={10}
+                  placeholder="Contoh: 0123456789 (Wajib 10 digit)"
                   value={regForm.nisn}
-                  onChange={(e) => setRegForm({ ...regForm, nisn: e.target.value.replace(/\D/g, '') })}
+                  onChange={(e) => setRegForm({ ...regForm, nisn: e.target.value.replace(/\D/g, '').slice(0, 10) })}
                   className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500 font-bold"
                 />
-                <p className="text-[10px] text-slate-500 mt-1">NISN akan digunakan sebagai nomor ID login portal status dan pencarian data calon murid.</p>
+                <p className="text-[10px] text-slate-500 mt-1">NISN dibatasi tepat 10 digit angka sebagai nomor ID login portal status dan pencarian data calon murid.</p>
               </div>
 
               {/* Jenis Kelamin & WhatsApp */}
@@ -2930,9 +2960,10 @@ export default function SpmbLandingPage({
                   <Search size={16} className="absolute left-3.5 top-3 text-slate-400" />
                   <input
                     type="text"
+                    maxLength={10}
                     placeholder="Masukkan 10 digit NISN Calon Murid..."
                     value={searchNisn}
-                    onChange={(e) => setSearchNisn(e.target.value.replace(/\D/g, ''))}
+                    onChange={(e) => setSearchNisn(e.target.value.replace(/\D/g, '').slice(0, 10))}
                     onKeyDown={(e) => e.key === 'Enter' && handleCheckStatus()}
                     className="w-full pl-10 pr-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-emerald-500"
                   />
@@ -3644,7 +3675,7 @@ export default function SpmbLandingPage({
                             type="text"
                             maxLength={16}
                             value={fullForm.nik || activeCandidate.nik || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, nik: e.target.value.replace(/\D/g, '') })}
+                            onChange={(e) => setFullForm({ ...fullForm, nik: e.target.value.replace(/\D/g, '').slice(0, 16) })}
                             placeholder="16 Digit NIK Murid"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
@@ -3690,7 +3721,7 @@ export default function SpmbLandingPage({
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                         <div>
                           <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                            No. Kartu Keluarga (KK) <span className="text-rose-500">*</span>
+                            No. Kartu Keluarga (KK: 16 Digit) <span className="text-rose-500">*</span>
                             <span className="ml-1 text-[10px] font-normal text-emerald-700">
                               (Promo Inden: Bebas SPP Bulan Pertama jika No. KK sama dengan saudara kandung siswa aktif/murid baru)
                             </span>
@@ -3698,9 +3729,10 @@ export default function SpmbLandingPage({
                           <div className="relative">
                             <input
                               type="text"
+                              maxLength={16}
                               value={fullForm.kkNumber || ''}
                               onChange={(e) => {
-                                const cleanVal = e.target.value.replace(/\D/g, '');
+                                const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 16);
                                 setFullForm({ ...fullForm, kkNumber: cleanVal });
                                 if (cleanVal.length >= 10) {
                                   checkKkMatchRealtime(cleanVal);
@@ -4001,12 +4033,13 @@ export default function SpmbLandingPage({
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">NIK Ayah</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">NIK Ayah (16 Digit)</label>
                           <input
                             type="text"
+                            maxLength={16}
                             value={fullForm.fatherNik || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, fatherNik: e.target.value.replace(/\D/g, '') })}
-                            placeholder="16 Digit NIK"
+                            onChange={(e) => setFullForm({ ...fullForm, fatherNik: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                            placeholder="16 Digit NIK Ayah"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
@@ -4120,12 +4153,13 @@ export default function SpmbLandingPage({
                           />
                         </div>
                         <div>
-                          <label className="block text-[11px] font-bold text-slate-700 mb-1">NIK Ibu</label>
+                          <label className="block text-[11px] font-bold text-slate-700 mb-1">NIK Ibu (16 Digit)</label>
                           <input
                             type="text"
+                            maxLength={16}
                             value={fullForm.motherNik || ''}
-                            onChange={(e) => setFullForm({ ...fullForm, motherNik: e.target.value.replace(/\D/g, '') })}
-                            placeholder="16 Digit NIK"
+                            onChange={(e) => setFullForm({ ...fullForm, motherNik: e.target.value.replace(/\D/g, '').slice(0, 16) })}
+                            placeholder="16 Digit NIK Ibu"
                             className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                           />
                         </div>
@@ -4320,8 +4354,9 @@ export default function SpmbLandingPage({
                               </label>
                               <input
                                 type="text"
+                                maxLength={16}
                                 value={fullForm.guardianNik || ''}
-                                onChange={(e) => setFullForm({ ...fullForm, guardianNik: e.target.value.replace(/\D/g, '') })}
+                                onChange={(e) => setFullForm({ ...fullForm, guardianNik: e.target.value.replace(/\D/g, '').slice(0, 16) })}
                                 placeholder="16 Digit NIK Wali"
                                 className="w-full px-3 py-2 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 font-mono placeholder-slate-400 focus:ring-2 focus:ring-emerald-500"
                               />

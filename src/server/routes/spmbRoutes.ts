@@ -2917,7 +2917,8 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
         address, dusun, rt, rw, village, district, city, postalCode 
       } = req.body;
       
-      const cleanNisn = (nisn || "").trim();
+      const rawNisn = String(nisn || "").replace(/\D/g, "");
+      const cleanNisn = rawNisn.slice(0, 10);
       const cleanFullName = (fullName || req.body.name || "").trim().toUpperCase();
       const cleanPhone = (parentPhone || phone || whatsapp || noHp || req.body.parent_phone || "").trim();
       const cleanGender = gender || req.body.jenisKelamin || "L";
@@ -2930,8 +2931,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       const cleanCity = toProperCase(city || "Pasuruan");
       const cleanPostalCode = String(postalCode || req.body.zipCode || "67156").trim();
 
-      if (!cleanNisn || !cleanFullName || !cleanPhone) {
-        return res.status(400).json({ error: "NISN, Nama Lengkap, Jenis Kelamin, dan No. HP WhatsApp Orang Tua wajib diisi." });
+      if (!cleanNisn || cleanNisn.length !== 10) {
+        return res.status(400).json({ error: "Nomor NISN calon murid wajib tepat 10 digit angka." });
+      }
+      if (!cleanFullName || !cleanPhone) {
+        return res.status(400).json({ error: "Nama Lengkap, Jenis Kelamin, dan No. HP WhatsApp Orang Tua wajib diisi." });
       }
 
       const selectedSession = spmbConfig.sessions.find(s => s.id === sessionId) || spmbConfig.sessions[0];
@@ -3484,6 +3488,21 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       }
       if (incomingData.guardianBirthPlace) {
         incomingData.guardianBirthPlace = toProperCase(incomingData.guardianBirthPlace);
+      }
+      if (incomingData.nik) {
+        incomingData.nik = String(incomingData.nik).replace(/\D/g, '').slice(0, 16);
+      }
+      if (incomingData.kkNumber) {
+        incomingData.kkNumber = String(incomingData.kkNumber).replace(/\D/g, '').slice(0, 16);
+      }
+      if (incomingData.fatherNik) {
+        incomingData.fatherNik = String(incomingData.fatherNik).replace(/\D/g, '').slice(0, 16);
+      }
+      if (incomingData.motherNik) {
+        incomingData.motherNik = String(incomingData.motherNik).replace(/\D/g, '').slice(0, 16);
+      }
+      if (incomingData.guardianNik) {
+        incomingData.guardianNik = String(incomingData.guardianNik).replace(/\D/g, '').slice(0, 16);
       }
       if (incomingData.phone) {
         incomingData.phone = String(incomingData.phone).trim();
@@ -4945,13 +4964,19 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       if (fullName !== undefined && String(fullName).trim()) candidate.fullName = String(fullName).trim();
       if (nickname !== undefined) candidate.nickname = String(nickname).trim();
       if (nisn !== undefined && String(nisn).trim()) {
-        candidate.nisn = String(nisn).trim();
+        const cleanNisn = String(nisn).replace(/\D/g, '').slice(0, 10);
+        if (cleanNisn.length !== 10) {
+          return res.status(400).json({ error: "Nomor NISN calon murid wajib tepat 10 digit angka." });
+        }
+        candidate.nisn = cleanNisn;
         if (!candidate.registrationNo || candidate.registrationNo.length < 5) {
           candidate.registrationNo = candidate.nisn;
           candidate.registrationNumber = candidate.nisn;
         }
       }
-      if (nik !== undefined) candidate.nik = String(nik).trim();
+      if (nik !== undefined) {
+        candidate.nik = String(nik).replace(/\D/g, '').slice(0, 16);
+      }
       if (gender !== undefined) candidate.gender = gender === "P" ? "P" : "L";
       if (birthPlace !== undefined) candidate.birthPlace = String(birthPlace).trim();
       if (birthDate !== undefined) candidate.birthDate = String(birthDate).trim();

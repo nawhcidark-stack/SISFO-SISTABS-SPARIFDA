@@ -699,8 +699,14 @@ export default function AdminSpmbManagement({
       alert('Nama lengkap calon murid wajib diisi.');
       return;
     }
-    if (!editInitialForm.nisn.trim()) {
-      alert('NISN calon murid wajib diisi.');
+    const cleanNisn = editInitialForm.nisn.replace(/\D/g, '');
+    if (!cleanNisn || cleanNisn.length !== 10) {
+      alert('NISN calon murid wajib tepat 10 digit angka.');
+      return;
+    }
+    const cleanNik = editInitialForm.nik.replace(/\D/g, '');
+    if (cleanNik && cleanNik.length !== 16) {
+      alert('NIK calon murid harus tepat 16 digit angka jika diisi.');
       return;
     }
 
@@ -5573,10 +5579,10 @@ export default function AdminSpmbManagement({
                     <input
                       type="text"
                       required
-                      maxLength={12}
+                      maxLength={10}
                       value={editInitialForm.nisn}
-                      onChange={e => setEditInitialForm(prev => ({ ...prev, nisn: e.target.value.replace(/\D/g, '') }))}
-                      placeholder="Contoh: 3140631960"
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, nisn: e.target.value.replace(/\D/g, '').slice(0, 10) }))}
+                      placeholder="Contoh: 3140631960 (10 Digit)"
                       className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono font-bold focus:border-amber-400 focus:outline-hidden"
                     />
                   </div>
@@ -5585,10 +5591,10 @@ export default function AdminSpmbManagement({
                     <label className="text-slate-300 font-bold block">NIK Siswa (16 Digit)</label>
                     <input
                       type="text"
-                      maxLength={18}
+                      maxLength={16}
                       value={editInitialForm.nik}
-                      onChange={e => setEditInitialForm(prev => ({ ...prev, nik: e.target.value.replace(/\D/g, '') }))}
-                      placeholder="Contoh: 3514120101140001"
+                      onChange={e => setEditInitialForm(prev => ({ ...prev, nik: e.target.value.replace(/\D/g, '').slice(0, 16) }))}
+                      placeholder="Contoh: 3514120101140001 (16 Digit)"
                       className="w-full px-3.5 py-2.5 bg-slate-900 border border-slate-700 rounded-xl text-white font-mono focus:border-amber-400 focus:outline-hidden"
                     />
                   </div>

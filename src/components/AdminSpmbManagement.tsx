@@ -15,7 +15,8 @@ import {
   generateAuthenticPasPhotoSvgDataUrl, 
   calculateReRegDetails,
   formatReceiptPaymentMethod,
-  classifySchoolOrigin
+  classifySchoolOrigin,
+  SchoolOriginCategory
 } from '../utils/spmbReceiptPrint';
 import { 
   GraduationCap, 
@@ -118,7 +119,7 @@ export default function AdminSpmbManagement({
   const [filterSession, setFilterSession] = useState<string>('all');
   const [filterStatus, setFilterStatus] = useState<string>('all');
   const [filterGender, setFilterGender] = useState<string>('all');
-  const [filterSchoolOrigin, setFilterSchoolOrigin] = useState<'all' | 'maarif' | 'other'>('all');
+  const [filterSchoolOrigin, setFilterSchoolOrigin] = useState<'all' | 'maarif' | 'maarif_jogosari' | 'lp_maarif' | 'other'>('all');
   const [filterCollective, setFilterCollective] = useState<string>('all');
   const [filterTransfer, setFilterTransfer] = useState<'all' | 'transferred' | 'normal'>('all');
   const [sortBy, setSortBy] = useState<'time_asc' | 'time_desc' | 'name_asc'>('time_asc');
@@ -178,7 +179,7 @@ export default function AdminSpmbManagement({
     phone: '',
     studentPhone: '',
     schoolOrigin: '',
-    schoolOriginType: 'maarif' as 'maarif' | 'other' | 'alumni',
+    schoolOriginType: 'maarif_jogosari' as SchoolOriginCategory | 'maarif' | 'other' | 'alumni' | string,
     registrationType: 'school_collective' as 'online_individual' | 'school_collective',
     sessionId: 'inden',
     address: '',
@@ -2660,6 +2661,7 @@ export default function AdminSpmbManagement({
                 const isCollective = candidate.registrationType === 'school_collective';
                 const isTokenPending = candidate.tokenPaymentStatus === 'pending';
                 const isTokenPaid = !isTokenPending && (candidate.tokenPaymentStatus === 'paid' || candidate.tokenPaid);
+                const isRefunded = candidate.collectiveRefundStatus === 'refunded';
                 const schoolClass = classifySchoolOrigin(candidate.schoolOrigin, candidate.schoolOriginType);
 
                 return (

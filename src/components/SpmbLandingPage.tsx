@@ -148,9 +148,9 @@ export default function SpmbLandingPage({
     birthPlace: 'Pasuruan',
     birthDate: '2014-05-12',
     phone: '',
-    schoolOriginType: 'maarif_jogosari' as 'maarif_jogosari' | 'lp_maarif' | 'other',
+    schoolOriginType: 'other' as 'maarif_jogosari' | 'lp_maarif' | 'other',
     manualSchoolName: '',
-    schoolOrigin: 'SD MAARIF JOGOSARI',
+    schoolOrigin: '',
     sessionId: 'inden',
     dusun: '',
     rt: '',
@@ -1049,13 +1049,22 @@ export default function SpmbLandingPage({
       return;
     }
 
-    const finalSchoolOrigin = (regForm.schoolOriginType === 'maarif_jogosari'
-      ? (config?.maarifSchoolName || 'SD MAARIF JOGOSARI')
-      : regForm.manualSchoolName.trim()).toUpperCase();
+    const finalSchoolOrigin = (regForm.schoolOrigin || regForm.manualSchoolName || '').trim().toUpperCase();
 
-    if (regForm.schoolOriginType === 'other' && !finalSchoolOrigin) {
-      setRegError('Nama SD/MI asal wajib diisi secara lengkap.');
+    if (!finalSchoolOrigin) {
+      setRegError('Nama lengkap SD/MI asal calon murid wajib diisi.');
       return;
+    }
+
+    // Deteksi kata kunci Ma'arif Jogosari / Maarif Jogosari dan Maarif / Ma'arif
+    const normSchool = finalSchoolOrigin.replace(/['’`.]/g, '');
+    let effectiveSchoolType: 'maarif_jogosari' | 'lp_maarif' | 'other' = 'other';
+    if (normSchool.includes('MAARIF JOGOSARI')) {
+      effectiveSchoolType = 'maarif_jogosari';
+    } else if (normSchool.includes('MAARIF')) {
+      effectiveSchoolType = 'lp_maarif';
+    } else {
+      effectiveSchoolType = 'other';
     }
 
     setIsProcessingTokenPay(true);
@@ -1079,6 +1088,7 @@ export default function SpmbLandingPage({
         schoolOrigin: finalSchoolOrigin,
         originSchool: finalSchoolOrigin,
         manualSchoolName: finalSchoolOrigin,
+        schoolOriginType: effectiveSchoolType,
         address: combinedAddress,
         dusun: toProperCase(regForm.dusun || ''),
         rt: (regForm.rt || '').replace(/\D/g, ''),
@@ -2511,152 +2521,116 @@ export default function SpmbLandingPage({
                 })()}
               </div>
 
-              {/* 2. Asal Sekolah (SD MAARIF JOGOSARI vs SD/MI LP. MA'ARIF vs SD Lainnya) */}
+              {/* 2. Asal Sekolah (SD / MI) - 1 Kolom Pengisian Tunggal dengan Deteksi Otomatis Kata Kunci */}
               <div className="space-y-2">
                 <label className="block text-xs font-bold text-slate-700">
-                  2. Asal Sekolah (SD / MI) <span className="text-rose-500">*</span>
+                  2. Asal Sekolah (SD / MI Asal) <span className="text-rose-500">*</span>
                 </label>
-                <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                  {/* SD Maarif Jogosari */}
-                  <button
-                    type="button"
-                    onClick={() => setRegForm(prev => ({
-                      ...prev,
-                      schoolOriginType: 'maarif_jogosari',
-                      schoolOrigin: (config?.maarifSchoolName || 'SD MAARIF JOGOSARI').toUpperCase()
-                    }))}
-                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                      regForm.schoolOriginType === 'maarif_jogosari'
-                        ? 'bg-emerald-50 border-2 border-emerald-500 shadow-xs ring-2 ring-emerald-500/20'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                        <Sparkles size={14} className="text-emerald-600" />
-                        <span>1. SD MAARIF JOGOSARI</span>
-                      </span>
-                      {regForm.schoolOriginType === 'maarif_jogosari' && (
-                        <CheckCircle2 size={14} className="text-emerald-600" />
-                      )}
-                    </div>
-                    <div className="mt-1 space-y-0.5">
-                      <span className="inline-block px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 text-[10px] font-bold border border-emerald-200">
-                        ✨ Diskon Gedung & Seragam
-                      </span>
-                      {regForm.sessionId === 'inden' && (
-                        <span className="inline-block ml-1 px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-black border border-amber-300">
-                          🎁 Bonus Seragam
-                        </span>
-                      )}
-                    </div>
-                  </button>
+                <div className="space-y-2">
+                  <input
+                    type="text"
+                    required
+                    placeholder="Ketik nama SD/MI asal (Contoh: SD Ma'arif Jogosari / SD Maarif Riyadul Arkham / SDN Bulukandang 1)"
+                    value={regForm.schoolOrigin || regForm.manualSchoolName || ''}
+                    onChange={(e) => {
+                      const upperVal = e.target.value.toUpperCase();
+                      const norm = upperVal.replace(/['’`.]/g, '');
+                      let detectedType: 'maarif_jogosari' | 'lp_maarif' | 'other' = 'other';
+                      if (norm.includes('MAARIF JOGOSARI')) {
+                        detectedType = 'maarif_jogosari';
+                      } else if (norm.includes('MAARIF')) {
+                        detectedType = 'lp_maarif';
+                      }
+                      setRegForm(prev => ({
+                        ...prev,
+                        manualSchoolName: upperVal,
+                        schoolOrigin: upperVal,
+                        schoolOriginType: detectedType
+                      }));
+                    }}
+                    onBlur={(e) => {
+                      const upperVal = e.target.value.toUpperCase();
+                      const norm = upperVal.replace(/['’`.]/g, '');
+                      let detectedType: 'maarif_jogosari' | 'lp_maarif' | 'other' = 'other';
+                      if (norm.includes('MAARIF JOGOSARI')) {
+                        detectedType = 'maarif_jogosari';
+                      } else if (norm.includes('MAARIF')) {
+                        detectedType = 'lp_maarif';
+                      }
+                      setRegForm(prev => ({
+                        ...prev,
+                        manualSchoolName: upperVal,
+                        schoolOrigin: upperVal,
+                        schoolOriginType: detectedType
+                      }));
+                    }}
+                    className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold placeholder:normal-case placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 tracking-wide"
+                  />
 
-                  {/* SD / MI LP. Maarif Lainnya */}
-                  <button
-                    type="button"
-                    onClick={() => setRegForm(prev => ({
-                      ...prev,
-                      schoolOriginType: 'lp_maarif',
-                      schoolOrigin: (prev.manualSchoolName || '').toUpperCase()
-                    }))}
-                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                      regForm.schoolOriginType === 'lp_maarif'
-                        ? 'bg-amber-50 border-2 border-amber-500 shadow-xs ring-2 ring-amber-500/20'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-                        <span>🎁 2. SD/MI LP. MA'ARIF</span>
-                      </span>
-                      {regForm.schoolOriginType === 'lp_maarif' && (
-                        <CheckCircle2 size={14} className="text-amber-600" />
-                      )}
-                    </div>
-                    <div className="mt-1">
-                      <span className="inline-block px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 text-[10px] font-bold border border-amber-300">
-                        🎁 Bonus 1 Set Seragam Olahraga (Inden)
-                      </span>
-                    </div>
-                  </button>
+                  {/* Deteksi Otomatis Kata Kunci Ma'arif Jogosari / Maarif Jogosari & LP. Ma'arif */}
+                  {(() => {
+                    const inputSchool = regForm.schoolOrigin || regForm.manualSchoolName || '';
+                    const norm = inputSchool.toUpperCase().replace(/['’`.]/g, '');
+                    const isJogosari = norm.includes('MAARIF JOGOSARI');
+                    const isLp = !isJogosari && norm.includes('MAARIF');
 
-                  {/* SD Lainnya */}
-                  <button
-                    type="button"
-                    onClick={() => setRegForm(prev => ({
-                      ...prev,
-                      schoolOriginType: 'other',
-                      schoolOrigin: (prev.manualSchoolName || '').toUpperCase()
-                    }))}
-                    className={`p-3.5 rounded-2xl border text-left transition-all cursor-pointer ${
-                      regForm.schoolOriginType === 'other'
-                        ? 'bg-indigo-50 border-2 border-indigo-500 shadow-xs ring-2 ring-indigo-500/20'
-                        : 'bg-white border-slate-200 text-slate-700 hover:border-slate-300'
-                    }`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <span className="text-xs font-black text-slate-900">3. SD Lainnya (Umum)</span>
-                      {regForm.schoolOriginType === 'other' && (
-                        <CheckCircle2 size={14} className="text-indigo-600" />
-                      )}
-                    </div>
-                    <p className="text-[10px] text-slate-500 mt-1 m-0">Dari SD / MI negeri & swasta lainnya</p>
-                  </button>
-                </div>
-
-                {/* Input Manual jika memilih SD/MI LP Maarif Lainnya atau SD Lainnya */}
-                {(regForm.schoolOriginType === 'other' || regForm.schoolOriginType === 'lp_maarif') && (
-                  <div className="pt-2 animate-in fade-in">
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Nama Lengkap SD / MI Asal (Otomatis Huruf Besar / KAPITAL) <span className="text-rose-500">*</span>
-                    </label>
-                    <input
-                      type="text"
-                      required
-                      placeholder={regForm.schoolOriginType === 'lp_maarif' ? "CONTOH: MI MAARIF PANDAAN" : "CONTOH: SDN BULUKANDANG 1 PRIGEN"}
-                      value={regForm.manualSchoolName}
-                      onChange={(e) => {
-                        const upperVal = e.target.value.toUpperCase();
-                        setRegForm(prev => ({
-                          ...prev,
-                          manualSchoolName: upperVal,
-                          schoolOrigin: upperVal
-                        }));
-                      }}
-                      onBlur={(e) => {
-                        const upperVal = e.target.value.toUpperCase();
-                        setRegForm(prev => ({
-                          ...prev,
-                          manualSchoolName: upperVal,
-                          schoolOrigin: upperVal
-                        }));
-                      }}
-                      className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold placeholder:normal-case placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 tracking-wide"
-                    />
-                  </div>
-                )}
-
-                {/* Alert jika berhak mendapatkan bonus seragam olahraga sesi inden */}
-                {(() => {
-                  const isLp = isSchoolLpMaarif(regForm.schoolOriginType, regForm.schoolOrigin || regForm.manualSchoolName);
-                  if (regForm.sessionId === 'inden' && isLp) {
-                    return (
-                      <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-emerald-50 border border-amber-300 text-amber-950 flex items-start gap-3 shadow-2xs animate-in fade-in mt-2">
-                        <span className="text-xl shrink-0 mt-0.5">🎁</span>
-                        <div>
-                          <p className="text-xs font-black text-amber-900 m-0">
-                            Klaim Bonus Sesi Inden Terdeteksi! (1 Set Seragam Olahraga Gratis)
-                          </p>
-                          <p className="text-[11px] text-amber-800 m-0 mt-0.5 leading-relaxed">
-                            Selamat! Calon murid asal SD/MI dari LP. Ma'arif di Sesi Inden otomatis mendapatkan <strong>1 Set Seragam Olahraga Lengkap secara GRATIS (Senilai Rp 175.000)</strong> saat menyelesaikan daftar ulang seragam sekolah.
-                          </p>
+                    if (!inputSchool.trim()) {
+                      return (
+                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-xs flex items-center gap-2">
+                          <span className="text-base shrink-0">💡</span>
+                          <span className="text-[11px] leading-relaxed">
+                            <em>Gunakan kata kunci <strong>"Ma'arif Jogosari"</strong> atau <strong>"Maarif Jogosari"</strong> untuk klaim otomatis diskon uang gedung & seragam SD Ma'arif Jogosari (+ bonus seragam olahraga di Sesi Inden). Gunakan kata kunci <strong>"Ma'arif"</strong> atau <strong>"Maarif"</strong> untuk klaim otomatis bonus seragam olahraga SD/MI LP. Ma'arif pada Sesi Inden.</em>
+                          </span>
                         </div>
+                      );
+                    }
+
+                    if (isJogosari) {
+                      return (
+                        <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+                          <Sparkles size={18} className="text-emerald-700 shrink-0 mt-0.5" />
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-black text-emerald-900 m-0 text-xs">✨ Terdeteksi: SD Ma'arif Jogosari</p>
+                              <span className="px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 text-[10px] font-black">Kata Kunci: Ma'arif Jogosari / Maarif Jogosari</span>
+                            </div>
+                            <p className="text-[11px] text-emerald-800 m-0 mt-1 leading-relaxed">
+                              Mendapatkan <strong>Potongan Khusus Uang Gedung & Diskon Seragam</strong> SD Ma'arif Jogosari {regForm.sessionId === 'inden' ? '+ 🎁 Bonus 1 Set Seragam Olahraga Gratis (Senilai Rp 175.000) pada Sesi Inden.' : '.'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    if (isLp) {
+                      return (
+                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-sky-50 border-2 border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+                          <span className="text-xl shrink-0 mt-0.5">🎁</span>
+                          <div className="space-y-0.5">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              <p className="font-black text-amber-900 m-0 text-xs">Klaim Bonus Khusus SD/MI LP. Ma'arif Terdeteksi!</p>
+                              <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 text-[10px] font-black">Kata Kunci: Maarif / Ma'arif</span>
+                            </div>
+                            <p className="text-[11px] text-amber-800 m-0 mt-1 leading-relaxed">
+                              {regForm.sessionId === 'inden'
+                                ? '🎉 Selamat! Calon murid dari jaringan SD/MI LP. Ma\'arif pada Sesi Inden otomatis berhak mendapatkan Bonus 1 Set Seragam Olahraga Gratis (Senilai Rp 175.000) saat menyelesaikan daftar ulang seragam sekolah.'
+                                : 'Calon murid terdaftar berasal dari jaringan sekolah/madrasah lingkungan LP. Ma\'arif NU.'}
+                            </p>
+                          </div>
+                        </div>
+                      );
+                    }
+
+                    return (
+                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-xs flex items-center gap-2">
+                        <span className="text-base shrink-0">🏫</span>
+                        <span className="text-[11px]">
+                          Asal Sekolah: <strong>{inputSchool}</strong> (SD/MI Umum / Luar Ma'arif).
+                        </span>
                       </div>
                     );
-                  }
-                  return null;
-                })()}
+                  })()}
+                </div>
               </div>
 
               {/* Nama Lengkap */}

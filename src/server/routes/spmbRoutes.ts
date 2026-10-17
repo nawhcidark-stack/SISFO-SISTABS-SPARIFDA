@@ -2955,9 +2955,11 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       const orderId = `SPMB-TOKEN-${cleanNisn}-${Date.now()}`;
       const regNumber = `SPMB-${spmbConfig.academicYear.replace(/[^0-9]/g, "")}-${cleanNisn.slice(-4) || Math.floor(1000 + Math.random() * 9000)}`;
 
-      const rawSchool = schoolOriginType === 'maarif_jogosari' 
-        ? (spmbConfig.maarifSchoolName || 'SD MAARIF JOGOSARI') 
-        : (schoolOrigin || originSchool || 'SD Lainnya');
+      const rawSchool = (schoolOrigin && String(schoolOrigin).trim()) 
+        ? schoolOrigin 
+        : ((originSchool && String(originSchool).trim())
+          ? originSchool
+          : (schoolOriginType === 'maarif_jogosari' ? (spmbConfig.maarifSchoolName || 'SD MAARIF JOGOSARI') : 'SD Lainnya'));
       const effectiveSchoolOrigin = String(rawSchool).trim().toUpperCase();
 
       const isLpMaarif = isSchoolLpMaarif(schoolOriginType, effectiveSchoolOrigin);

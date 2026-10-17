@@ -2567,35 +2567,23 @@ export default function SpmbLandingPage({
                     className="w-full px-4 py-2.5 bg-white border border-slate-300 rounded-xl text-xs text-slate-900 uppercase font-bold placeholder:normal-case placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500 tracking-wide"
                   />
 
-                  {/* Deteksi Otomatis Kata Kunci Ma'arif Jogosari / Maarif Jogosari & LP. Ma'arif */}
+                  {/* Feedback Status Asal Sekolah (Tanpa Keterangan Kata Kunci) */}
                   {(() => {
                     const inputSchool = regForm.schoolOrigin || regForm.manualSchoolName || '';
+                    if (!inputSchool.trim()) return null;
+
                     const norm = inputSchool.toUpperCase().replace(/['’`.]/g, '');
                     const isJogosari = norm.includes('MAARIF JOGOSARI');
                     const isLp = !isJogosari && norm.includes('MAARIF');
 
-                    if (!inputSchool.trim()) {
-                      return (
-                        <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-xs flex items-center gap-2">
-                          <span className="text-base shrink-0">💡</span>
-                          <span className="text-[11px] leading-relaxed">
-                            <em>Gunakan kata kunci <strong>"Ma'arif Jogosari"</strong> atau <strong>"Maarif Jogosari"</strong> untuk klaim otomatis diskon uang gedung & seragam SD Ma'arif Jogosari (+ bonus seragam olahraga di Sesi Inden). Gunakan kata kunci <strong>"Ma'arif"</strong> atau <strong>"Maarif"</strong> untuk klaim otomatis bonus seragam olahraga SD/MI LP. Ma'arif pada Sesi Inden.</em>
-                          </span>
-                        </div>
-                      );
-                    }
-
                     if (isJogosari) {
                       return (
-                        <div className="p-3.5 rounded-2xl bg-emerald-50 border-2 border-emerald-400 text-emerald-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
-                          <Sparkles size={18} className="text-emerald-700 shrink-0 mt-0.5" />
+                        <div className="p-3 rounded-2xl bg-emerald-50 border border-emerald-300 text-emerald-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+                          <Sparkles size={16} className="text-emerald-700 shrink-0 mt-0.5" />
                           <div className="space-y-0.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-black text-emerald-900 m-0 text-xs">✨ Terdeteksi: SD Ma'arif Jogosari</p>
-                              <span className="px-2 py-0.5 rounded-full bg-emerald-200 text-emerald-900 text-[10px] font-black">Kata Kunci: Ma'arif Jogosari / Maarif Jogosari</span>
-                            </div>
-                            <p className="text-[11px] text-emerald-800 m-0 mt-1 leading-relaxed">
-                              Mendapatkan <strong>Potongan Khusus Uang Gedung & Diskon Seragam</strong> SD Ma'arif Jogosari {regForm.sessionId === 'inden' ? '+ 🎁 Bonus 1 Set Seragam Olahraga Gratis (Senilai Rp 175.000) pada Sesi Inden.' : '.'}
+                            <p className="font-black text-emerald-900 m-0 text-xs">✨ Terdeteksi: SD Ma'arif Jogosari</p>
+                            <p className="text-[11px] text-emerald-800 m-0 leading-relaxed">
+                              Mendapatkan potongan khusus uang gedung & seragam SD Ma'arif Jogosari {regForm.sessionId === 'inden' ? '+ 🎁 Bonus 1 Set Seragam Olahraga Gratis pada Sesi Inden.' : '.'}
                             </p>
                           </div>
                         </div>
@@ -2604,16 +2592,13 @@ export default function SpmbLandingPage({
 
                     if (isLp) {
                       return (
-                        <div className="p-3.5 rounded-2xl bg-gradient-to-r from-amber-50 to-sky-50 border-2 border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
-                          <span className="text-xl shrink-0 mt-0.5">🎁</span>
+                        <div className="p-3 rounded-2xl bg-gradient-to-r from-amber-50 to-sky-50 border border-amber-300 text-amber-950 text-xs flex items-start gap-2.5 shadow-2xs animate-in fade-in">
+                          <span className="text-base shrink-0 mt-0.5">🎁</span>
                           <div className="space-y-0.5">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              <p className="font-black text-amber-900 m-0 text-xs">Klaim Bonus Khusus SD/MI LP. Ma'arif Terdeteksi!</p>
-                              <span className="px-2 py-0.5 rounded-full bg-amber-200 text-amber-950 text-[10px] font-black">Kata Kunci: Maarif / Ma'arif</span>
-                            </div>
-                            <p className="text-[11px] text-amber-800 m-0 mt-1 leading-relaxed">
+                            <p className="font-black text-amber-900 m-0 text-xs">Bonus SD/MI LP. Ma'arif Aktif</p>
+                            <p className="text-[11px] text-amber-800 m-0 leading-relaxed">
                               {regForm.sessionId === 'inden'
-                                ? '🎉 Selamat! Calon murid dari jaringan SD/MI LP. Ma\'arif pada Sesi Inden otomatis berhak mendapatkan Bonus 1 Set Seragam Olahraga Gratis (Senilai Rp 175.000) saat menyelesaikan daftar ulang seragam sekolah.'
+                                ? '🎉 Selamat! Calon murid pada Sesi Inden berhak mendapatkan Bonus 1 Set Seragam Olahraga Gratis (Senilai Rp 175.000) saat daftar ulang seragam sekolah.'
                                 : 'Calon murid terdaftar berasal dari jaringan sekolah/madrasah lingkungan LP. Ma\'arif NU.'}
                             </p>
                           </div>
@@ -2621,14 +2606,7 @@ export default function SpmbLandingPage({
                       );
                     }
 
-                    return (
-                      <div className="p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-slate-600 text-xs flex items-center gap-2">
-                        <span className="text-base shrink-0">🏫</span>
-                        <span className="text-[11px]">
-                          Asal Sekolah: <strong>{inputSchool}</strong> (SD/MI Umum / Luar Ma'arif).
-                        </span>
-                      </div>
-                    );
+                    return null;
                   })()}
                 </div>
               </div>

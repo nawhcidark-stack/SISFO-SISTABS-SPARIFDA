@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher, SharedLearningObjective } from '../types';
-import { isSameSubject, normClass, isSameClass } from '../utils/subjectMatcher';
+import { isSameSubject, normClass, isSameClass, toMasterSubjectName } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import ScheduleView from './ScheduleView';
@@ -239,34 +239,36 @@ export default function SubjectTeacherPanel({
   // --- Kurikulum Merdeka State Settings ---
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
-  const [selectedSubject, setSelectedSubject] = useState<string>(() => currentTeacher?.subject || 'Matematika');
+  const [selectedSubject, setSelectedSubject] = useState<string>(() => toMasterSubjectName(currentTeacher?.subject || 'Matematika'));
   const [selectedGradeClass, setSelectedGradeClass] = useState<string>('');
   const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [selectedYearGrading, setSelectedYearGrading] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
 
   useEffect(() => {
     if (currentTeacher?.subject) {
-      setSelectedSubject(currentTeacher.subject);
+      setSelectedSubject(toMasterSubjectName(currentTeacher.subject));
     }
   }, [currentTeacher?.subject]);
 
   const subjectOptions = useMemo(() => {
     const list = [
-      currentTeacher?.subject,
+      currentTeacher?.subject ? toMasterSubjectName(currentTeacher.subject) : null,
       'Matematika',
       'Bahasa Indonesia',
       'Bahasa Inggris',
-      'Ilmu Pengetahuan Alam',
-      'Ilmu Pengetahuan Sosial',
+      'Ilmu Pengetahuan Alam (IPA)',
+      'Ilmu Pengetahuan Sosial (IPS)',
       'Pendidikan Agama Islam',
       'Pendidikan Pancasila',
-      'Pendidikan Jasmani & OR',
+      'Pendidikan Jasmani, Olahraga, dan Kesehatan',
       'Seni Budaya',
       'Informatika',
       'Prakarya',
-      'Bahasa Jawa',
+      'Muatan Lokal: Bahasa Daerah',
+      'Bahasa Arab',
+      'Ke-NU-an / Aswaja',
       'Bimbingan Konseling'
-    ].filter(Boolean);
+    ].filter(Boolean) as string[];
     return Array.from(new Set(list));
   }, [currentTeacher?.subject]);
 
@@ -715,17 +717,22 @@ export default function SubjectTeacherPanel({
         const sub = s.subject.trim();
         const lower = sub.toLowerCase();
         if (!lower.includes('bimbingan wali') && !lower.includes('upacara') && !lower.includes('senam') && !lower.includes('apel')) {
-          set.add(sub);
+          set.add(toMasterSubjectName(sub));
         }
       }
     });
     if (currentTeacher?.subject && currentTeacher.subject.trim()) {
-      set.add(currentTeacher.subject.trim());
+      set.add(toMasterSubjectName(currentTeacher.subject.trim()));
+    }
+    if ((currentTeacher as any)?.subjects && Array.isArray((currentTeacher as any).subjects)) {
+      (currentTeacher as any).subjects.forEach((s: string) => {
+        if (s && s.trim()) set.add(toMasterSubjectName(s.trim()));
+      });
     }
     const arr = Array.from(set);
     if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
-    return currentTeacher?.subject ? [currentTeacher.subject] : ['Matematika'];
-  }, [teacherSchedules, currentTeacher?.subject]);
+    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject)] : ['Matematika'];
+  }, [teacherSchedules, currentTeacher]);
 
   const allowedClasses = useMemo(() => {
     const set = new Set<string>();
@@ -1244,7 +1251,7 @@ export default function SubjectTeacherPanel({
 
       const matchedAssessment = merdekaAssessments.find(a =>
         a.studentId === st.id &&
-        (a.subject || '').trim().toLowerCase() === selectedSubject.trim().toLowerCase() &&
+        isSameSubject(a.subject, selectedSubject) &&
         a.semester === selectedSemesterGrading &&
         a.academicYear === selectedYearGrading
       );
@@ -5573,7 +5580,7 @@ export default function SubjectTeacherPanel({
 
                         const matchedAssessment = merdekaAssessments.find(a =>
                           a.studentId === st.id &&
-                          (a.subject || '').trim().toLowerCase() === selectedSubject.trim().toLowerCase() &&
+                          isSameSubject(a.subject, selectedSubject) &&
                           a.semester === selectedSemesterGrading &&
                           a.academicYear === selectedYearGrading
                         );

@@ -1,5 +1,21 @@
 // Utility for canonical subject and class matching across the application
 
+export const MASTER_SUBJECTS_LIST: string[] = [
+  'Pendidikan Agama Islam',
+  'Pendidikan Pancasila',
+  'Bahasa Indonesia',
+  'Matematika',
+  'Ilmu Pengetahuan Alam (IPA)',
+  'Ilmu Pengetahuan Sosial (IPS)',
+  'Bahasa Inggris',
+  'Seni Budaya',
+  'Pendidikan Jasmani, Olahraga, dan Kesehatan',
+  'Informatika',
+  'Muatan Lokal: Bahasa Daerah',
+  'Bahasa Arab',
+  'Ke-NU-an / Aswaja'
+];
+
 export const normalizeSubject = (subj?: string): string => {
   if (!subj) return '';
   const s = subj.trim().toLowerCase();
@@ -7,8 +23,8 @@ export const normalizeSubject = (subj?: string): string => {
   if (s.includes('pancasila') || s === 'pkn' || s === 'ppkn') return 'Pendidikan Pancasila';
   if (s === 'b. indonesia' || s === 'bahasa indonesia' || s === 'bindo' || s.includes('indonesia')) return 'Bahasa Indonesia';
   if (s === 'mtk' || s === 'mat' || s.includes('matematika')) return 'Matematika';
-  if (s === 'ipa' || s.includes('pengetahuan alam')) return 'Ilmu Pengetahuan Alam';
-  if (s === 'ips' || s.includes('pengetahuan sosial')) return 'Ilmu Pengetahuan Sosial';
+  if (s === 'ipa' || s.includes('pengetahuan alam')) return 'Ilmu Pengetahuan Alam (IPA)';
+  if (s === 'ips' || s.includes('pengetahuan sosial')) return 'Ilmu Pengetahuan Sosial (IPS)';
   if (s === 'b. inggris' || s === 'bahasa inggris' || s === 'bing' || s.includes('inggris')) return 'Bahasa Inggris';
   if (s.includes('seni') || s.includes('budaya') || s === 'sbk') return 'Seni Budaya';
   if (s === 'pjok' || s.includes('jasmani') || s.includes('olahraga') || s.includes('penjas')) return 'Pendidikan Jasmani, Olahraga, dan Kesehatan';
@@ -20,6 +36,27 @@ export const normalizeSubject = (subj?: string): string => {
   if (s.includes('konseling') || s === 'bk') return 'Bimbingan Konseling';
   if (s.includes('kokurikuler') || s.includes('p5')) return 'Kokurikuler';
   return subj.trim();
+};
+
+export const toMasterSubjectName = (subj?: string, customMasterList?: Array<{ name: string; code?: string }>): string => {
+  if (!subj) return '';
+  const trimmed = subj.trim();
+  if (!trimmed) return '';
+
+  if (customMasterList && customMasterList.length > 0) {
+    const found = customMasterList.find(m => 
+      m.name.toLowerCase().trim() === trimmed.toLowerCase() ||
+      (m.code && m.code.toLowerCase().trim() === trimmed.toLowerCase()) ||
+      isSameSubject(m.name, trimmed) ||
+      (m.code && isSameSubject(m.code, trimmed))
+    );
+    if (found) return found.name;
+  }
+
+  const matchMaster = MASTER_SUBJECTS_LIST.find(m => isSameSubject(m, trimmed));
+  if (matchMaster) return matchMaster;
+
+  return normalizeSubject(trimmed);
 };
 
 export const isSameSubject = (a?: string, b?: string): boolean => {

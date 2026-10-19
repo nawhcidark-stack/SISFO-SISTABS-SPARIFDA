@@ -1062,11 +1062,13 @@ export default function WakaKurikulumPanel({
     });
   }, [liveAssessments, selectedSemester, selectedAcademicYear]);
 
-  // Distinct Teacher Options for filter dropdown (using teacher ID as value, displaying teacher Name)
+  // Distinct Teacher Options for filter dropdown (using username/ID as value, displaying teacher Name & username)
   const allTeacherOptions = useMemo(() => {
     interface TeacherOpt {
       id: string; // Canonical ID (e.g. 'st-1784121769274-0-scop', 'ht-4')
       name: string; // Display Name (e.g. 'Drs. Husnan')
+      username: string; // Teacher username (e.g. 'novita', 'novitasari')
+      usernames: string[]; // List of all usernames mapped to this teacher
       rawIds: string[]; // Linked IDs e.g. ['ht-4', 'st-sync-ht-4']
       role: 'subject_teacher' | 'homeroom' | 'both';
       subject?: string;
@@ -1080,16 +1082,34 @@ export default function WakaKurikulumPanel({
       if (!st.name || st.name.trim().toLowerCase() === 'guru mapel' || st.name.trim().toLowerCase() === 'guru') return;
       const canonicalId = getCanonicalTeacherId(st.id);
       const name = st.name.trim();
-      const existing = teacherMap.get(canonicalId) || Array.from(teacherMap.values()).find(t => cleanTeacherName(t.name) === cleanTeacherName(name));
+      const username = (st.username || '').trim().toLowerCase();
+
+      // Look up existing teacher:
+      // Primary match by username (if username exists)
+      // Fallback match by canonical ID
+      // Fallback match by exact clean name
+      const existing = (username ? teacherMap.get(username) : null) ||
+                       (canonicalId ? teacherMap.get(canonicalId) : null) ||
+                       Array.from(teacherMap.values()).find(t => 
+                         (username && t.usernames.includes(username)) ||
+                         (canonicalId && t.rawIds.includes(canonicalId)) ||
+                         (cleanTeacherName(t.name) === cleanTeacherName(name))
+                       );
+
       if (existing) {
-        if (!existing.rawIds.includes(st.id)) existing.rawIds.push(st.id);
+        if (st.id && !existing.rawIds.includes(st.id)) existing.rawIds.push(st.id);
+        if (canonicalId && !existing.rawIds.includes(canonicalId)) existing.rawIds.push(canonicalId);
+        if (username && !existing.usernames.includes(username)) existing.usernames.push(username);
         if (st.subject && !existing.subject) existing.subject = st.subject;
         if (existing.role === 'homeroom') existing.role = 'both';
       } else {
-        teacherMap.set(canonicalId, {
+        const key = username || canonicalId;
+        teacherMap.set(key, {
           id: canonicalId,
           name,
-          rawIds: [canonicalId, st.id],
+          username: username || canonicalId,
+          usernames: username ? [username] : [],
+          rawIds: [canonicalId, st.id].filter(Boolean),
           role: 'subject_teacher',
           subject: st.subject,
           className: st.className
@@ -1102,16 +1122,30 @@ export default function WakaKurikulumPanel({
       if (!hr.name || hr.name.trim().toLowerCase() === 'wali kelas') return;
       const canonicalId = getCanonicalTeacherId(hr.id);
       const name = hr.name.trim();
-      const existing = teacherMap.get(canonicalId) || Array.from(teacherMap.values()).find(t => cleanTeacherName(t.name) === cleanTeacherName(name));
+      const username = (hr.username || '').trim().toLowerCase();
+
+      const existing = (username ? teacherMap.get(username) : null) ||
+                       (canonicalId ? teacherMap.get(canonicalId) : null) ||
+                       Array.from(teacherMap.values()).find(t => 
+                         (username && t.usernames.includes(username)) ||
+                         (canonicalId && t.rawIds.includes(canonicalId)) ||
+                         (cleanTeacherName(t.name) === cleanTeacherName(name))
+                       );
+
       if (existing) {
-        if (!existing.rawIds.includes(hr.id)) existing.rawIds.push(hr.id);
+        if (hr.id && !existing.rawIds.includes(hr.id)) existing.rawIds.push(hr.id);
+        if (canonicalId && !existing.rawIds.includes(canonicalId)) existing.rawIds.push(canonicalId);
+        if (username && !existing.usernames.includes(username)) existing.usernames.push(username);
         if (hr.className) existing.className = hr.className;
         existing.role = 'both';
       } else {
-        teacherMap.set(canonicalId, {
+        const key = username || canonicalId;
+        teacherMap.set(key, {
           id: canonicalId,
           name,
-          rawIds: [canonicalId, hr.id],
+          username: username || canonicalId,
+          usernames: username ? [username] : [],
+          rawIds: [canonicalId, hr.id].filter(Boolean),
           role: 'homeroom',
           className: hr.className
         });
@@ -1123,15 +1157,30 @@ export default function WakaKurikulumPanel({
       if (!sch.teacherName || sch.teacherName.trim().toLowerCase() === 'guru mapel') return;
       const schId = sch.teacherId ? getCanonicalTeacherId(sch.teacherId) : '';
       const name = sch.teacherName.trim();
-      const existing = (schId ? teacherMap.get(schId) : null) || Array.from(teacherMap.values()).find(t => cleanTeacherName(t.name) === cleanTeacherName(name));
+      const schUsername = sch.teacherId && !sch.teacherId.startsWith('st-') && !sch.teacherId.startsWith('ht-') 
+        ? sch.teacherId.trim().toLowerCase() 
+        : '';
+
+      const existing = (schUsername ? teacherMap.get(schUsername) : null) ||
+                       (schId ? teacherMap.get(schId) : null) ||
+                       Array.from(teacherMap.values()).find(t => 
+                         (schUsername && t.usernames.includes(schUsername)) ||
+                         (schId && (t.id === schId || t.rawIds.includes(schId))) ||
+                         (cleanTeacherName(t.name) === cleanTeacherName(name))
+                       );
+
       if (existing) {
         if (schId && !existing.rawIds.includes(schId)) existing.rawIds.push(schId);
+        if (schUsername && !existing.usernames.includes(schUsername)) existing.usernames.push(schUsername);
         if (sch.subject && !existing.subject) existing.subject = sch.subject;
-      } else if (schId) {
-        teacherMap.set(schId, {
-          id: schId,
+      } else if (schId || schUsername) {
+        const key = schUsername || schId;
+        teacherMap.set(key, {
+          id: schId || schUsername,
           name,
-          rawIds: [schId],
+          username: schUsername || schId,
+          usernames: schUsername ? [schUsername] : [],
+          rawIds: schId ? [schId] : [],
           role: 'subject_teacher',
           subject: sch.subject,
           className: sch.className
@@ -1142,19 +1191,30 @@ export default function WakaKurikulumPanel({
     return Array.from(teacherMap.values()).sort((a, b) => a.name.localeCompare(b.name, 'id'));
   }, [subjectTeachers, homerooms, classSchedules]);
 
-  // Selected teacher entity from detailTeacherFilter (supports ID or fallback Name)
+  // Selected teacher entity from detailTeacherFilter (supports Username, ID, or fallback Name)
   const selectedTeacherObj = useMemo(() => {
     if (detailTeacherFilter === 'all') return null;
+    const filterVal = detailTeacherFilter.trim().toLowerCase();
     const filterCanonical = getCanonicalTeacherId(detailTeacherFilter);
+
+    // 1. By username match (primary)
+    const byUsername = allTeacherOptions.find(t => 
+      t.username.toLowerCase() === filterVal ||
+      t.usernames.some(u => u.toLowerCase() === filterVal)
+    );
+    if (byUsername) return byUsername;
+
+    // 2. By ID match
     const byId = allTeacherOptions.find(t => 
       t.id === filterCanonical || 
       t.rawIds.some(rid => getCanonicalTeacherId(rid) === filterCanonical)
     );
     if (byId) return byId;
 
+    // 3. By exact clean name (STRICT EQUALITY ONLY, NEVER SUBSTRING)
     const cleanFilter = cleanTeacherName(detailTeacherFilter);
     return allTeacherOptions.find(t => 
-      t.name.toLowerCase().trim() === detailTeacherFilter.toLowerCase().trim() ||
+      t.name.toLowerCase().trim() === filterVal ||
       (cleanTeacherName(t.name) === cleanFilter)
     ) || null;
   }, [detailTeacherFilter, allTeacherOptions]);
@@ -1164,26 +1224,26 @@ export default function WakaKurikulumPanel({
     const cleanT = cleanTeacherName(teacherName);
     const classesSet = new Set<string>();
 
-    // 1. From classSchedules matching teacher and subject
+    // 1. From classSchedules matching teacher and subject (strict name matching)
     classSchedules.forEach(s => {
       if (isSameSubject(s.subject, subject)) {
         const cleanS = cleanTeacherName(s.teacherName);
         if (
           (s.teacherName && s.teacherName.toLowerCase().trim() === teacherName.toLowerCase().trim()) ||
-          (cleanS && cleanT && (cleanS === cleanT || cleanS.includes(cleanT) || cleanT.includes(cleanS)))
+          (cleanS && cleanT && cleanS === cleanT)
         ) {
           if (s.className) classesSet.add(s.className.trim().toUpperCase());
         }
       }
     });
 
-    // 2. From assessments directly inputted by this teacher for this subject
+    // 2. From assessments directly inputted by this teacher for this subject (strict name matching)
     filteredAssessments.forEach(a => {
       if (isSameSubject(a.subject, subject) && hasAssessmentData(a)) {
         const cleanA = cleanTeacherName(a.teacherName);
         if (
           (a.teacherName && a.teacherName.toLowerCase().trim() === teacherName.toLowerCase().trim()) ||
-          (cleanA && cleanT && (cleanA === cleanT || cleanA.includes(cleanT) || cleanT.includes(cleanA)))
+          (cleanA && cleanT && cleanA === cleanT)
         ) {
           if (a.className) classesSet.add(a.className.trim().toUpperCase());
         }
@@ -1240,38 +1300,70 @@ export default function WakaKurikulumPanel({
         if (!hasKokuScore) return false;
       }
 
-      // 5. Teacher filter (using ID as primary anchor, with Name matching fallback)
+      // 5. Teacher filter (using Username and ID as primary anchors, strict exact Name matching fallback)
       if (detailTeacherFilter !== 'all') {
-        const cleanTarget = selectedTeacherObj ? cleanTeacherName(selectedTeacherObj.name) : cleanTeacherName(detailTeacherFilter);
-        const cleanActual = cleanTeacherName(a.teacherName);
-        const cleanSched = cleanTeacherName(scheduledTeacherName);
-        const cleanHr = cleanTeacherName(homeroomTeacherName);
+        const targetUsernames = selectedTeacherObj 
+          ? [selectedTeacherObj.username.toLowerCase(), ...selectedTeacherObj.usernames.map(u => u.toLowerCase())]
+          : [detailTeacherFilter.toLowerCase().trim()];
 
         const targetIds = selectedTeacherObj
           ? selectedTeacherObj.rawIds.map(getCanonicalTeacherId)
           : [getCanonicalTeacherId(detailTeacherFilter)];
 
-        const actualTeacherId = a.teacherId ? getCanonicalTeacherId(a.teacherId) : '';
+        const targetCleanName = selectedTeacherObj 
+          ? cleanTeacherName(selectedTeacherObj.name) 
+          : cleanTeacherName(detailTeacherFilter);
 
-        // a. Direct match with assessment recorded teacher (by ID or Name)
+        // a. Direct match with assessment recorded teacher
+        const actualTeacherId = a.teacherId ? getCanonicalTeacherId(a.teacherId) : '';
+        const cleanActual = cleanTeacherName(a.teacherName);
+        const cleanSched = cleanTeacherName(scheduledTeacherName);
+        const cleanHr = cleanTeacherName(homeroomTeacherName);
+        const directTeacherEntity = allTeacherOptions.find(t => 
+          (actualTeacherId && (t.id === actualTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === actualTeacherId))) ||
+          (cleanActual && cleanTeacherName(t.name) === cleanActual)
+        );
+        const directTeacherUsernames = directTeacherEntity 
+          ? [directTeacherEntity.username.toLowerCase(), ...directTeacherEntity.usernames.map(u => u.toLowerCase())]
+          : [];
+
         const isDirectTeacher = (
+          (directTeacherUsernames.length > 0 && directTeacherUsernames.some(u => targetUsernames.includes(u))) ||
           (actualTeacherId && targetIds.includes(actualTeacherId)) ||
           (a.teacherName && selectedTeacherObj && a.teacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
-          (cleanActual.length > 0 && cleanTarget.length > 0 && (cleanActual === cleanTarget || cleanActual.includes(cleanTarget) || cleanTarget.includes(cleanActual)))
+          (cleanActual.length > 0 && targetCleanName.length > 0 && cleanActual === targetCleanName)
         );
 
-        // b. Scheduled teacher match for this class and subject (by ID or Name)
+        // b. Scheduled teacher match for this class and subject
+        const scheduledTeacherEntity = allTeacherOptions.find(t => 
+          (scheduledTeacherId && (t.id === scheduledTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === scheduledTeacherId))) ||
+          (cleanSched && cleanTeacherName(t.name) === cleanSched)
+        );
+        const schedTeacherUsernames = scheduledTeacherEntity 
+          ? [scheduledTeacherEntity.username.toLowerCase(), ...scheduledTeacherEntity.usernames.map(u => u.toLowerCase())]
+          : [];
+
         const isScheduled = (
+          (schedTeacherUsernames.length > 0 && schedTeacherUsernames.some(u => targetUsernames.includes(u))) ||
           (scheduledTeacherId && targetIds.includes(scheduledTeacherId)) ||
           (scheduledTeacherName && selectedTeacherObj && scheduledTeacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
-          (cleanSched.length > 0 && cleanTarget.length > 0 && (cleanSched === cleanTarget || cleanSched.includes(cleanTarget) || cleanTarget.includes(cleanSched)))
+          (cleanSched.length > 0 && targetCleanName.length > 0 && cleanSched === targetCleanName)
         );
 
-        // c. Homeroom match for this student's class (by ID or Name)
+        // c. Homeroom match for this student's class
+        const hrTeacherEntity = allTeacherOptions.find(t => 
+          (homeroomTeacherId && (t.id === homeroomTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === homeroomTeacherId))) ||
+          (cleanHr && cleanTeacherName(t.name) === cleanHr)
+        );
+        const hrTeacherUsernames = hrTeacherEntity 
+          ? [hrTeacherEntity.username.toLowerCase(), ...hrTeacherEntity.usernames.map(u => u.toLowerCase())]
+          : [];
+
         const isHomeroomMatch = (
+          (hrTeacherUsernames.length > 0 && hrTeacherUsernames.some(u => targetUsernames.includes(u))) ||
           (homeroomTeacherId && targetIds.includes(homeroomTeacherId)) ||
           (homeroomTeacherName && selectedTeacherObj && homeroomTeacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
-          (cleanHr.length > 0 && cleanTarget.length > 0 && cleanHr === cleanTarget)
+          (cleanHr.length > 0 && targetCleanName.length > 0 && cleanHr === targetCleanName)
         );
 
         if (detailRoleFilter === 'homeroom') {
@@ -1309,7 +1401,14 @@ export default function WakaKurikulumPanel({
         const subjMatch = a.subject?.toLowerCase().includes(q) || normalizeSubject(a.subject).toLowerCase().includes(q);
         const teacherMatch = a.teacherName?.toLowerCase().includes(q) || (scheduledTeacherName && scheduledTeacherName.toLowerCase().includes(q));
         const classMatch = a.className?.toLowerCase().includes(q) || normClass(a.className).includes(normClass(q));
-        if (!nameMatch && !idMatch && !subjMatch && !teacherMatch && !classMatch) return false;
+        // Match teacher username
+        const teacherUserMatch = allTeacherOptions.some(t => 
+          (t.username.toLowerCase().includes(q) || t.usernames.some(u => u.toLowerCase().includes(q))) &&
+          (cleanTeacherName(t.name) === cleanTeacherName(a.teacherName) || 
+           (scheduledTeacherName && cleanTeacherName(t.name) === cleanTeacherName(scheduledTeacherName)) ||
+           (homeroomTeacherName && cleanTeacherName(t.name) === cleanTeacherName(homeroomTeacherName)))
+        );
+        if (!nameMatch && !idMatch && !subjMatch && !teacherMatch && !classMatch && !teacherUserMatch) return false;
       }
 
       return true;
@@ -3211,7 +3310,7 @@ export default function WakaKurikulumPanel({
                 </select>
               </div>
 
-              {/* Filter Nama Guru (Acuan filter menggunakan ID Guru, menampilkan Nama Guru) */}
+              {/* Filter Nama Guru / Wali (menggunakan Username sebagai nilai/kunci pencarian utama) */}
               <div>
                 <label className="block text-[10px] font-extrabold text-slate-400 uppercase tracking-wider mb-1">Guru / Wali</label>
                 <select
@@ -3221,8 +3320,8 @@ export default function WakaKurikulumPanel({
                 >
                   <option value="all">Semua Guru / Wali</option>
                   {allTeacherOptions.map(t => (
-                    <option key={t.id} value={t.id}>
-                      {t.name}
+                    <option key={t.username || t.id} value={t.username || t.id}>
+                      {t.name} {t.username ? `(@${t.username})` : ''}
                     </option>
                   ))}
                 </select>
@@ -3351,12 +3450,12 @@ export default function WakaKurikulumPanel({
                         </div>
                         <span className="text-slate-800 font-black text-sm">
                           {detailTeacherFilter !== 'all' && detailSubjectFilter !== 'all'
-                            ? `Belum Ada Nilai Terdata untuk ${detailTeacherFilter}`
+                            ? `Belum Ada Nilai Terdata untuk ${selectedTeacherObj?.name || detailTeacherFilter}`
                             : 'Tidak Ada Data Penilaian Sesuai Filter'}
                         </span>
                         <p className="text-xs text-slate-500 font-normal leading-relaxed">
                           {detailTeacherFilter !== 'all' && detailSubjectFilter !== 'all'
-                            ? `Guru ${detailTeacherFilter} belum menginput nilai untuk mata pelajaran ${detailSubjectFilter}${detailClassFilter !== 'all' ? ` di Kelas ${detailClassFilter}` : ''}. Silakan pilih guru lain atau gunakan tombol di bawah untuk meninjau seluruh nilai tersimpan.`
+                            ? `Guru ${selectedTeacherObj?.name || detailTeacherFilter} belum menginput nilai untuk mata pelajaran ${detailSubjectFilter}${detailClassFilter !== 'all' ? ` di Kelas ${detailClassFilter}` : ''}. Silakan pilih guru lain atau gunakan tombol di bawah untuk meninjau seluruh nilai tersimpan.`
                             : 'Periksa kembali pilihan guru, kelas, mapel, atau periode semester & tahun ajaran di atas.'}
                         </p>
                         <div className="flex items-center gap-2 flex-wrap justify-center pt-2">

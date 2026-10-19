@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction, SharedLearningObjective } from '../types';
-import { isSameSubject, normClass, isSameClass } from '../utils/subjectMatcher';
+import { isSameSubject, normClass, isSameClass, toMasterSubjectName } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import BukuIndukManagement from './BukuIndukManagement';
@@ -801,11 +801,11 @@ export default function HomeroomPanel({
     }
   }, [currentTeacher?.className]);
 
-  const [selectedSubjectForGrading, setSelectedSubjectForGrading] = useState<string>(() => currentTeacher?.subject || 'Pendidikan Pancasila');
+  const [selectedSubjectForGrading, setSelectedSubjectForGrading] = useState<string>(() => toMasterSubjectName(currentTeacher?.subject || 'Pendidikan Pancasila'));
 
   useEffect(() => {
     if (currentTeacher?.subject) {
-      setSelectedSubjectForGrading(currentTeacher.subject);
+      setSelectedSubjectForGrading(toMasterSubjectName(currentTeacher.subject));
     }
   }, [currentTeacher?.subject]);
 
@@ -899,7 +899,7 @@ export default function HomeroomPanel({
 
           const matchedAss = merdekaAssessments.find(a => 
             (a.className === targetClass || (a.className && a.className.startsWith(gradeLevel))) &&
-            a.subject?.toLowerCase() === (selectedSubjectForGrading || '').toLowerCase() &&
+            isSameSubject(a.subject, selectedSubjectForGrading) &&
             (a.tp1Id || a.tp2Id || a.tp3Id || a.tp4Id)
           );
           if (matchedAss) {
@@ -1552,17 +1552,22 @@ export default function HomeroomPanel({
         const sub = s.subject.trim();
         const lower = sub.toLowerCase();
         if (!lower.includes('bimbingan wali') && !lower.includes('upacara') && !lower.includes('senam') && !lower.includes('apel')) {
-          set.add(sub);
+          set.add(toMasterSubjectName(sub));
         }
       }
     });
     if (currentTeacher?.subject && currentTeacher.subject.trim()) {
-      set.add(currentTeacher.subject.trim());
+      set.add(toMasterSubjectName(currentTeacher.subject.trim()));
+    }
+    if ((currentTeacher as any)?.subjects && Array.isArray((currentTeacher as any).subjects)) {
+      (currentTeacher as any).subjects.forEach((s: string) => {
+        if (s && s.trim()) set.add(toMasterSubjectName(s.trim()));
+      });
     }
     const arr = Array.from(set);
     if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
-    return currentTeacher?.subject ? [currentTeacher.subject] : ['Pendidikan Pancasila'];
-  }, [teacherSchedules, currentTeacher?.subject]);
+    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject)] : ['Pendidikan Pancasila'];
+  }, [teacherSchedules, currentTeacher]);
 
   const homeroomGradingClasses = useMemo(() => {
     const set = new Set<string>();

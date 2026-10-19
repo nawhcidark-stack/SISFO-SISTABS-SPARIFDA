@@ -11,7 +11,7 @@ import compression from "compression";
 // allowing instant and reliable reads/writes without FS permission locks.
 import { Student, SppBill, SavingsTransaction, RealtimeNotification, MidtransConfig, MidtransTransactionRecord, AttendanceLog, HomeroomTeacher, SubjectTeacher, TeachingJournal, TreasurerTransaction, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, MerdekaAssessment, TeacherSalary, SalaryConfig, MiscBill, ClassSchedule, SpmbConfig, SpmbCandidate, SpmbSession, SpmbUniformItem, VoidedPaymentRecord, CurriculumSubject, CurriculumTpDescription, SharedLearningObjective } from "./src/types";
 import { generateSeedSharedTps } from "./src/server/seedSharedTps";
-import { isSameSubject, isSameSemester, isSameAcademicYear } from "./src/utils/subjectMatcher";
+import { isSameSubject, isSameSemester, isSameAcademicYear, toMasterSubjectName } from "./src/utils/subjectMatcher";
 import { AUTHORITATIVE_SAVINGS_MAP } from "./src/savings_map";
 import { loadMysqlConfig, getSanitizedConfig, saveMysqlConfig, syncDataToMysql, pullDataFromMysql, saveConfigToMysql, saveConfigsBatchToMysql, triggerDebouncedMysqlSync, ensureAllMysqlTablesExist, testMysqlConnection, directSaveEntityToMysql, directDeleteEntityFromMysql, directSaveEntitiesBatchToMysql, directDeleteEntitiesBatchFromMysql, directClearTableInMysql, findSpmbCandidateInMysql, getAllCurriculumSubjectsFromMysql, getAllCurriculumTpFromMysql, getSharedPool } from "./src/server/mysqlService";
 import { createMysqlRouter } from "./src/server/routes/mysqlRoutes";
@@ -5852,6 +5852,9 @@ async function startServer() {
   try {
     merdekaAssessments.forEach(ass => {
       recalculateAssessmentScores(ass);
+      if (ass.subject) {
+        ass.subject = toMasterSubjectName(ass.subject);
+      }
       // Synchronize authoritative teacher for IPA in 8-D, 8-F, 9-C to Drs. Husnan
       const isIpa = (ass.subject || "").toLowerCase().includes("pengetahuan alam") || (ass.subject || "").toLowerCase() === "ipa";
       if (isIpa && ["8-D", "8-F", "9-C"].includes(ass.className)) {
@@ -5940,7 +5943,7 @@ async function startServer() {
         studentId,
         studentName: cleanStudentName,
         className: resolvedClass || (existing ? existing.className : "7-A"),
-        subject: existing ? existing.subject : subject,
+        subject: toMasterSubjectName(subject || existing?.subject || ""),
         teacherName: teacherName || (existing ? existing.teacherName : "Guru Mapel"),
         semester: sem,
         academicYear: year,

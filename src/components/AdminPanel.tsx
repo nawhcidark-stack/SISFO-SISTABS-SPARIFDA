@@ -82,6 +82,8 @@ import {
   Database,
   HardDrive,
   CheckSquare,
+  Square,
+  ListChecks,
   FileSpreadsheet,
   ChevronDown,
 } from "lucide-react";
@@ -203,10 +205,10 @@ interface AdminPanelProps {
     action: "approve" | "reject",
   ) => Promise<boolean>;
   onBulkWithdrawSavings?: (
-    grade: string,
-    amount: number,
-    notes: string,
-    allowDebt: boolean,
+    targetOrGrade: any,
+    amount?: number,
+    notes?: string,
+    allowDebt?: boolean,
   ) => Promise<any>;
   onBroadcastNotification: (
     title: string,
@@ -2296,7 +2298,13 @@ export default function AdminPanel({
 
   // Bulk Savings Withdrawal States
   const [isBulkWithdrawOpen, setIsBulkWithdrawOpen] = useState(false);
+  const [bulkTargetMode, setBulkTargetMode] = useState<"class" | "checklist" | "grade">("class");
   const [bulkGrade, setBulkGrade] = useState<"7" | "8" | "9">("7");
+  const [bulkTargetClass, setBulkTargetClass] = useState<string>("");
+  const [useClassCustomChecklist, setUseClassCustomChecklist] = useState<boolean>(false);
+  const [selectedBulkStudentIds, setSelectedBulkStudentIds] = useState<string[]>([]);
+  const [bulkStudentSearch, setBulkStudentSearch] = useState<string>("");
+  const [bulkStudentClassFilter, setBulkStudentClassFilter] = useState<string>("all");
   const [bulkAmount, setBulkAmount] = useState("");
   const [bulkNotes, setBulkNotes] = useState("");
   const [bulkAllowDebt, setBulkAllowDebt] = useState(true);
@@ -2308,6 +2316,98 @@ export default function AdminPanel({
     totalDeducted?: number;
     skippedCount?: number;
   } | null>(null);
+
+  // Auto-select initial class for bulk savings withdrawal
+  useEffect(() => {
+    if (!bulkTargetClass && uniqueClasses.length > 0) {
+      setBulkTargetClass(uniqueClasses[0]);
+    }
+  }, [uniqueClasses, bulkTargetClass]);
+
+  // All active students (excluding mutation and alumni) for bulk operations
+  const activeStudentsForBulk = useMemo(() => {
+    return students.filter((s) => {
+      const cls = String(s.class || "").trim().toLowerCase();
+      const isNotActive =
+        (s.mutationDate && s.mutationDate.trim() !== "") ||
+        cls.includes("mutasi") ||
+        cls.includes("alumni") ||
+        cls.includes("lulus");
+      return !isNotActive;
+    });
+  }, [students]);
+
+  // Students in currently selected class
+  const classStudentsForBulk = useMemo(() => {
+    if (!bulkTargetClass) return [];
+    return activeStudentsForBulk.filter(
+      (s) => String(s.class || "").trim().toLowerCase() === bulkTargetClass.trim().toLowerCase()
+    );
+  }, [activeStudentsForBulk, bulkTargetClass]);
+
+  // When class changes and useClassCustomChecklist is true, sync all class students into selection
+  useEffect(() => {
+    if (bulkTargetMode === "class" && useClassCustomChecklist && classStudentsForBulk.length > 0) {
+      const classIds = classStudentsForBulk.map((s) => s.id);
+      setSelectedBulkStudentIds(classIds);
+    }
+  }, [bulkTargetMode, useClassCustomChecklist, bulkTargetClass]);
+
+  // Filtered students for generic checklist mode
+  const checklistFilteredStudents = useMemo(() => {
+    return activeStudentsForBulk.filter((s) => {
+      if (
+        bulkStudentClassFilter !== "all" &&
+        String(s.class || "").trim().toLowerCase() !== bulkStudentClassFilter.trim().toLowerCase()
+      ) {
+        return false;
+      }
+      if (bulkStudentSearch.trim()) {
+        const query = bulkStudentSearch.toLowerCase().trim();
+        const matchName = (s.name || "").toLowerCase().includes(query);
+        const matchNis = (s.nis || "").toString().includes(query);
+        return matchName || matchNis;
+      }
+      return true;
+    });
+  }, [activeStudentsForBulk, bulkStudentClassFilter, bulkStudentSearch]);
+
+  // Effective target students calculated based on active mode
+  const effectiveBulkTargetStudents = useMemo(() => {
+    if (bulkTargetMode === "checklist") {
+      const idSet = new Set(selectedBulkStudentIds);
+      return activeStudentsForBulk.filter((s) => idSet.has(s.id));
+    }
+    if (bulkTargetMode === "class") {
+      if (useClassCustomChecklist) {
+        const idSet = new Set(selectedBulkStudentIds);
+        return classStudentsForBulk.filter((s) => idSet.has(s.id));
+      }
+      return classStudentsForBulk;
+    }
+    // grade mode
+    return activeStudentsForBulk.filter(
+      (s) => s.class && s.class.trim().startsWith(bulkGrade)
+    );
+  }, [bulkTargetMode, selectedBulkStudentIds, activeStudentsForBulk, classStudentsForBulk, useClassCustomChecklist, bulkGrade]);
+
+  const handleToggleBulkStudent = (studentId: string) => {
+    setSelectedBulkStudentIds((prev) =>
+      prev.includes(studentId)
+        ? prev.filter((id) => id !== studentId)
+        : [...prev, studentId]
+    );
+  };
+
+  const handleSelectAllBulkFiltered = (studentList: Student[]) => {
+    const ids = studentList.map((s) => s.id);
+    setSelectedBulkStudentIds((prev) => Array.from(new Set([...prev, ...ids])));
+  };
+
+  const handleDeselectAllBulkFiltered = (studentList: Student[]) => {
+    const idsSet = new Set(studentList.map((s) => s.id));
+    setSelectedBulkStudentIds((prev) => prev.filter((id) => !idsSet.has(id)));
+  };
 
   // Printing & Receipt States
   const [printId, setPrintId] = useState<string | null>(null);
@@ -6369,10 +6469,10 @@ export default function AdminPanel({
                   <button
                     onClick={() => setIsBulkWithdrawOpen(!isBulkWithdrawOpen)}
                     className="flex items-center gap-1.5 px-3 py-1.5 bg-rose-600 hover:bg-rose-700 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-lg shadow-sm transition-all cursor-pointer shrink-0"
-                    title="Lakukan penarikan dana tabungan massal per angkatan/tingkat kelas"
+                    title="Lakukan penarikan dana tabungan massal per kelas, per siswa via ceklist, atau per angkatan"
                   >
                     <ArrowDownLeft size={13} className="stroke-[2.5]" />
-                    <span>Tarik Massal (7,8,9)</span>
+                    <span>Tarik Tabungan Massal</span>
                   </button>
 
                   <button
@@ -6403,12 +6503,14 @@ export default function AdminPanel({
                         <ArrowDownLeft size={16} className="stroke-[2.5]" />
                       </div>
                       <div>
-                        <h4 className="font-extrabold text-rose-900 text-xs uppercase tracking-wider">
-                          Form Penarikan Tabungan Massal
+                        <h4 className="font-extrabold text-rose-900 text-xs uppercase tracking-wider flex items-center gap-2">
+                          <span>Form Penarikan Tabungan Massal Siswa</span>
+                          <span className="text-[9px] px-2 py-0.5 bg-rose-200/70 text-rose-900 rounded-full font-bold">
+                            Per Kelas / Siswa Ceklist
+                          </span>
                         </h4>
                         <p className="text-[10px] text-rose-700 font-semibold">
-                          Penarikan per angkatan untuk keperluan ujian, LKS,
-                          study tour, atau kebutuhan siswa lainnya.
+                          Penarikan tabungan secara massal per rombel/kelas, per siswa terpilih dengan ceklist, atau per angkatan untuk kebutuhan sekolah (ujian, LKS, study tour, dll).
                         </p>
                       </div>
                     </div>
@@ -6418,17 +6520,16 @@ export default function AdminPanel({
                         setIsBulkWithdrawOpen(false);
                         setBulkFeedback(null);
                       }}
-                      className="text-[10px] font-extrabold uppercase tracking-wide px-2 py-1 bg-white hover:bg-rose-50 text-rose-800 border border-rose-200 rounded-lg transition-all cursor-pointer"
+                      className="text-[10px] font-extrabold uppercase tracking-wide px-2.5 py-1 bg-white hover:bg-rose-50 text-rose-800 border border-rose-200 rounded-lg transition-all cursor-pointer shadow-3xs"
                     >
-                      Batal
+                      Tutup Form
                     </button>
                   </div>
 
                   {bulkFeedback ? (
                     <div className="bg-emerald-50 border border-emerald-200 p-4 rounded-xl flex flex-col gap-2 shadow-2xs">
                       <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm">
-                        <span className="text-lg">✅</span> Penarikan Massal
-                        Sukses!
+                        <span className="text-lg">✅</span> Penarikan Massal Sukses!
                       </div>
                       <p className="text-xs text-emerald-700 font-medium leading-relaxed">
                         {bulkFeedback.message}
@@ -6445,7 +6546,7 @@ export default function AdminPanel({
                         {bulkFeedback.skippedCount !== undefined && (
                           <div>
                             <span className="text-[9px] text-slate-500 font-bold uppercase block">
-                              Siswa Dilewati (Saldo 0)
+                              Siswa Dilewati (Saldo Kurang)
                             </span>
                             <span className="text-sm font-extrabold text-slate-800 font-mono">
                               {bulkFeedback.skippedCount} Siswa
@@ -6454,13 +6555,11 @@ export default function AdminPanel({
                         )}
                         <div>
                           <span className="text-[9px] text-slate-500 font-bold uppercase block">
-                            Total Pendanaan
+                            Total Pendanaan Dihimpun
                           </span>
                           <span className="text-sm font-extrabold text-rose-600 font-mono">
                             Rp{" "}
-                            {bulkFeedback.totalDeducted?.toLocaleString(
-                              "id-ID",
-                            ) || 0}
+                            {bulkFeedback.totalDeducted?.toLocaleString("id-ID") || 0}
                           </span>
                         </div>
                       </div>
@@ -6484,57 +6583,407 @@ export default function AdminPanel({
                             setBulkAmount("");
                             setBulkNotes("");
                           }}
-                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-205 text-slate-700 text-[10px] font-bold uppercase tracking-wider border border-slate-200 rounded-lg transition-colors cursor-pointer"
+                          className="px-2.5 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold uppercase tracking-wider border border-slate-200 rounded-lg transition-colors cursor-pointer"
                         >
-                          Tutup
+                          Selesai & Tutup
                         </button>
                       </div>
                     </div>
                   ) : (
-                    <div className="grid grid-cols-1 lg:grid-cols-4 gap-4">
-                      {/* Left: Configuration Inputs */}
-                      <div className="lg:col-span-3 flex flex-col gap-3.5">
-                        {/* Selector for Grade */}
+                    <div className="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+                      {/* Left: Configuration Inputs & Selectors */}
+                      <div className="lg:col-span-8 flex flex-col gap-4">
+                        {/* 1. Pilih Skema / Mode Target Penarikan */}
                         <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                            Pilih Angkatan / Tingkat Kelas
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">
+                            1. Pilih Skema Sasaran Penarikan
                           </label>
-                          <div className="flex gap-2">
-                            {["7", "8", "9"].map((lvl) => {
-                              const isActive = bulkGrade === lvl;
-                              const count = students.filter(
-                                (s) =>
-                                  s.class && s.class.trim().startsWith(lvl),
-                              ).length;
-                              return (
-                                <button
-                                  key={lvl}
-                                  type="button"
-                                  onClick={() => setBulkGrade(lvl as any)}
-                                  className={`flex-1 py-2 px-3 border rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer ${
-                                    isActive
-                                      ? "bg-rose-600 border-rose-700 text-white shadow-sm font-extrabold"
-                                      : "bg-white hover:bg-rose-50/50 text-slate-700 border-slate-200"
-                                  }`}
-                                >
-                                  <span className="text-xs font-extrabold">
-                                    Tingkat {lvl}
-                                  </span>
-                                  <span
-                                    className={`text-[9px] block font-semibold mt-0.5 ${isActive ? "text-rose-100" : "text-slate-400"}`}
-                                  >
-                                    {count} Siswa Terdaftar
-                                  </span>
-                                </button>
-                              );
-                            })}
+                          <div className="grid grid-cols-3 gap-2 p-1 bg-white border border-rose-200/80 rounded-xl shadow-3xs">
+                            <button
+                              type="button"
+                              onClick={() => setBulkTargetMode("class")}
+                              className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                bulkTargetMode === "class"
+                                  ? "bg-rose-600 text-white shadow-xs font-extrabold"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-rose-50/50"
+                              }`}
+                            >
+                              <Users size={14} />
+                              <span className="truncate">Per Kelas / Rombel</span>
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setBulkTargetMode("checklist")}
+                              className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                bulkTargetMode === "checklist"
+                                  ? "bg-rose-600 text-white shadow-xs font-extrabold"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-rose-50/50"
+                              }`}
+                            >
+                              <CheckSquare size={14} />
+                              <span className="truncate">Pilih Siswa (Ceklist)</span>
+                              {selectedBulkStudentIds.length > 0 && (
+                                <span className={`ml-1 px-1.5 py-0.2 text-[10px] font-black rounded-full ${bulkTargetMode === 'checklist' ? 'bg-white text-rose-700' : 'bg-rose-100 text-rose-800'}`}>
+                                  {selectedBulkStudentIds.length}
+                                </span>
+                              )}
+                            </button>
+
+                            <button
+                              type="button"
+                              onClick={() => setBulkTargetMode("grade")}
+                              className={`py-2 px-2.5 rounded-lg text-xs font-bold transition-all cursor-pointer flex items-center justify-center gap-1.5 ${
+                                bulkTargetMode === "grade"
+                                  ? "bg-rose-600 text-white shadow-xs font-extrabold"
+                                  : "text-slate-600 hover:text-slate-900 hover:bg-rose-50/50"
+                              }`}
+                            >
+                              <GraduationCap size={14} />
+                              <span className="truncate">Per Tingkat (7, 8, 9)</span>
+                            </button>
                           </div>
                         </div>
 
-                        {/* Amount with pre-filled buttons */}
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                            Nominal Penarikan per Siswa (Rp)
+                        {/* 2. Target Selection Subpanel */}
+                        {bulkTargetMode === "class" && (
+                          <div className="flex flex-col gap-2 p-3.5 bg-white border border-rose-200/80 rounded-xl shadow-3xs">
+                            <div className="flex items-center justify-between">
+                              <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                                <Users size={13} className="text-rose-600" />
+                                <span>Pilih Rombel / Kelas Target:</span>
+                              </label>
+                              <span className="text-[10px] font-bold text-slate-500">
+                                Kelas terpilih: <span className="text-rose-600 font-mono font-extrabold">{bulkTargetClass || '-'}</span> ({classStudentsForBulk.length} siswa aktif)
+                              </span>
+                            </div>
+
+                            {/* Class Buttons Grid */}
+                            <div className="flex flex-wrap gap-2 pt-1">
+                              {uniqueClasses.map((cls) => {
+                                const isActive = bulkTargetClass === cls;
+                                const countInClass = activeStudentsForBulk.filter(
+                                  (s) => String(s.class || "").trim().toLowerCase() === cls.trim().toLowerCase()
+                                ).length;
+                                return (
+                                  <button
+                                    key={cls}
+                                    type="button"
+                                    onClick={() => setBulkTargetClass(cls)}
+                                    className={`py-1.5 px-3 border rounded-lg text-xs transition-all cursor-pointer flex items-center gap-1.5 ${
+                                      isActive
+                                        ? "bg-rose-600 border-rose-700 text-white font-black shadow-xs"
+                                        : "bg-slate-50 hover:bg-rose-50/60 text-slate-700 border-slate-200 font-semibold"
+                                    }`}
+                                  >
+                                    <span>Kelas {cls}</span>
+                                    <span className={`text-[9px] px-1.5 py-0.2 rounded-full font-bold ${isActive ? 'bg-rose-700/80 text-rose-100' : 'bg-slate-200 text-slate-600'}`}>
+                                      {countInClass}
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+
+                            {/* Option to fine-tune students in this class using checklist */}
+                            <div className="mt-2 pt-2.5 border-t border-slate-100 flex flex-col gap-2">
+                              <div className="flex items-center justify-between">
+                                <label className="inline-flex items-center gap-2 cursor-pointer select-none">
+                                  <input
+                                    type="checkbox"
+                                    checked={useClassCustomChecklist}
+                                    onChange={(e) => {
+                                      setUseClassCustomChecklist(e.target.checked);
+                                      if (e.target.checked) {
+                                        // Auto-select all students of this class
+                                        const ids = classStudentsForBulk.map((s) => s.id);
+                                        setSelectedBulkStudentIds(ids);
+                                      }
+                                    }}
+                                    className="w-4 h-4 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                                  />
+                                  <span className="text-[11px] font-bold text-slate-700">
+                                    Kustomisasi Ceklist Siswa di Kelas {bulkTargetClass}
+                                  </span>
+                                  <span className="text-[10px] text-slate-400 font-normal">
+                                    (Centang/batalkan centang siswa tertentu jika ada yang tidak ditarik)
+                                  </span>
+                                </label>
+
+                                {useClassCustomChecklist && (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSelectAllBulkFiltered(classStudentsForBulk)}
+                                      className="text-[9px] font-bold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-0.5 rounded cursor-pointer"
+                                    >
+                                      Pilih Semua ({classStudentsForBulk.length})
+                                    </button>
+                                    <button
+                                      type="button"
+                                      onClick={() => handleDeselectAllBulkFiltered(classStudentsForBulk)}
+                                      className="text-[9px] font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2 py-0.5 rounded cursor-pointer"
+                                    >
+                                      Batal Semua
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
+
+                              {/* Class Checklist Sub-Table */}
+                              {useClassCustomChecklist && (
+                                <div className="max-h-56 overflow-y-auto border border-rose-200 rounded-lg bg-slate-50/50">
+                                  {classStudentsForBulk.length === 0 ? (
+                                    <div className="p-4 text-center text-xs text-slate-400">
+                                      Tidak ada siswa terdaftar di Kelas {bulkTargetClass}.
+                                    </div>
+                                  ) : (
+                                    <table className="w-full text-left text-xs border-collapse">
+                                      <thead className="bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200">
+                                        <tr>
+                                          <th className="py-1.5 px-3 w-10 text-center">Pilih</th>
+                                          <th className="py-1.5 px-3">Nama Siswa</th>
+                                          <th className="py-1.5 px-3">NIS</th>
+                                          <th className="py-1.5 px-3 text-right">Saldo Tabungan</th>
+                                          <th className="py-1.5 px-3 text-center">Status</th>
+                                        </tr>
+                                      </thead>
+                                      <tbody className="divide-y divide-slate-100">
+                                        {classStudentsForBulk.map((st) => {
+                                          const isChecked = selectedBulkStudentIds.includes(st.id);
+                                          const bal = st.savingsBalance || 0;
+                                          const isSufficient = Number(bulkAmount || 0) <= 0 || bal >= Number(bulkAmount);
+                                          return (
+                                            <tr
+                                              key={st.id}
+                                              onClick={() => handleToggleBulkStudent(st.id)}
+                                              className={`cursor-pointer transition-colors ${
+                                                isChecked ? "bg-rose-50/70 hover:bg-rose-100/60" : "hover:bg-slate-100/60"
+                                              }`}
+                                            >
+                                              <td className="py-1.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                                <input
+                                                  type="checkbox"
+                                                  checked={isChecked}
+                                                  onChange={() => handleToggleBulkStudent(st.id)}
+                                                  className="w-3.5 h-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                                                />
+                                              </td>
+                                              <td className="py-1.5 px-3 font-bold text-slate-800">
+                                                {st.name}
+                                              </td>
+                                              <td className="py-1.5 px-3 font-mono text-[11px] text-slate-500">
+                                                {st.nis}
+                                              </td>
+                                              <td className="py-1.5 px-3 font-mono font-bold text-right text-slate-700">
+                                                Rp {bal.toLocaleString("id-ID")}
+                                              </td>
+                                              <td className="py-1.5 px-3 text-center">
+                                                {isSufficient ? (
+                                                  <span className="inline-flex px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                    Cukup
+                                                  </span>
+                                                ) : (
+                                                  <span className="inline-flex px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                    Kurang
+                                                  </span>
+                                                )}
+                                              </td>
+                                            </tr>
+                                          );
+                                        })}
+                                      </tbody>
+                                    </table>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {bulkTargetMode === "checklist" && (
+                          <div className="flex flex-col gap-2.5 p-3.5 bg-white border border-rose-200/80 rounded-xl shadow-3xs">
+                            <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2">
+                              <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                                <CheckSquare size={13} className="text-rose-600" />
+                                <span>Pilih Siswa Menggunakan Ceklist Multi-Select</span>
+                              </label>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-extrabold text-rose-700 bg-rose-50 px-2.5 py-0.5 rounded-full border border-rose-200">
+                                  {selectedBulkStudentIds.length} Siswa Terpilih
+                                </span>
+                              </div>
+                            </div>
+
+                            {/* Search & Filter Bar */}
+                            <div className="grid grid-cols-1 sm:grid-cols-12 gap-2">
+                              <div className="sm:col-span-4">
+                                <select
+                                  value={bulkStudentClassFilter}
+                                  onChange={(e) => setBulkStudentClassFilter(e.target.value)}
+                                  className="w-full px-2.5 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500 cursor-pointer"
+                                >
+                                  <option value="all">Semua Kelas ({activeStudentsForBulk.length} Siswa)</option>
+                                  {uniqueClasses.map((c) => (
+                                    <option key={c} value={c}>
+                                      Kelas {c} ({activeStudentsForBulk.filter(s => String(s.class || "").trim().toLowerCase() === c.toLowerCase()).length} Siswa)
+                                    </option>
+                                  ))}
+                                </select>
+                              </div>
+                              <div className="sm:col-span-8 relative">
+                                <Search size={13} className="absolute left-2.5 top-2.5 text-slate-400" />
+                                <input
+                                  type="text"
+                                  value={bulkStudentSearch}
+                                  onChange={(e) => setBulkStudentSearch(e.target.value)}
+                                  placeholder="Cari nama atau NIS siswa..."
+                                  className="w-full pl-8 pr-3 py-1.5 bg-slate-50 border border-slate-200 rounded-lg text-xs font-semibold text-slate-800 focus:outline-none focus:ring-1 focus:ring-rose-500"
+                                />
+                              </div>
+                            </div>
+
+                            {/* Batch Action Buttons */}
+                            <div className="flex items-center justify-between pt-1">
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  type="button"
+                                  onClick={() => handleSelectAllBulkFiltered(checklistFilteredStudents)}
+                                  className="text-[10px] font-bold text-rose-700 hover:text-rose-900 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1"
+                                >
+                                  <CheckSquare size={12} />
+                                  <span>Pilih Semua Hasil ({checklistFilteredStudents.length})</span>
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => handleDeselectAllBulkFiltered(checklistFilteredStudents)}
+                                  className="text-[10px] font-bold text-slate-600 hover:text-slate-800 bg-slate-100 hover:bg-slate-200 border border-slate-200 px-2.5 py-1 rounded-md transition-colors cursor-pointer flex items-center gap-1"
+                                >
+                                  <Square size={12} />
+                                  <span>Batal Pilih Semua</span>
+                                </button>
+                              </div>
+                              <span className="text-[10px] text-slate-400 font-medium">
+                                Menampilkan {checklistFilteredStudents.length} siswa
+                              </span>
+                            </div>
+
+                            {/* Checklist Table */}
+                            <div className="max-h-64 overflow-y-auto border border-rose-200 rounded-lg bg-slate-50/30">
+                              {checklistFilteredStudents.length === 0 ? (
+                                <div className="p-6 text-center text-xs text-slate-400">
+                                  Tidak ada siswa yang cocok dengan filter atau kata kunci pencarian.
+                                </div>
+                              ) : (
+                                <table className="w-full text-left text-xs border-collapse">
+                                  <thead className="bg-slate-100 text-slate-600 text-[10px] font-black uppercase tracking-wider sticky top-0 z-10 border-b border-slate-200">
+                                    <tr>
+                                      <th className="py-2 px-3 w-10 text-center">Pilih</th>
+                                      <th className="py-2 px-3">Nama Siswa</th>
+                                      <th className="py-2 px-3">Kelas</th>
+                                      <th className="py-2 px-3">NIS</th>
+                                      <th className="py-2 px-3 text-right">Saldo Tabungan</th>
+                                      <th className="py-2 px-3 text-center">Kecukupan</th>
+                                    </tr>
+                                  </thead>
+                                  <tbody className="divide-y divide-slate-100 bg-white">
+                                    {checklistFilteredStudents.map((st) => {
+                                      const isChecked = selectedBulkStudentIds.includes(st.id);
+                                      const bal = st.savingsBalance || 0;
+                                      const isSufficient = Number(bulkAmount || 0) <= 0 || bal >= Number(bulkAmount);
+                                      return (
+                                        <tr
+                                          key={st.id}
+                                          onClick={() => handleToggleBulkStudent(st.id)}
+                                          className={`cursor-pointer transition-colors ${
+                                            isChecked ? "bg-rose-50/80 hover:bg-rose-100/70" : "hover:bg-slate-50"
+                                          }`}
+                                        >
+                                          <td className="py-1.5 px-3 text-center" onClick={(e) => e.stopPropagation()}>
+                                            <input
+                                              type="checkbox"
+                                              checked={isChecked}
+                                              onChange={() => handleToggleBulkStudent(st.id)}
+                                              className="w-3.5 h-3.5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer"
+                                            />
+                                          </td>
+                                          <td className="py-1.5 px-3 font-bold text-slate-800">
+                                            {st.name}
+                                          </td>
+                                          <td className="py-1.5 px-3">
+                                            <span className="px-1.5 py-0.2 rounded text-[10px] font-black uppercase tracking-wider bg-slate-100 text-slate-700 border border-slate-200">
+                                              {st.class || '-'}
+                                            </span>
+                                          </td>
+                                          <td className="py-1.5 px-3 font-mono text-[11px] text-slate-500">
+                                            {st.nis}
+                                          </td>
+                                          <td className="py-1.5 px-3 font-mono font-bold text-right text-slate-800">
+                                            Rp {bal.toLocaleString("id-ID")}
+                                          </td>
+                                          <td className="py-1.5 px-3 text-center">
+                                            {isSufficient ? (
+                                              <span className="inline-flex px-1.5 py-0.2 rounded text-[9px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                                                Cukup
+                                              </span>
+                                            ) : (
+                                              <span className="inline-flex px-1.5 py-0.2 rounded text-[9px] font-bold bg-amber-50 text-amber-700 border border-amber-200">
+                                                Kurang
+                                              </span>
+                                            )}
+                                          </td>
+                                        </tr>
+                                      );
+                                    })}
+                                  </tbody>
+                                </table>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {bulkTargetMode === "grade" && (
+                          <div className="flex flex-col gap-2 p-3.5 bg-white border border-rose-200/80 rounded-xl shadow-3xs">
+                            <label className="text-[10px] font-extrabold text-slate-700 uppercase tracking-wide flex items-center gap-1.5">
+                              <GraduationCap size={13} className="text-rose-600" />
+                              <span>Pilih Tingkat / Angkatan Kelas:</span>
+                            </label>
+                            <div className="flex gap-2">
+                              {["7", "8", "9"].map((lvl) => {
+                                const isActive = bulkGrade === lvl;
+                                const count = activeStudentsForBulk.filter(
+                                  (s) => s.class && s.class.trim().startsWith(lvl),
+                                ).length;
+                                return (
+                                  <button
+                                    key={lvl}
+                                    type="button"
+                                    onClick={() => setBulkGrade(lvl as any)}
+                                    className={`flex-1 py-2 px-3 border rounded-xl flex flex-col items-center justify-center transition-all cursor-pointer ${
+                                      isActive
+                                        ? "bg-rose-600 border-rose-700 text-white shadow-sm font-extrabold"
+                                        : "bg-slate-50 hover:bg-rose-50/50 text-slate-700 border-slate-200"
+                                    }`}
+                                  >
+                                    <span className="text-xs font-extrabold">
+                                      Tingkat {lvl}
+                                    </span>
+                                    <span
+                                      className={`text-[9px] block font-semibold mt-0.5 ${isActive ? "text-rose-100" : "text-slate-400"}`}
+                                    >
+                                      {count} Siswa Aktif
+                                    </span>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* 3. Nominal Penarikan per Siswa (Rp) */}
+                        <div className="flex flex-col gap-1.5 p-3.5 bg-white border border-rose-200/80 rounded-xl shadow-3xs">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">
+                            2. Nominal Penarikan per Siswa (Rp)
                           </label>
                           <div className="relative">
                             <span className="absolute inset-y-0 left-0 flex items-center pl-3.5 pb-0.5 font-sans font-bold text-slate-400 text-xs">
@@ -6552,8 +7001,8 @@ export default function AdminPanel({
                           </div>
 
                           {/* Quick selection tags */}
-                          <div className="flex flex-wrap gap-1.5">
-                            {[10000, 25000, 50000, 75000, 100000, 150000].map(
+                          <div className="flex flex-wrap gap-1.5 mt-1">
+                            {[10000, 25000, 50000, 75000, 100000, 150000, 200000].map(
                               (val) => (
                                 <button
                                   key={val}
@@ -6561,8 +7010,8 @@ export default function AdminPanel({
                                   onClick={() => setBulkAmount(String(val))}
                                   className={`px-2 py-1 rounded-md text-[9px] font-bold transition-all cursor-pointer ${
                                     bulkAmount === String(val)
-                                      ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                      : "bg-white hover:bg-slate-105 text-slate-600 border border-slate-200"
+                                      ? "bg-rose-100 text-rose-800 border border-rose-300 font-extrabold"
+                                      : "bg-slate-50 hover:bg-slate-100 text-slate-600 border border-slate-200"
                                   }`}
                                 >
                                   Rp {val.toLocaleString("id-ID")}
@@ -6572,11 +7021,10 @@ export default function AdminPanel({
                           </div>
                         </div>
 
-                        {/* Reason and notes */}
-                        <div className="flex flex-col gap-1.5">
-                          <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wide">
-                            Alasan / Keterangan Penarikan (Tercatat di Mutasi /
-                            Rapor Tabungan)
+                        {/* 4. Alasan / Keterangan Penarikan */}
+                        <div className="flex flex-col gap-1.5 p-3.5 bg-white border border-rose-200/80 rounded-xl shadow-3xs">
+                          <label className="text-[10px] font-bold text-slate-600 uppercase tracking-wide">
+                            3. Alasan / Keterangan Penarikan (Tercatat di Mutasi / Buku Kas)
                           </label>
                           <input
                             type="text"
@@ -6588,8 +7036,8 @@ export default function AdminPanel({
                           />
                         </div>
 
-                        {/* Debt Configuration Checkbox */}
-                        <div className="flex items-center gap-2 mt-1">
+                        {/* 5. Debt Configuration Checkbox */}
+                        <div className="flex items-center gap-2 p-2.5 bg-white border border-rose-200/80 rounded-xl shadow-3xs">
                           <input
                             type="checkbox"
                             id="bulkAllowDebt"
@@ -6599,74 +7047,67 @@ export default function AdminPanel({
                           />
                           <label
                             htmlFor="bulkAllowDebt"
-                            className="text-[11px] text-slate-600 font-semibold cursor-pointer select-none leading-tight"
+                            className="text-[11px] text-slate-700 font-semibold cursor-pointer select-none leading-tight"
                           >
                             Izinkan saldo siswa menjadi minus{" "}
                             <span className="text-slate-400 font-normal">
-                              (Catat sebagai defisit/utang jika saldo kurang)
+                              (Catat sebagai defisit/utang jika saldo tabungan tidak cukup)
                             </span>
                           </label>
                         </div>
                       </div>
 
-                      {/* Right: Informational/Metric/Action Card */}
-                      <div className="bg-rose-50/50 border border-rose-150 rounded-xl p-4 flex flex-col justify-between gap-4">
+                      {/* Right: Informational / Metric / Action Summary Card */}
+                      <div className="lg:col-span-4 sticky top-4 bg-rose-50/70 border border-rose-200 rounded-xl p-4 flex flex-col justify-between gap-4 shadow-2xs">
                         <div className="flex flex-col gap-3">
-                          <h5 className="font-bold text-rose-900 text-[10px] uppercase tracking-wider">
-                            Keamanan & Rangkuman Sesi
-                          </h5>
+                          <div className="flex items-center justify-between border-b border-rose-200 pb-2">
+                            <h5 className="font-extrabold text-rose-950 text-[10px] uppercase tracking-wider flex items-center gap-1.5">
+                              <ListChecks size={13} className="text-rose-700" />
+                              <span>Rangkuman Penarikan</span>
+                            </h5>
+                            <span className="text-[9px] font-black uppercase px-2 py-0.5 rounded-full bg-rose-200/80 text-rose-900">
+                              {bulkTargetMode === "checklist" ? "Ceklist" : (bulkTargetMode === "class" ? "Per Kelas" : "Per Tingkat")}
+                            </span>
+                          </div>
 
                           <div className="flex flex-col gap-2">
-                            <div className="flex justify-between text-[11px] border-b border-rose-150 pb-1">
-                              <span className="text-slate-505 font-medium">
-                                Banyak Siswa
-                              </span>
-                              <span className="font-bold text-slate-800 font-mono text-xs">
-                                {
-                                  students.filter(
-                                    (s) =>
-                                      s.class &&
-                                      s.class.trim().startsWith(bulkGrade),
-                                  ).length
-                                }{" "}
-                                Siswa
+                            <div className="flex justify-between text-[11px] border-b border-rose-150 pb-1.5">
+                              <span className="text-slate-500 font-medium">Sasaran Target</span>
+                              <span className="font-extrabold text-rose-900 font-mono text-xs text-right">
+                                {bulkTargetMode === "checklist"
+                                  ? `${effectiveBulkTargetStudents.length} Siswa Terpilih`
+                                  : (bulkTargetMode === "class"
+                                    ? `Kelas ${bulkTargetClass || '-'}${useClassCustomChecklist ? ` (${effectiveBulkTargetStudents.length} dipilih)` : ''}`
+                                    : `Tingkat ${bulkGrade}`)}
                               </span>
                             </div>
-                            <div className="flex justify-between text-[11px] border-b border-rose-150 pb-1 font-medium">
-                              <span className="text-slate-505">
-                                Nominal per Siswa
-                              </span>
-                              <span className="font-bold text-slate-800 font-mono text-xs">
-                                Rp{" "}
-                                {Number(bulkAmount || 0).toLocaleString(
-                                  "id-ID",
-                                )}
+
+                            <div className="flex justify-between text-[11px] border-b border-rose-150 pb-1.5">
+                              <span className="text-slate-500 font-medium">Jumlah Siswa Didebet</span>
+                              <span className="font-extrabold text-slate-900 font-mono text-xs">
+                                {effectiveBulkTargetStudents.length} Siswa
                               </span>
                             </div>
-                            <div className="flex justify-between text-[11px]">
-                              <span className="text-slate-505 font-medium">
-                                Total Maksimal Tarik
+
+                            <div className="flex justify-between text-[11px] border-b border-rose-150 pb-1.5 font-medium">
+                              <span className="text-slate-500">Nominal per Siswa</span>
+                              <span className="font-bold text-slate-800 font-mono text-xs">
+                                Rp {Number(bulkAmount || 0).toLocaleString("id-ID")}
                               </span>
-                              <span className="font-extrabold text-rose-600 font-mono text-xs">
-                                Rp{" "}
-                                {(
-                                  students.filter(
-                                    (s) =>
-                                      s.class &&
-                                      s.class.trim().startsWith(bulkGrade),
-                                  ).length * Number(bulkAmount || 0)
-                                ).toLocaleString("id-ID")}
+                            </div>
+
+                            <div className="flex justify-between text-[11px] pt-0.5">
+                              <span className="text-slate-600 font-bold">Total Dana Dihimpun</span>
+                              <span className="font-black text-rose-700 font-mono text-sm">
+                                Rp {(effectiveBulkTargetStudents.length * Number(bulkAmount || 0)).toLocaleString("id-ID")}
                               </span>
                             </div>
                           </div>
 
-                          <div className="bg-amber-50 border border-amber-200 p-2 rounded-lg flex gap-1 leading-relaxed text-[9px] text-amber-800 font-medium">
+                          <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-lg flex gap-1.5 leading-relaxed text-[9px] text-amber-800 font-medium">
                             <span>💡</span>
                             <span>
-                              Tindakan ini akan langsung mendebet saldo tabungan
-                              seluruh siswa terpilih tanpa persetujuan bertahap.
-                              Pastikan kuitansi ujian/kebutuhan sekolah telah
-                              siap.
+                              Tindakan ini akan langsung mendebet saldo tabungan seluruh siswa terpilih tanpa persetujuan bertahap. Mutasi kas dan pesan WhatsApp otomatis terkirim.
                             </span>
                           </div>
                         </div>
@@ -6676,31 +7117,56 @@ export default function AdminPanel({
                           disabled={
                             bulkProcessing ||
                             !bulkAmount ||
+                            Number(bulkAmount) <= 0 ||
                             !bulkNotes ||
+                            effectiveBulkTargetStudents.length === 0 ||
                             !onBulkWithdrawSavings
                           }
                           onClick={async () => {
                             if (!onBulkWithdrawSavings) return;
-                            const targetCount = students.filter(
-                              (s) =>
-                                s.class && s.class.trim().startsWith(bulkGrade),
-                            ).length;
+                            const targetCount = effectiveBulkTargetStudents.length;
                             if (targetCount === 0) {
-                              alert(
-                                `Tidak ditemukan siswa di Tingkat ${bulkGrade}.`,
-                              );
+                              alert("Tidak ada siswa yang dipilih atau ditemukan untuk penarikan massal.");
                               return;
                             }
-                            const confirmText = `Apakah Anda yakin ingin menarik tabungan secara MASSAL untuk seluruh siswa Tingkat ${bulkGrade} (${targetCount} siswa)?\nNominal penarikan: Rp ${Number(bulkAmount).toLocaleString("id-ID")} per siswa.\n\nTindakan ini langsung memperbarui buku kas & otomatis mengirim WhatsApp mutasi ke wali murid!`;
+
+                            const scopeDescription =
+                              bulkTargetMode === "checklist"
+                                ? `${targetCount} siswa terpilih via ceklist`
+                                : bulkTargetMode === "class"
+                                  ? `Kelas ${bulkTargetClass}${useClassCustomChecklist ? ` (${targetCount} siswa terpilih)` : ` (${targetCount} siswa)`}`
+                                  : `Tingkat ${bulkGrade} (${targetCount} siswa)`;
+
+                            const totalNominal = targetCount * Number(bulkAmount);
+                            const confirmText = `Apakah Anda yakin ingin menarik tabungan secara MASSAL untuk ${scopeDescription}?\n\n• Jumlah Siswa: ${targetCount} siswa\n• Nominal per Siswa: Rp ${Number(bulkAmount).toLocaleString("id-ID")}\n• Total Dana Ditarik: Rp ${totalNominal.toLocaleString("id-ID")}\n• Keperluan: "${bulkNotes}"\n\nTindakan ini langsung mendebet buku tabungan siswa & mengirim notifikasi WhatsApp ke wali murid!`;
+
                             if (!window.confirm(confirmText)) return;
 
                             setBulkProcessing(true);
-                            const res = await onBulkWithdrawSavings(
-                              bulkGrade,
-                              Number(bulkAmount),
-                              bulkNotes,
-                              bulkAllowDebt,
-                            );
+                            let res: any = null;
+                            if (bulkTargetMode === "checklist") {
+                              res = await onBulkWithdrawSavings({
+                                studentIds: selectedBulkStudentIds,
+                                amount: Number(bulkAmount),
+                                notes: bulkNotes,
+                                allowDebt: bulkAllowDebt,
+                              });
+                            } else if (bulkTargetMode === "class") {
+                              res = await onBulkWithdrawSavings({
+                                targetClass: bulkTargetClass,
+                                studentIds: useClassCustomChecklist ? selectedBulkStudentIds : undefined,
+                                amount: Number(bulkAmount),
+                                notes: bulkNotes,
+                                allowDebt: bulkAllowDebt,
+                              });
+                            } else {
+                              res = await onBulkWithdrawSavings({
+                                grade: bulkGrade,
+                                amount: Number(bulkAmount),
+                                notes: bulkNotes,
+                                allowDebt: bulkAllowDebt,
+                              });
+                            }
                             setBulkProcessing(false);
 
                             if (res && res.success) {
@@ -6711,19 +7177,20 @@ export default function AdminPanel({
                                 skippedCount: res.skippedCount,
                                 totalDeducted: res.totalDeducted,
                               });
+                              onRefresh();
                             }
                           }}
-                          className="w-full py-2 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-400 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-lg shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5"
+                          className="w-full py-2.5 bg-rose-600 hover:bg-rose-700 disabled:bg-rose-300 text-white font-extrabold text-[11px] uppercase tracking-wider rounded-xl shadow-sm transition-all cursor-pointer flex items-center justify-center gap-1.5 leading-none"
                         >
                           {bulkProcessing ? (
-                            "Memproses Penarikan..."
+                            <>
+                              <RefreshCw size={13} className="animate-spin" />
+                              <span>Memproses Penarikan...</span>
+                            </>
                           ) : (
                             <>
-                              <ArrowDownLeft
-                                size={13}
-                                className="stroke-[2.5]"
-                              />
-                              <span>Eksekusi Tarik Massal</span>
+                              <ArrowDownLeft size={14} className="stroke-[2.5]" />
+                              <span>Tarik Tabungan ({effectiveBulkTargetStudents.length} Siswa)</span>
                             </>
                           )}
                         </button>

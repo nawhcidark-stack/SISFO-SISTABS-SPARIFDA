@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction, SharedLearningObjective } from '../types';
 import { isSameSubject, normClass, isSameClass } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
@@ -19,7 +19,7 @@ import { printClassFinancialRecapPdf } from '../utils/financialRecapPrint';
 import { 
   Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, ArrowLeft, BookOpen, AlertCircle as ErrorIcon,
-  Download, Copy, Search, Wallet, CreditCard, CheckCircle, Clock, User, Key, Lock, Unlock,
+  Download, Copy, Search, Wallet, CreditCard, CheckCircle, CheckCircle2, Clock, User, Key, Lock, Unlock,
   Printer, FileText, Plus, Trash2, Edit, Award, Heart, Smile, Megaphone, AlertTriangle,
   LayoutGrid, Home, Smartphone, Apple, Filter, RotateCcw, ArrowUpDown,
   FileSpreadsheet, Upload, X
@@ -808,7 +808,27 @@ export default function HomeroomPanel({
       setSelectedSubjectForGrading(currentTeacher.subject);
     }
   }, [currentTeacher?.subject]);
+
   const [gradeInputMap, setGradeInputMap] = useState<Record<string, any>>({});
+
+  // Anti-Wipe Protection & Unsaved Manual Grade Tracking for Wali Kelas
+  const dirtyStudentsRef = useRef<Set<string>>(new Set());
+  const lastGradingScopeRef = useRef<string>('');
+  const [hasUnsavedGrades, setHasUnsavedGrades] = useState<boolean>(false);
+  const [unsavedCount, setUnsavedCount] = useState<number>(0);
+
+  // Warn homeroom teacher before leaving if there are unsaved grades
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedGrades) {
+        e.preventDefault();
+        e.returnValue = 'Ada nilai siswa yang belum disimpan ke database. Yakin ingin meninggalkan halaman?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedGrades]);
   const [tp1InputName, setTp1InputName] = useState<string>('Memahami konsep dasar dan penerapannya');
   const [tp2InputName, setTp2InputName] = useState<string>('Menganalisis materi dan studi kasus');
   const [tp3InputName, setTp3InputName] = useState<string>('Praktik dan refleksi pembiasaan');
@@ -2452,10 +2472,59 @@ export default function HomeroomPanel({
           };
         }
       });
-      setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
-      setGradeInputMap(fullGradeMap);
+      const currentScopeKey = `${currentTeacher?.id || 'wali'}_${selectedGradingClass || currentTeacher.className}_${selectedSubjectForGrading}_${kokurikulerSemester}_${kokurikulerYear}`;
+      const isScopeChange = lastGradingScopeRef.current !== currentScopeKey;
+
+      if (isScopeChange) {
+        lastGradingScopeRef.current = currentScopeKey;
+        let restoredFromDraft = false;
+        try {
+          const rawDraft = localStorage.getItem(`draft_grades_homeroom_${currentScopeKey}`);
+          if (rawDraft) {
+            const draftObj = JSON.parse(rawDraft);
+            if (draftObj && typeof draftObj === 'object') {
+              gradingStudents.forEach(st => {
+                if (draftObj[st.id]) {
+                  fullGradeMap[st.id] = { ...fullGradeMap[st.id], ...draftObj[st.id] };
+                  dirtyStudentsRef.current.add(st.id);
+                  if (draftObj[st.id].kokurikuler !== undefined) {
+                    initialMap[st.id] = String(draftObj[st.id].kokurikuler);
+                  }
+                }
+              });
+              restoredFromDraft = dirtyStudentsRef.current.size > 0;
+            }
+          }
+        } catch (e) {
+          console.warn("Gagal membaca draft lokal wali kelas:", e);
+        }
+
+        if (!restoredFromDraft) {
+          dirtyStudentsRef.current.clear();
+          setHasUnsavedGrades(false);
+          setUnsavedCount(0);
+        } else {
+          setHasUnsavedGrades(true);
+          setUnsavedCount(dirtyStudentsRef.current.size);
+        }
+        setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
+        setGradeInputMap(fullGradeMap);
+      } else {
+        // Background sync, SSE, student array update, or background polling:
+        // CRITICAL: Protect dirty inputs from being wiped out!
+        setGradeInputMap(prev => {
+          const merged: Record<string, any> = { ...fullGradeMap };
+          Object.keys(prev).forEach(studId => {
+            if (dirtyStudentsRef.current.has(studId) && prev[studId]) {
+              merged[studId] = { ...fullGradeMap[studId], ...prev[studId] };
+            }
+          });
+          return merged;
+        });
+        setKokurikulerScores(prev => ({ ...initialMap, ...prev }));
+      }
     }
-  }, [activeSubTab, merdekaAssessments, selectedSubjectForGrading, gradingStudents, kokurikulerSemester, kokurikulerYear]);
+  }, [activeSubTab, merdekaAssessments, selectedSubjectForGrading, gradingStudents, kokurikulerSemester, kokurikulerYear, selectedGradingClass, currentTeacher?.id, currentTeacher?.className]);
 
   const handleSaveFullGrades = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -2536,6 +2605,13 @@ export default function HomeroomPanel({
       });
 
       if (res1.ok) {
+        dirtyStudentsRef.current.clear();
+        setHasUnsavedGrades(false);
+        setUnsavedCount(0);
+        try {
+          localStorage.removeItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`);
+        } catch (e) {}
+
         setNotifMsg({ type: 'success', text: `🎉 Penilaian Kurikulum Merdeka & Nilai Kokurikuler Kelas ${currentTeacher.className} (${selectedSubjectForGrading}) berhasil disimpan langsung ke database MySQL!` });
         setGradeSuccessSummary({
           className: currentTeacher.className,
@@ -2559,6 +2635,7 @@ export default function HomeroomPanel({
   const handleFillSampleGrades = () => {
     const updatedMap = { ...gradeInputMap };
     gradingStudents.forEach((st, index) => {
+      dirtyStudentsRef.current.add(st.id);
       const cur = updatedMap[st.id] || {};
       const base = 80 + ((index * 3) % 15);
       updatedMap[st.id] = {
@@ -2585,6 +2662,11 @@ export default function HomeroomPanel({
       };
     });
     setGradeInputMap(updatedMap);
+    setHasUnsavedGrades(true);
+    setUnsavedCount(dirtyStudentsRef.current.size);
+    try {
+      localStorage.setItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`, JSON.stringify(updatedMap));
+    } catch (e) {}
     setNotifMsg({ type: 'success', text: '✨ Berhasil mengisi contoh nilai (80-95) untuk seluruh siswa. Klik Simpan untuk memperbarui database.' });
     setShowSuccessCheck(true);
   };
@@ -2986,6 +3068,7 @@ export default function HomeroomPanel({
 
     excelParsedPreview.forEach(item => {
       if (item.matched && item.studentId) {
+        dirtyStudentsRef.current.add(item.studentId);
         updatedMap[item.studentId] = {
           ...(updatedMap[item.studentId] || {}),
           tp1Tugas1: item.tp1Tugas1 !== undefined ? String(item.tp1Tugas1) : "",
@@ -3015,6 +3098,11 @@ export default function HomeroomPanel({
 
     setGradeInputMap(updatedMap);
     setKokurikulerScores(updatedKoku);
+    setHasUnsavedGrades(true);
+    setUnsavedCount(dirtyStudentsRef.current.size);
+    try {
+      localStorage.setItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`, JSON.stringify(updatedMap));
+    } catch (e) {}
     setShowExcelModal(false);
     setExcelPasteContent('');
     setExcelParsedPreview([]);
@@ -7999,6 +8087,50 @@ Wassalamualaikum Wr. Wb.
                   </div>
                 </div>
 
+                {/* Anti-Wipe Protection Banner & Unsaved Changes Alert for Wali Kelas */}
+                <div className="mb-2">
+                  {hasUnsavedGrades ? (
+                    <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-amber-50 border-2 border-amber-300 text-amber-950 rounded-2xl text-xs font-semibold shadow-sm animate-fade-in">
+                      <div className="flex items-center gap-2.5">
+                        <div className="w-8 h-8 rounded-xl bg-amber-200/80 flex items-center justify-center shrink-0">
+                          <AlertTriangle size={18} className="text-amber-700" />
+                        </div>
+                        <div>
+                          <div className="font-extrabold text-amber-900 text-xs flex items-center gap-2">
+                            <span>Perhatian: Ada {unsavedCount} Nilai Siswa Sedang Diisi Manual</span>
+                            <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900 uppercase">
+                              Draft Aman Anti-Wipe
+                            </span>
+                          </div>
+                          <div className="text-[11px] text-amber-800 mt-0.5 font-normal">
+                            Nilai tersimpan lokal pada peramban Anda dan dilindungi dari refresh / sinkronisasi background otomatis. Klik Simpan untuk memperbarui database MySQL.
+                          </div>
+                        </div>
+                      </div>
+                      <button
+                        type="submit"
+                        disabled={isSavingFullGrades || gradingStudents.length === 0}
+                        className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-amber-600/20 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0 disabled:opacity-50"
+                      >
+                        {isSavingFullGrades ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                        <span>Simpan Sekarang ({unsavedCount} Siswa)</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-emerald-900 text-xs font-medium">
+                      <div className="flex items-center gap-2">
+                        <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                        <span className="text-[11px]">
+                          <strong>Status Penilaian:</strong> Seluruh nilai tersimpan di database. Sistem proteksi background sync aktif melindungi ketikan Anda saat pengisian manual.
+                        </span>
+                      </div>
+                      <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md uppercase">
+                        Anti-Wipe Aktif
+                      </span>
+                    </div>
+                  )}
+                </div>
+
                 {gradingStudents.length === 0 ? (
                   <div className="py-12 text-center text-slate-400 font-semibold text-xs">
                     Tidak ada siswa terdaftar pada kelas {selectedGradingClass || currentTeacher.className}.
@@ -8076,13 +8208,24 @@ Wassalamualaikum Wr. Wb.
                             : null;
 
                           const updateField = (field: string, val: string) => {
-                            setGradeInputMap(prev => ({
-                              ...prev,
-                              [st.id]: {
+                            dirtyStudentsRef.current.add(st.id);
+                            setHasUnsavedGrades(true);
+                            setUnsavedCount(dirtyStudentsRef.current.size);
+
+                            setGradeInputMap(prev => {
+                              const updatedStudent = {
                                 ...(prev[st.id] || {}),
                                 [field]: val
-                              }
-                            }));
+                              };
+                              const nextMap = {
+                                ...prev,
+                                [st.id]: updatedStudent
+                              };
+                              try {
+                                localStorage.setItem(`draft_grades_homeroom_${lastGradingScopeRef.current}`, JSON.stringify(nextMap));
+                              } catch (e) {}
+                              return nextMap;
+                            });
                             if (field === 'kokurikuler') {
                               setKokurikulerScores(prev => ({
                                 ...prev,

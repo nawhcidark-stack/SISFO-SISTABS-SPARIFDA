@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher, SharedLearningObjective } from '../types';
 import { isSameSubject, normClass, isSameClass } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
@@ -8,7 +8,7 @@ import { TpJournalSelector } from './TpJournalSelector';
 import { SharedTpBankView } from './SharedTpBankView';
 import { SharedTpQuickSelector } from './SharedTpQuickSelector';
 import { 
-  Calendar, Check, AlertCircle, Save, Loader2, Users, ClipboardCheck, 
+  Calendar, Check, AlertCircle, AlertTriangle, Save, Loader2, Users, ClipboardCheck, 
   Sparkles, LogOut, ArrowRight, BookOpen, AlertCircle as ErrorIcon,
   Search, ShieldCheck, HelpCircle, History, CheckCircle2, ChevronRight, FileText, X, Printer, Lock, Unlock,
   User, Bell, LayoutGrid, Home, Smartphone, Apple, Download, Edit, Trash2, ShieldAlert, Megaphone, CreditCard, Award
@@ -644,6 +644,25 @@ export default function SubjectTeacherPanel({
     deskripsiCapaian?: string;
   }>>({});
 
+  // Anti-Wipe Protection & Unsaved Manual Grade Tracking
+  const dirtyStudentsRef = useRef<Set<string>>(new Set());
+  const lastGradingScopeRef = useRef<string>('');
+  const [hasUnsavedGrades, setHasUnsavedGrades] = useState<boolean>(false);
+  const [unsavedCount, setUnsavedCount] = useState<number>(0);
+
+  // Warn teacher before closing/leaving page if there are unsaved grades
+  useEffect(() => {
+    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
+      if (hasUnsavedGrades) {
+        e.preventDefault();
+        e.returnValue = 'Ada nilai siswa yang belum disimpan ke server. Yakin ingin meninggalkan halaman?';
+        return e.returnValue;
+      }
+    };
+    window.addEventListener('beforeunload', handleBeforeUnload);
+    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
+  }, [hasUnsavedGrades]);
+
   const [showExcelModal, setShowExcelModal] = useState<boolean>(false);
   const [showPrintGradePdfModal, setShowPrintGradePdfModal] = useState<boolean>(false);
   const [excelPasteContent, setExcelPasteContent] = useState<string>('');
@@ -992,7 +1011,7 @@ export default function SubjectTeacherPanel({
     fetchAssessments();
     fetchPrincipalWorkPrograms();
     fetchEvaluations();
-  }, [currentTeacher]);
+  }, [currentTeacher?.id]);
 
   const gradingClassStudents = useMemo(() => {
     if (!selectedGradeClass) return [];
@@ -1044,8 +1063,53 @@ export default function SubjectTeacherPanel({
       }
     });
 
-    setGradeInputMap(newMap);
-  }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, selectedSubject]);
+    const currentScopeKey = `${currentTeacher?.id || 'guru'}_${selectedGradeClass}_${selectedSubject}_${selectedSemesterGrading}_${selectedYearGrading}`;
+    const isScopeChange = lastGradingScopeRef.current !== currentScopeKey;
+
+    if (isScopeChange) {
+      lastGradingScopeRef.current = currentScopeKey;
+      let restoredFromDraft = false;
+      try {
+        const rawDraft = localStorage.getItem(`draft_grades_subject_${currentScopeKey}`);
+        if (rawDraft) {
+          const draftObj = JSON.parse(rawDraft);
+          if (draftObj && typeof draftObj === 'object') {
+            gradingClassStudents.forEach(s => {
+              if (draftObj[s.id]) {
+                newMap[s.id] = { ...newMap[s.id], ...draftObj[s.id] };
+                dirtyStudentsRef.current.add(s.id);
+              }
+            });
+            restoredFromDraft = dirtyStudentsRef.current.size > 0;
+          }
+        }
+      } catch (e) {
+        console.warn("Gagal membaca draft lokal guru:", e);
+      }
+
+      if (!restoredFromDraft) {
+        dirtyStudentsRef.current.clear();
+        setHasUnsavedGrades(false);
+        setUnsavedCount(0);
+      } else {
+        setHasUnsavedGrades(true);
+        setUnsavedCount(dirtyStudentsRef.current.size);
+      }
+      setGradeInputMap(newMap);
+    } else {
+      // Background sync, SSE, student array update, or background polling:
+      // CRITICAL: Protect dirty inputs from being wiped out!
+      setGradeInputMap(prev => {
+        const merged: Record<string, any> = { ...newMap };
+        Object.keys(prev).forEach(studId => {
+          if (dirtyStudentsRef.current.has(studId) && prev[studId]) {
+            merged[studId] = { ...newMap[studId], ...prev[studId] };
+          }
+        });
+        return merged;
+      });
+    }
+  }, [gradingClassStudents, merdekaAssessments, selectedSemesterGrading, selectedYearGrading, selectedSubject, currentTeacher?.id]);
 
   function matchSubject(sub1: string, sub2: string): boolean {
     return isSameSubject(sub1, sub2);
@@ -1398,6 +1462,7 @@ export default function SubjectTeacherPanel({
 
     excelParsedPreview.forEach(item => {
       if (item.matched && item.studentId) {
+        dirtyStudentsRef.current.add(item.studentId);
         updatedMap[item.studentId] = {
           ...(updatedMap[item.studentId] || {}),
           tp1Tugas1: item.tp1Tugas1 !== undefined ? String(item.tp1Tugas1) : "",
@@ -1421,6 +1486,11 @@ export default function SubjectTeacherPanel({
     });
 
     setGradeInputMap(updatedMap);
+    setHasUnsavedGrades(true);
+    setUnsavedCount(dirtyStudentsRef.current.size);
+    try {
+      localStorage.setItem(`draft_grades_subject_${lastGradingScopeRef.current}`, JSON.stringify(updatedMap));
+    } catch (e) {}
     setShowExcelModal(false);
     setExcelPasteContent('');
     setExcelParsedPreview([]);
@@ -3078,6 +3148,7 @@ export default function SubjectTeacherPanel({
                   onClick={() => {
                     const updated = { ...gradeInputMap };
                     gradingClassStudents.forEach(s => {
+                      dirtyStudentsRef.current.add(s.id);
                       if (!updated[s.id]?.tp1Tugas1 && !updated[s.id]?.tp1Uh) {
                         updated[s.id] = {
                           tp1Tugas1: String(Math.floor(Math.random() * 11) + 85),
@@ -3099,6 +3170,11 @@ export default function SubjectTeacherPanel({
                       }
                     });
                     setGradeInputMap(updated);
+                    setHasUnsavedGrades(true);
+                    setUnsavedCount(dirtyStudentsRef.current.size);
+                    try {
+                      localStorage.setItem(`draft_grades_subject_${lastGradingScopeRef.current}`, JSON.stringify(updated));
+                    } catch (e) {}
                     setFeedback({ type: 'success', text: "Berhasil mengisi contoh nilai lengkap (TP1-TP4 Tugas & UH, Kokurikuler, PTS, PAS) untuk demo!" });
                   }}
                   className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 hover:bg-slate-100 text-slate-700 font-bold text-xs transition-colors flex items-center gap-1.5 cursor-pointer"
@@ -3333,6 +3409,124 @@ export default function SubjectTeacherPanel({
             </div>
           </div>
 
+          {/* Anti-Wipe Protection Banner & Unsaved Changes Alert */}
+          <div className="mb-1">
+            {hasUnsavedGrades ? (
+              <div className="flex flex-col sm:flex-row items-center justify-between gap-3 p-3.5 bg-amber-50 border-2 border-amber-300 text-amber-950 rounded-2xl text-xs font-semibold shadow-sm animate-fade-in">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-xl bg-amber-200/80 flex items-center justify-center shrink-0">
+                    <AlertTriangle size={18} className="text-amber-700" />
+                  </div>
+                  <div>
+                    <div className="font-extrabold text-amber-900 text-xs flex items-center gap-2">
+                      <span>Perhatian: Ada {unsavedCount} Nilai Siswa Sedang Diisi Manual</span>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-amber-200 text-amber-900 uppercase">
+                        Draft Aman Anti-Wipe
+                      </span>
+                    </div>
+                    <div className="text-[11px] text-amber-800 mt-0.5 font-normal">
+                      Nilai tersimpan lokal pada peramban Anda dan dilindungi dari refresh / sinkronisasi otomatis latar belakang. Klik tombol di kanan untuk menyimpan ke database.
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={async () => {
+                    setIsSaving(true);
+                    try {
+                      const batchData = gradingClassStudents.map(s => {
+                        const inputState = gradeInputMap[s.id] || {
+                          tp1Tugas1: '', tp1Uh: '',
+                          tp2Tugas1: '', tp2Uh: '',
+                          tp3Tugas1: '', tp3Uh: '',
+                          tp4Tugas1: '', tp4Uh: ''
+                        };
+
+                        return {
+                          studentId: s.id,
+                          studentName: s.name,
+                          className: s.class || selectedGradeClass,
+                          subject: selectedSubject,
+                          teacherName: currentTeacher.name,
+                          semester: selectedSemesterGrading,
+                          academicYear: selectedYearGrading,
+                          tp1Id: tp1Id || undefined,
+                          tp1Name: tp1InputName,
+                          tp1Tugas1: inputState.tp1Tugas1,
+                          tp1Uh: inputState.tp1Uh,
+
+                          tp2Id: tp2Id || undefined,
+                          tp2Name: tp2InputName || undefined,
+                          tp2Tugas1: inputState.tp2Tugas1,
+                          tp2Uh: inputState.tp2Uh,
+
+                          tp3Id: tp3Id || undefined,
+                          tp3Name: tp3InputName || undefined,
+                          tp3Tugas1: inputState.tp3Tugas1,
+                          tp3Uh: inputState.tp3Uh,
+
+                          tp4Id: tp4Id || undefined,
+                          tp4Name: tp4InputName || undefined,
+                          tp4Tugas1: (inputState as any).tp4Tugas1,
+                          tp4Uh: (inputState as any).tp4Uh
+                        };
+                      });
+
+                      const res = await fetch('/api/merdeka-assessments', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(batchData)
+                      });
+
+                      if (res.ok) {
+                        dirtyStudentsRef.current.clear();
+                        setHasUnsavedGrades(false);
+                        setUnsavedCount(0);
+                        try {
+                          localStorage.removeItem(`draft_grades_subject_${lastGradingScopeRef.current}`);
+                        } catch (e) {}
+
+                        setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka dan deskripsi TP untuk Kelas ${selectedGradeClass} berhasil disimpan langsung ke basis data MySQL!` });
+                        setGradeSuccessSummary({
+                          className: selectedGradeClass,
+                          subject: selectedSubject,
+                          count: batchData.length
+                        });
+                        setShowGradeSuccessModal(true);
+                        fetchAssessments();
+                        handleSaveTpDescriptions();
+                        onRefresh();
+                      } else {
+                        setFeedback({ type: 'error', text: 'Gagal memproses penyimpanan penilaian ke MySQL.' });
+                      }
+                    } catch (err: any) {
+                      setFeedback({ type: 'error', text: err.message || 'Terjadi kesalahan sistem.' });
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving || gradingClassStudents.length === 0}
+                  className="px-4 py-2 bg-amber-600 hover:bg-amber-700 text-white font-extrabold text-xs rounded-xl transition-all shadow-md shadow-amber-600/20 cursor-pointer flex items-center gap-2 whitespace-nowrap shrink-0 disabled:opacity-50"
+                >
+                  {isSaving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
+                  <span>Simpan Sekarang ({unsavedCount} Siswa)</span>
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2 bg-emerald-50/80 border border-emerald-200 rounded-2xl text-emerald-900 text-xs font-medium">
+                <div className="flex items-center gap-2">
+                  <CheckCircle2 size={15} className="text-emerald-600 shrink-0" />
+                  <span className="text-[11px]">
+                    <strong>Status Penilaian:</strong> Seluruh nilai tersimpan di database. Sistem proteksi background sync aktif melindungi ketikan Anda saat pengisian manual.
+                  </span>
+                </div>
+                <span className="text-[10px] font-bold text-emerald-700 bg-emerald-100 px-2 py-0.5 rounded-md uppercase">
+                  Anti-Wipe Aktif
+                </span>
+              </div>
+            )}
+          </div>
+
           {/* Student Grading Grid Table */}
           <div className="bg-white border border-slate-200 rounded-3xl shadow-sm overflow-hidden">
             <div className="overflow-x-auto">
@@ -3428,9 +3622,11 @@ export default function SubjectTeacherPanel({
                           if (isNaN(numVal)) cleanIdx = '';
                           else cleanIdx = String(Math.min(100, Math.max(0, numVal)));
                         }
-                        setGradeInputMap(prev => ({
-                          ...prev,
-                          [s.id]: {
+                        dirtyStudentsRef.current.add(s.id);
+                        setHasUnsavedGrades(true);
+                        setUnsavedCount(dirtyStudentsRef.current.size);
+                        setGradeInputMap(prev => {
+                          const updatedStudent = {
                             ...(prev[s.id] || {
                               tp1Tugas1: '', tp1Tugas2: '', tp1Uh: '',
                               tp2Tugas1: '', tp2Tugas2: '', tp2Uh: '',
@@ -3438,8 +3634,16 @@ export default function SubjectTeacherPanel({
                               tp4Tugas1: '', tp4Tugas2: '', tp4Uh: ''
                             }),
                             [field]: cleanIdx
-                          }
-                        }));
+                          };
+                          const nextMap = {
+                            ...prev,
+                            [s.id]: updatedStudent
+                          };
+                          try {
+                            localStorage.setItem(`draft_grades_subject_${lastGradingScopeRef.current}`, JSON.stringify(nextMap));
+                          } catch (e) {}
+                          return nextMap;
+                        });
                       };
 
                       return (
@@ -3601,6 +3805,13 @@ export default function SubjectTeacherPanel({
                     });
 
                     if (res.ok) {
+                      dirtyStudentsRef.current.clear();
+                      setHasUnsavedGrades(false);
+                      setUnsavedCount(0);
+                      try {
+                        localStorage.removeItem(`draft_grades_subject_${lastGradingScopeRef.current}`);
+                      } catch (e) {}
+
                       setFeedback({ type: 'success', text: `Seluruh penilaian Kurikulum Merdeka dan deskripsi TP untuk Kelas ${selectedGradeClass} berhasil disimpan langsung ke basis data MySQL!` });
                       setGradeSuccessSummary({
                         className: selectedGradeClass,

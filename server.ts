@@ -10257,48 +10257,77 @@ async function startServer() {
     });
   });
 
-  // Admin Bulk Savings Withdrawal per grade level (7,8,9)
+  // Admin Bulk Savings Withdrawal (per grade, per class, or specific student checklist)
   app.post("/api/admin/savings-bulk-withdraw", (req, res) => {
-    const { grade, amount, notes, allowDebt } = req.body;
+    const { grade, targetClass, studentIds, amount, notes, allowDebt } = req.body;
     
-    // Validate inputs
-    if (!grade || !["7", "8", "9"].includes(String(grade))) {
-      return res.status(400).json({ error: "Tingkat kelas tidak valid (harus 7, 8, atau 9)." });
-    }
-
     const valAmount = Number(amount);
     if (isNaN(valAmount) || valAmount <= 0) {
       return res.status(400).json({ error: "Jumlah penarikan harus berupa angka positif." });
     }
 
-    const customNotes = notes || `Penarikan massal tingkat ${grade}`;
+    const customNotes = notes || (targetClass ? `Penarikan massal kelas ${targetClass}` : (grade ? `Penarikan massal tingkat ${grade}` : "Penarikan tabungan massal"));
 
-    // Filter students belonging to specified grade
-    const targetStudents = students.filter(student => {
-      const cls = String(student.class || "").trim();
-      return cls.startsWith(String(grade));
-    });
+    // Determine target students
+    let targetStudents: Student[] = [];
+
+    if (Array.isArray(studentIds) && studentIds.length > 0) {
+      const idSet = new Set(studentIds.map(String));
+      targetStudents = students.filter(s => idSet.has(s.id));
+    } else if (targetClass && targetClass !== "all") {
+      targetStudents = students.filter(student => {
+        const cls = String(student.class || "").trim().toLowerCase();
+        const isNotActive = (student.mutationDate && student.mutationDate.trim() !== '') ||
+          cls.includes("mutasi") || cls.includes("alumni") || cls.includes("lulus");
+        if (isNotActive) return false;
+        return cls === String(targetClass).trim().toLowerCase();
+      });
+    } else if (grade && grade !== "all" && ["7", "8", "9"].includes(String(grade))) {
+      targetStudents = students.filter(student => {
+        const cls = String(student.class || "").trim().toLowerCase();
+        const isNotActive = (student.mutationDate && student.mutationDate.trim() !== '') ||
+          cls.includes("mutasi") || cls.includes("alumni") || cls.includes("lulus");
+        if (isNotActive) return false;
+        return cls.startsWith(String(grade).toLowerCase());
+      });
+    } else {
+      // All active students (excluding alumni and mutasi keluar)
+      targetStudents = students.filter(s => {
+        const cls = String(s.class || "").toLowerCase();
+        const isNotActive = (s.mutationDate && s.mutationDate.trim() !== '') ||
+          cls.includes("mutasi") || cls.includes("alumni") || cls.includes("lulus");
+        return !isNotActive;
+      });
+    }
 
     if (targetStudents.length === 0) {
-      return res.status(404).json({ error: `Tidak ditemukan siswa di tingkat kelas ${grade}.` });
+      return res.status(404).json({ error: "Tidak ada siswa yang dipilih atau ditemukan untuk penarikan massal." });
     }
 
     let successCount = 0;
     let skippedCount = 0;
     let totalDeducted = 0;
     const bulkTxs: SavingsTransaction[] = [];
+    const affectedStudents: Student[] = [];
 
     for (const student of targetStudents) {
-      let deductVal = valAmount;
+      const currentBal = student.savingsBalance || 0;
 
-      // Deduct balance (allows negative/minus balance)
-      student.savingsBalance -= deductVal;
+      // If debt is not allowed and balance is insufficient
+      if (!allowDebt && currentBal < valAmount) {
+        skippedCount++;
+        continue;
+      }
+
+      let deductVal = valAmount;
+      student.savingsBalance = currentBal - deductVal;
       totalDeducted += deductVal;
       successCount++;
+      affectedStudents.push(student);
 
       // Create transaction record
       const transaction: SavingsTransaction = {
-        id: `sav-bulk-${Date.now()}-${student.id}`,
+        id: `sav-bulk-${Date.now()}-${Math.floor(Math.random() * 1000)}-${student.id}`,
         studentId: student.id,
         type: "withdrawal",
         amount: deductVal,
@@ -10323,9 +10352,9 @@ async function startServer() {
 
       // Send automated WhatsApp notification (if enabled)
       if (whatsappConfig.enabled && whatsappConfig.notifyOnSavings && student.phone) {
-        const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}).\n\n` +
+        const waMsg = `Yth. Orang Tua / Wali Siswa dari *${student.name}* (NIS: ${student.nis}, Kelas: ${student.class || '-'}).\n\n` +
           `📝 *NOTIFIKASI TRANSAKSI TABUNGAN SISWA*\n` +
-          `Telah diproses *PENARIKAN TABUNGAN MASSAL* Tingkat ${grade} oleh Teller Sekolah:\n\n` +
+          `Telah diproses *PENARIKAN TABUNGAN MASSAL* oleh Teller Sekolah:\n\n` +
           `• Jumlah Penarikan: *Rp ${deductVal.toLocaleString("id-ID")}*\n` +
           `• Keperluan: *${customNotes}*\n` +
           `• Tanggal: ${new Date().toLocaleDateString('id-ID')} pukul ${new Date().toLocaleTimeString('id-ID')}\n` +
@@ -10337,18 +10366,28 @@ async function startServer() {
       }
     }
 
-    // Record general notification in the school notification feed
+    if (successCount === 0 && skippedCount > 0) {
+      return res.status(400).json({
+        error: `Semua siswa terpilih (${skippedCount} siswa) dilewati karena saldo tidak mencukupi (Rp ${valAmount.toLocaleString("id-ID")}) dan opsi saldo minus tidak dicentang.`
+      });
+    }
+
+    const scopeLabel = Array.isArray(studentIds) && studentIds.length > 0
+      ? (targetClass ? `Kelas ${targetClass} (${studentIds.length} Siswa Terpilih)` : `${studentIds.length} Siswa Pilihan Ceklist`)
+      : (targetClass ? `Kelas ${targetClass}` : (grade && grade !== "all" ? `Tingkat ${grade}` : "Pilihan Siswa"));
     const schoolNotification: RealtimeNotification = {
       id: `notif-bulk-sav-sch-${Date.now()}`,
-      title: `Penarikan Massal Tingkat ${grade} Berhasil`,
-      message: `Diproses penarikan tabungan massal tingkat ${grade} sebesar Rp ${valAmount.toLocaleString("id-ID")} per siswa untuk "${customNotes}". Sebanyak ${successCount} siswa didebet, total dana dihimpun: Rp ${totalDeducted.toLocaleString("id-ID")}.`,
+      title: `Penarikan Tabungan Massal (${scopeLabel}) Berhasil`,
+      message: `Diproses penarikan tabungan massal (${scopeLabel}) sebesar Rp ${valAmount.toLocaleString("id-ID")} per siswa untuk "${customNotes}". Sebanyak ${successCount} siswa didebet${skippedCount > 0 ? `, ${skippedCount} dilewati (saldo kurang)` : ''}, total dana dihimpun: Rp ${totalDeducted.toLocaleString("id-ID")}.`,
       type: "success",
       createdAt: new Date().toISOString()
     };
     broadcastNotification(schoolNotification);
 
     saveState();
-    persistEntities("students", targetStudents).catch(err => console.error("Error persisting bulk withdraw students to MySQL:", err));
+    if (affectedStudents.length > 0) {
+      persistEntities("students", affectedStudents).catch(err => console.error("Error persisting bulk withdraw students to MySQL:", err));
+    }
     if (bulkTxs.length > 0) {
       persistEntities("savingsTransactions", bulkTxs).catch(err => console.error("Error persisting bulk withdraw txs to MySQL:", err));
     }
@@ -10358,7 +10397,7 @@ async function startServer() {
       successCount,
       skippedCount,
       totalDeducted,
-      message: `Berhasil memproses penarikan massal tingkat ${grade}. Keperluan: ${customNotes}.`
+      message: `Berhasil memproses penarikan tabungan massal untuk ${successCount} siswa${skippedCount > 0 ? ` (${skippedCount} siswa dilewati karena saldo tidak cukup)` : ''}. Keperluan: ${customNotes}.`
     });
   });
 

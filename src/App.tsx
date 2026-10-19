@@ -615,7 +615,10 @@ export default function App() {
       const hrRes = await fetchNoCache('/api/homerooms?fresh=true');
       if (hrRes.ok) {
         const hrData = await hrRes.json();
-        setHomeroomsList(hrData);
+        setHomeroomsList(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(hrData)) return prev;
+          return hrData;
+        });
       }
     } catch (e) {
       console.error("Gagal memuat wali kelas", e);
@@ -627,7 +630,10 @@ export default function App() {
       const stRes = await fetchNoCache('/api/subject-teachers?fresh=true');
       if (stRes.ok) {
         const stData = await stRes.json();
-        setSubjectTeachersList(stData);
+        setSubjectTeachersList(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(stData)) return prev;
+          return stData;
+        });
       }
     } catch (e) {
       console.error("Gagal memuat guru mapel", e);
@@ -639,7 +645,10 @@ export default function App() {
       const maRes = await fetchNoCache('/api/merdeka-assessments');
       if (maRes.ok) {
         const maData = await maRes.json();
-        setMerdekaAssessmentsList(maData);
+        setMerdekaAssessmentsList(prev => {
+          if (JSON.stringify(prev) === JSON.stringify(maData)) return prev;
+          return maData;
+        });
       }
     } catch (e) {
       console.error("Gagal memuat penilaian merdeka", e);
@@ -897,7 +906,10 @@ export default function App() {
         fetch('/api/students')
           .then(res => res.json())
           .then(dataList => {
-            setStudentsList(dataList);
+            setStudentsList(prev => {
+              if (JSON.stringify(prev) === JSON.stringify(dataList)) return prev;
+              return dataList;
+            });
             // Also sync active student's specific sub-cards
             const freshActiveStud = currentStudentRef.current;
             if (freshActiveStud) {
@@ -1210,12 +1222,29 @@ export default function App() {
   };
 
   // Administrative Bulk Savings Withdrawal
-  const handleBulkWithdrawSavings = async (grade: string, amount: number, notes: string, allowDebt: boolean): Promise<any> => {
+  const handleBulkWithdrawSavings = async (
+    targetOrGrade: any,
+    amountParam?: number,
+    notesParam?: string,
+    allowDebtParam?: boolean
+  ): Promise<any> => {
     try {
+      let body: any = {};
+      if (typeof targetOrGrade === 'object' && targetOrGrade !== null) {
+        body = targetOrGrade;
+      } else {
+        body = {
+          grade: targetOrGrade,
+          amount: amountParam,
+          notes: notesParam,
+          allowDebt: allowDebtParam ?? true
+        };
+      }
+
       const res = await fetch('/api/admin/savings-bulk-withdraw', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ grade, amount, notes, allowDebt })
+        body: JSON.stringify(body)
       });
       const data = await res.json();
       if (res.ok) {

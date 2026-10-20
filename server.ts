@@ -2046,7 +2046,24 @@ function loadState() {
       }
       if (Array.isArray(data.treasurerTransactions)) {
         treasurerTransactions.length = 0;
-        treasurerTransactions.push(...data.treasurerTransactions);
+        const cleaned = data.treasurerTransactions.filter((t: any) => {
+          if (!t) return false;
+          const idLower = (t.id || "").toLowerCase();
+          const catLower = (t.category || "").toLowerCase().trim();
+          const descLower = (t.description || "").toLowerCase();
+          if (idLower.startsWith("trx-spmb-")) return false;
+          if (descLower.includes("krishna") && (descLower.includes("token") || descLower.includes("daftar ulang"))) return false;
+          if (
+            catLower === "spmb - token formulir" ||
+            catLower === "spmb - daftar ulang" ||
+            catLower === "spmb - daftar ulang & seragam" ||
+            catLower === "spmb daftar ulang & seragam" ||
+            catLower === "spmb formulir" ||
+            catLower === "spmb daftar ulang"
+          ) return false;
+          return true;
+        });
+        treasurerTransactions.push(...cleaned);
       } else {
         // Initial mock data if empty
         treasurerTransactions.length = 0;
@@ -2097,7 +2114,35 @@ function loadState() {
       if (data.schoolIdentity) Object.assign(schoolIdentity, data.schoolIdentity);
       if (data.midtransConfig) Object.assign(midtransConfig, data.midtransConfig);
       if (data.whatsappConfig) Object.assign(whatsappConfig, data.whatsappConfig);
-      if (data.treasurerConfig) Object.assign(treasurerConfig, data.treasurerConfig);
+      if (data.treasurerConfig) {
+        Object.assign(treasurerConfig, data.treasurerConfig);
+        if (Array.isArray(treasurerConfig.categories)) {
+          treasurerConfig.categories = treasurerConfig.categories.filter((c: any) => {
+            const name = typeof c === 'string' ? c : c.name || '';
+            const nl = name.toLowerCase().trim();
+            return !nl.includes("midtrans") &&
+                   !nl.includes("transaksi online") &&
+                   nl !== "spp siswa" &&
+                   nl !== "tagihan non-spp" &&
+                   nl !== "spmb siswa baru" &&
+                   nl !== "daftar ulang siswa baru" &&
+                   nl !== "spmb - token formulir" &&
+                   nl !== "spmb - daftar ulang" &&
+                   nl !== "spmb - daftar ulang & seragam" &&
+                   nl !== "spmb daftar ulang & seragam" &&
+                   nl !== "spmb formulir" &&
+                   nl !== "spmb daftar ulang" &&
+                   nl !== "spp" &&
+                   nl !== "tabungan";
+          });
+          if (!treasurerConfig.categories.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'token spmb formulir')) {
+            treasurerConfig.categories.push({ name: 'Token SPMB Formulir', type: 'both' });
+          }
+          if (!treasurerConfig.categories.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'spmb daftar ulang')) {
+            treasurerConfig.categories.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
+          }
+        }
+      }
       if (data.principalConfig) Object.assign(principalConfig, data.principalConfig);
       if (data.sarprasConfig) Object.assign(sarprasConfig, data.sarprasConfig);
       if (data.bkConfig) Object.assign(bkConfig, data.bkConfig);
@@ -8120,7 +8165,7 @@ async function startServer() {
       .map(c => ({
         id: `spmb-tok-${c.id}`,
         type: 'incoming' as const,
-        category: 'SPMB Formulir',
+        category: 'Token SPMB Formulir',
         amount: Number(c.tokenAmount) || 50000,
         description: `Pembayaran Token Formulir SPMB (${c.sessionId ? c.sessionId.toUpperCase() : 'SPMB'}) - ${c.fullName} (NISN: ${c.nisn || '-'})`,
         date: getWIBDateString(c.tokenPaidAt || c.createdAt || new Date()),
@@ -8138,7 +8183,7 @@ async function startServer() {
       .map(c => ({
         id: `spmb-ref-${c.id}`,
         type: 'outgoing' as const,
-        category: 'SPMB Formulir',
+        category: 'Token SPMB Formulir',
         amount: Number(c.collectiveRefundAmount) || 50000,
         description: `Pengembalian Tunai Token SPMB Kolektif - ${c.fullName} (NISN: ${c.nisn || '-'})${c.collectiveRefundRecipient ? ` [Penerima: ${c.collectiveRefundRecipient}]` : ''}`,
         date: getWIBDateString(c.collectiveRefundedAt || new Date()),
@@ -8163,7 +8208,7 @@ async function startServer() {
         return {
           id: `spmb-rereg-${c.id}`,
           type: 'incoming' as const,
-          category: 'SPMB Daftar Ulang',
+          category: 'SPMB DAFTAR ULANG',
           amount: amt,
           description: `Pembayaran Daftar Ulang SPMB (${c.sessionId ? c.sessionId.toUpperCase() : 'SPMB'}) - ${c.fullName} (NISN: ${c.nisn || '-'})`,
           date: getWIBDateString(c.reRegistrationPaidAt || new Date()),
@@ -8186,12 +8231,20 @@ async function startServer() {
       const createdByLower = (t.createdBy || "").toLowerCase();
 
       if (idLower.startsWith("tx-misc-") || idLower.startsWith("tx-midtrans-")) return false;
+      if (idLower.startsWith("trx-spmb-")) return false;
+      if (descLower.includes("krishna") && (descLower.includes("token") || descLower.includes("daftar ulang"))) return false;
       if (t.category === "Operasional" && descLower.startsWith("pembayaran ")) return false;
       if (
         catLower === "spp siswa" || 
         catLower === "tagihan non-spp" || 
         catLower === "spmb siswa baru" || 
         catLower === "daftar ulang siswa baru" || 
+        catLower === "spmb - token formulir" || 
+        catLower === "spmb - daftar ulang" || 
+        catLower === "spmb - daftar ulang & seragam" || 
+        catLower === "spmb daftar ulang & seragam" || 
+        catLower === "spmb formulir" || 
+        catLower === "spmb daftar ulang" || 
         catLower === "spp" || 
         catLower === "tabungan"
       ) return false;
@@ -8282,8 +8335,8 @@ async function startServer() {
     const defaultCats = [
       { name: 'Operasional', type: 'outgoing' },
       { name: 'Gaji Guru', type: 'outgoing' },
-      { name: 'SPMB Formulir', type: 'both' },
-      { name: 'SPMB Daftar Ulang', type: 'incoming' },
+      { name: 'Token SPMB Formulir', type: 'both' },
+      { name: 'SPMB DAFTAR ULANG', type: 'both' },
       { name: 'Pembangunan', type: 'outgoing' },
       { name: 'Ujian', type: 'outgoing' },
       { name: 'HUT RI 81 2026', type: 'both' },
@@ -8309,9 +8362,22 @@ async function startServer() {
              nl !== "tagihan non-spp" &&
              nl !== "spmb siswa baru" &&
              nl !== "daftar ulang siswa baru" &&
+             nl !== "spmb - token formulir" &&
+             nl !== "spmb - daftar ulang" &&
+             nl !== "spmb - daftar ulang & seragam" &&
+             nl !== "spmb daftar ulang & seragam" &&
+             nl !== "spmb formulir" &&
+             nl !== "spmb daftar ulang" &&
              nl !== "spp" &&
              nl !== "tabungan";
     });
+
+    if (!cleaned.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'token spmb formulir')) {
+      cleaned.push({ name: 'Token SPMB Formulir', type: 'both' });
+    }
+    if (!cleaned.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'spmb daftar ulang')) {
+      cleaned.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
+    }
 
     res.json({ success: true, categories: cleaned });
   });
@@ -8332,9 +8398,22 @@ async function startServer() {
              nl !== "tagihan non-spp" &&
              nl !== "spmb siswa baru" &&
              nl !== "daftar ulang siswa baru" &&
+             nl !== "spmb - token formulir" &&
+             nl !== "spmb - daftar ulang" &&
+             nl !== "spmb - daftar ulang & seragam" &&
+             nl !== "spmb daftar ulang & seragam" &&
+             nl !== "spmb formulir" &&
+             nl !== "spmb daftar ulang" &&
              nl !== "spp" &&
              nl !== "tabungan";
     });
+
+    if (!cleaned.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'token spmb formulir')) {
+      cleaned.push({ name: 'Token SPMB Formulir', type: 'both' });
+    }
+    if (!cleaned.some((c: any) => (typeof c === 'string' ? c : c.name || '').toLowerCase().trim() === 'spmb daftar ulang')) {
+      cleaned.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
+    }
 
     treasurerConfig.categories = cleaned;
     saveConfigToMysql("treasurerConfig", treasurerConfig).catch(() => {});

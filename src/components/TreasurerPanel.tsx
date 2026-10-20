@@ -264,9 +264,21 @@ export default function TreasurerPanel({
                    nl !== 'tagihan non-spp' &&
                    nl !== 'spmb siswa baru' &&
                    nl !== 'daftar ulang siswa baru' &&
+                   nl !== 'spmb - token formulir' &&
+                   nl !== 'spmb - daftar ulang' &&
+                   nl !== 'spmb - daftar ulang & seragam' &&
+                   nl !== 'spmb daftar ulang & seragam' &&
+                   nl !== 'spmb formulir' &&
+                   nl !== 'spmb daftar ulang' &&
                    nl !== 'spp' &&
                    nl !== 'tabungan';
           });
+          if (!cleaned.some(c => c.name.toLowerCase().trim() === 'token spmb formulir')) {
+            cleaned.push({ name: 'Token SPMB Formulir', type: 'both' });
+          }
+          if (!cleaned.some(c => c.name.toLowerCase().trim() === 'spmb daftar ulang')) {
+            cleaned.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
+          }
           localStorage.setItem('treasurer_categories', JSON.stringify(cleaned));
           return cleaned;
         }
@@ -277,6 +289,8 @@ export default function TreasurerPanel({
     return [
       { name: 'Operasional', type: 'outgoing' },
       { name: 'Gaji Guru', type: 'outgoing' },
+      { name: 'Token SPMB Formulir', type: 'both' },
+      { name: 'SPMB DAFTAR ULANG', type: 'both' },
       { name: 'Pembangunan', type: 'outgoing' },
       { name: 'Ujian', type: 'outgoing' },
       { name: 'HUT RI 81 2026', type: 'both' },
@@ -785,17 +799,35 @@ export default function TreasurerPanel({
       const res = await fetch('/api/treasurer/transactions');
       if (res.ok) {
         const data = await res.json();
-        setTransactions(data);
+        const rawData = Array.isArray(data) ? data : [];
+        const sanitizedData = rawData.filter((tx: any) => {
+          if (!tx) return false;
+          const id = (tx.id || '').toLowerCase();
+          const cat = (tx.category || '').toLowerCase().trim();
+          const desc = (tx.description || '').toLowerCase();
+          if (id.startsWith('trx-spmb-')) return false;
+          if (desc.includes('krishna') && (desc.includes('token') || desc.includes('daftar ulang'))) return false;
+          if (
+            cat === 'spmb - token formulir' ||
+            cat === 'spmb - daftar ulang' ||
+            cat === 'spmb - daftar ulang & seragam' ||
+            cat === 'spmb daftar ulang & seragam' ||
+            cat === 'spmb formulir' ||
+            cat === 'spmb daftar ulang'
+          ) return false;
+          return true;
+        });
+        setTransactions(sanitizedData);
 
         // Auto-detect any missing category in existing transactions and add it to the active POS categories list
-        if (Array.isArray(data)) {
+        if (Array.isArray(sanitizedData)) {
           const fetchedCategories = new Set<string>();
-          data.forEach((tx: any) => {
+          sanitizedData.forEach((tx: any) => {
             if (tx.category && typeof tx.category === 'string') {
               const trimmed = tx.category.trim();
               const catLower = trimmed.toLowerCase();
               const isExcluded = 
-                ['spp', 'tabungan', 'spp siswa', 'tagihan non-spp', 'spmb siswa baru', 'daftar ulang siswa baru'].includes(catLower) ||
+                ['spp', 'tabungan', 'spp siswa', 'tagihan non-spp', 'spmb siswa baru', 'daftar ulang siswa baru', 'spmb - token formulir', 'spmb - daftar ulang', 'spmb - daftar ulang & seragam', 'spmb daftar ulang & seragam', 'spmb formulir', 'spmb daftar ulang'].includes(catLower) ||
                 catLower.includes('midtrans') || 
                 catLower.includes('transaksi online');
 
@@ -805,43 +837,53 @@ export default function TreasurerPanel({
             }
           });
 
-          if (fetchedCategories.size > 0) {
-            setCategories(prev => {
-              const currentNames = new Set(prev.map(c => c.name.toLowerCase()));
-              const newlyDetected: BudgetCategory[] = [];
-              fetchedCategories.forEach((catName: string) => {
-                if (!currentNames.has(catName.toLowerCase())) {
-                  const sameCatTxs = data.filter((tx: any) => tx.category === catName);
-                  const hasIncoming = sameCatTxs.some((tx: any) => tx.type === 'incoming');
-                  const hasOutgoing = sameCatTxs.some((tx: any) => tx.type === 'outgoing');
-                  let type: 'incoming' | 'outgoing' | 'both' = 'both';
-                  if (hasIncoming && !hasOutgoing) {
-                    type = 'incoming';
-                  } else if (hasOutgoing && !hasIncoming) {
-                    type = 'outgoing';
-                  }
-                  newlyDetected.push({ name: catName, type });
-                }
-              });
-
-              if (newlyDetected.length > 0) {
-                const updated = [...prev, ...newlyDetected].filter(c => {
-                  const nl = c.name.toLowerCase().trim();
-                  return !nl.includes('midtrans') && 
-                         !nl.includes('transaksi online') &&
-                         nl !== 'spp siswa' &&
-                         nl !== 'tagihan non-spp' &&
-                         nl !== 'spmb siswa baru' &&
-                         nl !== 'daftar ulang siswa baru' &&
-                         nl !== 'spp' &&
-                         nl !== 'tabungan';
-                });
-                localStorage.setItem('treasurer_categories', JSON.stringify(updated));
-                return updated;
-              }
-              return prev;
+          setCategories(prev => {
+            // First, purge any forbidden categories that may still be in previous state
+            const cleanedPrev = prev.filter(c => {
+              const nl = c.name.toLowerCase().trim();
+              return !nl.includes('midtrans') && 
+                     !nl.includes('transaksi online') &&
+                     nl !== 'spp siswa' &&
+                     nl !== 'tagihan non-spp' &&
+                     nl !== 'spmb siswa baru' &&
+                     nl !== 'daftar ulang siswa baru' &&
+                     nl !== 'spmb - token formulir' &&
+                     nl !== 'spmb - daftar ulang' &&
+                     nl !== 'spmb - daftar ulang & seragam' &&
+                     nl !== 'spmb daftar ulang & seragam' &&
+                     nl !== 'spmb formulir' &&
+                     nl !== 'spmb daftar ulang' &&
+                     nl !== 'spp' &&
+                     nl !== 'tabungan';
             });
-          }
+            if (!cleanedPrev.some(c => c.name.toLowerCase().trim() === 'token spmb formulir')) {
+              cleanedPrev.push({ name: 'Token SPMB Formulir', type: 'both' });
+            }
+            if (!cleanedPrev.some(c => c.name.toLowerCase().trim() === 'spmb daftar ulang')) {
+              cleanedPrev.push({ name: 'SPMB DAFTAR ULANG', type: 'both' });
+            }
+
+            const currentNames = new Set(cleanedPrev.map(c => c.name.toLowerCase()));
+            const newlyDetected: BudgetCategory[] = [];
+            fetchedCategories.forEach((catName: string) => {
+              if (!currentNames.has(catName.toLowerCase())) {
+                const sameCatTxs = sanitizedData.filter((tx: any) => tx.category === catName);
+                const hasIncoming = sameCatTxs.some((tx: any) => tx.type === 'incoming');
+                const hasOutgoing = sameCatTxs.some((tx: any) => tx.type === 'outgoing');
+                let type: 'incoming' | 'outgoing' | 'both' = 'both';
+                if (hasIncoming && !hasOutgoing) {
+                  type = 'incoming';
+                } else if (hasOutgoing && !hasIncoming) {
+                  type = 'outgoing';
+                }
+                newlyDetected.push({ name: catName, type });
+              }
+            });
+
+            const finalCategories = [...cleanedPrev, ...newlyDetected];
+            localStorage.setItem('treasurer_categories', JSON.stringify(finalCategories));
+            return finalCategories;
+          });
         }
       } else {
         setErrorMsg('Gagal memuat pembukuan bendahara.');

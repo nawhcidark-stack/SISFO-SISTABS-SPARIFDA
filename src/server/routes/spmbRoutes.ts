@@ -2298,36 +2298,36 @@ export function createSpmbRouter(deps: SpmbRouterDeps): Router {
       directDeleteEntityFromMysql("students", rawNisn).catch(() => {});
     }
 
-    // Catat transaksi kas bendahara pembayaran tunai token & daftar ulang
+    // Pastikan tidak ada transaksi manual ganda kas bendahara untuk KRISHNA
     if (Array.isArray(treasurerTransactions)) {
-      if (!treasurerTransactions.some(t => t.id === `trx-spmb-token-${rawNisn}`)) {
-        const tokenTrx = {
-          id: `trx-spmb-token-${rawNisn}`,
-          type: "income" as const,
-          category: "SPMB - Token Formulir",
-          amount: 50000,
-          description: `Pembayaran Tunai Token Formulir SPMB - KRISHNA RASYID NIKAZ (NISN: ${rawNisn})`,
-          paymentMethod: "Tunai",
-          date: "2026-10-09",
-          recordedBy: "Kasir SPMB / Bendahara"
-        };
-        treasurerTransactions.push(tokenTrx);
-        directSaveEntityToMysql("treasurer_transactions", tokenTrx).catch(() => {});
+      const idxs: number[] = [];
+      treasurerTransactions.forEach((t, i) => {
+        const idLower = (t.id || "").toLowerCase();
+        const catLower = (t.category || "").toLowerCase().trim();
+        const descLower = (t.description || "").toLowerCase();
+        if (
+          t.id === `trx-spmb-token-${rawNisn}` ||
+          t.id === `trx-spmb-rereg-${rawNisn}` ||
+          idLower.startsWith("trx-spmb-") ||
+          (descLower.includes('krishna') && (descLower.includes('token') || descLower.includes('daftar ulang'))) ||
+          catLower === 'spmb - token formulir' ||
+          catLower === 'spmb - daftar ulang & seragam' ||
+          catLower === 'spmb - daftar ulang' ||
+          catLower === 'spmb daftar ulang & seragam'
+        ) {
+          idxs.push(i);
+        }
+      });
+      if (idxs.length > 0) {
+        for (let i = idxs.length - 1; i >= 0; i--) {
+          treasurerTransactions.splice(idxs[i], 1);
+        }
+        if (typeof saveState === 'function') {
+          saveState();
+        }
       }
-      if (!treasurerTransactions.some(t => t.id === `trx-spmb-rereg-${rawNisn}`)) {
-        const reregTrx = {
-          id: `trx-spmb-rereg-${rawNisn}`,
-          type: "income" as const,
-          category: "SPMB - Daftar Ulang & Seragam",
-          amount: 560000,
-          description: `Pembayaran Tunai Daftar Ulang & Seragam SPMB - KRISHNA RASYID NIKAZ (NISN: ${rawNisn})`,
-          paymentMethod: "Tunai",
-          date: "2026-10-09",
-          recordedBy: "Kasir SPMB / Bendahara"
-        };
-        treasurerTransactions.push(reregTrx);
-        directSaveEntityToMysql("treasurer_transactions", reregTrx).catch(() => {});
-      }
+      directDeleteEntityFromMysql("treasurer_transactions", `trx-spmb-token-${rawNisn}`).catch(() => {});
+      directDeleteEntityFromMysql("treasurer_transactions", `trx-spmb-rereg-${rawNisn}`).catch(() => {});
     }
   }
 

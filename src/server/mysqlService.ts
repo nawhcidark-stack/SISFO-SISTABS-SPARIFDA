@@ -3044,7 +3044,7 @@ export async function directSaveEntityToMysql(entityType: string, data: any): Pr
     }
 
     // 5. Treasurer Transactions (Kas Umum)
-    else if (typeKey === 'transaction' || typeKey === 'treasurer_transaction' || typeKey === 'treasurertransactions') {
+    else if (typeKey === 'transaction' || typeKey === 'transactions' || typeKey === 'treasurer_transaction' || typeKey === 'treasurer_transactions' || typeKey === 'treasurertransactions' || typeKey === 'treasurertransaction') {
       const t = data;
       await connection.query(`
         INSERT INTO \`treasurer_transactions\` (
@@ -4111,8 +4111,11 @@ export async function directDeleteEntityFromMysql(entityType: string, id: string
       savings_transaction: 'savings_transactions',
       savingstransactions: 'savings_transactions',
       transaction: 'treasurer_transactions',
+      transactions: 'treasurer_transactions',
       treasurer_transaction: 'treasurer_transactions',
+      treasurer_transactions: 'treasurer_transactions',
       treasurertransactions: 'treasurer_transactions',
+      treasurertransaction: 'treasurer_transactions',
       salary: 'teacher_salaries',
       teacher_salary: 'teacher_salaries',
       teachersalaries: 'teacher_salaries',
@@ -4237,8 +4240,11 @@ export async function directDeleteEntitiesBatchFromMysql(entityType: string, ids
       savings_transaction: 'savings_transactions',
       savingstransactions: 'savings_transactions',
       transaction: 'treasurer_transactions',
+      transactions: 'treasurer_transactions',
       treasurer_transaction: 'treasurer_transactions',
+      treasurer_transactions: 'treasurer_transactions',
       treasurertransactions: 'treasurer_transactions',
+      treasurertransaction: 'treasurer_transactions',
       salary: 'teacher_salaries',
       teacher_salary: 'teacher_salaries',
       teachersalaries: 'teacher_salaries',

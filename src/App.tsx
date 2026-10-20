@@ -2706,6 +2706,7 @@ export default function App() {
             classSchedules={schedulesList}
             subjectTeachers={subjectTeachersList}
             homerooms={homeroomsList}
+            merdekaAssessments={merdekaAssessmentsList}
           />
         ) : role === 'homeroom' ? (
           (homeroomsList.find(h => h.id === loggedHomeroom?.id) || loggedHomeroom) ? (

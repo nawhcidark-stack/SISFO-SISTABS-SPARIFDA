@@ -1,7 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
-import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill, ClassSchedule, HomeroomTeacher, SubjectTeacher } from '../types';
+import { Student, SppBill, SavingsTransaction, SchoolIdentity, AttendanceLog, RealtimeNotification, TeachingJournal, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, isSppBillOverdue, MiscBill, ClassSchedule, HomeroomTeacher, SubjectTeacher, MerdekaAssessment } from '../types';
+import { isSameSubject } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
-import { GraduationCap, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone } from 'lucide-react';
+import { GraduationCap, Award, User, CreditCard, Wallet, Landmark, ArrowUpRight, ArrowDownLeft, Clock, RefreshCw, Send, CheckCircle2, ChevronRight, Check, Key, AlertCircle, Info, CalendarRange, Printer, Download, Home, History, Bell, BookOpen, ClipboardList, QrCode, Lock, LayoutGrid, Smartphone, Apple, Edit, X, XCircle, Banknote, ExternalLink, Calendar, ShoppingCart, ShieldAlert, Megaphone } from 'lucide-react';
 import QRCode from 'qrcode';
 import StudentPaymentCard from './StudentPaymentCard';
 import ScheduleView from './ScheduleView';
@@ -90,6 +91,7 @@ interface StudentPanelProps {
   classSchedules?: ClassSchedule[];
   subjectTeachers?: SubjectTeacher[];
   homerooms?: HomeroomTeacher[];
+  merdekaAssessments?: MerdekaAssessment[];
 }
 
 export default function StudentPanel({
@@ -116,9 +118,48 @@ export default function StudentPanel({
   onPayCartSnap,
   classSchedules = [],
   subjectTeachers = [],
-  homerooms = []
+  homerooms = [],
+  merdekaAssessments = []
 }: StudentPanelProps) {
-  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk'>('spp');
+  const [activeTab, setActiveTab] = useState<'spp' | 'tabungan' | 'pembayaran_lain' | 'absensi' | 'jadwal' | 'kartu_qr' | 'jurnal_catatan' | 'buku_induk' | 'rapor'>('spp');
+  const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
+  const [reportReleaseConfig, setReportReleaseConfig] = useState<{
+    midtermReleased?: boolean;
+    finalReleased?: boolean;
+    activeSemester?: string;
+    activeAcademicYear?: string;
+    midtermDate?: string;
+    finalDate?: string;
+  }>({});
+  const [isRefreshingRaporStatus, setIsRefreshingRaporStatus] = useState<boolean>(false);
+  const [liveAssessments, setLiveAssessments] = useState<MerdekaAssessment[]>(merdekaAssessments);
+
+  const fetchReportReleaseStatus = async () => {
+    try {
+      setIsRefreshingRaporStatus(true);
+      const res = await fetch('/api/curriculum/report-status');
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.config) {
+          setReportReleaseConfig(data.config);
+        }
+      }
+    } catch (err) {
+      console.warn("Gagal memuat status rilis rapor di akun siswa:", err);
+    } finally {
+      setIsRefreshingRaporStatus(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportReleaseStatus();
+  }, []);
+
+  useEffect(() => {
+    if (merdekaAssessments && merdekaAssessments.length > 0) {
+      setLiveAssessments(merdekaAssessments);
+    }
+  }, [merdekaAssessments]);
   const [printQrCard, setPrintQrCard] = useState<boolean>(false);
   const [showPassbookModal, setShowPassbookModal] = useState<boolean>(false);
   const [mobileTab, setMobileTab] = useState<'beranda' | 'log' | 'lonceng' | 'orang'>('beranda');
@@ -136,6 +177,107 @@ export default function StudentPanel({
     }
     return !n.studentId || n.studentId === studentId;
   };
+
+  // Memoized Rapor calculations for logged in student
+  const studentAssessmentsForRapor = useMemo(() => {
+    if (!currentStudent) return [];
+    const activeSem = reportReleaseConfig.activeSemester || 'Ganjil';
+    const activeYear = reportReleaseConfig.activeAcademicYear || '2024/2025';
+
+    const matched = liveAssessments.filter(a =>
+      (a.studentId === currentStudent.id || a.studentId === currentStudent.nis || (a.studentName && a.studentName.trim().toLowerCase() === currentStudent.name.trim().toLowerCase())) &&
+      (!activeSem || activeSem === 'all' || a.semester === activeSem) &&
+      (!activeYear || activeYear === 'all' || a.academicYear === activeYear)
+    );
+
+    const OFFICIAL_ORDER = [
+      'Pendidikan Agama Islam',
+      'Pendidikan Pancasila',
+      'Bahasa Indonesia',
+      'Matematika',
+      'Ilmu Pengetahuan Alam (IPA)',
+      'Ilmu Pengetahuan Sosial (IPS)',
+      'Bahasa Inggris',
+      'Pendidikan Jasmani, Olahraga, dan Kesehatan',
+      'Informatika',
+      'Seni Budaya',
+      'Bahasa Jawa'
+    ];
+
+    return OFFICIAL_ORDER.map(subjName => {
+      const a = matched.find(m => isSameSubject(m.subject, subjName));
+      const kktp = 75;
+      const avgTp = a && a.nilaiRataTp !== undefined && a.nilaiRataTp !== null ? Number(a.nilaiRataTp) : 0;
+      const pts = a && a.nilaiPts !== undefined && a.nilaiPts !== null ? Number(a.nilaiPts) : 0;
+      const pas = a && a.nilaiPas !== undefined && a.nilaiPas !== null ? Number(a.nilaiPas) : 0;
+
+      let naPts = 0;
+      if (avgTp > 0 && pts > 0) {
+        naPts = Math.round((avgTp * 2 + pts) / 3);
+      } else if (pts > 0) {
+        naPts = pts;
+      } else if (avgTp > 0) {
+        naPts = avgTp;
+      }
+
+      let naAkhir = 0;
+      if (a && a.nilaiAkhirMapel && Number(a.nilaiAkhirMapel) > 0) {
+        naAkhir = Number(a.nilaiAkhirMapel);
+      } else if (avgTp > 0 && (pts > 0 || pas > 0)) {
+        naAkhir = Math.round((avgTp * 2 + (pts > 0 ? pts : avgTp) + (pas > 0 ? pas : avgTp)) / 4);
+      } else if (naPts > 0) {
+        naAkhir = naPts;
+      }
+
+      let desc = a?.deskripsiCapaian;
+      if (!desc) {
+        if (naPts >= 85) {
+          desc = `Menunjukkan penguasaan materi yang sangat baik pada seluruh Capaian Pembelajaran mata pelajaran ${subjName}.`;
+        } else if (naPts >= 75) {
+          desc = `Menunjukkan capaian kompetensi yang tuntas dan pemahaman yang baik pada mata pelajaran ${subjName}.`;
+        } else if (naPts > 0) {
+          desc = `Perlu bimbingan dan pendampingan lebih lanjut dalam penguatan kompetensi esensial mata pelajaran ${subjName}.`;
+        } else {
+          desc = 'Menunjukkan capaian kompetensi yang cukup baik dalam proses pembelajaran.';
+        }
+      }
+
+      return {
+        subject: subjName,
+        kktp,
+        avgTp,
+        pts,
+        pas,
+        naPts,
+        naAkhir,
+        desc,
+        hasScore: naPts > 0 || naAkhir > 0
+      };
+    });
+  }, [currentStudent, liveAssessments, reportReleaseConfig]);
+
+  const studentRaporAttendance = useMemo(() => {
+    const att = { Sakit: 0, Izin: 0, Alpa: 0, Terlambat: 0 };
+    if (!attendanceLogs || attendanceLogs.length === 0 || !currentStudent) return att;
+
+    attendanceLogs.forEach(l => {
+      const match = (l.studentId && (l.studentId === currentStudent.id || l.studentId === currentStudent.nis)) ||
+                    ((l as any).studentName && (l as any).studentName.trim().toLowerCase() === currentStudent.name.trim().toLowerCase());
+      if (match) {
+        const st = (l.status || '').trim();
+        if (st === 'Sakit' || st === 'S') att.Sakit++;
+        else if (st === 'Izin' || st === 'I') att.Izin++;
+        else if (st === 'Alpa' || st === 'A' || st.toLowerCase() === 'tanpa keterangan') att.Alpa++;
+        else if (st === 'Terlambat' || st === 'T') att.Terlambat++;
+      }
+    });
+    return att;
+  }, [attendanceLogs, currentStudent]);
+
+  const studentHomeroom = useMemo(() => {
+    if (!currentStudent || !currentStudent.class) return null;
+    return homerooms.find(h => h.className && h.className.trim().toUpperCase() === currentStudent.class?.trim().toUpperCase()) || null;
+  }, [homerooms, currentStudent]);
 
   // Shopping Cart State
   const [cartBillIds, setCartBillIds] = useState<string[]>([]);
@@ -1591,6 +1733,33 @@ export default function StudentPanel({
                     <BookOpen className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
                   </div>
                   <span className="hidden md:inline">Buku Induk Digital</span>
+                </button>
+                <button
+                  id="tab-rapor"
+                  onClick={() => setActiveTab('rapor')}
+                  className={`py-2 px-3 md:py-3 md:px-1 font-bold text-[11px] uppercase tracking-wider border-b-2 transition-all cursor-pointer flex items-center justify-center gap-2 focus:outline-none shrink-0 whitespace-nowrap ${
+                    activeTab === 'rapor'
+                      ? 'border-purple-600 text-purple-700 font-extrabold'
+                      : 'border-transparent text-slate-500 hover:text-purple-600'
+                  }`}
+                  title="Rapor Hasil Belajar Kurikulum Merdeka (Tengah & Akhir Semester)"
+                >
+                  <div className={`p-2 rounded-xl transition-all flex items-center justify-center relative ${
+                    activeTab === 'rapor'
+                      ? 'bg-purple-100 text-purple-700 shadow-xs ring-1 ring-purple-200/50'
+                      : 'bg-purple-50/50 text-purple-400/80 hover:bg-purple-100/50 hover:text-purple-600'
+                  } md:bg-transparent md:p-0 md:shadow-none md:ring-0 md:text-inherit`}>
+                    <GraduationCap className="w-5 h-5 md:w-3.5 md:h-3.5 shrink-0" />
+                    {(reportReleaseConfig.midtermReleased || reportReleaseConfig.finalReleased) && (
+                      <span className="absolute -top-0.5 -right-0.5 h-2 w-2 rounded-full bg-emerald-500 animate-pulse md:hidden" />
+                    )}
+                  </div>
+                  <span className="hidden md:inline">Rapor Hasil Belajar</span>
+                  {(reportReleaseConfig.midtermReleased || reportReleaseConfig.finalReleased) && (
+                    <span className="hidden md:inline-flex items-center px-1.5 py-0.2 rounded-full text-[9px] font-black bg-emerald-100 text-emerald-800">
+                      Dirilis
+                    </span>
+                  )}
                 </button>
               </div>
 
@@ -4040,6 +4209,443 @@ export default function StudentPanel({
 
                 </div>
               )}
+
+              {/* ================= TAB: MENU UTAMA RAPOR (SUB-MENU: RAPOR TENGAH & AKHIR SEMESTER) ================= */}
+              {activeTab === 'rapor' && currentStudent && (
+                <div className="flex flex-col gap-6 animate-fade-in text-left">
+                  {/* Sub Navigation Bar: Rapor Tengah Semester & Rapor Akhir Semester */}
+                  <div className="bg-white border border-slate-200 rounded-2xl p-3 shadow-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        type="button"
+                        onClick={() => setRaporSubTab('tengah_semester')}
+                        className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                          raporSubTab === 'tengah_semester'
+                            ? 'bg-purple-600 text-white shadow-sm'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        <GraduationCap size={15} />
+                        <span>Rapor Tengah Semester (PTS)</span>
+                        {reportReleaseConfig.midtermReleased ? (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-emerald-500 text-white">
+                            ✓ Dirilis
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-slate-200 text-slate-600">
+                            Terkunci
+                          </span>
+                        )}
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setRaporSubTab('akhir_semester')}
+                        className={`px-4 py-2 rounded-xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                          raporSubTab === 'akhir_semester'
+                            ? 'bg-purple-600 text-white shadow-sm'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border border-slate-200'
+                        }`}
+                      >
+                        <Award size={15} />
+                        <span>Rapor Akhir Semester (SAS)</span>
+                        {reportReleaseConfig.finalReleased ? (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-emerald-500 text-white">
+                            ✓ Dirilis
+                          </span>
+                        ) : (
+                          <span className="px-1.5 py-0.5 rounded-full text-[9px] font-black bg-slate-200 text-slate-600">
+                            Terkunci
+                          </span>
+                        )}
+                      </button>
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={fetchReportReleaseStatus}
+                        disabled={isRefreshingRaporStatus}
+                        className="px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 font-bold text-xs rounded-xl flex items-center gap-1.5 transition cursor-pointer"
+                        title="Segarkan status rilis rapor dari Waka Kurikulum"
+                      >
+                        <RefreshCw size={13} className={isRefreshingRaporStatus ? 'animate-spin' : ''} />
+                        <span>Segarkan Status</span>
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* ================= SUB TAB 1: RAPOR TENGAH SEMESTER ================= */}
+                  {raporSubTab === 'tengah_semester' && (
+                    <>
+                      {!reportReleaseConfig.midtermReleased ? (
+                        /* KONDISI: BELUM DIRILIS WAKA KURIKULUM */
+                        <div className="bg-white border border-slate-200 rounded-3xl p-8 sm:p-12 text-center shadow-sm max-w-xl mx-auto my-6 space-y-4 animate-fade-in">
+                          <div className="h-16 w-16 mx-auto rounded-3xl bg-amber-50 border border-amber-200 text-amber-600 flex items-center justify-center">
+                            <Lock size={30} />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase text-amber-600 bg-amber-50 border border-amber-200 px-3 py-1 rounded-full">
+                              Menunggu Rilis Waka Kurikulum
+                            </span>
+                            <h3 className="font-extrabold text-xl text-slate-900 mt-3">
+                              Rapor Tengah Semester Belum Dirilis
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+                              Lembar hasil belajar Penilaian Tengah Semester (PTS / STS) Kurikulum Merdeka untuk kelas <strong>{currentStudent.class}</strong> belum dirilis secara publik oleh Wakil Kepala Sekolah Bidang Kurikulum.
+                            </p>
+                            <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+                              Rapor akan otomatis tampil di akun Anda begitu Waka Kurikulum menekan tombol rilis rapor.
+                            </p>
+                          </div>
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={fetchReportReleaseStatus}
+                              disabled={isRefreshingRaporStatus}
+                              className="px-5 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-2"
+                            >
+                              <RefreshCw size={14} className={isRefreshingRaporStatus ? 'animate-spin' : ''} />
+                              <span>Periksa Kembali Status Rilis</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* KONDISI: TELAH DIRILIS WAKA KURIKULUM */
+                        <div className="flex flex-col gap-4 animate-fade-in">
+                          {/* Top Action Bar */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-purple-50/60 border border-purple-200/80 rounded-2xl p-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-500 text-white">
+                                  ✓ Resmi Dirilis
+                                </span>
+                                <span className="text-xs font-bold text-slate-600">
+                                  Semester {reportReleaseConfig.activeSemester || 'Ganjil'} &bull; Tahun Ajaran {reportReleaseConfig.activeAcademicYear || '2024/2025'}
+                                </span>
+                              </div>
+                              <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">
+                                Lembar Rapor Tengah Semester (PTS / STS)
+                              </h4>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => window.print()}
+                              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 transition cursor-pointer self-start sm:self-auto"
+                            >
+                              <Printer size={15} />
+                              <span>Cetak / Unduh PDF</span>
+                            </button>
+                          </div>
+
+                          {/* Authentic Report Document Sheet */}
+                          <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-sm text-black font-sans text-xs select-text">
+                            {/* KOP Surat */}
+                            {schoolIdentity?.letterhead ? (
+                              <div className="-mx-6 -mt-6 sm:-mx-8 sm:-mt-8 mb-5 overflow-hidden rounded-t-2xl">
+                                <img
+                                  src={schoolIdentity.letterhead}
+                                  alt="KOP Resmi Sekolah"
+                                  className="w-full h-auto block"
+                                  style={{ width: '100%', display: 'block' }}
+                                />
+                              </div>
+                            ) : (
+                              <div className="w-full text-center mb-4 border-b-2 border-black pb-2">
+                                <div className="text-xs font-bold tracking-wide">LEMBAGA PENDIDIKAN MA'ARIF NU</div>
+                                <h2 className="text-base font-black uppercase mt-0.5">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
+                                <p className="text-[10px] text-slate-600">{schoolIdentity?.address || "Jl. Dr. Sutomo No. 1 Pandaan, Pasuruan"}</p>
+                              </div>
+                            )}
+
+                            {/* Judul Dokumen */}
+                            <div className="text-center my-4">
+                              <h3 className="font-black text-sm uppercase underline tracking-wider">
+                                LAPORAN HASIL BELAJAR TENGAH SEMESTER (PTS / STS)
+                              </h3>
+                              <p className="text-[11px] text-slate-600 mt-0.5">
+                                Tahun Ajaran {reportReleaseConfig.activeAcademicYear || '2024/2025'} &bull; Semester {reportReleaseConfig.activeSemester || 'Ganjil'}
+                              </p>
+                            </div>
+
+                            {/* Identitas Peserta Didik */}
+                            <div className="grid grid-cols-2 gap-2 text-[11px] mb-4 bg-slate-50/50 p-3 rounded-xl border border-slate-200">
+                              <div>Nama Peserta Didik: <strong className="text-slate-900">{currentStudent.name}</strong></div>
+                              <div>Kelas: <strong className="text-slate-900">{currentStudent.class}</strong></div>
+                              <div>NIS / NISN: <strong className="text-slate-900">{currentStudent.nis || '-'} / {currentStudent.nisn || '-'}</strong></div>
+                              <div>Fase Kurikulum: <strong className="text-slate-900">Fase D (SMP)</strong></div>
+                            </div>
+
+                            {/* Tabel Nilai */}
+                            <table className="w-full border-collapse border border-black text-[11px] mb-4">
+                              <thead>
+                                <tr className="bg-slate-100 text-center font-bold">
+                                  <th className="border border-black px-2 py-1.5 w-8">No</th>
+                                  <th className="border border-black px-2 py-1.5 text-left">Mata Pelajaran</th>
+                                  <th className="border border-black px-2 py-1.5 w-14">KKTP</th>
+                                  <th className="border border-black px-2 py-1.5 w-16">Rata TP</th>
+                                  <th className="border border-black px-2 py-1.5 w-16">Nilai PTS</th>
+                                  <th className="border border-black px-2 py-1.5 w-20">Nilai Akhir PTS</th>
+                                  <th className="border border-black px-2 py-1.5 text-left">Capaian Kompetensi</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {studentAssessmentsForRapor.map((sc, sIdx) => (
+                                  <tr key={sc.subject}>
+                                    <td className="border border-black px-2 py-1 text-center font-mono">{sIdx + 1}</td>
+                                    <td className="border border-black px-2 py-1 font-semibold">{sc.subject}</td>
+                                    <td className="border border-black px-2 py-1 text-center font-mono">{sc.kktp}</td>
+                                    <td className="border border-black px-2 py-1 text-center font-mono">{sc.avgTp > 0 ? sc.avgTp : '-'}</td>
+                                    <td className="border border-black px-2 py-1 text-center font-mono">{sc.pts > 0 ? sc.pts : '-'}</td>
+                                    <td className="border border-black px-2 py-1 text-center font-mono font-bold text-slate-900">
+                                      {sc.naPts > 0 ? sc.naPts : '-'}
+                                    </td>
+                                    <td className="border border-black px-2 py-1 text-slate-700 leading-snug">
+                                      {sc.desc}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+
+                            {/* Presensi & Catatan */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] mb-4">
+                              <div className="border border-black p-2.5 rounded-lg">
+                                <div className="font-bold border-b border-black pb-1 mb-1.5">Ketidakhadiran (Presensi)</div>
+                                <div className="flex justify-between py-0.5"><span>Sakit (S):</span><strong>{studentRaporAttendance.Sakit} hari</strong></div>
+                                <div className="flex justify-between py-0.5"><span>Izin (I):</span><strong>{studentRaporAttendance.Izin} hari</strong></div>
+                                <div className="flex justify-between py-0.5"><span>Tanpa Keterangan (A):</span><strong>{studentRaporAttendance.Alpa} hari</strong></div>
+                              </div>
+
+                              <div className="border border-black p-2.5 rounded-lg">
+                                <div className="font-bold border-b border-black pb-1 mb-1.5">Catatan Wali Kelas</div>
+                                <p className="italic text-slate-700 leading-relaxed">
+                                  Ananda menunjukkan kesungguhan dan ketertiban yang sangat baik selama pembelajaran tengah semester. Pertahankan fokus belajar, kedisiplinan beribadah, dan tingkatkan pemahaman materi untuk persiapan akhir semester.
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Tanda Tangan Resmi */}
+                            <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] mt-6 pt-2">
+                              <div>
+                                <div>Mengetahui,</div>
+                                <div>Orang Tua / Wali Murid</div>
+                                <div className="h-14" />
+                                <div>( .................................... )</div>
+                              </div>
+
+                              <div>
+                                <div>Wali Kelas {currentStudent.class}</div>
+                                <div className="h-14 flex items-center justify-center">
+                                  <span className="text-[9px] text-slate-400 italic">[Terverifikasi Sistem]</span>
+                                </div>
+                                <u><strong>{studentHomeroom?.name || 'Wali Kelas'}</strong></u>
+                              </div>
+
+                              <div>
+                                <div>Pandaan, {reportReleaseConfig.midtermDate || new Date().toLocaleDateString('id-ID')}</div>
+                                <div>Kepala Sekolah</div>
+                                <div className="h-14 flex items-center justify-center">
+                                  {schoolIdentity?.principalSignature ? (
+                                    <img src={schoolIdentity.principalSignature} alt="TTD" className="max-h-12 object-contain mx-auto" />
+                                  ) : (
+                                    <span className="text-[9px] text-slate-400 italic">[Terverifikasi Resmi]</span>
+                                  )}
+                                </div>
+                                <u><strong>{schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</strong></u>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {/* ================= SUB TAB 2: RAPOR AKHIR SEMESTER ================= */}
+                  {raporSubTab === 'akhir_semester' && (
+                    <>
+                      {!reportReleaseConfig.finalReleased ? (
+                        /* KONDISI: BELUM DIRILIS WAKA KURIKULUM */
+                        <div className="bg-white border border-slate-200 rounded-3xl p-8 sm:p-12 text-center shadow-sm max-w-xl mx-auto my-6 space-y-4 animate-fade-in">
+                          <div className="h-16 w-16 mx-auto rounded-3xl bg-purple-50 border border-purple-200 text-purple-600 flex items-center justify-center">
+                            <Lock size={30} />
+                          </div>
+                          <div>
+                            <span className="text-[10px] font-black uppercase text-purple-600 bg-purple-50 border border-purple-200 px-3 py-1 rounded-full">
+                              Menunggu Rilis Waka Kurikulum
+                            </span>
+                            <h3 className="font-extrabold text-xl text-slate-900 mt-3">
+                              Rapor Akhir Semester Belum Dirilis
+                            </h3>
+                            <p className="text-xs text-slate-500 mt-2 max-w-md mx-auto leading-relaxed">
+                              Lembar laporan hasil belajar Sumatif Akhir Semester (SAS / Rapor Lengkap) Kurikulum Merdeka untuk kelas <strong>{currentStudent.class}</strong> belum dirilis oleh Waka Kurikulum.
+                            </p>
+                            <p className="text-[11px] text-slate-400 mt-1 max-w-md mx-auto leading-relaxed">
+                              Rapor akhir akan otomatis dapat diakses di akun Anda begitu Waka Kurikulum menyelesaikan pengesahan dan merilisnya.
+                            </p>
+                          </div>
+                          <div className="pt-2">
+                            <button
+                              type="button"
+                              onClick={fetchReportReleaseStatus}
+                              disabled={isRefreshingRaporStatus}
+                              className="px-5 py-2.5 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-xl shadow-sm transition-all cursor-pointer inline-flex items-center gap-2"
+                            >
+                              <RefreshCw size={14} className={isRefreshingRaporStatus ? 'animate-spin' : ''} />
+                              <span>Periksa Kembali Status Rilis</span>
+                            </button>
+                          </div>
+                        </div>
+                      ) : (
+                        /* KONDISI: TELAH DIRILIS WAKA KURIKULUM */
+                        <div className="flex flex-col gap-4 animate-fade-in">
+                          {/* Top Action Bar */}
+                          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-purple-50/60 border border-purple-200/80 rounded-2xl p-4">
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <span className="text-[10px] font-black uppercase px-2 py-0.5 rounded-md bg-emerald-500 text-white">
+                                  ✓ Resmi Dirilis
+                                </span>
+                                <span className="text-xs font-bold text-slate-600">
+                                  Semester {reportReleaseConfig.activeSemester || 'Ganjil'} &bull; Tahun Ajaran {reportReleaseConfig.activeAcademicYear || '2024/2025'}
+                                </span>
+                              </div>
+                              <h4 className="text-slate-900 font-extrabold text-sm mt-0.5">
+                                Lembar Rapor Akhir Semester (Sumatif Akhir Semester)
+                              </h4>
+                            </div>
+
+                            <button
+                              type="button"
+                              onClick={() => window.print()}
+                              className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs rounded-xl shadow-sm flex items-center justify-center gap-2 transition cursor-pointer self-start sm:self-auto"
+                            >
+                              <Printer size={15} />
+                              <span>Cetak / Unduh PDF</span>
+                            </button>
+                          </div>
+
+                          {/* Authentic Report Document Sheet */}
+                          <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-sm text-black font-sans text-xs select-text">
+                            {/* KOP Surat */}
+                            {schoolIdentity?.letterhead ? (
+                              <div className="-mx-6 -mt-6 sm:-mx-8 sm:-mt-8 mb-5 overflow-hidden rounded-t-2xl">
+                                <img
+                                  src={schoolIdentity.letterhead}
+                                  alt="KOP Resmi Sekolah"
+                                  className="w-full h-auto block"
+                                  style={{ width: '100%', display: 'block' }}
+                                />
+                              </div>
+                            ) : (
+                              <div className="w-full text-center mb-4 border-b-2 border-black pb-2">
+                                <div className="text-xs font-bold tracking-wide">LEMBAGA PENDIDIKAN MA'ARIF NU</div>
+                                <h2 className="text-base font-black uppercase mt-0.5">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
+                                <p className="text-[10px] text-slate-600">{schoolIdentity?.address || "Jl. Dr. Sutomo No. 1 Pandaan, Pasuruan"}</p>
+                              </div>
+                            )}
+
+                            {/* Judul Dokumen */}
+                            <div className="text-center my-4">
+                              <h3 className="font-black text-sm uppercase underline tracking-wider">
+                                LAPORAN HASIL BELAJAR AKHIR SEMESTER (SAS / RAPOR LENGKAP)
+                              </h3>
+                              <p className="text-[11px] text-slate-600 mt-0.5">
+                                Tahun Ajaran {reportReleaseConfig.activeAcademicYear || '2024/2025'} &bull; Semester {reportReleaseConfig.activeSemester || 'Ganjil'}
+                              </p>
+                            </div>
+
+                            {/* Identitas Peserta Didik */}
+                            <div className="grid grid-cols-2 gap-2 text-[11px] mb-4 bg-slate-50/50 p-3 rounded-xl border border-slate-200">
+                              <div>Nama Peserta Didik: <strong className="text-slate-900">{currentStudent.name}</strong></div>
+                              <div>Kelas: <strong className="text-slate-900">{currentStudent.class}</strong></div>
+                              <div>NIS / NISN: <strong className="text-slate-900">{currentStudent.nis || '-'} / {currentStudent.nisn || '-'}</strong></div>
+                              <div>Fase Kurikulum: <strong className="text-slate-900">Fase D (SMP)</strong></div>
+                            </div>
+
+                            {/* Tabel Nilai */}
+                            <table className="w-full border-collapse border border-black text-[11px] mb-4">
+                              <thead>
+                                <tr className="bg-slate-100 text-center font-bold">
+                                  <th className="border border-black px-2 py-1.5 w-8">No</th>
+                                  <th className="border border-black px-2 py-1.5 text-left">Mata Pelajaran</th>
+                                  <th className="border border-black px-2 py-1.5 w-16">KKTP</th>
+                                  <th className="border border-black px-2 py-1.5 w-24">Nilai Akhir Rapor</th>
+                                  <th className="border border-black px-2 py-1.5 text-left">Capaian Kompetensi</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {studentAssessmentsForRapor.map((sc, sIdx) => (
+                                  <tr key={sc.subject}>
+                                    <td className="border border-black px-2 py-1 text-center font-mono">{sIdx + 1}</td>
+                                    <td className="border border-black px-2 py-1 font-semibold">{sc.subject}</td>
+                                    <td className="border border-black px-2 py-1 text-center font-mono">{sc.kktp}</td>
+                                    <td className="border border-black px-2 py-1 text-center font-mono font-bold text-slate-900">
+                                      {sc.naAkhir > 0 ? sc.naAkhir : '-'}
+                                    </td>
+                                    <td className="border border-black px-2 py-1 text-slate-700 leading-snug">
+                                      {sc.desc}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+
+                            {/* Presensi & Catatan */}
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] mb-4">
+                              <div className="border border-black p-2.5 rounded-lg">
+                                <div className="font-bold border-b border-black pb-1 mb-1.5">Ketidakhadiran (Presensi)</div>
+                                <div className="flex justify-between py-0.5"><span>Sakit (S):</span><strong>{studentRaporAttendance.Sakit} hari</strong></div>
+                                <div className="flex justify-between py-0.5"><span>Izin (I):</span><strong>{studentRaporAttendance.Izin} hari</strong></div>
+                                <div className="flex justify-between py-0.5"><span>Tanpa Keterangan (A):</span><strong>{studentRaporAttendance.Alpa} hari</strong></div>
+                              </div>
+
+                              <div className="border border-black p-2.5 rounded-lg">
+                                <div className="font-bold border-b border-black pb-1 mb-1.5">Catatan Wali Kelas</div>
+                                <p className="italic text-slate-700 leading-relaxed">
+                                  Ananda telah menuntaskan seluruh proses pembelajaran Kurikulum Merdeka pada semester ini dengan penuh dedikasi. Terus kembangkan potensi diri, pertahankan akhlak mulia dan prestasi pada jenjang berikutnya.
+                                </p>
+                              </div>
+                            </div>
+
+                            {/* Tanda Tangan Resmi */}
+                            <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] mt-6 pt-2">
+                              <div>
+                                <div>Mengetahui,</div>
+                                <div>Orang Tua / Wali Murid</div>
+                                <div className="h-14" />
+                                <div>( .................................... )</div>
+                              </div>
+
+                              <div>
+                                <div>Wali Kelas {currentStudent.class}</div>
+                                <div className="h-14 flex items-center justify-center">
+                                  <span className="text-[9px] text-slate-400 italic">[Terverifikasi Sistem]</span>
+                                </div>
+                                <u><strong>{studentHomeroom?.name || 'Wali Kelas'}</strong></u>
+                              </div>
+
+                              <div>
+                                <div>Pandaan, {reportReleaseConfig.finalDate || new Date().toLocaleDateString('id-ID')}</div>
+                                <div>Kepala Sekolah</div>
+                                <div className="h-14 flex items-center justify-center">
+                                  {schoolIdentity?.principalSignature ? (
+                                    <img src={schoolIdentity.principalSignature} alt="TTD" className="max-h-12 object-contain mx-auto" />
+                                  ) : (
+                                    <span className="text-[9px] text-slate-400 italic">[Terverifikasi Resmi]</span>
+                                  )}
+                                </div>
+                                <u><strong>{schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</strong></u>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
             </div>
           </motion.div>
         ) : (
@@ -4689,6 +5295,26 @@ export default function StudentPanel({
               </div>
 
               <div className="grid grid-cols-2 md:grid-cols-3 gap-3.5">
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMobileTab('beranda');
+                    setActiveTab('rapor');
+                    setShowMoreMenu(false);
+                  }}
+                  className="p-4 border border-purple-200 bg-purple-50/50 hover:bg-purple-100/50 rounded-2xl flex flex-col gap-2.5 text-left cursor-pointer transition-all"
+                >
+                  <span className="p-2 w-fit bg-purple-100 rounded-xl text-purple-700 text-lg">🎓</span>
+                  <div>
+                    <h5 className="font-extrabold text-xs text-purple-950 flex items-center gap-1.5">
+                      <span>Rapor Nilai Siswa</span>
+                      {(reportReleaseConfig.midtermReleased || reportReleaseConfig.finalReleased) && (
+                        <span className="h-2 w-2 rounded-full bg-emerald-500 animate-pulse" />
+                      )}
+                    </h5>
+                    <p className="text-[10px] text-purple-700/80 mt-0.5 leading-tight">Lihat lembar rapor tengah & akhir semester Kurikulum Merdeka</p>
+                  </div>
+                </button>
                 <button
                   type="button"
                   onClick={() => {

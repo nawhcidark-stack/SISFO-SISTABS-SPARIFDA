@@ -507,6 +507,31 @@ let curriculumConfig = {
   password: "kurikulum123"
 };
 
+// Rapor Release Configuration (Kontrol Rilis Rapor ke Akun Siswa)
+export interface ReportReleaseConfig {
+  midtermReleased: boolean;
+  midtermReleasedAt?: string;
+  midtermReleasedBy?: string;
+  midtermClasses?: string[]; // Jika kosong atau mencakup 'all', berlaku untuk semua kelas
+  finalReleased: boolean;
+  finalReleasedAt?: string;
+  finalReleasedBy?: string;
+  finalClasses?: string[];
+  activeSemester?: string;
+  activeAcademicYear?: string;
+}
+
+let reportReleaseConfig: ReportReleaseConfig = {
+  midtermReleased: false,
+  midtermReleasedAt: undefined,
+  midtermReleasedBy: undefined,
+  midtermClasses: [],
+  finalReleased: false,
+  finalReleasedAt: undefined,
+  finalReleasedBy: undefined,
+  finalClasses: []
+};
+
 // Admin Credentials Config
 let adminConfig = {
   password: "admin123"
@@ -1744,7 +1769,8 @@ function saveState(skipRemoteSync: boolean = false) {
       databaseBackups,
       curriculumSubjects,
       curriculumTpDescriptions,
-      sharedLearningObjectives
+      sharedLearningObjectives,
+      reportReleaseConfig
     };
     // 1. PRIMARY PERSISTENCE: Database MySQL Hostinger (authoritative cloud database)
     if (!skipRemoteSync) {
@@ -2106,6 +2132,10 @@ function loadState() {
         sharedLearningObjectives.push(...genuineTps);
       } else {
         sharedLearningObjectives.length = 0;
+      }
+
+      if (data.reportReleaseConfig) {
+        Object.assign(reportReleaseConfig, data.reportReleaseConfig);
       }
 
       // Pastikan seluruh TP asli dari curriculumTpDescriptions (dibuat admin di panel admin utama / guru) selalu tersinkronisasi
@@ -6251,6 +6281,46 @@ async function startServer() {
     }
 
     res.json({ success: true, message: "Master data mata pelajaran berhasil direset ke standar Kurikulum Merdeka di database MySQL.", subjects: curriculumSubjects });
+  });
+
+  // --- KONTROL RILIS RAPOR KURIKULUM MERDEKA KE AKUN SISWA ---
+  app.get("/api/curriculum/report-status", (req, res) => {
+    res.json({
+      success: true,
+      config: reportReleaseConfig
+    });
+  });
+
+  app.post("/api/curriculum/report-release", (req, res) => {
+    const { type, released, releasedBy, classes, semester, academicYear } = req.body;
+    const now = new Date().toISOString();
+    
+    if (type === 'midterm') {
+      reportReleaseConfig.midtermReleased = Boolean(released);
+      reportReleaseConfig.midtermReleasedAt = released ? now : undefined;
+      reportReleaseConfig.midtermReleasedBy = released ? (releasedBy || 'Waka Kurikulum') : undefined;
+      if (Array.isArray(classes)) {
+        reportReleaseConfig.midtermClasses = classes;
+      }
+    } else if (type === 'final') {
+      reportReleaseConfig.finalReleased = Boolean(released);
+      reportReleaseConfig.finalReleasedAt = released ? now : undefined;
+      reportReleaseConfig.finalReleasedBy = released ? (releasedBy || 'Waka Kurikulum') : undefined;
+      if (Array.isArray(classes)) {
+        reportReleaseConfig.finalClasses = classes;
+      }
+    }
+
+    if (semester) reportReleaseConfig.activeSemester = semester;
+    if (academicYear) reportReleaseConfig.activeAcademicYear = academicYear;
+
+    saveState();
+
+    res.json({
+      success: true,
+      message: `Status rilis ${type === 'midterm' ? 'Rapor Tengah Semester' : 'Rapor Akhir Semester'} berhasil ${released ? 'DIRILIS ke Akun Siswa' : 'DITARIK / DISEMBUNYIKAN dari Akun Siswa'}.`,
+      config: reportReleaseConfig
+    });
   });
 
   // --- TUJUAN PEMBELAJARAN (TP) PER TINGKAT (WAKA KURIKULUM, GURU MAPEL & WALI KELAS) ---

@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, SubjectTeacher, TeachingJournal, SchoolIdentity, SubjectAttendanceEntry, RealtimeNotification, ClassSchedule, HomeroomTeacher, SharedLearningObjective } from '../types';
-import { isSameSubject, normClass, isSameClass, toMasterSubjectName } from '../utils/subjectMatcher';
+import { isSameSubject, normClass, isSameClass, toMasterSubjectName, normalizeSubject } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import ScheduleView from './ScheduleView';
@@ -239,16 +239,28 @@ export default function SubjectTeacherPanel({
   // --- Kurikulum Merdeka State Settings ---
   const [merdekaAssessments, setMerdekaAssessments] = useState<any[]>([]);
   const [loadingAssessments, setLoadingAssessments] = useState<boolean>(false);
+  const [masterCurriculumSubjects, setMasterCurriculumSubjects] = useState<Array<{ name: string; code?: string }>>([]);
   const [selectedSubject, setSelectedSubject] = useState<string>(() => toMasterSubjectName(currentTeacher?.subject || 'Matematika'));
   const [selectedGradeClass, setSelectedGradeClass] = useState<string>('');
   const [selectedSemesterGrading, setSelectedSemesterGrading] = useState<string>(() => getSemesterFromDate(getWIBDateStr()));
   const [selectedYearGrading, setSelectedYearGrading] = useState<string>(schoolIdentity?.activeAcademicYear || '2025/2026');
 
   useEffect(() => {
+    fetch('/api/curriculum/subjects')
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.subjects)) {
+          setMasterCurriculumSubjects(data.subjects);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  useEffect(() => {
     if (currentTeacher?.subject) {
-      setSelectedSubject(toMasterSubjectName(currentTeacher.subject));
+      setSelectedSubject(toMasterSubjectName(currentTeacher.subject, masterCurriculumSubjects));
     }
-  }, [currentTeacher?.subject]);
+  }, [currentTeacher?.subject, masterCurriculumSubjects]);
 
   const subjectOptions = useMemo(() => {
     const list = [
@@ -712,27 +724,41 @@ export default function SubjectTeacherPanel({
   // Modul Penilaian: Hanya tampilkan mapel yang diampu dan kelas yang diajar saja sesuai jadwal pelajaran / monitoring jam mengajar
   const allowedSubjects = useMemo(() => {
     const set = new Set<string>();
-    teacherSchedules.forEach(s => {
-      if (s.subject && s.subject.trim()) {
-        const sub = s.subject.trim();
-        const lower = sub.toLowerCase();
-        if (!lower.includes('bimbingan wali') && !lower.includes('upacara') && !lower.includes('senam') && !lower.includes('apel')) {
-          set.add(toMasterSubjectName(sub));
-        }
+    const seenNormalized = new Set<string>();
+
+    const addSubject = (rawSubj?: string) => {
+      if (!rawSubj || !rawSubj.trim()) return;
+      const sub = rawSubj.trim();
+      const lower = sub.toLowerCase();
+      if (lower.includes('bimbingan wali') || lower.includes('upacara') || lower.includes('senam') || lower.includes('apel')) {
+        return;
       }
+      const canonical = toMasterSubjectName(sub, masterCurriculumSubjects);
+      const normKey = normalizeSubject(canonical).toLowerCase();
+      if (!seenNormalized.has(normKey)) {
+        seenNormalized.add(normKey);
+        set.add(canonical);
+      }
+    };
+
+    teacherSchedules.forEach(s => {
+      addSubject(s.subject);
     });
-    if (currentTeacher?.subject && currentTeacher.subject.trim()) {
-      set.add(toMasterSubjectName(currentTeacher.subject.trim()));
+
+    if (currentTeacher?.subject) {
+      addSubject(currentTeacher.subject);
     }
+
     if ((currentTeacher as any)?.subjects && Array.isArray((currentTeacher as any).subjects)) {
       (currentTeacher as any).subjects.forEach((s: string) => {
-        if (s && s.trim()) set.add(toMasterSubjectName(s.trim()));
+        addSubject(s);
       });
     }
+
     const arr = Array.from(set);
     if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
-    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject)] : ['Matematika'];
-  }, [teacherSchedules, currentTeacher]);
+    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject, masterCurriculumSubjects)] : ['Matematika'];
+  }, [teacherSchedules, currentTeacher, masterCurriculumSubjects]);
 
   const allowedClasses = useMemo(() => {
     const set = new Set<string>();
@@ -3455,6 +3481,7 @@ export default function SubjectTeacherPanel({
                           className: s.class || selectedGradeClass,
                           subject: selectedSubject,
                           teacherName: currentTeacher.name,
+                          teacherId: currentTeacher.username || currentTeacher.id,
                           semester: selectedSemesterGrading,
                           academicYear: selectedYearGrading,
                           tp1Id: tp1Id || undefined,
@@ -3781,6 +3808,7 @@ export default function SubjectTeacherPanel({
                         className: s.class || selectedGradeClass,
                         subject: selectedSubject,
                         teacherName: currentTeacher.name,
+                        teacherId: currentTeacher.username || currentTeacher.id,
                         semester: selectedSemesterGrading,
                         academicYear: selectedYearGrading,
                         tp1Id: tp1Id || undefined,

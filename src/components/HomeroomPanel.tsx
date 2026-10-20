@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Student, AttendanceLog, HomeroomTeacher, SchoolIdentity, SppBill, StudentDevelopmentLog, StudentInfractionLog, StudentCounselingLog, ClassAnnouncement, ClassMeetingLog, isSppBillOverdue, MiscBill, sortSppBills, ClassSchedule, SubjectTeacher, SavingsTransaction, SharedLearningObjective } from '../types';
-import { isSameSubject, normClass, isSameClass, toMasterSubjectName } from '../utils/subjectMatcher';
+import { isSameSubject, normClass, isSameClass, toMasterSubjectName, normalizeSubject } from '../utils/subjectMatcher';
 import { motion, AnimatePresence } from 'motion/react';
 import * as XLSX from 'xlsx';
 import BukuIndukManagement from './BukuIndukManagement';
@@ -1532,6 +1532,18 @@ export default function HomeroomPanel({
     return Array.from(classes).sort();
   }, [students, currentTeacher?.className]);
 
+  const [masterCurriculumSubjects, setMasterCurriculumSubjects] = useState<Array<{ name: string; code?: string }>>([]);
+  useEffect(() => {
+    fetch('/api/curriculum/subjects')
+      .then(res => res.json())
+      .then(data => {
+        if (data && Array.isArray(data.subjects)) {
+          setMasterCurriculumSubjects(data.subjects);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
   // Filter class schedules created in Waka Kurikulum for this current teacher
   const teacherSchedules = useMemo(() => {
     if (!classSchedules || classSchedules.length === 0) return [];
@@ -1547,27 +1559,38 @@ export default function HomeroomPanel({
   // Modul Penilaian Wali Kelas: Hanya tampilkan mapel yang diampu dan kelas yang diajar saja (sesuai jadwal pelajaran / monitoring jam mengajar)
   const homeroomGradingSubjects = useMemo(() => {
     const set = new Set<string>();
-    teacherSchedules.forEach(s => {
-      if (s.subject && s.subject.trim()) {
-        const sub = s.subject.trim();
-        const lower = sub.toLowerCase();
-        if (!lower.includes('bimbingan wali') && !lower.includes('upacara') && !lower.includes('senam') && !lower.includes('apel')) {
-          set.add(toMasterSubjectName(sub));
-        }
+    const seenNormalized = new Set<string>();
+
+    const addSubject = (rawSubj?: string) => {
+      if (!rawSubj || !rawSubj.trim()) return;
+      const sub = rawSubj.trim();
+      const lower = sub.toLowerCase();
+      if (lower.includes('bimbingan wali') || lower.includes('upacara') || lower.includes('senam') || lower.includes('apel')) {
+        return;
       }
+      const canonical = toMasterSubjectName(sub, masterCurriculumSubjects);
+      const normKey = normalizeSubject(canonical).toLowerCase();
+      if (!seenNormalized.has(normKey)) {
+        seenNormalized.add(normKey);
+        set.add(canonical);
+      }
+    };
+
+    teacherSchedules.forEach(s => {
+      addSubject(s.subject);
     });
-    if (currentTeacher?.subject && currentTeacher.subject.trim()) {
-      set.add(toMasterSubjectName(currentTeacher.subject.trim()));
+    if (currentTeacher?.subject) {
+      addSubject(currentTeacher.subject);
     }
     if ((currentTeacher as any)?.subjects && Array.isArray((currentTeacher as any).subjects)) {
       (currentTeacher as any).subjects.forEach((s: string) => {
-        if (s && s.trim()) set.add(toMasterSubjectName(s.trim()));
+        addSubject(s);
       });
     }
     const arr = Array.from(set);
     if (arr.length > 0) return arr.sort((a, b) => a.localeCompare(b));
-    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject)] : ['Pendidikan Pancasila'];
-  }, [teacherSchedules, currentTeacher]);
+    return currentTeacher?.subject ? [toMasterSubjectName(currentTeacher.subject, masterCurriculumSubjects)] : ['Pendidikan Pancasila'];
+  }, [teacherSchedules, currentTeacher, masterCurriculumSubjects]);
 
   const homeroomGradingClasses = useMemo(() => {
     const set = new Set<string>();
@@ -2557,6 +2580,7 @@ export default function HomeroomPanel({
           className: targetClass,
           subject: selectedSubjectForGrading,
           teacherName: currentTeacher.name,
+          teacherId: currentTeacher.username || currentTeacher.id,
           semester: kokurikulerSemester,
           academicYear: kokurikulerYear,
           tp1Id: tp1Id || undefined,

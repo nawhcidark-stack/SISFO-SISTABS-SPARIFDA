@@ -18,13 +18,13 @@ export const MASTER_SUBJECTS_LIST: string[] = [
 
 export const normalizeSubject = (subj?: string): string => {
   if (!subj) return '';
-  const s = subj.trim().toLowerCase();
+  const s = subj.trim().toLowerCase().replace(/\s+/g, ' ');
   if (s === 'pai' || s.includes('agama islam')) return 'Pendidikan Agama Islam';
   if (s.includes('pancasila') || s === 'pkn' || s === 'ppkn') return 'Pendidikan Pancasila';
   if (s === 'b. indonesia' || s === 'bahasa indonesia' || s === 'bindo' || s.includes('indonesia')) return 'Bahasa Indonesia';
   if (s === 'mtk' || s === 'mat' || s.includes('matematika')) return 'Matematika';
-  if (s === 'ipa' || s.includes('pengetahuan alam')) return 'Ilmu Pengetahuan Alam (IPA)';
-  if (s === 'ips' || s.includes('pengetahuan sosial')) return 'Ilmu Pengetahuan Sosial (IPS)';
+  if (s === 'ipa' || s.includes('pengetahuan alam') || s === 'ilmu pengetahuan alam' || s === 'ilmu pengetahuan alam (ipa)' || s === 'ilmu pengetahuan alam(ipa)') return 'Ilmu Pengetahuan Alam (IPA)';
+  if (s === 'ips' || s.includes('pengetahuan sosial') || s === 'ilmu pengetahuan sosial' || s === 'ilmu pengetahuan sosial (ips)' || s === 'ilmu pengetahuan sosial(ips)') return 'Ilmu Pengetahuan Sosial (IPS)';
   if (s === 'b. inggris' || s === 'bahasa inggris' || s === 'bing' || s.includes('inggris')) return 'Bahasa Inggris';
   if (s.includes('seni') || s.includes('budaya') || s === 'sbk') return 'Seni Budaya';
   if (s === 'pjok' || s.includes('jasmani') || s.includes('olahraga') || s.includes('penjas')) return 'Pendidikan Jasmani, Olahraga, dan Kesehatan';
@@ -44,13 +44,35 @@ export const toMasterSubjectName = (subj?: string, customMasterList?: Array<{ na
   if (!trimmed) return '';
 
   if (customMasterList && customMasterList.length > 0) {
-    const found = customMasterList.find(m => 
+    const normInput = normalizeSubject(trimmed).toLowerCase();
+    const cleanInput = trimmed.toLowerCase().replace(/[^a-z0-9]/g, '');
+
+    // 1. Exact match on name or code
+    const exact = customMasterList.find(m => 
       m.name.toLowerCase().trim() === trimmed.toLowerCase() ||
-      (m.code && m.code.toLowerCase().trim() === trimmed.toLowerCase()) ||
-      isSameSubject(m.name, trimmed) ||
-      (m.code && isSameSubject(m.code, trimmed))
+      (m.code && m.code.toLowerCase().trim() === trimmed.toLowerCase())
     );
-    if (found) return found.name;
+    if (exact) return exact.name;
+
+    // 2. Normalized subject equality
+    const normMatch = customMasterList.find(m => {
+      const normM = normalizeSubject(m.name).toLowerCase();
+      const normCode = m.code ? normalizeSubject(m.code).toLowerCase() : '';
+      return normM === normInput || (normCode && normCode === normInput);
+    });
+    if (normMatch) return normMatch.name;
+
+    // 3. Clean string equality (ignoring punctuation and spaces, e.g. "ilmupengetahuanalamipa")
+    const cleanMatch = customMasterList.find(m => {
+      const cleanM = m.name.toLowerCase().replace(/[^a-z0-9]/g, '');
+      const cleanCode = (m.code || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+      return cleanM === cleanInput || (cleanCode && cleanCode === cleanInput);
+    });
+    if (cleanMatch) return cleanMatch.name;
+
+    // 4. isSameSubject check
+    const sameCheck = customMasterList.find(m => isSameSubject(m.name, trimmed) || (m.code && isSameSubject(m.code, trimmed)));
+    if (sameCheck) return sameCheck.name;
   }
 
   const matchMaster = MASTER_SUBJECTS_LIST.find(m => isSameSubject(m, trimmed));

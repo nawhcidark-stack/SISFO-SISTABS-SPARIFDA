@@ -39,7 +39,8 @@ import {
   Layers,
   Save,
   Tag,
-  Hash
+  Hash,
+  Send
 } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -176,9 +177,89 @@ export default function WakaKurikulumPanel({
   attendanceLogs = [],
   onRefreshData
 }: WakaKurikulumPanelProps) {
-  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'rapor_tengah_semester' | 'password'>('monitoring');
+  const [activeTab, setActiveTab] = useState<'monitoring' | 'schedules' | 'master_mapel' | 'import_pts_pas' | 'rekap_nilai' | 'detail_nilai' | 'rapor' | 'rapor_tengah_semester' | 'password'>('monitoring');
   const [masterMapelSubTab, setMasterMapelSubTab] = useState<'mapel_list' | 'bank_tp'>('mapel_list');
+  const [raporSubTab, setRaporSubTab] = useState<'tengah_semester' | 'akhir_semester'>('tengah_semester');
   const [showMoreMenu, setShowMoreMenu] = useState<boolean>(false);
+
+  // Rapor Release State (Kontrol Rilis Rapor ke Akun Siswa)
+  const [reportReleaseConfig, setReportReleaseConfig] = useState<{
+    midtermReleased: boolean;
+    midtermReleasedAt?: string;
+    midtermReleasedBy?: string;
+    midtermClasses?: string[];
+    finalReleased: boolean;
+    finalReleasedAt?: string;
+    finalReleasedBy?: string;
+    finalClasses?: string[];
+  }>({
+    midtermReleased: false,
+    finalReleased: false
+  });
+  const [isUpdatingRelease, setIsUpdatingRelease] = useState<boolean>(false);
+
+  const fetchReportReleaseStatus = async () => {
+    try {
+      const res = await fetch(`/api/curriculum/report-status?_t=${Date.now()}`);
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.config) {
+          setReportReleaseConfig(data.config);
+        }
+      }
+    } catch (err) {
+      console.warn("Gagal memuat status rilis rapor:", err);
+    }
+  };
+
+  useEffect(() => {
+    fetchReportReleaseStatus();
+  }, []);
+
+  const handleToggleReportRelease = async (type: 'midterm' | 'final') => {
+    const isCurrentlyReleased = type === 'midterm' ? reportReleaseConfig.midtermReleased : reportReleaseConfig.finalReleased;
+    const actionLabel = isCurrentlyReleased ? 'Tarik / Kunci Rapor (Sembunyikan dari Siswa)' : 'Rilis Rapor Resmi ke Akun Siswa';
+    const reportName = type === 'midterm' ? 'Rapor Tengah Semester (PTS / STS)' : 'Rapor Akhir Semester (SAS / Akhir)';
+
+    if (!confirm(`Konfirmasi Tindakan: ${actionLabel}?\n\n${
+      isCurrentlyReleased 
+        ? `Rapor ${reportName} akan disembunyikan dari seluruh akun siswa hingga Anda merilisnya kembali.` 
+        : `Setelah dirilis, seluruh siswa dapat langsung melihat dan mengunduh lembar ${reportName} mereka di akun siswa masing-masing.`
+    }`)) {
+      return;
+    }
+
+    setIsUpdatingRelease(true);
+    try {
+      const res = await fetch('/api/curriculum/report-release', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type,
+          released: !isCurrentlyReleased,
+          releasedBy: 'Waka Kurikulum',
+          semester: selectedSemester,
+          academicYear: selectedAcademicYear,
+          classes: ['all']
+        })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data && data.config) {
+          setReportReleaseConfig(data.config);
+        } else {
+          await fetchReportReleaseStatus();
+        }
+        alert(`Berhasil: ${data.message || 'Status rilis rapor berhasil diperbarui.'}`);
+      } else {
+        alert('Gagal memperbarui status rilis rapor ke server.');
+      }
+    } catch (err: any) {
+      alert('Terjadi kesalahan: ' + err.message);
+    } finally {
+      setIsUpdatingRelease(false);
+    }
+  };
 
   // Master Data Mata Pelajaran State
   const [curriculumSubjectsList, setCurriculumSubjectsList] = useState<CurriculumSubject[]>([]);
@@ -1087,14 +1168,15 @@ export default function WakaKurikulumPanel({
       // Look up existing teacher:
       // Primary match by username (if username exists)
       // Fallback match by canonical ID
-      // Fallback match by exact clean name
+      // Fallback match by exact clean name ONLY if usernames do NOT conflict!
       const existing = (username ? teacherMap.get(username) : null) ||
                        (canonicalId ? teacherMap.get(canonicalId) : null) ||
-                       Array.from(teacherMap.values()).find(t => 
-                         (username && t.usernames.includes(username)) ||
-                         (canonicalId && t.rawIds.includes(canonicalId)) ||
-                         (cleanTeacherName(t.name) === cleanTeacherName(name))
-                       );
+                       Array.from(teacherMap.values()).find(t => {
+                         if (username && (t.username.toLowerCase() === username || t.usernames.includes(username))) return true;
+                         if (canonicalId && (t.id === canonicalId || t.rawIds.includes(canonicalId))) return true;
+                         if (username && t.username && username !== t.username.toLowerCase()) return false;
+                         return cleanTeacherName(t.name) === cleanTeacherName(name);
+                       });
 
       if (existing) {
         if (st.id && !existing.rawIds.includes(st.id)) existing.rawIds.push(st.id);
@@ -1103,11 +1185,11 @@ export default function WakaKurikulumPanel({
         if (st.subject && !existing.subject) existing.subject = st.subject;
         if (existing.role === 'homeroom') existing.role = 'both';
       } else {
-        const key = username || canonicalId;
+        const key = username || canonicalId || cleanTeacherName(name);
         teacherMap.set(key, {
           id: canonicalId,
           name,
-          username: username || canonicalId,
+          username: username || canonicalId || cleanTeacherName(name),
           usernames: username ? [username] : [],
           rawIds: [canonicalId, st.id].filter(Boolean),
           role: 'subject_teacher',
@@ -1126,11 +1208,12 @@ export default function WakaKurikulumPanel({
 
       const existing = (username ? teacherMap.get(username) : null) ||
                        (canonicalId ? teacherMap.get(canonicalId) : null) ||
-                       Array.from(teacherMap.values()).find(t => 
-                         (username && t.usernames.includes(username)) ||
-                         (canonicalId && t.rawIds.includes(canonicalId)) ||
-                         (cleanTeacherName(t.name) === cleanTeacherName(name))
-                       );
+                       Array.from(teacherMap.values()).find(t => {
+                         if (username && (t.username.toLowerCase() === username || t.usernames.includes(username))) return true;
+                         if (canonicalId && (t.id === canonicalId || t.rawIds.includes(canonicalId))) return true;
+                         if (username && t.username && username !== t.username.toLowerCase()) return false;
+                         return cleanTeacherName(t.name) === cleanTeacherName(name);
+                       });
 
       if (existing) {
         if (hr.id && !existing.rawIds.includes(hr.id)) existing.rawIds.push(hr.id);
@@ -1139,11 +1222,11 @@ export default function WakaKurikulumPanel({
         if (hr.className) existing.className = hr.className;
         existing.role = 'both';
       } else {
-        const key = username || canonicalId;
+        const key = username || canonicalId || cleanTeacherName(name);
         teacherMap.set(key, {
           id: canonicalId,
           name,
-          username: username || canonicalId,
+          username: username || canonicalId || cleanTeacherName(name),
           usernames: username ? [username] : [],
           rawIds: [canonicalId, hr.id].filter(Boolean),
           role: 'homeroom',
@@ -1163,11 +1246,12 @@ export default function WakaKurikulumPanel({
 
       const existing = (schUsername ? teacherMap.get(schUsername) : null) ||
                        (schId ? teacherMap.get(schId) : null) ||
-                       Array.from(teacherMap.values()).find(t => 
-                         (schUsername && t.usernames.includes(schUsername)) ||
-                         (schId && (t.id === schId || t.rawIds.includes(schId))) ||
-                         (cleanTeacherName(t.name) === cleanTeacherName(name))
-                       );
+                       Array.from(teacherMap.values()).find(t => {
+                         if (schUsername && (t.username.toLowerCase() === schUsername || t.usernames.includes(schUsername))) return true;
+                         if (schId && (t.id === schId || t.rawIds.includes(schId))) return true;
+                         if (schUsername && t.username && schUsername !== t.username.toLowerCase()) return false;
+                         return cleanTeacherName(t.name) === cleanTeacherName(name);
+                       });
 
       if (existing) {
         if (schId && !existing.rawIds.includes(schId)) existing.rawIds.push(schId);
@@ -1302,9 +1386,10 @@ export default function WakaKurikulumPanel({
 
       // 5. Teacher filter (using Username and ID as primary anchors, strict exact Name matching fallback)
       if (detailTeacherFilter !== 'all') {
+        const targetUsername = (selectedTeacherObj?.username || detailTeacherFilter).trim().toLowerCase();
         const targetUsernames = selectedTeacherObj 
           ? [selectedTeacherObj.username.toLowerCase(), ...selectedTeacherObj.usernames.map(u => u.toLowerCase())]
-          : [detailTeacherFilter.toLowerCase().trim()];
+          : [targetUsername];
 
         const targetIds = selectedTeacherObj
           ? selectedTeacherObj.rawIds.map(getCanonicalTeacherId)
@@ -1320,7 +1405,7 @@ export default function WakaKurikulumPanel({
         const cleanSched = cleanTeacherName(scheduledTeacherName);
         const cleanHr = cleanTeacherName(homeroomTeacherName);
         const directTeacherEntity = allTeacherOptions.find(t => 
-          (actualTeacherId && (t.id === actualTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === actualTeacherId))) ||
+          (actualTeacherId && (t.username.toLowerCase() === actualTeacherId.toLowerCase() || t.id === actualTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === actualTeacherId))) ||
           (cleanActual && cleanTeacherName(t.name) === cleanActual)
         );
         const directTeacherUsernames = directTeacherEntity 
@@ -1330,13 +1415,13 @@ export default function WakaKurikulumPanel({
         const isDirectTeacher = (
           (directTeacherUsernames.length > 0 && directTeacherUsernames.some(u => targetUsernames.includes(u))) ||
           (actualTeacherId && targetIds.includes(actualTeacherId)) ||
-          (a.teacherName && selectedTeacherObj && a.teacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
+          (actualTeacherId && targetUsernames.includes(actualTeacherId.toLowerCase())) ||
           (cleanActual.length > 0 && targetCleanName.length > 0 && cleanActual === targetCleanName)
         );
 
         // b. Scheduled teacher match for this class and subject
         const scheduledTeacherEntity = allTeacherOptions.find(t => 
-          (scheduledTeacherId && (t.id === scheduledTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === scheduledTeacherId))) ||
+          (scheduledTeacherId && (t.username.toLowerCase() === scheduledTeacherId.toLowerCase() || t.id === scheduledTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === scheduledTeacherId))) ||
           (cleanSched && cleanTeacherName(t.name) === cleanSched)
         );
         const schedTeacherUsernames = scheduledTeacherEntity 
@@ -1346,13 +1431,13 @@ export default function WakaKurikulumPanel({
         const isScheduled = (
           (schedTeacherUsernames.length > 0 && schedTeacherUsernames.some(u => targetUsernames.includes(u))) ||
           (scheduledTeacherId && targetIds.includes(scheduledTeacherId)) ||
-          (scheduledTeacherName && selectedTeacherObj && scheduledTeacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
+          (scheduledTeacherId && targetUsernames.includes(scheduledTeacherId.toLowerCase())) ||
           (cleanSched.length > 0 && targetCleanName.length > 0 && cleanSched === targetCleanName)
         );
 
         // c. Homeroom match for this student's class
         const hrTeacherEntity = allTeacherOptions.find(t => 
-          (homeroomTeacherId && (t.id === homeroomTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === homeroomTeacherId))) ||
+          (homeroomTeacherId && (t.username.toLowerCase() === homeroomTeacherId.toLowerCase() || t.id === homeroomTeacherId || t.rawIds.some(rid => getCanonicalTeacherId(rid) === homeroomTeacherId))) ||
           (cleanHr && cleanTeacherName(t.name) === cleanHr)
         );
         const hrTeacherUsernames = hrTeacherEntity 
@@ -1362,7 +1447,7 @@ export default function WakaKurikulumPanel({
         const isHomeroomMatch = (
           (hrTeacherUsernames.length > 0 && hrTeacherUsernames.some(u => targetUsernames.includes(u))) ||
           (homeroomTeacherId && targetIds.includes(homeroomTeacherId)) ||
-          (homeroomTeacherName && selectedTeacherObj && homeroomTeacherName.toLowerCase().trim() === selectedTeacherObj.name.toLowerCase().trim()) ||
+          (homeroomTeacherId && targetUsernames.includes(homeroomTeacherId.toLowerCase())) ||
           (cleanHr.length > 0 && targetCleanName.length > 0 && cleanHr === targetCleanName)
         );
 
@@ -1375,9 +1460,10 @@ export default function WakaKurikulumPanel({
           if (!isDirectTeacher && !isScheduled) return false;
         } else {
           // Role is 'all':
+          // Subject assessments ONLY match the subject teacher! Never show another teacher's subject assessment just because the teacher is homeroom.
           const matchesAsSubject = isDirectTeacher || isScheduled;
-          const matchesAsHomeroom = isHomeroomMatch && (
-            hasKokuScore || detailSubjectFilter === 'all'
+          const matchesAsHomeroom = isHomeroomMatch && hasKokuScore && (
+            detailSubjectFilter === 'all' || isSameSubject(a.subject, 'Kokurikuler')
           );
 
           if (!matchesAsSubject && !matchesAsHomeroom) {
@@ -1393,21 +1479,38 @@ export default function WakaKurikulumPanel({
       if (detailStatusFilter === 'mapel_filled' && !hasSubjectScores) return false;
       if (detailStatusFilter === 'koku_filled' && !hasKokuScore) return false;
 
-      // 7. Text Search Query
+      // 7. Text Search Query (supports Student Name, NIS, Subject, Teacher Name, and Teacher Username / @username)
       if (detailSearchQuery.trim()) {
-        const q = detailSearchQuery.toLowerCase().trim();
-        const nameMatch = a.studentName?.toLowerCase().includes(q);
-        const idMatch = a.studentId?.toLowerCase().includes(q);
-        const subjMatch = a.subject?.toLowerCase().includes(q) || normalizeSubject(a.subject).toLowerCase().includes(q);
-        const teacherMatch = a.teacherName?.toLowerCase().includes(q) || (scheduledTeacherName && scheduledTeacherName.toLowerCase().includes(q));
-        const classMatch = a.className?.toLowerCase().includes(q) || normClass(a.className).includes(normClass(q));
-        // Match teacher username
-        const teacherUserMatch = allTeacherOptions.some(t => 
-          (t.username.toLowerCase().includes(q) || t.usernames.some(u => u.toLowerCase().includes(q))) &&
-          (cleanTeacherName(t.name) === cleanTeacherName(a.teacherName) || 
-           (scheduledTeacherName && cleanTeacherName(t.name) === cleanTeacherName(scheduledTeacherName)) ||
-           (homeroomTeacherName && cleanTeacherName(t.name) === cleanTeacherName(homeroomTeacherName)))
-        );
+        const rawQ = detailSearchQuery.toLowerCase().trim();
+        const cleanQ = rawQ.replace(/^@/, '');
+        const nameMatch = a.studentName?.toLowerCase().includes(rawQ);
+        const idMatch = a.studentId?.toLowerCase().includes(rawQ);
+        const subjMatch = a.subject?.toLowerCase().includes(rawQ) || normalizeSubject(a.subject).toLowerCase().includes(rawQ);
+        const teacherMatch = a.teacherName?.toLowerCase().includes(rawQ) || 
+          (scheduledTeacherName && scheduledTeacherName.toLowerCase().includes(rawQ)) ||
+          (homeroomTeacherName && homeroomTeacherName.toLowerCase().includes(rawQ));
+        const classMatch = a.className?.toLowerCase().includes(rawQ) || normClass(a.className).includes(normClass(rawQ));
+
+        // Match teacher username (exact or partial, with or without '@')
+        const teacherUserMatch = allTeacherOptions.some(t => {
+          const uMatch = t.username.toLowerCase() === cleanQ || 
+            t.username.toLowerCase().includes(cleanQ) || 
+            t.usernames.some(u => u.toLowerCase() === cleanQ || u.toLowerCase().includes(cleanQ));
+          if (!uMatch) return false;
+
+          const actualId = a.teacherId ? getCanonicalTeacherId(a.teacherId) : '';
+          const idDirect = actualId && (
+            t.id === actualId || 
+            t.rawIds.some(rid => getCanonicalTeacherId(rid) === actualId) || 
+            t.username.toLowerCase() === actualId.toLowerCase()
+          );
+          const nameDirect = cleanTeacherName(t.name) === cleanTeacherName(a.teacherName);
+          const schedDirect = Boolean(scheduledTeacherName && cleanTeacherName(t.name) === cleanTeacherName(scheduledTeacherName));
+          const hrDirect = Boolean(homeroomTeacherName && cleanTeacherName(t.name) === cleanTeacherName(homeroomTeacherName));
+
+          return Boolean(idDirect || nameDirect || schedDirect || hrDirect);
+        });
+
         if (!nameMatch && !idMatch && !subjMatch && !teacherMatch && !classMatch && !teacherUserMatch) return false;
       }
 
@@ -1449,7 +1552,9 @@ export default function WakaKurikulumPanel({
 
         const cleanA = cleanTeacherName(a.teacherName);
         const isDirect = (a.teacherName && a.teacherName.toLowerCase().trim() === teacher.name.toLowerCase().trim()) ||
-          (cleanA.length > 0 && cleanTarget.length > 0 && (cleanA === cleanTarget || cleanA.includes(cleanTarget) || cleanTarget.includes(cleanA)));
+          (cleanA.length > 0 && cleanTarget.length > 0 && cleanA === cleanTarget) ||
+          (a.teacherId && teacher.username && a.teacherId.toLowerCase() === teacher.username.toLowerCase()) ||
+          (a.teacherId && teacher.id && a.teacherId === teacher.id);
 
         const isSched = classSchedules.some(sch => 
           normClass(sch.className) === normClass(a.className) &&
@@ -2199,15 +2304,18 @@ export default function WakaKurikulumPanel({
         </button>
 
         <button
-          onClick={() => setActiveTab('rapor_tengah_semester')}
+          onClick={() => setActiveTab('rapor')}
           className={`pb-3 px-4 text-xs font-extrabold flex items-center gap-2 border-b-2 transition-all cursor-pointer whitespace-nowrap ${
-            activeTab === 'rapor_tengah_semester'
+            activeTab === 'rapor' || activeTab === 'rapor_tengah_semester'
               ? 'border-indigo-600 text-indigo-600'
               : 'border-transparent text-slate-500 hover:text-slate-800'
           }`}
         >
           <GraduationCap size={15} />
-          <span>Rapor Tengah Semester</span>
+          <span>Rapor</span>
+          {reportReleaseConfig.midtermReleased && (
+            <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" title="Rapor Tengah Semester Telah Dirilis" />
+          )}
         </button>
 
         <button
@@ -3379,7 +3487,8 @@ export default function WakaKurikulumPanel({
                 <div className="relative">
                   <input
                     type="text"
-                    placeholder="Nama / NIS..."
+                    placeholder="Nama, NIS, @Username..."
+                    title="Cari berdasarkan nama siswa, NIS, nama guru/wali, atau username guru (@username)"
                     value={detailSearchQuery}
                     onChange={(e) => setDetailSearchQuery(e.target.value)}
                     className="w-full bg-white border border-slate-200 rounded-xl pl-7 pr-2 py-1.5 text-xs font-semibold focus:outline-none focus:border-indigo-600"
@@ -3857,37 +3966,106 @@ export default function WakaKurikulumPanel({
         )}
       </AnimatePresence>
 
-      {/* TAB: RAPOR TENGAH SEMESTER (PTS / STS KURIKULUM MERDEKA) */}
-      {activeTab === 'rapor_tengah_semester' && (
+      {/* TAB: MENU UTAMA RAPOR (SUB-MENU: RAPOR TENGAH SEMESTER & RAPOR AKHIR SEMESTER) */}
+      {(activeTab === 'rapor' || activeTab === 'rapor_tengah_semester') && (
         <div className="space-y-6 animate-fade-in text-left">
-          {/* Header Controls Card */}
-          <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
-            <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600" />
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
-              <div>
-                <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Waka Kurikulum</span>
-                <h2 className="font-extrabold text-xl text-slate-900 mt-1 flex items-center gap-2">
-                  <GraduationCap className="text-indigo-600" size={24} />
-                  <span>Rapor Penilaian Tengah Semester (PTS / STS)</span>
-                </h2>
-                <p className="text-slate-500 text-xs mt-0.5">
-                  Laporan hasil belajar tengah semester Kurikulum Merdeka. Dilengkapi rekapitulasi absensi sebelum catatan wali kelas, KOP resmi sekolah dari panel admin, serta tanda tangan otomatis Kepala Sekolah &amp; Wali Kelas.
-                </p>
-              </div>
+          {/* Sub Navigation Bar: Rapor Tengah Semester & Rapor Akhir Semester */}
+          <div className="flex items-center gap-2 border-b border-slate-200 pb-3 flex-wrap">
+            <button
+              type="button"
+              onClick={() => setRaporSubTab('tengah_semester')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                raporSubTab === 'tengah_semester'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <GraduationCap size={15} />
+              <span>Rapor Tengah Semester (PTS / STS)</span>
+              {reportReleaseConfig.midtermReleased ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-white">
+                  ✓ Dirilis ke Siswa
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-600">
+                  Belum Dirilis
+                </span>
+              )}
+            </button>
 
-              <div className="flex flex-wrap items-center gap-2 shrink-0">
-                <button
-                  type="button"
-                  disabled={raporStudents.length === 0}
-                  onClick={() => printMidtermReport(raporStudents)}
-                  className="px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm"
-                  title="Cetak lembar rapor seluruh siswa kelas ini sekaligus (tiap siswa terpisah 1 halaman)"
-                >
-                  <Printer size={15} />
-                  <span>Cetak Rapor 1 Kelas ({raporStudents.length} Siswa)</span>
-                </button>
-              </div>
-            </div>
+            <button
+              type="button"
+              onClick={() => setRaporSubTab('akhir_semester')}
+              className={`px-4 py-2.5 rounded-2xl text-xs font-extrabold flex items-center gap-2 transition-all cursor-pointer ${
+                raporSubTab === 'akhir_semester'
+                  ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/25'
+                  : 'bg-white hover:bg-slate-100 text-slate-600 border border-slate-200'
+              }`}
+            >
+              <Award size={15} />
+              <span>Rapor Akhir Semester</span>
+              {reportReleaseConfig.finalReleased ? (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-emerald-500 text-white">
+                  ✓ Dirilis ke Siswa
+                </span>
+              ) : (
+                <span className="px-2 py-0.5 rounded-full text-[10px] font-black bg-slate-200 text-slate-600">
+                  Belum Dirilis
+                </span>
+              )}
+            </button>
+          </div>
+
+          {raporSubTab === 'tengah_semester' ? (
+            <div className="space-y-6">
+              {/* Header Controls Card */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-indigo-600 via-purple-600 to-indigo-600" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-indigo-600 tracking-wider">Modul Waka Kurikulum</span>
+                    <h2 className="font-extrabold text-xl text-slate-900 mt-1 flex items-center gap-2">
+                      <GraduationCap className="text-indigo-600" size={24} />
+                      <span>Rapor Penilaian Tengah Semester (PTS / STS)</span>
+                    </h2>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      Laporan hasil belajar tengah semester Kurikulum Merdeka. Dilengkapi rekapitulasi absensi sebelum catatan wali kelas, KOP resmi sekolah dari panel admin, serta tanda tangan otomatis Kepala Sekolah &amp; Wali Kelas.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {/* Tombol Rilis Rapor Tengah Semester ke Akun Siswa */}
+                    <button
+                      type="button"
+                      disabled={isUpdatingRelease}
+                      onClick={() => handleToggleReportRelease('midterm')}
+                      className={`px-4 py-2.5 font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm ${
+                        reportReleaseConfig.midtermReleased
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          : 'bg-indigo-600 hover:bg-indigo-700 text-white animate-pulse'
+                      }`}
+                      title={reportReleaseConfig.midtermReleased ? 'Rapor telah aktif di akun siswa. Klik untuk mengunci/menarik kembali.' : 'Klik untuk merilis rapor ke akun siswa.'}
+                    >
+                      <Send size={15} />
+                      <span>
+                        {reportReleaseConfig.midtermReleased
+                          ? '✓ Rapor Tengah Semester TELAH DIRILIS (Klik untuk Kunci)'
+                          : '🚀 Rilis Rapor Tengah Semester ke Akun Siswa'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={raporStudents.length === 0}
+                      onClick={() => printMidtermReport(raporStudents)}
+                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                      title="Cetak lembar rapor seluruh siswa kelas ini sekaligus (tiap siswa terpisah 1 halaman)"
+                    >
+                      <Printer size={15} />
+                      <span>Cetak Rapor 1 Kelas ({raporStudents.length} Siswa)</span>
+                    </button>
+                  </div>
+                </div>
 
             {/* Filter Controls Row */}
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-2">
@@ -4368,6 +4546,353 @@ export default function WakaKurikulumPanel({
               )}
             </div>
           </div>
+        </div>
+      ) : (
+            /* SUB TAB: RAPOR AKHIR SEMESTER (SAS / RAPOR LENGKAP) */
+            <div className="space-y-6">
+              {/* Header Controls Card */}
+              <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm relative overflow-hidden">
+                <div className="absolute top-0 inset-x-0 h-1.5 bg-gradient-to-r from-purple-600 via-indigo-600 to-purple-600" />
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-100">
+                  <div>
+                    <span className="text-[10px] font-black uppercase text-purple-600 tracking-wider">Modul Waka Kurikulum</span>
+                    <h2 className="font-extrabold text-xl text-slate-900 mt-1 flex items-center gap-2">
+                      <Award className="text-purple-600" size={24} />
+                      <span>Rapor Akhir Semester (Sumatif Akhir Semester / SAS)</span>
+                    </h2>
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      Laporan hasil belajar lengkap akhir semester Kurikulum Merdeka. Memuat Nilai Akhir Rapor, Capaian Kompetensi, Nilai Projek Kokurikuler (P5), serta tanda tangan resmi.
+                    </p>
+                  </div>
+
+                  <div className="flex flex-wrap items-center gap-2 shrink-0">
+                    {/* Tombol Rilis Rapor Akhir Semester ke Akun Siswa */}
+                    <button
+                      type="button"
+                      disabled={isUpdatingRelease}
+                      onClick={() => handleToggleReportRelease('final')}
+                      className={`px-4 py-2.5 font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm ${
+                        reportReleaseConfig.finalReleased
+                          ? 'bg-emerald-600 hover:bg-emerald-700 text-white'
+                          : 'bg-purple-600 hover:bg-purple-700 text-white animate-pulse'
+                      }`}
+                      title={reportReleaseConfig.finalReleased ? 'Rapor akhir telah aktif di akun siswa. Klik untuk mengunci/menarik kembali.' : 'Klik untuk merilis rapor akhir ke akun siswa.'}
+                    >
+                      <Send size={15} />
+                      <span>
+                        {reportReleaseConfig.finalReleased
+                          ? '✓ Rapor Akhir TELAH DIRILIS (Klik untuk Kunci)'
+                          : '🚀 Rilis Rapor Akhir Semester ke Akun Siswa'}
+                      </span>
+                    </button>
+
+                    <button
+                      type="button"
+                      disabled={raporStudents.length === 0}
+                      onClick={() => printMidtermReport(raporStudents)}
+                      className="px-4 py-2.5 bg-slate-800 hover:bg-slate-900 disabled:opacity-50 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-sm"
+                      title="Cetak lembar rapor seluruh siswa kelas ini sekaligus"
+                    >
+                      <Printer size={15} />
+                      <span>Cetak Rapor 1 Kelas ({raporStudents.length} Siswa)</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Filter Controls Row */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-4 pt-2">
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                      Pilih Kelas Rombel
+                    </label>
+                    <select
+                      value={selectedRaporClass}
+                      onChange={(e) => setSelectedRaporClass(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {availableClasses.map(cls => (
+                        <option key={cls} value={cls}>
+                          Kelas {cls} ({activeStudents.filter(s => s.class && normClass(s.class) === normClass(cls)).length} Siswa)
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                      Semester
+                    </label>
+                    <select
+                      value={selectedSemester}
+                      onChange={(e) => setSelectedSemester(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      <option value="Ganjil">Semester Ganjil</option>
+                      <option value="Genap">Semester Genap</option>
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                      Tahun Ajaran
+                    </label>
+                    <select
+                      value={selectedAcademicYear}
+                      onChange={(e) => setSelectedAcademicYear(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    >
+                      {academicYearOptions.map(yr => (
+                        <option key={yr} value={yr}>{yr}</option>
+                      ))}
+                    </select>
+                  </div>
+
+                  <div>
+                    <label className="block text-[10px] font-black uppercase text-slate-400 tracking-wider mb-1.5">
+                      Tanggal Rapor (Untuk TTD)
+                    </label>
+                    <input
+                      type="date"
+                      value={raporDate}
+                      onChange={(e) => handleRaporDateChange(e.target.value)}
+                      className="w-full bg-slate-50 border border-slate-200 hover:border-slate-300 focus:border-indigo-600 focus:bg-white rounded-xl px-3 py-2 text-xs font-bold text-slate-800 transition-colors cursor-pointer"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Main Grid: Student Selector (Left) & Report Preview (Right) */}
+              <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+                {/* Left Column: Student List */}
+                <div className="lg:col-span-4 flex flex-col gap-3">
+                  <div className="bg-white border border-slate-200 rounded-3xl p-4 shadow-sm flex flex-col gap-3">
+                    <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                      <span className="text-[10px] font-black uppercase text-slate-400 tracking-wider">
+                        Daftar Siswa Kelas {selectedRaporClass} ({raporStudents.length})
+                      </span>
+                      {selectedRaporClass && (
+                        <span className="text-[10px] font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded-md">
+                          {homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporClass))?.name || 'Wali Kelas'}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="relative">
+                      <Search size={14} className="absolute left-3 top-2.5 text-slate-400" />
+                      <input
+                        type="text"
+                        placeholder="Cari nama atau NIS siswa..."
+                        value={raporSearchQuery}
+                        onChange={(e) => setRaporSearchQuery(e.target.value)}
+                        className="w-full bg-slate-50 border border-slate-200 focus:border-indigo-600 focus:bg-white rounded-xl pl-8 pr-3 py-1.5 text-xs font-semibold text-slate-800 focus:outline-none"
+                      />
+                    </div>
+
+                    <div className="flex flex-col gap-1.5 max-h-[560px] overflow-y-auto pr-1">
+                      {raporStudents.length === 0 ? (
+                        <div className="py-8 text-center text-slate-400 text-xs font-semibold">
+                          Tidak ada siswa aktif terdaftar di kelas {selectedRaporClass}.
+                        </div>
+                      ) : (
+                        raporStudents
+                          .filter(s => {
+                            if (!raporSearchQuery) return true;
+                            const q = raporSearchQuery.toLowerCase();
+                            return s.name.toLowerCase().includes(q) || (s.nis && s.nis.toLowerCase().includes(q));
+                          })
+                          .map((st, idx) => {
+                            const isSelected = selectedRaporStudentId === st.id;
+                            const stAssessments = getStudentAssessmentsForRapor(st);
+
+                            return (
+                              <button
+                                key={st.id}
+                                type="button"
+                                onClick={() => setSelectedRaporStudentId(st.id)}
+                                className={`w-full text-left p-3 rounded-2xl flex items-center justify-between cursor-pointer transition-all border ${
+                                  isSelected
+                                    ? 'bg-slate-900 border-slate-900 shadow-md text-white'
+                                    : 'bg-slate-50 hover:bg-slate-100 border-slate-200 text-slate-800'
+                                }`}
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className={`h-6 w-6 shrink-0 rounded-lg text-[10px] font-black flex items-center justify-center ${
+                                    isSelected ? 'bg-purple-600 text-white' : 'bg-slate-200 text-slate-600'
+                                  }`}>
+                                    {idx + 1}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className="font-extrabold text-xs truncate leading-tight">{st.name}</div>
+                                    <div className="text-[9px] font-mono mt-0.5 text-slate-400">
+                                      NIS: {st.nis || '-'}
+                                    </div>
+                                  </div>
+                                </div>
+
+                                <div className="flex flex-col items-end shrink-0 gap-0.5">
+                                  <span className={`text-[9.5px] px-2 py-0.5 rounded-md font-bold font-mono ${
+                                    isSelected
+                                      ? 'bg-purple-600 text-white'
+                                      : 'bg-emerald-50 text-emerald-700'
+                                  }`}>
+                                    {stAssessments.filter(a => a.naPts > 0).length} / {stAssessments.length} Mapel
+                                  </span>
+                                </div>
+                              </button>
+                            );
+                          })
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Right Column: Report Card Preview */}
+                <div className="lg:col-span-8 flex flex-col gap-4">
+                  {selectedRaporStudent ? (() => {
+                    const att = getStudentAttendance(selectedRaporStudent);
+                    const scores = getStudentAssessmentsForRapor(selectedRaporStudent);
+                    const homeroomTeacher = homerooms.find(h => h.className && normClass(h.className) === normClass(selectedRaporStudent.class));
+                    const homeroomTeacherName = homeroomTeacher?.name || 'Wali Kelas';
+                    const defaultNote = "Ananda telah menuntaskan seluruh proses pembelajaran Kurikulum Merdeka pada semester ini dengan penuh dedikasi. Terus kembangkan potensi diri, pertahankan akhlak mulia dan prestasi pada semester berikutnya.";
+                    const studentNote = raporNotes[selectedRaporStudent.id] || defaultNote;
+
+                    return (
+                      <div className="bg-white border border-slate-200 rounded-3xl p-6 shadow-sm flex flex-col gap-5">
+                        <div className="flex items-center justify-between pb-4 border-b border-slate-100 flex-wrap gap-3">
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[10px] font-black text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md uppercase tracking-wider">
+                                Pratinjau Rapor Akhir Semester
+                              </span>
+                              <span className="text-[10px] font-bold text-slate-400">
+                                Kelas {selectedRaporStudent.class} &bull; Semester {selectedSemester}
+                              </span>
+                            </div>
+                            <h3 className="font-black text-slate-900 text-lg leading-tight mt-1">
+                              {selectedRaporStudent.name}
+                            </h3>
+                          </div>
+
+                          <button
+                            type="button"
+                            onClick={() => printMidtermReport([selectedRaporStudent])}
+                            className="px-4 py-2 bg-purple-600 hover:bg-purple-700 text-white font-extrabold text-xs tracking-wider rounded-xl transition-all cursor-pointer flex items-center gap-2 shadow-xs"
+                          >
+                            <Printer size={14} />
+                            <span>Cetak Rapor Akhir</span>
+                          </button>
+                        </div>
+
+                        {/* Report Card Document Simulation */}
+                        <div className="bg-white border-2 border-slate-300 rounded-2xl p-6 sm:p-8 shadow-xs text-black font-sans text-xs select-text">
+                          {schoolIdentity?.letterhead ? (
+                            <div className="w-full mb-3">
+                              <img src={schoolIdentity.letterhead} alt="KOP Resmi" className="w-full h-auto object-contain" />
+                            </div>
+                          ) : (
+                            <div className="text-center mb-3 border-b-2 border-black pb-2">
+                              <h2 className="font-black text-base uppercase">{schoolIdentity?.name || "SMP MA'ARIF NU PANDAAN"}</h2>
+                              <p className="text-[11px] text-slate-600">{schoolIdentity?.address || "Pandaan, Pasuruan"}</p>
+                            </div>
+                          )}
+
+                          <div className="text-center my-3">
+                            <h3 className="font-extrabold text-sm uppercase underline tracking-wider">LAPORAN HASIL BELAJAR AKHIR SEMESTER</h3>
+                            <p className="text-[11px] text-slate-600 mt-0.5">Tahun Ajaran {selectedAcademicYear} &bull; Semester {selectedSemester}</p>
+                          </div>
+
+                          <div className="grid grid-cols-2 gap-2 text-[11px] mb-4">
+                            <div>Nama: <strong>{selectedRaporStudent.name}</strong></div>
+                            <div>Kelas: <strong>{selectedRaporStudent.class}</strong></div>
+                            <div>NIS / NISN: <strong>{selectedRaporStudent.nis || '-'} / {selectedRaporStudent.nisn || '-'}</strong></div>
+                            <div>Fase: <strong>D (SMP)</strong></div>
+                          </div>
+
+                          {/* Table of Grades */}
+                          <table className="w-full border-collapse border border-black text-[11px] mb-4">
+                            <thead>
+                              <tr className="bg-slate-100 text-center font-bold">
+                                <th className="border border-black px-2 py-1.5 w-8">No</th>
+                                <th className="border border-black px-2 py-1.5 text-left">Mata Pelajaran</th>
+                                <th className="border border-black px-2 py-1.5 w-16">KKTP</th>
+                                <th className="border border-black px-2 py-1.5 w-20">Nilai Akhir</th>
+                                <th className="border border-black px-2 py-1.5 text-left">Capaian Kompetensi</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {scores.map((sc, sIdx) => (
+                                <tr key={sc.id}>
+                                  <td className="border border-black px-2 py-1 text-center font-mono">{sIdx + 1}</td>
+                                  <td className="border border-black px-2 py-1 font-semibold">{sc.subject}</td>
+                                  <td className="border border-black px-2 py-1 text-center font-mono">{sc.kktp}</td>
+                                  <td className="border border-black px-2 py-1 text-center font-mono font-bold text-slate-900">
+                                    {sc.naPts > 0 ? sc.naPts : '-'}
+                                  </td>
+                                  <td className="border border-black px-2 py-1 text-slate-700 leading-snug">
+                                    {sc.desc}
+                                  </td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+
+                          {/* Attendance & Notes */}
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-[11px] mb-4">
+                            <div className="border border-black p-2.5 rounded-lg">
+                              <div className="font-bold border-b border-black pb-1 mb-1.5">Ketidakhadiran (Presensi)</div>
+                              <div className="flex justify-between py-0.5"><span>Sakit (S):</span><strong>{att.Sakit} hari</strong></div>
+                              <div className="flex justify-between py-0.5"><span>Izin (I):</span><strong>{att.Izin} hari</strong></div>
+                              <div className="flex justify-between py-0.5"><span>Tanpa Keterangan (A):</span><strong>{att.Alpa} hari</strong></div>
+                            </div>
+
+                            <div className="border border-black p-2.5 rounded-lg">
+                              <div className="font-bold border-b border-black pb-1 mb-1.5">Catatan Wali Kelas</div>
+                              <p className="italic text-slate-700 leading-relaxed">{studentNote}</p>
+                            </div>
+                          </div>
+
+                          {/* Signatures */}
+                          <div className="grid grid-cols-3 gap-2 text-center text-[10.5px] mt-6 pt-2">
+                            <div>
+                              <div>Mengetahui,</div>
+                              <div>Orang Tua / Wali Murid</div>
+                              <div className="h-14" />
+                              <div>( .................................... )</div>
+                            </div>
+
+                            <div>
+                              <div>Wali Kelas {selectedRaporStudent.class}</div>
+                              <div className="h-14 flex items-center justify-center">
+                                {schoolIdentity?.principalSignature && (
+                                  <span className="text-[9px] text-slate-400 italic">[Terverifikasi Sistem]</span>
+                                )}
+                              </div>
+                              <u><strong>{homeroomTeacherName}</strong></u>
+                            </div>
+
+                            <div>
+                              <div>Pandaan, {formatIndonesianDate(raporDate) || new Date().toLocaleDateString('id-ID')}</div>
+                              <div>Kepala Sekolah</div>
+                              <div className="h-14 flex items-center justify-center">
+                                {schoolIdentity?.principalSignature ? (
+                                  <img src={schoolIdentity.principalSignature} alt="TTD" className="max-h-12 object-contain mx-auto" />
+                                ) : null}
+                              </div>
+                              <u><strong>{schoolIdentity?.principal || "H. Achmad Fauzi, M.Pd"}</strong></u>
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })() : (
+                    <div className="py-24 text-center text-slate-400 font-semibold bg-white border border-slate-200 rounded-3xl shadow-sm text-xs">
+                      Pilih siswa di sebelah kiri untuk melihat pratinjau lembar Rapor Akhir Semester.
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

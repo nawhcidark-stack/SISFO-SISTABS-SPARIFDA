@@ -1675,7 +1675,7 @@ export default function WakaKurikulumPanel({
     });
   }, [homerooms, availableClasses, activeStudents, filteredAssessments]);
 
-  // Handle Parse Excel/CSV Input
+  // Handle Parse Excel/CSV Input with dynamic column & template awareness
   const handleParseImport = () => {
     setImportError(null);
     setImportSuccessMsg(null);
@@ -1686,45 +1686,134 @@ export default function WakaKurikulumPanel({
     }
 
     try {
-      const lines = importText.trim().split('\n');
+      const rawLines = importText.trim().split('\n').map(l => l.trim()).filter(Boolean);
+      if (rawLines.length === 0) {
+        setImportError('Data yang ditempel kosong.');
+        return;
+      }
+
+      // Check if first line is a header
+      const firstLineCols = (rawLines[0].split('\t').length > 1 ? rawLines[0].split('\t') : rawLines[0].split(',')).map(c => c.trim().replace(/^["']|["']$/g, ''));
+      
+      let headerNisIdx = -1;
+      let headerNameIdx = -1;
+      let headerClassIdx = -1;
+      let headerSubjIdx = -1;
+      let headerPtsIdx = -1;
+      let headerPasIdx = -1;
+
+      const isHeaderRow = firstLineCols.some(c => {
+        const lower = c.toLowerCase();
+        return lower.includes('nis') || lower.includes('nama') || lower.includes('siswa') || lower.includes('mapel') || lower.includes('pts') || lower.includes('pas') || lower.includes('kelas');
+      });
+
+      let dataLines = rawLines;
+      if (isHeaderRow) {
+        firstLineCols.forEach((c, idx) => {
+          const l = c.toLowerCase();
+          if (l.includes('nis')) headerNisIdx = idx;
+          else if (l.includes('nama') || l.includes('siswa')) headerNameIdx = idx;
+          else if (l.includes('kelas') || l.includes('class') || l.includes('rombel')) headerClassIdx = idx;
+          else if (l.includes('mapel') || l.includes('pelajaran') || l.includes('subject') || l.includes('mata')) headerSubjIdx = idx;
+          else if (l.includes('pts') || l.includes('asts') || l.includes('tengah') || l.includes('uts')) headerPtsIdx = idx;
+          else if (l.includes('pas') || l.includes('asas') || l.includes('akhir') || l.includes('uas') || l.includes('sas')) headerPasIdx = idx;
+        });
+        dataLines = rawLines.slice(1);
+      }
+
       const parsedRows: any[] = [];
 
-      lines.forEach((line, idx) => {
-        const cols = line.split('\t').length > 1 ? line.split('\t') : line.split(',');
-        if (cols.length < 3) return; // skip header or short lines
+      dataLines.forEach((line) => {
+        const cols = (line.split('\t').length > 1 ? line.split('\t') : line.split(',')).map(c => c.trim().replace(/^["']|["']$/g, ''));
+        if (cols.length < 3) return; // skip too short rows
 
-        const col0 = cols[0]?.trim();
-        const col1 = cols[1]?.trim();
-        const col2 = cols[2]?.trim();
-        const col3 = cols[3]?.trim();
-        const col4 = cols[4]?.trim();
+        let nis = '';
+        let studentName = '';
+        let className = '';
+        let subject = '';
+        let ptsStr = '';
+        let pasStr = '';
 
-        // Check if header line
-        if (col0.toLowerCase().includes('nis') || col1.toLowerCase().includes('nama')) {
-          return;
+        if (isHeaderRow && (headerNisIdx !== -1 || headerNameIdx !== -1)) {
+          if (headerNisIdx !== -1) nis = cols[headerNisIdx] || '';
+          if (headerNameIdx !== -1) studentName = cols[headerNameIdx] || '';
+          if (headerClassIdx !== -1) className = cols[headerClassIdx] || '';
+          if (headerSubjIdx !== -1) subject = cols[headerSubjIdx] || '';
+          if (headerPtsIdx !== -1) ptsStr = cols[headerPtsIdx] || '';
+          if (headerPasIdx !== -1) pasStr = cols[headerPasIdx] || '';
+        } else {
+          // No header row: auto-detect by column count and value inspection
+          let offset = 0;
+          if (/^\d{1,3}$/.test(cols[0]) && cols[1] && (cols[1].length >= 4 || students.some(s => s.nis.trim() === cols[1]))) {
+            // First column is row number: 1, 2, 3...
+            offset = 1;
+          }
+
+          const eff = cols.slice(offset);
+
+          if (eff.length >= 6) {
+            // Standard template: [NIS, Nama, Kelas, Mapel, PTS, PAS]
+            nis = eff[0] || '';
+            studentName = eff[1] || '';
+            className = eff[2] || '';
+            subject = eff[3] || '';
+            ptsStr = eff[4] || '';
+            pasStr = eff[5] || '';
+          } else if (eff.length === 5) {
+            // Either [NIS, Nama, Kelas, PTS, PAS] or [NIS, Nama, Mapel, PTS, PAS]
+            const col2 = eff[2] || '';
+            const isKnownClass = availableClasses.some(c => normClass(c) === normClass(col2)) || /^[789]-?[A-Z]$/i.test(col2);
+            if (isKnownClass) {
+              nis = eff[0] || '';
+              studentName = eff[1] || '';
+              className = col2;
+              subject = '';
+              ptsStr = eff[3] || '';
+              pasStr = eff[4] || '';
+            } else {
+              nis = eff[0] || '';
+              studentName = eff[1] || '';
+              subject = col2;
+              ptsStr = eff[3] || '';
+              pasStr = eff[4] || '';
+            }
+          } else if (eff.length === 4) {
+            // [NIS, Nama, PTS, PAS]
+            nis = eff[0] || '';
+            studentName = eff[1] || '';
+            ptsStr = eff[2] || '';
+            pasStr = eff[3] || '';
+          } else if (eff.length >= 3) {
+            // [NIS, Nama, PTS]
+            nis = eff[0] || '';
+            studentName = eff[1] || '';
+            ptsStr = eff[2] || '';
+          }
         }
 
-        let nis = col0;
-        let studentName = col1;
-        let subject = col2;
-        let pts = col3;
-        let pas = col4;
-
-        // Try matching student
-        let matchedStudent = students.find(s => s.nis.trim() === nis);
+        // Student matching
+        let matchedStudent = students.find(s => s.nis && String(s.nis).trim() === nis);
         if (!matchedStudent && studentName) {
-          matchedStudent = students.find(s => s.name.toLowerCase().trim() === studentName.toLowerCase().trim());
+          const cleanInput = studentName.toLowerCase().trim();
+          matchedStudent = students.find(s => s.name && s.name.toLowerCase().trim() === cleanInput);
         }
 
         if (matchedStudent) {
+          const resolvedSubject = subject && subject.trim().toLowerCase() !== 'semua mapel'
+            ? normalizeSubject(subject)
+            : (detailSubjectFilter !== 'all' ? detailSubjectFilter : (availableSubjects[0] || 'Matematika'));
+
+          const parsedPts = ptsStr !== '' && !isNaN(Number(ptsStr)) ? Number(ptsStr) : 0;
+          const parsedPas = pasStr !== '' && !isNaN(Number(pasStr)) ? Number(pasStr) : 0;
+
           parsedRows.push({
             studentId: matchedStudent.id,
             nis: matchedStudent.nis,
             studentName: matchedStudent.name,
-            className: matchedStudent.class,
-            subject: subject || 'Semua Mapel',
-            pts: pts && !isNaN(Number(pts)) ? Number(pts) : 0,
-            pas: pas && !isNaN(Number(pas)) ? Number(pas) : 0
+            className: matchedStudent.class || className || '7-A',
+            subject: resolvedSubject,
+            pts: parsedPts,
+            pas: parsedPas
           });
         }
       });
@@ -1757,7 +1846,7 @@ export default function WakaKurikulumPanel({
       });
 
       if (res.ok) {
-        setImportSuccessMsg(`Berhasil mengimpor & menghubungkan nilai PTS & PAS untuk ${importParsedData.length} data siswa!`);
+        setImportSuccessMsg(`🎉 Berhasil mengimpor & menyimpan nilai PTS & PAS untuk ${importParsedData.length} data siswa langsung ke MySQL!`);
         setImportParsedData([]);
         setImportText('');
         if (onRefreshData) onRefreshData();

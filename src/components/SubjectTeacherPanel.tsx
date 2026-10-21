@@ -1079,6 +1079,10 @@ export default function SubjectTeacherPanel({
           tp4Tugas1: match.tp4Tugas1 !== undefined && match.tp4Tugas1 !== null ? String(match.tp4Tugas1) : (match.tp4Grade !== undefined ? String(match.tp4Grade) : ''),
           tp4Uh: match.tp4Uh !== undefined && match.tp4Uh !== null ? String(match.tp4Uh) : '',
 
+          pts: match.nilaiPts !== undefined && match.nilaiPts !== null && Number(match.nilaiPts) > 0 ? String(match.nilaiPts) : '',
+          pas: match.nilaiPas !== undefined && match.nilaiPas !== null && Number(match.nilaiPas) > 0 ? String(match.nilaiPas) : '',
+          kokurikuler: match.nilaiKokurikuler !== undefined && match.nilaiKokurikuler !== null && Number(match.nilaiKokurikuler) > 0 ? String(match.nilaiKokurikuler) : '',
+
           nilaiSumatifLM: String(match.nilaiSumatifLM ?? ''),
           nilaiSAS: String(match.nilaiSAS ?? ''),
           deskripsiCapaian: match.deskripsiCapaian ?? ''
@@ -1089,6 +1093,7 @@ export default function SubjectTeacherPanel({
           tp2Tugas1: '', tp2Uh: '',
           tp3Tugas1: '', tp3Uh: '',
           tp4Tugas1: '', tp4Uh: '',
+          pts: '', pas: '', kokurikuler: '',
           nilaiSumatifLM: '',
           nilaiSAS: '',
           deskripsiCapaian: ''
@@ -3475,6 +3480,13 @@ export default function SubjectTeacherPanel({
                           tp4Tugas1: '', tp4Uh: ''
                         };
 
+                        const matched = merdekaAssessments.find(a =>
+                          a.studentId === s.id &&
+                          isSameSubject(a.subject, selectedSubject) &&
+                          (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() &&
+                          (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
+                        );
+
                         return {
                           studentId: s.id,
                           studentName: s.name,
@@ -3502,7 +3514,11 @@ export default function SubjectTeacherPanel({
                           tp4Id: tp4Id || undefined,
                           tp4Name: tp4InputName || undefined,
                           tp4Tugas1: (inputState as any).tp4Tugas1,
-                          tp4Uh: (inputState as any).tp4Uh
+                          tp4Uh: (inputState as any).tp4Uh,
+
+                          nilaiPts: (inputState as any).pts !== undefined && (inputState as any).pts !== '' ? Number((inputState as any).pts) : (matched?.nilaiPts !== undefined ? Number(matched.nilaiPts) : undefined),
+                          nilaiPas: (inputState as any).pas !== undefined && (inputState as any).pas !== '' ? Number((inputState as any).pas) : (matched?.nilaiPas !== undefined ? Number(matched.nilaiPas) : undefined),
+                          nilaiKokurikuler: (inputState as any).kokurikuler !== undefined && (inputState as any).kokurikuler !== '' ? Number((inputState as any).kokurikuler) : (matched?.nilaiKokurikuler !== undefined ? Number(matched.nilaiKokurikuler) : undefined)
                         };
                       });
 
@@ -3642,9 +3658,9 @@ export default function SubjectTeacherPanel({
                       const validTps = [tp1Score, tp2Score, tp3Score, tp4Score].filter((x): x is number => x !== null);
                       const avgTp = validTps.length > 0 ? Math.round(validTps.reduce((a, b) => a + b, 0) / validTps.length) : 0;
 
-                      const kokurikulerVal = matchedAss?.nilaiKokurikuler ?? 0;
-                      const ptsVal = matchedAss?.nilaiPts ?? 0;
-                      const pasVal = matchedAss?.nilaiPas ?? 0;
+                      const kokurikulerVal = (inputState as any).kokurikuler !== undefined && (inputState as any).kokurikuler !== '' ? Number((inputState as any).kokurikuler) : (matchedAss?.nilaiKokurikuler ?? 0);
+                      const ptsVal = (inputState as any).pts !== undefined && (inputState as any).pts !== '' ? Number((inputState as any).pts) : (matchedAss?.nilaiPts ?? 0);
+                      const pasVal = (inputState as any).pas !== undefined && (inputState as any).pas !== '' ? Number((inputState as any).pas) : (matchedAss?.nilaiPas ?? 0);
 
                       // NILAI AKHIR TIAP MAPEL = ((Nilai Rata-rata TP dikali 3) + Nilai Kokurikuler + PTS + PAS) / 6
                       const finalMapelScore = Math.round(((avgTp * 3) + kokurikulerVal + ptsVal + pasVal) / 6);
@@ -3802,6 +3818,13 @@ export default function SubjectTeacherPanel({
                         tp4Tugas1: '', tp4Uh: ''
                       };
 
+                      const matched = merdekaAssessments.find(a =>
+                        a.studentId === s.id &&
+                        isSameSubject(a.subject, selectedSubject) &&
+                        (a.semester || '').toLowerCase() === selectedSemesterGrading.toLowerCase() &&
+                        (a.academicYear || '').toLowerCase() === selectedYearGrading.toLowerCase()
+                      );
+
                       return {
                         studentId: s.id,
                         studentName: s.name,
@@ -3829,7 +3852,11 @@ export default function SubjectTeacherPanel({
                         tp4Id: tp4Id || undefined,
                         tp4Name: tp4InputName || undefined,
                         tp4Tugas1: (inputState as any).tp4Tugas1,
-                        tp4Uh: (inputState as any).tp4Uh
+                        tp4Uh: (inputState as any).tp4Uh,
+
+                        nilaiPts: (inputState as any).pts !== undefined && (inputState as any).pts !== '' ? Number((inputState as any).pts) : (matched?.nilaiPts !== undefined ? Number(matched.nilaiPts) : undefined),
+                        nilaiPas: (inputState as any).pas !== undefined && (inputState as any).pas !== '' ? Number((inputState as any).pas) : (matched?.nilaiPas !== undefined ? Number(matched.nilaiPas) : undefined),
+                        nilaiKokurikuler: (inputState as any).kokurikuler !== undefined && (inputState as any).kokurikuler !== '' ? Number((inputState as any).kokurikuler) : (matched?.nilaiKokurikuler !== undefined ? Number(matched.nilaiKokurikuler) : undefined)
                       };
                     });
 

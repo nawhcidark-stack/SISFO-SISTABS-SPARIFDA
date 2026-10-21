@@ -6970,15 +6970,16 @@ async function startServer() {
   });
 
   // Batch import PTS & PAS from Waka Kurikulum
-  app.post("/api/curriculum/import-pts-pas", (req, res) => {
+  app.post("/api/curriculum/import-pts-pas", async (req, res) => {
     const { items, semester, academicYear } = req.body;
     if (!Array.isArray(items)) {
       return res.status(400).json({ error: "Data import tidak valid." });
     }
 
-    const sem = semester || "Genap";
-    const year = academicYear || "2025/2026";
+    const sem = semester || (schoolIdentity as any).activeSemester || "Ganjil";
+    const year = academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027";
     let updatedCount = 0;
+    const affectedAssessments: MerdekaAssessment[] = [];
 
     items.forEach((item: any) => {
       let targetStudent = null;
@@ -6986,7 +6987,7 @@ async function startServer() {
         targetStudent = students.find(s => s.id === item.studentId);
       }
       if (!targetStudent && item.nis) {
-        targetStudent = students.find(s => s.nis.trim() === String(item.nis).trim());
+        targetStudent = students.find(s => String(s.nis).trim() === String(item.nis).trim());
       }
       if (!targetStudent && item.studentName) {
         targetStudent = students.find(s => s.name.toLowerCase().trim() === String(item.studentName).toLowerCase().trim());
@@ -6994,29 +6995,31 @@ async function startServer() {
 
       if (!targetStudent) return;
 
-      const targetSubj = item.subject ? item.subject.trim() : null;
+      const rawSubj = item.subject ? String(item.subject).trim() : null;
+      if (!rawSubj || rawSubj.toLowerCase() === 'semua mapel') return;
 
-      if (!targetSubj) return;
+      const targetSubj = toMasterSubjectName(rawSubj);
 
-      // Find existing assessment or create one
+      // Find existing assessment using robust matcher
       let existingIdx = merdekaAssessments.findIndex(a =>
         a.studentId === targetStudent.id &&
-        a.subject.toLowerCase() === targetSubj.toLowerCase() &&
-        a.semester === sem &&
-        a.academicYear === year
+        isSameSubject(a.subject, targetSubj) &&
+        isSameSemester(a.semester, sem) &&
+        isSameAcademicYear(a.academicYear, year)
       );
 
-      const ptsVal = item.pts !== undefined && item.pts !== "" ? Number(item.pts) : undefined;
-      const pasVal = item.pas !== undefined && item.pas !== "" ? Number(item.pas) : undefined;
+      const ptsVal = item.pts !== undefined && item.pts !== "" && !isNaN(Number(item.pts)) ? Number(item.pts) : undefined;
+      const pasVal = item.pas !== undefined && item.pas !== "" && !isNaN(Number(item.pas)) ? Number(item.pas) : undefined;
 
       if (existingIdx !== -1) {
         if (ptsVal !== undefined) merdekaAssessments[existingIdx].nilaiPts = ptsVal;
         if (pasVal !== undefined) merdekaAssessments[existingIdx].nilaiPas = pasVal;
         recalculateAssessmentScores(merdekaAssessments[existingIdx]);
+        affectedAssessments.push(merdekaAssessments[existingIdx]);
         updatedCount++;
       } else {
         const newAss: MerdekaAssessment = {
-          id: `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+          id: `ma-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
           studentId: targetStudent.id,
           studentName: targetStudent.name,
           className: targetStudent.class,
@@ -7031,16 +7034,32 @@ async function startServer() {
         };
         recalculateAssessmentScores(newAss);
         merdekaAssessments.unshift(newAss);
+        affectedAssessments.push(newAss);
         updatedCount++;
       }
     });
 
+    let mysqlSaved = false;
+    let mysqlError: string | null = null;
+    if (affectedAssessments.length > 0) {
+      try {
+        const batchRes = await directSaveEntitiesBatchToMysql("merdekaAssessments", affectedAssessments);
+        mysqlSaved = Boolean(batchRes?.success);
+        if (!mysqlSaved && batchRes?.error) {
+          mysqlError = batchRes.error;
+        }
+      } catch (err: any) {
+        mysqlError = err?.message || String(err);
+        console.warn("[MySQL] Gagal batch save import PTS/PAS ke MySQL:", mysqlError);
+      }
+    }
+
     saveState();
-    res.json({ success: true, updatedCount, merdekaAssessments });
+    res.json({ success: true, updatedCount, mysqlSaved, mysqlError, merdekaAssessments });
   });
 
   // Batch Save Kokurikuler by Wali Kelas
-  app.post("/api/kokurikuler/batch-save", (req, res) => {
+  app.post("/api/kokurikuler/batch-save", async (req, res) => {
     const { className, semester, academicYear, scores } = req.body;
     if (!scores || typeof scores !== 'object') {
       return res.status(400).json({ error: "Data nilai kokurikuler tidak valid." });
@@ -7049,6 +7068,7 @@ async function startServer() {
     const sem = semester || (schoolIdentity as any).activeSemester || "Ganjil";
     const year = academicYear || (schoolIdentity as any).activeAcademicYear || "2026/2027";
     let updatedCount = 0;
+    const affectedAssessments: MerdekaAssessment[] = [];
 
     Object.entries(scores).forEach(([studentId, scoreVal]) => {
       const kokuScore = Number(scoreVal) || 0;
@@ -7056,14 +7076,15 @@ async function startServer() {
       // Update all existing subject assessments for this student in this sem & year
       const matchedAssessments = merdekaAssessments.filter(a =>
         a.studentId === studentId &&
-        a.semester === sem &&
-        a.academicYear === year
+        isSameSemester(a.semester, sem) &&
+        isSameAcademicYear(a.academicYear, year)
       );
 
       if (matchedAssessments.length > 0) {
         matchedAssessments.forEach(ass => {
           ass.nilaiKokurikuler = kokuScore;
           recalculateAssessmentScores(ass);
+          affectedAssessments.push(ass);
           updatedCount++;
         });
       } else {
@@ -7073,11 +7094,11 @@ async function startServer() {
           const distinctSubjects = Array.from(new Set(subjectTeachers.map(st => st.subject)));
           distinctSubjects.forEach(subj => {
             const newAss: MerdekaAssessment = {
-              id: `ma-${Date.now()}-${Math.random().toString(36).substr(2, 4)}`,
+              id: `ma-${Date.now()}-${Math.random().toString(36).substr(2, 6)}`,
               studentId: studentObj.id,
               studentName: studentObj.name,
               className: studentObj.class,
-              subject: subj,
+              subject: toMasterSubjectName(subj),
               teacherName: "Guru Mapel",
               semester: sem,
               academicYear: year,
@@ -7088,14 +7109,30 @@ async function startServer() {
             };
             recalculateAssessmentScores(newAss);
             merdekaAssessments.unshift(newAss);
+            affectedAssessments.push(newAss);
             updatedCount++;
           });
         }
       }
     });
 
+    let mysqlSaved = false;
+    let mysqlError: string | null = null;
+    if (affectedAssessments.length > 0) {
+      try {
+        const batchRes = await directSaveEntitiesBatchToMysql("merdekaAssessments", affectedAssessments);
+        mysqlSaved = Boolean(batchRes?.success);
+        if (!mysqlSaved && batchRes?.error) {
+          mysqlError = batchRes.error;
+        }
+      } catch (err: any) {
+        mysqlError = err?.message || String(err);
+        console.warn("[MySQL] Gagal batch save kokurikuler ke MySQL:", mysqlError);
+      }
+    }
+
     saveState();
-    res.json({ success: true, updatedCount, merdekaAssessments });
+    res.json({ success: true, updatedCount, mysqlSaved, mysqlError, merdekaAssessments });
   });
 
   app.delete("/api/merdeka-assessments/:id", async (req, res) => {

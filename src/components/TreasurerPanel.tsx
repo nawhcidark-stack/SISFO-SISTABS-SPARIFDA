@@ -269,7 +269,6 @@ export default function TreasurerPanel({
                    nl !== 'spmb - daftar ulang & seragam' &&
                    nl !== 'spmb daftar ulang & seragam' &&
                    nl !== 'spmb formulir' &&
-                   nl !== 'spmb daftar ulang' &&
                    nl !== 'spp' &&
                    nl !== 'tabungan';
           });
@@ -804,16 +803,13 @@ export default function TreasurerPanel({
           if (!tx) return false;
           const id = (tx.id || '').toLowerCase();
           const cat = (tx.category || '').toLowerCase().trim();
-          const desc = (tx.description || '').toLowerCase();
           if (id.startsWith('trx-spmb-')) return false;
-          if (desc.includes('krishna') && (desc.includes('token') || desc.includes('daftar ulang'))) return false;
           if (
             cat === 'spmb - token formulir' ||
             cat === 'spmb - daftar ulang' ||
             cat === 'spmb - daftar ulang & seragam' ||
             cat === 'spmb daftar ulang & seragam' ||
-            cat === 'spmb formulir' ||
-            cat === 'spmb daftar ulang'
+            cat === 'spmb formulir'
           ) return false;
           return true;
         });
@@ -827,7 +823,7 @@ export default function TreasurerPanel({
               const trimmed = tx.category.trim();
               const catLower = trimmed.toLowerCase();
               const isExcluded = 
-                ['spp', 'tabungan', 'spp siswa', 'tagihan non-spp', 'spmb siswa baru', 'daftar ulang siswa baru', 'spmb - token formulir', 'spmb - daftar ulang', 'spmb - daftar ulang & seragam', 'spmb daftar ulang & seragam', 'spmb formulir', 'spmb daftar ulang'].includes(catLower) ||
+                ['spp', 'tabungan', 'spp siswa', 'tagihan non-spp', 'spmb siswa baru', 'daftar ulang siswa baru', 'spmb - token formulir', 'spmb - daftar ulang', 'spmb - daftar ulang & seragam', 'spmb daftar ulang & seragam', 'spmb formulir'].includes(catLower) ||
                 catLower.includes('midtrans') || 
                 catLower.includes('transaksi online');
 
@@ -852,7 +848,6 @@ export default function TreasurerPanel({
                      nl !== 'spmb - daftar ulang & seragam' &&
                      nl !== 'spmb daftar ulang & seragam' &&
                      nl !== 'spmb formulir' &&
-                     nl !== 'spmb daftar ulang' &&
                      nl !== 'spp' &&
                      nl !== 'tabungan';
             });
@@ -2301,11 +2296,18 @@ export default function TreasurerPanel({
                 return (
                   <div
                     key={pos.name}
-                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:bg-slate-50 hover:border-slate-300 transition-all flex flex-col justify-between shadow-xs"
+                    onClick={() => {
+                      setFilterCategory(pos.name);
+                      setSelectedBook('bku');
+                      setFilterType('all');
+                      setActiveTab('kas_ledger');
+                    }}
+                    title={`Klik untuk melihat rincian catatan pembukuan POS ${pos.name}`}
+                    className="p-4 rounded-2xl border border-slate-200 bg-slate-50/40 hover:bg-indigo-50/40 hover:border-indigo-300 transition-all flex flex-col justify-between shadow-xs cursor-pointer group"
                   >
                     <div>
                       <div className="flex items-center justify-between gap-1.5 mb-2">
-                        <span className="text-[10.5px] font-black text-slate-900 uppercase truncate" title={pos.name}>
+                        <span className="text-[10.5px] font-black text-slate-900 uppercase truncate group-hover:text-indigo-650 transition-colors" title={pos.name}>
                           📊 {pos.name}
                         </span>
                         {pos.name === 'SPP' || pos.name === 'Tabungan' ? (

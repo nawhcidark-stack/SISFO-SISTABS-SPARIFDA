@@ -2058,8 +2058,7 @@ function loadState() {
             catLower === "spmb - daftar ulang" ||
             catLower === "spmb - daftar ulang & seragam" ||
             catLower === "spmb daftar ulang & seragam" ||
-            catLower === "spmb formulir" ||
-            catLower === "spmb daftar ulang"
+            catLower === "spmb formulir"
           ) return false;
           return true;
         });
@@ -2131,7 +2130,6 @@ function loadState() {
                    nl !== "spmb - daftar ulang & seragam" &&
                    nl !== "spmb daftar ulang & seragam" &&
                    nl !== "spmb formulir" &&
-                   nl !== "spmb daftar ulang" &&
                    nl !== "spp" &&
                    nl !== "tabungan";
           });
@@ -8281,7 +8279,6 @@ async function startServer() {
         catLower === "spmb - daftar ulang & seragam" || 
         catLower === "spmb daftar ulang & seragam" || 
         catLower === "spmb formulir" || 
-        catLower === "spmb daftar ulang" || 
         catLower === "spp" || 
         catLower === "tabungan"
       ) return false;
@@ -8404,7 +8401,6 @@ async function startServer() {
              nl !== "spmb - daftar ulang & seragam" &&
              nl !== "spmb daftar ulang & seragam" &&
              nl !== "spmb formulir" &&
-             nl !== "spmb daftar ulang" &&
              nl !== "spp" &&
              nl !== "tabungan";
     });
@@ -8440,7 +8436,6 @@ async function startServer() {
              nl !== "spmb - daftar ulang & seragam" &&
              nl !== "spmb daftar ulang & seragam" &&
              nl !== "spmb formulir" &&
-             nl !== "spmb daftar ulang" &&
              nl !== "spp" &&
              nl !== "tabungan";
     });

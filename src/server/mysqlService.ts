@@ -4009,7 +4009,7 @@ export async function directSaveEntitiesBatchToMysql(entityType: string, items: 
         } catch (itemErr: any) {
           console.error(`[MySQL Batch Voided Error] ${v?.id}:`, itemErr?.message || itemErr);
         }
-      } else if (typeKey === 'transaction' || typeKey === 'treasurer_transaction' || typeKey === 'treasurertransactions') {
+      } else if (typeKey === 'transaction' || typeKey === 'treasurer_transaction' || typeKey === 'treasurertransactions' || typeKey === 'treasurer_transactions') {
         const t = item;
         try {
           await connection.query(`
